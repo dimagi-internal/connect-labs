@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-screen-xl mx-auto px-4 py-6">
+
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-semibold text-brand-deep-purple mb-2">Funder Dashboard</h1>
+                <p class="text-sm text-gray-600">Manage your funds, programs, and grantees.</p>
+            </div>
+            <a href="{% url 'funder_dashboard:fund_create' %}"
+               class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-plus mr-2"></i>
+                Create Fund
+            </a>
+        </div>
+    </div>
+
+    {% if not has_context %}
+        <div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-12 text-center">
+            <i class="fa-solid fa-building text-5xl text-blue-400 mb-4"></i>
+            <h3 class="text-xl font-semibold text-blue-900 mb-2">No organization selected</h3>
+            <p class="text-blue-700 mb-6">Please select an organization from the context selector above.</p>
+        </div>
+    {% elif funds %}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for fund in funds %}
+            <a href="{% url 'funder_dashboard:fund_detail' pk=fund.pk %}" class="block">
+                <div class="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition border border-gray-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">{{ fund.name }}</h3>
+                        {% if fund.status == 'active' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Active</span>
+                        {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Closed</span>
+                        {% endif %}
+                    </div>
+                    <p class="text-sm text-gray-600 mb-4">{{ fund.description|truncatewords:20 }}</p>
+                    <div class="flex items-center justify-between text-sm text-gray-500">
+                        {% if fund.total_budget %}
+                            <span class="font-medium text-gray-900">${{ fund.total_budget|floatformat:0 }}</span>
+                        {% endif %}
+                        <span>{{ fund.program_ids|length }} program{{ fund.program_ids|length|pluralize }}</span>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="bg-white rounded-lg shadow-sm p-12 text-center">
+            <i class="fa-solid fa-coins text-5xl text-gray-300 mb-4"></i>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">No funds yet</h3>
+            <p class="text-gray-600 mb-6">Create your first fund to get started.</p>
+            <a href="{% url 'funder_dashboard:fund_create' %}"
+               class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-plus mr-2"></i>
+                Create Fund
+            </a>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock %}
