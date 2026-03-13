@@ -6,12 +6,14 @@ Setup: python manage.py get_cli_token
 Tests use the saved token from ~/.commcare-connect/token.json
 and load credentials from .env (same as real CLI).
 """
+import pytest
 from django.conf import settings
 
 from commcare_connect.labs.integrations.connect.cli import TokenManager, get_labs_user_from_token
 from commcare_connect.labs.integrations.connect.oauth import introspect_token
 
 
+@pytest.mark.e2e
 def test_token_manager_loads_saved_token():
     """Test that TokenManager loads the token saved by get_cli_token command."""
     manager = TokenManager()
@@ -21,6 +23,7 @@ def test_token_manager_loads_saved_token():
     print(f"\n[OK] Loaded token: {access_token[:20]}...")
 
 
+@pytest.mark.e2e
 def test_introspect_saved_token():
     """Test introspecting the saved token to get user profile."""
     manager = TokenManager()
@@ -41,6 +44,7 @@ def test_introspect_saved_token():
     print(f"\n[OK] User: {user_profile['username']}")
 
 
+@pytest.mark.e2e
 def test_get_labs_user_like_real_script():
     """Test creating User from saved token - the typical CLI pattern."""
     # Exactly what a real script does
