@@ -278,7 +278,7 @@ class Command(BaseCommand):
         - labs_context with opportunity_id
         - Authenticated user via LabsOAuthBackend
         """
-        from commcare_connect.labs.models import LabsUser
+        from commcare_connect.users.models import User
 
         factory = RequestFactory()
 
@@ -291,12 +291,15 @@ class Command(BaseCommand):
         else:
             request = factory.get(path)
 
-        # Set up session like LabsAuthenticationMiddleware does
+        # Set up session like the OAuth callback does
         session = SessionStore()
         session["labs_oauth"] = {
             "access_token": access_token,
             "expires_at": time.time() + 3600,
             "user_profile": user_profile,
+            "organization_data": {
+                "opportunities": [{"id": opportunity_id, "name": "Test Opportunity"}],
+            },
         }
         session.create()
         request.session = session
@@ -306,14 +309,15 @@ class Command(BaseCommand):
             "opportunity_id": opportunity_id,
         }
 
-        # Create a LabsUser with real user profile
-        session_data = {
-            "user_profile": user_profile,
-            "organization_data": {
-                "opportunities": [{"id": opportunity_id, "name": "Test Opportunity"}],
+        # Create a Django User with real user profile
+        user, _ = User.objects.update_or_create(
+            username=user_profile.get("username", "test"),
+            defaults={
+                "email": user_profile.get("email", ""),
+                "name": f"{user_profile.get('first_name', '')} {user_profile.get('last_name', '')}".strip(),
             },
-        }
-        request.user = LabsUser(session_data)
+        )
+        request.user = user
 
         return request
 

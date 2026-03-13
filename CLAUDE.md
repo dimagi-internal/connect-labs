@@ -6,7 +6,7 @@ Most production apps have been removed from this codebase. The remaining non-lab
 
 ## Architecture at a Glance
 
-- **OAuth session auth** — no Django User model for labs. `LabsUser` is transient (created from session each request, never saved to DB). Auth flow: `/labs/login/` → production OAuth → callback stores token in session.
+- **OAuth + Django User** — OAuth login via production Connect creates/updates a Django User via `User.objects.update_or_create()`. OAuth tokens stored in `request.session["labs_oauth"]` for API calls. Org data (organizations, programs, opportunities) available via `get_org_data(request)` from `labs/context.py`, and in templates via `user_organizations`, `user_programs`, `user_opportunities` context variables.
 - **All data via API** — `LabsRecordAPIClient` (`commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to `/export/labs_record/` on production for all CRUD. The production data export API code lives in the **`dimagi/commcare-connect`** repo at `commcare_connect/data_export/` (views, serializers, URLs). Use `gh api repos/dimagi/commcare-connect/contents/commcare_connect/data_export/views.py` to read it. **Note:** The CSV export serializes Python dicts with `str()`, producing Python repr format (single quotes), not JSON — use `ast.literal_eval` as fallback when parsing.
 - **data_access.py pattern** — each app wraps `LabsRecordAPIClient` in a `data_access.py` class with domain-specific methods.
 - **Proxy models** — `LocalLabsRecord` subclasses provide typed `@property` access to JSON data. They cannot be `.save()`d locally.
@@ -18,7 +18,7 @@ Most production apps have been removed from this codebase. The remaining non-lab
 
 | App              | Purpose                                                               | Key files                                                                        |
 | ---------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `labs/`          | Core infrastructure: OAuth, API client, middleware, analysis pipeline | `integrations/connect/api_client.py`, `models.py`, `middleware.py`, `context.py` |
+| `labs/`          | Core infrastructure: OAuth, API client, middleware, analysis pipeline | `integrations/connect/api_client.py`, `models.py`, `context.py` |
 | `audit/`         | Quality assurance review of FLW visits, HQ image questions            | `data_access.py`, `ai_review.py`, `tasks.py`, `hq_app_utils.py`, `views.py`     |
 | `tasks/`         | Task management for FLW follow-ups                                    | `data_access.py` (simplest example of the pattern)                               |
 | `workflow/`      | Configurable workflow engine with React UIs and pipelines             | `data_access.py` (most complex), `templates/`                                    |
@@ -76,9 +76,8 @@ pre-commit run --all-files          # Run linters/formatters
 
 - **DO NOT** query Django ORM models (`Opportunity`, `User`, `Organization`) expecting production data — those tables are empty. Use `LabsRecordAPIClient`.
 - **DO NOT** use `config.settings.labs_aws` for local development. Use `config.settings.local` (the default). The `labs_aws` settings are only for the AWS deployment at `labs.connect.dimagi.com`.
-- **DO NOT** call `.save()` on `LabsUser` or `LocalLabsRecord` — they raise `NotImplementedError`. Use `LabsRecordAPIClient` for persistence.
+- **DO NOT** call `.save()` on `LocalLabsRecord` — it raises `NotImplementedError`. Use `LabsRecordAPIClient` for persistence.
 - **DO NOT** modify models in the retained non-labs apps (`opportunity/`, `organization/`, `program/`, `users/`). They exist only for migrations and FK references.
-- New app URL prefixes must be added to `WHITELISTED_PREFIXES` in `commcare_connect/labs/middleware.py` or they will redirect to production.
 
 ## CommCare MCP Server
 

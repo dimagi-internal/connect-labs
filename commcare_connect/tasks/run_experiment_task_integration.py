@@ -68,27 +68,15 @@ def test_experiment_task_flow():
     # Step 3: Create mock OAuth user for testing
     print("\n[3] Creating mock OAuth user...")
     try:
-        from commcare_connect.labs.models import LabsUser
+        from commcare_connect.users.models import User
 
-        # For testing, create a mock LabsUser with minimal data
+        # For testing, create a Django User with minimal data
         # In real usage, this would come from OAuth login
-        mock_user_data = {
-            "user_profile": {
-                "id": 999,  # Mock user ID
-                "username": "test_oauth_user",
-                "email": "oauth_test@example.com",
-                "first_name": "Test",
-                "last_name": "OAuth User",
-            },
-            "organization_data": {
-                "organizations": [],
-                "programs": [],
-                "opportunities": [],
-            },
-        }
-
-        oauth_user = LabsUser(mock_user_data)
-        print(f"[OK] Created mock LabsUser: {oauth_user.username} (ID: {oauth_user.id})")
+        oauth_user, _ = User.objects.update_or_create(
+            username="test_oauth_user",
+            defaults={"email": "oauth_test@example.com", "name": "Test OAuth User"},
+        )
+        print(f"[OK] Created User: {oauth_user.username} (ID: {oauth_user.id})")
         print("     Note: Using mock user for testing. In production, user comes from OAuth login.")
 
     except Exception as e:

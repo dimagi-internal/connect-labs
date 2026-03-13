@@ -3,7 +3,6 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.db import transaction
-from django.contrib.messages.views import SuccessMessageMixin
 from django.http import HttpResponse, JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect, render
@@ -14,7 +13,7 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
-from django.views.generic import FormView, RedirectView, UpdateView, View
+from django.views.generic import FormView, View
 from oauth2_provider.contrib.rest_framework import OAuth2Authentication
 from oauth2_provider.views.mixins import ClientProtectedResourceMixin
 from rest_framework.decorators import api_view, authentication_classes
@@ -39,38 +38,6 @@ from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
 
 User = get_user_model()
-
-
-class UserUpdateView(LoginRequiredMixin, SuccessMessageMixin, UpdateView):
-    model = User
-    fields = ["name"]
-    success_message = _("Information successfully updated")
-    template_name = "users/user_form.html"
-
-    def get_success_url(self):
-        assert self.request.user.is_authenticated  # for mypy to know that the user is authenticated
-        return reverse("account_email")
-
-    def get_object(self):
-        return self.request.user
-
-
-user_update_view = UserUpdateView.as_view()
-
-
-class UserRedirectView(LoginRequiredMixin, RedirectView):
-    permanent = False
-
-    def get_redirect_url(self):
-        if not self.request.user.memberships.exists():
-            return reverse("home")
-        organization = self.request.org
-        if organization:
-            return reverse("opportunity:list", kwargs={"org_slug": organization.slug})
-        return reverse("account_email")
-
-
-user_redirect_view = UserRedirectView.as_view()
 
 
 @method_decorator(csrf_exempt, name="dispatch")

@@ -235,9 +235,9 @@ def get_labs_user_from_token(
     production_url: str | None = None,
 ):
     """
-    Create LabsUser instance by introspecting saved CLI token at runtime.
+    Create a Django User instance by introspecting saved CLI token at runtime.
 
-    This is the recommended way for CLI scripts to get a LabsUser object.
+    This is the recommended way for CLI scripts to get an authenticated User object.
     It loads the token saved by `python manage.py get_cli_token` and
     introspects it to get fresh user profile data.
 
@@ -248,7 +248,7 @@ def get_labs_user_from_token(
         production_url: Production URL (defaults to settings.CONNECT_PRODUCTION_URL)
 
     Returns:
-        LabsUser instance or None if token invalid/expired or introspection fails
+        User instance or None if token invalid/expired or introspection fails
 
     Example:
         >>> from commcare_connect.labs.integrations.connect.cli import get_labs_user_from_token
@@ -260,7 +260,7 @@ def get_labs_user_from_token(
 
     from commcare_connect.labs.integrations.connect.cli.token_manager import TokenManager
     from commcare_connect.labs.integrations.connect.oauth import introspect_token
-    from commcare_connect.labs.models import LabsUser
+    from commcare_connect.users.models import User
 
     # Load token
     if token_manager is None:
@@ -294,12 +294,15 @@ def get_labs_user_from_token(
     if not user_profile:
         return None
 
-    # Create LabsUser from profile data
-    session_data = {
-        "user_profile": user_profile,
-        "organization_data": {},
-    }
-    return LabsUser(session_data)
+    # Create Django User from profile data
+    user, _ = User.objects.update_or_create(
+        username=user_profile.get("username"),
+        defaults={
+            "email": user_profile.get("email", ""),
+            "name": f"{user_profile.get('first_name', '')} {user_profile.get('last_name', '')}".strip(),
+        },
+    )
+    return user
 
 
 def create_cli_request(
@@ -342,7 +345,7 @@ def create_cli_request(
 
     from commcare_connect.labs.integrations.connect.cli.token_manager import TokenManager
     from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
-    from commcare_connect.labs.models import LabsUser
+    from commcare_connect.users.models import User
 
     # Load token
     token_manager = TokenManager()
@@ -374,12 +377,17 @@ def create_cli_request(
     if not org_data:
         org_data = {}
 
-    # Create LabsUser with full organization data
-    session_data = {
-        "user_profile": user_profile,
-        "organization_data": org_data,
-    }
-    user = LabsUser(session_data)
+    # Create Django User from profile data
+    first_name = user_profile.get("first_name", "")
+    last_name = user_profile.get("last_name", "")
+    name = f"{first_name} {last_name}".strip() or user_profile.get("username", "")
+    user, _ = User.objects.update_or_create(
+        username=user_profile.get("username"),
+        defaults={
+            "email": user_profile.get("email", ""),
+            "name": name,
+        },
+    )
 
     # Build labs_context similar to what LabsContextMiddleware does
     labs_context = {}

@@ -13,7 +13,7 @@ def get_user_tasks_queryset(user):
     Get filtered queryset of tasks user can access via OAuth.
 
     Args:
-        user: Django User or LabsUser instance
+        user: Django User instance
 
     Returns:
         QuerySet of TaskRecord instances (OAuth enforces access)

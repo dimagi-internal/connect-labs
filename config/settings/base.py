@@ -229,6 +229,7 @@ TEMPLATES = [
                 "django.template.context_processors.static",
                 "django.template.context_processors.tz",
                 "django.contrib.messages.context_processors.messages",
+                "commcare_connect.labs.context.labs_org_data_context",
                 "commcare_connect.web.context_processors.page_settings",
                 "commcare_connect.web.context_processors.gtm_context",
                 "commcare_connect.web.context_processors.chat_widget_context",

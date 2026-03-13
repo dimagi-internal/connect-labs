@@ -1376,7 +1376,7 @@ class VisitDetailFromProductionView(LoginRequiredMixin, TemplateView):
         access_token = labs_oauth.get("access_token")
 
         if not access_token:
-            # If user is authenticated (LabsUser exists), they just need to refresh their session
+            # If user is logged in, they just need to refresh their session
             # Otherwise they need to log in
             if self.request.user.is_authenticated:
                 context["error"] = "OAuth token not found in session. Please refresh your session or log in again."

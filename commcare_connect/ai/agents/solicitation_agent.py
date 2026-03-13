@@ -127,7 +127,7 @@ async def get_program_details(ctx: RunContext["UserDependencies"]) -> ProgramDat
     user = ctx.deps.user
     program_id = ctx.deps.program_id
 
-    # Check if user has programs data (LabsUser has this)
+    # Check if user has programs data (available from session org data)
     if hasattr(user, "programs"):
         for program in user.programs:
             if program.get("id") == program_id:
@@ -154,7 +154,7 @@ async def list_programs(ctx: RunContext["UserDependencies"]) -> list[ProgramData
     """
     user = ctx.deps.user
 
-    # Check if user has programs data (LabsUser has this)
+    # Check if user has programs data (available from session org data)
     if not hasattr(user, "programs"):
         return []
 
@@ -184,7 +184,7 @@ async def list_organizations(ctx: RunContext["UserDependencies"]) -> list[Organi
     """
     user = ctx.deps.user
 
-    # Check if user has organizations data (LabsUser has this)
+    # Check if user has organizations data (available from session org data)
     if not hasattr(user, "organizations"):
         return []
 
@@ -212,7 +212,7 @@ async def list_opportunities(ctx: RunContext["UserDependencies"]) -> list[Opport
     """
     user = ctx.deps.user
 
-    # Check if user has opportunities data (LabsUser has this)
+    # Check if user has opportunities data (available from session org data)
     if not hasattr(user, "opportunities"):
         return []
 

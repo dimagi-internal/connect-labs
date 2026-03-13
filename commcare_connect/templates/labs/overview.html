@@ -145,11 +145,11 @@
         email: <span class="font-mono">{{ user.email|default:"(empty)" }}</span>
       </p>
       <div class="flex items-center justify-center gap-4 text-xs text-gray-500">
-        <span><i class="fa-solid fa-building mr-1"></i> {{ user.organizations|length }} organizations</span>
+        <span><i class="fa-solid fa-building mr-1"></i> {{ user_organizations|length }} organizations</span>
         <span class="text-gray-300">|</span>
-        <span><i class="fa-solid fa-sitemap mr-1"></i> {{ user.programs|length }} programs</span>
+        <span><i class="fa-solid fa-sitemap mr-1"></i> {{ user_programs|length }} programs</span>
         <span class="text-gray-300">|</span>
-        <span><i class="fa-solid fa-clipboard mr-1"></i> {{ user.opportunities|length }} opportunities</span>
+        <span><i class="fa-solid fa-clipboard mr-1"></i> {{ user_opportunities|length }} opportunities</span>
       </div>
     </div>
   </div>

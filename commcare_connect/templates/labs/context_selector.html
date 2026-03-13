@@ -1,9 +1,9 @@
 {% load static %}
 {# Context selector component for labs header #}
 
-{{user.organizations|json_script:"org-data"}}
-{{ user.programs|json_script:"program-data"}}
-{{ user.opportunities|json_script:"opportunity-data"}}
+{{ user_organizations|json_script:"org-data" }}
+{{ user_programs|json_script:"program-data" }}
+{{ user_opportunities|json_script:"opportunity-data" }}
 
 {# Button only - no wrapper #}
 <div x-data="labsContextSelector()">

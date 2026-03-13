@@ -4,7 +4,6 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.db import models
 from django.db.models import Q, UniqueConstraint
-from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.commcarehq.models import HQServer
@@ -57,7 +56,7 @@ class User(AbstractUser):
             str: URL for user detail.
 
         """
-        return reverse("account_email")
+        return "/labs/overview/"
 
     class Meta:
         constraints = [UniqueConstraint(fields=["email"], name="unique_user_email", condition=Q(email__isnull=False))]

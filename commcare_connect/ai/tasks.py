@@ -109,9 +109,8 @@ def run_agent(
 
         return pydantic_messages
 
-    # Get user object and create LabsUser with organization data
+    # Get user object
     user = None
-    labs_user = None
     if user_id:
         try:
             user = User.objects.get(id=user_id)
@@ -119,39 +118,18 @@ def run_agent(
             logger.error(f"[AI TASK] User with ID {user_id} does not exist")
             raise ValueError(f"User with ID {user_id} does not exist")
 
-    # Fetch organization data and create LabsUser if we have an access token
+    # Fetch organization data if we have an access token
+    org_data = None
     if access_token:
         from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data
-        from commcare_connect.labs.models import LabsUser
 
-        # Fetch organization data from production API
         org_data = fetch_user_organization_data(access_token)
         if org_data is None:
             logger.warning("[AI TASK] Failed to fetch organization data, continuing without it")
 
-        # Create session data structure expected by LabsUser
-        session_data = {
-            "user_profile": {
-                "id": user.id if user else 0,
-                "username": user.username if user else "unknown",
-                "email": user.email if user else "",
-                "first_name": user.first_name if user else "",
-                "last_name": user.last_name if user else "",
-            },
-            "organization_data": org_data or {},
-        }
-
-        # Create LabsUser with organization data (needed for API scoping)
-        try:
-            labs_user = LabsUser(session_data)
-        except Exception as e:
-            logger.warning(f"[AI TASK] Failed to create LabsUser: {e}, falling back to regular user")
-            labs_user = user
-
     # Create a minimal request-like object for OAuth token access
-    # We'll create a simple object that has the session data needed
     class MockRequest:
-        def __init__(self, access_token, user=None, program_id=None):
+        def __init__(self, access_token, user=None, program_id=None, organization_data=None):
             self.session = {}
             self.user = user
             if access_token:
@@ -162,20 +140,18 @@ def run_agent(
                     "access_token": access_token,
                     "expires_at": time.time() + 3600,  # 1 hour from now
                 }
+                if organization_data:
+                    self.session["labs_oauth"]["organization_data"] = organization_data
             # Set labs_context for data access classes that check request.labs_context
             if program_id is not None:
                 self.labs_context = {"program_id": program_id}
             else:
                 self.labs_context = {}
 
-    # Use LabsUser if available (has _org_data), otherwise fall back to regular user
-    # This ensures the user has _org_data for API scoping
-    request_user = labs_user or user
-    mock_request = MockRequest(access_token, user=request_user, program_id=program_id)
+    mock_request = MockRequest(access_token, user=user, program_id=program_id, organization_data=org_data or {})
 
-    # Create dependencies - use the same user object for consistency
-    # program_id is optional for UserDependencies
-    deps = UserDependencies(user=request_user, request=mock_request, program_id=program_id)
+    # Create dependencies
+    deps = UserDependencies(user=user, request=mock_request, program_id=program_id)
 
     # Parse current_code as JSON for workflow agent (it contains workflow definition, render_code, and IDs)
     current_definition = None

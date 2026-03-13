@@ -12,7 +12,7 @@ from commcare_connect.labs.context import (
     try_auto_select_context,
     validate_context_access,
 )
-from commcare_connect.labs.models import LabsUser
+from commcare_connect.users.models import User
 
 
 @pytest.mark.django_db
@@ -67,13 +67,10 @@ class TestContextValidation:
         factory = RequestFactory()
         request = factory.get("/")
 
-        # Create mock LabsUser with org data
-        session_data = {
-            "user_profile": {"id": 1, "username": "testuser", "email": "test@example.com"},
-            "organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]},
-        }
-        request.user = LabsUser(session_data)
-        request.session = {"labs_oauth": {"organization_data": session_data["organization_data"]}}
+        # Create Django User and set up session with org data
+        user = User.objects.create(username="testuser", email="test@example.com")
+        request.user = user
+        request.session = {"labs_oauth": {"organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]}}}
 
         context = {"opportunity_id": 123}
         validated = validate_context_access(request, context)
@@ -87,12 +84,9 @@ class TestContextValidation:
         factory = RequestFactory()
         request = factory.get("/")
 
-        session_data = {
-            "user_profile": {"id": 1, "username": "testuser", "email": "test@example.com"},
-            "organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]},
-        }
-        request.user = LabsUser(session_data)
-        request.session = {"labs_oauth": {"organization_data": session_data["organization_data"]}}
+        user = User.objects.create(username="testuser2", email="test2@example.com")
+        request.user = user
+        request.session = {"labs_oauth": {"organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]}}}
 
         context = {"opportunity_id": 999}
         validated = validate_context_access(request, context)
@@ -112,16 +106,14 @@ class TestAutoSelection:
         factory = RequestFactory()
         request = factory.get("/")
 
-        session_data = {
-            "user_profile": {"id": 1, "username": "testuser", "email": "test@example.com"},
-            "organization_data": {
-                "opportunities": [{"id": 123, "name": "Only Opportunity"}],
-                "programs": [],
-                "organizations": [],
-            },
+        org_data = {
+            "opportunities": [{"id": 123, "name": "Only Opportunity"}],
+            "programs": [],
+            "organizations": [],
         }
-        request.user = LabsUser(session_data)
-        request.session = {"labs_oauth": {"organization_data": session_data["organization_data"]}}
+        user = User.objects.create(username="testuser3", email="test3@example.com")
+        request.user = user
+        request.session = {"labs_oauth": {"organization_data": org_data}}
 
         result = try_auto_select_context(request)
 
@@ -133,16 +125,14 @@ class TestAutoSelection:
         factory = RequestFactory()
         request = factory.get("/")
 
-        session_data = {
-            "user_profile": {"id": 1, "username": "testuser", "email": "test@example.com"},
-            "organization_data": {
-                "opportunities": [{"id": 123, "name": "Opportunity 1"}, {"id": 456, "name": "Opportunity 2"}],
-                "programs": [],
-                "organizations": [],
-            },
+        org_data = {
+            "opportunities": [{"id": 123, "name": "Opportunity 1"}, {"id": 456, "name": "Opportunity 2"}],
+            "programs": [],
+            "organizations": [],
         }
-        request.user = LabsUser(session_data)
-        request.session = {"labs_oauth": {"organization_data": session_data["organization_data"]}}
+        user = User.objects.create(username="testuser4", email="test4@example.com")
+        request.user = user
+        request.session = {"labs_oauth": {"organization_data": org_data}}
 
         result = try_auto_select_context(request)
 
@@ -153,16 +143,14 @@ class TestAutoSelection:
         factory = RequestFactory()
         request = factory.get("/")
 
-        session_data = {
-            "user_profile": {"id": 1, "username": "testuser", "email": "test@example.com"},
-            "organization_data": {
-                "opportunities": [],
-                "programs": [{"id": 789, "name": "Only Program"}],
-                "organizations": [],
-            },
+        org_data = {
+            "opportunities": [],
+            "programs": [{"id": 789, "name": "Only Program"}],
+            "organizations": [],
         }
-        request.user = LabsUser(session_data)
-        request.session = {"labs_oauth": {"organization_data": session_data["organization_data"]}}
+        user = User.objects.create(username="testuser5", email="test5@example.com")
+        request.user = user
+        request.session = {"labs_oauth": {"organization_data": org_data}}
 
         result = try_auto_select_context(request)
 

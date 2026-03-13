@@ -1,7 +1,6 @@
 from functools import wraps
 
 from django.http import Http404, HttpResponseRedirect
-from django.urls import reverse
 from django.utils.decorators import method_decorator
 
 from commcare_connect.opportunity.models import Opportunity
@@ -54,7 +53,7 @@ def _get_decorated_function(view_func, permission_test_function):
     def _inner(request, *args, **kwargs):
         user = request.user
         if not user.is_authenticated:
-            return HttpResponseRedirect("{}?next={}".format(reverse("account_login"), request.path))
+            return HttpResponseRedirect("/labs/login/?next={}".format(request.path))
 
         if not permission_test_function(request):
             raise Http404()

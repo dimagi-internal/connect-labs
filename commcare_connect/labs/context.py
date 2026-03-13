@@ -234,6 +234,16 @@ def try_auto_select_context(request: HttpRequest) -> dict | None:
     return None
 
 
+def labs_org_data_context(request):
+    """Template context processor: expose org data lists from session."""
+    org_data = get_org_data(request)
+    return {
+        "user_organizations": org_data.get("organizations", []),
+        "user_programs": org_data.get("programs", []),
+        "user_opportunities": org_data.get("opportunities", []),
+    }
+
+
 class LabsContextMiddleware(MiddlewareMixin):
     """Middleware to handle labs context selection.
 

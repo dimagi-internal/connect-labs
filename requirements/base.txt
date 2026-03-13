@@ -98,7 +98,6 @@ django==4.2.5
     # via
     #   -r requirements/base.in
     #   crispy-tailwind
-    #   django-allauth
     #   django-autocomplete-light
     #   django-celery-beat
     #   django-cors-headers
@@ -117,8 +116,6 @@ django==4.2.5
     #   django-weasyprint
     #   djangorestframework
     #   drf-spectacular
-django-allauth==0.54.0
-    # via -r requirements/base.in
 django-anymail[amazon-ses]==10.1
     # via -r requirements/base.in
 django-autocomplete-light==3.11.0
@@ -250,9 +247,7 @@ pycparser==2.21
 pydyf==0.12.1
     # via weasyprint
 pyjwt[crypto]==2.8.0
-    # via
-    #   django-allauth
-    #   twilio
+    # via twilio
 pyphen==0.17.2
     # via weasyprint
 python-crontab==3.0.0
@@ -284,7 +279,6 @@ referencing==0.30.0
     #   jsonschema-specifications
 requests==2.31.0
     # via
-    #   django-allauth
     #   django-oauth-toolkit
     #   requests-oauthlib
     #   twilio

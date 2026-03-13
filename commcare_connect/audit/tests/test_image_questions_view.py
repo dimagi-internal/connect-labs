@@ -79,8 +79,15 @@ def _mock_stream_context(lines):
 
 @pytest.fixture
 def labs_client(db):
-    """Django test client with a valid labs session injected."""
+    """Django test client with a valid labs session and authenticated user."""
+    from commcare_connect.users.models import User
+
+    user, _ = User.objects.update_or_create(
+        username="testuser",
+        defaults={"email": "testuser@example.com"},
+    )
     client = Client(enforce_csrf_checks=False)
+    client.force_login(user)
     session = client.session
     session["labs_oauth"] = {
         "access_token": "test-token-abc",
@@ -124,7 +131,7 @@ def test_image_types_returns_unique_question_ids(labs_client):
 
 
 @override_settings(**LABS_SETTINGS)
-def test_image_types_requires_auth():
+def test_image_types_requires_auth(db):
     """Unauthenticated request redirects to login."""
     client = Client()
     response = client.get("/audit/api/opportunity/42/image-questions/")
