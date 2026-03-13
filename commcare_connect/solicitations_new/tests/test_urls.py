@@ -190,7 +190,7 @@ class TestURLResolution:
             assert url.startswith("/solicitations_new/"), f"{full_name} resolved to {url}"
 
     def test_url_pattern_count(self):
-        """Ensure we have exactly the expected number of URL patterns (15 total)."""
+        """Ensure we have exactly the expected number of URL patterns (16 total)."""
         from commcare_connect.solicitations_new.urls import urlpatterns
 
-        assert len(urlpatterns) == 15
+        assert len(urlpatterns) == 16

@@ -426,6 +426,36 @@ class TestCreateResponse:
         )
 
 
+class TestAwardResponse:
+    def test_awards_response(self, data_access, mock_api_client):
+        current_record = _make_response_record(id=10)
+        mock_api_client.get_record_by_id.return_value = current_record
+
+        updated_data = dict(current_record.data)
+        updated_data["status"] = "awarded"
+        updated_data["reward_budget"] = 500000
+        updated_data["org_id"] = "org_99"
+        api_return = LocalLabsRecord(
+            {"id": 10, "experiment": "llo_entity_123", "type": RESPONSE_TYPE,
+             "data": updated_data, "opportunity_id": 0}
+        )
+        mock_api_client.update_record.return_value = api_return
+
+        result = data_access.award_response(10, reward_budget=500000, org_id="org_99")
+
+        assert isinstance(result, ResponseRecord)
+        mock_api_client.update_record.assert_called_once()
+        call_data = mock_api_client.update_record.call_args[1]["data"]
+        assert call_data["status"] == "awarded"
+        assert call_data["reward_budget"] == 500000
+        assert call_data["org_id"] == "org_99"
+
+    def test_raises_for_missing_response(self, data_access, mock_api_client):
+        mock_api_client.get_record_by_id.return_value = None
+        with pytest.raises(ValueError, match="Response 999 not found"):
+            data_access.award_response(999, reward_budget=500000, org_id="org_99")
+
+
 class TestUpdateResponse:
     def test_updates_record(self, data_access, mock_api_client):
         updated_data = {

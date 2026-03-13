@@ -257,6 +257,28 @@ class SolicitationsNewDataAccess:
         )
         return ResponseRecord(record.to_api_dict())
 
+    def award_response(self, response_id: int, reward_budget: int, org_id: str) -> ResponseRecord:
+        """
+        Mark a response as awarded with budget and org_id.
+
+        Args:
+            response_id: ID of the response to award
+            reward_budget: Budget allocated to this grantee
+            org_id: Connect org ID of the awarded grantee
+
+        Returns:
+            Updated ResponseRecord instance
+        """
+        current = self.get_response_by_id(response_id)
+        if not current:
+            raise ValueError(f"Response {response_id} not found")
+
+        data = dict(current.data)
+        data["status"] = "awarded"
+        data["reward_budget"] = reward_budget
+        data["org_id"] = org_id
+        return self.update_response(response_id, data)
+
     def update_response(self, response_id: int, data: dict) -> ResponseRecord:
         """
         Update an existing response via production API.
