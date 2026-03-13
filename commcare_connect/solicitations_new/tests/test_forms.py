@@ -6,11 +6,7 @@ import json
 
 import pytest
 
-from commcare_connect.solicitations_new.forms import (
-    ReviewForm,
-    SolicitationForm,
-    SolicitationResponseForm,
-)
+from commcare_connect.solicitations_new.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
 
 
 class TestSolicitationForm:
@@ -144,9 +140,7 @@ class TestSolicitationForm:
         assert data["expected_end_date"] == "2026-12-31"
 
     def test_to_data_dict_parses_questions_json(self):
-        questions = [
-            {"id": "q1", "text": "Why?", "type": "textarea", "required": True}
-        ]
+        questions = [{"id": "q1", "text": "Why?", "type": "textarea", "required": True}]
         form = SolicitationForm(
             data={
                 "title": "Test",

@@ -1,9 +1,6 @@
 import pytest
-from commcare_connect.solicitations_new.models import (
-    SolicitationRecord,
-    ResponseRecord,
-    ReviewRecord,
-)
+
+from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 
 class TestSolicitationRecord:
@@ -50,6 +47,7 @@ class TestSolicitationRecord:
     def test_application_deadline_parses(self):
         rec = self._make()
         from datetime import date
+
         assert rec.application_deadline == date(2026, 6, 1)
 
     def test_application_deadline_none(self):
@@ -86,11 +84,13 @@ class TestSolicitationRecord:
     def test_expected_start_date(self):
         rec = self._make()
         from datetime import date
+
         assert rec.expected_start_date == date(2026, 7, 1)
 
     def test_expected_end_date(self):
         rec = self._make()
         from datetime import date
+
         assert rec.expected_end_date == date(2026, 12, 31)
 
     def test_estimated_scale(self):
@@ -113,15 +113,13 @@ class TestSolicitationRecord:
 class TestSolicitationRecordFundId:
     def test_fund_id(self):
         record = SolicitationRecord(
-            {"id": 1, "experiment": "p", "type": "solicitation_new",
-             "data": {"fund_id": 42}, "opportunity_id": 0}
+            {"id": 1, "experiment": "p", "type": "solicitation_new", "data": {"fund_id": 42}, "opportunity_id": 0}
         )
         assert record.fund_id == 42
 
     def test_fund_id_default_none(self):
         record = SolicitationRecord(
-            {"id": 1, "experiment": "p", "type": "solicitation_new",
-             "data": {}, "opportunity_id": 0}
+            {"id": 1, "experiment": "p", "type": "solicitation_new", "data": {}, "opportunity_id": 0}
         )
         assert record.fund_id is None
 
@@ -129,15 +127,25 @@ class TestSolicitationRecordFundId:
 class TestResponseRecordOrgFields:
     def test_org_id(self):
         record = ResponseRecord(
-            {"id": 1, "experiment": "e", "type": "solicitation_new_response",
-             "data": {"org_id": "org_42"}, "opportunity_id": 0}
+            {
+                "id": 1,
+                "experiment": "e",
+                "type": "solicitation_new_response",
+                "data": {"org_id": "org_42"},
+                "opportunity_id": 0,
+            }
         )
         assert record.org_id == "org_42"
 
     def test_org_name(self):
         record = ResponseRecord(
-            {"id": 1, "experiment": "e", "type": "solicitation_new_response",
-             "data": {"org_name": "Test Org"}, "opportunity_id": 0}
+            {
+                "id": 1,
+                "experiment": "e",
+                "type": "solicitation_new_response",
+                "data": {"org_name": "Test Org"},
+                "opportunity_id": 0,
+            }
         )
         assert record.org_name == "Test Org"
 
@@ -145,15 +153,19 @@ class TestResponseRecordOrgFields:
 class TestReviewRecordRewardBudget:
     def test_reward_budget(self):
         record = ReviewRecord(
-            {"id": 1, "experiment": "e", "type": "solicitation_new_review",
-             "data": {"reward_budget": 500000}, "opportunity_id": 0}
+            {
+                "id": 1,
+                "experiment": "e",
+                "type": "solicitation_new_review",
+                "data": {"reward_budget": 500000},
+                "opportunity_id": 0,
+            }
         )
         assert record.reward_budget == 500000
 
     def test_reward_budget_default_none(self):
         record = ReviewRecord(
-            {"id": 1, "experiment": "e", "type": "solicitation_new_review",
-             "data": {}, "opportunity_id": 0}
+            {"id": 1, "experiment": "e", "type": "solicitation_new_review", "data": {}, "opportunity_id": 0}
         )
         assert record.reward_budget is None
 

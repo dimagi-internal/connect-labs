@@ -16,12 +16,7 @@ from commcare_connect.solicitations_new.data_access import (
     SOLICITATION_TYPE,
     SolicitationsNewDataAccess,
 )
-from commcare_connect.solicitations_new.models import (
-    ResponseRecord,
-    ReviewRecord,
-    SolicitationRecord,
-)
-
+from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 # =========================================================================
 # Fixtures
@@ -109,9 +104,7 @@ def _make_review_record(**overrides):
 @pytest.fixture
 def mock_api_client():
     """Create a mock LabsRecordAPIClient."""
-    with patch(
-        "commcare_connect.solicitations_new.data_access.LabsRecordAPIClient"
-    ) as MockClient:
+    with patch("commcare_connect.solicitations_new.data_access.LabsRecordAPIClient") as MockClient:
         mock_instance = MagicMock()
         MockClient.return_value = mock_instance
         yield mock_instance
@@ -436,8 +429,13 @@ class TestAwardResponse:
         updated_data["reward_budget"] = 500000
         updated_data["org_id"] = "org_99"
         api_return = LocalLabsRecord(
-            {"id": 10, "experiment": "llo_entity_123", "type": RESPONSE_TYPE,
-             "data": updated_data, "opportunity_id": 0}
+            {
+                "id": 10,
+                "experiment": "llo_entity_123",
+                "type": RESPONSE_TYPE,
+                "data": updated_data,
+                "opportunity_id": 0,
+            }
         )
         mock_api_client.update_record.return_value = api_return
 

@@ -9,11 +9,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from commcare_connect.solicitations_new.data_access import SolicitationsNewDataAccess
-from commcare_connect.solicitations_new.forms import (
-    ReviewForm,
-    SolicitationForm,
-    SolicitationResponseForm,
-)
+from commcare_connect.solicitations_new.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
 
 logger = logging.getLogger(__name__)
 

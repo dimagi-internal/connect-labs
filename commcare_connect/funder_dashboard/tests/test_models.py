@@ -15,9 +15,7 @@ class TestFundRecord:
             "status": "active",
         }
         data.update(data_overrides)
-        return FundRecord(
-            {"id": 1, "experiment": "org_42", "type": "fund", "data": data, "opportunity_id": 0}
-        )
+        return FundRecord({"id": 1, "experiment": "org_42", "type": "fund", "data": data, "opportunity_id": 0})
 
     def test_name(self):
         assert self._make_fund().name == "Bloomberg Neonatal Fund"
