@@ -26,6 +26,15 @@
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
                     Draft
                 </span>
+            {% elif response.status == 'reviewed' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                    Reviewed
+                </span>
+            {% elif response.status == 'awarded' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                    <i class="fa-solid fa-trophy text-green-500 mr-1"></i>
+                    Awarded
+                </span>
             {% else %}
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
                     {{ response.status|title }}

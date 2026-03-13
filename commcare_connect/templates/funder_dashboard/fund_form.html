@@ -1,60 +1,116 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-screen-lg mx-auto px-4 py-6">
+<div class="max-w-4xl mx-auto px-4 py-6">
 
-    <div class="bg-white rounded-lg shadow-sm p-6">
-        <a href="{% url 'funder_dashboard:portfolio' %}" class="text-sm text-indigo-600 hover:text-indigo-800 mb-4 inline-block">&larr; Back to Portfolio</a>
-        <h1 class="text-2xl font-semibold text-brand-deep-purple mb-6">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        <a href="{% url 'funder_dashboard:portfolio' %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-chart-pie mr-1"></i> Portfolio
+        </a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <span class="text-gray-700 font-medium">
             {% if is_create %}Create Fund{% else %}Edit Fund{% endif %}
-        </h1>
+        </span>
+    </nav>
 
-        {% if error %}
-            <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-6">
+        {% if is_create %}Create New Fund{% else %}Edit Fund{% endif %}
+    </h1>
+
+    {% if error %}
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6" role="alert">
+            <div class="flex items-center">
+                <i class="fa-solid fa-exclamation-circle text-red-400 mr-3"></i>
                 <p class="text-sm text-red-700">{{ error }}</p>
             </div>
-        {% endif %}
+        </div>
+    {% endif %}
 
-        {% if not has_context %}
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <p class="text-sm text-blue-700">Please select an organization from the context selector above.</p>
-            </div>
-        {% else %}
-            <form method="post" class="space-y-6">
-                {% csrf_token %}
+    {% if not has_context %}
+        <div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-12 text-center">
+            <i class="fa-solid fa-building text-5xl text-blue-400 mb-4"></i>
+            <h3 class="text-xl font-semibold text-blue-900 mb-2">No organization selected</h3>
+            <p class="text-blue-700 mb-6">Please select an organization from the context selector above before creating a fund.</p>
+            <a href="{% url 'funder_dashboard:portfolio' %}"
+               class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
+                Back to Portfolio
+            </a>
+        </div>
+    {% else %}
+    <form method="post" class="space-y-8">
+        {% csrf_token %}
 
-                {% for field in form %}
-                    {% if not field.is_hidden %}
-                    <div>
-                        <label for="{{ field.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">
-                            {{ field.label }}
-                        </label>
-                        {{ field }}
-                        {% if field.help_text %}
-                            <p class="mt-1 text-xs text-gray-500">{{ field.help_text }}</p>
-                        {% endif %}
-                        {% for error in field.errors %}
-                            <p class="mt-1 text-xs text-red-600">{{ error }}</p>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                        {{ field }}
+        <!-- Fund Details -->
+        <div class="bg-white rounded-xl shadow-sm p-8">
+            <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+                <i class="fa-solid fa-info-circle mr-2"></i>
+                Fund Details
+            </h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.name.label }} <span class="text-red-500">*</span></label>
+                    {{ form.name }}
+                    {% if form.name.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.name.errors.0 }}</p>
                     {% endif %}
-                {% endfor %}
-
-                <div class="flex justify-end gap-3 pt-4">
-                    <a href="{% url 'funder_dashboard:portfolio' %}"
-                       class="px-4 py-2 bg-white border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50">
-                        Cancel
-                    </a>
-                    <button type="submit"
-                            class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700">
-                        {% if is_create %}Create Fund{% else %}Save Changes{% endif %}
-                    </button>
                 </div>
-            </form>
-        {% endif %}
-    </div>
+
+                <div>
+                    <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.description.label }}</label>
+                    {{ form.description }}
+                    {% if form.description.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.description.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="{{ form.total_budget.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.total_budget.label }}</label>
+                        {{ form.total_budget }}
+                        {% if form.total_budget.errors %}
+                            <p class="mt-1 text-sm text-red-600">{{ form.total_budget.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+
+                    <div>
+                        <label for="{{ form.currency.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.currency.label }}</label>
+                        {{ form.currency }}
+                        {% if form.currency.errors %}
+                            <p class="mt-1 text-sm text-red-600">{{ form.currency.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+
+                    <div>
+                        <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.status.label }} <span class="text-red-500">*</span></label>
+                        {{ form.status }}
+                        {% if form.status.errors %}
+                            <p class="mt-1 text-sm text-red-600">{{ form.status.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{ form.program_ids_json }}
+        {{ form.delivery_types_json }}
+
+        <!-- Form Actions -->
+        <div class="flex justify-end gap-4 pt-2 pb-8">
+            <a href="{% url 'funder_dashboard:portfolio' %}"
+               class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
+                <i class="fa-solid fa-times mr-2"></i>
+                Cancel
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-save mr-2"></i>
+                {% if is_create %}Create Fund{% else %}Save Changes{% endif %}
+            </button>
+        </div>
+    </form>
+    {% endif %}
 
 </div>
 {% endblock %}

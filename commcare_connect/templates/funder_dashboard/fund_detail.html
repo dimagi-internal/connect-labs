@@ -3,62 +3,130 @@
 {% block content %}
 <div class="max-w-screen-xl mx-auto px-4 py-6">
 
-    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        <a href="{% url 'funder_dashboard:portfolio' %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-chart-pie mr-1"></i> Portfolio
+        </a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <span class="text-gray-700 font-medium">{{ fund.name|truncatewords:6 }}</span>
+    </nav>
+
+    <!-- Header -->
+    <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
         <div class="flex items-center justify-between">
             <div>
-                <a href="{% url 'funder_dashboard:portfolio' %}" class="text-sm text-indigo-600 hover:text-indigo-800 mb-2 inline-block">&larr; Back to Portfolio</a>
-                <h1 class="text-2xl font-semibold text-brand-deep-purple mb-2">{{ fund.name }}</h1>
-                <p class="text-sm text-gray-600">{{ fund.description }}</p>
+                <div class="flex items-center gap-3 mb-2">
+                    <h1 class="text-2xl font-semibold text-brand-deep-purple">{{ fund.name }}</h1>
+                    {% if fund.status == 'active' %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>
+                            Active
+                        </span>
+                    {% else %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Closed</span>
+                    {% endif %}
+                </div>
+                {% if fund.description %}
+                    <p class="text-sm text-gray-600 max-w-2xl">{{ fund.description }}</p>
+                {% endif %}
             </div>
-            <div class="flex gap-3">
-                <a href="{% url 'funder_dashboard:fund_edit' pk=fund.pk %}"
-                   class="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 transition">
-                    <i class="fa-solid fa-edit mr-2"></i> Edit Fund
-                </a>
-            </div>
+            <a href="{% url 'funder_dashboard:fund_edit' pk=fund.pk %}"
+               class="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 transition">
+                <i class="fa-solid fa-edit mr-2"></i> Edit Fund
+            </a>
         </div>
     </div>
 
     <!-- Fund KPIs -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-            <div class="text-sm text-gray-500">Total Budget</div>
-            <div class="text-2xl font-bold text-gray-900">
-                {% if fund.total_budget %}${{ fund.total_budget|floatformat:0 }}{% else %}&mdash;{% endif %}
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-dollar-sign text-indigo-600"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Total Budget</div>
+                    <div class="text-xl font-bold text-gray-900">
+                        {% if fund.total_budget %}${{ fund.total_budget|floatformat:0 }}{% else %}&mdash;{% endif %}
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-            <div class="text-sm text-gray-500">Programs</div>
-            <div class="text-2xl font-bold text-gray-900">{{ fund.program_ids|length }}</div>
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-diagram-project text-blue-600"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Programs</div>
+                    <div class="text-xl font-bold text-gray-900">{{ fund.program_ids|length }}</div>
+                </div>
+            </div>
         </div>
-        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-            <div class="text-sm text-gray-500">Currency</div>
-            <div class="text-2xl font-bold text-gray-900">{{ fund.currency }}</div>
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-coins text-green-600"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Currency</div>
+                    <div class="text-xl font-bold text-gray-900">{{ fund.currency }}</div>
+                </div>
+            </div>
         </div>
-        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-            <div class="text-sm text-gray-500">Status</div>
-            <div class="text-2xl font-bold {% if fund.status == 'active' %}text-green-600{% else %}text-gray-600{% endif %}">{{ fund.status|title }}</div>
+        <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-flag text-amber-600"></i>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">Status</div>
+                    <div class="text-xl font-bold {% if fund.status == 'active' %}text-green-600{% else %}text-gray-600{% endif %}">{{ fund.status|title }}</div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Programs table (placeholder — will be populated from Connect API in future) -->
-    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Programs</h2>
+    <!-- Programs -->
+    <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
+        <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+            <i class="fa-solid fa-diagram-project mr-2"></i>
+            Linked Programs
+        </h2>
         {% if fund.program_ids %}
-            <p class="text-sm text-gray-600">Program IDs: {{ fund.program_ids|join:", " }}</p>
-            <p class="text-xs text-gray-400 mt-2">Full program details will be loaded from Connect API.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {% for pid in fund.program_ids %}
+                    <div class="flex items-center gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <div class="w-8 h-8 bg-indigo-100 rounded flex items-center justify-center">
+                            <i class="fa-solid fa-folder text-indigo-500 text-sm"></i>
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium text-gray-900">Program #{{ pid }}</div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
         {% else %}
-            <p class="text-sm text-gray-500">No programs linked to this fund yet.</p>
+            <div class="text-center py-6">
+                <i class="fa-solid fa-link text-3xl text-gray-300 mb-2"></i>
+                <p class="text-sm text-gray-500">No programs linked to this fund yet.</p>
+            </div>
         {% endif %}
     </div>
 
     <!-- Delivery Types -->
     {% if fund.delivery_types %}
-    <div class="bg-white rounded-lg shadow-sm p-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Delivery Types</h2>
+    <div class="bg-white rounded-xl shadow-sm p-8">
+        <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
+            <i class="fa-solid fa-truck-medical mr-2"></i>
+            Delivery Types
+        </h2>
         <div class="flex flex-wrap gap-2">
             {% for dt in fund.delivery_types %}
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-50 text-indigo-700">{{ dt }}</span>
+                <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    {{ dt }}
+                </span>
             {% endfor %}
         </div>
     </div>
