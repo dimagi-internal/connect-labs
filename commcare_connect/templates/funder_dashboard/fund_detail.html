@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load humanize %}
 
 {% block content %}
 <div class="max-w-screen-xl mx-auto px-4 py-6">
@@ -48,7 +49,7 @@
                 <div>
                     <div class="text-xs text-gray-500 uppercase tracking-wider">Total Budget</div>
                     <div class="text-xl font-bold text-gray-900">
-                        {% if fund.total_budget %}${{ fund.total_budget|floatformat:0 }}{% else %}&mdash;{% endif %}
+                        {% if fund.total_budget %}${{ fund.total_budget|intcomma }}{% else %}&mdash;{% endif %}
                     </div>
                 </div>
             </div>

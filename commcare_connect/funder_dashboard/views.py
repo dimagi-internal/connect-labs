@@ -41,10 +41,15 @@ class PortfolioDashboardView(ManagerRequiredMixin, TemplateView):
             return ctx
         try:
             da = _get_data_access(self.request)
-            ctx["funds"] = da.get_funds()
+            funds = da.get_funds()
+            ctx["funds"] = funds
+            ctx["active_count"] = sum(1 for f in funds if f.status == "active")
+            ctx["total_programs"] = sum(len(f.program_ids) for f in funds)
         except Exception:
             logger.exception("Failed to load funds for portfolio")
             ctx["funds"] = []
+            ctx["active_count"] = 0
+            ctx["total_programs"] = 0
         return ctx
 
 
