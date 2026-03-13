@@ -23,6 +23,7 @@ STATUS_CHOICES = [
     ("draft", "Draft"),
     ("active", "Active"),
     ("closed", "Closed"),
+    ("awarded", "Awarded"),
 ]
 
 RECOMMENDATION_CHOICES = [
@@ -257,4 +258,11 @@ class ReviewForm(forms.Form):
         label="Tags",
         required=False,
         help_text="Comma-separated tags",
+    )
+
+    reward_budget = forms.IntegerField(
+        label="Award Budget",
+        required=False,
+        help_text="Budget to award this grantee (smallest currency unit)",
+        widget=forms.NumberInput(attrs={"placeholder": "e.g. 500000"}),
     )

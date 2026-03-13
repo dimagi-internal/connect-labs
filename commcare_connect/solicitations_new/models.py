@@ -87,6 +87,10 @@ class SolicitationRecord(LocalLabsRecord):
     def program_name(self):
         return self.data.get("program_name", "")
 
+    @property
+    def fund_id(self):
+        return self.data.get("fund_id")
+
     def can_accept_responses(self):
         return self.status == "active"
 
@@ -121,6 +125,14 @@ class ResponseRecord(LocalLabsRecord):
     @property
     def submitted_by_email(self):
         return self.data.get("submitted_by_email", "")
+
+    @property
+    def org_id(self):
+        return self.data.get("org_id", "")
+
+    @property
+    def org_name(self):
+        return self.data.get("org_name", "")
 
     @property
     def submission_date(self):
@@ -159,6 +171,10 @@ class ReviewRecord(LocalLabsRecord):
     @property
     def reviewer_username(self):
         return self.data.get("reviewer_username", "")
+
+    @property
+    def reward_budget(self):
+        return self.data.get("reward_budget")
 
     @property
     def review_date(self):
