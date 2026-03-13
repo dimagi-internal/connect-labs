@@ -58,7 +58,7 @@ Organization (PM: Baobob Institute)
 
 **FundRecord** — groups programs under a single funding source
 - `name`, `description`, `total_budget`, `currency`
-- `llo_entity_id` (references the funder's Connect org *Open question: do we need a specific different entity for a Funder"*)
+- `org_id` (references the funder's Connect org ID — `llo_entity_id` is not yet exposed via API. *Open question: do we need a specific different entity for a Funder?*)
 - `program_ids[]` (references Connect Program IDs)
 - `delivery_types[]` (references Connect Delivery Types)
 - `status`: active | closed
@@ -74,7 +74,7 @@ Organization (PM: Baobob Institute)
 - `estimated_scale`, `contact_email`
 
 **ResponseRecord** (exists in solicitations_new)
-- `solicitation_id`, (`llo_entity_id`, `llo_entity_name` exist in data model, to be connected after changes on Connect prod to allow creation from new users — populated on account creation)
+- `solicitation_id`, `org_id`, `org_name` (using Connect org ID for now — `llo_entity_id` not yet exposed via API; to be connected after changes on Connect prod to allow creation from new users)
 - `responses`: dict of question answers
 - `status`: draft | submitted | awarded | rejected
 - `submitted_by_name`, `submitted_by_email`
@@ -91,7 +91,7 @@ Organization (PM: Baobob Institute)
 
 ```
 Baobob Institute logs into Labs
-  → **(An LLO Entity is manually created for them for Demo)**
+  → **(An Organization is manually created for them for Demo)**
   → Creates FundRecord ("Funding Tranche #1")
   → Links existing Connect Programs (KMC, CHC, MBW)
   → Creates SolicitationRecord (RFP for Kangaroo Mother Care)
@@ -132,11 +132,11 @@ Funder views responses in solicitations_new
   → Adds review notes and recommendation
   → Ranks responses
   → Clicks "Award" on selected respondents
-  → Inputs the reward_budget & llo_entity_id for each grantee awarded.  Can be one or more.
+  → Inputs the reward_budget & org_id for each grantee awarded.  Can be one or more.
 ```
 
 **Award triggers auto-setup (Labs → Connect API):**
-1. Links NM org (LLO_entity_id of grantee) to the relevant Program (i.e., Funding Tranche #1 - KMC Programs) (Connect API call)
+1. Links NM org (org_id of grantee) to the relevant Program (i.e., Funding Tranche #1 - KMC Programs) (Connect API call)
 2. Creates ManagedOpportunity from program template using one of existing delivery_types (Connect API call)
 3. Allocates budget from fund (Connect API call)
 4. Sends notification to NM org admin
@@ -188,8 +188,8 @@ Funder views Funder Dashboard
 
 #### Data model changes
 - Add `fund_id` field to SolicitationRecord
-- Add `llo_entity_id` field to ResponseRecord
-- Add `llo_entity_name` field to ResponseRecord
+- Add `org_id` field to ResponseRecord
+- Add `org_name` field to ResponseRecord
 - Add `awarded` status to ResponseRecord and SolicitationRecord
 - Add `proposed_budget` field to ResponseRecord
 
@@ -322,7 +322,7 @@ Answer: Matt has a KMC demo app he can use.
 
 ## Future Work
 
-1. Fix the **WORKSPACE_ENTITY_MANAGEMENT_ACCESS gate** so that a non-Dimagi user on Labs can create an "LLO Entity".  Reconsider how the LLO Entity is implemented in the data models to support this use case.  Allow a user signing up on Connect for the first time to create a new org if their's isn't available.
+1. Fix the **WORKSPACE_ENTITY_MANAGEMENT_ACCESS gate** so that a non-Dimagi user on Labs can create an Organization.  Reconsider how the LLO Entity is implemented in the data models to support this use case.  Allow a user signing up on Connect for the first time to create a new org if theirs isn't available.  Expose `llo_entity_id` via the Connect API so it can replace `org_id` as the linking identifier.
 
 2. Enable **ManagedOpportunity creation via API**.  What exists already?  What needs to be default or templatized?  How different is this from creating a standard Opportunity that Dimagi PMs do?
 
