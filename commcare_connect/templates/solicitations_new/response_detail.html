@@ -127,10 +127,22 @@
                 <i class="fa-solid fa-arrow-left mr-1"></i> Back to Responses
             </a>
         {% endif %}
-        <a href="{% url 'solicitations_new:review' pk=response.pk %}"
-           class="inline-flex items-center px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
-            <i class="fa-solid fa-clipboard-check mr-2"></i> Add Review
-        </a>
+        <div class="flex items-center gap-3">
+            {% if response.status != 'awarded' %}
+                <a href="{% url 'solicitations_new:award' pk=response.pk %}"
+                   class="inline-flex items-center px-6 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition">
+                    <i class="fa-solid fa-trophy mr-2"></i> Award
+                </a>
+            {% else %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                    <i class="fa-solid fa-check mr-1"></i> Awarded
+                </span>
+            {% endif %}
+            <a href="{% url 'solicitations_new:review' pk=response.pk %}"
+               class="inline-flex items-center px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-clipboard-check mr-2"></i> Add Review
+            </a>
+        </div>
     </div>
 
 </div>

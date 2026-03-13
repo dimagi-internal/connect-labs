@@ -137,6 +137,16 @@
                                        class="text-green-600 hover:text-green-900 font-medium">
                                         <i class="fa-solid fa-clipboard-check mr-1"></i> Review
                                     </a>
+                                    {% if response.status != 'awarded' %}
+                                        <a href="{% url 'solicitations_new:award' pk=response.pk %}"
+                                           class="text-amber-600 hover:text-amber-900 font-medium">
+                                            <i class="fa-solid fa-trophy mr-1"></i> Award
+                                        </a>
+                                    {% else %}
+                                        <span class="text-green-600 font-medium">
+                                            <i class="fa-solid fa-check mr-1"></i> Awarded
+                                        </span>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
