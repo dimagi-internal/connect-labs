@@ -235,11 +235,9 @@ class ResponsesListView(ManagerRequiredMixin, TemplateView):
             for r in responses:
                 try:
                     reviews = da.get_reviews_for_response(r.pk)
-                    r._reviews = reviews
-                    r._latest_review = reviews[-1] if reviews else None
+                    r.latest_review = reviews[-1] if reviews else None
                 except Exception:
-                    r._reviews = []
-                    r._latest_review = None
+                    r.latest_review = None
             ctx["responses"] = responses
         except Http404:
             raise

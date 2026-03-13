@@ -101,8 +101,8 @@
                                 {% endif %}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                {% if response._latest_review %}
-                                    {% with rec=response._latest_review.recommendation %}
+                                {% if response.latest_review %}
+                                    {% with rec=response.latest_review.recommendation %}
                                         {% if rec == 'approved' %}
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                 Approved
@@ -126,8 +126,8 @@
                                 {% endif %}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {% if response._latest_review and response._latest_review.score %}
-                                    <span class="font-medium">{{ response._latest_review.score }}/100</span>
+                                {% if response.latest_review and response.latest_review.score %}
+                                    <span class="font-medium">{{ response.latest_review.score }}/100</span>
                                 {% else %}
                                     <span class="text-gray-400">-</span>
                                 {% endif %}

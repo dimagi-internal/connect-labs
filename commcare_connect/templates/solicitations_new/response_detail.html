@@ -118,9 +118,7 @@
                         {% endif %}
                         {% if rev.tags %}
                             <div class="mt-2">
-                                {% for tag in rev.tags.split:"," %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 mr-1">{{ tag|trim }}</span>
-                                {% endfor %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ rev.tags }}</span>
                             </div>
                         {% endif %}
                     </div>
