@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not bucket_configured %}not configured{% endif %}
+{% for f in files %}{{ f.label }} {{ f.row_count }}{% endfor %}
+{% endblock %}
