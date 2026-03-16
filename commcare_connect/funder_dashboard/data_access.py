@@ -75,7 +75,6 @@ class FunderDashboardDataAccess:
             experiment=self.org_id,
             type=FUND_TYPE,
             data=data,
-            organization_id=int(self.org_id) if self.org_id else None,
         )
         return FundRecord(record.to_api_dict())
 

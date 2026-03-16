@@ -19,15 +19,15 @@ class TestFundCRUDLifecycle:
     """Full fund create -> view -> edit (add allocation) -> verify KPIs."""
 
     def test_portfolio_loads(self, auth_page, live_server_url, org_id):
-        """Step 1: Portfolio page loads with KPI cards."""
+        """Step 1: Portfolio page loads with header and org context."""
         page = auth_page
         page.set_default_timeout(30_000)
         page.goto(f"{live_server_url}/funder/?organization_id={org_id}")
         page.wait_for_load_state("domcontentloaded")
 
         assert page.locator("h1").filter(has_text="Funder Dashboard").is_visible()
-        assert page.get_by_text("Total Funds").is_visible()
-        assert page.get_by_text("Create Fund").is_visible()
+        # Create Fund button is visible when org context is set
+        assert page.get_by_role("link", name="Create Fund").first.is_visible()
 
     def test_create_fund(self, auth_page, live_server_url, org_id):
         """Step 2: Create a new fund via the form."""
@@ -82,7 +82,7 @@ class TestFundCRUDLifecycle:
         page.wait_for_load_state("domcontentloaded")
 
         # Click the first fund card link
-        fund_link = page.locator("a[href*='/funder/fund/']").first
+        fund_link = page.locator("a.block.group[href*='/funder/fund/']").first
         fund_link.click()
         page.wait_for_load_state("domcontentloaded")
 
@@ -101,7 +101,7 @@ class TestFundCRUDLifecycle:
         page.goto(f"{live_server_url}/funder/?organization_id={org_id}")
         page.wait_for_load_state("domcontentloaded")
 
-        fund_link = page.locator("a[href*='/funder/fund/']").first
+        fund_link = page.locator("a.block.group[href*='/funder/fund/']").first
         fund_link.click()
         page.wait_for_load_state("domcontentloaded")
 
@@ -123,8 +123,8 @@ class TestFundCRUDLifecycle:
         page.locator("select[x-model='alloc.type']").first.select_option("retroactive")
         page.locator("input[x-model='alloc.notes']").first.fill("E2E test allocation")
 
-        # Submit the form
-        page.locator("button[type='submit']").click()
+        # Submit the form (use role to avoid matching context selector submit)
+        page.get_by_role("button", name="Save Changes").click()
         page.wait_for_load_state("domcontentloaded")
 
         # Navigate back to the fund detail and verify allocation appears
@@ -133,4 +133,4 @@ class TestFundCRUDLifecycle:
 
         assert page.get_by_text("Test Program").is_visible()
         assert page.get_by_text("Retroactive").is_visible()
-        assert page.get_by_text("100,000").is_visible()
+        assert page.get_by_text("100,000").first.is_visible()

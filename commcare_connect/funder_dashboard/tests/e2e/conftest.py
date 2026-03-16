@@ -37,8 +37,8 @@ def django_db_setup():
     pass
 
 
-E2E_PORT = 8001
-E2E_HOST = "127.0.0.1"
+E2E_PORT = 8000
+E2E_HOST = "localhost"
 
 
 def pytest_addoption(parser):
@@ -100,25 +100,31 @@ def live_server_url():
 
 
 @pytest.fixture(scope="session")
-def authenticated_context(request, browser, live_server_url):
-    """Create a browser context with a valid OAuth session using the specified profile."""
+def _auth_data(request, browser, live_server_url):
+    """Authenticate and return (browser_context, auth_response_body)."""
     profile = request.config.getoption("--profile")
     context = browser.new_context()
     page = context.new_page()
 
-    auth_url = f"{live_server_url}/labs/test-auth/"
+    auth_url = "{}/labs/test-auth/".format(live_server_url)
     if profile:
-        auth_url += f"?profile={profile}"
+        auth_url += "?profile={}".format(profile)
 
     response = page.goto(auth_url)
-    assert response.status == 200, f"test-auth failed: {page.content()}"
+    assert response.status == 200, "test-auth failed: {}".format(page.content())
 
     body = response.json()
-    assert body.get("success"), f"test-auth returned: {body}"
+    assert body.get("success"), "test-auth returned: {}".format(body)
 
     page.close()
-    yield context
+    yield context, body
     context.close()
+
+
+@pytest.fixture(scope="session")
+def authenticated_context(_auth_data):
+    """Browser context with valid auth session."""
+    return _auth_data[0]
 
 
 @pytest.fixture
@@ -130,49 +136,31 @@ def auth_page(authenticated_context):
 
 
 @pytest.fixture(scope="session")
-def org_id(request, authenticated_context, live_server_url):
-    """Get or auto-detect the organization ID."""
+def org_id(request, _auth_data):
+    """Get or auto-detect the organization slug for URL context params."""
     explicit = request.config.getoption("--org-id")
     if explicit:
         return explicit
 
-    # Auto-detect: hit the labs context API to find the first org
-    page = authenticated_context.new_page()
-    page.goto(f"{live_server_url}/labs/api/context/")
-    page.wait_for_load_state("networkidle")
-    try:
-        data = page.evaluate("() => JSON.parse(document.body.innerText)")
-        orgs = data.get("organizations", [])
-        if orgs:
-            return str(orgs[0].get("id", ""))
-    except Exception:
-        pass
-    finally:
-        page.close()
+    _, body = _auth_data
+    orgs = body.get("organizations", [])
+    if orgs:
+        return str(orgs[0].get("slug", orgs[0].get("id", "")))
 
     pytest.skip("No organization found — pass --org-id or ensure account has orgs")
 
 
 @pytest.fixture(scope="session")
-def program_id(request, authenticated_context, live_server_url):
+def program_id(request, _auth_data):
     """Get or auto-detect the program ID."""
     explicit = request.config.getoption("--program-id")
     if explicit:
         return explicit
 
-    # Auto-detect from context API
-    page = authenticated_context.new_page()
-    page.goto(f"{live_server_url}/labs/api/context/")
-    page.wait_for_load_state("networkidle")
-    try:
-        data = page.evaluate("() => JSON.parse(document.body.innerText)")
-        programs = data.get("programs", [])
-        if programs:
-            return str(programs[0].get("id", ""))
-    except Exception:
-        pass
-    finally:
-        page.close()
+    _, body = _auth_data
+    programs = body.get("programs", [])
+    if programs:
+        return str(programs[0].get("id", ""))
 
     pytest.skip("No program found — pass --program-id or ensure account has programs")
 
