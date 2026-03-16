@@ -14,6 +14,7 @@ from django.contrib.auth.mixins import AccessMixin, LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.views.generic import TemplateView
 
+from commcare_connect.labs.context import get_org_data
 from commcare_connect.labs.integrations.connect.api_client import LabsAPIError
 from commcare_connect.workflow.templates import list_templates
 
@@ -111,11 +112,12 @@ class AuditOfAuditsView(LoginRequiredMixin, DimagiUserRequiredMixin, TemplateVie
         context = super().get_context_data(**kwargs)
 
         # Always available: user identity + full org list for the config form
+        org_data = get_org_data(self.request)
         user_orgs: list[dict] = [
-            o for o in (getattr(self.request.user, "organizations", []) or [])
+            o for o in org_data.get("organizations", [])
             if isinstance(o.get("id"), int)
         ]
-        user_opps: list[dict] = getattr(self.request.user, "opportunities", []) or []
+        user_opps: list[dict] = org_data.get("opportunities", []) or []
 
         context["user_email"] = _dimagi_display_name(self.request.user)
         context["user_orgs"] = user_orgs
