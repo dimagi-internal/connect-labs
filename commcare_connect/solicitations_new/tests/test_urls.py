@@ -171,7 +171,7 @@ class TestURLResolution:
             "api_review_detail",
         ]
         for name in url_names:
-            full_name = f"solicitations_new:{name}"
+            full_name = "solicitations_new:{}".format(name)
             # Should not raise NoReverseMatch
             kwargs = {}
             if name in (

@@ -3,9 +3,8 @@ import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.http import Http404
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.utils import timezone
-from django.views import View
 from django.views.generic import TemplateView
 
 from commcare_connect.solicitations_new.data_access import SolicitationsNewDataAccess

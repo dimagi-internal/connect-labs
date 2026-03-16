@@ -8,8 +8,6 @@ Uses Django RequestFactory for direct view function invocation.
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from commcare_connect.solicitations_new.api_views import (
     api_response_detail,
     api_responses_list,

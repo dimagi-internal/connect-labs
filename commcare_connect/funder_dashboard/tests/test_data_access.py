@@ -157,7 +157,7 @@ class TestAddAllocation:
         da = FunderDashboardDataAccess(org_id="1", access_token="tok")
         with patch.object(da, "get_fund_by_id", return_value=mock_fund):
             with patch.object(da, "update_fund", return_value=mock_updated) as mock_update:
-                result = da.add_allocation(
+                da.add_allocation(
                     fund_id=1,
                     allocation={"program_id": 45, "program_name": "KMC", "amount": 200000, "type": "retroactive"},
                 )

@@ -1,5 +1,3 @@
-import pytest
-
 from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 
@@ -74,7 +72,7 @@ class TestSolicitationRecord:
         assert rec.scope_of_work == "Do the work"
 
     def test_status_default(self):
-        rec = self._make(data={"status": None})
+        self._make(data={"status": None})
         # When status is None, data.get("status", "draft") returns None, not "draft"
         # But our default should handle missing keys gracefully
         rec2 = self._make()

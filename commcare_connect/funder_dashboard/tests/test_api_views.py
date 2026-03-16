@@ -2,10 +2,9 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from django.test import RequestFactory
 
-from commcare_connect.funder_dashboard.api_views import api_fund_detail, api_funds_list
+from commcare_connect.funder_dashboard.api_views import api_funds_list
 
 
 def _mock_request(method="GET", body=None, user_authenticated=True):

@@ -69,12 +69,12 @@ def live_server_url():
     result = sock.connect_ex((E2E_HOST, E2E_PORT))
     sock.close()
     if result == 0:
-        yield f"http://{E2E_HOST}:{E2E_PORT}"
+        yield "http://{}:{}".format(E2E_HOST, E2E_PORT)
         return
 
     server_log = open("e2e_django_server.log", "w")
     proc = subprocess.Popen(
-        [sys.executable, "manage.py", "runserver", f"{E2E_HOST}:{E2E_PORT}", "--noreload"],
+        [sys.executable, "manage.py", "runserver", "{}:{}".format(E2E_HOST, E2E_PORT), "--noreload"],
         stdout=server_log,
         stderr=subprocess.STDOUT,
     )
@@ -90,9 +90,9 @@ def live_server_url():
             time.sleep(0.5)
     else:
         proc.kill()
-        raise RuntimeError(f"Django server failed to start on {E2E_HOST}:{E2E_PORT}")
+        raise RuntimeError("Django server failed to start on {}:{}".format(E2E_HOST, E2E_PORT))
 
-    yield f"http://{E2E_HOST}:{E2E_PORT}"
+    yield "http://{}:{}".format(E2E_HOST, E2E_PORT)
 
     proc.terminate()
     proc.wait(timeout=10)
@@ -192,7 +192,6 @@ def screenshot_on_failure(request, auth_page):
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
-    import pytest
     outcome = yield
     rep = outcome.get_result()
     setattr(item, f"rep_{rep.when}", rep)

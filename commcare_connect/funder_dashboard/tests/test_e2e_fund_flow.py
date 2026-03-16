@@ -11,7 +11,7 @@ Run:
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.test import RequestFactory, override_settings
+from django.test import RequestFactory
 
 from commcare_connect.funder_dashboard.data_access import FUND_TYPE
 from commcare_connect.funder_dashboard.models import FundRecord
@@ -21,7 +21,6 @@ from commcare_connect.funder_dashboard.views import (
     FundEditView,
     PortfolioDashboardView,
 )
-
 
 # =========================================================================
 # Helpers
@@ -273,9 +272,7 @@ class TestStep4EditFund:
         """POST with valid data updates fund and redirects."""
         fund = _make_fund_record(pk=1, name="Old Name")
         MockDA.return_value.get_fund_by_id.return_value = fund
-        MockDA.return_value.update_fund.return_value = _make_fund_record(
-            pk=1, name="Updated Name"
-        )
+        MockDA.return_value.update_fund.return_value = _make_fund_record(pk=1, name="Updated Name")
 
         request = _make_request(
             "/funder/fund/1/edit/",

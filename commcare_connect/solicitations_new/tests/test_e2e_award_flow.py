@@ -11,21 +11,11 @@ Run:
 """
 from unittest.mock import MagicMock, patch
 
-import pytest
-from django.test import RequestFactory, override_settings
+from django.test import RequestFactory
 
-from commcare_connect.solicitations_new.data_access import (
-    RESPONSE_TYPE,
-    REVIEW_TYPE,
-    SOLICITATION_TYPE,
-)
+from commcare_connect.solicitations_new.data_access import RESPONSE_TYPE, REVIEW_TYPE, SOLICITATION_TYPE
 from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
-from commcare_connect.solicitations_new.views import (
-    AwardView,
-    ResponseDetailView,
-    ResponsesListView,
-)
-
+from commcare_connect.solicitations_new.views import AwardView, ResponseDetailView, ResponsesListView
 
 # =========================================================================
 # Helpers
@@ -50,9 +40,7 @@ def _make_solicitation(pk=1, title="Neonatal Care RFP", status="active"):
     )
 
 
-def _make_response(
-    pk=10, solicitation_id=1, status="submitted", org_id="", reward_budget=None
-):
+def _make_response(pk=10, solicitation_id=1, status="submitted", org_id="", reward_budget=None):
     data = {
         "solicitation_id": solicitation_id,
         "submitted_by_name": "Jane Doe",
@@ -249,10 +237,8 @@ class TestStep3AwardForm:
     @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
     def test_award_submit_redirects(self, MockDA):
         """POST with valid data awards the response and redirects."""
-        resp = _make_response(pk=10, solicitation_id=1)
-        awarded_resp = _make_response(
-            pk=10, status="awarded", org_id="org_77", reward_budget=50000
-        )
+        _make_response(pk=10, solicitation_id=1)
+        awarded_resp = _make_response(pk=10, status="awarded", org_id="org_77", reward_budget=50000)
         MockDA.return_value.award_response.return_value = awarded_resp
         MockDA.return_value.get_response_by_id.return_value = awarded_resp
 
@@ -264,9 +250,7 @@ class TestStep3AwardForm:
         response = AwardView.as_view()(request, pk=10)
 
         assert response.status_code == 302
-        MockDA.return_value.award_response.assert_called_once_with(
-            10, reward_budget=50000, org_id="org_77"
-        )
+        MockDA.return_value.award_response.assert_called_once_with(10, reward_budget=50000, org_id="org_77")
 
 
 # =========================================================================
@@ -283,9 +267,7 @@ class TestFullAwardFlow:
         """Full lifecycle: responses list → detail → award → verify awarded."""
         solicitation = _make_solicitation(pk=1)
         resp_submitted = _make_response(pk=10, status="submitted")
-        resp_awarded = _make_response(
-            pk=10, status="awarded", org_id="org_77", reward_budget=50000
-        )
+        resp_awarded = _make_response(pk=10, status="awarded", org_id="org_77", reward_budget=50000)
 
         # -- Step 1: View responses list --
         MockDA.return_value.get_solicitation_by_id.return_value = solicitation

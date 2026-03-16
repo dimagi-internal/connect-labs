@@ -4,8 +4,6 @@ These tests are pure Python — no database required.
 """
 import json
 
-import pytest
-
 from commcare_connect.solicitations_new.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
 
 
