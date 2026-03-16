@@ -17,6 +17,8 @@ from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
+from commcare_connect.labs import s3_export
+from commcare_connect.labs.context import get_org_data
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 from commcare_connect.workflow.templates import TEMPLATES
 from commcare_connect.workflow.templates import create_workflow_from_template as create_from_template
@@ -251,6 +253,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     return super().get(request, *args, **kwargs)
                 finally:
                     data_access.close()
+                org_data = get_org_data(request)
+                opp_map = {o["id"]: o.get("name", "") for o in org_data.get("opportunities", [])}
+                s3_export.upsert_workflow_run(
+                    run, opportunity_name=opp_map.get(run.opportunity_id, "")
+                )
                 params = request.GET.copy()
                 params["run_id"] = str(run.id)
                 return redirect(f"{request.path}?{params.urlencode()}")
@@ -803,6 +810,8 @@ def complete_run_api(request, run_id):
 
         if not result:
             return JsonResponse({"error": "Failed to update run"}, status=500)
+
+        s3_export.upsert_workflow_run(result)
 
         return JsonResponse(
             {
