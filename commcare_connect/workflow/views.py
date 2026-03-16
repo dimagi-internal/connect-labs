@@ -248,16 +248,20 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         period_end=week_end.isoformat(),
                         initial_state={"worker_states": {}},
                     )
+                    org_data = get_org_data(request)
+                    opp_map = {o["id"]: o.get("name", "") for o in org_data.get("opportunities", [])}
+                    # definition_name omitted — requires an extra API call to load the
+                    # definition; definition_id in the row allows downstream joins.
+                    s3_export.upsert_workflow_run(
+                        run,
+                        opportunity_name=opp_map.get(run.opportunity_id, ""),
+                        template_type=run.template_type,
+                    )
                 except Exception as e:
                     logger.exception("Failed to create run for opp %s", opportunity_id)
                     return super().get(request, *args, **kwargs)
                 finally:
                     data_access.close()
-                org_data = get_org_data(request)
-                opp_map = {o["id"]: o.get("name", "") for o in org_data.get("opportunities", [])}
-                s3_export.upsert_workflow_run(
-                    run, opportunity_name=opp_map.get(run.opportunity_id, "")
-                )
                 params = request.GET.copy()
                 params["run_id"] = str(run.id)
                 return redirect(f"{request.path}?{params.urlencode()}")
@@ -811,7 +815,8 @@ def complete_run_api(request, run_id):
         if not result:
             return JsonResponse({"error": "Failed to update run"}, status=500)
 
-        s3_export.upsert_workflow_run(result)
+        # definition_name omitted — requires an extra API call; definition_id allows joins.
+        s3_export.upsert_workflow_run(result, template_type=result.template_type)
 
         return JsonResponse(
             {
