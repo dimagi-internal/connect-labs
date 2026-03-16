@@ -205,6 +205,29 @@ def test_upsert_audit_session_replaces_existing_row(mock_boto3, settings):
 
 
 @patch("commcare_connect.labs.s3_export.boto3")
+def test_upsert_audit_session_no_bucket_is_noop(mock_boto3, settings):
+    """When LABS_EXPORTS_BUCKET is None, does nothing."""
+    settings.LABS_EXPORTS_BUCKET = None
+    session = _make_session()
+    s3_export.upsert_audit_session(session)
+    mock_boto3.client.assert_not_called()
+
+
+@patch("commcare_connect.labs.s3_export.boto3")
+def test_upsert_audit_session_s3_error_is_silenced(mock_boto3, settings):
+    """When S3 raises an unexpected error, it is logged and swallowed."""
+    settings.LABS_EXPORTS_BUCKET = "test-bucket"
+    mock_s3 = MagicMock()
+    mock_boto3.client.return_value = mock_s3
+    mock_s3.get_object.side_effect = RuntimeError("network error")
+
+    session = _make_session()
+    # Must not raise
+    s3_export.upsert_audit_session(session)
+    mock_s3.put_object.assert_not_called()
+
+
+@patch("commcare_connect.labs.s3_export.boto3")
 def test_upsert_audit_session_organization_id_coerced_to_int(mock_boto3, settings):
     """organization_id (str in API) is written as int string, not raw string."""
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
