@@ -35,6 +35,17 @@ def _get_connect_token() -> str:
 
     data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
 
+    # Unwrap v2 multi-profile format
+    if "_version" in data and "profiles" in data:
+        active = data.get("_active_profile")
+        profiles = data["profiles"]
+        if active and active in profiles:
+            data = profiles[active]
+        elif profiles:
+            data = next(iter(profiles.values()))
+        else:
+            raise ValueError("No profiles in token file.")
+
     # Check expiry
     if "expires_at" in data:
         expires_at = datetime.fromisoformat(data["expires_at"])
