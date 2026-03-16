@@ -41,3 +41,16 @@ class FundRecord(LocalLabsRecord):
     @property
     def status(self):
         return self.data.get("status", "active")
+
+    @property
+    def allocations(self):
+        return self.data.get("allocations", [])
+
+    @property
+    def committed_amount(self):
+        return sum(a.get("amount", 0) for a in self.allocations)
+
+    @property
+    def remaining_amount(self):
+        budget = self.total_budget or 0
+        return max(0, budget - self.committed_amount)
