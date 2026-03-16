@@ -45,17 +45,17 @@ S3 bucket config:
 
 ### Event-driven export (no scheduled task, no service token)
 
-Export fires from within the normal Labs request cycle, using the **logged-in user's active OAuth token**. No dedicated service account or stored credentials needed.
+Export fires from within the normal Labs request cycle, using the **logged-in user's active OAuth token** for any supplemental API calls. No dedicated service account or stored credentials needed.
 
-**Two trigger points:**
+**Three trigger points:**
 
 1. **Workflow run created** — when a user clicks "Run" on a workflow definition, the new `WorkflowRunRecord` is written to S3 immediately after the API call succeeds. Row status will be `in_progress`.
 
 2. **Workflow run completed** — when a run's status is updated to `completed`, the existing row is overwritten (upsert by `run_id`) with the final state including session aggregates.
 
-3. **Audit session created or completed** — when an `AuditSessionRecord` is created or its status changes, the row is upserted by `session_id`.
+3. **Audit session created or completed (synchronous path only)** — when an `AuditSessionRecord` is created or its status changes via the synchronous wizard view (`ExperimentAuditCreateView`), the row is upserted by `session_id`. Sessions created via the Celery bulk-creation path do not have a request context and therefore cannot be exported at creation time; they will be captured on the next synchronous status update (e.g. when the session is completed through the wizard).
 
-**Upsert mechanism:** read current CSV from S3 → find row by ID (insert if missing, replace if present) → write back to S3. Volume is low and writes are not concurrent, so no locking is required.
+**Upsert mechanism:** read current CSV from S3 → find row by ID (insert if missing, replace if present) → write back to S3. This is a read-modify-write operation. With the default ECS deployment of 3 Gunicorn workers (`WEB_CONCURRENCY=3`), simultaneous writes to the same file are possible in theory. For a backup-only use case this is acceptable: no data is corrupted (S3 versioning preserves the prior state), and a missed write self-heals on the next trigger for the same record. No locking mechanism is added.
 
 ---
 
@@ -69,14 +69,14 @@ Export fires from within the normal Labs request cycle, using the **logged-in us
 | `definition_id` | `WorkflowRunRecord.definition_id` |
 | `definition_name` | Definition name or `Workflow #{id}` |
 | `template_type` | Definition template type |
-| `opportunity_id` | `WorkflowRunRecord.opportunity_id` |
+| `opportunity_id` | `WorkflowRunRecord.opportunity_id` (int) |
 | `opportunity_name` | Resolved from org data |
 | `created_at` | `WorkflowRunRecord.created_at` |
 | `period_start` | Normalized YYYY-MM-DD |
 | `period_end` | Normalized YYYY-MM-DD |
 | `status` | `completed`, `in_progress`, `unknown` |
 | `selected_count` | Number of selected FLWs |
-| `username` | Run creator username |
+| `username` | Run creator: `run.username or state.get("run_by") or run.data.get("username")` (same three-way fallback as `build_report_data()`) |
 | `session_count` | Total linked audit sessions |
 | `completed_session_count` | Sessions with pass/fail result |
 | `avg_pct_passed` | Pre-computed or calculated |
@@ -91,9 +91,9 @@ Export fires from within the normal Labs request cycle, using the **logged-in us
 |---|---|
 | `session_id` | `AuditSessionRecord.id` |
 | `workflow_run_id` | `AuditSessionRecord.workflow_run_id` |
-| `opportunity_id` | `AuditSessionRecord.opportunity_id` |
+| `opportunity_id` | `AuditSessionRecord.opportunity_id` (int) — sourced from `self.data["opportunity_id"]` via `@property` override; this is the *audited* opportunity, distinct from the API storage-scope `opportunity_id` on the parent `LocalLabsRecord` |
 | `opportunity_name` | `AuditSessionRecord.opportunity_name` |
-| `organization_id` | `AuditSessionRecord.organization_id` |
+| `organization_id` | `AuditSessionRecord.organization_id` (str \| None — stored as string by the API; coerce to int in `s3_export.py` if populated) |
 | `flw_username` | `AuditSessionRecord.flw_username` |
 | `status` | `AuditSessionRecord.status` |
 | `overall_result` | `pass`, `fail`, or blank |
@@ -128,14 +128,16 @@ File metadata (last updated, size, rows) is stored as S3 object metadata (`x-amz
 
 | File | Purpose |
 |---|---|
+| `commcare_connect/labs/s3_export.py` | S3 upsert logic for both record types (shared infrastructure, imported by workflow and audit apps) |
 | `commcare_connect/custom_analysis/exports/views.py` | Download page view, pre-signed URL generation |
 | `commcare_connect/custom_analysis/exports/urls.py` | URL config for `/custom_analysis/exports/` |
-| `commcare_connect/custom_analysis/exports/s3_export.py` | S3 upsert logic for both record types |
 | `commcare_connect/templates/custom_analysis/exports/index.html` | Download page template |
 
 Export hooks added to existing files:
-- `commcare_connect/workflow/views.py` — call export after run create/complete
-- `commcare_connect/audit/views.py` or signal — call export after session create/complete
+- `commcare_connect/workflow/views.py` — call `labs.s3_export` after run create/complete
+- `commcare_connect/audit/views.py` — call `labs.s3_export` in synchronous session create/complete paths only
+
+`s3_export.py` lives in `commcare_connect/labs/` (shared infrastructure layer) so that `workflow` and `audit` apps can import it without creating a reverse dependency on `custom_analysis`.
 
 ---
 
