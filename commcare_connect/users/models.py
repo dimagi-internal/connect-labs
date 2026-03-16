@@ -49,6 +49,9 @@ class User(AbstractUser):
 
     objects = UserManager()
 
+    def get_display_name(self) -> str:
+        return self.name or self.username or self.email or "Unknown User"
+
     def get_absolute_url(self) -> str:
         """Get URL for user's detail view.
 
