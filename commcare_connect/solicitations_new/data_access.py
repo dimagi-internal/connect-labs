@@ -13,10 +13,14 @@ Type constants:
 - Reviews: experiment=llo_entity_id, type="solicitation_new_review"
 """
 
+import logging
+
 from django.http import HttpRequest
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
 from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
+
+logger = logging.getLogger(__name__)
 
 # Record type constants
 SOLICITATION_TYPE = "solicitation_new"
@@ -253,16 +257,9 @@ class SolicitationsNewDataAccess:
         return ResponseRecord(record.to_api_dict())
 
     def award_response(self, response_id: int, reward_budget: int, org_id: str) -> ResponseRecord:
-        """
-        Mark a response as awarded with budget and org_id.
+        """Mark a response as awarded with budget and org_id.
 
-        Args:
-            response_id: ID of the response to award
-            reward_budget: Budget allocated to this grantee
-            org_id: Connect org ID of the awarded grantee
-
-        Returns:
-            Updated ResponseRecord instance
+        If the parent solicitation has a fund_id, auto-creates a fund allocation.
         """
         current = self.get_response_by_id(response_id)
         if not current:
@@ -272,7 +269,33 @@ class SolicitationsNewDataAccess:
         data["status"] = "awarded"
         data["reward_budget"] = reward_budget
         data["org_id"] = org_id
-        return self.update_response(response_id, data)
+        result = self.update_response(response_id, data)
+
+        # Auto-create fund allocation if solicitation has a fund_id
+        try:
+            solicitation = self.get_solicitation_by_id(current.solicitation_id)
+            if solicitation and solicitation.fund_id:
+                from commcare_connect.funder_dashboard.data_access import FunderDashboardDataAccess
+
+                fda = FunderDashboardDataAccess(access_token=self.access_token)
+                fda.add_allocation(
+                    fund_id=solicitation.fund_id,
+                    allocation={
+                        "program_id": self.program_id,
+                        "program_name": "",
+                        "amount": reward_budget,
+                        "type": "award",
+                        "solicitation_id": current.solicitation_id,
+                        "response_id": response_id,
+                        "org_id": org_id,
+                        "org_name": current.llo_entity_name,
+                        "notes": f"Award from {solicitation.title}",
+                    },
+                )
+        except Exception:
+            logger.exception("Failed to auto-create fund allocation for response %s", response_id)
+
+        return result
 
     def update_response(self, response_id: int, data: dict) -> ResponseRecord:
         """

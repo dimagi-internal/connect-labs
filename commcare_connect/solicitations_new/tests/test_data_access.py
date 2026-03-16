@@ -558,6 +558,66 @@ class TestCreateReview:
         )
 
 
+class TestAwardResponseAutoAllocation:
+    def test_award_creates_fund_allocation(self):
+        """When the solicitation has a fund_id, awarding auto-creates a fund allocation."""
+        response_data = {
+            "solicitation_id": 100,
+            "status": "submitted",
+            "llo_entity_id": "org1",
+            "llo_entity_name": "Partner Org",
+        }
+        mock_response = ResponseRecord(
+            {
+                "id": 10,
+                "experiment": "org1",
+                "type": "solicitation_new_response",
+                "opportunity_id": None,
+                "data": response_data,
+            }
+        )
+        awarded_data = dict(response_data)
+        awarded_data.update({"status": "awarded", "reward_budget": 50000, "org_id": "42"})
+        mock_awarded = ResponseRecord(
+            {
+                "id": 10,
+                "experiment": "org1",
+                "type": "solicitation_new_response",
+                "opportunity_id": None,
+                "data": awarded_data,
+            }
+        )
+
+        solicitation_data = {"title": "Test RFP", "fund_id": 5}
+        mock_solicitation = SolicitationRecord(
+            {
+                "id": 100,
+                "experiment": "1",
+                "type": "solicitation_new",
+                "opportunity_id": None,
+                "data": solicitation_data,
+            }
+        )
+
+        da = SolicitationsNewDataAccess(program_id="1", access_token="tok")
+        with (
+            patch.object(da, "get_response_by_id", return_value=mock_response),
+            patch.object(da, "update_response", return_value=mock_awarded),
+            patch.object(da, "get_solicitation_by_id", return_value=mock_solicitation),
+            patch(
+                "commcare_connect.funder_dashboard.data_access.FunderDashboardDataAccess"
+            ) as MockFDA,
+        ):
+            mock_fda_instance = MockFDA.return_value
+            da.award_response(10, reward_budget=50000, org_id="42")
+            mock_fda_instance.add_allocation.assert_called_once()
+            alloc = mock_fda_instance.add_allocation.call_args[1]["allocation"]
+            assert alloc["amount"] == 50000
+            assert alloc["type"] == "award"
+            assert alloc["response_id"] == 10
+            assert alloc["solicitation_id"] == 100
+
+
 class TestUpdateReview:
     def test_updates_record(self, data_access, mock_api_client):
         updated_data = {
