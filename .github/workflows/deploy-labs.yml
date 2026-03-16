@@ -60,10 +60,12 @@ jobs:
         run: |
           BASE_TAG="base-latest"
           BASE_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${BASE_TAG}"
-          if aws ecr describe-images \
+          # Use list-images + jq to check tag existence (more reliable than describe-images with OCI manifests)
+          TAG_EXISTS=$(aws ecr list-images \
             --repository-name ${{ env.ECR_REPOSITORY }} \
-            --image-ids imageTag=${BASE_TAG} \
-            --output text 2>/dev/null; then
+            --query "imageIds[?imageTag=='${BASE_TAG}'].imageTag" \
+            --output text 2>&1) || true
+          if [ -n "$TAG_EXISTS" ] && [ "$TAG_EXISTS" != "None" ]; then
             echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
             echo "Base image found: ${BASE_IMAGE}"
           else
@@ -79,6 +81,7 @@ jobs:
         with:
           context: .
           push: true
+          provenance: false
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
