@@ -54,6 +54,12 @@ def pytest_addoption(parser):
         default=None,
         help="Program ID to use for E2E tests (auto-detected if not set)",
     )
+    parser.addoption(
+        "--profile",
+        action="store",
+        default="test-user",
+        help="TokenManager profile name for auth (default: test-user)",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -94,12 +100,17 @@ def live_server_url():
 
 
 @pytest.fixture(scope="session")
-def authenticated_context(browser, live_server_url):
-    """Create a browser context with a valid OAuth session."""
+def authenticated_context(request, browser, live_server_url):
+    """Create a browser context with a valid OAuth session using the specified profile."""
+    profile = request.config.getoption("--profile")
     context = browser.new_context()
     page = context.new_page()
 
-    response = page.goto(f"{live_server_url}/labs/test-auth/")
+    auth_url = f"{live_server_url}/labs/test-auth/"
+    if profile:
+        auth_url += f"?profile={profile}"
+
+    response = page.goto(auth_url)
     assert response.status == 200, f"test-auth failed: {page.content()}"
 
     body = response.json()
