@@ -87,3 +87,26 @@ class FunderDashboardDataAccess:
             data=data,
         )
         return FundRecord(record.to_api_dict())
+
+    def add_allocation(self, fund_id: int, allocation: dict) -> FundRecord:
+        """Append an allocation entry to a fund's allocations array."""
+        fund = self.get_fund_by_id(fund_id)
+        if not fund:
+            raise ValueError(f"Fund {fund_id} not found")
+        data = dict(fund.data)
+        allocations = list(data.get("allocations", []))
+        allocations.append(allocation)
+        data["allocations"] = allocations
+        return self.update_fund(fund_id, data)
+
+    def remove_allocation(self, fund_id: int, index: int) -> FundRecord:
+        """Remove an allocation entry by index."""
+        fund = self.get_fund_by_id(fund_id)
+        if not fund:
+            raise ValueError(f"Fund {fund_id} not found")
+        data = dict(fund.data)
+        allocations = list(data.get("allocations", []))
+        if 0 <= index < len(allocations):
+            allocations.pop(index)
+        data["allocations"] = allocations
+        return self.update_fund(fund_id, data)

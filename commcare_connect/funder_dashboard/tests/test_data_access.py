@@ -140,3 +140,50 @@ class TestUpdateFund:
             type=FUND_TYPE,
             data=updated_data,
         )
+
+
+class TestAddAllocation:
+    def test_adds_allocation_to_fund(self):
+        fund_data = {"name": "Test Fund", "total_budget": 500000, "allocations": []}
+        mock_fund = FundRecord({"id": 1, "experiment": "1", "type": "fund", "opportunity_id": None, "data": fund_data})
+        updated_data = dict(fund_data)
+        updated_data["allocations"] = [
+            {"program_id": 45, "program_name": "KMC", "amount": 200000, "type": "retroactive"}
+        ]
+        mock_updated = FundRecord(
+            {"id": 1, "experiment": "1", "type": "fund", "opportunity_id": None, "data": updated_data}
+        )
+
+        da = FunderDashboardDataAccess(org_id="1", access_token="tok")
+        with patch.object(da, "get_fund_by_id", return_value=mock_fund):
+            with patch.object(da, "update_fund", return_value=mock_updated) as mock_update:
+                result = da.add_allocation(
+                    fund_id=1,
+                    allocation={"program_id": 45, "program_name": "KMC", "amount": 200000, "type": "retroactive"},
+                )
+                call_data = mock_update.call_args[0][1]
+                assert len(call_data["allocations"]) == 1
+                assert call_data["allocations"][0]["program_id"] == 45
+
+
+class TestRemoveAllocation:
+    def test_removes_allocation_by_index(self):
+        allocs = [
+            {"program_id": 1, "amount": 100000, "type": "retroactive"},
+            {"program_id": 2, "amount": 50000, "type": "award"},
+        ]
+        fund_data = {"name": "Test Fund", "total_budget": 500000, "allocations": allocs}
+        mock_fund = FundRecord({"id": 1, "experiment": "1", "type": "fund", "opportunity_id": None, "data": fund_data})
+        expected_data = dict(fund_data)
+        expected_data["allocations"] = [allocs[1]]
+        mock_updated = FundRecord(
+            {"id": 1, "experiment": "1", "type": "fund", "opportunity_id": None, "data": expected_data}
+        )
+
+        da = FunderDashboardDataAccess(org_id="1", access_token="tok")
+        with patch.object(da, "get_fund_by_id", return_value=mock_fund):
+            with patch.object(da, "update_fund", return_value=mock_updated) as mock_update:
+                da.remove_allocation(fund_id=1, index=0)
+                call_data = mock_update.call_args[0][1]
+                assert len(call_data["allocations"]) == 1
+                assert call_data["allocations"][0]["program_id"] == 2
