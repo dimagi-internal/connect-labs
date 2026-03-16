@@ -83,6 +83,11 @@ class FundForm(forms.Form):
         widget=forms.HiddenInput(),
         label="Delivery Types (JSON)",
     )
+    allocations_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+        label="Allocations (JSON)",
+    )
 
     def to_data_dict(self) -> dict:
         data = {
@@ -109,5 +114,14 @@ class FundForm(forms.Form):
                 data["delivery_types"] = []
         else:
             data["delivery_types"] = []
+
+        raw_allocations = self.cleaned_data.get("allocations_json", "")
+        if raw_allocations:
+            try:
+                data["allocations"] = json.loads(raw_allocations)
+            except (json.JSONDecodeError, TypeError):
+                data["allocations"] = []
+        else:
+            data["allocations"] = []
 
         return data

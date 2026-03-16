@@ -93,6 +93,77 @@
             </div>
         </div>
 
+        <!-- Allocations -->
+        <div class="bg-white rounded-xl shadow-sm p-8" x-data='allocationsManager()'>
+            <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+                <i class="fa-solid fa-file-invoice-dollar mr-2"></i>
+                Allocations
+            </h2>
+
+            <template x-for="(alloc, index) in allocations" :key="index">
+                <div class="flex items-end gap-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div class="flex-1">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Program Name</label>
+                        <input type="text" x-model="alloc.program_name" placeholder="e.g. KMC Uganda"
+                               class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="w-32">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Amount</label>
+                        <input type="number" x-model.number="alloc.amount" placeholder="0"
+                               class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="w-36">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                        <select x-model="alloc.type"
+                                class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                            <option value="retroactive">Retroactive</option>
+                            <option value="manual">Manual</option>
+                            <option value="award">Award</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                        <input type="text" x-model="alloc.notes" placeholder="Optional notes"
+                               class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <button type="button" @click="removeAllocation(index)"
+                            class="px-2 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </template>
+
+            <button type="button" @click="addAllocation()"
+                    class="inline-flex items-center px-3 py-1.5 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition">
+                <i class="fa-solid fa-plus mr-1.5"></i> Add Allocation
+            </button>
+
+            <input type="hidden" name="allocations_json" :value="JSON.stringify(allocations)">
+        </div>
+
+        <script>
+            function allocationsManager() {
+                const raw = document.querySelector('input[name="allocations_json"][type="hidden"]:not([x-bind\\:value])')
+                let initial = []
+                if (raw && raw.value) {
+                    try { initial = JSON.parse(raw.value) } catch(e) {}
+                    raw.remove()
+                }
+                return {
+                    allocations: initial,
+                    addAllocation() {
+                        this.allocations.push({
+                            program_id: '', program_name: '', amount: 0,
+                            type: 'retroactive', notes: '', org_id: '', org_name: ''
+                        })
+                    },
+                    removeAllocation(index) {
+                        this.allocations.splice(index, 1)
+                    }
+                }
+            }
+        </script>
+
         {{ form.program_ids_json }}
         {{ form.delivery_types_json }}
 

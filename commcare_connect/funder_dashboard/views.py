@@ -130,6 +130,7 @@ class FundEditView(ManagerRequiredMixin, TemplateView):
                 "status": fund.status,
                 "program_ids_json": json.dumps(fund.program_ids),
                 "delivery_types_json": json.dumps(fund.delivery_types),
+                "allocations_json": json.dumps(fund.allocations),
             }
             ctx["form"] = FundForm(initial=initial)
             ctx["is_create"] = False
