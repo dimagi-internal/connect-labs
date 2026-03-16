@@ -227,7 +227,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     user, created = User.objects.update_or_create(
         username=profile_data.get("username"),
         defaults={
-            "email": profile_data.get("email", ""),
+            "email": profile_data.get("email") or None,
             "name": name,
         },
     )
