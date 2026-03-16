@@ -1,5 +1,62 @@
 {% extends "base.html" %}
+
+{% block title %}Data Exports{% endblock %}
+
 {% block content %}
-{% if not bucket_configured %}not configured{% endif %}
-{% for f in files %}{{ f.label }} {{ f.row_count }}{% endfor %}
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+  <div class="mb-6">
+    <h1 class="text-2xl font-semibold text-gray-900">Data Exports</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      CSV backups of workflow runs and audit sessions stored in S3.
+      Download links expire after 15 minutes.
+    </p>
+  </div>
+
+  {% if not bucket_configured %}
+  <div class="rounded-lg bg-yellow-50 border border-yellow-200 p-4 text-sm text-yellow-800">
+    <strong>Not configured.</strong>
+    Set the <code>LABS_EXPORTS_BUCKET</code> environment variable to enable exports.
+  </div>
+
+  {% elif not files %}
+  <div class="rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-600">
+    No export files found yet. Files are created when workflow runs or audit sessions are saved.
+  </div>
+
+  {% else %}
+  <div class="overflow-hidden rounded-lg border border-gray-200 shadow-sm">
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium text-gray-600">File</th>
+          <th class="px-4 py-3 text-right font-medium text-gray-600">Rows</th>
+          <th class="px-4 py-3 text-right font-medium text-gray-600">Size</th>
+          <th class="px-4 py-3 text-left font-medium text-gray-600">Last Updated</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100 bg-white">
+        {% for f in files %}
+        <tr>
+          <td class="px-4 py-3 font-mono text-gray-800">{{ f.label }}</td>
+          <td class="px-4 py-3 text-right text-gray-600">{{ f.row_count }}</td>
+          <td class="px-4 py-3 text-right text-gray-500">{{ f.size_kb }} KB</td>
+          <td class="px-4 py-3 text-gray-500">{{ f.last_updated }}</td>
+          <td class="px-4 py-3 text-right">
+            <a href="{% url 'exports:download' %}?key={{ f.key|urlencode }}"
+               class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md
+                      bg-purple-600 text-white hover:bg-purple-700 transition-colors">
+              <i class="fa-solid fa-download text-xs"></i>
+              Download
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
 {% endblock %}
