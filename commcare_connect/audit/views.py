@@ -29,6 +29,7 @@ from commcare_connect.audit.models import AuditSessionRecord
 from commcare_connect.audit.tables import AuditTable
 from commcare_connect.labs.analysis.data_access import get_flw_names_for_opportunity
 from commcare_connect.labs.analysis.sse_streaming import CeleryTaskStreamView
+from commcare_connect.labs import s3_export
 from commcare_connect.labs.context import get_org_data
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,7 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 )
                 session.data["completed_at"] = timezone.now().isoformat()
                 session = data_access.save_audit_session(session)
+                s3_export.upsert_audit_session(session)
 
                 return JsonResponse({"success": True})
 
@@ -817,6 +819,7 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
                         workflow_run_id=None,  # Created from wizard UI
                     )
                     sessions_created.append({"session_id": session.id, "flw_id": flw_id, "visits": len(flw_visit_ids)})
+                    s3_export.upsert_audit_session(session)
 
                 return JsonResponse(
                     {
@@ -870,6 +873,7 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
                 visit_images=all_visit_images,
                 workflow_run_id=None,  # Created from wizard UI
             )
+            s3_export.upsert_audit_session(session)
 
             # Determine redirect URL
             redirect_url = reverse_lazy("audit:session_list")
