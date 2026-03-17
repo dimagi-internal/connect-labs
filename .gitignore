@@ -331,6 +331,7 @@ commcare_connect/audit/tests/test_connect_staging_api.py
 
 # Browser testing screenshots
 .playwright-mcp/
+screenshots/
 
 # Analysis cache (local development)
 .analysis_cache/
