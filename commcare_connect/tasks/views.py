@@ -422,7 +422,9 @@ def task_bulk_create(request):
 
         data_access.close()
 
-        return JsonResponse({"success": True, "created_count": created_count, "tasks": created_tasks, "errors": errors})
+        return JsonResponse(
+            {"success": True, "created_count": created_count, "tasks": created_tasks, "errors": errors}
+        )
 
     except json.JSONDecodeError:
         return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
@@ -490,7 +492,9 @@ def task_single_create(request):
         return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
     except Exception as e:
         logger.error(f"Error in single task creation: {e}", exc_info=True)
-        return JsonResponse({"success": False, "error": "Failed to create task. Please try again or contact support."}, status=500)
+        return JsonResponse(
+            {"success": False, "error": "Failed to create task. Please try again or contact support."}, status=500
+        )
 
 
 @login_required
@@ -502,23 +506,28 @@ def task_detail_api(request, task_id):
         if not task:
             return JsonResponse({"success": False, "error": "Task not found"}, status=404)
 
-        return JsonResponse({
-            "success": True,
-            "task": {
-                "id": task.id,
-                "title": task.title,
-                "status": task.status,
-                "username": task.task_username,
-                "flw_name": task.flw_name,
-                "priority": task.priority,
-                "description": task.description,
-                "resolution_details": task.resolution_details,
-                "events": task.events,
-            },
-        })
+        return JsonResponse(
+            {
+                "success": True,
+                "task": {
+                    "id": task.id,
+                    "title": task.title,
+                    "status": task.status,
+                    "username": task.task_username,
+                    "flw_name": task.flw_name,
+                    "priority": task.priority,
+                    "description": task.description,
+                    "resolution_details": task.resolution_details,
+                    "events": task.events,
+                },
+            }
+        )
     except Exception as e:
         logger.error(f"Error fetching task detail: {e}", exc_info=True)
-        return JsonResponse({"success": False, "error": "Failed to fetch task details. Please try again or contact support."}, status=500)
+        return JsonResponse(
+            {"success": False, "error": "Failed to fetch task details. Please try again or contact support."},
+            status=500,
+        )
     finally:
         data_access.close()
 

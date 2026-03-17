@@ -14,17 +14,18 @@ def _build_absolute_uri(path):
         domain = "localhost"
     return f"https://{domain}{path}"
 
-from commcare_connect.opportunity.models import (
+
+from commcare_connect.opportunity.models import (  # noqa: E402
     CompletedWork,
     CompletedWorkStatus,
     Opportunity,
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from commcare_connect.organization.models import Organization, UserOrganizationMembership
-from commcare_connect.program.models import ManagedOpportunity, ProgramApplication
-from commcare_connect.utils.tasks import send_mail_async
-from config import celery_app
+from commcare_connect.organization.models import Organization, UserOrganizationMembership  # noqa: E402
+from commcare_connect.program.models import ManagedOpportunity, ProgramApplication  # noqa: E402
+from commcare_connect.utils.tasks import send_mail_async  # noqa: E402
+from config import celery_app  # noqa: E402
 
 
 def send_program_invite_applied_email(application_id):

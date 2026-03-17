@@ -29,8 +29,7 @@ def _get_connect_token() -> str:
     """Read the Connect CLI OAuth token from ~/.commcare-connect/token.json."""
     if not TOKEN_FILE.exists():
         raise FileNotFoundError(
-            f"No Connect CLI token found at {TOKEN_FILE}. "
-            "Run the CLI OAuth flow first to generate a token."
+            f"No Connect CLI token found at {TOKEN_FILE}. " "Run the CLI OAuth flow first to generate a token."
         )
 
     data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
@@ -51,8 +50,7 @@ def _get_connect_token() -> str:
         expires_at = datetime.fromisoformat(data["expires_at"])
         if datetime.now() >= (expires_at - timedelta(minutes=5)):
             raise PermissionError(
-                f"Connect CLI token expired at {expires_at}. "
-                "Run the CLI OAuth flow again to refresh."
+                f"Connect CLI token expired at {expires_at}. " "Run the CLI OAuth flow again to refresh."
             )
 
     token = data.get("access_token")
@@ -82,8 +80,7 @@ async def get_opportunity_apps(opportunity_id: int) -> dict:
         resp = await client.get(url, headers={"Authorization": f"Bearer {token}"})
         if resp.status_code in (401, 403):
             raise PermissionError(
-                f"Connect API auth failed: HTTP {resp.status_code}. "
-                "Your CLI token may have expired."
+                f"Connect API auth failed: HTTP {resp.status_code}. " "Your CLI token may have expired."
             )
         resp.raise_for_status()
         data = resp.json()
@@ -145,8 +142,5 @@ async def resolve_domain_and_app(
             "Use get_opportunity_apps to find the domain for an opportunity."
         )
     if not app_id:
-        raise ValueError(
-            "Provide app_id when using domain directly. "
-            "Use list_apps to find available app IDs."
-        )
+        raise ValueError("Provide app_id when using domain directly. " "Use list_apps to find available app IDs.")
     return domain, app_id

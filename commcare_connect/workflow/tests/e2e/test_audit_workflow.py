@@ -47,9 +47,7 @@ class TestAuditWithAIReviewWorkflow:
         # Select the audit template — it's a submit button inside a <form> in the modal.
         # Scope to the modal (z-50 overlay) to avoid matching the workflow name button on the card.
         modal = page.locator(".fixed.inset-0.z-50")
-        audit_template_btn = modal.locator("button[type='submit']").filter(
-            has_text="Weekly Audit with AI Review"
-        )
+        audit_template_btn = modal.locator("button[type='submit']").filter(has_text="Weekly Audit with AI Review")
         expect(audit_template_btn).to_be_visible()
 
         # Get CSRF token from the form before submitting
@@ -114,8 +112,7 @@ class TestAuditWithAIReviewWorkflow:
         # 10 visits with images: ~2 min API fetch + ~2 min AI review = ~4 min total.
         for attempt in range(60):
             status_resp = page.request.get(
-                f"{live_server_url}/audit/api/audit/task/{task_id}/status/"
-                f"?opportunity_id={opportunity_id}",
+                f"{live_server_url}/audit/api/audit/task/{task_id}/status/" f"?opportunity_id={opportunity_id}",
             )
             assert status_resp.ok, f"status check failed: {status_resp.status}"
             status = status_resp.json()
@@ -135,9 +132,9 @@ class TestAuditWithAIReviewWorkflow:
         page.reload()
         page.wait_for_load_state("domcontentloaded")
         # Wait for either the sessions view or the config form to render
-        page.get_by_text("Audit Sessions Created").or_(
-            page.get_by_text("Visit Selection")
-        ).first.wait_for(timeout=30_000)
+        page.get_by_text("Audit Sessions Created").or_(page.get_by_text("Visit Selection")).first.wait_for(
+            timeout=30_000
+        )
 
         # Check if sessions were created (depends on opportunity having image data)
         sessions_header = page.get_by_text("Audit Sessions Created")

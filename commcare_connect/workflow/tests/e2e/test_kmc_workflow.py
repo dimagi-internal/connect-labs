@@ -47,9 +47,7 @@ class TestKMCLongitudinalWorkflow:
 
         # Select the KMC template — scope to modal to avoid card name conflicts
         modal = page.locator(".fixed.inset-0.z-50")
-        kmc_template_btn = modal.locator("button[type='submit']").filter(
-            has_text="KMC Longitudinal Tracking"
-        )
+        kmc_template_btn = modal.locator("button[type='submit']").filter(has_text="KMC Longitudinal Tracking")
         expect(kmc_template_btn).to_be_visible()
 
         # Get CSRF token and submit via API (avoids Playwright navigation timeout)
@@ -79,7 +77,12 @@ class TestKMCLongitudinalWorkflow:
         # --- Step 3: Verify React dashboard renders ---
         # Capture console errors for debugging transpilation/runtime failures
         console_errors = []
-        page.on("console", lambda msg: console_errors.append(f"[{msg.type}] {msg.text}") if msg.type in ("error", "warning") else None)
+        page.on(
+            "console",
+            lambda msg: console_errors.append(f"[{msg.type}] {msg.text}")
+            if msg.type in ("error", "warning")
+            else None,
+        )
 
         # Wait for Babel transpilation and WorkflowUI to mount.
         # The KMC dashboard shows either KPI cards (when data loads) or
@@ -88,12 +91,11 @@ class TestKMCLongitudinalWorkflow:
         # Also check for "Loading workflow..." (initial Babel loading state).
         #
         # Wait for any of these to confirm React rendered successfully.
-        dashboard_indicator = page.get_by_text("Total Children").or_(
-            page.get_by_text("Loading visit data...")
-        ).or_(
-            page.get_by_text("No KMC visit data found")
-        ).or_(
-            page.get_by_text("Loading workflow...")
+        dashboard_indicator = (
+            page.get_by_text("Total Children")
+            .or_(page.get_by_text("Loading visit data..."))
+            .or_(page.get_by_text("No KMC visit data found"))
+            .or_(page.get_by_text("Loading workflow..."))
         )
         try:
             dashboard_indicator.first.wait_for(timeout=60_000)
@@ -175,9 +177,7 @@ class TestKMCLongitudinalWorkflow:
                 expect(wf_root.get_by_text("Vital Signs")).to_be_visible()
 
                 # Verify the child name tab appeared in navigation
-                child_name_tab = wf_root.locator(
-                    ".border-b.border-gray-200 button"
-                ).nth(2)  # Third tab = child name
+                child_name_tab = wf_root.locator(".border-b.border-gray-200 button").nth(2)  # Third tab = child name
                 expect(child_name_tab).to_be_visible()
 
                 # --- Step 8: Navigate back via tabs ---
@@ -191,9 +191,7 @@ class TestKMCLongitudinalWorkflow:
 
         else:
             # No data — verify the empty/loading state rendered correctly
-            no_data = wf_root.get_by_text("No KMC visit data found").or_(
-                wf_root.get_by_text("Loading visit data...")
-            )
+            no_data = wf_root.get_by_text("No KMC visit data found").or_(wf_root.get_by_text("Loading visit data..."))
             expect(no_data.first).to_be_visible()
 
         # --- Step 9: Cleanup ---
@@ -201,21 +199,17 @@ class TestKMCLongitudinalWorkflow:
         current_url = page.url
         run_id_match = re.search(r"run_id=(\d+)", current_url)
         workflow_id_match = re.search(r"/workflow/(\d+)/run/", current_url)
-        csrf_token = page.evaluate(
-            "document.querySelector('#workflow-root')?.dataset?.csrfToken || ''"
-        )
+        csrf_token = page.evaluate("document.querySelector('#workflow-root')?.dataset?.csrfToken || ''")
         if csrf_token:
             if run_id_match:
                 run_id = run_id_match.group(1)
                 page.request.post(
-                    f"{live_server_url}/labs/workflow/api/run/{run_id}/delete/"
-                    f"?opportunity_id={opportunity_id}",
+                    f"{live_server_url}/labs/workflow/api/run/{run_id}/delete/" f"?opportunity_id={opportunity_id}",
                     headers={"X-CSRFToken": csrf_token},
                 )
             if workflow_id_match:
                 wf_id = workflow_id_match.group(1)
                 page.request.post(
-                    f"{live_server_url}/labs/workflow/api/{wf_id}/delete/"
-                    f"?opportunity_id={opportunity_id}",
+                    f"{live_server_url}/labs/workflow/api/{wf_id}/delete/" f"?opportunity_id={opportunity_id}",
                     headers={"X-CSRFToken": csrf_token},
                 )

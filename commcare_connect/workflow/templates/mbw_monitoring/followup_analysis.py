@@ -388,11 +388,13 @@ def aggregate_visit_status_distribution(
     for vt_key in VISIT_TYPE_KEYS:
         counts = by_type[vt_key]
         total = sum(counts.values())
-        by_visit_type.append({
-            "visit_type": _VISIT_TYPE_KEY_TO_DISPLAY.get(vt_key, vt_key),
-            **counts,
-            "total": total,
-        })
+        by_visit_type.append(
+            {
+                "visit_type": _VISIT_TYPE_KEY_TO_DISPLAY.get(vt_key, vt_key),
+                **counts,
+                "total": total,
+            }
+        )
 
     totals["total"] = sum(totals.values())
     return {"by_visit_type": by_visit_type, "totals": totals}
@@ -433,10 +435,7 @@ def aggregate_mother_metrics(
     mothers = []
     for mother_id, cases in by_mother.items():
         all_visits = _build_visit_details(cases, current_date)
-        has_due_visits = any(
-            v["status"] in (STATUS_DUE_ON_TIME, STATUS_DUE_LATE)
-            for v in all_visits
-        )
+        has_due_visits = any(v["status"] in (STATUS_DUE_ON_TIME, STATUS_DUE_LATE) for v in all_visits)
 
         # Mother metadata from mother case
         mother_case = mother_cases_map.get(mother_id, {})
@@ -451,26 +450,28 @@ def aggregate_mother_metrics(
 
         rate = round((completed / total) * 100) if total > 0 else 0
 
-        mothers.append({
-            "mother_case_id": mother_id,
-            "mother_name": mother_case.get("case_name") or mother_props.get("mother_name", ""),
-            "registration_date": (mother_case.get("date_opened") or "")[:10] or "",
-            "age": mother_props.get("age") or mother_props.get("mother_age", ""),
-            "phone_number": mother_props.get("phone_number") or mother_props.get("contact_phone", ""),
-            "household_size": mother_props.get("household_size", ""),
-            "preferred_time_of_visit": mother_props.get("preferred_time_of_visit", ""),
-            "anc_completion_date": anc_date_by_mother.get(mother_id, ""),
-            "pnc_completion_date": pnc_date_by_mother.get(mother_id, ""),
-            "expected_delivery_date": mother_props.get("expected_delivery_date", ""),
-            "baby_dob": baby_dob_by_mother.get(mother_id, ""),
-            "eligible": is_eligible,
-            "completed": completed,
-            "total": total,
-            "total_visits": len(cases),
-            "follow_up_rate": rate,
-            "has_due_visits": has_due_visits,
-            "visits": all_visits,
-        })
+        mothers.append(
+            {
+                "mother_case_id": mother_id,
+                "mother_name": mother_case.get("case_name") or mother_props.get("mother_name", ""),
+                "registration_date": (mother_case.get("date_opened") or "")[:10] or "",
+                "age": mother_props.get("age") or mother_props.get("mother_age", ""),
+                "phone_number": mother_props.get("phone_number") or mother_props.get("contact_phone", ""),
+                "household_size": mother_props.get("household_size", ""),
+                "preferred_time_of_visit": mother_props.get("preferred_time_of_visit", ""),
+                "anc_completion_date": anc_date_by_mother.get(mother_id, ""),
+                "pnc_completion_date": pnc_date_by_mother.get(mother_id, ""),
+                "expected_delivery_date": mother_props.get("expected_delivery_date", ""),
+                "baby_dob": baby_dob_by_mother.get(mother_id, ""),
+                "eligible": is_eligible,
+                "completed": completed,
+                "total": total,
+                "total_visits": len(cases),
+                "follow_up_rate": rate,
+                "has_due_visits": has_due_visits,
+                "visits": all_visits,
+            }
+        )
 
     # Sort by follow-up rate ascending (worst first)
     mothers.sort(key=lambda m: m["follow_up_rate"])
@@ -484,13 +485,15 @@ def _build_visit_details(cases: list[dict], current_date: date) -> list[dict]:
         props = case.get("properties", {})
         status = calculate_visit_status(case, current_date)
 
-        details.append({
-            "case_id": case.get("case_id"),
-            "visit_type": VISIT_TYPE_DISPLAY.get(props.get("visit_type", ""), props.get("visit_type", "")),
-            "visit_date_scheduled": props.get("visit_date_scheduled"),
-            "visit_expiry_date": props.get("visit_expiry_date"),
-            "status": status,
-        })
+        details.append(
+            {
+                "case_id": case.get("case_id"),
+                "visit_type": VISIT_TYPE_DISPLAY.get(props.get("visit_type", ""), props.get("visit_type", "")),
+                "visit_date_scheduled": props.get("visit_date_scheduled"),
+                "visit_expiry_date": props.get("visit_expiry_date"),
+                "status": status,
+            }
+        )
 
     # Sort by scheduled date, then visit type
     details.sort(key=lambda d: (d.get("visit_date_scheduled") or "", d.get("visit_type", "")))
@@ -545,12 +548,14 @@ def _extract_schedules_from_registration_form(form_dict: dict) -> list[dict]:
             if str(var_visit.get(create_flag_name, "")) != "1":
                 continue  # Visit not created for this mother
 
-        schedules.append({
-            "visit_type": visit_type,
-            "visit_date_scheduled": var_visit.get("visit_date_scheduled", ""),
-            "visit_expiry_date": var_visit.get("visit_expiry_date", ""),
-            "mother_case_id": var_visit.get("mother_case_id", ""),
-        })
+        schedules.append(
+            {
+                "visit_type": visit_type,
+                "visit_date_scheduled": var_visit.get("visit_date_scheduled", ""),
+                "visit_expiry_date": var_visit.get("visit_expiry_date", ""),
+                "mother_case_id": var_visit.get("mother_case_id", ""),
+            }
+        )
     return schedules
 
 
@@ -616,8 +621,7 @@ def extract_mother_metadata_from_forms(
             try:
                 dob = date.fromisoformat(mother_dob)
                 age = str(
-                    current_date.year - dob.year
-                    - ((current_date.month, current_date.day) < (dob.month, dob.day))
+                    current_date.year - dob.year - ((current_date.month, current_date.day) < (dob.month, dob.day))
                 )
             except (ValueError, TypeError):
                 age = md.get("age_in_years_rounded") or md.get("mothers_age") or ""
@@ -642,10 +646,7 @@ def extract_mother_metadata_from_forms(
 
         # Registration date from form metadata
         form_metadata = form_dict.get("metadata", {})
-        registration_date = (
-            form_dict.get("received_on", "")[:10]
-            or (form_metadata.get("timeEnd") or "")[:10]
-        )
+        registration_date = form_dict.get("received_on", "")[:10] or (form_metadata.get("timeEnd") or "")[:10]
 
         metadata_map[mother_case_id] = {
             "case_name": name,
@@ -844,9 +845,14 @@ def build_followup_from_pipeline(
         "[MBW Follow-Up] Step 3: %d completions matched | "
         "skipped: inactive=%d, empty_form=%d, registration=%d, "
         "unmapped_form=%d, no_flag=%d, no_mother_id=%d, no_match=%d",
-        completions_matched, skip_inactive, skip_empty_form,
-        skip_registration, skip_unmapped_form,
-        skip_no_flag, skip_no_mother_id, skip_no_match,
+        completions_matched,
+        skip_inactive,
+        skip_empty_form,
+        skip_registration,
+        skip_unmapped_form,
+        skip_no_flag,
+        skip_no_mother_id,
+        skip_no_match,
     )
     logger.info(
         "[MBW Follow-Up] Step 3 form_name distribution: %s",
@@ -872,8 +878,7 @@ def build_followup_from_pipeline(
     # Log which active FLWs are included vs missing
     missing_flws = active_usernames - set(by_flw.keys())
     logger.info(
-        "[MBW Follow-Up] Result: %d FLWs with visits, %d total visits. "
-        "Active FLWs missing from follow-up: %d %s",
+        "[MBW Follow-Up] Result: %d FLWs with visits, %d total visits. " "Active FLWs missing from follow-up: %d %s",
         len(by_flw),
         sum(len(v) for v in by_flw.values()),
         len(missing_flws),
@@ -1153,25 +1158,25 @@ def compute_flw_performance_by_status(
                     continue  # not yet due past buffer
                 denominator += 1
                 # Count total completed visits for this mother
-                completed = sum(
-                    1 for v in m["visits"] if v["status"].startswith("Completed")
-                )
+                completed = sum(1 for v in m["visits"] if v["status"].startswith("Completed"))
                 if completed >= min_completed:
                     numerator += 1
-            milestone_results[metric_key] = (
-                round(numerator / denominator * 100) if denominator > 0 else 0
-            )
+            milestone_results[metric_key] = round(numerator / denominator * 100) if denominator > 0 else 0
 
-        results.append({
-            "status": FLW_STATUS_DISPLAY.get(status_key, status_key),
-            "status_key": status_key,
-            "num_flws": len(flw_list),
-            "total_cases": total_cases,
-            "total_cases_eligible_at_registration": total_eligible,
-            "total_cases_still_eligible": still_eligible,
-            "pct_still_eligible": round(still_eligible / total_eligible * 100) if total_eligible > 0 else 0,
-            "pct_missed_1_or_less_visits": round(missed_1_or_less / total_eligible * 100) if total_eligible > 0 else 0,
-            **milestone_results,
-        })
+        results.append(
+            {
+                "status": FLW_STATUS_DISPLAY.get(status_key, status_key),
+                "status_key": status_key,
+                "num_flws": len(flw_list),
+                "total_cases": total_cases,
+                "total_cases_eligible_at_registration": total_eligible,
+                "total_cases_still_eligible": still_eligible,
+                "pct_still_eligible": round(still_eligible / total_eligible * 100) if total_eligible > 0 else 0,
+                "pct_missed_1_or_less_visits": round(missed_1_or_less / total_eligible * 100)
+                if total_eligible > 0
+                else 0,
+                **milestone_results,
+            }
+        )
 
     return results

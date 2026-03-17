@@ -20,22 +20,17 @@ from rest_framework.decorators import api_view, authentication_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-# waffle was removed from INSTALLED_APPS during labs simplification
 
 from commcare_connect.opportunity.models import HQApiKey, Opportunity, OpportunityAccess, UserInvite, UserInviteStatus
 from commcare_connect.users.forms import ManualUserOTPForm
 from commcare_connect.utils.db import get_object_or_list_by_uuid_or_int
 from commcare_connect.utils.error_codes import ErrorCodes
-from commcare_connect.utils.permission_const import (
-    ALL_ORG_ACCESS,
-    DEMO_USER_ACCESS,
-    KPI_REPORT_ACCESS,
-    OTP_ACCESS,
-    PRODUCT_FEATURES_ACCESS,
-)
+from commcare_connect.utils.permission_const import DEMO_USER_ACCESS, OTP_ACCESS
 
 from .helpers import create_hq_user_and_link
 from .models import ConnectIDUserLink
+
+# waffle was removed from INSTALLED_APPS during labs simplification
 
 User = get_user_model()
 

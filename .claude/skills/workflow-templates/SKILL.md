@@ -44,6 +44,7 @@ Skip this phase if you already know the CommCare form paths and indicators.
 ## Checklist
 
 Before considering a template complete:
+
 - [ ] Template key is unique
 - [ ] All field paths verified via MCP or CommCare HQ inspection
 - [ ] RENDER_CODE uses `var` (not `const`/`let`) and function is named `WorkflowUI`

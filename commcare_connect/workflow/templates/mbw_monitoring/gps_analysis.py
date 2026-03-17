@@ -395,11 +395,9 @@ def build_result_from_analyzed_visits(
             avg_daily_travel = total_km / len(trailing_7)
 
         # Count mothers with >1 GPS visit (revisit distance denominator)
-        cases_with_revisits = len({
-            v.mother_case_id or v.case_id
-            for v in flw_visits
-            if v.distance_from_prev_case_visit is not None
-        })
+        cases_with_revisits = len(
+            {v.mother_case_id or v.case_id for v in flw_visits if v.distance_from_prev_case_visit is not None}
+        )
 
         flw_summaries.append(
             FLWSummary(
@@ -489,11 +487,9 @@ def analyze_gps_metrics(
             avg_daily_travel = total_km / len(trailing_7)
 
         # Count mothers with >1 GPS visit (revisit distance denominator)
-        cases_with_revisits = len({
-            v.mother_case_id or v.case_id
-            for v in flw_visits
-            if v.distance_from_prev_case_visit is not None
-        })
+        cases_with_revisits = len(
+            {v.mother_case_id or v.case_id for v in flw_visits if v.distance_from_prev_case_visit is not None}
+        )
 
         flw_summaries.append(
             FLWSummary(

@@ -8,8 +8,6 @@ Functions:
 
 from __future__ import annotations
 
-from typing import Any
-
 
 def extract_app_structure(app: dict) -> dict:
     """Extract a clean app structure tree from a raw HQ app definition.
@@ -40,17 +38,21 @@ def extract_app_structure(app: dict) -> dict:
 
         forms = []
         for form in module.get("forms", []):
-            forms.append({
-                "name": _get_name(form),
-                "xmlns": form.get("xmlns", ""),
-                "question_count": len(form.get("questions", [])),
-            })
+            forms.append(
+                {
+                    "name": _get_name(form),
+                    "xmlns": form.get("xmlns", ""),
+                    "question_count": len(form.get("questions", [])),
+                }
+            )
 
-        modules.append({
-            "name": mod_name,
-            "case_type": ct,
-            "forms": forms,
-        })
+        modules.append(
+            {
+                "name": mod_name,
+                "case_type": ct,
+                "forms": forms,
+            }
+        )
 
         if ct and ct not in case_types_seen:
             case_types_seen.add(ct)
@@ -160,10 +162,7 @@ def _process_questions(questions: list[dict]) -> list[dict]:
         # Options for select questions
         options = q.get("options")
         if options:
-            processed["options"] = [
-                {"value": o.get("value", ""), "label": _get_label(o)}
-                for o in options
-            ]
+            processed["options"] = [{"value": o.get("value", ""), "label": _get_label(o)} for o in options]
 
         # Nested questions for groups/repeats
         children = q.get("children")
@@ -174,9 +173,7 @@ def _process_questions(questions: list[dict]) -> list[dict]:
     return result
 
 
-def _build_json_paths(
-    questions: list[dict], prefix: str = "form"
-) -> list[dict]:
+def _build_json_paths(questions: list[dict], prefix: str = "form") -> list[dict]:
     """Build flat list of JSON paths from HQ question definitions.
 
     Maps each question's XForm path to its form submission JSON path.
@@ -207,12 +204,14 @@ def _build_json_paths(
             continue
 
         if json_path:
-            paths.append({
-                "json_path": json_path,
-                "question_path": q_path,
-                "type": q_type,
-                "label": label,
-            })
+            paths.append(
+                {
+                    "json_path": json_path,
+                    "question_path": q_path,
+                    "type": q_type,
+                    "label": label,
+                }
+            )
 
     return paths
 

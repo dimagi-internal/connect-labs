@@ -53,7 +53,7 @@ def _get_decorated_function(view_func, permission_test_function):
     def _inner(request, *args, **kwargs):
         user = request.user
         if not user.is_authenticated:
-            return HttpResponseRedirect("/labs/login/?next={}".format(request.path))
+            return HttpResponseRedirect(f"/labs/login/?next={request.path}")
 
         if not permission_test_function(request):
             raise Http404()

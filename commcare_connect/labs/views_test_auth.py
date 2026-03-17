@@ -74,7 +74,7 @@ def test_auth_view(request):
     # Create or update Django User and log in (mirrors OAuth callback)
     first_name = profile_data.get("first_name", "")
     last_name = profile_data.get("last_name", "")
-    name = "{} {}".format(first_name, last_name).strip() or profile_data.get("username", "")
+    name = f"{first_name} {last_name}".strip() or profile_data.get("username", "")
     defaults = {"name": name}
     email = profile_data.get("email", "")
     if email:
@@ -109,12 +109,8 @@ def test_auth_view(request):
             "success": True,
             "username": profile_data.get("username"),
             "organizations": [
-                {"id": o.get("id"), "slug": o.get("slug"), "name": o.get("name")}
-                for o in organizations
+                {"id": o.get("id"), "slug": o.get("slug"), "name": o.get("name")} for o in organizations
             ],
-            "programs": [
-                {"id": p.get("id"), "name": p.get("name")}
-                for p in programs
-            ],
+            "programs": [{"id": p.get("id"), "name": p.get("name")} for p in programs],
         }
     )

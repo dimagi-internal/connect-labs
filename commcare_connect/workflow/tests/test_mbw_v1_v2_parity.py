@@ -38,10 +38,7 @@ if not settings.configured:
     )
     django.setup()
 
-import pytest  # noqa: E402
-
 from commcare_connect.workflow.job_handlers.mbw_monitoring import (  # noqa: E402
-    _PipelineRowAdapter,
     _adapt_rows,
     _build_gps_visit_dicts,
     _compute_ebf_by_flw,
@@ -53,10 +50,10 @@ from commcare_connect.workflow.templates.mbw_monitoring.data_transforms import (
     extract_per_mother_fields,
 )
 
-
 # =============================================================================
 # Test Fixtures — realistic MBW data
 # =============================================================================
+
 
 def _make_visit_rows():
     """Create VisitRow-like objects as v1's pipeline would produce.
@@ -190,9 +187,7 @@ def _serialize_visit_row(row) -> dict:
         "computed": dict(row.computed),
         # Pipeline SSE also includes metadata
         "metadata": {
-            "location": (
-                f"{row.latitude} {row.longitude}" if row.latitude is not None else None
-            ),
+            "location": (f"{row.latitude} {row.longitude}" if row.latitude is not None else None),
         },
     }
 
@@ -227,7 +222,7 @@ class TestGPSTransformationParity:
         # v1 filters by active_usernames and lowercases; v2 doesn't filter
         # but preserves username. For parity, compare lowercased.
         v2_usernames_lower = [u.lower() for u in v2_usernames]
-        assert v1_usernames == v2_usernames_lower[:len(v1_usernames)]
+        assert v1_usernames == v2_usernames_lower[: len(v1_usernames)]
 
     def test_gps_dict_computed_fields_match(self):
         """Both paths produce identical computed dicts for GPS analysis."""
@@ -236,12 +231,18 @@ class TestGPSTransformationParity:
 
         # Compare computed fields for each visit
         for v1, v2 in zip(v1_dicts, v2_dicts):
-            for key in ["gps_location", "case_id", "mother_case_id",
-                        "entity_name", "visit_datetime", "form_name",
-                        "app_build_version"]:
-                assert v1["computed"].get(key) == v2["computed"].get(key), (
-                    f"Mismatch on computed['{key}']: v1={v1['computed'].get(key)} vs v2={v2['computed'].get(key)}"
-                )
+            for key in [
+                "gps_location",
+                "case_id",
+                "mother_case_id",
+                "entity_name",
+                "visit_datetime",
+                "form_name",
+                "app_build_version",
+            ]:
+                assert v1["computed"].get(key) == v2["computed"].get(
+                    key
+                ), f"Mismatch on computed['{key}']: v1={v1['computed'].get(key)} vs v2={v2['computed'].get(key)}"
 
     def test_gps_dict_metadata_location_match(self):
         """Both paths produce identical metadata.location strings."""
@@ -255,9 +256,7 @@ class TestGPSTransformationParity:
 
     def test_gps_analysis_produces_identical_results(self):
         """Full GPS analysis produces identical results from both paths."""
-        from commcare_connect.workflow.templates.mbw_monitoring.gps_analysis import (
-            analyze_gps_metrics,
-        )
+        from commcare_connect.workflow.templates.mbw_monitoring.gps_analysis import analyze_gps_metrics
 
         flw_names = {"flw_alpha": "FLW Alpha"}
         v1_dicts = build_gps_visit_dicts(self.visit_rows, self.active_usernames)
@@ -366,9 +365,9 @@ class TestPipelineRowAdapterParity:
     def test_computed_access(self):
         for orig, adapted in zip(self.visit_rows, self.adapted_rows):
             for key in orig.computed:
-                assert adapted.computed.get(key) == orig.computed.get(key), (
-                    f"computed['{key}']: orig={orig.computed.get(key)} vs adapted={adapted.computed.get(key)}"
-                )
+                assert adapted.computed.get(key) == orig.computed.get(
+                    key
+                ), f"computed['{key}']: orig={orig.computed.get(key)} vs adapted={adapted.computed.get(key)}"
 
     def test_visit_date_access(self):
         for orig, adapted in zip(self.visit_rows, self.adapted_rows):
@@ -387,25 +386,19 @@ class TestFollowupAnalysisParity:
 
     def test_build_followup_produces_same_structure(self):
         """build_followup_from_pipeline produces identical visit_cases_by_flw."""
-        from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
-            build_followup_from_pipeline,
-        )
+        from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import build_followup_from_pipeline
 
-        v1_cases = build_followup_from_pipeline(
-            self.visit_rows, self.active_usernames
-        )
-        v2_cases = build_followup_from_pipeline(
-            _adapt_rows(self.serialized_rows), self.active_usernames
-        )
+        v1_cases = build_followup_from_pipeline(self.visit_rows, self.active_usernames)
+        v2_cases = build_followup_from_pipeline(_adapt_rows(self.serialized_rows), self.active_usernames)
 
         # Same FLW keys
         assert set(v1_cases.keys()) == set(v2_cases.keys())
 
         # Same number of cases per FLW
         for flw in v1_cases:
-            assert len(v1_cases[flw]) == len(v2_cases[flw]), (
-                f"FLW {flw}: v1 has {len(v1_cases[flw])} cases, v2 has {len(v2_cases[flw])}"
-            )
+            assert len(v1_cases[flw]) == len(
+                v2_cases[flw]
+            ), f"FLW {flw}: v1 has {len(v1_cases[flw])} cases, v2 has {len(v2_cases[flw])}"
 
     def test_aggregate_flw_followup_matches(self):
         """aggregate_flw_followup produces identical summaries."""
@@ -416,12 +409,8 @@ class TestFollowupAnalysisParity:
 
         current_date = date(2024, 2, 20)
 
-        v1_cases = build_followup_from_pipeline(
-            self.visit_rows, self.active_usernames
-        )
-        v2_cases = build_followup_from_pipeline(
-            _adapt_rows(self.serialized_rows), self.active_usernames
-        )
+        v1_cases = build_followup_from_pipeline(self.visit_rows, self.active_usernames)
+        v2_cases = build_followup_from_pipeline(_adapt_rows(self.serialized_rows), self.active_usernames)
 
         v1_followup = aggregate_flw_followup(v1_cases, current_date, self.flw_names)
         v2_followup = aggregate_flw_followup(v2_cases, current_date, self.flw_names)
@@ -442,12 +431,8 @@ class TestFollowupAnalysisParity:
 
         current_date = date(2024, 2, 20)
 
-        v1_cases = build_followup_from_pipeline(
-            self.visit_rows, self.active_usernames
-        )
-        v2_cases = build_followup_from_pipeline(
-            _adapt_rows(self.serialized_rows), self.active_usernames
-        )
+        v1_cases = build_followup_from_pipeline(self.visit_rows, self.active_usernames)
+        v2_cases = build_followup_from_pipeline(_adapt_rows(self.serialized_rows), self.active_usernames)
 
         v1_dist = aggregate_visit_status_distribution(v1_cases, current_date)
         v2_dist = aggregate_visit_status_distribution(v2_cases, current_date)
@@ -467,12 +452,8 @@ class TestEndToEndJobHandlerParity:
 
     def test_gps_data_matches(self):
         """GPS data from job handler matches v1 computation."""
-        from commcare_connect.workflow.templates.mbw_monitoring.gps_analysis import (
-            analyze_gps_metrics,
-        )
-        from commcare_connect.workflow.templates.mbw_monitoring.serializers import (
-            serialize_flw_summary,
-        )
+        from commcare_connect.workflow.templates.mbw_monitoring.gps_analysis import analyze_gps_metrics
+        from commcare_connect.workflow.templates.mbw_monitoring.serializers import serialize_flw_summary
 
         # V1 path
         v1_gps_dicts = build_gps_visit_dicts(self.visit_rows, self.active_usernames)
@@ -503,9 +484,9 @@ class TestEndToEndJobHandlerParity:
                     # Compare length and structure
                     assert len(v1_flw[key]) == len(v2_flw[key])
                 else:
-                    assert v1_flw[key] == v2_flw[key], (
-                        f"GPS FLW summary mismatch on '{key}': v1={v1_flw[key]} vs v2={v2_flw[key]}"
-                    )
+                    assert (
+                        v1_flw[key] == v2_flw[key]
+                    ), f"GPS FLW summary mismatch on '{key}': v1={v1_flw[key]} vs v2={v2_flw[key]}"
 
     def test_followup_data_matches(self):
         """Follow-up data from job handler matches v1 computation."""
@@ -518,16 +499,12 @@ class TestEndToEndJobHandlerParity:
         current_date = date(2024, 2, 20)
 
         # V1 path
-        v1_cases = build_followup_from_pipeline(
-            self.visit_rows, self.active_usernames
-        )
+        v1_cases = build_followup_from_pipeline(self.visit_rows, self.active_usernames)
         v1_followup = aggregate_flw_followup(v1_cases, current_date, self.flw_names)
         v1_dist = aggregate_visit_status_distribution(v1_cases, current_date)
 
         # V2 path
-        v2_cases = build_followup_from_pipeline(
-            _adapt_rows(self.serialized_rows), self.active_usernames
-        )
+        v2_cases = build_followup_from_pipeline(_adapt_rows(self.serialized_rows), self.active_usernames)
         v2_followup = aggregate_flw_followup(v2_cases, current_date, self.flw_names)
         v2_dist = aggregate_visit_status_distribution(v2_cases, current_date)
 
@@ -551,13 +528,12 @@ class TestEndToEndJobHandlerParity:
         current_date = date(2024, 2, 20)
 
         # V1 path
-        v1_cases = build_followup_from_pipeline(
-            self.visit_rows, self.active_usernames
-        )
+        v1_cases = build_followup_from_pipeline(self.visit_rows, self.active_usernames)
         v1_per_mother = extract_per_mother_fields(self.visit_rows)
         v1_mother_meta = extract_mother_metadata_from_forms([], current_date=current_date)
         v1_quality = compute_overview_quality_metrics(
-            v1_cases, v1_mother_meta,
+            v1_cases,
+            v1_mother_meta,
             v1_per_mother["parity_by_mother"],
             anc_date_by_mother=v1_per_mother["anc_date_by_mother"],
             pnc_date_by_mother=v1_per_mother["pnc_date_by_mother"],
@@ -569,7 +545,8 @@ class TestEndToEndJobHandlerParity:
         v2_per_mother = _extract_per_mother_fields(adapted)
         v2_mother_meta = extract_mother_metadata_from_forms([], current_date=current_date)
         v2_quality = compute_overview_quality_metrics(
-            v2_cases, v2_mother_meta,
+            v2_cases,
+            v2_mother_meta,
             v2_per_mother["parity_by_mother"],
             anc_date_by_mother=v2_per_mother["anc_date_by_mother"],
             pnc_date_by_mother=v2_per_mother["pnc_date_by_mother"],

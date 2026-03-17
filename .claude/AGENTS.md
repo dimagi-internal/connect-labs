@@ -100,14 +100,22 @@ Structured audits of FLW visits with AI-powered reviews.
 #### Audit API Contracts (used by workflow templates)
 
 **Create async** `POST /audit/api/audit/create-async/`
+
 ```json
-{ "opportunities": [{"id": 1, "name": "..."}], "criteria": {
+{
+  "opportunities": [{ "id": 1, "name": "..." }],
+  "criteria": {
     "audit_type": "date_range|last_n_per_opp",
-    "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD",
-    "count_per_opp": 10, "sample_percentage": 100,
-    "related_fields": [{"image_path": "...", "filter_by_image": true}]
-  }, "workflow_run_id": 123 }
+    "start_date": "YYYY-MM-DD",
+    "end_date": "YYYY-MM-DD",
+    "count_per_opp": 10,
+    "sample_percentage": 100,
+    "related_fields": [{ "image_path": "...", "filter_by_image": true }]
+  },
+  "workflow_run_id": 123
+}
 ```
+
 Response: `{"success": true, "task_id": "..."}`. Task result has `{"sessions": [{"id", "title", "visits", "images"}]}`.
 
 **Bulk data** `GET /audit/api/<session_id>/bulk-data/`
@@ -191,6 +199,7 @@ TEMPLATE = {
 **Registration:** `__init__.py` auto-discovers via `pkgutil.iter_modules`. Also has explicit re-exports at the bottom — **add new templates to both the `from . import` line and `__all__`**.
 
 **JSX-in-Python rules:**
+
 - Cannot use `"""` inside `RENDER_CODE` (Python string delimiter conflict)
 - Inner components must be defined BEFORE they are used (no hoisting)
 - State for child components is hoisted to outer `WorkflowUI` so it persists across re-renders

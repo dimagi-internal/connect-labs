@@ -67,9 +67,17 @@ PIPELINE_SCHEMAS = [
                     "path": "form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
                     "aggregation": "first",
                 },
-                {"name": "anc_completion_date", "path": "form.visit_completion.anc_completion_date", "aggregation": "first"},
+                {
+                    "name": "anc_completion_date",
+                    "path": "form.visit_completion.anc_completion_date",
+                    "aggregation": "first",
+                },
                 {"name": "pnc_completion_date", "path": "form.pnc_completion_date", "aggregation": "first"},
-                {"name": "baby_dob", "path": "form.capture_the_following_birth_details.baby_dob", "aggregation": "first"},
+                {
+                    "name": "baby_dob",
+                    "path": "form.capture_the_following_birth_details.baby_dob",
+                    "aggregation": "first",
+                },
                 {
                     "name": "app_build_version",
                     "path": "form.meta.app_build_version",

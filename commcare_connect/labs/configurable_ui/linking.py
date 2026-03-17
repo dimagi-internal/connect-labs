@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 
 
-
 @dataclass
 class LinkingConfig:
     """Configuration for how to link visits to children."""
