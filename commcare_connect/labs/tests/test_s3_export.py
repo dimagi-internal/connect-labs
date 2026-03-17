@@ -1,17 +1,16 @@
 """Tests for labs/s3_export.py — S3 CSV upsert utility."""
 import csv
 import io
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
 from botocore.exceptions import ClientError
 
 from commcare_connect.audit.models import AuditSessionRecord
 from commcare_connect.labs import s3_export
 from commcare_connect.workflow.data_access import WorkflowRunRecord
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _make_run(run_id=1, status="in_progress", opportunity_id=42, username="testuser"):
     """Build a minimal WorkflowRunRecord from a dict."""
@@ -76,9 +75,7 @@ def _csv_body(rows: list[dict], fieldnames: list[str]) -> bytes:
 
 
 def _no_such_key_error():
-    err = ClientError(
-        {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "GetObject"
-    )
+    err = ClientError({"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "GetObject")
     return err
 
 

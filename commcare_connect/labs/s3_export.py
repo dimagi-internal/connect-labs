@@ -124,7 +124,9 @@ def _write_rows(s3_client, bucket: str, key: str, rows: dict, fieldnames: list[s
     )
 
 
-def upsert_workflow_run(run, opportunity_name: str = "", definition_name: str = "", template_type: str = "", username: str = "") -> None:
+def upsert_workflow_run(
+    run, opportunity_name: str = "", definition_name: str = "", template_type: str = "", username: str = ""
+) -> None:
     """Upsert one WorkflowRunRecord row into workflow_runs.csv on S3.
 
     Existing values for opportunity_name, definition_name, template_type,

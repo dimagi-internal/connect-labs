@@ -27,9 +27,9 @@ from commcare_connect.audit.analysis_config import extract_images_with_question_
 from commcare_connect.audit.data_access import AuditDataAccess
 from commcare_connect.audit.models import AuditSessionRecord
 from commcare_connect.audit.tables import AuditTable
+from commcare_connect.labs import s3_export
 from commcare_connect.labs.analysis.data_access import get_flw_names_for_opportunity
 from commcare_connect.labs.analysis.sse_streaming import CeleryTaskStreamView
-from commcare_connect.labs import s3_export
 from commcare_connect.labs.context import get_org_data
 
 logger = logging.getLogger(__name__)
