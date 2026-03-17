@@ -669,6 +669,7 @@ def update_state_api(request, run_id):
         updated_run = data_access.update_run_state(run_id, new_state)
 
         if updated_run:
+            s3_export.upsert_workflow_run(updated_run)
             return JsonResponse(
                 {
                     "success": True,
@@ -814,8 +815,6 @@ def complete_run_api(request, run_id):
 
         if not result:
             return JsonResponse({"error": "Failed to update run"}, status=500)
-
-        s3_export.upsert_workflow_run(result)
 
         return JsonResponse(
             {
