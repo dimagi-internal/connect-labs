@@ -2,6 +2,17 @@
 Token Manager for CommCare Connect OAuth CLI tokens.
 
 Handles secure storage, loading, and validation of OAuth tokens for CLI usage.
+Supports multiple named profiles with an active profile concept.
+
+File format (v2):
+{
+    "_version": 2,
+    "_active_profile": "jjackson",
+    "profiles": {
+        "jjackson": { "access_token": "...", ... },
+        "test-user": { "access_token": "...", ... }
+    }
+}
 """
 
 import json
@@ -14,58 +25,106 @@ class TokenManager:
     """
     Manages OAuth token storage and retrieval for CLI tools.
 
-    Tokens are stored in JSON format with expiration tracking.
+    Tokens are stored in a versioned JSON file supporting multiple named profiles.
+    When no profile is specified, the active profile is used.
     """
 
-    def __init__(self, token_file: str = None):
+    def __init__(self, token_file: str = None, profile: str | None = None):
         """
         Initialize token manager.
 
         Args:
             token_file: Path to token file. Defaults to ~/.commcare-connect/token.json
+            profile: Named profile to use. None means use the active profile.
         """
         if token_file:
             self.token_file = Path(token_file)
         else:
-            # Default: Store in user's home directory
             config_dir = Path.home() / ".commcare-connect"
             config_dir.mkdir(exist_ok=True)
             self.token_file = config_dir / "token.json"
 
+        self._profile = profile
+
+    def _load_store(self) -> dict:
+        """Load the full token store, migrating v1 format if needed."""
+        if not self.token_file.exists():
+            return {"_version": 2, "_active_profile": None, "profiles": {}}
+
+        try:
+            with open(self.token_file) as f:
+                data = json.load(f)
+        except Exception:
+            return {"_version": 2, "_active_profile": None, "profiles": {}}
+
+        if "_version" not in data:
+            return self._migrate_v1(data)
+
+        return data
+
+    def _migrate_v1(self, data: dict) -> dict:
+        """Migrate a v1 flat token dict to v2 multi-profile format."""
+        user_profile = data.get("user_profile", {})
+        profile_name = user_profile.get("username", "default")
+
+        store = {
+            "_version": 2,
+            "_active_profile": profile_name,
+            "profiles": {
+                profile_name: data,
+            },
+        }
+
+        self._save_store(store)
+        return store
+
+    def _save_store(self, store: dict) -> None:
+        """Write the full token store to disk."""
+        self.token_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.token_file, "w") as f:
+            json.dump(store, f, indent=2)
+        os.chmod(self.token_file, 0o600)
+
+    def _resolve_profile(self, store: dict) -> str | None:
+        """Determine which profile name to use."""
+        if self._profile:
+            return self._profile
+        return store.get("_active_profile")
+
     def save_token(self, token_data: dict, user_profile: dict | None = None) -> bool:
         """
-        Save OAuth token to file with expiration timestamp and optional user profile.
+        Save OAuth token under the resolved profile.
 
         Args:
             token_data: Token response from OAuth provider
-            user_profile: Optional user profile dict with keys: id, username, email, first_name, last_name
+            user_profile: Optional user profile dict
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Calculate expiration time if expires_in is provided
             if "expires_in" in token_data:
                 expires_at = (datetime.now() + timedelta(seconds=token_data["expires_in"])).isoformat()
                 token_data["expires_at"] = expires_at
 
-            # Add saved timestamp
             token_data["saved_at"] = datetime.now().isoformat()
 
-            # Add user profile if provided
             if user_profile:
                 token_data["user_profile"] = user_profile
 
-            # Ensure parent directory exists
-            self.token_file.parent.mkdir(parents=True, exist_ok=True)
+            store = self._load_store()
 
-            # Write token to file
-            with open(self.token_file, "w") as f:
-                json.dump(token_data, f, indent=2)
+            # Determine profile name
+            profile_name = self._profile
+            if not profile_name:
+                # Auto-detect from user_profile or token_data
+                up = user_profile or token_data.get("user_profile", {})
+                profile_name = up.get("username", "default")
 
-            # Set restrictive permissions (owner read/write only)
-            os.chmod(self.token_file, 0o600)
+            store["profiles"][profile_name] = token_data
+            store["_active_profile"] = profile_name
 
+            self._save_store(store)
             return True
         except Exception as e:
             print(f"Failed to save token: {e}")
@@ -73,17 +132,17 @@ class TokenManager:
 
     def load_token(self) -> dict | None:
         """
-        Load OAuth token from file.
+        Load OAuth token for the resolved profile.
 
         Returns:
-            Token data dict or None if file doesn't exist or is invalid
+            Token data dict or None if not found
         """
         try:
-            if not self.token_file.exists():
+            store = self._load_store()
+            profile_name = self._resolve_profile(store)
+            if not profile_name:
                 return None
-
-            with open(self.token_file) as f:
-                return json.load(f)
+            return store["profiles"].get(profile_name)
         except Exception:
             return None
 
@@ -99,10 +158,8 @@ class TokenManager:
         if not token_data:
             return None
 
-        # Check if token has expired
         if "expires_at" in token_data:
             expires_at = datetime.fromisoformat(token_data["expires_at"])
-            # Add 5 minute buffer before expiration
             if datetime.now() >= (expires_at - timedelta(minutes=5)):
                 return None
 
@@ -119,14 +176,25 @@ class TokenManager:
 
     def clear_token(self) -> bool:
         """
-        Delete the stored token file.
+        Remove the resolved profile from the store.
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            if self.token_file.exists():
-                self.token_file.unlink()
+            store = self._load_store()
+            profile_name = self._resolve_profile(store)
+            if not profile_name:
+                return True
+
+            store["profiles"].pop(profile_name, None)
+
+            # If we removed the active profile, pick another or set None
+            if store["_active_profile"] == profile_name:
+                remaining = list(store["profiles"].keys())
+                store["_active_profile"] = remaining[0] if remaining else None
+
+            self._save_store(store)
             return True
         except Exception:
             return False
@@ -151,7 +219,6 @@ class TokenManager:
             "is_valid": self.get_valid_token() is not None,
         }
 
-        # Calculate time remaining
         if "expires_at" in token_data:
             expires_at = datetime.fromisoformat(token_data["expires_at"])
             now = datetime.now()
@@ -162,6 +229,62 @@ class TokenManager:
                 info["expires_in_seconds"] = 0
 
         return info
+
+    def list_profiles(self) -> list[dict]:
+        """
+        List all stored profiles with metadata.
+
+        Returns:
+            List of dicts with profile name, active status, and token info
+        """
+        store = self._load_store()
+        active = store.get("_active_profile")
+        result = []
+
+        for name, token_data in store.get("profiles", {}).items():
+            up = token_data.get("user_profile", {})
+            result.append(
+                {
+                    "name": name,
+                    "active": name == active,
+                    "username": up.get("username", ""),
+                    "email": up.get("email", ""),
+                    "saved_at": token_data.get("saved_at"),
+                    "is_expired": self._is_token_expired(token_data),
+                }
+            )
+
+        return result
+
+    def set_active_profile(self, profile_name: str) -> bool:
+        """
+        Switch the active profile.
+
+        Args:
+            profile_name: Name of the profile to activate
+
+        Returns:
+            True if successful, False if profile doesn't exist
+        """
+        store = self._load_store()
+        if profile_name not in store["profiles"]:
+            return False
+        store["_active_profile"] = profile_name
+        self._save_store(store)
+        return True
+
+    def get_active_profile_name(self) -> str | None:
+        """Return the name of the currently active profile."""
+        store = self._load_store()
+        return store.get("_active_profile")
+
+    @staticmethod
+    def _is_token_expired(token_data: dict) -> bool:
+        """Check if a token data dict is expired."""
+        if "expires_at" not in token_data:
+            return False
+        expires_at = datetime.fromisoformat(token_data["expires_at"])
+        return datetime.now() >= (expires_at - timedelta(minutes=5))
 
 
 def get_or_refresh_token(

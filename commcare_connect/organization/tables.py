@@ -2,8 +2,8 @@ import django_tables2 as tables
 from django.utils.html import format_html
 from django_tables2 import columns
 
-from commcare_connect.utils.tables import IndexColumn
 from commcare_connect.organization.models import UserOrganizationMembership
+from commcare_connect.utils.tables import IndexColumn
 
 
 class OrgMemberTable(tables.Table):

@@ -135,7 +135,7 @@ def run_agent(
             if access_token:
                 import time
 
-                # Store token in session format expected by SolicitationDataAccess
+                # Store token in session format expected by SolicitationsDataAccess
                 self.session["labs_oauth"] = {
                     "access_token": access_token,
                     "expires_at": time.time() + 3600,  # 1 hour from now

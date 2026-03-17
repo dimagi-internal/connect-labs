@@ -96,7 +96,7 @@ In `config/settings/base.py`:
 **Step 6: Verify tests pass**
 
 ```bash
-pytest commcare_connect/labs/ commcare_connect/audit/ commcare_connect/tasks/ commcare_connect/workflow/ commcare_connect/ai/ commcare_connect/solicitations/ commcare_connect/coverage/ commcare_connect/solicitations_new/ -x --ds=config.settings.test -o "addopts="
+pytest commcare_connect/labs/ commcare_connect/audit/ commcare_connect/tasks/ commcare_connect/workflow/ commcare_connect/ai/ commcare_connect/solicitations/ commcare_connect/coverage/ commcare_connect/solicitations/ -x --ds=config.settings.test -o "addopts="
 ```
 
 Expected: PASS (no labs code depends on removed apps)
@@ -675,7 +675,7 @@ In `.github/workflows/ci.yml`, update the pytest step to:
 ```yaml
       - name: Run tests
         run: |
-          pytest commcare_connect/labs/ commcare_connect/audit/ commcare_connect/tasks/ commcare_connect/workflow/ commcare_connect/ai/ commcare_connect/solicitations/ commcare_connect/coverage/ commcare_connect/solicitations_new/ -x
+          pytest commcare_connect/labs/ commcare_connect/audit/ commcare_connect/tasks/ commcare_connect/workflow/ commcare_connect/ai/ commcare_connect/solicitations/ commcare_connect/coverage/ commcare_connect/solicitations/ -x
 ```
 
 **Step 4: Clean up config/urls.py**

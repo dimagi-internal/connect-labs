@@ -1,131 +1,121 @@
 {% extends "base.html" %}
-{% load static %}
-
-{% block title %}Manage Solicitations - Solicitations Lab{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8">
-    <div class="mb-8">
-        <a href="{% url 'solicitations:home' %}" class="text-indigo-600 hover:text-indigo-800 font-semibold">
-            ← Back to Solicitations Home
-        </a>
-    </div>
+<div class="max-w-screen-xl mx-auto px-4 py-6">
 
-    <div class="flex justify-between items-center mb-8">
-        <div>
-            <h1 class="text-3xl font-bold text-gray-900 mb-2">My Solicitations</h1>
-            <p class="text-gray-600">Solicitations you've created</p>
-        </div>
-        {% if has_context %}
-            <a href="{% url 'solicitations:create' %}"
-               class="button button-md primary-dark">
-                <i class="fa-solid fa-plus mr-2"></i>
-                Create New Solicitation
-            </a>
-        {% endif %}
-    </div>
-
-    {% if solicitations %}
-        <div class="space-y-4">
-            {% for solicitation in solicitations %}
-                <div class="bg-white rounded-lg shadow hover:shadow-md transition p-6">
-                    <div class="flex items-start justify-between">
-                        <div class="flex-1">
-                            <div class="flex items-center gap-3 mb-2">
-                                <h3 class="text-xl font-semibold text-gray-900">{{ solicitation.title }}</h3>
-                                <span class="px-3 py-1 text-sm font-semibold rounded-full
-                                    {% if solicitation.data.status == 'active' %}bg-green-100 text-green-800
-                                    {% elif solicitation.data.status == 'draft' %}bg-gray-100 text-gray-800
-                                    {% else %}bg-red-100 text-red-800{% endif %}">
-                                    {{ solicitation.data.status|upper }}
-                                </span>
-                                <span class="px-3 py-1 text-sm font-semibold bg-indigo-100 text-indigo-800 rounded-full">
-                                    {{ solicitation.data.solicitation_type|upper }}
-                                </span>
-                            </div>
-                            <p class="text-gray-600 mb-3">{{ solicitation.data.description|truncatewords:40 }}</p>
-                            <div class="text-sm text-gray-500 space-y-1">
-                                <div><strong>Program ID:</strong> {{ solicitation.program_id }}</div>
-                                {% if solicitation.date_created %}
-                                    <div><strong>Created:</strong> {{ solicitation.date_created|date:"M d, Y" }}</div>
-                                {% endif %}
-                                {% if solicitation.data.application_deadline %}
-                                    <div><strong>Deadline:</strong> {{ solicitation.data.application_deadline }}</div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="ml-4 flex flex-col gap-2">
-                            <a href="{% url 'solicitations:solicitation_responses' solicitation_pk=solicitation.pk %}"
-                               class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-center font-semibold">
-                                <i class="fa-solid fa-inbox mr-1"></i>
-                                Responses
-                            </a>
-                            <a href="{% url 'solicitations:edit' pk=solicitation.pk %}"
-                               class="px-4 py-2 bg-white border-2 border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 transition text-center font-semibold">
-                                <i class="fa-solid fa-edit mr-1"></i>
-                                Edit
-                            </a>
-                            <a href="{% url 'solicitations:detail' pk=solicitation.pk %}"
-                               class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-center font-semibold">
-                                <i class="fa-solid fa-eye mr-1"></i>
-                                View
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-
-        {% if is_paginated %}
-            <div class="mt-8 flex justify-center">
-                <nav class="flex gap-2">
-                    {% if page_obj.has_previous %}
-                        <a href="?page=1" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50">First</a>
-                        <a href="?page={{ page_obj.previous_page_number }}" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50">Previous</a>
-                    {% endif %}
-
-                    <span class="px-4 py-2 bg-indigo-600 text-white rounded-lg">
-                        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-                    </span>
-
-                    {% if page_obj.has_next %}
-                        <a href="?page={{ page_obj.next_page_number }}" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50">Next</a>
-                        <a href="?page={{ page_obj.paginator.num_pages }}" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50">Last</a>
-                    {% endif %}
-                </nav>
+    <!-- Page Header -->
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-semibold text-brand-deep-purple mb-2">Manage Solicitations</h1>
+                <p class="text-sm text-gray-600">Create, edit, and manage your solicitations and review responses.</p>
             </div>
-        {% endif %}
+            <a href="{% url 'solicitations:create' %}"
+               class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-plus mr-2"></i>
+                Create Solicitation
+            </a>
+        </div>
+    </div>
+
+    {% if not has_context %}
+        <!-- No Context Selected -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-12 text-center">
+            <i class="fa-solid fa-building text-5xl text-blue-400 mb-4"></i>
+            <h3 class="text-xl font-semibold text-blue-900 mb-2">No program selected</h3>
+            <p class="text-blue-700 mb-6">Please select a program from the context selector above to view and manage solicitations.</p>
+        </div>
+    {% elif solicitations %}
+        <!-- Solicitations Table -->
+        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deadline</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Responses</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for solicitation in solicitations %}
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="px-6 py-4">
+                                <div class="text-sm font-medium text-gray-900">{{ solicitation.title }}</div>
+                                <div class="text-sm text-gray-500">{{ solicitation.description|truncatewords:12 }}</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="badge badge-sm {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
+                                    {{ solicitation.solicitation_type|upper }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {% if solicitation.status == 'active' %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>
+                                        Active
+                                    </span>
+                                {% elif solicitation.status == 'draft' %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                        <span class="w-1.5 h-1.5 bg-gray-500 rounded-full mr-1.5"></span>
+                                        Draft
+                                    </span>
+                                {% elif solicitation.status == 'closed' %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                        <span class="w-1.5 h-1.5 bg-red-500 rounded-full mr-1.5"></span>
+                                        Closed
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                        {{ solicitation.status|title }}
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {% if solicitation.application_deadline %}
+                                    {{ solicitation.application_deadline|date:"M d, Y" }}
+                                {% else %}
+                                    <span class="text-gray-400">No deadline</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
+                                    <i class="fa-solid fa-inbox mr-1 text-xs"></i>
+                                    {{ solicitation.response_count }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+                                <div class="flex items-center justify-end gap-3">
+                                    <a href="{% url 'solicitations:edit' pk=solicitation.pk %}"
+                                       class="text-indigo-600 hover:text-indigo-900 font-medium">
+                                        <i class="fa-solid fa-edit mr-1"></i> Edit
+                                    </a>
+                                    <a href="{% url 'solicitations:responses_list' pk=solicitation.pk %}"
+                                       class="text-green-600 hover:text-green-900 font-medium">
+                                        <i class="fa-solid fa-inbox mr-1"></i> Responses
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     {% else %}
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-12 text-center">
-            <svg class="w-16 h-16 text-blue-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            {% if not has_context %}
-                <h3 class="text-xl font-semibold text-blue-900 mb-2">No organization or program selected</h3>
-                <p class="text-blue-700 mb-6">Please select an organization or program from the context selector above to view solicitations.</p>
-            {% else %}
-                <h3 class="text-xl font-semibold text-blue-900 mb-2">No solicitations yet</h3>
-                <p class="text-blue-700 mb-6">Create your first solicitation to get started</p>
-                <a href="{% url 'solicitations:create' %}"
-                   class="inline-block bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition font-semibold">
-                    Create Solicitation
-                </a>
-            {% endif %}
+        <!-- Empty State -->
+        <div class="bg-white rounded-lg shadow-sm p-12 text-center">
+            <i class="fa-solid fa-file-circle-plus text-5xl text-gray-300 mb-4"></i>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">No solicitations yet</h3>
+            <p class="text-gray-600 mb-6">Create your first solicitation to get started.</p>
+            <a href="{% url 'solicitations:create' %}"
+               class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-plus mr-2"></i>
+                Create Solicitation
+            </a>
         </div>
     {% endif %}
+
 </div>
-
-    <!-- AI Chat Widget -->
-    <div
-      id="chat-widget-root"
-      data-submit-url="{% url 'ai:ai_demo_submit' %}"
-      data-status-url="{% url 'ai:ai_demo_status' %}"
-      data-history-url="{% url 'ai:ai_demo_history' %}"
-      data-agent="solicitations"
-    ></div>
 {% endblock %}
-
-{% block javascript %}
-  {{ block.super }}
-  <script src="{% static 'bundles/js/chat-widget-bundle.js' %}" defer></script>
-{% endblock javascript %}

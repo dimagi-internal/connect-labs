@@ -242,10 +242,7 @@ class CommCareDataAccess:
             batch = case_ids[i : i + batch_size]
             batch_num = i // batch_size + 1
             total_batches = (total + batch_size - 1) // batch_size
-            logger.info(
-                f"Bulk-fetching case batch {batch_num}/{total_batches} "
-                f"({len(batch)} cases) from CommCare"
-            )
+            logger.info(f"Bulk-fetching case batch {batch_num}/{total_batches} " f"({len(batch)} cases) from CommCare")
 
             ids_param = ",".join(batch)
             url = f"{self.base_url}/a/{self.domain}/api/case/v2/{ids_param}/"

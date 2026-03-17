@@ -426,9 +426,7 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             # Build image filter from session's stored related_fields (for display-time filtering
             # of sessions created before storage-level filtering was applied)
             session_related_fields = session.data.get("related_fields", [])
-            image_filter_paths = {
-                r.get("image_path", "") for r in session_related_fields if r.get("filter_by_image")
-            }
+            image_filter_paths = {r.get("image_path", "") for r in session_related_fields if r.get("filter_by_image")}
 
             # Fetch FLW display names for the opportunity
             flw_names = {}

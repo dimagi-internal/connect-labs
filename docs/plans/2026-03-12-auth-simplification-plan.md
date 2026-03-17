@@ -158,7 +158,7 @@ Since all users are now standard Django Users authenticated via OAuth, `is_labs_
 
 **Files:**
 - Modify: `commcare_connect/solicitations/views.py` (lines 34, 52, 71, 98)
-- Modify: `commcare_connect/solicitations_new/views.py` (line 34)
+- Modify: `commcare_connect/solicitations/views.py` (line 34)
 - Modify: `commcare_connect/tasks/views.py` (lines 100, 136, 223)
 - Modify: `commcare_connect/templates/layouts/header.html` (lines 8, 19, 24)
 
@@ -188,7 +188,7 @@ if request.user.is_authenticated:
 ```
 And remove the production fallback after it.
 
-**Step 2: Simplify solicitations_new/views.py**
+**Step 2: Simplify solicitations/views.py**
 
 Replace:
 ```python

@@ -60,14 +60,16 @@ async def list_apps(domain: str | None = None) -> list[dict]:
     for app in apps_raw:
         modules = app.get("modules", [])
         form_count = sum(len(m.get("forms", [])) for m in modules)
-        summaries.append({
-            "id": app.get("id", ""),
-            "name": app.get("name", ""),
-            "version": app.get("version", 0),
-            "is_released": app.get("is_released", False),
-            "module_count": len(modules),
-            "form_count": form_count,
-        })
+        summaries.append(
+            {
+                "id": app.get("id", ""),
+                "name": app.get("name", ""),
+                "version": app.get("version", 0),
+                "is_released": app.get("is_released", False),
+                "module_count": len(modules),
+                "form_count": form_count,
+            }
+        )
 
     _app_list_cache[domain] = summaries
     return summaries

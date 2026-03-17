@@ -8,23 +8,39 @@ Labs is a rapid prototyping environment for CommCare Connect experiments. It use
 
 Follow the standard CommCare Connect setup in the main [README.md](../../README.md), then:
 
-1.  **Install labs requirements**:
-
-    $ pip install -r requirements/labs.txt
-
-2.  **Run with local settings** (NOT labs settings):
+1.  **Run with local settings** (NOT labs settings):
 
         $ ./manage.py runserver
 
     **Important**: Use `config.settings.local` (the default), NOT `config.settings.labs_aws`. The `labs_aws` settings are only for the AWS deployment at `labs.connect.dimagi.com`. The `local.py` settings already have `IS_LABS_ENVIRONMENT = True` and all labs middleware configured.
 
-3.  **Get a CLI OAuth token** (for scripts and management commands):
+2.  **Get a CLI OAuth token** (for scripts and management commands):
 
         $ python manage.py get_cli_token
 
     This opens a browser for OAuth authentication and saves the token to `~/.commcare-connect/token.json`.
 
-4.  **Access Labs features** at `http://localhost:8000/labs/login/`
+    **Multi-profile support**: You can store multiple tokens (e.g., your personal account and a test user):
+
+        # Save under a named profile
+        $ python manage.py get_cli_token --profile test-user
+
+        # List all profiles
+        $ python manage.py get_cli_token --list-profiles
+
+        # Switch active profile
+        $ python manage.py get_cli_token --switch-profile test-user
+
+    In code, specify a profile explicitly:
+
+    ```python
+    tm = TokenManager(profile="test-user")
+    token = tm.get_valid_token()
+    ```
+
+    When no profile is specified, the active profile is used automatically.
+
+3.  **Access Labs features** at `http://localhost:8000/labs/login/`
 
 ## Key Architecture
 

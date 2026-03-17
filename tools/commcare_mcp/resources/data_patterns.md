@@ -18,8 +18,8 @@ When a CommCare form is submitted, the API returns:
       "nested_question": "value"
     },
     "repeat_group": [
-      {"item_question": "value1"},
-      {"item_question": "value2"}
+      { "item_question": "value1" },
+      { "item_question": "value2" }
     ],
     "case": {
       "@case_id": "case-uuid",
@@ -42,16 +42,17 @@ When a CommCare form is submitted, the API returns:
 
 CommCare question IDs map to form submission JSON paths as follows:
 
-| Question path in app definition | JSON path in form submission |
-|--------------------------------|------------------------------|
-| `/data/weight` | `form.weight` |
-| `/data/child_info/birth_weight` (inside group) | `form.child_info.birth_weight` |
-| `/data/visits/visit_date` (inside repeat) | `form.visits[].visit_date` |
+| Question path in app definition                 | JSON path in form submission   |
+| ----------------------------------------------- | ------------------------------ |
+| `/data/weight`                                  | `form.weight`                  |
+| `/data/child_info/birth_weight` (inside group)  | `form.child_info.birth_weight` |
+| `/data/visits/visit_date` (inside repeat)       | `form.visits[].visit_date`     |
 | `/data/case/update/last_weight` (case property) | `form.case.update.last_weight` |
-| `/data/case/@case_id` (case reference) | `form.case.@case_id` |
-| `/data/meta/userID` (form metadata) | `form.meta.userID` |
+| `/data/case/@case_id` (case reference)          | `form.case.@case_id`           |
+| `/data/meta/userID` (form metadata)             | `form.meta.userID`             |
 
 **Rules:**
+
 1. Strip the `/data/` prefix and replace with `form.`
 2. Groups create nested objects: `/data/group/question` → `form.group.question`
 3. Repeat groups create arrays: `/data/repeat/question` → `form.repeat[].question`
@@ -81,6 +82,7 @@ presence of `@case_id` in a dict:
 ## Common Field Patterns
 
 ### Weight/measurements
+
 ```
 form.weight              → current weight (usually grams as string)
 form.birth_weight        → birth weight
@@ -88,11 +90,13 @@ form.child_weight_visit  → weight at visit (alternative naming)
 ```
 
 ### GPS/Location
+
 ```
 form.gps                 → "lat lon altitude accuracy" (space-separated string)
 ```
 
 ### Dates
+
 ```
 form.visit_date          → "2026-01-15" (date string)
 form.meta.timeStart      → "2026-01-15T10:30:00Z" (form open time)
@@ -100,12 +104,14 @@ form.meta.timeEnd        → "2026-01-15T10:35:00Z" (form submit time)
 ```
 
 ### Case identification
+
 ```
 form.case.@case_id       → the case being updated
 form.subcase_0.case.@case_id → child case (when creating sub-cases)
 ```
 
 ### Beneficiary/entity linking
+
 ```
 form.case.@case_id          → the beneficiary case ID (most common)
 form.case.index.parent      → parent case reference

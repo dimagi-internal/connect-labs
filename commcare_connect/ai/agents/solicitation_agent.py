@@ -5,7 +5,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from commcare_connect.ai.types import UserDependencies
-from commcare_connect.solicitations.data_access import SolicitationDataAccess
+from commcare_connect.solicitations.data_access import SolicitationsDataAccess
 from commcare_connect.solicitations.models import SolicitationRecord
 
 INSTRUCTIONS = """
@@ -25,7 +25,7 @@ class SolicitationData(BaseModel):
     scope_of_work: str
     solicitation_type: str  # 'eoi' or 'rfp'
     status: str  # 'active', 'closed', 'draft'
-    is_publicly_listed: bool
+    is_public: bool
     program_name: str
     application_deadline: date | None = None
     expected_start_date: date | None = None
@@ -45,7 +45,7 @@ class SolicitationData(BaseModel):
             scope_of_work=record.scope_of_work,
             solicitation_type=record.solicitation_type,
             status=record.status,
-            is_publicly_listed=record.is_publicly_listed,
+            is_public=record.is_public,
             program_name=record.program_name,
             application_deadline=record.application_deadline,
             expected_start_date=record.expected_start_date,
@@ -59,7 +59,6 @@ async def list_solicitations(
     ctx: RunContext["UserDependencies"],
     status: str | None = None,
     solicitation_type: str | None = None,
-    is_publicly_listed: bool | None = None,
 ) -> list[SolicitationData]:
     """List solicitations with optional filters.
 
@@ -67,19 +66,16 @@ async def list_solicitations(
         ctx: The run context with user dependencies.
         status: Filter by status ('active', 'closed', 'draft').
         solicitation_type: Filter by type ('eoi', 'rfp').
-        is_publicly_listed: Filter by public listing status.
     """
     if not ctx.deps.request:
         raise ValueError("Request object is required to access solicitations")
 
     # program_id is required in UserDependencies and validated at initialization
-    data_access = SolicitationDataAccess(request=ctx.deps.request, program_id=ctx.deps.program_id)
+    data_access = SolicitationsDataAccess(request=ctx.deps.request, program_id=str(ctx.deps.program_id))
 
     solicitations = data_access.get_solicitations(
-        program_id=ctx.deps.program_id,
         status=status,
         solicitation_type=solicitation_type,
-        is_publicly_listed=is_publicly_listed,
     )
 
     return [SolicitationData.from_solicitation_record(sol) for sol in solicitations]

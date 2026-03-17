@@ -25,7 +25,7 @@ They want an end-to-end demo of how Connect could serve as their regranting plat
 
 | Module | What |
 |--------|------|
-| **solicitations_new** (enhance existing) | Solicitation management, response collection, review/scoring, award action |
+| **solicitations** (enhance existing) | Solicitation management, response collection, review/scoring, award action |
 | **funder_dashboard** (new) | Fund portfolio view, aggregated KPIs, drill-down into programs |
 
 ### In scope (Production Connect — minimal changes)
@@ -63,7 +63,7 @@ Organization (PM: Baobob Institute)
 - `delivery_types[]` (references Connect Delivery Types)
 - `status`: active | closed
 
-**SolicitationRecord** (exists in solicitations_new)
+**SolicitationRecord** (exists in solicitations)
 - `fund_id` (reference to FundRecord)
 - `program_id` (optional — specific program within fund)
 - `title`, `description`, `scope_of_work`
@@ -73,13 +73,13 @@ Organization (PM: Baobob Institute)
 - `application_deadline`, `expected_start_date`, `expected_end_date`
 - `estimated_scale`, `contact_email`
 
-**ResponseRecord** (exists in solicitations_new)
+**ResponseRecord** (exists in solicitations)
 - `solicitation_id`, `org_id`, `org_name` (using Connect org ID for now — `llo_entity_id` not yet exposed via API; to be connected after changes on Connect prod to allow creation from new users)
 - `responses`: dict of question answers
 - `status`: draft | submitted | awarded | rejected
 - `submitted_by_name`, `submitted_by_email`
 
-**ReviewRecord** (exists in solicitations_new)
+**ReviewRecord** (exists in solicitations)
 - `response_id`, `score` (1-100)
 - `recommendation`: approved | rejected | needs_revision | under_review
 - `reward_budget`
@@ -126,7 +126,7 @@ Local org discovers RFP on public solicitation listing
 ### Phase 3: Review & Award (Funder in Labs)
 
 ```
-Funder views responses in solicitations_new
+Funder views responses in solicitations
   → Reviews each response (read answers, org details)
   → Scores responses (1-100 scale)
   → Adds review notes and recommendation
@@ -182,7 +182,7 @@ Funder views Funder Dashboard
 
 ## Module Design
 
-### 1. solicitations_new (Enhance Existing)
+### 1. solicitations (Enhance Existing)
 
 **Existing on fork/labs-main** (~1500 lines, 32 tests passing). Needs:
 
@@ -314,11 +314,11 @@ Answer: Matt has a KMC demo app he can use.
 
 ## Technical Notes
 
-- All new Labs code builds on the existing solicitations_new foundation (fork/labs-main branch)
+- All new Labs code builds on the existing solicitations foundation (fork/labs-main branch)
 - LabsRecordAPIClient handles all LabsRecord CRUD (existing pattern)
 - Connect production API accessed via existing HTTP client
 - Django templates with Tailwind + Alpine.js + htmx (existing Labs stack)
-- MCP tools follow existing pattern in solicitations_new/mcp_tools.py
+- MCP tools follow existing pattern in solicitations/mcp_tools.py
 
 ## Future Work
 

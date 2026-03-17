@@ -1,0 +1,26 @@
+# Node build image for CommCare Connect Labs
+# Contains pre-built frontend bundles (webpack + tailwind).
+# Rebuilt only when frontend source files change.
+#
+# Build manually:
+#   docker build -f Dockerfile.node -t labs-node .
+# Or trigger via .github/workflows/build-node.yml
+
+FROM node:18-bullseye
+WORKDIR /app
+
+# Install npm deps first (layer cache on package files)
+COPY package.json package-lock.json /app/
+RUN npm install
+
+# Copy files webpack + tailwind need
+COPY webpack/ /app/webpack/
+COPY tsconfig.json /app/tsconfig.json
+COPY components/ /app/components/
+COPY lib/ /app/lib/
+COPY tailwind/ /app/tailwind/
+# Full commcare_connect/ dir so Tailwind can scan templates AND Python files
+# for class names (views, forms, templatetags all contain Tailwind classes)
+COPY commcare_connect/ /app/commcare_connect/
+
+RUN npm run build

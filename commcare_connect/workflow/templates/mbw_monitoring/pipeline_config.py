@@ -27,7 +27,7 @@ MBW_GPS_PIPELINE_CONFIG = AnalysisPipelineConfig(
             name="gps_location",
             paths=[
                 "form.meta.location.#text",  # dict location with #text key
-                "form.meta.location",         # string location fallback
+                "form.meta.location",  # string location fallback
             ],
             aggregation="first",
             description="GPS location string (lat lon altitude accuracy)",

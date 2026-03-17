@@ -41,7 +41,7 @@ jobs:
       - name: Compute requirements hash
         id: req-hash
         run: |
-          HASH=$(cat requirements/base.txt requirements/labs.txt | sha256sum | cut -c1-12)
+          HASH=$(cat requirements/base.txt | sha256sum | cut -c1-12)
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx

@@ -42,9 +42,7 @@ class TestKMCFLWFlagsWorkflow:
 
         # Select the FLW Flag Report template -- scope to modal to avoid conflicts
         modal = page.locator(".fixed.inset-0.z-50")
-        flw_template_btn = modal.locator("button[type='submit']").filter(
-            has_text="KMC FLW Flag Report"
-        )
+        flw_template_btn = modal.locator("button[type='submit']").filter(has_text="KMC FLW Flag Report")
         expect(flw_template_btn).to_be_visible()
 
         # Get CSRF token and submit via API (avoids Playwright navigation timeout)
@@ -54,9 +52,7 @@ class TestKMCFLWFlagsWorkflow:
             form={"csrfmiddlewaretoken": csrf_token, "template": "kmc_flw_flags"},
             timeout=60_000,
         )
-        assert response.ok or response.status == 302, (
-            f"create_from_template failed: {response.status}"
-        )
+        assert response.ok or response.status == 302, f"create_from_template failed: {response.status}"
 
         # Reload the workflow list to pick up the new workflow
         page.goto(f"{live_server_url}/labs/workflow/?opportunity_id={opportunity_id}")
@@ -130,15 +126,13 @@ class TestKMCFLWFlagsWorkflow:
             page.screenshot(path="e2e_flw_flags_ui.png", full_page=True)
 
             # --- Verify action bar ---
-            expect(
-                wf_root.get_by_text(re.compile(r"Create Audits with AI Review"))
-            ).to_be_visible()
+            expect(wf_root.get_by_text(re.compile(r"Create Audits with AI Review"))).to_be_visible()
         else:
             # No data or still loading -- just confirm React rendered without error
-            loading_or_empty = wf_root.get_by_text("Loading...").or_(
-                wf_root.get_by_text("No data")
-            ).or_(
-                wf_root.get_by_text("Loading workflow...")
+            loading_or_empty = (
+                wf_root.get_by_text("Loading...")
+                .or_(wf_root.get_by_text("No data"))
+                .or_(wf_root.get_by_text("Loading workflow..."))
             )
             expect(loading_or_empty.first).to_be_visible()
 
@@ -147,21 +141,17 @@ class TestKMCFLWFlagsWorkflow:
         current_url = page.url
         run_id_match = re.search(r"run_id=(\d+)", current_url)
         workflow_id_match = re.search(r"/workflow/(\d+)/run/", current_url)
-        csrf_token = page.evaluate(
-            "document.querySelector('#workflow-root')?.dataset?.csrfToken || ''"
-        )
+        csrf_token = page.evaluate("document.querySelector('#workflow-root')?.dataset?.csrfToken || ''")
         if csrf_token:
             if run_id_match:
                 run_id = run_id_match.group(1)
                 page.request.post(
-                    f"{live_server_url}/labs/workflow/api/run/{run_id}/delete/"
-                    f"?opportunity_id={opportunity_id}",
+                    f"{live_server_url}/labs/workflow/api/run/{run_id}/delete/" f"?opportunity_id={opportunity_id}",
                     headers={"X-CSRFToken": csrf_token},
                 )
             if workflow_id_match:
                 wf_id = workflow_id_match.group(1)
                 page.request.post(
-                    f"{live_server_url}/labs/workflow/api/{wf_id}/delete/"
-                    f"?opportunity_id={opportunity_id}",
+                    f"{live_server_url}/labs/workflow/api/{wf_id}/delete/" f"?opportunity_id={opportunity_id}",
                     headers={"X-CSRFToken": csrf_token},
                 )

@@ -20,9 +20,11 @@ def get_exchange_rate(currency_code, date=None):
         return 1
 
     rate_date = date or now().date()
-    rate_obj = ExchangeRate.objects.filter(
-        currency_code=currency_code, rate_date__lte=rate_date
-    ).order_by("-rate_date").first()
+    rate_obj = (
+        ExchangeRate.objects.filter(currency_code=currency_code, rate_date__lte=rate_date)
+        .order_by("-rate_date")
+        .first()
+    )
 
     if not rate_obj or not rate_obj.rate:
         raise Exception("Rate not found for opportunity currency")

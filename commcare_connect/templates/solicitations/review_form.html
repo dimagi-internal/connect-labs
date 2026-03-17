@@ -1,107 +1,88 @@
 {% extends "base.html" %}
-{% load static crispy_forms_tags %}
-
-{% block page_title %}Review Response - {{ response.organization_name }}{% endblock %}
+{% load crispy_forms_tags %}
 
 {% block content %}
-    <!-- Breadcrumb Navigation -->
-    {% include 'components/breadcrumbs.html' with path=path %}
+<div class="max-w-4xl mx-auto px-4 py-6">
 
-    <div class="max-w-6xl mx-auto">
-        <!-- Header Card -->
-        <div class="bg-white rounded-xl shadow-sm p-8 mb-8">
-            <div class="flex items-start justify-between">
-                <div class="flex-1">
-                    <div class="flex items-center gap-3 mb-4">
-                        <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-dark{% else %}warning-dark{% endif %}">
-                            {{ solicitation.get_solicitation_type_display }}
-                        </span>
-                        <span class="badge badge-md
-                            {% if response.status == 'submitted' %}neutral-light
-                            {% elif response.status == 'under_review' %}warning-dark
-                            {% elif response.status == 'accepted' %}positive-dark
-                            {% elif response.status == 'rejected' %}negative-dark
-                            {% else %}neutral-dark{% endif %}">
-                            {{ response.get_status_display }}
-                        </span>
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        <a href="{% url 'solicitations:response_detail' pk=response.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-eye mr-1"></i> Response
+        </a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <span class="text-gray-700 font-medium">{% if is_update %}Update{% else %}Add{% endif %} Review</span>
+    </nav>
+
+    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-6">
+        Review: {{ response.llo_entity_name }}
+    </h1>
+
+    <!-- Q&A Summary -->
+    {% if qa_pairs %}
+        <div class="bg-gray-50 rounded-xl border border-gray-200 p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-3">
+                <i class="fa-solid fa-clipboard-list mr-2"></i>
+                Response Summary
+            </h2>
+            <div class="space-y-3">
+                {% for qa in qa_pairs %}
+                    <div class="{% if not forloop.last %}pb-3 border-b border-gray-200{% endif %}">
+                        <p class="text-sm font-medium text-gray-700">{{ qa.question }}</p>
+                        <p class="text-sm text-gray-900 mt-1 whitespace-pre-line">{{ qa.answer|default:"No answer provided" }}</p>
                     </div>
-                    <h1 class="text-3xl font-bold text-brand-deep-purple mb-2">Review Response</h1>
-                    <p class="text-gray-600 mb-6">{{ solicitation.title }}</p>
-
-                    <!-- Response Information -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="flex items-center text-sm text-gray-600">
-                            <i class="fa-solid fa-building mr-2 text-gray-400"></i>
-                            <span>Organization: {{ response.organization_id }}</span>
-                        </div>
-                        <div class="flex items-center text-sm text-gray-600">
-                            <i class="fa-solid fa-user mr-2 text-gray-400"></i>
-                            <span>{{ response.submitted_by_name }}{% if response.submitted_by_email %} ({{ response.submitted_by_email }}){% endif %}</span>
-                        </div>
-                        <div class="flex items-center text-sm text-gray-600">
-                            <i class="fa-solid fa-calendar mr-2 text-gray-400"></i>
-                            <span>Submitted <span class="local-datetime" datetime="{{ response.submission_date|date:'c' }}">{{ response.submission_date|date:"M j, Y g:i A" }}</span></span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-x-4">
-                    <a href="{% url 'solicitations:response_detail' pk=response.pk %}"
-                       class="button button-md outline-style">
-                        <i class="fa-solid fa-arrow-left mr-2"></i>
-                        Back to Response
-                    </a>
-                </div>
+                {% endfor %}
             </div>
         </div>
+    {% endif %}
 
-        <div>
-            <!-- Response Answers -->
-            {% include "solicitations/components/response_answers.html" %}
+    <!-- Review Form -->
+    <form method="post" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
+        {% csrf_token %}
 
-            <!-- File Attachments -->
-            {% if response.attachments and response.attachments|length > 0 %}
-                {% include "solicitations/components/file_attachments.html" with section_title="Supporting Documents" %}
-            {% endif %}
-
-            <!-- Review Panel (Full Width) -->
-            <form x-data="responseReviewHandler()" method="post">
-                {% csrf_token %}
-                {% crispy form %}
-
-                <!-- Submit Button -->
-                <div class="pt-4 border-t border-gray-200 bg-white rounded-xl shadow-sm p-8 mt-8">
-                    <button type="submit" class="w-full button button-md primary-dark">
-                        <i class="fa-solid fa-save mr-2"></i>
-                        {% if existing_review %}Update Review{% else %}Save Review{% endif %}
-                    </button>
+        {% if error %}
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+                <div class="flex items-center">
+                    <i class="fa-solid fa-exclamation-circle text-red-400 mr-3"></i>
+                    <p class="text-sm text-red-700">{{ error }}</p>
                 </div>
-            </form>
-
-
             </div>
+        {% endif %}
+
+        {% if form.errors %}
+            <div class="bg-red-50 border-l-4 border-red-400 p-4">
+                <div class="flex">
+                    <i class="fa-solid fa-exclamation-circle text-red-400 mr-3 mt-0.5"></i>
+                    <div>
+                        <p class="text-sm font-medium text-red-700 mb-1">Please correct the errors below:</p>
+                        <ul class="text-sm text-red-600 list-disc list-inside">
+                            {% for field, errors in form.errors.items %}
+                                {% for err in errors %}
+                                    <li>{{ err }}</li>
+                                {% endfor %}
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        {{ form.score|as_crispy_field }}
+        {{ form.recommendation|as_crispy_field }}
+        {{ form.notes|as_crispy_field }}
+        {{ form.tags|as_crispy_field }}
+
+        <div class="flex justify-end gap-4 pt-4 border-t border-gray-200">
+            <a href="{% url 'solicitations:response_detail' pk=response.pk %}"
+               class="inline-flex items-center px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition text-sm font-medium">
+                Cancel
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm font-medium">
+                <i class="fa-solid fa-check mr-2"></i>
+                {% if is_update %}Update{% else %}Submit{% endif %} Review
+            </button>
         </div>
-    </div>
-{% endblock %}
+    </form>
 
-{% block inline_javascript %}
-<script>
-// Alpine.js Component for Response Review Handler
-
-function responseReviewHandler() {
-    return {
-        selectedRecommendation: '{% if existing_review.recommendation %}{{ existing_review.recommendation }}{% endif %}',
-
-        init() {
-            // Component is initialized with the existing recommendation value
-            // Alpine.js x-model will handle the rest automatically
-        }
-    }
-}
-
-// Register Alpine.js component
-document.addEventListener('alpine:init', () => {
-    Alpine.data('responseReviewHandler', responseReviewHandler);
-});
-</script>
+</div>
 {% endblock %}

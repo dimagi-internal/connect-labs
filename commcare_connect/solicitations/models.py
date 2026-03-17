@@ -1,59 +1,18 @@
+# commcare_connect/solicitations/models.py
 """
-Proxy models for LocalLabsRecord.
+Proxy models for solicitations.
 
-These proxy models provide convenient access to LocalLabsRecord data
-for solicitations. LocalLabsRecord is a transient Python object
-that deserializes production API responses - no database storage.
+These proxy models extend LocalLabsRecord with typed @property access
+to JSON data stored via the LabsRecord API. They cannot be .save()d locally.
 """
-
 from datetime import datetime
 
 from commcare_connect.labs.models import LocalLabsRecord
 
 
-class DeliveryTypeDescriptionRecord(LocalLabsRecord):
-    """Proxy model for DeliveryTypeDescription-type LocalLabsRecords.
-
-    Stores delivery type metadata for categorizing solicitations.
-    These records are always public so all authenticated users can view them.
-    Matches production DeliveryType slugs but stores additional description data.
-    """
-
-    @property
-    def name(self):
-        """Display name for the delivery type."""
-        return self.data.get("name", "")
-
-    @property
-    def slug(self):
-        """URL-safe slug identifier (matches production DeliveryType slugs)."""
-        return self.data.get("slug", "")
-
-    @property
-    def description(self):
-        """Brief description for card display."""
-        return self.data.get("description", "")
-
-    @property
-    def long_description(self):
-        """Detailed description for detail page (supports markdown)."""
-        return self.data.get("long_description", "")
-
-    @property
-    def icon(self):
-        """FontAwesome icon class (e.g., 'fa-solid fa-baby')."""
-        return self.data.get("icon", "fa-solid fa-folder")
-
-    @property
-    def is_active(self):
-        """Whether this delivery type is active and should be shown."""
-        return self.data.get("is_active", True)
-
-
 class SolicitationRecord(LocalLabsRecord):
-    """Proxy model for Solicitation-type LocalLabsRecords."""
+    """Proxy model for solicitation records. Scoped by program_id."""
 
-    # Properties for convenient access
     @property
     def title(self):
         return self.data.get("title", "")
@@ -72,24 +31,18 @@ class SolicitationRecord(LocalLabsRecord):
 
     @property
     def status(self):
-        return self.data.get("status", "")
+        return self.data.get("status", "draft")
 
     @property
-    def is_publicly_listed(self):
-        return self.data.get("is_publicly_listed", True)
+    def is_public(self):
+        return self.data.get("is_public", False)
 
     @property
     def questions(self):
         return self.data.get("questions", [])
 
     @property
-    def program_name(self):
-        """Return program name from JSON data."""
-        return self.data.get("program_name", "")
-
-    @property
     def application_deadline(self):
-        """Return application deadline as a date object."""
         date_str = self.data.get("application_deadline")
         if date_str:
             try:
@@ -100,7 +53,6 @@ class SolicitationRecord(LocalLabsRecord):
 
     @property
     def expected_start_date(self):
-        """Return expected start date as a date object."""
         date_str = self.data.get("expected_start_date")
         if date_str:
             try:
@@ -111,7 +63,6 @@ class SolicitationRecord(LocalLabsRecord):
 
     @property
     def expected_end_date(self):
-        """Return expected end date as a date object."""
         date_str = self.data.get("expected_end_date")
         if date_str:
             try:
@@ -126,152 +77,111 @@ class SolicitationRecord(LocalLabsRecord):
 
     @property
     def contact_email(self):
-        """Return contact email."""
         return self.data.get("contact_email", "")
 
     @property
-    def delivery_type_slug(self):
-        """Return delivery type slug for categorization."""
-        return self.data.get("delivery_type_slug", "")
+    def created_by(self):
+        return self.data.get("created_by", "")
 
-    # Helper methods
+    @property
+    def program_name(self):
+        return self.data.get("program_name", "")
+
+    @property
+    def fund_id(self):
+        return self.data.get("fund_id")
+
     def can_accept_responses(self):
-        """Check if this solicitation can accept responses."""
         return self.status == "active"
-
-    def get_solicitation_type_display(self):
-        """Get display text for solicitation type."""
-        type_map = {"eoi": "Expression of Interest", "rfp": "Request for Proposal"}
-        return type_map.get(self.solicitation_type, self.solicitation_type)
 
 
 class ResponseRecord(LocalLabsRecord):
-    """Proxy model for SolicitationResponse-type LocalLabsRecords."""
+    """Proxy model for response records. Scoped by llo_entity_id."""
+
+    @property
+    def solicitation_id(self):
+        return self.data.get("solicitation_id")
+
+    @property
+    def llo_entity_id(self):
+        return self.data.get("llo_entity_id", "")
+
+    @property
+    def llo_entity_name(self):
+        return self.data.get("llo_entity_name", "")
 
     @property
     def responses(self):
         return self.data.get("responses", {})
 
     @property
-    def response_status(self):
+    def status(self):
         return self.data.get("status", "draft")
 
     @property
-    def submission_date(self):
-        # date_created doesn't exist on LocalLabsRecord - store in data if needed
-        return self.data.get("submission_date")
-
-    @property
-    def attachments(self):
-        return self.data.get("attachments", [])
-
-    @property
     def submitted_by_name(self):
-        """Return user name for display."""
-        submitted_by = self.data.get("submitted_by", {})
-        full_name = submitted_by.get("full_name", "").strip()
-        if full_name:
-            return full_name
-        username = submitted_by.get("username")
-        if username:
-            return username
-        return f"User {self.user_id}" if self.user_id is not None else "Unknown User"
+        return self.data.get("submitted_by_name", "")
 
     @property
     def submitted_by_email(self):
-        """Return user email for display."""
-        submitted_by = self.data.get("submitted_by", {})
-        return submitted_by.get("email", "")
+        return self.data.get("submitted_by_email", "")
 
     @property
-    def organization_name(self):
-        """Return organization name for display."""
-        # For labs, we only have slug. Could look up in OAuth data if needed.
-        return self.organization_id if self.organization_id else "Unknown Organization"
+    def org_id(self):
+        return self.data.get("org_id", "")
 
-    # Helper methods
-    def is_draft(self):
-        """Check if this response is still a draft."""
-        return self.response_status == "draft"
+    @property
+    def org_name(self):
+        return self.data.get("org_name", "")
 
-    def is_submitted(self):
-        """Check if this response has been submitted."""
-        return self.response_status == "submitted"
+    @property
+    def submission_date(self):
+        date_str = self.data.get("submission_date")
+        if date_str:
+            try:
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
+        return None
 
 
 class ReviewRecord(LocalLabsRecord):
-    """Proxy model for SolicitationReview-type LocalLabsRecords."""
+    """Proxy model for review records."""
+
+    @property
+    def response_id(self):
+        return self.data.get("response_id")
 
     @property
     def score(self):
         return self.data.get("score")
 
     @property
-    def tags(self):
-        return self.data.get("tags", "")
+    def recommendation(self):
+        return self.data.get("recommendation", "")
 
     @property
     def notes(self):
         return self.data.get("notes", "")
 
     @property
-    def recommendation(self):
-        return self.data.get("recommendation")
+    def tags(self):
+        return self.data.get("tags", "")
+
+    @property
+    def reviewer_username(self):
+        return self.data.get("reviewer_username", "")
+
+    @property
+    def reward_budget(self):
+        return self.data.get("reward_budget")
 
     @property
     def review_date(self):
-        # date_created doesn't exist on LocalLabsRecord - store in data if needed
-        return self.data.get("review_date")
-
-    def get_recommendation_display(self):
-        """Get display text for recommendation."""
-        rec_map = {
-            "recommended": "Recommended",
-            "not_recommended": "Not Recommended",
-            "neutral": "Neutral",
-        }
-        return rec_map.get(self.recommendation, self.recommendation)
-
-
-class OppOrgEnrichmentRecord(LocalLabsRecord):
-    """Proxy model for storing enrichment data for opportunities.
-
-    This record stores additional metadata about opportunities that is not
-    available in Connect Prod, such as country information. This allows us
-    to enrich the data displayed on delivery type pages.
-
-    The data field contains an array of opportunity enrichment objects.
-    """
-
-    @property
-    def enrichments(self):
-        """Return the array of enrichment objects."""
-        return self.data.get("enrichments", [])
-
-    def get_enrichment_for_opp(self, opportunity_id: int) -> dict | None:
-        """Get enrichment data for a specific opportunity.
-
-        Args:
-            opportunity_id: The opportunity ID to look up
-
-        Returns:
-            Dict with enrichment data or None if not found
-        """
-        for enrichment in self.enrichments:
-            if enrichment.get("opportunity_id") == opportunity_id:
-                return enrichment
+        date_str = self.data.get("review_date")
+        if date_str:
+            try:
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                return None
         return None
-
-    def get_country_for_opp(self, opportunity_id: int) -> str:
-        """Get country for a specific opportunity.
-
-        Args:
-            opportunity_id: The opportunity ID to look up
-
-        Returns:
-            Country string or empty string if not found
-        """
-        enrichment = self.get_enrichment_for_opp(opportunity_id)
-        if enrichment:
-            return enrichment.get("opp_country", "")
-        return ""

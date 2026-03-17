@@ -68,7 +68,7 @@ Incremental removal of dead apps, one commit per logical step, tests verified be
 ## What Stays Untouched
 
 - **All 7 labs apps:** labs, audit, tasks, workflow, ai, solicitations, coverage
-- `solicitations_new/`
+- `solicitations/`
 - `users/`, `organization/`, `program/` — small, kept as-is
 - `web/` — base templates
 - `multidb/` — DB routing

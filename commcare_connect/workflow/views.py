@@ -37,9 +37,7 @@ def _is_dimagi_user(user) -> bool:
     username = getattr(user, "username", "") or ""  # noqa: F401
     allowlist = getattr(settings, "LABS_ADMIN_USERNAMES", [])  # noqa: F401
     return (
-        email.endswith("@dimagi.com")
-        or username.endswith("@dimagi.com")
-        or bool(username and username in allowlist)
+        email.endswith("@dimagi.com") or username.endswith("@dimagi.com") or bool(username and username in allowlist)
     )
 
 
@@ -258,7 +256,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         opportunity_name=opp_map.get(run.opportunity_id, ""),
                         username=getattr(request.user, "username", "") or "",
                     )
-                except Exception as e:
+                except Exception:
                     logger.exception("Failed to create run for opp %s", opportunity_id)
                     return super().get(request, *args, **kwargs)
                 finally:

@@ -16,27 +16,26 @@ Most production apps have been removed from this codebase. The remaining non-lab
 
 ### Labs Apps (Active Development)
 
-| App              | Purpose                                                               | Key files                                                                        |
-| ---------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `labs/`          | Core infrastructure: OAuth, API client, middleware, analysis pipeline | `integrations/connect/api_client.py`, `models.py`, `context.py` |
-| `audit/`         | Quality assurance review of FLW visits, HQ image questions            | `data_access.py`, `ai_review.py`, `tasks.py`, `hq_app_utils.py`, `views.py`     |
-| `tasks/`         | Task management for FLW follow-ups                                    | `data_access.py` (simplest example of the pattern)                               |
-| `workflow/`      | Configurable workflow engine with React UIs and pipelines             | `data_access.py` (most complex), `templates/`                                    |
-| `ai/`            | AI agent integration via pydantic-ai, SSE streaming                   | `agents/`, `views.py` (AIStreamView)                                             |
-| `solicitations/` | RFP management (scoped by program, not opportunity)                   | `data_access.py`, `models.py`                                                    |
-| `solicitations_new/` | Next-gen solicitations with API views, forms, and MCP tools       | `data_access.py`, `api_views.py`, `mcp_tools.py`, `forms.py`                    |
-| `coverage/`      | Delivery unit mapping from CommCare HQ (separate OAuth)               | `data_access.py`, `data_loader.py`                                               |
-| `custom_analysis/` | Program-specific analysis dashboards (audit_of_audits, chc_nutrition, kmc, mbw, rutf) | Each sub-app has `data_access.py`, `views.py`, `urls.py`     |
+| App                | Purpose                                                                               | Key files                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `labs/`            | Core infrastructure: OAuth, API client, middleware, analysis pipeline                 | `integrations/connect/api_client.py`, `models.py`, `context.py`             |
+| `audit/`           | Quality assurance review of FLW visits, HQ image questions                            | `data_access.py`, `ai_review.py`, `tasks.py`, `hq_app_utils.py`, `views.py` |
+| `tasks/`           | Task management for FLW follow-ups                                                    | `data_access.py` (simplest example of the pattern)                          |
+| `workflow/`        | Configurable workflow engine with React UIs and pipelines                             | `data_access.py` (most complex), `templates/`                               |
+| `ai/`              | AI agent integration via pydantic-ai, SSE streaming                                   | `agents/`, `views.py` (AIStreamView)                                        |
+| `solicitations/`   | Solicitations with API views, forms, and MCP tools                                    | `data_access.py`, `api_views.py`, `mcp_tools.py`, `forms.py`                |
+| `coverage/`        | Delivery unit mapping from CommCare HQ (separate OAuth)                               | `data_access.py`, `data_loader.py`                                          |
+| `custom_analysis/` | Program-specific analysis dashboards (audit_of_audits, chc_nutrition, kmc, mbw, rutf) | Each sub-app has `data_access.py`, `views.py`, `urls.py`                    |
 
 ### Retained Non-Labs Apps (Models + Migrations Only)
 
-| App              | Purpose                                                               |
-| ---------------- | --------------------------------------------------------------------- |
-| `opportunity/`   | ORM models and migrations only — needed by FK references. No views, no business logic. |
-| `users/`         | User model definitions and migrations                                 |
-| `organization/`  | Organization model definitions and migrations                         |
-| `program/`       | Program model definitions and migrations                              |
-| `commcarehq/`    | Minimal — just `HQServer` model + migrations (needed by FKs)          |
+| App             | Purpose                                                                                |
+| --------------- | -------------------------------------------------------------------------------------- |
+| `opportunity/`  | ORM models and migrations only — needed by FK references. No views, no business logic. |
+| `users/`        | User model definitions and migrations                                                  |
+| `organization/` | Organization model definitions and migrations                                          |
+| `program/`      | Program model definitions and migrations                                               |
+| `commcarehq/`   | Minimal — just `HQServer` model + migrations (needed by FKs)                           |
 
 **Cross-app connections:** Workflow can create audits and tasks. AI agents modify workflows and solicitations. `custom_analysis/audit_of_audits` reads audit and organization data. Coverage is standalone.
 

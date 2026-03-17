@@ -113,10 +113,7 @@ class AuditOfAuditsView(LoginRequiredMixin, DimagiUserRequiredMixin, TemplateVie
 
         # Always available: user identity + full org list for the config form
         org_data = get_org_data(self.request)
-        user_orgs: list[dict] = [
-            o for o in org_data.get("organizations", [])
-            if isinstance(o.get("id"), int)
-        ]
+        user_orgs: list[dict] = [o for o in org_data.get("organizations", []) if isinstance(o.get("id"), int)]
         user_opps: list[dict] = org_data.get("opportunities", []) or []
 
         context["user_email"] = _dimagi_display_name(self.request.user)
@@ -165,22 +162,17 @@ class AuditOfAuditsView(LoginRequiredMixin, DimagiUserRequiredMixin, TemplateVie
         # This mirrors the context selector's cascading filter logic.
         selected_org_id_set: set[int] = set(selected_org_ids)
         selected_org_slugs: set[str] = {
-            o["slug"]
-            for o in user_orgs
-            if o.get("id") in selected_org_id_set and o.get("slug")
+            o["slug"] for o in user_orgs if o.get("id") in selected_org_id_set and o.get("slug")
         }
 
         user_programs: list[dict] = org_data.get("programs", []) or []
         selected_program_ids: set = {
-            p["id"]
-            for p in user_programs
-            if p.get("organization") in selected_org_slugs and p.get("id") is not None
+            p["id"] for p in user_programs if p.get("organization") in selected_org_slugs and p.get("id") is not None
         }
 
         if selected_program_ids:
             filtered_opps = [
-                o for o in user_opps
-                if isinstance(o.get("id"), int) and o.get("program") in selected_program_ids
+                o for o in user_opps if isinstance(o.get("id"), int) and o.get("program") in selected_program_ids
             ]
         elif selected_org_slugs:
             # Org slugs resolved but no programs matched — org may legitimately have no programs.
@@ -206,9 +198,7 @@ class AuditOfAuditsView(LoginRequiredMixin, DimagiUserRequiredMixin, TemplateVie
 
         # Map org id → org name for the report header summary
         org_name_map: dict[int, str] = {o["id"]: o.get("name", "") for o in user_orgs}
-        selected_orgs_display: list[str] = [
-            org_name_map.get(oid, str(oid)) for oid in selected_org_ids
-        ]
+        selected_orgs_display: list[str] = [org_name_map.get(oid, str(oid)) for oid in selected_org_ids]
 
         logger.info(
             "[AuditOfAudits] User %s — selected %d/%d orgs, %d opportunities",

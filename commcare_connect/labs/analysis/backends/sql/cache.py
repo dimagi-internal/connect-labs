@@ -237,8 +237,7 @@ class SQLCacheManager:
                 visit_count=self._pending_visit_count,
             ).update(visit_count=actual_count)
         logger.info(
-            f"[SQLCache] Finalized {updated} raw visits for opp {self.opportunity_id} "
-            f"(visit_count={actual_count})"
+            f"[SQLCache] Finalized {updated} raw visits for opp {self.opportunity_id} " f"(visit_count={actual_count})"
         )
 
     def get_raw_visits_queryset(self):

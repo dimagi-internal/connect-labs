@@ -6,13 +6,13 @@ This is the simplest example of the labs data_access.py pattern — a good start
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `models.py` | `TaskRecord` proxy model with timeline event management |
+| File             | Purpose                                                                       |
+| ---------------- | ----------------------------------------------------------------------------- |
+| `models.py`      | `TaskRecord` proxy model with timeline event management                       |
 | `data_access.py` | `TaskDataAccess` — LabsRecordAPIClient for state + httpx for Connect/OCS APIs |
-| `views.py` | Task list, create/edit, bulk create, OCS bot integration endpoints |
-| `helpers.py` | `create_task_from_audit()` — cross-app task creation helper |
-| `urls.py` | URL routing under `/tasks/` |
+| `views.py`       | Task list, create/edit, bulk create, OCS bot integration endpoints            |
+| `helpers.py`     | `create_task_from_audit()` — cross-app task creation helper                   |
+| `urls.py`        | URL routing under `/tasks/`                                                   |
 
 ## Data Model
 
@@ -21,6 +21,7 @@ This is the simplest example of the labs data_access.py pattern — a good start
 - **Proxy model:** `TaskRecord`
 
 Key properties:
+
 - `title`, `description`, `status`, `priority` (`low` / `medium` / `high`)
 - `task_username`, `flw_name` — the FLW this task is about
 - `assigned_to_type` (`self` / `network_manager` / `program_manager`), `assigned_to_name`
@@ -34,6 +35,7 @@ Status values: `investigating`, `flw_action_in_progress`, `flw_action_completed`
 ## OCS Integration
 
 Tasks can trigger Open Chat Studio bots for automated FLW outreach:
+
 - `task_initiate_ai()` — triggers bot, creates pending `ai_session` event
 - `task_ai_transcript()` — fetches transcript from OCS
 - Bot list via `OCSDataAccess` (separate OAuth)

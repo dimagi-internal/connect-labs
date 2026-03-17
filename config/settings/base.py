@@ -142,7 +142,6 @@ LOCAL_APPS = [
     "commcare_connect.organization",
     "commcare_connect.program",
     "commcare_connect.solicitations",
-    "commcare_connect.solicitations_new",
     "commcare_connect.users",
     "commcare_connect.web",
 ]

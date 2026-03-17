@@ -12,7 +12,6 @@ python3.11 -m venv venv && source venv/bin/activate
 
 # Install requirements
 pip install -r requirements-dev.txt
-pip install -r requirements/labs.txt
 
 # Install git hooks
 pre-commit install
@@ -35,15 +34,15 @@ python manage.py runserver
 
 ## Labs Apps
 
-| App | Purpose | Docs |
-|-----|---------|------|
-| `labs/` | Core infrastructure: OAuth, API client, middleware | [LABS_GUIDE.md](commcare_connect/labs/LABS_GUIDE.md) |
-| `audit/` | Quality assurance review of FLW visits | [README](commcare_connect/audit/README.md) |
-| `tasks/` | Task management for FLW follow-ups | [README](commcare_connect/tasks/README.md) |
-| `workflow/` | Configurable workflow engine with React UIs | [README](commcare_connect/workflow/README.md) |
-| `ai/` | AI agent integration via pydantic-ai | [README](commcare_connect/ai/README.md) |
-| `solicitations/` | RFP management scoped by program | [README](commcare_connect/solicitations/README.md) |
-| `coverage/` | Delivery unit mapping from CommCare HQ | [Commands README](commcare_connect/coverage/management/commands/README.md) |
+| App              | Purpose                                            | Docs                                                                       |
+| ---------------- | -------------------------------------------------- | -------------------------------------------------------------------------- |
+| `labs/`          | Core infrastructure: OAuth, API client, middleware | [LABS_GUIDE.md](commcare_connect/labs/LABS_GUIDE.md)                       |
+| `audit/`         | Quality assurance review of FLW visits             | [README](commcare_connect/audit/README.md)                                 |
+| `tasks/`         | Task management for FLW follow-ups                 | [README](commcare_connect/tasks/README.md)                                 |
+| `workflow/`      | Configurable workflow engine with React UIs        | [README](commcare_connect/workflow/README.md)                              |
+| `ai/`            | AI agent integration via pydantic-ai               | [README](commcare_connect/ai/README.md)                                    |
+| `solicitations/` | RFP management scoped by program                   | [README](commcare_connect/solicitations/README.md)                         |
+| `coverage/`      | Delivery unit mapping from CommCare HQ             | [Commands README](commcare_connect/coverage/management/commands/README.md) |
 
 ## Documentation Map
 

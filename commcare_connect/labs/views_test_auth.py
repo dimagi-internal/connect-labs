@@ -10,15 +10,14 @@ import logging
 from datetime import datetime
 
 from django.conf import settings
+from django.contrib.auth import login
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
 from commcare_connect.labs.integrations.connect.cli import TokenManager
-from commcare_connect.labs.integrations.connect.oauth import (
-    fetch_user_organization_data,
-    introspect_token,
-)
+from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
+from commcare_connect.users.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,8 @@ def test_auth_view(request):
     if not settings.DEBUG:
         return JsonResponse({"error": "Only available in DEBUG mode"}, status=403)
 
-    token_manager = TokenManager()
+    profile = request.GET.get("profile")
+    token_manager = TokenManager(profile=profile)
     token_data = token_manager.load_token()
 
     if not token_data:
@@ -71,6 +71,20 @@ def test_auth_view(request):
         expires_in = token_data.get("expires_in", 1209600)
         expires_at = (timezone.now() + timezone.timedelta(seconds=expires_in)).timestamp()
 
+    # Create or update Django User and log in (mirrors OAuth callback)
+    first_name = profile_data.get("first_name", "")
+    last_name = profile_data.get("last_name", "")
+    name = f"{first_name} {last_name}".strip() or profile_data.get("username", "")
+    defaults = {"name": name}
+    email = profile_data.get("email", "")
+    if email:
+        defaults["email"] = email
+    user, _ = User.objects.update_or_create(
+        username=profile_data.get("username"),
+        defaults=defaults,
+    )
+    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+
     # Write session — same structure as the OAuth callback
     request.session["labs_oauth"] = {
         "access_token": access_token,
@@ -86,7 +100,17 @@ def test_auth_view(request):
         "organization_data": org_data,
     }
 
-    return JsonResponse({
-        "success": True,
-        "username": profile_data.get("username"),
-    })
+    # Include org/program data so e2e conftest can auto-detect IDs
+    organizations = org_data.get("organizations", [])
+    programs = org_data.get("programs", [])
+
+    return JsonResponse(
+        {
+            "success": True,
+            "username": profile_data.get("username"),
+            "organizations": [
+                {"id": o.get("id"), "slug": o.get("slug"), "name": o.get("name")} for o in organizations
+            ],
+            "programs": [{"id": p.get("id"), "name": p.get("name")} for p in programs],
+        }
+    )

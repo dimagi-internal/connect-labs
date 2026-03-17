@@ -84,12 +84,16 @@ def _log_api_error(record_type: str, scope_type: str, scope_id: int, error: Labs
     if status_code == 404:
         logger.debug(
             "[AuditOfAudits] No labs records for %s %d (404 — not enrolled in workflow)",
-            scope_type, scope_id,
+            scope_type,
+            scope_id,
         )
     else:
         logger.warning(
             "[AuditOfAudits] Failed to fetch %s for %s %d: %s",
-            record_type, scope_type, scope_id, error,
+            record_type,
+            scope_type,
+            scope_id,
+            error,
         )
 
 
@@ -127,9 +131,7 @@ class AuditOfAuditsDataAccess:
         self.organization_ids = organization_ids
         self.opportunity_ids = opportunity_ids
         # None → no filter (fetch all template types)
-        self.template_types: frozenset[str] | None = (
-            frozenset(template_types) if template_types else None
-        )
+        self.template_types: frozenset[str] | None = frozenset(template_types) if template_types else None
 
     def close(self):
         pass  # All HTTP clients are short-lived and closed after each request
@@ -161,9 +163,7 @@ class AuditOfAuditsDataAccess:
     def _fetch_definitions_for_opp(self, opp_id: int) -> list[WorkflowDefinitionRecord]:
         """Fetch all workflow definition records scoped to one opportunity."""
         try:
-            with LabsRecordAPIClient(
-                access_token=self.access_token, opportunity_id=opp_id
-            ) as client:
+            with LabsRecordAPIClient(access_token=self.access_token, opportunity_id=opp_id) as client:
                 return client.get_records(
                     experiment=WORKFLOW_EXPERIMENT,
                     type="workflow_definition",
@@ -176,9 +176,7 @@ class AuditOfAuditsDataAccess:
     def _fetch_runs_for_opp(self, opp_id: int) -> list[WorkflowRunRecord]:
         """Fetch all workflow run records scoped to one opportunity."""
         try:
-            with LabsRecordAPIClient(
-                access_token=self.access_token, opportunity_id=opp_id
-            ) as client:
+            with LabsRecordAPIClient(access_token=self.access_token, opportunity_id=opp_id) as client:
                 return client.get_records(
                     experiment=WORKFLOW_EXPERIMENT,
                     type="workflow_run",
@@ -220,7 +218,8 @@ class AuditOfAuditsDataAccess:
 
         logger.info(
             "[AuditOfAudits] Phase 1: fetched %d sessions across %d orgs (concurrent)",
-            len(all_sessions), len(valid_org_ids),
+            len(all_sessions),
+            len(valid_org_ids),
         )
 
         # ── Phase 2A: Fetch definitions concurrently for ALL opportunities ───────
@@ -249,9 +248,10 @@ class AuditOfAuditsDataAccess:
         # ── Phase 2B: Fetch runs — skip opps with no matching definitions ─────
         run_opps: set[int] = opps_with_matching_defs if self.template_types else opportunity_ids
         logger.info(
-            "[AuditOfAudits] Phase 2B: fetching runs for %d/%d opportunities "
-            "(%d skipped by template filter)",
-            len(run_opps), len(opportunity_ids), len(opportunity_ids) - len(run_opps),
+            "[AuditOfAudits] Phase 2B: fetching runs for %d/%d opportunities " "(%d skipped by template filter)",
+            len(run_opps),
+            len(opportunity_ids),
+            len(opportunity_ids) - len(run_opps),
         )
 
         runs: list[WorkflowRunRecord] = []
@@ -266,7 +266,9 @@ class AuditOfAuditsDataAccess:
 
         logger.info(
             "[AuditOfAudits] Totals — definitions: %d, runs: %d, sessions: %d",
-            len(def_map), len(runs), len(all_sessions),
+            len(def_map),
+            len(runs),
+            len(all_sessions),
         )
 
         # ── Phase 3: Join and build rows ─────────────────────────────────────────
@@ -287,9 +289,7 @@ class AuditOfAuditsDataAccess:
             # Skip runs whose definition doesn't match the template type filter.
             # (opps_with_matching_defs ensures the opp has at least one matching
             # definition, but the opp may also have non-matching definitions.)
-            if self.template_types and (
-                not definition or definition.template_type not in self.template_types
-            ):
+            if self.template_types and (not definition or definition.template_type not in self.template_types):
                 continue
             linked_sessions = sessions_by_run.get(run.id, [])
             avg_pct_passed = _extract_avg_pct_passed(run, linked_sessions)
@@ -300,8 +300,7 @@ class AuditOfAuditsDataAccess:
             completed_sessions = [s for s in linked_sessions if s.overall_result in ("pass", "fail")]
             passing_sessions = [s for s in completed_sessions if s.overall_result == "pass"]
             pct_passing = (
-                round(len(passing_sessions) / len(completed_sessions) * 100, 1)
-                if completed_sessions else None
+                round(len(passing_sessions) / len(completed_sessions) * 100, 1) if completed_sessions else None
             )
 
             # ── Tasks created — CommCare tasks created by this run ───────────
@@ -330,12 +329,7 @@ class AuditOfAuditsDataAccess:
             # ── Run By — username of the NM who created the run ──────────────
             # Priority: top-level API field → state["run_by"] (written by
             # the template on creation for newer runs) → data["username"].
-            run_by = (
-                run.username
-                or state.get("run_by", "")
-                or run.data.get("username", "")
-                or ""
-            )
+            run_by = run.username or state.get("run_by", "") or run.data.get("username", "") or ""
 
             rows.append(
                 {

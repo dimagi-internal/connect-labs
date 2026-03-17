@@ -16,7 +16,7 @@ Most production apps have been removed from this codebase. The remaining non-lab
 **Three middleware layers** (configured in `config/settings/local.py`):
 
 1. `LabsAuthenticationMiddleware` — populates `request.user` as `LabsUser` from session OAuth data
-2. `LabsURLWhitelistMiddleware` — redirects non-labs URLs to `connect.dimagi.com`; whitelisted prefixes: `/ai/`, `/audit/`, `/coverage/`, `/tasks/`, `/solicitations/`, `/solicitations_new/`, `/labs/`, `/custom_analysis/`
+2. `LabsURLWhitelistMiddleware` — redirects non-labs URLs to `connect.dimagi.com`; whitelisted prefixes: `/ai/`, `/audit/`, `/coverage/`, `/tasks/`, `/solicitations/`, `/labs/`, `/custom_analysis/`
 3. `LabsContextMiddleware` — extracts opportunity/program/organization from URL params and session into `request.labs_context`
 
 **Important:** Use `config.settings.local` for local development, NOT `config.settings.labs_aws`. The `labs_aws` settings are only for the AWS deployment at `labs.connect.dimagi.com`. Local settings already have `IS_LABS_ENVIRONMENT = True`.
@@ -100,14 +100,22 @@ Structured audits of FLW visits with AI-powered reviews.
 #### Audit API Contracts (used by workflow templates)
 
 **Create async** `POST /audit/api/audit/create-async/`
+
 ```json
-{ "opportunities": [{"id": 1, "name": "..."}], "criteria": {
+{
+  "opportunities": [{ "id": 1, "name": "..." }],
+  "criteria": {
     "audit_type": "date_range|last_n_per_opp",
-    "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD",
-    "count_per_opp": 10, "sample_percentage": 100,
-    "related_fields": [{"image_path": "...", "filter_by_image": true}]
-  }, "workflow_run_id": 123 }
+    "start_date": "YYYY-MM-DD",
+    "end_date": "YYYY-MM-DD",
+    "count_per_opp": 10,
+    "sample_percentage": 100,
+    "related_fields": [{ "image_path": "...", "filter_by_image": true }]
+  },
+  "workflow_run_id": 123
+}
 ```
+
 Response: `{"success": true, "task_id": "..."}`. Task result has `{"sessions": [{"id", "title", "visits", "images"}]}`.
 
 **Bulk data** `GET /audit/api/<session_id>/bulk-data/`
@@ -191,6 +199,7 @@ TEMPLATE = {
 **Registration:** `__init__.py` auto-discovers via `pkgutil.iter_modules`. Also has explicit re-exports at the bottom — **add new templates to both the `from . import` line and `__all__`**.
 
 **JSX-in-Python rules:**
+
 - Cannot use `"""` inside `RENDER_CODE` (Python string delimiter conflict)
 - Inner components must be defined BEFORE they are used (no hoisting)
 - State for child components is hoisted to outer `WorkflowUI` so it persists across re-renders
@@ -218,9 +227,9 @@ SSE streaming endpoints for AI-assisted editing using pydantic-ai agents.
 
 Solicitations (requests for proposals), responses, and reviews.
 
-- **DataAccess:** `SolicitationDataAccess` in `solicitations/data_access.py`
-- **Proxy models:** `SolicitationRecord`, `ResponseRecord`, `ReviewRecord`, `DeliveryTypeDescriptionRecord`, `OppOrgEnrichmentRecord` (experiment=`"solicitations"`)
-- **Scoping:** Uses `program_id` and `organization_id` (NOT `opportunity_id`)
+- **DataAccess:** `SolicitationsDataAccess` in `solicitations/data_access.py`
+- **Proxy models:** `SolicitationRecord`, `ResponseRecord`, `ReviewRecord`
+- **Scoping:** Uses `program_id` (NOT `opportunity_id`)
 - **Key views:** Solicitation list, create, respond, review
 - **Standalone:** No cross-app dependencies (except AI agent integration)
 
@@ -256,7 +265,7 @@ Foundation layer used by all other apps.
 Workflow ──imports──→ AuditDataAccess (creates audits from workflow actions)
 Workflow ──imports──→ TaskDataAccess (creates tasks from workflow actions)
 AI ──────imports──→ WorkflowDataAccess (agents modify workflow definitions)
-AI ──────imports──→ SolicitationDataAccess (solicitation agent)
+AI ──────imports──→ SolicitationsDataAccess (solicitation agent)
 Audit ←──references── Tasks (tasks store audit_session_id)
 All apps ──depend──→ labs/ (API client, models, middleware)
 Coverage ──────────→ CommCare HQ (separate OAuth, no Connect dependency)

@@ -106,12 +106,12 @@ Used by audit (visit filtering) and workflow (pipeline data).
 | `tasks/` | `labs/` | `workflow/` | `TaskDataAccess`, `TaskRecord` |
 | `workflow/` | `labs/`, `audit/`, `tasks/` | `ai/` | `WorkflowDataAccess`, `PipelineDataAccess` |
 | `ai/` | `workflow/`, `solicitations/` | (called from UI) | Agent functions via SSE |
-| `solicitations/` | `labs/` | `ai/` | `SolicitationDataAccess` |
+| `solicitations/` | `labs/` | `ai/` | `SolicitationsDataAccess` |
 | `coverage/` | CommCare HQ OAuth | (standalone) | `CoverageDataAccess` |
 
 **Import direction:**
 - Workflow imports `AuditDataAccess` and `TaskDataAccess` to create audits/tasks from workflow actions
-- AI agents import `WorkflowDataAccess` and `SolicitationDataAccess` to modify data via tool calls
+- AI agents import `WorkflowDataAccess` and `SolicitationsDataAccess` to modify data via tool calls
 - Tasks store `audit_session_id` as a reference but don't import audit code
 - Coverage is fully standalone (uses CommCare HQ, not Connect production)
 

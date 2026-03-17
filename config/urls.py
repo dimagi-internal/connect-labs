@@ -16,7 +16,8 @@ urlpatterns = [
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     # Labs apps
-    path("solicitations_new/", include("commcare_connect.solicitations_new.urls", namespace="solicitations_new")),
+    path("solicitations/", include("commcare_connect.solicitations.urls", namespace="solicitations")),
+    path("funder/", include("commcare_connect.funder_dashboard.urls", namespace="funder_dashboard")),
     path("tasks/", include("commcare_connect.tasks.urls", namespace="tasks")),
     path("audit/", include("commcare_connect.audit.urls", namespace="audit")),
     path("coverage/", include("commcare_connect.coverage.urls", namespace="coverage")),

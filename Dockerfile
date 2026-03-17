@@ -1,27 +1,29 @@
 # Application image for CommCare Connect Labs
 # Uses a pre-built base image (from Dockerfile.base) that contains all Python
 # dependencies, runtime system packages, and docker scripts.
+# Uses a pre-built node image (from Dockerfile.node) that contains frontend
+# bundles. Falls back to building from source if not provided.
 #
-# For local development without a base image, the default BASE_IMAGE falls back
-# to the plain Python image — but you'll need to install deps separately.
+# For local development without pre-built images, the defaults fall back
+# to plain images — but you'll need to install deps separately.
 
 ARG BASE_IMAGE=python:3.11-slim-bookworm
+ARG NODE_IMAGE=node:18-bullseye
 
 # ---------------------------------------------------------------------------
-# Stage 1: Build frontend bundles
+# Stage 1: Build frontend bundles (skipped if pre-built node image has bundles)
 # ---------------------------------------------------------------------------
-FROM node:18-bullseye AS build-node
+FROM ${NODE_IMAGE} AS build-node
 
-RUN nodejs -v && npm -v
 WORKDIR /app
 
-# Install npm deps first (layer cache on package files)
+# Install npm deps only if not already present (pre-built image has them)
 COPY package.json package-lock.json /app/
-RUN npm install
+RUN [ -d /app/node_modules ] || npm install
 
-# Then copy the rest and build
+# Copy source and build only if bundles don't exist (pre-built image has them)
 COPY . /app
-RUN npm run build
+RUN [ -d /app/commcare_connect/static/bundles/js ] || npm run build
 
 # ---------------------------------------------------------------------------
 # Stage 2: Final application image

@@ -2,6 +2,9 @@
 .claude/mcp.json
 .mcp.json
 
+# Test account credentials
+.test-accounts.json
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -328,6 +331,7 @@ commcare_connect/audit/tests/test_connect_staging_api.py
 
 # Browser testing screenshots
 .playwright-mcp/
+screenshots/
 
 # Analysis cache (local development)
 .analysis_cache/
