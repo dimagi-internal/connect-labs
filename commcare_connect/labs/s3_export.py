@@ -81,10 +81,13 @@ def _get_s3_client():
     kwargs = {}
     key_id = getattr(settings, "LABS_AWS_ACCESS_KEY_ID", None)
     secret = getattr(settings, "LABS_AWS_SECRET_ACCESS_KEY", None)
+    token = getattr(settings, "LABS_AWS_SESSION_TOKEN", None)
     region = getattr(settings, "LABS_AWS_DEFAULT_REGION", None) or "us-east-1"
     if key_id and secret:
         kwargs["aws_access_key_id"] = key_id
         kwargs["aws_secret_access_key"] = secret
+    if token:
+        kwargs["aws_session_token"] = token
     kwargs["region_name"] = region
     return boto3.client("s3", **kwargs)
 
@@ -153,9 +156,16 @@ def upsert_workflow_run(run, opportunity_name: str = "", definition_name: str = 
             "status": run.status or "unknown",
             "selected_count": run.selected_count,
             "username": run_by,
-            "session_count": state.get("session_count", 0),
-            "completed_session_count": state.get("completed_session_count", 0),
-            "avg_pct_passed": state.get("avg_pct_passed", ""),
+            "session_count": state.get("session_count", "") or state.get("flws_count", ""),
+            "completed_session_count": state.get("completed_session_count", "") or state.get("completed_flws", ""),
+            # Templates write "avg_passed"; AoA report also checks avg_pct_passed/avg_pass_rate
+            "avg_pct_passed": (
+                state.get("avg_passed")
+                or state.get("avg_pct_passed")
+                or state.get("avg_pass_rate")
+                or state.get("pass_rate")
+                or ""
+            ),
             "pct_passing": state.get("pct_passing", ""),
             "tasks_created": state.get("tasks_created", ""),
             "images_reviewed": state.get("images_reviewed", ""),
