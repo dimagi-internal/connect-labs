@@ -1,14 +1,14 @@
 """
-Tests for solicitations_new JSON API views.
+Tests for solicitations JSON API views.
 
-All tests mock SolicitationsNewDataAccess to avoid real API calls.
+All tests mock SolicitationsDataAccess to avoid real API calls.
 Uses Django RequestFactory for direct view function invocation.
 """
 
 import json
 from unittest.mock import MagicMock, patch
 
-from commcare_connect.solicitations_new.api_views import (
+from commcare_connect.solicitations.api_views import (
     api_response_detail,
     api_responses_list,
     api_review_detail,
@@ -16,8 +16,8 @@ from commcare_connect.solicitations_new.api_views import (
     api_solicitation_detail,
     api_solicitations_list,
 )
-from commcare_connect.solicitations_new.data_access import RESPONSE_TYPE, REVIEW_TYPE, SOLICITATION_TYPE
-from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
+from commcare_connect.solicitations.data_access import RESPONSE_TYPE, REVIEW_TYPE, SOLICITATION_TYPE
+from commcare_connect.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 # =========================================================================
 # Test record factories
@@ -103,7 +103,7 @@ def _make_review(**overrides):
 # Request factory helpers
 # =========================================================================
 
-_DA_PATCH = "commcare_connect.solicitations_new.api_views._get_data_access"
+_DA_PATCH = "commcare_connect.solicitations.api_views._get_data_access"
 
 
 def _make_get_request(path="/", query_params=None):

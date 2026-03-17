@@ -23,7 +23,6 @@ from commcare_connect.labs.admin_boundaries.services import (
     stream_load_country,
 )
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView, send_sse_event
-from commcare_connect.solicitations.data_access import SolicitationDataAccess
 
 logger = logging.getLogger(__name__)
 
@@ -713,11 +712,11 @@ class BoundaryMapView(LoginRequiredMixin, TemplateView):
         return context
 
     def _load_enrichment_data(self) -> list:
-        """Load enrichment data from production LabsRecord."""
-        data_access = SolicitationDataAccess(request=self.request)
-        enrichment_record = data_access.get_enrichment_record()
-        if enrichment_record:
-            return enrichment_record.enrichments
+        """Load enrichment data from production LabsRecord.
+
+        TODO: The enrichment feature was removed when the old solicitations app was deleted.
+        This needs to be reimplemented if enrichment data is still needed.
+        """
         return []
 
 
@@ -911,9 +910,9 @@ class BoundaryMapAPIView(LoginRequiredMixin, View):
         )
 
     def _load_enrichment_data(self) -> list:
-        """Load enrichment data from production LabsRecord."""
-        data_access = SolicitationDataAccess(request=self.request)
-        enrichment_record = data_access.get_enrichment_record()
-        if enrichment_record:
-            return enrichment_record.enrichments
+        """Load enrichment data from production LabsRecord.
+
+        TODO: The enrichment feature was removed when the old solicitations app was deleted.
+        This needs to be reimplemented if enrichment data is still needed.
+        """
         return []

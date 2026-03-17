@@ -200,13 +200,13 @@ git commit -m "feat: add allocation methods to FunderDashboardDataAccess"
 ### Task 3: Auto-create allocation in award flow
 
 **Files:**
-- Modify: `commcare_connect/solicitations_new/data_access.py`
-- Modify: `commcare_connect/solicitations_new/views.py`
-- Test: `commcare_connect/solicitations_new/tests/test_data_access.py`
+- Modify: `commcare_connect/solicitations/data_access.py`
+- Modify: `commcare_connect/solicitations/views.py`
+- Test: `commcare_connect/solicitations/tests/test_data_access.py`
 
 **Step 1: Write failing test**
 
-Add to `commcare_connect/solicitations_new/tests/test_data_access.py`:
+Add to `commcare_connect/solicitations/tests/test_data_access.py`:
 
 ```python
 class TestAwardResponseAutoAllocation:
@@ -226,13 +226,13 @@ class TestAwardResponseAutoAllocation:
         solicitation_data = {"title": "Test RFP", "fund_id": 5}
         mock_solicitation = SolicitationRecord({"id": 100, "data": solicitation_data})
 
-        da = SolicitationsNewDataAccess(program_id="1", access_token="tok")
+        da = SolicitationsDataAccess(program_id="1", access_token="tok")
         with (
             patch.object(da, "get_response_by_id", return_value=mock_response),
             patch.object(da, "update_response", return_value=mock_awarded),
             patch.object(da, "get_solicitation_by_id", return_value=mock_solicitation),
             patch(
-                "commcare_connect.solicitations_new.data_access.FunderDashboardDataAccess"
+                "commcare_connect.solicitations.data_access.FunderDashboardDataAccess"
             ) as MockFDA,
         ):
             mock_fda_instance = MockFDA.return_value
@@ -247,12 +247,12 @@ class TestAwardResponseAutoAllocation:
 
 **Step 2: Run test to verify it fails**
 
-Run: `pytest commcare_connect/solicitations_new/tests/test_data_access.py::TestAwardResponseAutoAllocation -v`
+Run: `pytest commcare_connect/solicitations/tests/test_data_access.py::TestAwardResponseAutoAllocation -v`
 Expected: FAIL — no auto-allocation logic yet
 
 **Step 3: Implement auto-allocation in `award_response()`**
 
-Modify `commcare_connect/solicitations_new/data_access.py`:
+Modify `commcare_connect/solicitations/data_access.py`:
 
 Add import at top:
 ```python
@@ -308,13 +308,13 @@ Replace the existing `award_response` method:
 
 **Step 4: Run tests to verify they pass**
 
-Run: `pytest commcare_connect/solicitations_new/tests/test_data_access.py -v`
+Run: `pytest commcare_connect/solicitations/tests/test_data_access.py -v`
 Expected: All PASS
 
 **Step 5: Commit**
 
 ```bash
-git add commcare_connect/solicitations_new/data_access.py commcare_connect/solicitations_new/tests/test_data_access.py
+git add commcare_connect/solicitations/data_access.py commcare_connect/solicitations/tests/test_data_access.py
 git commit -m "feat: auto-create fund allocation on award"
 ```
 
@@ -584,7 +584,7 @@ git commit -m "feat: add allocations management to fund edit form"
 
 **Files:**
 - Modify: `commcare_connect/funder_dashboard/tests/test_e2e_fund_flow.py`
-- Modify: `commcare_connect/solicitations_new/tests/test_e2e_award_flow.py`
+- Modify: `commcare_connect/solicitations/tests/test_e2e_award_flow.py`
 
 **Step 1: Update test_e2e_fund_flow.py**
 
@@ -603,15 +603,15 @@ In `TestStep4EditFund.test_edit_form_renders_with_initial`, verify allocations_j
 
 The `award_response()` mock may need updating since it now tries to call `get_solicitation_by_id`. Add a mock for the solicitation lookup (returning a solicitation without `fund_id` so the auto-allocation path is skipped in unit tests).
 
-**Step 3: Run all funder_dashboard and solicitations_new tests**
+**Step 3: Run all funder_dashboard and solicitations tests**
 
-Run: `pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations_new/ -v`
+Run: `pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations/ -v`
 Expected: All PASS
 
 **Step 4: Commit**
 
 ```bash
-git add commcare_connect/funder_dashboard/tests/ commcare_connect/solicitations_new/tests/
+git add commcare_connect/funder_dashboard/tests/ commcare_connect/solicitations/tests/
 git commit -m "test: update unit tests for allocation changes"
 ```
 
@@ -905,7 +905,7 @@ class TestAwardWithFundAllocation:
 
         # --- Step 2: Create a solicitation linked to the fund ---
         sol_title = f"E2E Test RFP {timestamp}"
-        sol_url = f"{live_server_url}/solicitations_new/create/?program_id={program_id}"
+        sol_url = f"{live_server_url}/solicitations/create/?program_id={program_id}"
         page.goto(sol_url)
         page.wait_for_load_state("domcontentloaded")
         csrf_token = page.locator("input[name='csrfmiddlewaretoken']").first.input_value()
@@ -927,14 +927,14 @@ class TestAwardWithFundAllocation:
         assert response.ok or response.status == 302
 
         # Find the solicitation ID
-        page.goto(f"{live_server_url}/solicitations_new/manage/?program_id={program_id}")
+        page.goto(f"{live_server_url}/solicitations/manage/?program_id={program_id}")
         page.wait_for_load_state("domcontentloaded")
         sol_link = page.locator(f"a:has-text('{sol_title}')").first
         sol_href = sol_link.get_attribute("href")
         sol_id = sol_href.strip("/").split("/")[-1]
 
         # --- Step 3: Submit a response ---
-        respond_url = f"{live_server_url}/solicitations_new/{sol_id}/respond/?program_id={program_id}"
+        respond_url = f"{live_server_url}/solicitations/{sol_id}/respond/?program_id={program_id}"
         page.goto(respond_url)
         page.wait_for_load_state("domcontentloaded")
         csrf_token = page.locator("input[name='csrfmiddlewaretoken']").first.input_value()
@@ -950,7 +950,7 @@ class TestAwardWithFundAllocation:
         assert response.ok or response.status == 302
 
         # --- Step 4: Find the response and award it ---
-        page.goto(f"{live_server_url}/solicitations_new/{sol_id}/responses/?program_id={program_id}")
+        page.goto(f"{live_server_url}/solicitations/{sol_id}/responses/?program_id={program_id}")
         page.wait_for_load_state("domcontentloaded")
 
         # Click the first View link in the responses table
@@ -1008,7 +1008,7 @@ git commit -m "test: add e2e award flow with fund auto-allocation test"
 
 **Step 1: Run all unit tests**
 
-Run: `pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations_new/ commcare_connect/labs/tests/test_token_manager_profiles.py -v`
+Run: `pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations/ commcare_connect/labs/tests/test_token_manager_profiles.py -v`
 Expected: All PASS
 
 **Step 2: Run linting**

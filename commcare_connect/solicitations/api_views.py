@@ -1,8 +1,8 @@
 """
-JSON API views for solicitations_new.
+JSON API views for solicitations.
 
 Function-based views returning JsonResponse for solicitations, responses, and reviews.
-All data access goes through SolicitationsNewDataAccess (API-backed, no local DB).
+All data access goes through SolicitationsDataAccess (API-backed, no local DB).
 """
 
 import json
@@ -12,14 +12,14 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from commcare_connect.solicitations_new.data_access import SolicitationsNewDataAccess
+from commcare_connect.solicitations.data_access import SolicitationsDataAccess
 
 logger = logging.getLogger(__name__)
 
 
 def _get_data_access(request):
     """Create data access from request."""
-    return SolicitationsNewDataAccess(request=request)
+    return SolicitationsDataAccess(request=request)
 
 
 # =========================================================================

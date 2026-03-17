@@ -6,11 +6,11 @@
 
     <!-- Breadcrumb -->
     <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
-        <a href="{% url 'solicitations_new:public_list' %}" class="hover:text-brand-cornflower-blue transition-colors">
+        <a href="{% url 'solicitations:public_list' %}" class="hover:text-brand-cornflower-blue transition-colors">
             <i class="fa-solid fa-bullhorn mr-1"></i> Solicitations
         </a>
         <i class="fa-solid fa-chevron-right text-xs"></i>
-        <a href="{% url 'solicitations_new:public_detail' pk=solicitation.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
+        <a href="{% url 'solicitations:public_detail' pk=solicitation.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
             {{ solicitation.title|truncatewords:8 }}
         </a>
         <i class="fa-solid fa-chevron-right text-xs"></i>
@@ -29,7 +29,7 @@
             </div>
         </div>
         <div class="pt-4">
-            <a href="{% url 'solicitations_new:public_detail' pk=solicitation.pk %}" class="text-sm text-brand-cornflower-blue hover:underline">
+            <a href="{% url 'solicitations:public_detail' pk=solicitation.pk %}" class="text-sm text-brand-cornflower-blue hover:underline">
                 <i class="fa-solid fa-arrow-left mr-1"></i> Back to solicitation
             </a>
         </div>
@@ -85,7 +85,7 @@
 
             <!-- Form Actions -->
             <div class="flex justify-end gap-4 pt-2 pb-8">
-                <a href="{% url 'solicitations_new:public_detail' pk=solicitation.pk %}"
+                <a href="{% url 'solicitations:public_detail' pk=solicitation.pk %}"
                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
                     <i class="fa-solid fa-times mr-2"></i>
                     Cancel

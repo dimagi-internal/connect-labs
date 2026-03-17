@@ -1,5 +1,5 @@
 """
-Tests for solicitations_new data access layer.
+Tests for solicitations data access layer.
 
 All tests mock LabsRecordAPIClient to avoid real API calls.
 Mock returns LocalLabsRecord-compatible objects (proxy model instances).
@@ -10,13 +10,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from commcare_connect.labs.models import LocalLabsRecord
-from commcare_connect.solicitations_new.data_access import (
+from commcare_connect.solicitations.data_access import (
     RESPONSE_TYPE,
     REVIEW_TYPE,
     SOLICITATION_TYPE,
-    SolicitationsNewDataAccess,
+    SolicitationsDataAccess,
 )
-from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
+from commcare_connect.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 # =========================================================================
 # Fixtures
@@ -104,7 +104,7 @@ def _make_review_record(**overrides):
 @pytest.fixture
 def mock_api_client():
     """Create a mock LabsRecordAPIClient."""
-    with patch("commcare_connect.solicitations_new.data_access.LabsRecordAPIClient") as MockClient:
+    with patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient") as MockClient:
         mock_instance = MagicMock()
         MockClient.return_value = mock_instance
         yield mock_instance
@@ -112,8 +112,8 @@ def mock_api_client():
 
 @pytest.fixture
 def data_access(mock_api_client):
-    """Create a SolicitationsNewDataAccess with mocked API client."""
-    da = SolicitationsNewDataAccess(
+    """Create a SolicitationsDataAccess with mocked API client."""
+    da = SolicitationsDataAccess(
         program_id="42",
         access_token="test-token",
     )
@@ -131,32 +131,32 @@ class TestConstructor:
     def test_requires_access_token(self):
         """Raises ValueError when no access token is provided."""
         with pytest.raises(ValueError, match="OAuth access token required"):
-            SolicitationsNewDataAccess(program_id="42")
+            SolicitationsDataAccess(program_id="42")
 
-    @patch("commcare_connect.solicitations_new.data_access.LabsRecordAPIClient")
+    @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_stores_program_id(self, MockClient):
-        da = SolicitationsNewDataAccess(program_id="42", access_token="tok")
+        da = SolicitationsDataAccess(program_id="42", access_token="tok")
         assert da.program_id == "42"
 
-    @patch("commcare_connect.solicitations_new.data_access.LabsRecordAPIClient")
+    @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_creates_api_client_with_token(self, MockClient):
-        SolicitationsNewDataAccess(program_id="42", access_token="tok")
+        SolicitationsDataAccess(program_id="42", access_token="tok")
         MockClient.assert_called_once_with("tok", program_id=42)
 
-    @patch("commcare_connect.solicitations_new.data_access.LabsRecordAPIClient")
+    @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_extracts_context_from_request(self, MockClient):
         request = MagicMock()
         request.labs_context = {"program_id": 99}
         request.session = {"labs_oauth": {"access_token": "req-tok", "expires_at": 9999999999}}
-        da = SolicitationsNewDataAccess(request=request)
+        da = SolicitationsDataAccess(request=request)
         assert da.program_id == "99"
 
-    @patch("commcare_connect.solicitations_new.data_access.LabsRecordAPIClient")
+    @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_explicit_program_id_overrides_context(self, MockClient):
         request = MagicMock()
         request.labs_context = {"program_id": 99}
         request.session = {"labs_oauth": {"access_token": "req-tok", "expires_at": 9999999999}}
-        da = SolicitationsNewDataAccess(program_id="42", request=request)
+        da = SolicitationsDataAccess(program_id="42", request=request)
         assert da.program_id == "42"
 
 
@@ -599,14 +599,12 @@ class TestAwardResponseAutoAllocation:
             }
         )
 
-        da = SolicitationsNewDataAccess(program_id="1", access_token="tok")
+        da = SolicitationsDataAccess(program_id="1", access_token="tok")
         with (
             patch.object(da, "get_response_by_id", return_value=mock_response),
             patch.object(da, "update_response", return_value=mock_awarded),
             patch.object(da, "get_solicitation_by_id", return_value=mock_solicitation),
-            patch(
-                "commcare_connect.funder_dashboard.data_access.FunderDashboardDataAccess"
-            ) as MockFDA,
+            patch("commcare_connect.funder_dashboard.data_access.FunderDashboardDataAccess") as MockFDA,
         ):
             mock_fda_instance = MockFDA.return_value
             da.award_response(10, reward_budget=50000, org_id="42")

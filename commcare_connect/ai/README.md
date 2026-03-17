@@ -58,7 +58,7 @@ Tools mutate a `deps` dataclass during streaming. The view collects pending chan
 
 ## Cross-App Connections
 
-- **Depends on:** `workflow/` (WorkflowDataAccess, PipelineDataAccess for saving chat history), `solicitations/` (SolicitationDataAccess)
+- **Depends on:** `workflow/` (WorkflowDataAccess, PipelineDataAccess for saving chat history), `solicitations/` (SolicitationsDataAccess)
 - **Used by:** Called from workflow editor and pipeline editor UIs
 
 ## Testing

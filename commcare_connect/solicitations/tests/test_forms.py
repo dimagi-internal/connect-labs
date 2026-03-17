@@ -1,10 +1,10 @@
-"""Tests for solicitations_new forms.
+"""Tests for solicitations forms.
 
 These tests are pure Python — no database required.
 """
 import json
 
-from commcare_connect.solicitations_new.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
+from commcare_connect.solicitations.forms import ReviewForm, SolicitationForm, SolicitationResponseForm
 
 
 class TestSolicitationForm:

@@ -69,7 +69,7 @@ Still needed to manage opportunity/program/org context selection. Its `_org_data
 | `audit/views.py` | `_org_data` reads from session |
 | `tasks/views.py` | `_org_data` reads from session, remove `is_labs_user` checks |
 | `solicitations/views.py` | Remove `is_labs_user` checks |
-| `solicitations_new/views.py` | Remove `is_labs_user` checks |
+| `solicitations/views.py` | Remove `is_labs_user` checks |
 | `templates/layouts/header.html` | Remove `is_labs_user` conditionals, simplify to one mode |
 | `config/urls.py` | Add root redirect to `/labs/overview/` |
 | `organization/decorators.py` | Fix `reverse("account_login")` → `/labs/login/` |

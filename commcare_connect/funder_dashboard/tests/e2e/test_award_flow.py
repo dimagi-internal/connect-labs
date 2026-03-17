@@ -64,7 +64,7 @@ class TestAwardWithFundAllocation:
 
         # --- Step 2: Create a solicitation linked to the fund ---
         sol_title = f"E2E Test RFP {timestamp}"
-        sol_url = f"{live_server_url}/solicitations_new/create/?program_id={program_id}"
+        sol_url = f"{live_server_url}/solicitations/create/?program_id={program_id}"
         page.goto(sol_url)
         page.wait_for_load_state("domcontentloaded")
         csrf_token = page.locator("input[name='csrfmiddlewaretoken']").first.input_value()
@@ -86,14 +86,14 @@ class TestAwardWithFundAllocation:
         assert response.ok or response.status == 302
 
         # Find the solicitation ID
-        page.goto(f"{live_server_url}/solicitations_new/manage/?program_id={program_id}")
+        page.goto(f"{live_server_url}/solicitations/manage/?program_id={program_id}")
         page.wait_for_load_state("domcontentloaded")
         sol_link = page.locator(f"a:has-text('{sol_title}')").first  # noqa: E231
         sol_href = sol_link.get_attribute("href")
         sol_id = sol_href.strip("/").split("/")[-1]
 
         # --- Step 3: Submit a response ---
-        respond_url = f"{live_server_url}/solicitations_new/{sol_id}/respond/?program_id={program_id}"
+        respond_url = f"{live_server_url}/solicitations/{sol_id}/respond/?program_id={program_id}"
         page.goto(respond_url)
         page.wait_for_load_state("domcontentloaded")
         csrf_token = page.locator("input[name='csrfmiddlewaretoken']").first.input_value()
@@ -109,7 +109,7 @@ class TestAwardWithFundAllocation:
         assert response.ok or response.status == 302
 
         # --- Step 4: Find the response and award it ---
-        page.goto(f"{live_server_url}/solicitations_new/{sol_id}/responses/?program_id={program_id}")
+        page.goto(f"{live_server_url}/solicitations/{sol_id}/responses/?program_id={program_id}")
         page.wait_for_load_state("domcontentloaded")
 
         # Click the first View link in the responses table

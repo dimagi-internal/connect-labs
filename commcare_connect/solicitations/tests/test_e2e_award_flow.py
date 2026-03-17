@@ -7,15 +7,15 @@ detail → award response → verify awarded status.
 Uses Django's test client with mocked LabsRecordAPIClient.
 
 Run:
-    pytest commcare_connect/solicitations_new/tests/test_e2e_award_flow.py -v
+    pytest commcare_connect/solicitations/tests/test_e2e_award_flow.py -v
 """
 from unittest.mock import MagicMock, patch
 
 from django.test import RequestFactory
 
-from commcare_connect.solicitations_new.data_access import RESPONSE_TYPE, REVIEW_TYPE, SOLICITATION_TYPE
-from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
-from commcare_connect.solicitations_new.views import AwardView, ResponseDetailView, ResponsesListView
+from commcare_connect.solicitations.data_access import RESPONSE_TYPE, REVIEW_TYPE, SOLICITATION_TYPE
+from commcare_connect.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
+from commcare_connect.solicitations.views import AwardView, ResponseDetailView, ResponsesListView
 
 # =========================================================================
 # Helpers
@@ -119,7 +119,7 @@ class TestStep1ResponsesList:
     """Step 1: Manager views the list of responses to a solicitation."""
 
     @_CONTEXT_PATCH
-    @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
+    @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_responses_list_renders(self, MockDA):
         """Responses list shows all responses with Award action."""
         solicitation = _make_solicitation(pk=1)
@@ -141,7 +141,7 @@ class TestStep1ResponsesList:
         assert "Neonatal Care RFP" in content
 
     @_CONTEXT_PATCH
-    @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
+    @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_responses_list_shows_awarded_badge(self, MockDA):
         """Responses that are awarded show the Awarded badge instead of Award link."""
         solicitation = _make_solicitation(pk=1)
@@ -170,7 +170,7 @@ class TestStep2ResponseDetail:
     """Step 2: Manager views a response detail to see if it's award-worthy."""
 
     @_CONTEXT_PATCH
-    @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
+    @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_detail_shows_award_button(self, MockDA):
         """Non-awarded response shows the Award button."""
         resp = _make_response(pk=10, status="submitted")
@@ -189,7 +189,7 @@ class TestStep2ResponseDetail:
         assert "fa-trophy" in content
 
     @_CONTEXT_PATCH
-    @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
+    @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_detail_shows_awarded_badge_when_awarded(self, MockDA):
         """Awarded response shows the Awarded badge instead of Award button."""
         resp = _make_response(pk=10, status="awarded")
@@ -216,7 +216,7 @@ class TestStep3AwardForm:
     """Step 3: Manager opens the award form and submits it."""
 
     @_CONTEXT_PATCH
-    @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
+    @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_award_form_renders(self, MockDA):
         """Award form shows org_id and budget fields."""
         resp = _make_response(pk=10)
@@ -234,7 +234,7 @@ class TestStep3AwardForm:
         assert 'name="org_id"' in content
         assert 'name="reward_budget"' in content
 
-    @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
+    @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_award_submit_redirects(self, MockDA):
         """POST with valid data awards the response and redirects."""
         _make_response(pk=10, solicitation_id=1)
@@ -262,7 +262,7 @@ class TestFullAwardFlow:
     """Walk through the complete award lifecycle."""
 
     @_CONTEXT_PATCH
-    @patch("commcare_connect.solicitations_new.views.SolicitationsNewDataAccess")
+    @patch("commcare_connect.solicitations.views.SolicitationsDataAccess")
     def test_full_award_lifecycle(self, MockDA):
         """Full lifecycle: responses list → detail → award → verify awarded."""
         solicitation = _make_solicitation(pk=1)

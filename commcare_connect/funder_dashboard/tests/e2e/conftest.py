@@ -69,12 +69,12 @@ def live_server_url():
     result = sock.connect_ex((E2E_HOST, E2E_PORT))
     sock.close()
     if result == 0:
-        yield "http://{}:{}".format(E2E_HOST, E2E_PORT)
+        yield f"http://{E2E_HOST}:{E2E_PORT}"
         return
 
     server_log = open("e2e_django_server.log", "w")
     proc = subprocess.Popen(
-        [sys.executable, "manage.py", "runserver", "{}:{}".format(E2E_HOST, E2E_PORT), "--noreload"],
+        [sys.executable, "manage.py", "runserver", f"{E2E_HOST}:{E2E_PORT}", "--noreload"],
         stdout=server_log,
         stderr=subprocess.STDOUT,
     )
@@ -90,9 +90,9 @@ def live_server_url():
             time.sleep(0.5)
     else:
         proc.kill()
-        raise RuntimeError("Django server failed to start on {}:{}".format(E2E_HOST, E2E_PORT))
+        raise RuntimeError(f"Django server failed to start on {E2E_HOST}:{E2E_PORT}")
 
-    yield "http://{}:{}".format(E2E_HOST, E2E_PORT)
+    yield f"http://{E2E_HOST}:{E2E_PORT}"
 
     proc.terminate()
     proc.wait(timeout=10)
@@ -106,15 +106,15 @@ def _auth_data(request, browser, live_server_url):
     context = browser.new_context()
     page = context.new_page()
 
-    auth_url = "{}/labs/test-auth/".format(live_server_url)
+    auth_url = f"{live_server_url}/labs/test-auth/"
     if profile:
-        auth_url += "?profile={}".format(profile)
+        auth_url += f"?profile={profile}"
 
     response = page.goto(auth_url)
-    assert response.status == 200, "test-auth failed: {}".format(page.content())
+    assert response.status == 200, f"test-auth failed: {page.content()}"
 
     body = response.json()
-    assert body.get("success"), "test-auth returned: {}".format(body)
+    assert body.get("success"), f"test-auth returned: {body}"
 
     page.close()
     yield context, body

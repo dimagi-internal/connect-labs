@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-02
 **Status:** Approved
-**App name:** `solicitations_new`
+**App name:** `solicitations`
 
 ## Purpose
 
@@ -28,7 +28,7 @@ data_access.py (LabsRecord API)
 ### File Structure
 
 ```
-solicitations_new/
+solicitations/
 ├── data_access.py          # All business logic, talks to LabsRecord API
 ├── views.py                # Django template views (public + authenticated)
 ├── api_views.py            # JSON API endpoints (simple Django views)
@@ -37,7 +37,7 @@ solicitations_new/
 ├── urls.py                 # URL routing for both HTML and API
 ├── forms.py                # Django forms for solicitation + response + review
 └── templates/
-    └── solicitations_new/  # Server-rendered pages
+    └── solicitations/  # Server-rendered pages
 ```
 
 ### Data Storage
@@ -100,36 +100,36 @@ All data stored via LabsRecord API (production). No local Django ORM models. Pro
 ### Public (no login required)
 
 ```
-/solicitations_new/                          → public listing
-/solicitations_new/<int:pk>/                 → public detail
+/solicitations/                          → public listing
+/solicitations/<int:pk>/                 → public detail
 ```
 
 ### Authenticated UI
 
 ```
-/solicitations_new/manage/                   → manager's solicitation list
-/solicitations_new/create/                   → create solicitation form
-/solicitations_new/<int:pk>/edit/            → edit solicitation form
-/solicitations_new/<int:pk>/responses/       → view responses (manager)
-/solicitations_new/<int:pk>/respond/         → submit response
-/solicitations_new/response/<int:pk>/        → response detail
-/solicitations_new/response/<int:pk>/review/ → review form
+/solicitations/manage/                   → manager's solicitation list
+/solicitations/create/                   → create solicitation form
+/solicitations/<int:pk>/edit/            → edit solicitation form
+/solicitations/<int:pk>/responses/       → view responses (manager)
+/solicitations/<int:pk>/respond/         → submit response
+/solicitations/response/<int:pk>/        → response detail
+/solicitations/response/<int:pk>/review/ → review form
 ```
 
 ### JSON API
 
 ```
-/solicitations_new/api/solicitations/        → GET list, POST create
-/solicitations_new/api/solicitations/<id>/   → GET detail, PUT update
-/solicitations_new/api/responses/            → GET list, POST create
-/solicitations_new/api/responses/<id>/       → GET detail, PUT update
-/solicitations_new/api/reviews/              → POST create
-/solicitations_new/api/reviews/<id>/         → GET detail, PUT update
+/solicitations/api/solicitations/        → GET list, POST create
+/solicitations/api/solicitations/<id>/   → GET detail, PUT update
+/solicitations/api/responses/            → GET list, POST create
+/solicitations/api/responses/<id>/       → GET detail, PUT update
+/solicitations/api/reviews/              → POST create
+/solicitations/api/reviews/<id>/         → GET detail, PUT update
 ```
 
 ## Public Pages & Auth Flow
 
-### Public browse (`/solicitations_new/`)
+### Public browse (`/solicitations/`)
 
 - No login required
 - Lists solicitations where `is_public=True` and `status="active"`
@@ -137,12 +137,12 @@ All data stored via LabsRecord API (production). No local Django ORM models. Pro
 - Filter by solicitation type
 - SEO-friendly titles and meta descriptions
 
-### Public detail (`/solicitations_new/<pk>/`)
+### Public detail (`/solicitations/<pk>/`)
 
 - No login required
 - Full details: description, scope of work, questions preview, deadlines
 - CTA button: "Respond to this Solicitation"
-- Click → redirected to `/labs/login/?next=/solicitations_new/<pk>/respond/`
+- Click → redirected to `/labs/login/?next=/solicitations/<pk>/respond/`
 
 ### Response flow (new user)
 
@@ -166,7 +166,7 @@ Same but step 3 is instant (already authenticated). Existing LLOs appear in drop
 
 ## Manager & Review Flow
 
-### Manager dashboard (`/solicitations_new/manage/`)
+### Manager dashboard (`/solicitations/manage/`)
 
 - Lists solicitations for current user's program
 - Table: title, type, status, deadline, response count, actions
@@ -178,12 +178,12 @@ Same but step 3 is instant (already authenticated). Existing LLOs appear in drop
 - Dynamic question builder (Alpine.js): add/remove/reorder questions, set type, mark required
 - Question types: text, textarea, number, multiple_choice
 
-### Responses list (`/solicitations_new/<pk>/responses/`)
+### Responses list (`/solicitations/<pk>/responses/`)
 
 - Table: LLO entity name, submitted by, status, date, recommendation, score
 - Click → response detail with review option
 
-### Review form (`/solicitations_new/response/<pk>/review/`)
+### Review form (`/solicitations/response/<pk>/review/`)
 
 - Shows response: LLO entity info, all Q&A pairs
 - Review fields: score (1-100), recommendation, notes, tags
@@ -191,7 +191,7 @@ Same but step 3 is instant (already authenticated). Existing LLOs appear in drop
 
 ## Middleware Considerations
 
-Public pages (`/solicitations_new/` and `/solicitations_new/<pk>/`) must bypass `LabsURLWhitelistMiddleware` auth requirement. Add `/solicitations_new/` to `WHITELISTED_PREFIXES` and handle public vs. authenticated routing within the views.
+Public pages (`/solicitations/` and `/solicitations/<pk>/`) must bypass `LabsURLWhitelistMiddleware` auth requirement. Add `/solicitations/` to `WHITELISTED_PREFIXES` and handle public vs. authenticated routing within the views.
 
 ## MCP Tools
 

@@ -6,12 +6,12 @@
     <!-- Breadcrumb -->
     <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
         {% if solicitation %}
-            <a href="{% url 'solicitations_new:responses_list' pk=solicitation.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <a href="{% url 'solicitations:responses_list' pk=solicitation.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
                 <i class="fa-solid fa-list mr-1"></i> Responses
             </a>
             <i class="fa-solid fa-chevron-right text-xs"></i>
         {% endif %}
-        <a href="{% url 'solicitations_new:response_detail' pk=response.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
+        <a href="{% url 'solicitations:response_detail' pk=response.pk %}" class="hover:text-brand-cornflower-blue transition-colors">
             {{ response.submitted_by_name|default:"Response" }}
         </a>
         <i class="fa-solid fa-chevron-right text-xs"></i>
@@ -78,7 +78,7 @@
             </div>
 
             <div class="flex justify-end gap-4 pt-4 border-t border-gray-200">
-                <a href="{% url 'solicitations_new:response_detail' pk=response.pk %}"
+                <a href="{% url 'solicitations:response_detail' pk=response.pk %}"
                    class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
                     <i class="fa-solid fa-times mr-2"></i>
                     Cancel

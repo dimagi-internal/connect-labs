@@ -21,15 +21,15 @@
     <!-- Type Filter -->
     <div class="card_bg mb-8">
         <div class="flex flex-wrap gap-2">
-            <a href="{% url 'solicitations_new:public_list' %}"
+            <a href="{% url 'solicitations:public_list' %}"
                class="button button-sm {% if selected_type == '' %}primary-dark{% else %}outline-style{% endif %}">
                 All
             </a>
-            <a href="{% url 'solicitations_new:public_list' %}?type=rfp"
+            <a href="{% url 'solicitations:public_list' %}?type=rfp"
                class="button button-sm {% if selected_type == 'rfp' %}primary-dark{% else %}outline-style{% endif %}">
                 <i class="fa-solid fa-file-contract mr-1"></i> RFP
             </a>
-            <a href="{% url 'solicitations_new:public_list' %}?type=eoi"
+            <a href="{% url 'solicitations:public_list' %}?type=eoi"
                class="button button-sm {% if selected_type == 'eoi' %}primary-dark{% else %}outline-style{% endif %}">
                 <i class="fa-solid fa-hand mr-1"></i> EOI
             </a>
@@ -40,7 +40,7 @@
     {% if solicitations %}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             {% for solicitation in solicitations %}
-                <a href="{% url 'solicitations_new:public_detail' pk=solicitation.pk %}"
+                <a href="{% url 'solicitations:public_detail' pk=solicitation.pk %}"
                    class="card_bg hover:shadow-lg transition-all duration-300 block">
 
                     <!-- Card Header -->
@@ -106,7 +106,7 @@
                 {% endif %}
             </p>
             {% if selected_type %}
-                <a href="{% url 'solicitations_new:public_list' %}"
+                <a href="{% url 'solicitations:public_list' %}"
                    class="button button-md primary-dark">
                     View All Solicitations
                 </a>

@@ -34,7 +34,7 @@ Computed properties on FundRecord:
 
 ## Award Auto-Allocation
 
-When `SolicitationsNewDataAccess.award_response()` completes and the solicitation has a `fund_id`:
+When `SolicitationsDataAccess.award_response()` completes and the solicitation has a `fund_id`:
 1. Fetch the fund via `FunderDashboardDataAccess`
 2. Append allocation with `type="award"`, amount from `reward_budget`, solicitation/response IDs
 3. Save the fund
@@ -87,7 +87,7 @@ This requires `award_response()` to accept an optional `fund_id` or look it up f
 | `funder_dashboard/views.py` | Pass programs for dropdown, handle allocations in form POST |
 | `funder_dashboard/templates/fund_detail.html` | Allocations table, updated KPIs |
 | `funder_dashboard/templates/fund_form.html` | Dynamic allocations section |
-| `solicitations_new/data_access.py` | Auto-create allocation in `award_response()` |
+| `solicitations/data_access.py` | Auto-create allocation in `award_response()` |
 | `funder_dashboard/tests/e2e/conftest.py` | `--profile` option |
 | `funder_dashboard/tests/e2e/test_fund_flow.py` | New |
 | `funder_dashboard/tests/e2e/test_award_flow.py` | New |

@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Build the funder_dashboard module (FundRecord CRUD + portfolio views) and enhance solicitations_new with fund linkage, award flow, and `org_id`/`reward_budget` fields.
+**Goal:** Build the funder_dashboard module (FundRecord CRUD + portfolio views) and enhance solicitations with fund linkage, award flow, and `org_id`/`reward_budget` fields.
 
-**Architecture:** Two Labs modules — `funder_dashboard` (new) and `solicitations_new` (enhanced) — both using the LabsRecord API pattern. FundRecord is a new LabsRecord type scoped by `org_id`. Solicitations gain a `fund_id` foreign key. Award flow updates response status and captures `reward_budget` + `org_id` per grantee.
+**Architecture:** Two Labs modules — `funder_dashboard` (new) and `solicitations` (enhanced) — both using the LabsRecord API pattern. FundRecord is a new LabsRecord type scoped by `org_id`. Solicitations gain a `fund_id` foreign key. Award flow updates response status and captures `reward_budget` + `org_id` per grantee.
 
 **Tech Stack:** Django 4.2, LabsRecordAPIClient (httpx), Tailwind CSS, Alpine.js, pytest with mocked API client
 
@@ -272,7 +272,7 @@ def ensure_currency_country_data():
 
 **Step 2: Register URL in config/urls.py**
 
-Add after the `solicitations_new` line:
+Add after the `solicitations` line:
 ```python
 path("funder/", include("commcare_connect.funder_dashboard.urls", namespace="funder_dashboard")),
 ```
@@ -1123,16 +1123,16 @@ git commit -m "feat: implement fund API endpoints with tests"
 
 ---
 
-### Task 5: Enhance solicitations_new — add fund_id, org_id, reward_budget fields
+### Task 5: Enhance solicitations — add fund_id, org_id, reward_budget fields
 
 **Files:**
-- Modify: `commcare_connect/solicitations_new/models.py`
-- Modify: `commcare_connect/solicitations_new/forms.py`
-- Modify: `commcare_connect/solicitations_new/tests/test_models.py`
+- Modify: `commcare_connect/solicitations/models.py`
+- Modify: `commcare_connect/solicitations/forms.py`
+- Modify: `commcare_connect/solicitations/tests/test_models.py`
 
 **Step 1: Add fund_id to SolicitationRecord**
 
-In `commcare_connect/solicitations_new/models.py`, add to `SolicitationRecord`:
+In `commcare_connect/solicitations/models.py`, add to `SolicitationRecord`:
 ```python
 @property
 def fund_id(self):
@@ -1141,7 +1141,7 @@ def fund_id(self):
 
 **Step 2: Add org_id, org_name to ResponseRecord**
 
-In `commcare_connect/solicitations_new/models.py`, add to `ResponseRecord`:
+In `commcare_connect/solicitations/models.py`, add to `ResponseRecord`:
 ```python
 @property
 def org_id(self):
@@ -1154,7 +1154,7 @@ def org_name(self):
 
 **Step 3: Add reward_budget to ReviewRecord**
 
-In `commcare_connect/solicitations_new/models.py`, add to `ReviewRecord`:
+In `commcare_connect/solicitations/models.py`, add to `ReviewRecord`:
 ```python
 @property
 def reward_budget(self):
@@ -1163,7 +1163,7 @@ def reward_budget(self):
 
 **Step 4: Add "awarded" status to forms.py**
 
-In `commcare_connect/solicitations_new/forms.py`, update `STATUS_CHOICES`:
+In `commcare_connect/solicitations/forms.py`, update `STATUS_CHOICES`:
 ```python
 STATUS_CHOICES = [
     ("draft", "Draft"),
@@ -1185,7 +1185,7 @@ reward_budget = forms.IntegerField(
 
 **Step 5: Add model tests for new fields**
 
-In `commcare_connect/solicitations_new/tests/test_models.py`, add:
+In `commcare_connect/solicitations/tests/test_models.py`, add:
 ```python
 class TestSolicitationRecordFundId:
     def test_fund_id(self):
@@ -1237,13 +1237,13 @@ class TestReviewRecordRewardBudget:
 
 **Step 6: Run tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/solicitations_new/tests/ -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/solicitations/tests/ -v`
 Expected: All PASS
 
 **Step 7: Commit**
 
 ```bash
-git add commcare_connect/solicitations_new/
+git add commcare_connect/solicitations/
 git commit -m "feat: add fund_id, org_id, org_name, reward_budget fields to solicitation models"
 ```
 
@@ -1252,14 +1252,14 @@ git commit -m "feat: add fund_id, org_id, org_name, reward_budget fields to soli
 ### Task 6: Award flow — view and data access
 
 **Files:**
-- Modify: `commcare_connect/solicitations_new/data_access.py`
-- Modify: `commcare_connect/solicitations_new/views.py`
-- Modify: `commcare_connect/solicitations_new/urls.py`
-- Create: `commcare_connect/templates/solicitations_new/award.html`
+- Modify: `commcare_connect/solicitations/data_access.py`
+- Modify: `commcare_connect/solicitations/views.py`
+- Modify: `commcare_connect/solicitations/urls.py`
+- Create: `commcare_connect/templates/solicitations/award.html`
 
 **Step 1: Add award method to data access**
 
-In `commcare_connect/solicitations_new/data_access.py`, add after `update_response`:
+In `commcare_connect/solicitations/data_access.py`, add after `update_response`:
 ```python
 def award_response(self, response_id: int, reward_budget: int, org_id: str) -> ResponseRecord:
     """
@@ -1286,12 +1286,12 @@ def award_response(self, response_id: int, reward_budget: int, org_id: str) -> R
 
 **Step 2: Add AwardView to views.py**
 
-In `commcare_connect/solicitations_new/views.py`, add:
+In `commcare_connect/solicitations/views.py`, add:
 ```python
 class AwardView(ManagerRequiredMixin, TemplateView):
     """Award a response — mark as awarded with budget and org_id."""
 
-    template_name = "solicitations_new/award.html"
+    template_name = "solicitations/award.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -1322,8 +1322,8 @@ class AwardView(ManagerRequiredMixin, TemplateView):
             # Redirect back to the responses list for the parent solicitation
             response = da.get_response_by_id(pk)
             if response:
-                return redirect("solicitations_new:responses_list", pk=response.solicitation_id)
-            return redirect("solicitations_new:manage_list")
+                return redirect("solicitations:responses_list", pk=response.solicitation_id)
+            return redirect("solicitations:manage_list")
         except Exception:
             logger.exception("Failed to award response %s", pk)
             ctx = self.get_context_data(**kwargs)
@@ -1333,7 +1333,7 @@ class AwardView(ManagerRequiredMixin, TemplateView):
 
 **Step 3: Add URL**
 
-In `commcare_connect/solicitations_new/urls.py`, add before JSON API paths:
+In `commcare_connect/solicitations/urls.py`, add before JSON API paths:
 ```python
 # Award
 path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
@@ -1341,7 +1341,7 @@ path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
 
 **Step 4: Create award template**
 
-`commcare_connect/templates/solicitations_new/award.html`:
+`commcare_connect/templates/solicitations/award.html`:
 ```html
 {% extends "base.html" %}
 
@@ -1349,7 +1349,7 @@ path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
 <div class="max-w-screen-lg mx-auto px-4 py-6">
 
     <div class="bg-white rounded-lg shadow-sm p-6">
-        <a href="{% url 'solicitations_new:response_detail' pk=response.pk %}" class="text-sm text-indigo-600 hover:text-indigo-800 mb-4 inline-block">&larr; Back to Response</a>
+        <a href="{% url 'solicitations:response_detail' pk=response.pk %}" class="text-sm text-indigo-600 hover:text-indigo-800 mb-4 inline-block">&larr; Back to Response</a>
         <h1 class="text-2xl font-semibold text-brand-deep-purple mb-2">Award Response</h1>
         <p class="text-sm text-gray-600 mb-6">
             Awarding <strong>{{ response.submitted_by_name }}</strong>
@@ -1383,7 +1383,7 @@ path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
             </div>
 
             <div class="flex justify-end gap-3 pt-4">
-                <a href="{% url 'solicitations_new:response_detail' pk=response.pk %}"
+                <a href="{% url 'solicitations:response_detail' pk=response.pk %}"
                    class="px-4 py-2 bg-white border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50">
                     Cancel
                 </a>
@@ -1401,7 +1401,7 @@ path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
 
 **Step 5: Add award_response test to test_data_access.py**
 
-In `commcare_connect/solicitations_new/tests/test_data_access.py`, add:
+In `commcare_connect/solicitations/tests/test_data_access.py`, add:
 ```python
 class TestAwardResponse:
     def test_awards_response(self, data_access, mock_api_client):
@@ -1435,13 +1435,13 @@ class TestAwardResponse:
 
 **Step 6: Run all solicitation tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/solicitations_new/tests/ -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/solicitations/tests/ -v`
 Expected: All PASS
 
 **Step 7: Commit**
 
 ```bash
-git add commcare_connect/solicitations_new/ commcare_connect/templates/solicitations_new/award.html
+git add commcare_connect/solicitations/ commcare_connect/templates/solicitations/award.html
 git commit -m "feat: add award flow — view, data access, template, and tests"
 ```
 
@@ -1450,15 +1450,15 @@ git commit -m "feat: add award flow — view, data access, template, and tests"
 ### Task 7: Add "Award" button to response detail and responses list
 
 **Files:**
-- Modify: `commcare_connect/templates/solicitations_new/response_detail.html`
-- Modify: `commcare_connect/templates/solicitations_new/responses_list.html`
+- Modify: `commcare_connect/templates/solicitations/response_detail.html`
+- Modify: `commcare_connect/templates/solicitations/responses_list.html`
 
 **Step 1: Read current templates and add award buttons**
 
 Add an "Award" button to `response_detail.html` (visible when status is not "awarded"):
 ```html
 {% if response.status != 'awarded' %}
-    <a href="{% url 'solicitations_new:award' pk=response.pk %}"
+    <a href="{% url 'solicitations:award' pk=response.pk %}"
        class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition">
         <i class="fa-solid fa-trophy mr-2"></i> Award
     </a>
@@ -1478,7 +1478,7 @@ Add "Award" link to each row in `responses_list.html` actions column.
 **Step 3: Commit**
 
 ```bash
-git add commcare_connect/templates/solicitations_new/
+git add commcare_connect/templates/solicitations/
 git commit -m "feat: add Award button to response detail and responses list"
 ```
 
@@ -1488,7 +1488,7 @@ git commit -m "feat: add Award button to response detail and responses list"
 
 **Step 1: Run all tests**
 
-Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations_new/tests/ -v`
+Run: `cd "C:/Users/Jonathan Jackson/Projects/connect-labs" && pytest commcare_connect/funder_dashboard/ commcare_connect/solicitations/tests/ -v`
 Expected: All PASS
 
 **Step 2: Run linter**
@@ -1513,7 +1513,7 @@ git commit -m "style: fix linting issues"
 | 2 | FundRecord model + data access tests | 5 |
 | 3 | FundForm + Fund CRUD views + templates | 5 |
 | 4 | Fund API endpoints + tests | 4 |
-| 5 | solicitations_new field enhancements (fund_id, org_id, reward_budget) | 7 |
+| 5 | solicitations field enhancements (fund_id, org_id, reward_budget) | 7 |
 | 6 | Award flow (view, data access, template, tests) | 7 |
 | 7 | Award buttons in existing templates | 3 |
 | 8 | Full test suite + lint | 3 |

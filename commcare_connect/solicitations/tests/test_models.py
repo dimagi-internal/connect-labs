@@ -1,4 +1,4 @@
-from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
+from commcare_connect.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 
 class TestSolicitationRecord:
