@@ -1,14 +1,13 @@
 """Downloads page for S3-backed CSV exports."""
 import logging
 
-import boto3
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse, HttpResponseRedirect
 from django.views import View
 from django.views.generic import TemplateView
 
 from commcare_connect.custom_analysis.audit_of_audits.views import DimagiUserRequiredMixin
-from commcare_connect.labs.s3_export import AUDIT_SESSIONS_KEY, WORKFLOW_RUNS_KEY
+from commcare_connect.labs.s3_export import AUDIT_SESSIONS_KEY, WORKFLOW_RUNS_KEY, _get_s3_client
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ class ExportsIndexView(LoginRequiredMixin, DimagiUserRequiredMixin, TemplateView
         files = []
 
         if bucket:
-            s3 = boto3.client("s3")
+            s3 = _get_s3_client()
             for key, label in [
                 (WORKFLOW_RUNS_KEY, "workflow_runs.csv"),
                 (AUDIT_SESSIONS_KEY, "audit_sessions.csv"),
@@ -71,7 +70,7 @@ class DownloadExportView(LoginRequiredMixin, DimagiUserRequiredMixin, View):
         if not bucket:
             return HttpResponse("Export storage is not configured.", status=404)
 
-        s3 = boto3.client("s3")
+        s3 = _get_s3_client()
         url = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": key},

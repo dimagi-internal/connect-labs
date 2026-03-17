@@ -16,6 +16,7 @@ a subsequent write for the same record will self-heal.
 import csv
 import io
 import logging
+import os
 from datetime import datetime, timezone
 
 import boto3
@@ -71,6 +72,24 @@ def _get_bucket() -> str | None:
     return getattr(settings, "LABS_EXPORTS_BUCKET", None) or None
 
 
+def _get_s3_client():
+    """Build a boto3 S3 client, passing explicit credentials when available.
+
+    On ECS the task IAM role provides credentials automatically (no env vars
+    needed). Locally, credentials come from .env via django-environ which
+    populates os.environ at settings load time.
+    """
+    kwargs = {}
+    key_id = os.environ.get("AWS_ACCESS_KEY_ID")
+    secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+    if key_id and secret:
+        kwargs["aws_access_key_id"] = key_id
+        kwargs["aws_secret_access_key"] = secret
+    kwargs["region_name"] = region
+    return boto3.client("s3", **kwargs)
+
+
 def _read_rows(s3_client, bucket: str, key: str, id_field: str) -> dict:
     """Return existing CSV rows as {id_value: row_dict}, or {} if file absent."""
     try:
@@ -118,7 +137,7 @@ def upsert_workflow_run(run, opportunity_name: str = "", definition_name: str = 
     run_by = run.username or state.get("run_by", "") or ""
 
     try:
-        s3 = boto3.client("s3")
+        s3 = _get_s3_client()
         rows = _read_rows(s3, bucket, WORKFLOW_RUNS_KEY, "run_id")
         existing = rows.get(str(run.id), {})
 
@@ -177,7 +196,7 @@ def upsert_audit_session(session) -> None:
             "created_at": session.data.get("created_at", ""),
         }
 
-        s3 = boto3.client("s3")
+        s3 = _get_s3_client()
         rows = _read_rows(s3, bucket, AUDIT_SESSIONS_KEY, "session_id")
         rows[str(session.id)] = row
         _write_rows(s3, bucket, AUDIT_SESSIONS_KEY, rows, AUDIT_SESSION_FIELDS)

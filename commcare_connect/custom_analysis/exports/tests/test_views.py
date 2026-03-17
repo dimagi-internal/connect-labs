@@ -62,7 +62,7 @@ def non_dimagi_client(db):
 
 
 @override_settings(**LABS_SETTINGS, LABS_EXPORTS_BUCKET="test-bucket")
-@patch("commcare_connect.custom_analysis.exports.views.boto3")
+@patch("commcare_connect.labs.s3_export.boto3")
 def test_exports_page_lists_files(mock_boto3, dimagi_client):
     """Page renders with file metadata from S3 head_object."""
     mock_s3 = MagicMock()
@@ -110,7 +110,7 @@ def test_exports_page_requires_login(db):
 
 
 @override_settings(**LABS_SETTINGS, LABS_EXPORTS_BUCKET="test-bucket")
-@patch("commcare_connect.custom_analysis.exports.views.boto3")
+@patch("commcare_connect.labs.s3_export.boto3")
 def test_download_redirects_to_presigned_url(mock_boto3, dimagi_client):
     """Download endpoint generates pre-signed URL and redirects."""
     from commcare_connect.labs.s3_export import WORKFLOW_RUNS_KEY
