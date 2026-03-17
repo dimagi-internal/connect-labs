@@ -73,6 +73,23 @@ jobs:
             echo "base_image=python:3.11-slim-bookworm" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check node image exists
+        id: node-check
+        run: |
+          NODE_TAG="node-latest"
+          NODE_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${NODE_TAG}"
+          TAG_EXISTS=$(aws ecr list-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --query "imageIds[?imageTag=='${NODE_TAG}'].imageTag" \
+            --output text 2>&1) || true
+          if [ -n "$TAG_EXISTS" ] && [ "$TAG_EXISTS" != "None" ]; then
+            echo "node_image=${NODE_IMAGE}" >> "$GITHUB_OUTPUT"
+            echo "Node image found: ${NODE_IMAGE} (webpack build will be skipped)"
+          else
+            echo "::warning::Node image not found in ECR. Webpack will build from source. Run the 'Build Node Image' workflow first."
+            echo "node_image=node:18-bullseye" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -87,8 +104,7 @@ jobs:
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           build-args: |
             BASE_IMAGE=${{ steps.base-check.outputs.base_image }}
-          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node
-          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node,mode=max
+            NODE_IMAGE=${{ steps.node-check.outputs.node_image }}
 
       - name: Run database migrations
         if: ${{ github.event.inputs.run_migrations == 'true' }}
