@@ -1,0 +1,62 @@
+# Base image for CommCare Connect Labs
+# Contains all Python dependencies (pre-built wheels), runtime system packages,
+# and docker scripts. Rebuilt only when requirements or docker scripts change.
+#
+# Build manually:
+#   docker build -f Dockerfile.base -t labs-base .
+# Or trigger via .github/workflows/build-base.yml
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build Python wheels
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm AS build-python
+
+RUN apt-get update \
+  && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    libgdal-dev \
+    libproj-dev \
+    libgeos-dev \
+    cargo \
+    rustc \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY ./requirements /requirements
+
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r /requirements/base.txt
+
+# ---------------------------------------------------------------------------
+# Stage 2: Final base image
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1
+ENV DEBUG=0
+
+# Runtime system dependencies
+RUN apt-get update \
+  && apt-get install -y \
+    libpq-dev \
+    gettext \
+    curl \
+    gdal-bin \
+  && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages from pre-built wheels
+COPY --from=build-python /wheels /wheels
+COPY ./requirements /requirements
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r /requirements/base.txt && \
+    rm -rf /wheels
+
+# Create django user
+RUN addgroup --system django \
+    && adduser --system --ingroup django django
+
+# Copy and set up docker scripts (entrypoint, start, start_celery)
+COPY ./docker/* /
+RUN chmod +x /entrypoint /start* \
+    && chown django /entrypoint /start*
+
+WORKDIR /app

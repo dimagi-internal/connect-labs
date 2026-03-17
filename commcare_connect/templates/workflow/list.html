@@ -832,18 +832,19 @@
                                 <td class="py-3">
                                     <span class="text-sm font-medium text-gray-900">Run #{{ run.id }}</span>
                                     {% if workflow.template_type == "bulk_image_audit" and run.state.config %}
-                                    {% with img_types=run.state.config.selected_image_type_ids %}
+                                    {% with img_types=run.state.config.image_types %}
                                     {% if img_types %}
-                                    <div class="mt-0.5 flex flex-wrap gap-0.5">
-                                        {% for t in img_types %}
-                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700">
-                                            {% if t == "ors_photo" %}<i class="fa-solid fa-droplet mr-1"></i>ORS
-                                            {% elif t == "muac_photo" %}<i class="fa-solid fa-ruler mr-1"></i>MUAC
-                                            {% elif t == "scale_photo" %}<i class="fa-solid fa-weight-scale mr-1"></i>Scale
-                                            {% else %}{{ t }}{% endif %}
-                                        </span>
-                                        {% endfor %}
+                                    <div class="mt-0.5 text-xs text-indigo-600">
+                                        {% for t in img_types %}{{ t.label }}{% if not forloop.last %}; {% endif %}{% endfor %}
                                     </div>
+                                    {% else %}
+                                    {% with img_ids=run.state.config.selected_image_type_ids %}
+                                    {% if img_ids %}
+                                    <div class="mt-0.5 text-xs text-indigo-600">
+                                        {% for t in img_ids %}{{ t }}{% if not forloop.last %}; {% endif %}{% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    {% endwith %}
                                     {% endif %}
                                     {% endwith %}
                                     {% endif %}
@@ -939,6 +940,8 @@
                                 <td class="py-3 text-center">
                                     {% if run.state.tasks_created is not None and run.state.tasks_created != "" %}
                                     <span class="text-sm font-medium text-indigo-700">{{ run.state.tasks_created }}</span>
+                                    {% elif run.status == "completed" %}
+                                    <span class="text-sm text-gray-700">0</span>
                                     {% else %}
                                     <span class="text-sm text-gray-400">&mdash;</span>
                                     {% endif %}

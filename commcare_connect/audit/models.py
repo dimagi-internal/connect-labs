@@ -404,6 +404,7 @@ class AuditSessionRecord(LocalLabsRecord):
             "opportunity_name": self.opportunity_name,
             "description": self.description,
             "visit_count": self.get_visit_count(),
+            "image_count": self.data.get("image_count", 0),
             "assessment_stats": stats,
             "workflow_run_id": self.workflow_run_id,
             "flw_username": self.flw_username,

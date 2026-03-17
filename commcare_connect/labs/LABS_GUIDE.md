@@ -8,17 +8,13 @@ Labs is a rapid prototyping environment for CommCare Connect experiments. It use
 
 Follow the standard CommCare Connect setup in the main [README.md](../../README.md), then:
 
-1.  **Install labs requirements**:
-
-    $ pip install -r requirements/labs.txt
-
-2.  **Run with local settings** (NOT labs settings):
+1.  **Run with local settings** (NOT labs settings):
 
         $ ./manage.py runserver
 
     **Important**: Use `config.settings.local` (the default), NOT `config.settings.labs_aws`. The `labs_aws` settings are only for the AWS deployment at `labs.connect.dimagi.com`. The `local.py` settings already have `IS_LABS_ENVIRONMENT = True` and all labs middleware configured.
 
-3.  **Get a CLI OAuth token** (for scripts and management commands):
+2.  **Get a CLI OAuth token** (for scripts and management commands):
 
         $ python manage.py get_cli_token
 
@@ -44,7 +40,7 @@ Follow the standard CommCare Connect setup in the main [README.md](../../README.
 
     When no profile is specified, the active profile is used automatically.
 
-4.  **Access Labs features** at `http://localhost:8000/labs/login/`
+3.  **Access Labs features** at `http://localhost:8000/labs/login/`
 
 ## Key Architecture
 

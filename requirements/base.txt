@@ -4,100 +4,132 @@
 #
 #    inv requirements
 #
-aiohttp==3.8.5
-    # via
-    #   aiohttp-retry
-    #   twilio
-aiohttp-retry==2.8.3
-    # via twilio
-aiosignal==1.3.1
+ag-ui-protocol==0.1.13
+    # via pydantic-ai-slim
+aiofile==3.9.0
+    # via py-key-value-aio
+aiohappyeyeballs==2.6.1
     # via aiohttp
-amqp==5.1.1
+aiohttp==3.13.3
+    # via xai-sdk
+aiosignal==1.4.0
+    # via aiohttp
+amqp==5.3.1
     # via kombu
-anyio==4.11.0
-    # via httpcore
-argon2-cffi==21.3.0
+annotated-doc==0.0.4
+    # via typer
+annotated-types==0.7.0
+    # via pydantic
+anthropic==0.85.0
+    # via pydantic-ai-slim
+anyio==4.12.1
+    # via
+    #   anthropic
+    #   google-genai
+    #   groq
+    #   httpx
+    #   mcp
+    #   openai
+    #   py-key-value-aio
+    #   pydantic-evals
+    #   sse-starlette
+    #   starlette
+    #   watchfiles
+argcomplete==3.6.3
+    # via pydantic-ai-slim
+argon2-cffi==25.1.0
     # via -r requirements/base.in
-argon2-cffi-bindings==21.2.0
+argon2-cffi-bindings==25.1.0
     # via argon2-cffi
-asgiref==3.7.2
+asgiref==3.11.1
     # via
     #   django
+    #   django-cors-headers
     #   django-htmx
-async-timeout==4.0.3
-    # via aiohttp
-attrs==23.1.0
+attrs==25.4.0
     # via
     #   aiohttp
+    #   cyclopts
     #   jsonschema
     #   referencing
-billiard==4.1.0
+authlib==1.6.9
+    # via fastmcp
+backports-tarfile==1.2.0
+    # via jaraco-context
+beartype==0.22.9
+    # via py-key-value-aio
+billiard==4.2.4
     # via celery
-boto3==1.28.10
+boto3==1.42.69
     # via
     #   django-anymail
     #   django-storages
-botocore==1.31.10
+    #   pydantic-ai-slim
+botocore==1.42.69
     # via
     #   boto3
     #   s3transfer
-brotli==1.2.0
-    # via fonttools
-celery==5.3.4
+cachetools==7.0.5
+    # via py-key-value-aio
+caio==0.9.25
+    # via aiofile
+celery==5.6.2
     # via
     #   -r requirements/base.in
     #   django-celery-beat
-certifi==2023.7.22
+certifi==2026.2.25
     # via
     #   httpcore
     #   httpx
+    #   pyogrio
+    #   pyproj
     #   requests
     #   sentry-sdk
 cffi==2.0.0
     # via
     #   argon2-cffi-bindings
     #   cryptography
-    #   gevent
-    #   weasyprint
-charset-normalizer==3.2.0
-    # via
-    #   aiohttp
-    #   requests
-click==8.1.6
+charset-normalizer==3.4.6
+    # via requests
+click==8.3.1
     # via
     #   celery
     #   click-didyoumean
     #   click-plugins
     #   click-repl
-    #   mercantile
-click-didyoumean==0.3.0
+    #   typer
+    #   uvicorn
+click-didyoumean==0.3.1
     # via celery
-click-plugins==1.1.1
+click-plugins==1.1.1.2
     # via celery
 click-repl==0.3.0
     # via celery
-colorama==0.4.6
-    # via click
+cohere==5.20.7
+    # via pydantic-ai-slim
 crispy-tailwind==1.0.3
     # via -r requirements/base.in
-cron-descriptor==1.4.0
+cron-descriptor==1.4.5
     # via django-celery-beat
-cryptography==41.0.2
+cryptography==46.0.5
     # via
+    #   authlib
+    #   google-auth
     #   jwcrypto
     #   pyjwt
-cssselect2==0.8.0
-    # via weasyprint
-decorator==5.1.1
-    # via jsonpath-ng
-defusedxml==0.7.1
-    # via python3-openid
-deprecated==1.2.14
-    # via jwcrypto
-django==4.2.5
+cyclopts==4.10.0
+    # via fastmcp
+distro==1.9.0
+    # via
+    #   anthropic
+    #   google-genai
+    #   groq
+    #   openai
+django==5.2.12
     # via
     #   -r requirements/base.in
     #   crispy-tailwind
+    #   django-anymail
     #   django-autocomplete-light
     #   django-celery-beat
     #   django-cors-headers
@@ -109,256 +141,564 @@ django==4.2.5
     #   django-pghistory
     #   django-pgtrigger
     #   django-redis
+    #   django-storages
     #   django-tables2
     #   django-timezone-field
-    #   django-vectortiles
-    #   django-waffle
-    #   django-weasyprint
     #   djangorestframework
     #   drf-spectacular
-django-anymail[amazon-ses]==10.1
+django-anymail[amazon-ses]==14.0
     # via -r requirements/base.in
-django-autocomplete-light==3.11.0
+django-autocomplete-light==3.12.1
     # via -r requirements/base.in
-django-celery-beat==2.5.0
+django-celery-beat==2.9.0
     # via -r requirements/base.in
-django-cors-headers==4.2.0
+django-cors-headers==4.9.0
     # via -r requirements/base.in
-django-crispy-forms==2.0
+django-crispy-forms==2.6
     # via
     #   -r requirements/base.in
     #   crispy-tailwind
-django-environ==0.10.0
+django-environ==0.13.0
     # via -r requirements/base.in
-django-filter==24.3
+django-filter==25.2
     # via -r requirements/base.in
-django-htmx==1.19.0
+django-htmx==1.27.0
     # via -r requirements/base.in
-django-model-utils==4.3.1
+django-model-utils==5.0.0
     # via -r requirements/base.in
-django-oauth-toolkit==2.3.0
+django-oauth-toolkit==3.2.0
     # via -r requirements/base.in
-django-pghistory==3.9.1
+django-pghistory==3.9.2
     # via -r requirements/base.in
 django-pgtrigger==4.17.0
     # via django-pghistory
-django-redis==5.3.0
+django-redis==6.0.0
     # via -r requirements/base.in
-django-storages[boto3]==1.13.2
+django-storages[boto3]==1.14.6
     # via -r requirements/base.in
-django-tables2==2.6.0
+django-tables2==2.8.0
     # via -r requirements/base.in
-django-timezone-field==5.1
+django-timezone-field==7.2.1
     # via django-celery-beat
-django-vectortiles==1.0.2
-    # via -r requirements/base.in
-django-waffle==5.0.0
-    # via -r requirements/base.in
-django-weasyprint==2.4.0
-    # via -r requirements/base.in
-djangorestframework==3.14.0
+djangorestframework==3.16.1
     # via
     #   -r requirements/base.in
     #   drf-spectacular
-drf-spectacular==0.26.4
+dnspython==2.8.0
+    # via email-validator
+docstring-parser==0.17.0
+    # via
+    #   anthropic
+    #   cyclopts
+docutils==0.22.4
+    # via rich-rst
+drf-spectacular==0.29.0
     # via -r requirements/base.in
-et-xmlfile==1.1.0
+email-validator==2.3.0
+    # via pydantic
+et-xmlfile==2.0.0
     # via openpyxl
+eval-type-backport==0.3.1
+    # via mistralai
+exceptiongroup==1.3.1
+    # via fastmcp
+executing==2.2.1
+    # via logfire
+fastavro==1.12.1
+    # via cohere
+fastmcp==3.1.1
+    # via pydantic-ai-slim
+filelock==3.25.2
+    # via huggingface-hub
 flatten-dict==0.4.2
     # via -r requirements/base.in
-fonttools[woff]==4.61.1
-    # via
-    #   fonttools
-    #   weasyprint
-frozenlist==1.4.0
+frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
-geographiclib==2.0
+fsspec==2026.2.0
+    # via huggingface-hub
+genai-prices==0.0.55
+    # via pydantic-ai-slim
+geographiclib==2.1
     # via geopy
+geopandas==1.1.3
+    # via -r requirements/base.in
 geopy==2.4.1
     # via -r requirements/base.in
-gevent==24.11.1
-    # via -r requirements/base.in
-greenlet==3.1.1
+gevent==25.9.1
+    # via
+    #   -r requirements/base.in
+    #   gunicorn
+google-auth[requests]==2.49.1
+    # via
+    #   google-genai
+    #   pydantic-ai-slim
+google-genai==1.67.0
+    # via pydantic-ai-slim
+googleapis-common-protos==1.73.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-http
+    #   xai-sdk
+greenlet==3.3.2
     # via gevent
-gunicorn[gevent]==21.2.0
+griffelib==2.0.0
+    # via pydantic-ai-slim
+groq==1.1.1
+    # via pydantic-ai-slim
+grpcio==1.78.0
+    # via xai-sdk
+gunicorn[gevent]==25.1.0
     # via -r requirements/base.in
-h11==0.14.0
-    # via httpcore
-h2==4.1.0
+h11==0.16.0
+    # via
+    #   httpcore
+    #   uvicorn
+h2==4.3.0
     # via httpx
-hiredis==2.2.3
+hf-xet==1.4.2
+    # via huggingface-hub
+hiredis==3.3.1
     # via -r requirements/base.in
-hpack==4.0.0
+hpack==4.1.0
     # via h2
-httpcore==0.17.3
+httpcore==1.0.9
     # via httpx
-httpx[http2]==0.24.1
-    # via -r requirements/base.in
-hyperframe==6.0.1
+httpx[http2]==0.28.1
+    # via
+    #   -r requirements/base.in
+    #   anthropic
+    #   cohere
+    #   fastmcp
+    #   genai-prices
+    #   google-genai
+    #   groq
+    #   huggingface-hub
+    #   mcp
+    #   mistralai
+    #   openai
+    #   pydantic-ai-slim
+    #   pydantic-graph
+httpx-sse==0.4.3
+    # via mcp
+huggingface-hub==1.7.1
+    # via
+    #   pydantic-ai-slim
+    #   tokenizers
+hyperframe==6.1.0
     # via h2
-idna==3.4
+idna==3.11
     # via
     #   anyio
+    #   django-anymail
+    #   email-validator
     #   httpx
     #   requests
     #   yarl
+importlib-metadata==8.7.1
+    # via
+    #   keyring
+    #   opentelemetry-api
 inflection==0.5.1
     # via drf-spectacular
-jmespath==1.0.1
+jaraco-classes==3.4.0
+    # via keyring
+jaraco-context==6.1.1
+    # via keyring
+jaraco-functools==4.4.0
+    # via keyring
+jiter==0.13.0
+    # via
+    #   anthropic
+    #   openai
+jmespath==1.1.0
     # via
     #   boto3
     #   botocore
-jsonpath-ng==1.5.3
+jsonpath-ng==1.8.0
     # via -r requirements/base.in
-jsonschema==4.18.4
-    # via drf-spectacular
-jsonschema-specifications==2023.7.1
+jsonref==1.1.0
+    # via fastmcp
+jsonschema==4.26.0
+    # via
+    #   drf-spectacular
+    #   mcp
+jsonschema-path==0.4.5
+    # via fastmcp
+jsonschema-specifications==2025.9.1
     # via jsonschema
-jwcrypto==1.5.0
+jwcrypto==1.5.6
     # via django-oauth-toolkit
-kombu==5.3.2
+keyring==25.7.0
+    # via py-key-value-aio
+kombu==5.6.2
     # via celery
-mercantile==1.2.1
-    # via django-vectortiles
-multidict==6.0.4
+logfire[httpx]==4.29.0
+    # via pydantic-ai-slim
+logfire-api==4.29.0
+    # via
+    #   pydantic-evals
+    #   pydantic-graph
+markdown-it-py==4.0.0
+    # via rich
+mcp==1.26.0
+    # via
+    #   fastmcp
+    #   pydantic-ai-slim
+mdurl==0.1.2
+    # via markdown-it-py
+mistralai==2.0.4
+    # via pydantic-ai-slim
+more-itertools==10.8.0
+    # via
+    #   jaraco-classes
+    #   jaraco-functools
+multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
-oauthlib==3.2.2
+nexus-rpc==1.2.0
+    # via temporalio
+numpy==2.4.3
     # via
-    #   django-oauth-toolkit
-    #   requests-oauthlib
-openpyxl==3.1.2
+    #   geopandas
+    #   pandas
+    #   pyogrio
+    #   shapely
+oauthlib==3.3.1
+    # via django-oauth-toolkit
+openai==2.28.0
+    # via pydantic-ai-slim
+openapi-pydantic==0.5.1
+    # via fastmcp
+openpyxl==3.1.5
     # via tablib
-pillow==10.0.0
+opentelemetry-api==1.39.1
+    # via
+    #   fastmcp
+    #   mistralai
+    #   opentelemetry-exporter-otlp-proto-http
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-httpx
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+    #   pydantic-ai-slim
+opentelemetry-exporter-otlp-proto-common==1.39.1
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-http==1.39.1
+    # via logfire
+opentelemetry-instrumentation==0.60b1
+    # via
+    #   logfire
+    #   opentelemetry-instrumentation-httpx
+opentelemetry-instrumentation-httpx==0.60b1
+    # via logfire
+opentelemetry-proto==1.39.1
+    # via
+    #   opentelemetry-exporter-otlp-proto-common
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-sdk==1.39.1
+    # via
+    #   logfire
+    #   opentelemetry-exporter-otlp-proto-http
+    #   xai-sdk
+opentelemetry-semantic-conventions==0.60b1
+    # via
+    #   mistralai
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-httpx
+    #   opentelemetry-sdk
+opentelemetry-util-http==0.60b1
+    # via opentelemetry-instrumentation-httpx
+packaging==25.0
+    # via
+    #   fastmcp
+    #   geopandas
+    #   gunicorn
+    #   huggingface-hub
+    #   kombu
+    #   opentelemetry-instrumentation
+    #   pyogrio
+    #   xai-sdk
+pandas==3.0.1
     # via
     #   -r requirements/base.in
-    #   weasyprint
-ply==3.11
-    # via jsonpath-ng
-prompt-toolkit==3.0.39
-    # via click-repl
-psycopg2-binary==2.9.6
+    #   geopandas
+pathable==0.5.0
+    # via jsonschema-path
+pillow==12.1.1
     # via -r requirements/base.in
-pycparser==2.21
+platformdirs==4.9.4
+    # via fastmcp
+prompt-toolkit==3.0.52
+    # via
+    #   click-repl
+    #   pydantic-ai-slim
+propcache==0.4.1
+    # via
+    #   aiohttp
+    #   yarl
+protobuf==6.33.5
+    # via
+    #   googleapis-common-protos
+    #   logfire
+    #   opentelemetry-proto
+    #   temporalio
+    #   xai-sdk
+psycopg2-binary==2.9.11
+    # via -r requirements/base.in
+py-key-value-aio[filetree,keyring,memory]==0.4.4
+    # via fastmcp
+pyasn1==0.6.3
+    # via pyasn1-modules
+pyasn1-modules==0.4.2
+    # via google-auth
+pycparser==3.0
     # via cffi
-pydyf==0.12.1
-    # via weasyprint
-pyjwt[crypto]==2.8.0
-    # via twilio
-pyphen==0.17.2
-    # via weasyprint
-python-crontab==3.0.0
-    # via django-celery-beat
-python-dateutil==2.8.2
+pydantic[email]==2.12.5
     # via
-    #   celery
-    #   python-crontab
-python-slugify==8.0.1
+    #   ag-ui-protocol
+    #   anthropic
+    #   cohere
+    #   fastmcp
+    #   genai-prices
+    #   google-genai
+    #   groq
+    #   mcp
+    #   mistralai
+    #   openai
+    #   openapi-pydantic
+    #   pydantic-ai-slim
+    #   pydantic-evals
+    #   pydantic-graph
+    #   pydantic-settings
+    #   xai-sdk
+pydantic-ai==1.69.0
     # via -r requirements/base.in
-python3-openid==3.2.0
-    # via django-allauth
-pytz==2023.3
+pydantic-ai-slim[ag-ui,anthropic,bedrock,cli,cohere,evals,fastmcp,google,groq,huggingface,logfire,mcp,mistral,openai,retries,temporal,ui,vertexai,xai]==1.69.0
     # via
-    #   django-timezone-field
-    #   djangorestframework
-    #   twilio
-pyyaml==6.0.1
-    # via drf-spectacular
+    #   pydantic-ai
+    #   pydantic-evals
+pydantic-core==2.41.5
+    # via
+    #   cohere
+    #   pydantic
+pydantic-evals==1.69.0
+    # via pydantic-ai-slim
+pydantic-graph==1.69.0
+    # via pydantic-ai-slim
+pydantic-settings==2.13.1
+    # via mcp
+pygments==2.19.2
+    # via rich
+pyjwt[crypto]==2.12.1
+    # via mcp
+pyogrio==0.12.1
+    # via geopandas
+pyperclip==1.11.0
+    # via
+    #   fastmcp
+    #   pydantic-ai-slim
+pyproj==3.7.2
+    # via geopandas
+python-crontab==3.3.0
+    # via django-celery-beat
+python-dateutil==2.9.0.post0
+    # via
+    #   botocore
+    #   celery
+    #   mistralai
+    #   pandas
+python-dotenv==1.2.2
+    # via
+    #   fastmcp
+    #   pydantic-settings
+python-multipart==0.0.22
+    # via mcp
+python-slugify==8.0.4
+    # via -r requirements/base.in
+pyyaml==6.0.3
+    # via
+    #   drf-spectacular
+    #   fastmcp
+    #   huggingface-hub
+    #   jsonschema-path
+    #   pydantic-evals
 quickcache==0.5.4
     # via -r requirements/base.in
-redis==4.6.0
+redis==7.3.0
     # via
     #   -r requirements/base.in
     #   django-redis
-referencing==0.30.0
+referencing==0.37.0
     # via
     #   jsonschema
+    #   jsonschema-path
     #   jsonschema-specifications
-requests==2.31.0
+regex==2026.2.28
+    # via tiktoken
+requests==2.32.5
     # via
+    #   cohere
+    #   django-anymail
     #   django-oauth-toolkit
-    #   requests-oauthlib
-    #   twilio
-requests-oauthlib==1.3.1
-    # via django-allauth
-rpds-py==0.9.2
+    #   google-auth
+    #   google-genai
+    #   opentelemetry-exporter-otlp-proto-http
+    #   pydantic-ai-slim
+    #   tiktoken
+    #   xai-sdk
+rich==14.3.3
+    # via
+    #   cyclopts
+    #   fastmcp
+    #   logfire
+    #   pydantic-ai-slim
+    #   pydantic-evals
+    #   rich-rst
+    #   typer
+rich-rst==1.3.2
+    # via cyclopts
+rpds-py==0.30.0
     # via
     #   jsonschema
     #   referencing
-packaging==23.1
-    # via gunicorn
-s3transfer==0.6.1
+s3transfer==0.16.0
     # via boto3
-sentry-sdk==1.29.2
+sentry-sdk==2.54.0
     # via -r requirements/base.in
-six==1.16.0
-    # via
-    #   flatten-dict
-    #   jsonpath-ng
-    #   python-dateutil
-    #   quickcache
-sniffio==1.3.0
-    # via
-    #   anyio
-    #   httpcore
-    #   httpx
-sqlparse==0.4.4
-    # via django
-tablib[xlsx]==3.5.0
-    # via -r requirements/base.in
-text-unidecode==1.3
-    # via python-slugify
-tinycss2==1.5.1
-    # via
-    #   cssselect2
-    #   weasyprint
-tinyhtml5==2.0.0
-    # via weasyprint
-twilio==8.8.0
-    # via -r requirements/base.in
-typing-extensions==4.15.0
-    # via anyio
-tzdata==2023.3
-    # via
-    #   celery
-    #   django
-    #   django-celery-beat
-uritemplate==4.1.1
-    # via drf-spectacular
-urllib3==1.26.16
+shapely==2.1.2
     # via
     #   -r requirements/base.in
+    #   geopandas
+shellingham==1.5.4
+    # via typer
+six==1.17.0
+    # via
+    #   flatten-dict
+    #   python-dateutil
+    #   quickcache
+sniffio==1.3.1
+    # via
+    #   anthropic
+    #   google-genai
+    #   groq
+    #   openai
+sqlparse==0.5.5
+    # via django
+sse-starlette==3.3.2
+    # via mcp
+starlette==0.52.1
+    # via
+    #   mcp
+    #   pydantic-ai-slim
+    #   sse-starlette
+tablib[xlsx]==3.9.0
+    # via -r requirements/base.in
+temporalio==1.20.0
+    # via pydantic-ai-slim
+tenacity==9.1.4
+    # via
+    #   google-genai
+    #   pydantic-ai-slim
+text-unidecode==1.3
+    # via python-slugify
+tiktoken==0.12.0
+    # via pydantic-ai-slim
+tokenizers==0.22.2
+    # via cohere
+tqdm==4.67.3
+    # via
+    #   huggingface-hub
+    #   openai
+typer==0.24.1
+    # via huggingface-hub
+types-protobuf==6.32.1.20260221
+    # via temporalio
+types-requests==2.32.4.20260107
+    # via cohere
+typing-extensions==4.15.0
+    # via
+    #   aiosignal
+    #   anthropic
+    #   anyio
+    #   cohere
+    #   exceptiongroup
+    #   google-genai
+    #   groq
+    #   grpcio
+    #   huggingface-hub
+    #   jwcrypto
+    #   logfire
+    #   mcp
+    #   nexus-rpc
+    #   openai
+    #   opentelemetry-api
+    #   opentelemetry-exporter-otlp-proto-http
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+    #   py-key-value-aio
+    #   pydantic
+    #   pydantic-core
+    #   referencing
+    #   starlette
+    #   temporalio
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via
+    #   mcp
+    #   mistralai
+    #   pydantic
+    #   pydantic-ai-slim
+    #   pydantic-graph
+    #   pydantic-settings
+tzdata==2025.3
+    # via
+    #   django-celery-beat
+    #   kombu
+tzlocal==5.3.1
+    # via celery
+uncalled-for==0.2.0
+    # via fastmcp
+uritemplate==4.2.0
+    # via drf-spectacular
+urllib3==2.6.3
+    # via
+    #   botocore
+    #   django-anymail
     #   requests
     #   sentry-sdk
-vine==5.0.0
+    #   types-requests
+uvicorn==0.42.0
+    # via
+    #   fastmcp
+    #   mcp
+vine==5.1.0
     # via
     #   amqp
     #   celery
     #   kombu
-wcwidth==0.2.6
+watchfiles==1.1.1
+    # via fastmcp
+wcwidth==0.6.0
     # via prompt-toolkit
-weasyprint==68.0
-    # via django-weasyprint
-webencodings==0.5.1
+websockets==16.0
     # via
-    #   cssselect2
-    #   tinycss2
-    #   tinyhtml5
-whitenoise==6.5.0
+    #   fastmcp
+    #   google-genai
+whitenoise==6.12.0
     # via -r requirements/base.in
-wrapt==1.15.0
-    # via deprecated
-yarl==1.9.2
+wrapt==1.17.3
+    # via
+    #   opentelemetry-instrumentation
+    #   opentelemetry-instrumentation-httpx
+xai-sdk==1.8.2
+    # via pydantic-ai-slim
+yarl==1.23.0
     # via aiohttp
-zope-event==5.0
+zipp==3.23.0
+    # via importlib-metadata
+zope-event==6.1
     # via gevent
-zope-interface==7.2
+zope-interface==8.2
     # via gevent
-zopfli==0.4.0
-    # via fonttools
-
-# The following packages are considered to be unsafe in a requirements file:
-# setuptools

@@ -811,7 +811,12 @@ class AuditDataAccess:
                         break
 
             if include_visit:
-                filtered_result[visit_id] = images
+                if image_filter_paths:
+                    filtered_images = [img for img in images if img.get("question_id") in image_filter_paths]
+                    if filtered_images:
+                        filtered_result[visit_id] = filtered_images
+                else:
+                    filtered_result[visit_id] = images
 
         return filtered_result
 
@@ -894,6 +899,8 @@ class AuditDataAccess:
         if visit_images is None:
             visit_images = self.extract_images_for_visits(visit_ids, opp_id, related_fields=related_fields)
 
+        image_count = sum(len(imgs) for imgs in (visit_images or {}).values())
+
         data = {
             "title": title,
             "tag": tag,
@@ -907,6 +914,7 @@ class AuditDataAccess:
             "opportunity_name": opportunity_name,
             "description": description,
             "visit_images": visit_images,
+            "image_count": image_count,
             "related_fields": related_fields or [],  # Store config for reference
             "criteria": criteria_dict,  # Store criteria for traceability
         }

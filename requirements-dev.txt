@@ -1,4 +1,3 @@
-# Convenience file for deploy that installs dev requirements
+# Convenience file that installs all requirements for local development
 -r requirements/base.txt
 -r requirements/dev.txt
--r requirements/labs.txt

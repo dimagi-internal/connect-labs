@@ -4,7 +4,7 @@ argon2-cffi
 whitenoise
 redis
 hiredis
-httpx[http2]
+httpx[http2]>=0.27
 celery
 django-oauth-toolkit
 jsonpath-ng
@@ -42,6 +42,9 @@ psycopg2-binary
 django-storages[boto3]
 django-anymail[amazon-ses]
 
-# Temporary
-# -------------------------------------------------------------------------------
-urllib3<2.0.0  # pin to avoid dependency resolution issue
+# Labs
+# ------------------------------------------------------------------------------
+pandas
+pydantic-ai
+shapely>=2.0.0  # For coverage maps WKT parsing
+geopandas>=0.14.0  # For coverage maps spatial operations

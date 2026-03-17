@@ -9,6 +9,11 @@ on:
         type: boolean
         required: true
         default: false
+      wait_for_stable:
+        description: 'Wait for ECS services to stabilize (uncheck for fast hotfixes)'
+        type: boolean
+        required: true
+        default: true
 
   # Optionally enable auto-deploy on push
   # Uncomment and customize branches to enable:
@@ -50,6 +55,24 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Check base image exists
+        id: base-check
+        run: |
+          BASE_TAG="base-latest"
+          BASE_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${BASE_TAG}"
+          # Use list-images + jq to check tag existence (more reliable than describe-images with OCI manifests)
+          TAG_EXISTS=$(aws ecr list-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --query "imageIds[?imageTag=='${BASE_TAG}'].imageTag" \
+            --output text 2>&1) || true
+          if [ -n "$TAG_EXISTS" ] && [ "$TAG_EXISTS" != "None" ]; then
+            echo "base_image=${BASE_IMAGE}" >> "$GITHUB_OUTPUT"
+            echo "Base image found: ${BASE_IMAGE}"
+          else
+            echo "::warning::Base image not found in ECR. Build will fall back to installing deps from scratch. Run the 'Build Base Image' workflow first."
+            echo "base_image=python:3.11-slim-bookworm" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -58,11 +81,14 @@ jobs:
         with:
           context: .
           push: true
+          provenance: false
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            BASE_IMAGE=${{ steps.base-check.outputs.base_image }}
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node
+          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node,mode=max
 
       - name: Run database migrations
         if: ${{ github.event.inputs.run_migrations == 'true' }}
@@ -98,9 +124,9 @@ jobs:
             --output text)
 
           if [ "$EXIT_CODE" == "0" ]; then
-            echo "✅ Migrations completed successfully"
+            echo "Migrations completed successfully"
           else
-            echo "❌ Migrations failed with exit code: $EXIT_CODE"
+            echo "Migrations failed with exit code: $EXIT_CODE"
             echo "Check CloudWatch Logs: https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#logsV2:log-groups/log-group/%2Fecs%2F${{ env.ECS_WEB_SERVICE }}"
             exit 1
           fi
@@ -124,6 +150,7 @@ jobs:
             --output text
 
       - name: Wait for services to stabilize
+        if: ${{ github.event.inputs.wait_for_stable != 'false' }}
         run: |
           aws ecs wait services-stable \
             --cluster ${{ env.ECS_CLUSTER }} \
