@@ -195,14 +195,32 @@ Set `child_cases` to create sub-cases linked to the current case. Common pattern
             "phone": "phone"
           },
           "questions": [
-            {"id": "patient_name", "type": "text", "label": "Patient Name", "required": true},
-            {"id": "age", "type": "int", "label": "Age", "required": true, "constraint": ". > 0 and . < 150", "constraint_msg": "Age must be between 1 and 149"},
-            {"id": "gender", "type": "select1", "label": "Gender", "required": true, "options": [
-              {"value": "male", "label": "Male"},
-              {"value": "female", "label": "Female"},
-              {"value": "other", "label": "Other"}
-            ]},
-            {"id": "phone", "type": "phone", "label": "Phone Number"}
+            {
+              "id": "patient_name",
+              "type": "text",
+              "label": "Patient Name",
+              "required": true
+            },
+            {
+              "id": "age",
+              "type": "int",
+              "label": "Age",
+              "required": true,
+              "constraint": ". > 0 and . < 150",
+              "constraint_msg": "Age must be between 1 and 149"
+            },
+            {
+              "id": "gender",
+              "type": "select1",
+              "label": "Gender",
+              "required": true,
+              "options": [
+                { "value": "male", "label": "Male" },
+                { "value": "female", "label": "Female" },
+                { "value": "other", "label": "Other" }
+              ]
+            },
+            { "id": "phone", "type": "phone", "label": "Phone Number" }
           ]
         },
         {
@@ -218,44 +236,81 @@ Set `child_cases` to create sub-cases linked to the current case. Common pattern
             "visit_notes": "notes"
           },
           "questions": [
-            {"id": "current_status", "type": "text", "label": "Current Status", "readonly": true},
-            {"id": "current_phone", "type": "text", "label": "Phone on File", "readonly": true},
-            {"id": "visit_date", "type": "date", "label": "Visit Date", "required": true},
-            {"id": "visit_status", "type": "select1", "label": "Updated Status", "options": [
-              {"value": "active", "label": "Active"},
-              {"value": "recovered", "label": "Recovered"},
-              {"value": "referred", "label": "Referred"}
-            ]},
-            {"id": "notes", "type": "text", "label": "Visit Notes"}
+            {
+              "id": "current_status",
+              "type": "text",
+              "label": "Current Status",
+              "readonly": true
+            },
+            {
+              "id": "current_phone",
+              "type": "text",
+              "label": "Phone on File",
+              "readonly": true
+            },
+            {
+              "id": "visit_date",
+              "type": "date",
+              "label": "Visit Date",
+              "required": true
+            },
+            {
+              "id": "visit_status",
+              "type": "select1",
+              "label": "Updated Status",
+              "options": [
+                { "value": "active", "label": "Active" },
+                { "value": "recovered", "label": "Recovered" },
+                { "value": "referred", "label": "Referred" }
+              ]
+            },
+            { "id": "notes", "type": "text", "label": "Visit Notes" }
           ]
         },
         {
           "name": "Discharge Patient",
           "type": "followup",
-          "close_case": {"question": "confirm_discharge", "answer": "yes"},
+          "close_case": { "question": "confirm_discharge", "answer": "yes" },
           "case_properties": {
             "discharge_reason": "reason",
             "discharge_date": "discharge_date"
           },
           "questions": [
-            {"id": "reason", "type": "select1", "label": "Reason for Discharge", "required": true, "options": [
-              {"value": "recovered", "label": "Recovered"},
-              {"value": "transferred", "label": "Transferred"},
-              {"value": "deceased", "label": "Deceased"},
-              {"value": "other", "label": "Other"}
-            ]},
-            {"id": "discharge_date", "type": "date", "label": "Discharge Date", "required": true},
-            {"id": "confirm_discharge", "type": "select1", "label": "Confirm Discharge?", "required": true, "options": [
-              {"value": "yes", "label": "Yes, close this case"},
-              {"value": "no", "label": "No, keep case open"}
-            ]}
+            {
+              "id": "reason",
+              "type": "select1",
+              "label": "Reason for Discharge",
+              "required": true,
+              "options": [
+                { "value": "recovered", "label": "Recovered" },
+                { "value": "transferred", "label": "Transferred" },
+                { "value": "deceased", "label": "Deceased" },
+                { "value": "other", "label": "Other" }
+              ]
+            },
+            {
+              "id": "discharge_date",
+              "type": "date",
+              "label": "Discharge Date",
+              "required": true
+            },
+            {
+              "id": "confirm_discharge",
+              "type": "select1",
+              "label": "Confirm Discharge?",
+              "required": true,
+              "options": [
+                { "value": "yes", "label": "Yes, close this case" },
+                { "value": "no", "label": "No, keep case open" }
+              ]
+            }
           ]
         }
       ],
       "case_list_columns": [
-        {"field": "age", "header": "Age"},
-        {"field": "gender", "header": "Gender"},
-        {"field": "visit_status", "header": "Status"}
+        { "field": "age", "header": "Age" },
+        { "field": "gender", "header": "Gender" },
+        { "field": "visit_status", "header": "Status" }
       ]
     }
   ]

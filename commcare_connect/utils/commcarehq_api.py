@@ -1,9 +1,5 @@
-import datetime
-
 import httpx
 from asgiref.sync import async_to_sync
-from django.conf import settings
-from django.utils import timezone
 
 from commcare_connect.opportunity.models import HQApiKey
 

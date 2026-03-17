@@ -12,6 +12,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils.functional import cached_property
 from django.utils.timezone import now
 from django.utils.translation import gettext, gettext_lazy
+
 from commcare_connect.commcarehq.models import HQServer
 from commcare_connect.organization.models import Organization
 
@@ -23,8 +24,8 @@ def switch_is_active(name):
 
 
 UPDATES_TO_MARK_AS_PAID_WORKFLOW = "UPDATES_TO_MARK_AS_PAID_WORKFLOW"
-from commcare_connect.users.models import User, UserCredential
-from commcare_connect.utils.db import BaseModel, slugify_uniquely
+from commcare_connect.users.models import User, UserCredential  # noqa: E402
+from commcare_connect.utils.db import BaseModel, slugify_uniquely  # noqa: E402
 
 
 class CommCareApp(BaseModel):

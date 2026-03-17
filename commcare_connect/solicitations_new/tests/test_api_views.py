@@ -8,8 +8,6 @@ Uses Django RequestFactory for direct view function invocation.
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from commcare_connect.solicitations_new.api_views import (
     api_response_detail,
     api_responses_list,
@@ -18,17 +16,8 @@ from commcare_connect.solicitations_new.api_views import (
     api_solicitation_detail,
     api_solicitations_list,
 )
-from commcare_connect.solicitations_new.data_access import (
-    RESPONSE_TYPE,
-    REVIEW_TYPE,
-    SOLICITATION_TYPE,
-)
-from commcare_connect.solicitations_new.models import (
-    ResponseRecord,
-    ReviewRecord,
-    SolicitationRecord,
-)
-
+from commcare_connect.solicitations_new.data_access import RESPONSE_TYPE, REVIEW_TYPE, SOLICITATION_TYPE
+from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 # =========================================================================
 # Test record factories
@@ -235,9 +224,7 @@ class TestApiSolicitationsList:
         body = _parse_response(response)
         assert "solicitation" in body
         assert body["solicitation"]["id"] == 99
-        mock_da.create_solicitation.assert_called_once_with(
-            {"title": "New One", "status": "draft"}
-        )
+        mock_da.create_solicitation.assert_called_once_with({"title": "New One", "status": "draft"})
 
     @patch(_DA_PATCH)
     def test_post_invalid_json_returns_400(self, mock_get_da):

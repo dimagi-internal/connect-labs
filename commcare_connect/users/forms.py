@@ -32,7 +32,6 @@ class UserAdminCreationForm(admin_forms.UserCreationForm):
         }
 
 
-
 class OrganizationCreationForm(forms.ModelForm):
     class Meta:
         model = Organization

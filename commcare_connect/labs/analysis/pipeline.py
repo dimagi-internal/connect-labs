@@ -195,9 +195,15 @@ class AnalysisPipeline:
         tolerance = self.cache_tolerance_pct
         terminal_stage = config.terminal_stage
         if terminal_stage == CacheStage.AGGREGATED:
-            return self.backend.get_cached_flw_result(opp_id, config, self.visit_count, tolerance_pct=tolerance) is not None
+            return (
+                self.backend.get_cached_flw_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
+                is not None
+            )
         else:
-            return self.backend.get_cached_visit_result(opp_id, config, self.visit_count, tolerance_pct=tolerance) is not None
+            return (
+                self.backend.get_cached_visit_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
+                is not None
+            )
 
     def filter_visits_for_audit(
         self,
@@ -308,9 +314,7 @@ class AnalysisPipeline:
             if event_type == "cached":
                 self._visit_dicts = event[1]
                 self._raw_data_already_stored = True
-                logger.info(
-                    f"[Pipeline/{self.backend_name}] Raw data CACHE HIT: {len(self._visit_dicts)} visits"
-                )
+                logger.info(f"[Pipeline/{self.backend_name}] Raw data CACHE HIT: {len(self._visit_dicts)} visits")
                 yield (EVENT_STATUS, {"message": f"Using cached raw data ({len(self._visit_dicts)} visits)..."})
             elif event_type == "progress":
                 _, bytes_downloaded, total_bytes = event
@@ -324,9 +328,7 @@ class AnalysisPipeline:
             elif event_type == "complete":
                 self._visit_dicts = event[1]
                 self._raw_data_already_stored = True
-                logger.info(
-                    f"[Pipeline/{self.backend_name}] Downloaded and parsed {len(self._visit_dicts)} visits"
-                )
+                logger.info(f"[Pipeline/{self.backend_name}] Downloaded and parsed {len(self._visit_dicts)} visits")
                 yield (EVENT_STATUS, {"message": f"Downloaded {len(self._visit_dicts)} visits"})
 
         if self._visit_dicts is None:
@@ -385,11 +387,17 @@ class AnalysisPipeline:
                 cached_result = None
                 if terminal_stage == CacheStage.AGGREGATED:
                     cached_result = self.backend.get_cached_flw_result(
-                        opp_id, config, expected_count, tolerance_pct=tolerance,
+                        opp_id,
+                        config,
+                        expected_count,
+                        tolerance_pct=tolerance,
                     )
                 else:
                     cached_result = self.backend.get_cached_visit_result(
-                        opp_id, config, expected_count, tolerance_pct=tolerance,
+                        opp_id,
+                        config,
+                        expected_count,
+                        tolerance_pct=tolerance,
                     )
 
                 if cached_result:
@@ -430,7 +438,11 @@ class AnalysisPipeline:
 
                             yield (
                                 EVENT_STATUS,
-                                {"message": f"Fetching '{unfiltered_config.data_source.form_name}' from CommCare HQ..."},
+                                {
+                                    "message": (
+                                        f"Fetching '{unfiltered_config.data_source.form_name}'" " from CommCare HQ..."
+                                    )
+                                },
                             )
                             visit_dicts = fetch_cchq_forms_as_visit_dicts(
                                 request=self.request,
@@ -441,7 +453,9 @@ class AnalysisPipeline:
                             raw_data_already_stored = False
                         else:
                             yield from self._consume_raw_visits_stream(
-                                opp_id, force_refresh=force_refresh, tolerance_pct=tolerance,
+                                opp_id,
+                                force_refresh=force_refresh,
+                                tolerance_pct=tolerance,
                             )
                             visit_dicts = self._visit_dicts
                             raw_data_already_stored = self._raw_data_already_stored
@@ -457,7 +471,10 @@ class AnalysisPipeline:
                         )
 
                         self.backend.process_and_cache(
-                            self.request, unfiltered_config, opp_id, visit_dicts,
+                            self.request,
+                            unfiltered_config,
+                            opp_id,
+                            visit_dicts,
                             skip_raw_store=raw_data_already_stored,
                         )
                         del visit_dicts
@@ -469,11 +486,17 @@ class AnalysisPipeline:
                         # expected_count=0: we just wrote this cache, skip count validation
                         if terminal_stage == CacheStage.AGGREGATED:
                             filtered_result = self.backend.get_cached_flw_result(
-                                opp_id, config, 0, tolerance_pct=tolerance,
+                                opp_id,
+                                config,
+                                0,
+                                tolerance_pct=tolerance,
                             )
                         else:
                             filtered_result = self.backend.get_cached_visit_result(
-                                opp_id, config, 0, tolerance_pct=tolerance,
+                                opp_id,
+                                config,
+                                0,
+                                tolerance_pct=tolerance,
                             )
 
                         if filtered_result:
@@ -524,7 +547,8 @@ class AnalysisPipeline:
                         raw_data_already_stored = False
                     else:
                         yield from self._consume_raw_visits_stream(
-                            opp_id, force_refresh=True,
+                            opp_id,
+                            force_refresh=True,
                         )
                         visit_dicts = self._visit_dicts
                         raw_data_already_stored = self._raw_data_already_stored
@@ -539,7 +563,10 @@ class AnalysisPipeline:
                     )
 
                     self.backend.process_and_cache(
-                        self.request, unfiltered_config, opp_id, visit_dicts,
+                        self.request,
+                        unfiltered_config,
+                        opp_id,
+                        visit_dicts,
                         skip_raw_store=raw_data_already_stored,
                     )
                     del visit_dicts
@@ -551,11 +578,17 @@ class AnalysisPipeline:
                     # expected_count=0: we just wrote this cache, skip count validation
                     if terminal_stage == CacheStage.AGGREGATED:
                         filtered_result = self.backend.get_cached_flw_result(
-                            opp_id, config, 0, tolerance_pct=tolerance,
+                            opp_id,
+                            config,
+                            0,
+                            tolerance_pct=tolerance,
                         )
                     else:
                         filtered_result = self.backend.get_cached_visit_result(
-                            opp_id, config, 0, tolerance_pct=tolerance,
+                            opp_id,
+                            config,
+                            0,
+                            tolerance_pct=tolerance,
                         )
 
                     if filtered_result:
@@ -570,9 +603,7 @@ class AnalysisPipeline:
 
             # CCHQ data source: fetch synchronously (no streaming progress)
             if config.data_source.type == "cchq_forms":
-                from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import (
-                    fetch_cchq_forms_as_visit_dicts,
-                )
+                from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import fetch_cchq_forms_as_visit_dicts
 
                 yield (EVENT_STATUS, {"message": f"Fetching '{config.data_source.form_name}' from CommCare HQ..."})
 
@@ -599,7 +630,9 @@ class AnalysisPipeline:
             logger.info(f"[Pipeline/{self.backend_name}] Downloading visit data for opp {opp_id}...")
 
             yield from self._consume_raw_visits_stream(
-                opp_id, force_refresh=force_refresh, tolerance_pct=tolerance,
+                opp_id,
+                force_refresh=force_refresh,
+                tolerance_pct=tolerance,
             )
             visit_dicts = self._visit_dicts
             raw_data_already_stored = self._raw_data_already_stored
@@ -609,7 +642,10 @@ class AnalysisPipeline:
             logger.info(f"[Pipeline/{self.backend_name}] Processing {len(visit_dicts)} visits")
 
             result = self.backend.process_and_cache(
-                self.request, config, opp_id, visit_dicts,
+                self.request,
+                config,
+                opp_id,
+                visit_dicts,
                 skip_raw_store=raw_data_already_stored,
             )
             del visit_dicts

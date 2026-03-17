@@ -129,9 +129,7 @@ class SQLBackend:
                         qs = qs.filter(visit_id__in=filter_visit_ids)
                     has_images = qs.exclude(images=[]).exists()
                     if not has_images:
-                        logger.info(
-                            f"[SQL] Cache has no images for opp {opportunity_id}, re-fetching with images"
-                        )
+                        logger.info(f"[SQL] Cache has no images for opp {opportunity_id}, re-fetching with images")
                     else:
                         logger.info(f"[SQL] Raw cache HIT (with images) for opp {opportunity_id}")
                         return self._load_from_cache(cache_manager, skip_form_json, filter_visit_ids)
@@ -255,9 +253,7 @@ class SQLBackend:
             yield ("parsing", csv_size, raw_line_count)
 
             # Parse and store in streaming batches (memory-efficient)
-            _, slim_dicts = self._parse_and_store_streaming(
-                csv_tmpfile, opportunity_id, raw_line_count
-            )
+            _, slim_dicts = self._parse_and_store_streaming(csv_tmpfile, opportunity_id, raw_line_count)
 
             yield ("complete", slim_dicts)
 
@@ -358,7 +354,10 @@ class SQLBackend:
     # -------------------------------------------------------------------------
 
     def get_cached_flw_result(
-        self, opportunity_id: int, config: AnalysisPipelineConfig, visit_count: int,
+        self,
+        opportunity_id: int,
+        config: AnalysisPipelineConfig,
+        visit_count: int,
         tolerance_pct: int = 100,
     ) -> FLWAnalysisResult | None:
         """Get cached FLW result if valid."""
@@ -393,7 +392,10 @@ class SQLBackend:
         )
 
     def get_cached_visit_result(
-        self, opportunity_id: int, config: AnalysisPipelineConfig, visit_count: int,
+        self,
+        opportunity_id: int,
+        config: AnalysisPipelineConfig,
+        visit_count: int,
         tolerance_pct: int = 100,
     ) -> VisitAnalysisResult | None:
         """Get cached visit result if valid, applying filters at query time."""

@@ -213,8 +213,7 @@ def fetch_visit_cases_by_ids(
 
     if not client.check_token_valid():
         raise ValueError(
-            "CommCare OAuth not configured or expired. "
-            "Please authorize CommCare access at /labs/commcare/initiate/"
+            "CommCare OAuth not configured or expired. " "Please authorize CommCare access at /labs/commcare/initiate/"
         )
 
     all_cases = client.fetch_cases_by_ids(unique_ids)
@@ -227,10 +226,7 @@ def fetch_visit_cases_by_ids(
         "cached_at": datetime.now(timezone.utc).isoformat(),
     }
     cache.set(cache_key, cache_data, config["cases_ttl"])
-    logger.info(
-        f"[HQ Cache] Cached {len(all_cases)} visit cases "
-        f"(ttl={config['cases_ttl']}s, key={cache_key})"
-    )
+    logger.info(f"[HQ Cache] Cached {len(all_cases)} visit cases " f"(ttl={config['cases_ttl']}s, key={cache_key})")
 
     return all_cases
 
@@ -280,8 +276,7 @@ def fetch_mother_cases_by_ids(
 
     if not client.check_token_valid():
         raise ValueError(
-            "CommCare OAuth not configured or expired. "
-            "Please authorize CommCare access at /labs/commcare/initiate/"
+            "CommCare OAuth not configured or expired. " "Please authorize CommCare access at /labs/commcare/initiate/"
         )
 
     all_cases = client.fetch_cases_by_ids(unique_ids)
@@ -294,10 +289,7 @@ def fetch_mother_cases_by_ids(
         "cached_at": datetime.now(timezone.utc).isoformat(),
     }
     cache.set(cache_key, cache_data, config["cases_ttl"])
-    logger.info(
-        f"[HQ Cache] Cached {len(all_cases)} mother cases "
-        f"(ttl={config['cases_ttl']}s, key={cache_key})"
-    )
+    logger.info(f"[HQ Cache] Cached {len(all_cases)} mother cases " f"(ttl={config['cases_ttl']}s, key={cache_key})")
 
     return all_cases
 
@@ -395,8 +387,7 @@ def group_visit_cases_by_flw(
                 by_flw[username].append(case)
 
     logger.info(
-        "[MBW Follow-Up] matched=%d, active_matched=%d, unique_flws=%d, "
-        "active_usernames size=%d",
+        "[MBW Follow-Up] matched=%d, active_matched=%d, unique_flws=%d, " "active_usernames size=%d",
         matched,
         active_matched,
         len(by_flw),
@@ -578,13 +569,9 @@ def fetch_registration_forms(
         # Fallback: fetch all forms for the app and filter client-side
         forms = client.fetch_forms(app_id=cc_app_id)
         pre_filter_count = len(forms)
-        forms = [
-            f for f in forms
-            if f.get("@name") == "Register Mother"
-        ]
+        forms = [f for f in forms if f.get("@name") == "Register Mother"]
         logger.info(
-            f"[MBW Dashboard] Client-side filter: {len(forms)}/{pre_filter_count} "
-            f"forms matched 'Register Mother'"
+            f"[MBW Dashboard] Client-side filter: {len(forms)}/{pre_filter_count} " f"forms matched 'Register Mother'"
         )
 
     logger.info(f"[MBW Dashboard] Fetched {len(forms)} registration forms from CCHQ ({cc_domain})")

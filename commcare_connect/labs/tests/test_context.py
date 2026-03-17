@@ -8,7 +8,6 @@ from commcare_connect.labs.context import (
     add_context_to_url,
     extract_context_from_url,
     get_context_url_params,
-    get_org_data,
     try_auto_select_context,
     validate_context_access,
 )
@@ -70,7 +69,9 @@ class TestContextValidation:
         # Create Django User and set up session with org data
         user = User.objects.create(username="testuser", email="test@example.com")
         request.user = user
-        request.session = {"labs_oauth": {"organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]}}}
+        request.session = {
+            "labs_oauth": {"organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]}}
+        }
 
         context = {"opportunity_id": 123}
         validated = validate_context_access(request, context)
@@ -86,7 +87,9 @@ class TestContextValidation:
 
         user = User.objects.create(username="testuser2", email="test2@example.com")
         request.user = user
-        request.session = {"labs_oauth": {"organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]}}}
+        request.session = {
+            "labs_oauth": {"organization_data": {"opportunities": [{"id": 123, "name": "Test Opportunity"}]}}
+        }
 
         context = {"opportunity_id": 999}
         validated = validate_context_access(request, context)

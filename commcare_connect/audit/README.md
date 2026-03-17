@@ -6,16 +6,16 @@ Audits are created by selecting visit criteria (date range, count per FLW, etc.)
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `models.py` | `AuditSessionRecord` proxy model with assessment result management |
-| `data_access.py` | `AuditDataAccess` — wraps LabsRecordAPIClient + AnalysisPipeline for visit fetching |
-| `views.py` | 23 views: creation wizard, bulk assessment UI, async job management, AI review |
-| `ai_review.py` | `run_single_ai_review()` — runs AI validation agents on images |
-| `tasks.py` | `run_audit_creation` Celery task — multi-stage async audit creation |
-| `analysis_config.py` | `AUDIT_EXTRACTION_CONFIG` — field extraction config for AnalysisPipeline |
-| `tables.py` | django-tables2 table definitions for audit list |
-| `urls.py` | URL routing under `/audit/` |
+| File                 | Purpose                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| `models.py`          | `AuditSessionRecord` proxy model with assessment result management                  |
+| `data_access.py`     | `AuditDataAccess` — wraps LabsRecordAPIClient + AnalysisPipeline for visit fetching |
+| `views.py`           | 23 views: creation wizard, bulk assessment UI, async job management, AI review      |
+| `ai_review.py`       | `run_single_ai_review()` — runs AI validation agents on images                      |
+| `tasks.py`           | `run_audit_creation` Celery task — multi-stage async audit creation                 |
+| `analysis_config.py` | `AUDIT_EXTRACTION_CONFIG` — field extraction config for AnalysisPipeline            |
+| `tables.py`          | django-tables2 table definitions for audit list                                     |
+| `urls.py`            | URL routing under `/audit/`                                                         |
 
 ## Data Model
 
@@ -24,6 +24,7 @@ Audits are created by selecting visit criteria (date range, count per FLW, etc.)
 - **Proxy model:** `AuditSessionRecord`
 
 Key properties on `AuditSessionRecord`:
+
 - `title`, `tag`, `status` (`in_progress` / `completed`), `overall_result` (`pass` / `fail` / None)
 - `visit_ids`, `visit_results` — per-visit assessment tracking
 - `criteria` — `AuditCriteria` dict (audit_type, date range, counts, sample %)
