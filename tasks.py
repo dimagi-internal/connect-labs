@@ -42,8 +42,6 @@ def requirements(c: Context, upgrade=False, upgrade_package=None):
         cmd_base += f" --upgrade-package {upgrade_package}"
     c.run(f"{cmd_base} requirements/base.in{args}", env=env)
     c.run(f"{cmd_base} requirements/dev.in{args}", env=env)
-    c.run(f"{cmd_base} requirements/production.in{args}", env=env)
-    c.run(f"{cmd_base} requirements/labs.in{args}", env=env)
 
 
 @task

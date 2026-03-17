@@ -24,9 +24,7 @@ RUN apt-get update \
 
 COPY ./requirements /requirements
 
-# Build wheels for each requirement file separately to avoid conflicts
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r /requirements/base.txt
-RUN pip wheel --no-cache-dir --wheel-dir /wheels -r /requirements/labs.txt
 
 # ---------------------------------------------------------------------------
 # Stage 2: Final base image
@@ -50,7 +48,6 @@ RUN apt-get update \
 COPY --from=build-python /wheels /wheels
 COPY ./requirements /requirements
 RUN pip install --no-cache-dir --no-index --find-links=/wheels -r /requirements/base.txt && \
-    pip install --no-cache-dir --no-index --find-links=/wheels -r /requirements/labs.txt --force-reinstall && \
     rm -rf /wheels
 
 # Create django user
