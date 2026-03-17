@@ -196,16 +196,12 @@ def parse_csv_bytes(
     visits = []
 
     try:
-        csv_reader = pd.read_csv(
-            io.BytesIO(csv_bytes), usecols=usecols, chunksize=chunksize, on_bad_lines="warn"
-        )
+        csv_reader = pd.read_csv(io.BytesIO(csv_bytes), usecols=usecols, chunksize=chunksize, on_bad_lines="warn")
     except ValueError as e:
         # Handle case where some slim columns don't exist in CSV
         if "not in list" in str(e) and skip_form_json:
             logger.warning(f"Some slim columns not found in CSV, falling back to all columns: {e}")
-            csv_reader = pd.read_csv(
-                io.BytesIO(csv_bytes), chunksize=chunksize, on_bad_lines="warn"
-            )
+            csv_reader = pd.read_csv(io.BytesIO(csv_bytes), chunksize=chunksize, on_bad_lines="warn")
         else:
             raise
 

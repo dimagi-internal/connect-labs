@@ -8,33 +8,33 @@ Workflows are defined as JSON definitions with associated React component code (
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `data_access.py` | `WorkflowDataAccess`, `PipelineDataAccess` — both extend `BaseDataAccess` |
-| `views.py` | ~40 views: workflow CRUD, run management, pipeline editing, SSE streaming, sharing |
-| `tasks.py` | `run_workflow_job` Celery task with pluggable job handler registry |
-| `urls.py` | URL routing under `/workflow/` |
-| `templates/` | Workflow template definitions (Python files auto-discovered by registry) |
+| File                        | Purpose                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| `data_access.py`            | `WorkflowDataAccess`, `PipelineDataAccess` — both extend `BaseDataAccess`                    |
+| `views.py`                  | ~40 views: workflow CRUD, run management, pipeline editing, SSE streaming, sharing           |
+| `tasks.py`                  | `run_workflow_job` Celery task with pluggable job handler registry                           |
+| `urls.py`                   | URL routing under `/workflow/`                                                               |
+| `templates/`                | Workflow template definitions (Python files auto-discovered by registry)                     |
 | `templates/mbw_monitoring/` | MBW monitoring dashboard — see [DOCUMENTATION.md](templates/mbw_monitoring/DOCUMENTATION.md) |
 
 ## Data Model
 
 **Workflow records** (experiment=`"workflow"`):
 
-| Type | Proxy Model | Purpose |
-|------|-------------|---------|
-| `workflow_definition` | `WorkflowDefinitionRecord` | Name, statuses, config, template_type, pipeline_sources |
-| `workflow_render_code` | `WorkflowRenderCodeRecord` | React component JSX (linked to definition) |
-| `workflow_run` | `WorkflowRunRecord` | Execution instance with state, period, status |
-| `workflow_chat_history` | `WorkflowChatHistoryRecord` | AI conversation messages |
+| Type                    | Proxy Model                 | Purpose                                                 |
+| ----------------------- | --------------------------- | ------------------------------------------------------- |
+| `workflow_definition`   | `WorkflowDefinitionRecord`  | Name, statuses, config, template_type, pipeline_sources |
+| `workflow_render_code`  | `WorkflowRenderCodeRecord`  | React component JSX (linked to definition)              |
+| `workflow_run`          | `WorkflowRunRecord`         | Execution instance with state, period, status           |
+| `workflow_chat_history` | `WorkflowChatHistoryRecord` | AI conversation messages                                |
 
 **Pipeline records** (experiment=`"pipeline"`):
 
-| Type | Proxy Model | Purpose |
-|------|-------------|---------|
-| `pipeline_definition` | `PipelineDefinitionRecord` | Schema with fields, aggregations, grouping |
-| `pipeline_render_code` | `PipelineRenderCodeRecord` | Visualization component |
-| `pipeline_chat_history` | `PipelineChatHistoryRecord` | AI conversation messages |
+| Type                    | Proxy Model                 | Purpose                                    |
+| ----------------------- | --------------------------- | ------------------------------------------ |
+| `pipeline_definition`   | `PipelineDefinitionRecord`  | Schema with fields, aggregations, grouping |
+| `pipeline_render_code`  | `PipelineRenderCodeRecord`  | Visualization component                    |
+| `pipeline_chat_history` | `PipelineChatHistoryRecord` | AI conversation messages                   |
 
 ## Key Patterns
 

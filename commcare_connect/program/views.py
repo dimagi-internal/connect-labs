@@ -10,7 +10,9 @@ from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
-from django.views.generic import ListView, UpdateView
+from django.views.generic import CreateView, ListView
+from django.views.generic import UpdateView
+from django.views.generic import UpdateView as DjangoUpdateView
 
 from commcare_connect.opportunity.models import (
     Opportunity,
@@ -20,8 +22,6 @@ from commcare_connect.opportunity.models import (
     VisitReviewStatus,
     VisitValidationStatus,
 )
-from django.views.generic import CreateView, UpdateView as DjangoUpdateView
-
 from commcare_connect.organization.decorators import (
     OrganizationProgramManagerMixin,
     org_admin_required,

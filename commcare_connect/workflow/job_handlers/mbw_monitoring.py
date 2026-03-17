@@ -216,9 +216,7 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         compute_median_meters_per_visit,
         compute_median_minutes_per_visit,
     )
-    from commcare_connect.workflow.templates.mbw_monitoring.serializers import (
-        serialize_flw_summary,
-    )
+    from commcare_connect.workflow.templates.mbw_monitoring.serializers import serialize_flw_summary
 
     pipeline_data = job_config.get("pipeline_data", {})
     active_usernames_list = job_config.get("active_usernames", [])
@@ -278,7 +276,9 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         }
         results["gps_data"] = gps_data
         results["successful"] += 1
-        logger.info("[MBW Job] GPS analysis complete: %d visits, %d flagged", gps_result.total_visits, gps_result.total_flagged)
+        logger.info(
+            "[MBW Job] GPS analysis complete: %d visits, %d flagged", gps_result.total_visits, gps_result.total_flagged
+        )
 
     except Exception as e:
         logger.error("[MBW Job] GPS analysis failed: %s", e, exc_info=True)
@@ -304,9 +304,7 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         )
 
         # Extract mother metadata from registration forms
-        mother_metadata = extract_mother_metadata_from_forms(
-            registration_rows, current_date=current_date
-        )
+        mother_metadata = extract_mother_metadata_from_forms(registration_rows, current_date=current_date)
 
         # Aggregate per-FLW follow-up summaries
         flw_followup = aggregate_flw_followup(
@@ -317,9 +315,7 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         )
 
         # Visit status distribution
-        visit_status_distribution = aggregate_visit_status_distribution(
-            visit_cases_by_flw, current_date
-        )
+        visit_status_distribution = aggregate_visit_status_distribution(visit_cases_by_flw, current_date)
 
         # Extract per-mother fields from pipeline rows
         per_mother = _extract_per_mother_fields(adapted_visit_rows)
@@ -401,9 +397,7 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
     try:
         progress_callback("Computing FLW performance metrics...", processed=3, total=5)
 
-        performance_data = compute_flw_performance_by_status(
-            flw_statuses, flw_drilldown, current_date
-        )
+        performance_data = compute_flw_performance_by_status(flw_statuses, flw_drilldown, current_date)
         results["performance_data"] = performance_data
         results["successful"] += 1
 
@@ -434,10 +428,7 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         ebf_pct_by_flw = _compute_ebf_by_flw(adapted_visit_rows)
 
         # Form name distribution for diagnostics
-        form_name_counts = Counter(
-            (row.computed.get("form_name") or "").strip()
-            for row in adapted_visit_rows
-        )
+        form_name_counts = Counter((row.computed.get("form_name") or "").strip() for row in adapted_visit_rows)
 
         overview_data = {
             "mother_counts": mother_counts,

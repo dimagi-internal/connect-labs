@@ -498,8 +498,7 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
       const urlParams = new URLSearchParams();
       if (params.username) urlParams.set('username', params.username);
       if (params.title) urlParams.set('title', params.title);
-      if (params.description)
-        urlParams.set('description', params.description);
+      if (params.description) urlParams.set('description', params.description);
       if (params.workflow_instance_id)
         urlParams.set(
           'workflow_instance_id',
@@ -523,25 +522,38 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
           return { success: false, error: `Server error: ${response.status}` };
         }
       } catch (e) {
-        return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch task' };
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : 'Failed to fetch task',
+        };
       }
     },
 
-    getAITranscript: async (taskId: number, sessionId?: string, refresh?: boolean): Promise<Record<string, unknown>> => {
+    getAITranscript: async (
+      taskId: number,
+      sessionId?: string,
+      refresh?: boolean,
+    ): Promise<Record<string, unknown>> => {
       try {
         const params = new URLSearchParams();
         if (sessionId) params.set('session_id', sessionId);
         if (refresh) params.set('refresh', 'true');
-        const response = await fetch(`/tasks/${taskId}/ai/transcript/?${params.toString()}`, {
-          headers: { 'X-CSRFToken': csrfToken },
-        });
+        const response = await fetch(
+          `/tasks/${taskId}/ai/transcript/?${params.toString()}`,
+          {
+            headers: { 'X-CSRFToken': csrfToken },
+          },
+        );
         try {
           return await response.json();
         } catch {
           return { success: false, error: `Server error: ${response.status}` };
         }
       } catch (e) {
-        return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch transcript' };
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : 'Failed to fetch transcript',
+        };
       }
     },
 
@@ -551,11 +563,17 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
         const data = await response.json();
         return data;
       } catch (e) {
-        return { success: false, error: e instanceof Error ? e.message : 'Failed to fetch AI sessions' };
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : 'Failed to fetch AI sessions',
+        };
       }
     },
 
-    updateTask: async (taskId: number, data: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    updateTask: async (
+      taskId: number,
+      data: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> => {
       try {
         const response = await fetch(`/tasks/api/${taskId}/update/`, {
           method: 'POST',
@@ -571,11 +589,17 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
           return { success: false, error: `Server error: ${response.status}` };
         }
       } catch (e) {
-        return { success: false, error: e instanceof Error ? e.message : 'Failed to update task' };
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : 'Failed to update task',
+        };
       }
     },
 
-    saveAITranscript: async (taskId: number, data: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    saveAITranscript: async (
+      taskId: number,
+      data: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> => {
       try {
         const response = await fetch(`/tasks/${taskId}/ai/save-transcript/`, {
           method: 'POST',
@@ -591,7 +615,10 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
           return { success: false, error: `Server error: ${response.status}` };
         }
       } catch (e) {
-        return { success: false, error: e instanceof Error ? e.message : 'Failed to save transcript' };
+        return {
+          success: false,
+          error: e instanceof Error ? e.message : 'Failed to save transcript',
+        };
       }
     },
   };

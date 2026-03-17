@@ -49,12 +49,14 @@ class OpportunityFLWListAPIView(LoginRequiredMixin, View):
                     for username, display_name in flw_names.items():
                         if username not in seen_usernames:
                             seen_usernames.add(username)
-                            all_flws.append({
-                                "username": username,
-                                "name": display_name,
-                                "connect_id": username,
-                                "opportunity_id": opp_id,
-                            })
+                            all_flws.append(
+                                {
+                                    "username": username,
+                                    "name": display_name,
+                                    "connect_id": username,
+                                    "opportunity_id": opp_id,
+                                }
+                            )
                 except Exception as e:
                     logger.warning(f"Failed to fetch FLWs for opportunity {opp_id}: {e}")
 
@@ -63,11 +65,13 @@ class OpportunityFLWListAPIView(LoginRequiredMixin, View):
             for flw in all_flws:
                 flw["history"] = flw_history.get(flw["username"].lower(), flw_history.get(flw["username"], {}))
 
-            return JsonResponse({
-                "success": True,
-                "flws": all_flws,
-                "total": len(all_flws),
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "flws": all_flws,
+                    "total": len(all_flws),
+                }
+            )
 
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -85,15 +89,17 @@ class OpportunityFLWListAPIView(LoginRequiredMixin, View):
         - Traditional audit sessions (via AuditDataAccess) — single FLW per session
         - Monitoring workflow runs (via WorkflowDataAccess) — per-FLW results in state.flw_results
         """
-        history = defaultdict(lambda: {
-            "last_audit_date": None,
-            "last_audit_result": None,
-            "audit_count": 0,
-            "open_task_count": 0,
-            "latest_task_id": None,
-            "latest_task_date": None,
-            "latest_task_title": None,
-        })
+        history = defaultdict(
+            lambda: {
+                "last_audit_date": None,
+                "last_audit_result": None,
+                "audit_count": 0,
+                "open_task_count": 0,
+                "latest_task_id": None,
+                "latest_task_date": None,
+                "latest_task_title": None,
+            }
+        )
 
         # 1. Read traditional audit sessions
         try:

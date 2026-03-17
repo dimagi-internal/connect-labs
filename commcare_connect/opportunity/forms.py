@@ -10,9 +10,8 @@ used in the labs environment.
 import json
 
 from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Column, Field, HTML, Layout, Row, Submit
+from crispy_forms.layout import Column, Field, Layout, Row, Submit
 from django import forms
-from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
 from commcare_connect.opportunity.models import (

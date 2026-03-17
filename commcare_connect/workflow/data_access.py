@@ -685,7 +685,9 @@ class WorkflowDataAccess(BaseDataAccess):
         """Alias for get_or_create_run (deprecated)."""
         return self.get_or_create_run(definition_id, opportunity_id)
 
-    def update_run_state(self, run_id: int, new_state: dict, run: WorkflowRunRecord | None = None) -> WorkflowRunRecord | None:
+    def update_run_state(
+        self, run_id: int, new_state: dict, run: WorkflowRunRecord | None = None
+    ) -> WorkflowRunRecord | None:
         """Update workflow run state (merge with existing).
 
         Args:

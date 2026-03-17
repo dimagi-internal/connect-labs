@@ -10,13 +10,15 @@ import gc
 import json
 import logging
 import platform
+
 try:
     import resource
 except ImportError:
     resource = None
 from collections import Counter
 from collections.abc import Generator
-from datetime import date, datetime, timedelta, timezone as dt_timezone
+from datetime import date, datetime, timedelta
+from datetime import timezone as dt_timezone
 
 import sentry_sdk
 from django.conf import settings
@@ -28,10 +30,31 @@ from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from django.views import View
 from django.views.generic import TemplateView
 
+from commcare_connect.labs.analysis.data_access import fetch_flw_names
+from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
+from commcare_connect.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
+from commcare_connect.labs.integrations.commcare.api_client import CommCareDataAccess
+from commcare_connect.workflow.data_access import WorkflowDataAccess
+from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import (
+    _get_cache_config,
+    fetch_gs_forms,
+    fetch_opportunity_metadata,
+    fetch_registration_forms,
+)
 from commcare_connect.workflow.templates.mbw_monitoring.data_transforms import (
     build_gps_visit_dicts,
     compute_ebf_by_flw,
     extract_per_mother_fields,
+)
+from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
+    aggregate_flw_followup,
+    aggregate_mother_metrics,
+    aggregate_visit_status_distribution,
+    build_followup_from_pipeline,
+    compute_flw_performance_by_status,
+    compute_overview_quality_metrics,
+    count_mothers_from_pipeline,
+    extract_mother_metadata_from_forms,
 )
 from commcare_connect.workflow.templates.mbw_monitoring.gps_analysis import (
     analyze_gps_metrics,
@@ -45,35 +68,15 @@ from commcare_connect.workflow.templates.mbw_monitoring.serializers import (
     serialize_flw_summary,
     serialize_visit,
 )
-from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import (
-    _get_cache_config,
-    fetch_gs_forms,
-    fetch_opportunity_metadata,
-    fetch_registration_forms,
-)
-from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
-    aggregate_flw_followup,
-    aggregate_mother_metrics,
-    aggregate_visit_status_distribution,
-    build_followup_from_pipeline,
-    compute_flw_performance_by_status,
-    compute_overview_quality_metrics,
-    count_mothers_from_pipeline,
-    extract_mother_metadata_from_forms,
-)
 from commcare_connect.workflow.templates.mbw_monitoring.session_adapter import (
     VALID_FLW_RESULTS,
-    WorkflowMonitoringSession,
     complete_monitoring_run,
     load_monitoring_run,
     save_dashboard_snapshot,
+)
+from commcare_connect.workflow.templates.mbw_monitoring.session_adapter import (
     save_flw_result as save_flw_result_helper,
 )
-from commcare_connect.labs.analysis.data_access import fetch_flw_names
-from commcare_connect.labs.integrations.commcare.api_client import CommCareDataAccess
-from commcare_connect.workflow.data_access import WorkflowDataAccess
-from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
-from commcare_connect.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
 
 logger = logging.getLogger(__name__)
 
@@ -217,10 +220,7 @@ def _get_latest_flw_statuses(
         logger.warning("[MBW Dashboard] Failed to fetch workflow runs: %s", e)
 
     # Build final mapping: all active usernames get a status
-    return {
-        username: latest[username][1] if username in latest else "none"
-        for username in active_usernames
-    }
+    return {username: latest[username][1] if username in latest else "none" for username in active_usernames}
 
 
 class MBWMonitoringDashboardView(LoginRequiredMixin, TemplateView):
@@ -358,16 +358,11 @@ def _ensure_cchq_oauth(request, timeout=300):
         next_page = referer if referer.startswith("/") else "/labs/overview/"
     if not next_page or not next_page.startswith("/") or next_page.startswith("//"):
         next_page = "/labs/overview/"
-    authorize_url = (
-        reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_page})
-    )
+    authorize_url = reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_page})
 
     # Send auth_required event (frontend shows modal, keeps EventSource open)
     event = {
-        "message": (
-            "CommCare authorization expired. "
-            "Please re-authorize in a new tab."
-        ),
+        "message": ("CommCare authorization expired. " "Please re-authorize in a new tab."),
         "complete": False,
         "auth_required": True,
         "authorize_url": authorize_url,
@@ -381,14 +376,9 @@ def _ensure_cchq_oauth(request, timeout=300):
     while time.time() < deadline:
         time.sleep(10)
         # Re-read session from DB (bypass in-memory cache)
-        fresh_session = engine.SessionStore(
-            session_key=request.session.session_key
-        )
+        fresh_session = engine.SessionStore(session_key=request.session.session_key)
         fresh_oauth = fresh_session.get("commcare_oauth", {})
-        if (
-            fresh_oauth.get("access_token")
-            and timezone.now().timestamp() < fresh_oauth.get("expires_at", 0)
-        ):
+        if fresh_oauth.get("access_token") and timezone.now().timestamp() < fresh_oauth.get("expires_at", 0):
             # User re-authenticated — update in-memory session and resume
             request.session["commcare_oauth"] = fresh_oauth
             logger.info("[MBW Dashboard] CCHQ OAuth re-authenticated, resuming stream")
@@ -489,16 +479,12 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             from_cache = False
             for i, opp_id in enumerate(opportunity_ids):
                 if len(opportunity_ids) > 1:
-                    yield send_sse_event(
-                        f"Loading visits from opportunity {i + 1}/{len(opportunity_ids)}..."
-                    )
+                    yield send_sse_event(f"Loading visits from opportunity {i + 1}/{len(opportunity_ids)}...")
                 else:
                     yield send_sse_event("Loading visit forms from Connect...")
 
                 pipeline = AnalysisPipeline(request)
-                pipeline_stream = pipeline.stream_analysis(
-                    pipeline_config, opportunity_id=opp_id
-                )
+                pipeline_stream = pipeline.stream_analysis(pipeline_config, opportunity_id=opp_id)
                 yield from self.stream_pipeline_events(pipeline_stream)
 
                 if self._pipeline_result:
@@ -515,7 +501,9 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                 return
 
             total_rows = len(pipeline_result.rows)
-            logger.info(f"[MBW Dashboard] Pipeline returned {total_rows} visits across {len(opportunity_ids)} opportunities")
+            logger.info(
+                f"[MBW Dashboard] Pipeline returned {total_rows} visits across {len(opportunity_ids)} opportunities"
+            )
             _log_rss(f"after pipeline download ({total_rows} visits)")
 
             # Step 2: Get active Connect users and FLW names (per opportunity, merge)
@@ -525,9 +513,7 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             flw_last_active = {}
             for opp_id in opportunity_ids:
                 try:
-                    opp_flw_names = fetch_flw_names(
-                        access_token, opp_id, last_active_out=flw_last_active
-                    )
+                    opp_flw_names = fetch_flw_names(access_token, opp_id, last_active_out=flw_last_active)
                     flw_names.update(opp_flw_names)
                     active_usernames.update(opp_flw_names.keys())
                 except Exception as e:
@@ -572,8 +558,7 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             yield from _ensure_cchq_oauth(request)
             cchq_oauth = request.session.get("commcare_oauth", {})
             cchq_oauth_valid = bool(
-                cchq_oauth.get("access_token")
-                and timezone.now().timestamp() < cchq_oauth.get("expires_at", 0)
+                cchq_oauth.get("access_token") and timezone.now().timestamp() < cchq_oauth.get("expires_at", 0)
             )
 
             if cchq_oauth_valid:
@@ -586,8 +571,11 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                         if cc_domain:
                             yield send_sse_event("Fetching GS forms... (forms)")
                             forms = fetch_gs_forms(
-                                request, cc_domain, cc_app_id=cc_app_id,
-                                gs_app_id=gs_app_id, bust_cache=bust_cache,
+                                request,
+                                cc_domain,
+                                cc_app_id=cc_app_id,
+                                gs_app_id=gs_app_id,
+                                bust_cache=bust_cache,
                                 opportunity_id=opp_id,
                             )
                             gs_forms.extend(forms)
@@ -608,12 +596,16 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             if app_version_op and app_version_val is not None:
                 pre_filter_count = len(visits_for_gps)
                 visits_for_gps = [
-                    v for v in visits_for_gps
+                    v
+                    for v in visits_for_gps
                     if _check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
                 ]
                 logger.info(
                     "[MBW Dashboard] App version filter (%s %d): %d -> %d GPS visits",
-                    app_version_op, app_version_val, pre_filter_count, len(visits_for_gps),
+                    app_version_op,
+                    app_version_val,
+                    pre_filter_count,
+                    len(visits_for_gps),
                 )
 
             gps_result = analyze_gps_metrics(visits_for_gps, flw_names)
@@ -647,16 +639,12 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             yield from _ensure_cchq_oauth(request)
             cchq_oauth_valid = bool(
                 request.session.get("commcare_oauth", {}).get("access_token")
-                and timezone.now().timestamp()
-                < request.session.get("commcare_oauth", {}).get("expires_at", 0)
+                and timezone.now().timestamp() < request.session.get("commcare_oauth", {}).get("expires_at", 0)
             )
 
             if not cchq_oauth_valid:
                 logger.warning("[MBW Dashboard] CommCare OAuth not available after re-auth attempt")
-                yield send_sse_event(
-                    "Fetching registration data... skipped "
-                    "(CommCare authorization not available)"
-                )
+                yield send_sse_event("Fetching registration data... skipped " "(CommCare authorization not available)")
             else:
                 for opp_id in opportunity_ids:
                     try:
@@ -667,8 +655,11 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                         if cc_domain:
                             yield send_sse_event("Fetching registration data... (forms)")
                             forms = fetch_registration_forms(
-                                request, cc_domain, cc_app_id=cc_app_id,
-                                bust_cache=bust_cache, opportunity_id=opp_id,
+                                request,
+                                cc_domain,
+                                cc_app_id=cc_app_id,
+                                bust_cache=bust_cache,
+                                opportunity_id=opp_id,
                             )
                             registration_forms.extend(forms)
                             yield send_sse_event(f"Fetching registration data... ({len(registration_forms)} forms)")
@@ -693,9 +684,7 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             flw_followup = aggregate_flw_followup(
                 visit_cases_by_flw, current_date, flw_names, mother_cases_map=mother_metadata
             )
-            visit_status_distribution = aggregate_visit_status_distribution(
-                visit_cases_by_flw, current_date
-            )
+            visit_status_distribution = aggregate_visit_status_distribution(visit_cases_by_flw, current_date)
 
             # Extract per-mother fields from pipeline rows (needed by drilldown + quality metrics)
             per_mother = extract_per_mother_fields(all_pipeline_rows)
@@ -709,23 +698,24 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
 
             logger.info(
                 "[MBW Dashboard] Pipeline extraction: parity=%d, anc_date=%d, pnc_date=%d, baby_dob=%d mothers, ebf=%d FLWs",
-                len(parity_by_mother), len(anc_date_by_mother),
-                len(pnc_date_by_mother), len(baby_dob_by_mother),
+                len(parity_by_mother),
+                len(anc_date_by_mother),
+                len(pnc_date_by_mother),
+                len(baby_dob_by_mother),
                 len(ebf_pct_by_flw),
             )
 
             # Log form name distribution for debugging
 
-            form_name_counts = Counter(
-                row.computed.get("form_name", "").strip()
-                for row in all_pipeline_rows
-            )
+            form_name_counts = Counter(row.computed.get("form_name", "").strip() for row in all_pipeline_rows)
             logger.info("[MBW Dashboard] Form name distribution: %s", dict(form_name_counts))
 
             flw_drilldown = {}
             for flw_username, flw_cases in visit_cases_by_flw.items():
                 flw_drilldown[flw_username] = aggregate_mother_metrics(
-                    flw_cases, current_date, mother_cases_map=mother_metadata,
+                    flw_cases,
+                    current_date,
+                    mother_cases_map=mother_metadata,
                     anc_date_by_mother=anc_date_by_mother,
                     pnc_date_by_mother=pnc_date_by_mother,
                     baby_dob_by_mother=baby_dob_by_mother,
@@ -764,7 +754,9 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
 
             # Compute quality/fraud overview metrics
             quality_metrics = compute_overview_quality_metrics(
-                visit_cases_by_flw, mother_metadata, parity_by_mother,
+                visit_cases_by_flw,
+                mother_metadata,
+                parity_by_mother,
                 anc_date_by_mother=anc_date_by_mother,
                 pnc_date_by_mother=pnc_date_by_mother,
             )
@@ -796,23 +788,23 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
 
             # Merge meter/visit and cases_with_revisits into GPS FLW summaries for GPS tab
             for flw_summary in gps_data["flw_summaries"]:
-                flw_summary["median_meters_per_visit"] = meters_per_visit_by_flw.get(
-                    flw_summary["username"]
-                )
+                flw_summary["median_meters_per_visit"] = meters_per_visit_by_flw.get(flw_summary["username"])
 
             # Extract lightweight coordinates for aggregate GPS map
             all_coordinates = []
             for v in gps_result.visits:
                 if v.gps:
-                    all_coordinates.append({
-                        "lat": round(v.gps.latitude, 5),
-                        "lng": round(v.gps.longitude, 5),
-                        "u": v.username,
-                        "f": v.is_flagged,
-                        "d": v.visit_date.isoformat() if v.visit_date else None,
-                        "e": v.entity_name,
-                        "m": v.mother_case_id or v.case_id,
-                    })
+                    all_coordinates.append(
+                        {
+                            "lat": round(v.gps.latitude, 5),
+                            "lng": round(v.gps.longitude, 5),
+                            "u": v.username,
+                            "f": v.is_flagged,
+                            "d": v.visit_date.isoformat() if v.visit_date else None,
+                            "e": v.entity_name,
+                            "m": v.mother_case_id or v.case_id,
+                        }
+                    )
             gps_data["all_coordinates"] = all_coordinates
 
             del gps_result  # Free GPSAnalysisResult with ~60k VisitWithGPS objects
@@ -827,10 +819,16 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             # Build eligible mothers count per FLW
             eligible_mothers_by_flw = {}
             for flw_username, flw_cases in visit_cases_by_flw.items():
-                mother_ids = {c.get("properties", {}).get("mother_case_id", "") for c in flw_cases if c.get("properties", {}).get("mother_case_id")}
+                mother_ids = {
+                    c.get("properties", {}).get("mother_case_id", "")
+                    for c in flw_cases
+                    if c.get("properties", {}).get("mother_case_id")
+                }
                 eligible_count = sum(
-                    1 for mid in mother_ids
-                    if mother_metadata.get(mid, {}).get("properties", {}).get("eligible_full_intervention_bonus") == "1"
+                    1
+                    for mid in mother_ids
+                    if mother_metadata.get(mid, {}).get("properties", {}).get("eligible_full_intervention_bonus")
+                    == "1"
                 )
                 eligible_mothers_by_flw[flw_username] = eligible_count
             del mother_metadata  # Free ~15k mother metadata dicts
@@ -842,12 +840,8 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                 eligible_mothers = [m for m in mothers if m.get("eligible")]
                 still_on_track = 0
                 for m in eligible_mothers:
-                    completed_count = sum(
-                        1 for v in m["visits"] if v["status"].startswith("Completed")
-                    )
-                    missed_count = sum(
-                        1 for v in m["visits"] if v["status"] == "Missed"
-                    )
+                    completed_count = sum(1 for v in m["visits"] if v["status"].startswith("Completed"))
+                    missed_count = sum(1 for v in m["visits"] if v["status"] == "Missed")
                     if completed_count >= 5 or missed_count <= 1:
                         still_on_track += 1
                 total_eligible = len(eligible_mothers)
@@ -872,24 +866,28 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                         last_active_date = la_dt.strftime("%Y-%m-%d %H:%M")
                     except (ValueError, TypeError):
                         pass
-                overview_flws.append({
-                    "username": username,
-                    "display_name": display_name,
-                    "last_active_days": last_active_days,
-                    "last_active_date": last_active_date,
-                    "cases_registered": mother_counts.get(username, 0),
-                    "eligible_mothers": eligible_mothers_by_flw.get(username, 0),
-                    "first_gs_score": first_gs_by_flw.get(username),
-                    "post_test_attempts": None,  # TBD
-                    "followup_rate": followup_rate_by_flw.get(username, 0),
-                    "ebf_pct": ebf_pct_by_flw.get(username),
-                    "revisit_distance_km": gps_median_by_flw.get(username),
-                    "cases_with_revisits": gps_revisit_cases_by_flw.get(username, 0),
-                    "median_meters_per_visit": meters_per_visit_by_flw.get(username),
-                    "median_minutes_per_visit": minutes_per_visit_by_flw.get(username),
-                    **quality_metrics.get(username, {}),
-                    "cases_still_eligible": cases_eligible_by_flw.get(username, {"eligible": 0, "total": 0, "pct": 0}),
-                })
+                overview_flws.append(
+                    {
+                        "username": username,
+                        "display_name": display_name,
+                        "last_active_days": last_active_days,
+                        "last_active_date": last_active_date,
+                        "cases_registered": mother_counts.get(username, 0),
+                        "eligible_mothers": eligible_mothers_by_flw.get(username, 0),
+                        "first_gs_score": first_gs_by_flw.get(username),
+                        "post_test_attempts": None,  # TBD
+                        "followup_rate": followup_rate_by_flw.get(username, 0),
+                        "ebf_pct": ebf_pct_by_flw.get(username),
+                        "revisit_distance_km": gps_median_by_flw.get(username),
+                        "cases_with_revisits": gps_revisit_cases_by_flw.get(username, 0),
+                        "median_meters_per_visit": meters_per_visit_by_flw.get(username),
+                        "median_minutes_per_visit": minutes_per_visit_by_flw.get(username),
+                        **quality_metrics.get(username, {}),
+                        "cases_still_eligible": cases_eligible_by_flw.get(
+                            username, {"eligible": 0, "total": 0, "pct": 0}
+                        ),
+                    }
+                )
 
             overview_data = {
                 "flw_summaries": overview_flws,
@@ -904,9 +902,7 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
             # Step 7: FLW Performance by assessment status
             yield send_sse_event("Computing FLW performance metrics...")
             flw_statuses = _get_latest_flw_statuses(request, active_usernames)
-            performance_data = compute_flw_performance_by_status(
-                flw_statuses, flw_drilldown, current_date
-            )
+            performance_data = compute_flw_performance_by_status(flw_statuses, flw_drilldown, current_date)
 
             # Fetch open tasks so the frontend can grey out the Task button and
             # provide inline task management (task_id needed for detail/update APIs)
@@ -944,15 +940,11 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
 
             # Section 1: GPS data (small — send first, free early)
             yield send_sse_event("Sending data...")
-            yield send_sse_event(
-                "data_section", {"section": "gps", "gps_data": gps_data}
-            )
+            yield send_sse_event("data_section", {"section": "gps", "gps_data": gps_data})
             del gps_data
 
             # Section 2: Follow-up data (largest — flw_drilldown has per-visit details)
-            yield send_sse_event(
-                "data_section", {"section": "followup", "followup_data": followup_data}
-            )
+            yield send_sse_event("data_section", {"section": "followup", "followup_data": followup_data})
             del followup_data
 
             # Section 3: Overview + performance + lists
@@ -1032,9 +1024,7 @@ class MBWGPSDetailView(LoginRequiredMixin, View):
             return JsonResponse({"error": status_err}, status=400)
 
         try:
-            visits_for_analysis = self._load_visits_from_cache(
-                opportunity_id, username, status_filter=status_filter
-            )
+            visits_for_analysis = self._load_visits_from_cache(opportunity_id, username, status_filter=status_filter)
 
             if visits_for_analysis is None:
                 # Cache cold — fall back to full pipeline (slow for large opportunities)
@@ -1046,20 +1036,23 @@ class MBWGPSDetailView(LoginRequiredMixin, View):
             # Apply app version filter if configured
             if app_version_op and app_version_val is not None:
                 visits_for_analysis = [
-                    v for v in visits_for_analysis
+                    v
+                    for v in visits_for_analysis
                     if _check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
                 ]
 
             gps_result = analyze_gps_metrics(visits_for_analysis, {})
             filtered_visits = filter_visits_by_date(gps_result.visits, start_date, end_date)
 
-            return JsonResponse({
-                "success": True,
-                "username": username,
-                "visits": [serialize_visit(v) for v in filtered_visits],
-                "total_visits": len(filtered_visits),
-                "flagged_visits": sum(1 for v in filtered_visits if v.is_flagged),
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "username": username,
+                    "visits": [serialize_visit(v) for v in filtered_visits],
+                    "total_visits": len(filtered_visits),
+                    "flagged_visits": sum(1 for v in filtered_visits if v.is_flagged),
+                }
+            )
 
         except Exception as e:
             logger.error(f"[MBW Dashboard] GPS detail failed: {e}", exc_info=True)
@@ -1075,7 +1068,6 @@ class MBWGPSDetailView(LoginRequiredMixin, View):
         Returns None if cache is cold.
         """
         from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
-        from commcare_connect.labs.analysis.backends.sql.models import ComputedVisitCache
 
         cache_mgr = SQLCacheManager(opportunity_id, MBW_GPS_PIPELINE_CONFIG)
         username_lower = username.lower()
@@ -1090,26 +1082,33 @@ class MBWGPSDetailView(LoginRequiredMixin, View):
         if status_filter:
             qs = qs.filter(status__in=status_filter)
         rows = qs.values(
-            "visit_id", "username", "visit_date", "entity_name",
-            "computed_fields", "location",
+            "visit_id",
+            "username",
+            "visit_date",
+            "entity_name",
+            "computed_fields",
+            "location",
         )
 
         visits_for_analysis = []
         for row in rows:
             computed = row["computed_fields"] or {}
             gps_location = computed.get("gps_location") or row.get("location")
-            visits_for_analysis.append({
-                "id": row["visit_id"],
-                "username": username_lower,
-                "visit_date": row["visit_date"].isoformat() if row["visit_date"] else None,
-                "entity_name": row["entity_name"],
-                "computed": computed,
-                "metadata": {"location": gps_location},
-            })
+            visits_for_analysis.append(
+                {
+                    "id": row["visit_id"],
+                    "username": username_lower,
+                    "visit_date": row["visit_date"].isoformat() if row["visit_date"] else None,
+                    "entity_name": row["entity_name"],
+                    "computed": computed,
+                    "metadata": {"location": gps_location},
+                }
+            )
 
         logger.info(
             "[MBW Dashboard] GPS detail: loaded %d visits for %s from cache (fast path)",
-            len(visits_for_analysis), username,
+            len(visits_for_analysis),
+            username,
         )
         return visits_for_analysis
 
@@ -1134,14 +1133,16 @@ class MBWGPSDetailView(LoginRequiredMixin, View):
             if row.latitude is not None and row.longitude is not None:
                 gps_location = f"{row.latitude} {row.longitude}"
 
-            visits_for_analysis.append({
-                "id": row.id,
-                "username": username_lower,
-                "visit_date": row.visit_date.isoformat() if row.visit_date else None,
-                "entity_name": row.entity_name,
-                "computed": row.computed,
-                "metadata": {"location": gps_location},
-            })
+            visits_for_analysis.append(
+                {
+                    "id": row.id,
+                    "username": username_lower,
+                    "visit_date": row.visit_date.isoformat() if row.visit_date else None,
+                    "entity_name": row.entity_name,
+                    "computed": row.computed,
+                    "metadata": {"location": gps_location},
+                }
+            )
         return visits_for_analysis
 
 
@@ -1174,11 +1175,13 @@ class MBWSaveFlwResultView(LoginRequiredMixin, View):
             if not updated_session:
                 return JsonResponse({"error": "Monitoring session not found"}, status=404)
 
-            return JsonResponse({
-                "success": True,
-                "flw_results": updated_session.flw_results,
-                "progress": updated_session.get_monitoring_progress_stats(),
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "flw_results": updated_session.flw_results,
+                    "progress": updated_session.get_monitoring_progress_stats(),
+                }
+            )
 
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -1208,11 +1211,13 @@ class MBWCompleteSessionView(LoginRequiredMixin, View):
             if not updated_session:
                 return JsonResponse({"error": "Monitoring session not found"}, status=404)
 
-            return JsonResponse({
-                "success": True,
-                "status": updated_session.status,
-                "overall_result": updated_session.overall_result,
-            })
+            return JsonResponse(
+                {
+                    "success": True,
+                    "status": updated_session.status,
+                    "overall_result": updated_session.overall_result,
+                }
+            )
 
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -1241,28 +1246,30 @@ class MBWSnapshotView(LoginRequiredMixin, View):
         if not snapshot:
             return JsonResponse({"has_snapshot": False})
 
-        return JsonResponse({
-            "has_snapshot": True,
-            "snapshot_timestamp": snapshot.get("timestamp"),
-            "success": True,
-            "from_snapshot": True,
-            "gps_data": snapshot.get("gps_data"),
-            "followup_data": snapshot.get("followup_data"),
-            "overview_data": snapshot.get("overview_data"),
-            "active_usernames": snapshot.get("active_usernames", []),
-            "flw_names": snapshot.get("flw_names", {}),
-            "open_tasks": snapshot.get("open_tasks", {}),
-            "open_task_usernames": snapshot.get("open_task_usernames", []),
-            "performance_data": snapshot.get("performance_data", []),
-            "monitoring_session": {
-                "id": monitoring_session.id,
-                "title": monitoring_session.title,
-                "status": monitoring_session.status,
-                "flw_results": monitoring_session.flw_results,
-                "progress": monitoring_session.get_monitoring_progress_stats(),
-                "selected_flw_usernames": monitoring_session.selected_flw_usernames,
-            },
-        })
+        return JsonResponse(
+            {
+                "has_snapshot": True,
+                "snapshot_timestamp": snapshot.get("timestamp"),
+                "success": True,
+                "from_snapshot": True,
+                "gps_data": snapshot.get("gps_data"),
+                "followup_data": snapshot.get("followup_data"),
+                "overview_data": snapshot.get("overview_data"),
+                "active_usernames": snapshot.get("active_usernames", []),
+                "flw_names": snapshot.get("flw_names", {}),
+                "open_tasks": snapshot.get("open_tasks", {}),
+                "open_task_usernames": snapshot.get("open_task_usernames", []),
+                "performance_data": snapshot.get("performance_data", []),
+                "monitoring_session": {
+                    "id": monitoring_session.id,
+                    "title": monitoring_session.title,
+                    "status": monitoring_session.status,
+                    "flw_results": monitoring_session.flw_results,
+                    "progress": monitoring_session.get_monitoring_progress_stats(),
+                    "selected_flw_usernames": monitoring_session.selected_flw_usernames,
+                },
+            }
+        )
 
 
 def _rebuild_gps_with_visits(request, gps_data, opportunity_id=None):
@@ -1292,15 +1299,16 @@ def _rebuild_gps_with_visits(request, gps_data, opportunity_id=None):
             return gps_data
 
         # Get all FLW usernames from the snapshot's flw_summaries
-        flw_usernames = [
-            (s.get("username") or "").lower()
-            for s in gps_data.get("flw_summaries", [])
-        ]
+        flw_usernames = [(s.get("username") or "").lower() for s in gps_data.get("flw_summaries", [])]
 
         # Query visits from computed cache (fast: local DB, indexed by username)
         rows = base_qs.filter(username__in=flw_usernames).values(
-            "visit_id", "username", "visit_date", "entity_name",
-            "computed_fields", "location",
+            "visit_id",
+            "username",
+            "visit_date",
+            "entity_name",
+            "computed_fields",
+            "location",
         )
 
         # Build visit dicts in the format expected by analyze_gps_metrics
@@ -1308,14 +1316,16 @@ def _rebuild_gps_with_visits(request, gps_data, opportunity_id=None):
         for row in rows:
             computed = row["computed_fields"] or {}
             gps_location = computed.get("gps_location") or row.get("location")
-            visits_for_analysis.append({
-                "id": row["visit_id"],
-                "username": (row["username"] or "").lower(),
-                "visit_date": row["visit_date"].isoformat() if row["visit_date"] else None,
-                "entity_name": row["entity_name"],
-                "computed": computed,
-                "metadata": {"location": gps_location},
-            })
+            visits_for_analysis.append(
+                {
+                    "id": row["visit_id"],
+                    "username": (row["username"] or "").lower(),
+                    "visit_date": row["visit_date"].isoformat() if row["visit_date"] else None,
+                    "entity_name": row["entity_name"],
+                    "computed": computed,
+                    "metadata": {"location": gps_location},
+                }
+            )
 
         gps_result = analyze_gps_metrics(visits_for_analysis, {})
         del visits_for_analysis
@@ -1396,9 +1406,7 @@ class MBWSaveSnapshotView(LoginRequiredMixin, View):
         if gps_data is not None and not isinstance(gps_data, dict):
             return JsonResponse({"error": "gps_data must be a JSON object"}, status=400)
         if gps_data:
-            has_visits = any(
-                s.get("visits") for s in gps_data.get("flw_summaries", [])
-            )
+            has_visits = any(s.get("visits") for s in gps_data.get("flw_summaries", []))
             if not has_visits:
                 snapshot_data["gps_data"] = _rebuild_gps_with_visits(
                     request, gps_data, opportunity_id=run.opportunity_id
@@ -1429,19 +1437,21 @@ class MBWOAuthStatusView(LoginRequiredMixin, View):
         cchq = request.session.get("commcare_oauth", {})
         ocs = request.session.get("ocs_oauth", {})
 
-        return JsonResponse({
-            "connect": {
-                "active": bool(labs.get("access_token") and now_ts < labs.get("expires_at", 0)),
-            },
-            "commcare": {
-                "active": bool(cchq.get("access_token") and now_ts < cchq.get("expires_at", 0)),
-                "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
-            },
-            "ocs": {
-                "active": bool(ocs.get("access_token") and now_ts < ocs.get("expires_at", 0)),
-                "authorize_url": reverse("labs:ocs_initiate") + "?" + urlencode({"next": next_url}),
-            },
-        })
+        return JsonResponse(
+            {
+                "connect": {
+                    "active": bool(labs.get("access_token") and now_ts < labs.get("expires_at", 0)),
+                },
+                "commcare": {
+                    "active": bool(cchq.get("access_token") and now_ts < cchq.get("expires_at", 0)),
+                    "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
+                },
+                "ocs": {
+                    "active": bool(ocs.get("access_token") and now_ts < ocs.get("expires_at", 0)),
+                    "authorize_url": reverse("labs:ocs_initiate") + "?" + urlencode({"next": next_url}),
+                },
+            }
+        )
 
 
 class MBWSuspendUserView(LoginRequiredMixin, View):
@@ -1472,15 +1482,16 @@ class MBWSuspendUserView(LoginRequiredMixin, View):
             # is DB-level and not accessible from Labs environment.
             # Need to confirm the Connect API endpoint for this.
             logger.warning(
-                f"[MBW Dashboard] Suspend user requested for {username} "
-                f"(reason: {reason}) - NOT IMPLEMENTED YET"
+                f"[MBW Dashboard] Suspend user requested for {username} " f"(reason: {reason}) - NOT IMPLEMENTED YET"
             )
 
-            return JsonResponse({
-                "success": False,
-                "error": "User suspension is not yet available from the dashboard. "
-                "Please use the main Connect interface to suspend users.",
-            })
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "User suspension is not yet available from the dashboard. "
+                    "Please use the main Connect interface to suspend users.",
+                }
+            )
 
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)

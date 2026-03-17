@@ -1,9 +1,4 @@
-import pytest
-from commcare_connect.solicitations_new.models import (
-    SolicitationRecord,
-    ResponseRecord,
-    ReviewRecord,
-)
+from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 
 class TestSolicitationRecord:
@@ -50,6 +45,7 @@ class TestSolicitationRecord:
     def test_application_deadline_parses(self):
         rec = self._make()
         from datetime import date
+
         assert rec.application_deadline == date(2026, 6, 1)
 
     def test_application_deadline_none(self):
@@ -76,7 +72,7 @@ class TestSolicitationRecord:
         assert rec.scope_of_work == "Do the work"
 
     def test_status_default(self):
-        rec = self._make(data={"status": None})
+        self._make(data={"status": None})
         # When status is None, data.get("status", "draft") returns None, not "draft"
         # But our default should handle missing keys gracefully
         rec2 = self._make()
@@ -86,11 +82,13 @@ class TestSolicitationRecord:
     def test_expected_start_date(self):
         rec = self._make()
         from datetime import date
+
         assert rec.expected_start_date == date(2026, 7, 1)
 
     def test_expected_end_date(self):
         rec = self._make()
         from datetime import date
+
         assert rec.expected_end_date == date(2026, 12, 31)
 
     def test_estimated_scale(self):

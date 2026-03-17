@@ -114,8 +114,11 @@ def celery_worker():
     log_file = open("e2e_celery_worker.log", "w")
     worker = subprocess.Popen(
         [
-            sys.executable, "-m", "celery",
-            "-A", "config.celery_app",
+            sys.executable,
+            "-m",
+            "celery",
+            "-A",
+            "config.celery_app",
             "worker",
             "--loglevel=info",
             "--pool=solo",

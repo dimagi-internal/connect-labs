@@ -194,9 +194,7 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "color": "indigo",
             },
         ]
-        context["labs_projects"] = (
-            _dimagi_labs_projects + _open_labs_projects if _is_dimagi else _open_labs_projects
-        )
+        context["labs_projects"] = _dimagi_labs_projects + _open_labs_projects if _is_dimagi else _open_labs_projects
 
         # ── Custom Analysis projects — all Dimagi staff only ──────────────────
         if _is_dimagi:

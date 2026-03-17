@@ -93,8 +93,7 @@ def fetch_cchq_forms_as_visit_dicts(
     client = CommCareDataAccess(request, cc_domain)
     if not client.check_token_valid():
         raise ValueError(
-            "CommCare OAuth not configured or expired. "
-            "Please authorize CommCare access at /labs/commcare/initiate/"
+            "CommCare OAuth not configured or expired. " "Please authorize CommCare access at /labs/commcare/initiate/"
         )
 
     form_name = data_source.form_name

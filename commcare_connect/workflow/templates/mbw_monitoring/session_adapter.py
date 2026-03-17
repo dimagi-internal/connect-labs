@@ -115,10 +115,7 @@ class WorkflowMonitoringSession:
 
     def get_monitoring_progress_stats(self):
         total = len(self.selected_flw_usernames)
-        assessed = sum(
-            1 for u in self.selected_flw_usernames
-            if self.flw_results.get(u, {}).get("result")
-        )
+        assessed = sum(1 for u in self.selected_flw_usernames if self.flw_results.get(u, {}).get("result"))
         percentage = round((assessed / total) * 100) if total > 0 else 0
         return {"percentage": percentage, "assessed": assessed, "total": total}
 
@@ -211,9 +208,13 @@ def save_flw_result(request, run_id, username, result, notes, assessed_by):
         }
 
         # Shallow merge: pass entire worker_results dict
-        updated_run = data_access.update_run_state(run_id, {
-            "worker_results": updated_results,
-        }, run=run)
+        updated_run = data_access.update_run_state(
+            run_id,
+            {
+                "worker_results": updated_results,
+            },
+            run=run,
+        )
 
         if updated_run:
             return WorkflowMonitoringSession(updated_run)
@@ -275,13 +276,15 @@ def complete_monitoring_run(request, run_id, overall_result="completed", notes="
         )
 
         if result:
-            updated_run = WorkflowRunRecord({
-                "id": result.id,
-                "experiment": result.experiment,
-                "type": result.type,
-                "data": result.data,
-                "opportunity_id": result.opportunity_id,
-            })
+            updated_run = WorkflowRunRecord(
+                {
+                    "id": result.id,
+                    "experiment": result.experiment,
+                    "type": result.type,
+                    "data": result.data,
+                    "opportunity_id": result.opportunity_id,
+                }
+            )
             return WorkflowMonitoringSession(updated_run)
         return None
     except Exception as e:

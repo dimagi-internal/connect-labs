@@ -5,10 +5,13 @@ from django.utils.translation import gettext, gettext_lazy
 
 # Inline constant — opportunity.forms was removed during labs simplification
 CHECKBOX_CLASS = "simple-toggle"
-from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership
-from commcare_connect.users.models import User
-from commcare_connect.utils.forms import CreatableModelChoiceField
-from commcare_connect.utils.permission_const import ORG_MANAGEMENT_SETTINGS_ACCESS, WORKSPACE_ENTITY_MANAGEMENT_ACCESS
+from commcare_connect.organization.models import LLOEntity, Organization, UserOrganizationMembership  # noqa: E402
+from commcare_connect.users.models import User  # noqa: E402
+from commcare_connect.utils.forms import CreatableModelChoiceField  # noqa: E402
+from commcare_connect.utils.permission_const import (  # noqa: E402
+    ORG_MANAGEMENT_SETTINGS_ACCESS,
+    WORKSPACE_ENTITY_MANAGEMENT_ACCESS,
+)
 
 
 class OrganizationChangeForm(forms.ModelForm):

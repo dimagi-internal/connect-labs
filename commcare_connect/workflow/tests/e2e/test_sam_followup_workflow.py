@@ -117,10 +117,8 @@ class TestSAMFollowupWorkflow:
         # If we see "Loading visit data..." the pipeline hasn't finished yet.
         # Wait for it to either transition to data or "No SAM..." (up to 2 more minutes).
         if wf_root.get_by_text("Loading visit data...").is_visible(timeout=2_000):
-            data_loaded = (
-                wf_root.get_by_text("Total Children").or_(
-                    wf_root.get_by_text("No SAM follow-up visit data found")
-                )
+            data_loaded = wf_root.get_by_text("Total Children").or_(
+                wf_root.get_by_text("No SAM follow-up visit data found")
             )
             try:
                 data_loaded.first.wait_for(timeout=120_000)
@@ -239,14 +237,12 @@ class TestSAMFollowupWorkflow:
             if run_id_match:
                 run_id = run_id_match.group(1)
                 page.request.post(
-                    f"{live_server_url}/labs/workflow/api/run/{run_id}/delete/"
-                    f"?opportunity_id={opportunity_id}",
+                    f"{live_server_url}/labs/workflow/api/run/{run_id}/delete/" f"?opportunity_id={opportunity_id}",
                     headers={"X-CSRFToken": csrf_token},
                 )
             if workflow_id_match:
                 wf_id = workflow_id_match.group(1)
                 page.request.post(
-                    f"{live_server_url}/labs/workflow/api/{wf_id}/delete/"
-                    f"?opportunity_id={opportunity_id}",
+                    f"{live_server_url}/labs/workflow/api/{wf_id}/delete/" f"?opportunity_id={opportunity_id}",
                     headers={"X-CSRFToken": csrf_token},
                 )

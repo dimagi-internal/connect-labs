@@ -34,14 +34,16 @@ def build_gps_visit_dicts(
         if row.latitude is not None and row.longitude is not None:
             gps_location = f"{row.latitude} {row.longitude}"
 
-        visits_for_gps.append({
-            "id": row.id,
-            "username": row_username,
-            "visit_date": row.visit_date.isoformat() if row.visit_date else None,
-            "entity_name": row.entity_name,
-            "computed": row.computed,
-            "metadata": {"location": gps_location},
-        })
+        visits_for_gps.append(
+            {
+                "id": row.id,
+                "username": row_username,
+                "visit_date": row.visit_date.isoformat() if row.visit_date else None,
+                "entity_name": row.entity_name,
+                "computed": row.computed,
+                "metadata": {"location": gps_location},
+            }
+        )
     return visits_for_gps
 
 

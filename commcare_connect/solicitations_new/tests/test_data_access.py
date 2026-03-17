@@ -16,12 +16,7 @@ from commcare_connect.solicitations_new.data_access import (
     SOLICITATION_TYPE,
     SolicitationsNewDataAccess,
 )
-from commcare_connect.solicitations_new.models import (
-    ResponseRecord,
-    ReviewRecord,
-    SolicitationRecord,
-)
-
+from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 # =========================================================================
 # Fixtures
@@ -109,9 +104,7 @@ def _make_review_record(**overrides):
 @pytest.fixture
 def mock_api_client():
     """Create a mock LabsRecordAPIClient."""
-    with patch(
-        "commcare_connect.solicitations_new.data_access.LabsRecordAPIClient"
-    ) as MockClient:
+    with patch("commcare_connect.solicitations_new.data_access.LabsRecordAPIClient") as MockClient:
         mock_instance = MagicMock()
         MockClient.return_value = mock_instance
         yield mock_instance
