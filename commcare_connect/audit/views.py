@@ -423,6 +423,13 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
             bulk_primary_username = ""
             assessment_counter = 0  # Counter to ensure unique IDs even for duplicate visits
 
+            # Build image filter from session's stored related_fields (for display-time filtering
+            # of sessions created before storage-level filtering was applied)
+            session_related_fields = session.data.get("related_fields", [])
+            image_filter_paths = {
+                r.get("image_path", "") for r in session_related_fields if r.get("filter_by_image")
+            }
+
             # Fetch FLW display names for the opportunity
             flw_names = {}
             try:
@@ -442,6 +449,8 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
 
                 # Get images from stored session data (includes question_id, username, visit_date, entity_name)
                 images_metadata = session.data.get("visit_images", {}).get(str(visit_id), [])
+                if image_filter_paths:
+                    images_metadata = [img for img in images_metadata if img.get("question_id") in image_filter_paths]
 
                 if not images_metadata:
                     continue
