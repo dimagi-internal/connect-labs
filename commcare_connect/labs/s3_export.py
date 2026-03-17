@@ -16,7 +16,6 @@ a subsequent write for the same record will self-heal.
 import csv
 import io
 import logging
-import os
 from datetime import datetime, timezone
 
 import boto3
@@ -75,14 +74,14 @@ def _get_bucket() -> str | None:
 def _get_s3_client():
     """Build a boto3 S3 client, passing explicit credentials when available.
 
-    On ECS the task IAM role provides credentials automatically (no env vars
-    needed). Locally, credentials come from .env via django-environ which
-    populates os.environ at settings load time.
+    On ECS the task IAM role provides credentials automatically — LABS_AWS_*
+    settings will be None and boto3 falls back to the instance metadata.
+    Locally, credentials are read from .env via Django settings.
     """
     kwargs = {}
-    key_id = os.environ.get("AWS_ACCESS_KEY_ID")
-    secret = os.environ.get("AWS_SECRET_ACCESS_KEY")
-    region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+    key_id = getattr(settings, "LABS_AWS_ACCESS_KEY_ID", None)
+    secret = getattr(settings, "LABS_AWS_SECRET_ACCESS_KEY", None)
+    region = getattr(settings, "LABS_AWS_DEFAULT_REGION", None) or "us-east-1"
     if key_id and secret:
         kwargs["aws_access_key_id"] = key_id
         kwargs["aws_secret_access_key"] = secret
