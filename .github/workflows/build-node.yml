@@ -1,0 +1,70 @@
+name: Build Node Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'webpack/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'tailwind/**'
+      - 'tsconfig.json'
+      - 'commcare_connect/static/js/**'
+      - 'commcare_connect/static/css/**'
+      - 'commcare_connect/templates/**'
+      - 'Dockerfile.node'
+
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: labs-jj-commcare-connect
+  ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  build-node:
+    name: Build & Push Node Image
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute frontend files hash
+        id: fe-hash
+        run: |
+          HASH=$(find package.json package-lock.json webpack/ components/ lib/ tailwind/ tsconfig.json \
+            commcare_connect/static/js/ commcare_connect/static/css/ commcare_connect/templates/ \
+            -type f 2>/dev/null | sort | xargs cat | sha256sum | cut -c1-12)
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push node image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.node
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:node-latest
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:node-${{ steps.fe-hash.outputs.hash }}
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node
+          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:cache-node,mode=max
