@@ -2,6 +2,9 @@
 .claude/mcp.json
 .mcp.json
 
+# Test account credentials
+.test-accounts.json
+
 ### Python template
 # Byte-compiled / optimized / DLL files
 __pycache__/

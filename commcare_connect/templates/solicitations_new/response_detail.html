@@ -26,6 +26,15 @@
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
                     Draft
                 </span>
+            {% elif response.status == 'reviewed' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                    Reviewed
+                </span>
+            {% elif response.status == 'awarded' %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                    <i class="fa-solid fa-trophy text-green-500 mr-1"></i>
+                    Awarded
+                </span>
             {% else %}
                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
                     {{ response.status|title }}
@@ -109,9 +118,7 @@
                         {% endif %}
                         {% if rev.tags %}
                             <div class="mt-2">
-                                {% for tag in rev.tags.split:"," %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 mr-1">{{ tag|trim }}</span>
-                                {% endfor %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ rev.tags }}</span>
                             </div>
                         {% endif %}
                     </div>
@@ -127,10 +134,22 @@
                 <i class="fa-solid fa-arrow-left mr-1"></i> Back to Responses
             </a>
         {% endif %}
-        <a href="{% url 'solicitations_new:review' pk=response.pk %}"
-           class="inline-flex items-center px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
-            <i class="fa-solid fa-clipboard-check mr-2"></i> Add Review
-        </a>
+        <div class="flex items-center gap-3">
+            {% if response.status != 'awarded' %}
+                <a href="{% url 'solicitations_new:award' pk=response.pk %}"
+                   class="inline-flex items-center px-6 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition">
+                    <i class="fa-solid fa-trophy mr-2"></i> Award
+                </a>
+            {% else %}
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                    <i class="fa-solid fa-check mr-1"></i> Awarded
+                </span>
+            {% endif %}
+            <a href="{% url 'solicitations_new:review' pk=response.pk %}"
+               class="inline-flex items-center px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-clipboard-check mr-2"></i> Add Review
+            </a>
+        </div>
     </div>
 
 </div>

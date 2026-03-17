@@ -419,6 +419,41 @@ class TestCreateResponse:
         )
 
 
+class TestAwardResponse:
+    def test_awards_response(self, data_access, mock_api_client):
+        current_record = _make_response_record(id=10)
+        mock_api_client.get_record_by_id.return_value = current_record
+
+        updated_data = dict(current_record.data)
+        updated_data["status"] = "awarded"
+        updated_data["reward_budget"] = 500000
+        updated_data["org_id"] = "org_99"
+        api_return = LocalLabsRecord(
+            {
+                "id": 10,
+                "experiment": "llo_entity_123",
+                "type": RESPONSE_TYPE,
+                "data": updated_data,
+                "opportunity_id": 0,
+            }
+        )
+        mock_api_client.update_record.return_value = api_return
+
+        result = data_access.award_response(10, reward_budget=500000, org_id="org_99")
+
+        assert isinstance(result, ResponseRecord)
+        mock_api_client.update_record.assert_called_once()
+        call_data = mock_api_client.update_record.call_args[1]["data"]
+        assert call_data["status"] == "awarded"
+        assert call_data["reward_budget"] == 500000
+        assert call_data["org_id"] == "org_99"
+
+    def test_raises_for_missing_response(self, data_access, mock_api_client):
+        mock_api_client.get_record_by_id.return_value = None
+        with pytest.raises(ValueError, match="Response 999 not found"):
+            data_access.award_response(999, reward_budget=500000, org_id="org_99")
+
+
 class TestUpdateResponse:
     def test_updates_record(self, data_access, mock_api_client):
         updated_data = {
@@ -521,6 +556,66 @@ class TestCreateReview:
             data=input_data,
             labs_record_id=10,
         )
+
+
+class TestAwardResponseAutoAllocation:
+    def test_award_creates_fund_allocation(self):
+        """When the solicitation has a fund_id, awarding auto-creates a fund allocation."""
+        response_data = {
+            "solicitation_id": 100,
+            "status": "submitted",
+            "llo_entity_id": "org1",
+            "llo_entity_name": "Partner Org",
+        }
+        mock_response = ResponseRecord(
+            {
+                "id": 10,
+                "experiment": "org1",
+                "type": "solicitation_new_response",
+                "opportunity_id": None,
+                "data": response_data,
+            }
+        )
+        awarded_data = dict(response_data)
+        awarded_data.update({"status": "awarded", "reward_budget": 50000, "org_id": "42"})
+        mock_awarded = ResponseRecord(
+            {
+                "id": 10,
+                "experiment": "org1",
+                "type": "solicitation_new_response",
+                "opportunity_id": None,
+                "data": awarded_data,
+            }
+        )
+
+        solicitation_data = {"title": "Test RFP", "fund_id": 5}
+        mock_solicitation = SolicitationRecord(
+            {
+                "id": 100,
+                "experiment": "1",
+                "type": "solicitation_new",
+                "opportunity_id": None,
+                "data": solicitation_data,
+            }
+        )
+
+        da = SolicitationsNewDataAccess(program_id="1", access_token="tok")
+        with (
+            patch.object(da, "get_response_by_id", return_value=mock_response),
+            patch.object(da, "update_response", return_value=mock_awarded),
+            patch.object(da, "get_solicitation_by_id", return_value=mock_solicitation),
+            patch(
+                "commcare_connect.funder_dashboard.data_access.FunderDashboardDataAccess"
+            ) as MockFDA,
+        ):
+            mock_fda_instance = MockFDA.return_value
+            da.award_response(10, reward_budget=50000, org_id="42")
+            mock_fda_instance.add_allocation.assert_called_once()
+            alloc = mock_fda_instance.add_allocation.call_args[1]["allocation"]
+            assert alloc["amount"] == 50000
+            assert alloc["type"] == "award"
+            assert alloc["response_id"] == 10
+            assert alloc["solicitation_id"] == 100
 
 
 class TestUpdateReview:

@@ -82,6 +82,11 @@
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                         Reviewed
                                     </span>
+                                {% elif response.status == 'awarded' %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                        <i class="fa-solid fa-trophy text-green-500 mr-1"></i>
+                                        Awarded
+                                    </span>
                                 {% else %}
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                                         {{ response.status|title }}
@@ -96,8 +101,8 @@
                                 {% endif %}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                {% if response._latest_review %}
-                                    {% with rec=response._latest_review.recommendation %}
+                                {% if response.latest_review %}
+                                    {% with rec=response.latest_review.recommendation %}
                                         {% if rec == 'approved' %}
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                 Approved
@@ -121,8 +126,8 @@
                                 {% endif %}
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {% if response._latest_review and response._latest_review.score %}
-                                    <span class="font-medium">{{ response._latest_review.score }}/100</span>
+                                {% if response.latest_review and response.latest_review.score %}
+                                    <span class="font-medium">{{ response.latest_review.score }}/100</span>
                                 {% else %}
                                     <span class="text-gray-400">-</span>
                                 {% endif %}
@@ -137,6 +142,16 @@
                                        class="text-green-600 hover:text-green-900 font-medium">
                                         <i class="fa-solid fa-clipboard-check mr-1"></i> Review
                                     </a>
+                                    {% if response.status != 'awarded' %}
+                                        <a href="{% url 'solicitations_new:award' pk=response.pk %}"
+                                           class="text-amber-600 hover:text-amber-900 font-medium">
+                                            <i class="fa-solid fa-trophy mr-1"></i> Award
+                                        </a>
+                                    {% else %}
+                                        <span class="text-green-600 font-medium">
+                                            <i class="fa-solid fa-check mr-1"></i> Awarded
+                                        </span>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>

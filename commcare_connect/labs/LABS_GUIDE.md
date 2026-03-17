@@ -20,6 +20,26 @@ Follow the standard CommCare Connect setup in the main [README.md](../../README.
 
     This opens a browser for OAuth authentication and saves the token to `~/.commcare-connect/token.json`.
 
+    **Multi-profile support**: You can store multiple tokens (e.g., your personal account and a test user):
+
+        # Save under a named profile
+        $ python manage.py get_cli_token --profile test-user
+
+        # List all profiles
+        $ python manage.py get_cli_token --list-profiles
+
+        # Switch active profile
+        $ python manage.py get_cli_token --switch-profile test-user
+
+    In code, specify a profile explicitly:
+
+    ```python
+    tm = TokenManager(profile="test-user")
+    token = tm.get_valid_token()
+    ```
+
+    When no profile is specified, the active profile is used automatically.
+
 3.  **Access Labs features** at `http://localhost:8000/labs/login/`
 
 ## Key Architecture

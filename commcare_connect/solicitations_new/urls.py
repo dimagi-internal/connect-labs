@@ -16,6 +16,8 @@ urlpatterns = [
     # Response (login required)
     path("<int:pk>/respond/", views.RespondView.as_view(), name="respond"),
     path("response/<int:pk>/", views.ResponseDetailView.as_view(), name="response_detail"),
+    # Award
+    path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
     # Review (manager required)
     path("response/<int:pk>/review/", views.ReviewView.as_view(), name="review"),
     # JSON API

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-6">
+
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm text-gray-500 mb-6">
+        <a href="{% url 'funder_dashboard:portfolio' %}" class="hover:text-brand-cornflower-blue transition-colors">
+            <i class="fa-solid fa-chart-pie mr-1"></i> Portfolio
+        </a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <span class="text-gray-700 font-medium">
+            {% if is_create %}Create Fund{% else %}Edit Fund{% endif %}
+        </span>
+    </nav>
+
+    <h1 class="text-2xl font-semibold text-brand-deep-purple mb-6">
+        {% if is_create %}Create New Fund{% else %}Edit Fund{% endif %}
+    </h1>
+
+    {% if error %}
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6" role="alert">
+            <div class="flex items-center">
+                <i class="fa-solid fa-exclamation-circle text-red-400 mr-3"></i>
+                <p class="text-sm text-red-700">{{ error }}</p>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if not has_context %}
+        <div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-12 text-center">
+            <i class="fa-solid fa-building text-5xl text-blue-400 mb-4"></i>
+            <h3 class="text-xl font-semibold text-blue-900 mb-2">No organization selected</h3>
+            <p class="text-blue-700 mb-6">Please select an organization from the context selector above before creating a fund.</p>
+            <a href="{% url 'funder_dashboard:portfolio' %}"
+               class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
+                Back to Portfolio
+            </a>
+        </div>
+    {% else %}
+    <form method="post" class="space-y-8">
+        {% csrf_token %}
+
+        <!-- Fund Details -->
+        <div class="bg-white rounded-xl shadow-sm p-8">
+            <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+                <i class="fa-solid fa-info-circle mr-2"></i>
+                Fund Details
+            </h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label for="{{ form.name.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.name.label }} <span class="text-red-500">*</span></label>
+                    {{ form.name }}
+                    {% if form.name.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.name.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <div>
+                    <label for="{{ form.description.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.description.label }}</label>
+                    {{ form.description }}
+                    {% if form.description.errors %}
+                        <p class="mt-1 text-sm text-red-600">{{ form.description.errors.0 }}</p>
+                    {% endif %}
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="{{ form.total_budget.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.total_budget.label }}</label>
+                        {{ form.total_budget }}
+                        {% if form.total_budget.errors %}
+                            <p class="mt-1 text-sm text-red-600">{{ form.total_budget.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+
+                    <div>
+                        <label for="{{ form.currency.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.currency.label }}</label>
+                        {{ form.currency }}
+                        {% if form.currency.errors %}
+                            <p class="mt-1 text-sm text-red-600">{{ form.currency.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+
+                    <div>
+                        <label for="{{ form.status.id_for_label }}" class="block text-sm font-medium text-gray-700 mb-1">{{ form.status.label }} <span class="text-red-500">*</span></label>
+                        {{ form.status }}
+                        {% if form.status.errors %}
+                            <p class="mt-1 text-sm text-red-600">{{ form.status.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Allocations -->
+        <div class="bg-white rounded-xl shadow-sm p-8" x-data='allocationsManager()'>
+            <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+                <i class="fa-solid fa-file-invoice-dollar mr-2"></i>
+                Allocations
+            </h2>
+
+            <template x-for="(alloc, index) in allocations" :key="index">
+                <div class="flex items-end gap-3 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div class="flex-1">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Program Name</label>
+                        <input type="text" x-model="alloc.program_name" placeholder="e.g. KMC Uganda"
+                               class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="w-32">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Amount</label>
+                        <input type="number" x-model.number="alloc.amount" placeholder="0"
+                               class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="w-36">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                        <select x-model="alloc.type"
+                                class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                            <option value="retroactive">Retroactive</option>
+                            <option value="manual">Manual</option>
+                            <option value="award">Award</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                        <input type="text" x-model="alloc.notes" placeholder="Optional notes"
+                               class="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <button type="button" @click="removeAllocation(index)"
+                            class="px-2 py-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </template>
+
+            <button type="button" @click="addAllocation()"
+                    class="inline-flex items-center px-3 py-1.5 text-sm text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition">
+                <i class="fa-solid fa-plus mr-1.5"></i> Add Allocation
+            </button>
+
+            <input type="hidden" name="allocations_json" :value="JSON.stringify(allocations)">
+        </div>
+
+        <script>
+            function allocationsManager() {
+                const raw = document.querySelector('input[name="allocations_json"][type="hidden"]:not([x-bind\\:value])')
+                let initial = []
+                if (raw && raw.value) {
+                    try { initial = JSON.parse(raw.value) } catch(e) {}
+                    raw.remove()
+                }
+                return {
+                    allocations: initial,
+                    addAllocation() {
+                        this.allocations.push({
+                            program_id: '', program_name: '', amount: 0,
+                            type: 'retroactive', notes: '', org_id: '', org_name: ''
+                        })
+                    },
+                    removeAllocation(index) {
+                        this.allocations.splice(index, 1)
+                    }
+                }
+            }
+        </script>
+
+        {{ form.program_ids_json }}
+        {{ form.delivery_types_json }}
+
+        <!-- Form Actions -->
+        <div class="flex justify-end gap-4 pt-2 pb-8">
+            <a href="{% url 'funder_dashboard:portfolio' %}"
+               class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition">
+                <i class="fa-solid fa-times mr-2"></i>
+                Cancel
+            </a>
+            <button type="submit"
+                    class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                <i class="fa-solid fa-save mr-2"></i>
+                {% if is_create %}Create Fund{% else %}Save Changes{% endif %}
+            </button>
+        </div>
+    </form>
+    {% endif %}
+
+</div>
+{% endblock %}

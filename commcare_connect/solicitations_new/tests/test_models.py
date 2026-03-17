@@ -108,6 +108,66 @@ class TestSolicitationRecord:
         assert rec.program_name == "Test Program"
 
 
+class TestSolicitationRecordFundId:
+    def test_fund_id(self):
+        record = SolicitationRecord(
+            {"id": 1, "experiment": "p", "type": "solicitation_new", "data": {"fund_id": 42}, "opportunity_id": 0}
+        )
+        assert record.fund_id == 42
+
+    def test_fund_id_default_none(self):
+        record = SolicitationRecord(
+            {"id": 1, "experiment": "p", "type": "solicitation_new", "data": {}, "opportunity_id": 0}
+        )
+        assert record.fund_id is None
+
+
+class TestResponseRecordOrgFields:
+    def test_org_id(self):
+        record = ResponseRecord(
+            {
+                "id": 1,
+                "experiment": "e",
+                "type": "solicitation_new_response",
+                "data": {"org_id": "org_42"},
+                "opportunity_id": 0,
+            }
+        )
+        assert record.org_id == "org_42"
+
+    def test_org_name(self):
+        record = ResponseRecord(
+            {
+                "id": 1,
+                "experiment": "e",
+                "type": "solicitation_new_response",
+                "data": {"org_name": "Test Org"},
+                "opportunity_id": 0,
+            }
+        )
+        assert record.org_name == "Test Org"
+
+
+class TestReviewRecordRewardBudget:
+    def test_reward_budget(self):
+        record = ReviewRecord(
+            {
+                "id": 1,
+                "experiment": "e",
+                "type": "solicitation_new_review",
+                "data": {"reward_budget": 500000},
+                "opportunity_id": 0,
+            }
+        )
+        assert record.reward_budget == 500000
+
+    def test_reward_budget_default_none(self):
+        record = ReviewRecord(
+            {"id": 1, "experiment": "e", "type": "solicitation_new_review", "data": {}, "opportunity_id": 0}
+        )
+        assert record.reward_budget is None
+
+
 class TestResponseRecord:
     def _make(self, **overrides):
         data = {

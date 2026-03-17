@@ -234,11 +234,9 @@ class ResponsesListView(ManagerRequiredMixin, TemplateView):
             for r in responses:
                 try:
                     reviews = da.get_reviews_for_response(r.pk)
-                    r._reviews = reviews
-                    r._latest_review = reviews[-1] if reviews else None
+                    r.latest_review = reviews[-1] if reviews else None
                 except Exception:
-                    r._reviews = []
-                    r._latest_review = None
+                    r.latest_review = None
             ctx["responses"] = responses
         except Http404:
             raise
@@ -368,6 +366,52 @@ class ResponseDetailView(LabsLoginRequiredMixin, TemplateView):
             logger.exception("Failed to load response %s", pk)
             raise Http404("Response not found")
         return ctx
+
+
+# -- Award Views (manager required) ----------------------------------------
+
+
+class AwardView(ManagerRequiredMixin, TemplateView):
+    """Award a response — mark as awarded with budget and org_id."""
+
+    template_name = "solicitations_new/award.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        pk = kwargs["pk"]
+        try:
+            da = _get_data_access(self.request)
+            response = da.get_response_by_id(pk)
+            if not response:
+                raise Http404("Response not found")
+            ctx["response"] = response
+
+            solicitation = da.get_solicitation_by_id(response.solicitation_id)
+            ctx["solicitation"] = solicitation
+        except Http404:
+            raise
+        except Exception:
+            logger.exception("Failed to load response %s for award", pk)
+            raise Http404("Response not found")
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        pk = kwargs["pk"]
+        try:
+            da = _get_data_access(request)
+            reward_budget = int(request.POST.get("reward_budget", 0))
+            org_id = request.POST.get("org_id", "")
+            da.award_response(pk, reward_budget=reward_budget, org_id=org_id)
+            # Redirect back to the responses list for the parent solicitation
+            response = da.get_response_by_id(pk)
+            if response:
+                return redirect("solicitations_new:responses_list", pk=response.solicitation_id)
+            return redirect("solicitations_new:manage_list")
+        except Exception:
+            logger.exception("Failed to award response %s", pk)
+            ctx = self.get_context_data(**kwargs)
+            ctx["error"] = "Failed to award response. Please try again."
+            return self.render_to_response(ctx)
 
 
 # -- Review Views (manager required) ---------------------------------------

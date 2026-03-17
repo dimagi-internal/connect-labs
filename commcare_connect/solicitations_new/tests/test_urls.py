@@ -171,7 +171,7 @@ class TestURLResolution:
             "api_review_detail",
         ]
         for name in url_names:
-            full_name = f"solicitations_new:{name}"
+            full_name = "solicitations_new:{}".format(name)
             # Should not raise NoReverseMatch
             kwargs = {}
             if name in (
@@ -190,7 +190,7 @@ class TestURLResolution:
             assert url.startswith("/solicitations_new/"), f"{full_name} resolved to {url}"
 
     def test_url_pattern_count(self):
-        """Ensure we have exactly the expected number of URL patterns (15 total)."""
+        """Ensure we have exactly the expected number of URL patterns (16 total)."""
         from commcare_connect.solicitations_new.urls import urlpatterns
 
-        assert len(urlpatterns) == 15
+        assert len(urlpatterns) == 16
