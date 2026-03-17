@@ -124,19 +124,18 @@ def _write_rows(s3_client, bucket: str, key: str, rows: dict, fieldnames: list[s
     )
 
 
-def upsert_workflow_run(run, opportunity_name: str = "", definition_name: str = "", template_type: str = "") -> None:
+def upsert_workflow_run(run, opportunity_name: str = "", definition_name: str = "", template_type: str = "", username: str = "") -> None:
     """Upsert one WorkflowRunRecord row into workflow_runs.csv on S3.
 
-    Existing values for opportunity_name, definition_name, and
-    template_type are preserved when the caller passes empty strings
-    (e.g. on run creation before these are known).
+    Existing values for opportunity_name, definition_name, template_type,
+    and username are preserved when the caller passes empty strings.
     """
     bucket = _get_bucket()
     if not bucket:
         return
 
     state = run.state or {}
-    run_by = run.username or state.get("run_by", "") or ""
+    run_by = username or state.get("run_by", "") or ""
 
     try:
         s3 = _get_s3_client()
@@ -166,7 +165,12 @@ def upsert_workflow_run(run, opportunity_name: str = "", definition_name: str = 
                 or state.get("pass_rate")
                 or ""
             ),
-            "pct_passing": state.get("pct_passing", ""),
+            "pct_passing": (
+                state.get("pass_threshold")
+                or state.get("pct_passing")
+                or state.get("config", {}).get("threshold")
+                or ""
+            ),
             "tasks_created": state.get("tasks_created", ""),
             "images_reviewed": state.get("images_reviewed", ""),
             "pct_sampled": state.get("sample_percentage", ""),

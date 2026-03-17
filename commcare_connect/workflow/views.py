@@ -256,6 +256,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     s3_export.upsert_workflow_run(
                         run,
                         opportunity_name=opp_map.get(run.opportunity_id, ""),
+                        username=getattr(request.user, "username", "") or "",
                     )
                 except Exception as e:
                     logger.exception("Failed to create run for opp %s", opportunity_id)
@@ -669,7 +670,10 @@ def update_state_api(request, run_id):
         updated_run = data_access.update_run_state(run_id, new_state)
 
         if updated_run:
-            s3_export.upsert_workflow_run(updated_run)
+            s3_export.upsert_workflow_run(
+                updated_run,
+                username=getattr(request.user, "username", "") or "",
+            )
             return JsonResponse(
                 {
                     "success": True,
