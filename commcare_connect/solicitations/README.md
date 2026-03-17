@@ -6,26 +6,26 @@ Includes delivery type descriptions, opportunity enrichment data, and a public-f
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `models.py` | 5 proxy models: solicitations, responses, reviews, delivery types, enrichments |
+| File             | Purpose                                                                           |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `models.py`      | 5 proxy models: solicitations, responses, reviews, delivery types, enrichments    |
 | `data_access.py` | `SolicitationDataAccess` — CRUD for all record types + production API integration |
-| `views.py` | 14 views: public browse, manager CRUD, response submission, reviews |
-| `forms.py` | Dynamic forms: solicitation editor, response (from questions JSON), review |
-| `tables.py` | django-tables2 definitions |
-| `urls.py` | URL routing under `/solicitations/` |
+| `views.py`       | 14 views: public browse, manager CRUD, response submission, reviews               |
+| `forms.py`       | Dynamic forms: solicitation editor, response (from questions JSON), review        |
+| `tables.py`      | django-tables2 definitions                                                        |
+| `urls.py`        | URL routing under `/solicitations/`                                               |
 
 ## Data Model
 
 All records use experiment=`"solicitations"`.
 
-| Type | Proxy Model | Scoping | Purpose |
-|------|-------------|---------|---------|
-| `Solicitation` | `SolicitationRecord` | `program_id` | RFP/EOI with questions, deadlines, scope of work |
-| `SolicitationResponse` | `ResponseRecord` | `organization_id` | Answers to solicitation questions |
-| `SolicitationReview` | `ReviewRecord` | (linked to response) | Score, recommendation, notes |
-| `DeliveryTypeDescriptionRecord` | `DeliveryTypeDescriptionRecord` | `public=True` | Metadata for delivery types (CHC, KMC, etc.) |
-| `OppOrgEnrichmentRecord` | `OppOrgEnrichmentRecord` | `program_id` | Country/region enrichment for opportunities |
+| Type                            | Proxy Model                     | Scoping              | Purpose                                          |
+| ------------------------------- | ------------------------------- | -------------------- | ------------------------------------------------ |
+| `Solicitation`                  | `SolicitationRecord`            | `program_id`         | RFP/EOI with questions, deadlines, scope of work |
+| `SolicitationResponse`          | `ResponseRecord`                | `organization_id`    | Answers to solicitation questions                |
+| `SolicitationReview`            | `ReviewRecord`                  | (linked to response) | Score, recommendation, notes                     |
+| `DeliveryTypeDescriptionRecord` | `DeliveryTypeDescriptionRecord` | `public=True`        | Metadata for delivery types (CHC, KMC, etc.)     |
+| `OppOrgEnrichmentRecord`        | `OppOrgEnrichmentRecord`        | `program_id`         | Country/region enrichment for opportunities      |
 
 **Key difference from other apps:** Solicitations do NOT use `opportunity_id` for scoping. They use `program_id` for solicitations and `organization_id` for responses.
 

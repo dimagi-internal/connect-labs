@@ -57,6 +57,7 @@ Every form is an XForm document with this skeleton:
 ```
 
 **Key rules:**
+
 - Every `<bind>` nodeset must match an element in `<instance>`
 - `type` values: `xsd:string`, `xsd:int`, `xsd:decimal`, `xsd:date`, `xsd:dateTime`, `xsd:boolean`
 - `relevant` = skip logic (XPath expression), `constraint` = validation
@@ -85,6 +86,7 @@ Case operations live inside the form's `<instance>` and are controlled by a case
 ```
 
 **Case operations:**
+
 - `create` — opens a new case; requires `case_type`, `case_name`, `owner_id`
 - `update` — sets case properties; each child element name = property name
 - `close` — closes the case (empty element)
@@ -133,6 +135,7 @@ The suite.xml defines app navigation, menus, and case selection:
 ```
 
 **Key rules:**
+
 - Menu `id` format: `m0`, `m1`, etc. (module index)
 - Command `id` format: `m0-f0`, `m0-f1` (module-form index)
 - Detail `id` format: `m0_case_short`, `m0_case_long`
@@ -143,10 +146,12 @@ The suite.xml defines app navigation, menus, and case selection:
 ## Common Patterns
 
 **Registration form:** Creates a new case, no case selection needed.
+
 - XForm: has `<create>` block with case_type, case_name, owner_id
 - Suite entry: NO `<session>` datum
 
 **Follow-up form:** Updates an existing case, requires case list.
+
 - XForm: has `<update>` block, binds case properties
 - Suite entry: HAS `<session>` with datum for case selection
 - Suite: needs `detail-select` (case list) and `detail-confirm` (case detail)

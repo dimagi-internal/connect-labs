@@ -42,8 +42,7 @@ def _serialize_review(r):
     }
 
 
-def list_solicitations(access_token, program_id=None, status=None,
-                       solicitation_type=None, is_public=None):
+def list_solicitations(access_token, program_id=None, status=None, solicitation_type=None, is_public=None):
     """List solicitations, optionally filtered."""
     da = SolicitationsNewDataAccess(program_id=program_id, access_token=access_token)
     if is_public:

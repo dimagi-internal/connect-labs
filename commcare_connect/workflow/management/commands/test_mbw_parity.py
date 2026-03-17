@@ -17,7 +17,6 @@ Usage:
 """
 
 import logging
-from collections import Counter
 from datetime import date
 
 from django.core.management.base import BaseCommand, CommandError
@@ -51,13 +50,7 @@ class Command(BaseCommand):
         from commcare_connect.labs.analysis.data_access import fetch_flw_names
         from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
         from commcare_connect.labs.integrations.connect.cli import create_cli_request
-        from commcare_connect.workflow.job_handlers.mbw_monitoring import (
-            _adapt_rows,
-            _build_gps_visit_dicts,
-            _compute_ebf_by_flw,
-            _extract_per_mother_fields,
-            handle_mbw_monitoring_job,
-        )
+        from commcare_connect.workflow.job_handlers.mbw_monitoring import handle_mbw_monitoring_job
         from commcare_connect.workflow.templates.mbw_monitoring.data_transforms import (
             build_gps_visit_dicts,
             compute_ebf_by_flw,
@@ -78,12 +71,8 @@ class Command(BaseCommand):
             compute_median_meters_per_visit,
             compute_median_minutes_per_visit,
         )
-        from commcare_connect.workflow.templates.mbw_monitoring.pipeline_config import (
-            MBW_GPS_PIPELINE_CONFIG,
-        )
-        from commcare_connect.workflow.templates.mbw_monitoring.serializers import (
-            serialize_flw_summary,
-        )
+        from commcare_connect.workflow.templates.mbw_monitoring.pipeline_config import MBW_GPS_PIPELINE_CONFIG
+        from commcare_connect.workflow.templates.mbw_monitoring.serializers import serialize_flw_summary
 
         opportunity_id = options["opportunity_id"]
         verbose = options["verbose"]
@@ -97,9 +86,7 @@ class Command(BaseCommand):
         self.stdout.write("\n[1/6] Creating CLI request...")
         request = create_cli_request(opportunity_id=opportunity_id)
         if not request:
-            raise CommandError(
-                "Failed to create CLI request. Run: python manage.py get_cli_token"
-            )
+            raise CommandError("Failed to create CLI request. Run: python manage.py get_cli_token")
         access_token = request.session.get("labs_oauth", {}).get("access_token")
         self.stdout.write(self.style.SUCCESS("  -> OK"))
 
@@ -119,13 +106,15 @@ class Command(BaseCommand):
         except Exception as e:
             self.stdout.write(self.style.WARNING(f"  -> FLW names fetch failed: {e}"))
             flw_names = {}
-        active_usernames = {u.lower() for u in flw_names.keys()} if flw_names else {
-            (r.username or "").lower() for r in rows if r.username
-        }
+        active_usernames = (
+            {u.lower() for u in flw_names.keys()}
+            if flw_names
+            else {(r.username or "").lower() for r in rows if r.username}
+        )
         flw_names = {k.lower(): v for k, v in flw_names.items()}
-        self.stdout.write(self.style.SUCCESS(
-            f"  -> {len(flw_names)} FLW names, {len(active_usernames)} active usernames"
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(f"  -> {len(flw_names)} FLW names, {len(active_usernames)} active usernames")
+        )
 
         self.stdout.write("\n[4/6] Fetching CCHQ forms (registrations + GS)...")
         registration_forms = []
@@ -145,15 +134,18 @@ class Command(BaseCommand):
                     request, cc_domain, cc_app_id=cc_app_id, opportunity_id=opportunity_id
                 )
                 gs_forms = fetch_gs_forms(
-                    request, cc_domain, cc_app_id=cc_app_id, opportunity_id=opportunity_id,
+                    request,
+                    cc_domain,
+                    cc_app_id=cc_app_id,
+                    opportunity_id=opportunity_id,
                     gs_app_id=options.get("gs_app_id"),
                 )
         except Exception as e:
             self.stdout.write(self.style.WARNING(f"  -> CCHQ fetch failed: {e}"))
 
-        self.stdout.write(self.style.SUCCESS(
-            f"  -> {len(registration_forms)} registration forms, {len(gs_forms)} GS forms"
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(f"  -> {len(registration_forms)} registration forms, {len(gs_forms)} GS forms")
+        )
 
         current_date = date.today()
 
@@ -179,18 +171,12 @@ class Command(BaseCommand):
         }
 
         # Follow-up analysis
-        v1_visit_cases = build_followup_from_pipeline(
-            rows, active_usernames, registration_forms=registration_forms
-        )
-        v1_mother_metadata = extract_mother_metadata_from_forms(
-            registration_forms, current_date=current_date
-        )
+        v1_visit_cases = build_followup_from_pipeline(rows, active_usernames, registration_forms=registration_forms)
+        v1_mother_metadata = extract_mother_metadata_from_forms(registration_forms, current_date=current_date)
         v1_flw_followup = aggregate_flw_followup(
             v1_visit_cases, current_date, flw_names, mother_cases_map=v1_mother_metadata
         )
-        v1_visit_status_dist = aggregate_visit_status_distribution(
-            v1_visit_cases, current_date
-        )
+        v1_visit_status_dist = aggregate_visit_status_distribution(v1_visit_cases, current_date)
 
         # Per-mother fields + EBF
         v1_per_mother = extract_per_mother_fields(rows)
@@ -200,7 +186,9 @@ class Command(BaseCommand):
         v1_drilldown = {}
         for flw_username, flw_cases in v1_visit_cases.items():
             v1_drilldown[flw_username] = aggregate_mother_metrics(
-                flw_cases, current_date, mother_cases_map=v1_mother_metadata,
+                flw_cases,
+                current_date,
+                mother_cases_map=v1_mother_metadata,
                 anc_date_by_mother=v1_per_mother["anc_date_by_mother"],
                 pnc_date_by_mother=v1_per_mother["pnc_date_by_mother"],
                 baby_dob_by_mother=v1_per_mother["baby_dob_by_mother"],
@@ -228,15 +216,15 @@ class Command(BaseCommand):
 
         # Quality metrics
         v1_quality = compute_overview_quality_metrics(
-            v1_visit_cases, v1_mother_metadata, v1_per_mother["parity_by_mother"],
+            v1_visit_cases,
+            v1_mother_metadata,
+            v1_per_mother["parity_by_mother"],
             anc_date_by_mother=v1_per_mother["anc_date_by_mother"],
             pnc_date_by_mother=v1_per_mother["pnc_date_by_mother"],
         )
 
         # Overview assembly (mirrors views.py lines 696-718)
-        v1_mother_counts = count_mothers_from_pipeline(
-            rows, active_usernames, registration_forms=registration_forms
-        )
+        v1_mother_counts = count_mothers_from_pipeline(rows, active_usernames, registration_forms=registration_forms)
         v1_gps_median_by_flw = {}
         for flw in v1_gps_result.flw_summaries:
             if flw.avg_case_distance_km is not None:
@@ -253,13 +241,13 @@ class Command(BaseCommand):
         for flw_username, flw_cases in v1_visit_cases.items():
             mother_ids = {
                 c.get("properties", {}).get("mother_case_id", "")
-                for c in flw_cases if c.get("properties", {}).get("mother_case_id")
+                for c in flw_cases
+                if c.get("properties", {}).get("mother_case_id")
             }
             eligible_count = sum(
-                1 for mid in mother_ids
-                if v1_mother_metadata.get(mid, {}).get("properties", {}).get(
-                    "eligible_full_intervention_bonus"
-                ) == "1"
+                1
+                for mid in mother_ids
+                if v1_mother_metadata.get(mid, {}).get("properties", {}).get("eligible_full_intervention_bonus") == "1"
             )
             v1_eligible_mothers_by_flw[flw_username] = eligible_count
 
@@ -269,12 +257,8 @@ class Command(BaseCommand):
             eligible_mothers = [m for m in mothers if m.get("eligible")]
             still_on_track = 0
             for m in eligible_mothers:
-                completed_count = sum(
-                    1 for v in m["visits"] if v["status"].startswith("Completed")
-                )
-                missed_count = sum(
-                    1 for v in m["visits"] if v["status"] == "Missed"
-                )
+                completed_count = sum(1 for v in m["visits"] if v["status"].startswith("Completed"))
+                missed_count = sum(1 for v in m["visits"] if v["status"] == "Missed")
                 if completed_count >= 5 or missed_count <= 1:
                     still_on_track += 1
             total_eligible = len(eligible_mothers)
@@ -287,30 +271,32 @@ class Command(BaseCommand):
         v1_overview_flws = []
         for username in sorted(active_usernames):
             display_name = flw_names.get(username, username)
-            v1_overview_flws.append({
-                "username": username,
-                "display_name": display_name,
-                "cases_registered": v1_mother_counts.get(username, 0),
-                "eligible_mothers": v1_eligible_mothers_by_flw.get(username, 0),
-                "first_gs_score": v1_first_gs.get(username),
-                "post_test_attempts": None,
-                "followup_rate": v1_followup_rate_by_flw.get(username, 0),
-                "ebf_pct": v1_ebf.get(username),
-                "revisit_distance_km": v1_gps_median_by_flw.get(username),
-                "median_meters_per_visit": v1_median_meters.get(username) if v1_median_meters.get(username) is not None else None,
-                "median_minutes_per_visit": v1_median_minutes.get(username) if v1_median_minutes.get(username) is not None else None,
-                **v1_quality.get(username, {}),
-                "cases_still_eligible": v1_cases_eligible.get(
-                    username, {"eligible": 0, "total": 0, "pct": 0}
-                ),
-            })
+            v1_overview_flws.append(
+                {
+                    "username": username,
+                    "display_name": display_name,
+                    "cases_registered": v1_mother_counts.get(username, 0),
+                    "eligible_mothers": v1_eligible_mothers_by_flw.get(username, 0),
+                    "first_gs_score": v1_first_gs.get(username),
+                    "post_test_attempts": None,
+                    "followup_rate": v1_followup_rate_by_flw.get(username, 0),
+                    "ebf_pct": v1_ebf.get(username),
+                    "revisit_distance_km": v1_gps_median_by_flw.get(username),
+                    "median_meters_per_visit": v1_median_meters.get(username)
+                    if v1_median_meters.get(username) is not None
+                    else None,
+                    "median_minutes_per_visit": v1_median_minutes.get(username)
+                    if v1_median_minutes.get(username) is not None
+                    else None,
+                    **v1_quality.get(username, {}),
+                    "cases_still_eligible": v1_cases_eligible.get(username, {"eligible": 0, "total": 0, "pct": 0}),
+                }
+            )
 
         # FLW performance (skip _get_latest_flw_statuses — requires audit/workflow access)
         # Use empty statuses so both paths get the same input
         flw_statuses = {u: "none" for u in active_usernames}
-        v1_performance = compute_flw_performance_by_status(
-            flw_statuses, v1_drilldown, current_date
-        )
+        v1_performance = compute_flw_performance_by_status(flw_statuses, v1_drilldown, current_date)
 
         v1_payload = {
             "gps_data": v1_gps_data,
@@ -332,15 +318,19 @@ class Command(BaseCommand):
         # Serialize visit rows as dicts (mimics pipeline SSE serialization)
         serialized_visits = []
         for row in rows:
-            srow = row.to_dict() if hasattr(row, "to_dict") else {
-                "id": getattr(row, "id", None),
-                "username": row.username,
-                "visit_date": row.visit_date.isoformat() if row.visit_date else None,
-                "latitude": getattr(row, "latitude", None),
-                "longitude": getattr(row, "longitude", None),
-                "entity_name": getattr(row, "entity_name", None),
-                "computed": dict(row.computed) if row.computed else {},
-            }
+            srow = (
+                row.to_dict()
+                if hasattr(row, "to_dict")
+                else {
+                    "id": getattr(row, "id", None),
+                    "username": row.username,
+                    "visit_date": row.visit_date.isoformat() if row.visit_date else None,
+                    "latitude": getattr(row, "latitude", None),
+                    "longitude": getattr(row, "longitude", None),
+                    "entity_name": getattr(row, "entity_name", None),
+                    "computed": dict(row.computed) if row.computed else {},
+                }
+            )
             # Add metadata.location (v2 pipeline SSE includes this)
             lat = getattr(row, "latitude", None)
             lon = getattr(row, "longitude", None)
@@ -384,7 +374,7 @@ class Command(BaseCommand):
 
             # From GPS data
             gps_flw = {}
-            for g in (v2_gps_data.get("flw_summaries") or []):
+            for g in v2_gps_data.get("flw_summaries") or []:
                 if g.get("username") == u_lower:
                     gps_flw = g
                     break
@@ -393,7 +383,7 @@ class Command(BaseCommand):
 
             # From follow-up data
             fu_flw = {}
-            for f in (v2_followup_data.get("flw_summaries") or []):
+            for f in v2_followup_data.get("flw_summaries") or []:
                 if f.get("username") == u_lower:
                     fu_flw = f
                     break
@@ -411,13 +401,9 @@ class Command(BaseCommand):
             still_on_track = 0
             for m in eligible_mothers:
                 completed_count = sum(
-                    1 for v in (m.get("visits") or [])
-                    if (v.get("status") or "").startswith("Completed")
+                    1 for v in (m.get("visits") or []) if (v.get("status") or "").startswith("Completed")
                 )
-                missed_count = sum(
-                    1 for v in (m.get("visits") or [])
-                    if v.get("status") == "Missed"
-                )
+                missed_count = sum(1 for v in (m.get("visits") or []) if v.get("status") == "Missed")
                 if completed_count >= 5 or missed_count <= 1:
                     still_on_track += 1
             total_eligible = len(eligible_mothers)
@@ -456,35 +442,25 @@ class Command(BaseCommand):
             form = row.get("form", {}) if isinstance(row.get("form"), dict) else {}
 
             # user_connect_id (v2 pipeline) or load_flw_connect_id (v1 raw form)
-            connect_id = (
-                computed.get("user_connect_id")
-                or form.get("load_flw_connect_id", "")
-                or ""
-            ).lower()
+            connect_id = (computed.get("user_connect_id") or form.get("load_flw_connect_id", "") or "").lower()
 
             # gs_score (v2 pipeline) or checklist_percentage (v1 raw form)
-            score_str = str(
-                computed.get("gs_score")
-                or form.get("checklist_percentage", "")
-                or ""
-            )
+            score_str = str(computed.get("gs_score") or form.get("checklist_percentage", "") or "")
             try:
                 score = float(score_str)
             except (ValueError, TypeError):
                 score = None
 
             # assessment_date (v2 pipeline) or meta.timeEnd (v1 raw form)
-            assess_date = (
-                computed.get("assessment_date")
-                or form.get("meta", {}).get("timeEnd", "")
-                or ""
-            )
+            assess_date = computed.get("assessment_date") or form.get("meta", {}).get("timeEnd", "") or ""
 
             if connect_id and score is not None:
-                v2_gs_by_flw.setdefault(connect_id, []).append({
-                    "score": score,
-                    "date": assess_date,
-                })
+                v2_gs_by_flw.setdefault(connect_id, []).append(
+                    {
+                        "score": score,
+                        "date": assess_date,
+                    }
+                )
 
         for flw_entry in v2_overview_flws:
             gs_entries = v2_gs_by_flw.get(flw_entry["username"], [])
@@ -514,9 +490,7 @@ class Command(BaseCommand):
         all_diffs = []
 
         # Compare GPS data
-        gps_diffs = self._compare_section(
-            "gps_data", v1_payload["gps_data"], v2_payload["gps_data"], verbose
-        )
+        gps_diffs = self._compare_section("gps_data", v1_payload["gps_data"], v2_payload["gps_data"], verbose)
         all_diffs.extend(gps_diffs)
         self._report_section("GPS data", gps_diffs, verbose)
 
@@ -568,14 +542,11 @@ class Command(BaseCommand):
         dd_diffs = []
         if set(v1_dd.keys()) != set(v2_dd.keys()):
             dd_diffs.append(
-                f"drilldown FLW keys differ: v1={sorted(v1_dd.keys())[:5]}, "
-                f"v2={sorted(v2_dd.keys())[:5]}"
+                f"drilldown FLW keys differ: v1={sorted(v1_dd.keys())[:5]}, " f"v2={sorted(v2_dd.keys())[:5]}"
             )
         for flw in sorted(set(v1_dd.keys()) & set(v2_dd.keys()))[:3]:
             if len(v1_dd[flw]) != len(v2_dd[flw]):
-                dd_diffs.append(
-                    f"drilldown[{flw}] mother count: v1={len(v1_dd[flw])}, v2={len(v2_dd[flw])}"
-                )
+                dd_diffs.append(f"drilldown[{flw}] mother count: v1={len(v1_dd[flw])}, v2={len(v2_dd[flw])}")
             else:
                 for i, (m1, m2) in enumerate(zip(v1_dd[flw], v2_dd[flw])):
                     sub = self._compare_dicts(f"drilldown[{flw}][{i}]", m1, m2)
@@ -588,20 +559,16 @@ class Command(BaseCommand):
         # =====================================================================
         self.stdout.write("\n" + "=" * 70)
         if all_diffs:
-            self.stdout.write(self.style.ERROR(
-                f"\nFAILED: {len(all_diffs)} total differences"
-            ))
+            self.stdout.write(self.style.ERROR(f"\nFAILED: {len(all_diffs)} total differences"))
             for diff in all_diffs[:30]:
                 self.stdout.write(f"  - {diff}")
             if len(all_diffs) > 30:
                 self.stdout.write(f"  ... and {len(all_diffs) - 30} more")
             raise CommandError(f"Parity failed with {len(all_diffs)} differences")
         else:
-            self.stdout.write(self.style.SUCCESS(
-                "\nPASSED: v1 and v2 payloads are identical!"
-            ))
+            self.stdout.write(self.style.SUCCESS("\nPASSED: v1 and v2 payloads are identical!"))
 
-        self.stdout.write(f"\nData summary:")
+        self.stdout.write("\nData summary:")
         self.stdout.write(f"  Pipeline rows:        {len(rows)}")
         self.stdout.write(f"  Active usernames:     {len(active_usernames)}")
         self.stdout.write(f"  Registration forms:   {len(registration_forms)}")

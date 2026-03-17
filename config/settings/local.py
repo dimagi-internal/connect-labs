@@ -1,5 +1,3 @@
-import platform
-
 from .base import *  # noqa
 from .base import env
 
@@ -61,10 +59,10 @@ OCS_OAUTH_CLIENT_ID = env("OCS_OAUTH_CLIENT_ID", default="")
 OCS_OAUTH_CLIENT_SECRET = env("OCS_OAUTH_CLIENT_SECRET", default="")
 
 # Add labs app to installed apps
-INSTALLED_APPS = INSTALLED_APPS + [
+INSTALLED_APPS = INSTALLED_APPS + [  # noqa: F405
     "commcare_connect.labs",
     "commcare_connect.custom_analysis.chc_nutrition",
-]  # noqa: F405
+]
 
 # Add labs context middleware after auth
 MIDDLEWARE = list(MIDDLEWARE)  # noqa: F405

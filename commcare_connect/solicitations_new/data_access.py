@@ -16,11 +16,7 @@ Type constants:
 from django.http import HttpRequest
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
-from commcare_connect.solicitations_new.models import (
-    ResponseRecord,
-    ReviewRecord,
-    SolicitationRecord,
-)
+from commcare_connect.solicitations_new.models import ResponseRecord, ReviewRecord, SolicitationRecord
 
 # Record type constants
 SOLICITATION_TYPE = "solicitation_new"
@@ -59,7 +55,6 @@ class SolicitationsNewDataAccess:
             labs_context = request.labs_context
             if not program_id and "program_id" in labs_context:
                 self.program_id = str(labs_context["program_id"])
-
 
         # Get OAuth token from labs session
         if not access_token and request:

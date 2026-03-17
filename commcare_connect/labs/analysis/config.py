@@ -17,7 +17,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
-AggregationType = Literal["sum", "avg", "count", "min", "max", "list", "first", "last", "count_unique", "count_distinct"]
+AggregationType = Literal[
+    "sum", "avg", "count", "min", "max", "list", "first", "last", "count_unique", "count_distinct"
+]
 
 
 class CacheStage(Enum):

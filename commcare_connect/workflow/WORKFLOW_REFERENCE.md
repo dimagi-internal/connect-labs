@@ -10,17 +10,17 @@ Each template is a single `.py` file in `commcare_connect/workflow/templates/`. 
 
 ### Required Exports
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `DEFINITION` | `dict` | Workflow definition: name, description, statuses, config |
-| `RENDER_CODE` | `str` | JSX string defining the `WorkflowUI` function component |
-| `TEMPLATE` | `dict` | Registry entry that bundles everything together |
+| Export        | Type   | Description                                              |
+| ------------- | ------ | -------------------------------------------------------- |
+| `DEFINITION`  | `dict` | Workflow definition: name, description, statuses, config |
+| `RENDER_CODE` | `str`  | JSX string defining the `WorkflowUI` function component  |
+| `TEMPLATE`    | `dict` | Registry entry that bundles everything together          |
 
 ### Optional Exports
 
-| Export | Type | Description |
-|--------|------|-------------|
-| `PIPELINE_SCHEMA` | `dict` | Single pipeline schema (simple templates) |
+| Export             | Type         | Description                                                     |
+| ------------------ | ------------ | --------------------------------------------------------------- |
+| `PIPELINE_SCHEMA`  | `dict`       | Single pipeline schema (simple templates)                       |
 | `PIPELINE_SCHEMAS` | `list[dict]` | Multiple pipeline schemas with aliases (multi-source templates) |
 
 ### Minimal Example (Single Pipeline)
@@ -183,34 +183,34 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 
 #### `data_source`
 
-| Property | Values | Description |
-|----------|--------|-------------|
-| `type` | `"connect_csv"` | Fetch from Connect production CSV export (default). Most templates use this. |
-| `type` | `"cchq_forms"` | Fetch from CommCare HQ Form API. Requires `form_name` or `app_id`. |
-| `form_name` | string | (cchq_forms only) Human-readable form name, e.g., `"Register Mother"`. Used for xmlns discovery. |
-| `app_id_source` | `"opportunity"` | (cchq_forms only) Derive the CommCare app ID from opportunity metadata. |
-| `app_id` | string | (cchq_forms only) Explicit CommCare application ID. |
-| `gs_app_id` | string | (cchq_forms only) Explicit Gold Standard supervisor app ID. |
+| Property        | Values          | Description                                                                                      |
+| --------------- | --------------- | ------------------------------------------------------------------------------------------------ |
+| `type`          | `"connect_csv"` | Fetch from Connect production CSV export (default). Most templates use this.                     |
+| `type`          | `"cchq_forms"`  | Fetch from CommCare HQ Form API. Requires `form_name` or `app_id`.                               |
+| `form_name`     | string          | (cchq_forms only) Human-readable form name, e.g., `"Register Mother"`. Used for xmlns discovery. |
+| `app_id_source` | `"opportunity"` | (cchq_forms only) Derive the CommCare app ID from opportunity metadata.                          |
+| `app_id`        | string          | (cchq_forms only) Explicit CommCare application ID.                                              |
+| `gs_app_id`     | string          | (cchq_forms only) Explicit Gold Standard supervisor app ID.                                      |
 
 #### `grouping_key`
 
 How visits are grouped before aggregation. Determines the primary key of output rows.
 
-| Value | Description |
-|-------|-------------|
-| `"username"` | Group by FLW username. Most common. |
-| `"entity_id"` | Group by Connect entity ID. |
-| `"case_id"` | Group by CommCare case ID (for cchq_forms). |
-| `"deliver_unit_id"` | Group by delivery unit. |
+| Value               | Description                                 |
+| ------------------- | ------------------------------------------- |
+| `"username"`        | Group by FLW username. Most common.         |
+| `"entity_id"`       | Group by Connect entity ID.                 |
+| `"case_id"`         | Group by CommCare case ID (for cchq_forms). |
+| `"deliver_unit_id"` | Group by delivery unit.                     |
 
 #### `terminal_stage`
 
 Controls what the pipeline outputs and how custom fields are structured in the row.
 
-| Value | Output | Row shape |
-|-------|--------|-----------|
-| `"visit_level"` | One row per visit. Custom fields in row's `computed` dict (flattened to top-level in JSON). | `{ username, visit_date, entity_id, weight, height, ... }` |
-| `"aggregated"` | One row per group (per `grouping_key`). Custom fields in row's `custom_fields` dict (flattened to top-level in JSON). | `{ username, total_visits, approved_visits, avg_weight, ... }` |
+| Value           | Output                                                                                                                | Row shape                                                      |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `"visit_level"` | One row per visit. Custom fields in row's `computed` dict (flattened to top-level in JSON).                           | `{ username, visit_date, entity_id, weight, height, ... }`     |
+| `"aggregated"`  | One row per group (per `grouping_key`). Custom fields in row's `custom_fields` dict (flattened to top-level in JSON). | `{ username, total_visits, approved_visits, avg_weight, ... }` |
 
 **Important:** In the JSON response sent to the frontend, both `computed` and `custom_fields` are **flattened** into the top-level row object. So in render code, you access fields directly as `row.weight`, `row.visit_count`, etc. -- not as `row.computed.weight` or `row.custom_fields.visit_count`.
 
@@ -255,31 +255,31 @@ Example: In KMC tracking, each visit has a `beneficiary_case_id` that identifies
 
 ### Aggregation Types
 
-| Aggregation | Description | Output type |
-|-------------|-------------|-------------|
-| `first` | First non-null value (chronological order) | same as input |
-| `last` | Last non-null value (chronological order) | same as input |
-| `count` | Count of non-null values | int |
-| `count_unique` | Count of distinct non-null values | int |
-| `count_distinct` | Alias for `count_unique` | int |
-| `sum` | Sum of numeric values | float |
-| `avg` | Average of numeric values | float |
-| `min` | Minimum value | same as input |
-| `max` | Maximum value | same as input |
-| `list` | Collect all values into a list | list |
+| Aggregation      | Description                                | Output type   |
+| ---------------- | ------------------------------------------ | ------------- |
+| `first`          | First non-null value (chronological order) | same as input |
+| `last`           | Last non-null value (chronological order)  | same as input |
+| `count`          | Count of non-null values                   | int           |
+| `count_unique`   | Count of distinct non-null values          | int           |
+| `count_distinct` | Alias for `count_unique`                   | int           |
+| `sum`            | Sum of numeric values                      | float         |
+| `avg`            | Average of numeric values                  | float         |
+| `min`            | Minimum value                              | same as input |
+| `max`            | Maximum value                              | same as input |
+| `list`           | Collect all values into a list             | list          |
 
 ### Transform Types
 
 Transforms are applied to raw extracted values **before** aggregation.
 
-| Transform | Description |
-|-----------|-------------|
-| `"float"` | Parse to float. Returns `None` if not a valid number. |
-| `"int"` | Parse to int (via float). Returns `None` if not valid. |
+| Transform   | Description                                                              |
+| ----------- | ------------------------------------------------------------------------ |
+| `"float"`   | Parse to float. Returns `None` if not a valid number.                    |
+| `"int"`     | Parse to int (via float). Returns `None` if not valid.                   |
 | `"kg_to_g"` | Multiply by 1000 (kilogram to gram conversion). Validates numeric first. |
-| `"date"` | Date parsing. Handled by the pipeline date processing. |
-| `"string"` | Convert to string. |
-| *(omit)* | No transform; raw string value is used. |
+| `"date"`    | Date parsing. Handled by the pipeline date processing.                   |
+| `"string"`  | Convert to string.                                                       |
+| _(omit)_    | No transform; raw string value is used.                                  |
 
 ### Conditional Field Extraction (`filter_path` / `filter_value`)
 
@@ -337,11 +337,13 @@ Field paths map form questions to their JSON submission structure. Getting these
 The CommCare MCP server provides tools to discover exact JSON paths:
 
 1. **Get opportunity apps:**
+
    ```
    get_opportunity_apps(opportunity_id=874) -> { cc_domain, learn_app_id, deliver_app_id }
    ```
 
 2. **Get app structure:**
+
    ```
    get_app_structure(domain, app_id) -> modules, forms, xmlns
    ```
@@ -369,17 +371,17 @@ CommCare form questions map to JSON paths following these rules:
 
 ### Common Meta Paths
 
-| Path | Description |
-|------|-------------|
-| `form.meta.timeEnd` | Submission timestamp |
-| `form.meta.instanceID` | Unique form submission ID |
-| `form.meta.location.#text` | GPS coordinates (lat lon alt accuracy) |
-| `form.meta.appVersion` | CommCare app version string |
-| `form.meta.app_build_version` | App build version number |
-| `form.case.@case_id` | CommCare case ID |
-| `form.case.update.*` | Case property updates |
-| `form.@name` | Form name |
-| `metadata.location` | Alternative GPS location path |
+| Path                          | Description                            |
+| ----------------------------- | -------------------------------------- |
+| `form.meta.timeEnd`           | Submission timestamp                   |
+| `form.meta.instanceID`        | Unique form submission ID              |
+| `form.meta.location.#text`    | GPS coordinates (lat lon alt accuracy) |
+| `form.meta.appVersion`        | CommCare app version string            |
+| `form.meta.app_build_version` | App build version number               |
+| `form.case.@case_id`          | CommCare case ID                       |
+| `form.case.update.*`          | Case property updates                  |
+| `form.@name`                  | Form name                              |
+| `metadata.location`           | Alternative GPS location path          |
 
 ---
 
@@ -404,15 +406,15 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
 ### Props Reference
 
-| Prop | Type | Description |
-|------|------|-------------|
-| `definition` | `WorkflowDefinition` | Workflow config: `name`, `description`, `statuses[]`, `config`, `pipeline_sources[]` |
-| `instance` | `WorkflowInstance` | Current run: `id`, `definition_id`, `opportunity_id`, `status`, `state` |
-| `workers` | `WorkerData[]` | Workers: `username`, `name`, `visit_count`, `last_active`, `phone_number` |
-| `pipelines` | `Record<string, PipelineResult>` | Pipeline data keyed by alias |
-| `links` | `LinkHelpers` | URL builders: `links.auditUrl(params)`, `links.taskUrl(params)` |
-| `actions` | `ActionHandlers` | Action methods (see Section 5) |
-| `onUpdateState` | `(newState) => Promise<void>` | Merge-save instance state |
+| Prop            | Type                             | Description                                                                          |
+| --------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
+| `definition`    | `WorkflowDefinition`             | Workflow config: `name`, `description`, `statuses[]`, `config`, `pipeline_sources[]` |
+| `instance`      | `WorkflowInstance`               | Current run: `id`, `definition_id`, `opportunity_id`, `status`, `state`              |
+| `workers`       | `WorkerData[]`                   | Workers: `username`, `name`, `visit_count`, `last_active`, `phone_number`            |
+| `pipelines`     | `Record<string, PipelineResult>` | Pipeline data keyed by alias                                                         |
+| `links`         | `LinkHelpers`                    | URL builders: `links.auditUrl(params)`, `links.taskUrl(params)`                      |
+| `actions`       | `ActionHandlers`                 | Action methods (see Section 5)                                                       |
+| `onUpdateState` | `(newState) => Promise<void>`    | Merge-save instance state                                                            |
 
 ### Pipeline Data Access
 
@@ -441,8 +443,8 @@ var weight = row.weight;
 var caseId = row.beneficiary_case_id;
 
 // Wrong -- these nested paths do not exist in frontend JSON
-var weight = row.computed.weight;       // NO
-var count = row.custom_fields.count;    // NO
+var weight = row.computed.weight; // NO
+var count = row.custom_fields.count; // NO
 ```
 
 ### Built-in Row Fields
@@ -460,10 +462,10 @@ Instance state persists across page loads. `onUpdateState` performs a merge (not
 ```javascript
 // Save state (merges with existing state)
 await onUpdateState({
-    worker_states: {
-        ...workerStates,
-        [username]: { status: "reviewed", notes: "Looks good" }
-    }
+  worker_states: {
+    ...workerStates,
+    [username]: { status: 'reviewed', notes: 'Looks good' },
+  },
 });
 
 // Read state
@@ -477,22 +479,22 @@ var periodStart = instance.state?.period_start;
 // Generate audit creation URL
 var auditLink = links.auditUrl({ username: worker.username, count: 5 });
 var auditLink = links.auditUrl({
-    usernames: "user1,user2",
-    count: 10,
-    audit_type: "random",
-    start_date: "2026-01-01",
-    end_date: "2026-03-01",
-    title: "Weekly Review",
-    tag: "performance",
-    auto_create: true,
+  usernames: 'user1,user2',
+  count: 10,
+  audit_type: 'random',
+  start_date: '2026-01-01',
+  end_date: '2026-03-01',
+  title: 'Weekly Review',
+  tag: 'performance',
+  auto_create: true,
 });
 
 // Generate task creation URL
 var taskLink = links.taskUrl({
-    username: worker.username,
-    title: "Follow up on missed visits",
-    description: "Worker has 3 missed visits this week",
-    priority: "high",
+  username: worker.username,
+  title: 'Follow up on missed visits',
+  description: 'Worker has 3 missed visits this week',
+  priority: 'high',
 });
 ```
 
@@ -507,21 +509,21 @@ All action methods are available on the `actions` prop. They make API calls to t
 ```javascript
 // Create a task programmatically
 var result = await actions.createTask({
-    username: "worker123",       // Required
-    title: "Follow up needed",   // Required
-    description: "...",          // Optional
-    priority: "medium",          // Optional: "low" | "medium" | "high"
-    flw_name: "Worker Name",    // Optional: display name
+  username: 'worker123', // Required
+  title: 'Follow up needed', // Required
+  description: '...', // Optional
+  priority: 'medium', // Optional: "low" | "medium" | "high"
+  flw_name: 'Worker Name', // Optional: display name
 });
 // Returns: { success: boolean, task_id?: number, error?: string }
 
 // Open task creation form in new tab
 actions.openTaskCreator({
-    username: "worker123",
-    title: "Follow up needed",
-    description: "...",
-    priority: "high",
-    workflow_instance_id: instance.id,
+  username: 'worker123',
+  title: 'Follow up needed',
+  description: '...',
+  priority: 'high',
+  workflow_instance_id: instance.id,
 });
 // Returns: void (opens new browser tab)
 
@@ -530,7 +532,10 @@ var task = await actions.getTaskDetail(taskId);
 // Returns: task object or { success: false, error: string }
 
 // Update a task
-var updated = await actions.updateTask(taskId, { status: "completed", notes: "Done" });
+var updated = await actions.updateTask(taskId, {
+  status: 'completed',
+  notes: 'Done',
+});
 // Returns: updated task object or { success: false, error: string }
 ```
 
@@ -539,13 +544,13 @@ var updated = await actions.updateTask(taskId, { status: "completed", notes: "Do
 ```javascript
 // Create an audit asynchronously (returns task_id for progress tracking)
 var result = await actions.createAudit({
-    opportunities: [{ id: 874, name: "My Opportunity" }],
-    criteria: { count: 5, audit_type: "random" },
-    visit_ids: [1, 2, 3],                    // Optional: pre-selected visit IDs
-    flw_visit_ids: { "user1": [1, 2] },      // Optional: per-FLW visit IDs
-    template_overrides: { start_date: "..." },// Optional: override template values
-    workflow_run_id: instance.id,             // Optional: link to workflow run
-    ai_agent_id: "agent_name",               // Optional: run AI review after creation
+  opportunities: [{ id: 874, name: 'My Opportunity' }],
+  criteria: { count: 5, audit_type: 'random' },
+  visit_ids: [1, 2, 3], // Optional: pre-selected visit IDs
+  flw_visit_ids: { user1: [1, 2] }, // Optional: per-FLW visit IDs
+  template_overrides: { start_date: '...' }, // Optional: override template values
+  workflow_run_id: instance.id, // Optional: link to workflow run
+  ai_agent_id: 'agent_name', // Optional: run AI review after creation
 });
 // Returns: { success: boolean, task_id?: string, error?: string }
 
@@ -556,16 +561,16 @@ var status = await actions.getAuditStatus(taskId);
 
 // Stream audit progress via SSE (real-time updates)
 var cleanup = actions.streamAuditProgress(
-    taskId,
-    function onProgress(data) {
-        // data: { status, message?, current_stage?, total_stages?, stage_name?, processed?, total? }
-    },
-    function onComplete(result) {
-        // result: { success?, template_id?, sessions?, total_visits?, total_images?, error? }
-    },
-    function onError(error) {
-        // error: string
-    }
+  taskId,
+  function onProgress(data) {
+    // data: { status, message?, current_stage?, total_stages?, stage_name?, processed?, total? }
+  },
+  function onComplete(result) {
+    // result: { success?, template_id?, sessions?, total_visits?, total_images?, error? }
+  },
+  function onError(error) {
+    // error: string
+  },
 );
 // Returns: cleanup function. Call cleanup() to close the SSE connection.
 
@@ -581,30 +586,34 @@ Jobs are long-running backend computations (e.g., MBW monitoring analysis).
 ```javascript
 // Start a job
 var result = await actions.startJob(instance.id, {
-    job_type: "mbw_monitoring",
-    params: { /* job-specific parameters */ },
-    records: [ /* optional data records */ ],
+  job_type: 'mbw_monitoring',
+  params: {
+    /* job-specific parameters */
+  },
+  records: [
+    /* optional data records */
+  ],
 });
 // Returns: { success: boolean, task_id?: string, error?: string }
 
 // Stream job progress via SSE
 var cleanup = actions.streamJobProgress(
-    taskId,
-    function onProgress(data) {
-        // data: { status, current_stage?, total_stages?, stage_name?, processed?, total?, message? }
-    },
-    function onItemResult(item) {
-        // item: individual result row for real-time updates
-    },
-    function onComplete(results) {
-        // results: full computation results
-    },
-    function onError(error) {
-        // error: string
-    },
-    function onCancelled() {
-        // Job was cancelled
-    }
+  taskId,
+  function onProgress(data) {
+    // data: { status, current_stage?, total_stages?, stage_name?, processed?, total?, message? }
+  },
+  function onItemResult(item) {
+    // item: individual result row for real-time updates
+  },
+  function onComplete(results) {
+    // results: full computation results
+  },
+  function onError(error) {
+    // error: string
+  },
+  function onCancelled() {
+    // Job was cancelled
+  },
 );
 // Returns: cleanup function
 
@@ -630,22 +639,22 @@ var bots = await actions.listOCSBots();
 
 // Create a task and initiate OCS session in one call
 var result = await actions.createTaskWithOCS({
-    username: "worker123",
-    title: "AI Outreach",
-    ocs: {
-        experiment: "bot_experiment_id",
-        prompt_text: "Hello, this is a follow-up...",
-    },
+  username: 'worker123',
+  title: 'AI Outreach',
+  ocs: {
+    experiment: 'bot_experiment_id',
+    prompt_text: 'Hello, this is a follow-up...',
+  },
 });
 // Returns: { success, task_id?, error?, ocs?: { success, message?, error? } }
 
 // Initiate OCS session on existing task
 var result = await actions.initiateOCSSession(taskId, {
-    identifier: "worker123",
-    experiment: "bot_experiment_id",
-    prompt_text: "...",
-    platform: "commcare_connect",  // Optional, default
-    start_new_session: true,       // Optional, default true
+  identifier: 'worker123',
+  experiment: 'bot_experiment_id',
+  prompt_text: '...',
+  platform: 'commcare_connect', // Optional, default
+  start_new_session: true, // Optional, default true
 });
 // Returns: { success: boolean, message?: string, error?: string }
 ```
@@ -655,16 +664,16 @@ var result = await actions.initiateOCSSession(taskId, {
 ```javascript
 // Save a worker assessment result
 var result = await actions.saveWorkerResult(instance.id, {
-    username: "worker123",
-    result: "eligible_for_renewal",  // or "probation" | "suspended" | null
-    notes: "Good performance",
+  username: 'worker123',
+  result: 'eligible_for_renewal', // or "probation" | "suspended" | null
+  notes: 'Good performance',
 });
 // Returns: { success, worker_results?, progress?: { percentage, assessed, total }, error? }
 
 // Complete the workflow run
 var result = await actions.completeRun(instance.id, {
-    overall_result: "completed",
-    notes: "All workers reviewed",
+  overall_result: 'completed',
+  notes: 'All workers reviewed',
 });
 // Returns: { success, status?, overall_result?, error? }
 ```
@@ -694,25 +703,28 @@ Reusable code snippets for common workflow UI elements. All examples use `var` d
 ### KPI Summary Cards
 
 ```javascript
-var stats = React.useMemo(function() {
+var stats = React.useMemo(
+  function () {
     var total = workers.length;
-    var reviewed = workers.filter(function(w) {
-        return workerStates[w.username]?.status !== 'pending';
+    var reviewed = workers.filter(function (w) {
+      return workerStates[w.username]?.status !== 'pending';
     }).length;
     return { total: total, reviewed: reviewed };
-}, [workers, workerStates]);
+  },
+  [workers, workerStates],
+);
 
 return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow-sm">
-            <div className="text-3xl font-bold text-gray-900">{stats.total}</div>
-            <div className="text-gray-600">Total Workers</div>
-        </div>
-        <div className="bg-green-50 p-4 rounded-lg shadow-sm border border-green-200">
-            <div className="text-3xl font-bold text-green-700">{stats.reviewed}</div>
-            <div className="text-gray-600">Reviewed</div>
-        </div>
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="bg-white p-4 rounded-lg shadow-sm">
+      <div className="text-3xl font-bold text-gray-900">{stats.total}</div>
+      <div className="text-gray-600">Total Workers</div>
     </div>
+    <div className="bg-green-50 p-4 rounded-lg shadow-sm border border-green-200">
+      <div className="text-3xl font-bold text-green-700">{stats.reviewed}</div>
+      <div className="text-gray-600">Reviewed</div>
+    </div>
+  </div>
 );
 ```
 
@@ -720,19 +732,21 @@ return (
 
 ```javascript
 var colorMap = {
-    gray: 'bg-gray-100 text-gray-800',
-    green: 'bg-green-100 text-green-800',
-    yellow: 'bg-yellow-100 text-yellow-800',
-    blue: 'bg-blue-100 text-blue-800',
-    red: 'bg-red-100 text-red-800',
-    purple: 'bg-purple-100 text-purple-800',
-    orange: 'bg-orange-100 text-orange-800',
-    pink: 'bg-pink-100 text-pink-800'
+  gray: 'bg-gray-100 text-gray-800',
+  green: 'bg-green-100 text-green-800',
+  yellow: 'bg-yellow-100 text-yellow-800',
+  blue: 'bg-blue-100 text-blue-800',
+  red: 'bg-red-100 text-red-800',
+  purple: 'bg-purple-100 text-purple-800',
+  orange: 'bg-orange-100 text-orange-800',
+  pink: 'bg-pink-100 text-pink-800',
 };
 
-var getStatusColor = function(statusId) {
-    var status = definition.statuses.find(function(s) { return s.id === statusId; });
-    return colorMap[status?.color] || colorMap.gray;
+var getStatusColor = function (statusId) {
+  var status = definition.statuses.find(function (s) {
+    return s.id === statusId;
+  });
+  return colorMap[status?.color] || colorMap.gray;
 };
 ```
 
@@ -742,23 +756,30 @@ Pipeline data is typically loaded automatically by the workflow runner and passe
 
 ```javascript
 var _loading = React.useState(true);
-var loading = _loading[0]; var setLoading = _loading[1];
+var loading = _loading[0];
+var setLoading = _loading[1];
 var _data = React.useState([]);
-var data = _data[0]; var setData = _data[1];
+var data = _data[0];
+var setData = _data[1];
 
-React.useEffect(function() {
-    var url = window.WORKFLOW_API_ENDPOINTS?.streamPipelineData;
-    if (!url) { setLoading(false); return; }
-    var es = new EventSource(url);
-    es.onmessage = function(e) {
-        var msg = JSON.parse(e.data);
-        if (msg.complete) {
-            setData(msg.data.pipelines?.visits?.rows || []);
-            setLoading(false);
-            es.close();
-        }
-    };
-    return function() { es.close(); };
+React.useEffect(function () {
+  var url = window.WORKFLOW_API_ENDPOINTS?.streamPipelineData;
+  if (!url) {
+    setLoading(false);
+    return;
+  }
+  var es = new EventSource(url);
+  es.onmessage = function (e) {
+    var msg = JSON.parse(e.data);
+    if (msg.complete) {
+      setData(msg.data.pipelines?.visits?.rows || []);
+      setLoading(false);
+      es.close();
+    }
+  };
+  return function () {
+    es.close();
+  };
 }, []);
 ```
 
@@ -768,27 +789,32 @@ React.useEffect(function() {
 var chartRef = React.useRef(null);
 var chartInstance = React.useRef(null);
 
-React.useEffect(function() {
+React.useEffect(
+  function () {
     if (!chartRef.current || !window.Chart) return;
     if (chartInstance.current) chartInstance.current.destroy();
 
     chartInstance.current = new window.Chart(chartRef.current, {
-        type: 'line',
-        data: {
-            labels: dates,
-            datasets: [{
-                data: values,
-                label: 'Weight (g)',
-                borderColor: '#3b82f6',
-                tension: 0.1
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [
+          {
+            data: values,
+            label: 'Weight (g)',
+            borderColor: '#3b82f6',
+            tension: 0.1,
+          },
+        ],
+      },
+      options: { responsive: true, maintainAspectRatio: false },
     });
-    return function() {
-        if (chartInstance.current) chartInstance.current.destroy();
+    return function () {
+      if (chartInstance.current) chartInstance.current.destroy();
     };
-}, [dates, values]);
+  },
+  [dates, values],
+);
 
 // In JSX:
 // <div style={{height: '300px'}}><canvas ref={chartRef}></canvas></div>
@@ -800,17 +826,23 @@ React.useEffect(function() {
 var mapRef = React.useRef(null);
 var mapInstance = React.useRef(null);
 
-React.useEffect(function() {
+React.useEffect(
+  function () {
     if (!mapRef.current || !window.L || mapInstance.current) return;
     mapInstance.current = window.L.map(mapRef.current).setView([lat, lng], 13);
     window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
+      attribution: '&copy; OpenStreetMap',
     }).addTo(mapInstance.current);
     window.L.marker([lat, lng]).addTo(mapInstance.current);
-    return function() {
-        if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; }
+    return function () {
+      if (mapInstance.current) {
+        mapInstance.current.remove();
+        mapInstance.current = null;
+      }
     };
-}, [lat, lng]);
+  },
+  [lat, lng],
+);
 
 // In JSX:
 // <div ref={mapRef} style={{height: '300px', width: '100%'}}></div>
@@ -820,23 +852,29 @@ React.useEffect(function() {
 
 ```javascript
 var _sortBy = React.useState('name');
-var sortBy = _sortBy[0]; var setSortBy = _sortBy[1];
+var sortBy = _sortBy[0];
+var setSortBy = _sortBy[1];
 var _filterStatus = React.useState('all');
-var filterStatus = _filterStatus[0]; var setFilterStatus = _filterStatus[1];
+var filterStatus = _filterStatus[0];
+var setFilterStatus = _filterStatus[1];
 
-var displayWorkers = React.useMemo(function() {
+var displayWorkers = React.useMemo(
+  function () {
     var filtered = workers;
     if (filterStatus !== 'all') {
-        filtered = workers.filter(function(w) {
-            return (workerStates[w.username]?.status || 'pending') === filterStatus;
-        });
+      filtered = workers.filter(function (w) {
+        return (workerStates[w.username]?.status || 'pending') === filterStatus;
+      });
     }
-    return filtered.slice().sort(function(a, b) {
-        if (sortBy === 'name') return (a.name || a.username).localeCompare(b.name || b.username);
-        if (sortBy === 'visits') return b.visit_count - a.visit_count;
-        return 0;
+    return filtered.slice().sort(function (a, b) {
+      if (sortBy === 'name')
+        return (a.name || a.username).localeCompare(b.name || b.username);
+      if (sortBy === 'visits') return b.visit_count - a.visit_count;
+      return 0;
     });
-}, [workers, workerStates, filterStatus, sortBy]);
+  },
+  [workers, workerStates, filterStatus, sortBy],
+);
 ```
 
 ### Destructuring State Hook (var-compatible)
@@ -845,7 +883,8 @@ Since `const [x, setX] = React.useState(...)` requires `const`, use this pattern
 
 ```javascript
 var _state = React.useState(initialValue);
-var myValue = _state[0]; var setMyValue = _state[1];
+var myValue = _state[0];
+var setMyValue = _state[1];
 ```
 
 ---
@@ -857,6 +896,7 @@ Process for turning an indicator document or monitoring framework into a workflo
 ### Step 1: Analyze the Source Document
 
 Identify:
+
 - **Indicators** -- what data points are tracked (counts, rates, averages)
 - **Grouping** -- per-worker, per-beneficiary, per-facility
 - **Time dimension** -- single snapshot vs. longitudinal tracking
@@ -870,11 +910,11 @@ Identify:
 
 ### Step 3: Choose terminal_stage
 
-| Need | terminal_stage | Example |
-|------|---------------|---------|
-| Per-visit detail (timelines, individual records) | `visit_level` | KMC child timeline |
-| Per-worker summaries (scorecards, rankings) | `aggregated` | Performance review |
-| Both | Use two pipelines with different stages | KMC FLW flags (aggregated metrics + visit-level weight series) |
+| Need                                             | terminal_stage                          | Example                                                        |
+| ------------------------------------------------ | --------------------------------------- | -------------------------------------------------------------- |
+| Per-visit detail (timelines, individual records) | `visit_level`                           | KMC child timeline                                             |
+| Per-worker summaries (scorecards, rankings)      | `aggregated`                            | Performance review                                             |
+| Both                                             | Use two pipelines with different stages | KMC FLW flags (aggregated metrics + visit-level weight series) |
 
 ### Step 4: Write PIPELINE_SCHEMAS
 
@@ -883,6 +923,7 @@ Map each indicator to a field with the correct path, aggregation, and transform.
 ### Step 5: Design RENDER_CODE
 
 Match visualization to indicator type:
+
 - Counts/rates -> KPI cards
 - Per-worker metrics -> sortable tables
 - Time series -> Chart.js line/bar charts
@@ -897,15 +938,15 @@ Match visualization to indicator type:
 
 ### Common Indicator-to-Field Mappings
 
-| Indicator Type | Pipeline Field Pattern |
-|----------------|----------------------|
-| Count of visits | `{ "name": "visit_count", "path": "form.meta.instanceID", "aggregation": "count" }` |
-| Last visit date | `{ "name": "last_visit", "path": "form.meta.timeEnd", "aggregation": "last" }` |
-| Average numeric | `{ "name": "avg_weight", "path": "form.weight", "aggregation": "avg", "transform": "float" }` |
-| Yes/No rate numerator | `{ "name": "yes_count", "path": "form.field", "aggregation": "count", "filter_path": "form.field", "filter_value": "yes" }` |
-| Unique entities | `{ "name": "unique_cases", "path": "form.case.@case_id", "aggregation": "count_unique" }` |
-| Weight in grams (from kg) | `{ "name": "weight_g", "path": "form.weight_kg", "aggregation": "last", "transform": "kg_to_g" }` |
-| GPS location | `{ "name": "gps", "path": "form.meta.location.#text", "aggregation": "first" }` |
+| Indicator Type             | Pipeline Field Pattern                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Count of visits            | `{ "name": "visit_count", "path": "form.meta.instanceID", "aggregation": "count" }`                                                               |
+| Last visit date            | `{ "name": "last_visit", "path": "form.meta.timeEnd", "aggregation": "last" }`                                                                    |
+| Average numeric            | `{ "name": "avg_weight", "path": "form.weight", "aggregation": "avg", "transform": "float" }`                                                     |
+| Yes/No rate numerator      | `{ "name": "yes_count", "path": "form.field", "aggregation": "count", "filter_path": "form.field", "filter_value": "yes" }`                       |
+| Unique entities            | `{ "name": "unique_cases", "path": "form.case.@case_id", "aggregation": "count_unique" }`                                                         |
+| Weight in grams (from kg)  | `{ "name": "weight_g", "path": "form.weight_kg", "aggregation": "last", "transform": "kg_to_g" }`                                                 |
+| GPS location               | `{ "name": "gps", "path": "form.meta.location.#text", "aggregation": "first" }`                                                                   |
 | Distinct cases with filter | `{ "name": "deaths", "paths": ["form.case.@case_id"], "aggregation": "count_distinct", "filter_path": "form.child_alive", "filter_value": "no" }` |
 
 ---

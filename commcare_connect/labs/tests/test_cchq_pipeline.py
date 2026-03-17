@@ -24,17 +24,7 @@ if not settings.configured:
     )
     django.setup()
 
-import pytest  # noqa: E402
-
-from commcare_connect.labs.analysis.config import (  # noqa: E402
-    AnalysisPipelineConfig,
-    CacheStage,
-    DataSourceConfig,
-    FieldComputation,
-)
-from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import (  # noqa: E402
-    normalize_cchq_form_to_visit_dict,
-)
+from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import normalize_cchq_form_to_visit_dict  # noqa: E402
 
 
 class TestNormalizeCCHQForm:

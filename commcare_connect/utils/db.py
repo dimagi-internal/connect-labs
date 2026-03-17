@@ -1,6 +1,5 @@
 import uuid
 
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import QuerySet
 from django.http import Http404

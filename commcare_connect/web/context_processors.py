@@ -24,7 +24,6 @@ def gtm_context(request):
 
 def chat_widget_context(request):
     # flags app was removed during labs simplification; chat widget is disabled
-    creds_configured = bool(settings.CHATBOT_ID and settings.CHATBOT_EMBED_KEY)
     return {
         "chat_widget_enabled": False,
         "chatbot_id": settings.CHATBOT_ID,

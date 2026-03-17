@@ -15,10 +15,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 
 from commcare_connect.labs.integrations.connect.cli import TokenManager
-from commcare_connect.labs.integrations.connect.oauth import (
-    fetch_user_organization_data,
-    introspect_token,
-)
+from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +83,9 @@ def test_auth_view(request):
         "organization_data": org_data,
     }
 
-    return JsonResponse({
-        "success": True,
-        "username": profile_data.get("username"),
-    })
+    return JsonResponse(
+        {
+            "success": True,
+            "username": profile_data.get("username"),
+        }
+    )
