@@ -316,13 +316,9 @@
               {% endif %}
             </td>
 
-            {# Run By — username/email of the NM who created the run #}
+            {# Run By — username of who created the run, falls back to logged-in user #}
             <td class="px-4 py-3">
-              {% if row.username %}
-              <span class="font-mono text-xs text-gray-600">{{ row.username }}</span>
-              {% else %}
-              <span class="text-gray-300">—</span>
-              {% endif %}
+              <span class="font-mono text-xs text-gray-600">{{ row.username|default:user_username }}</span>
             </td>
 
           </tr>

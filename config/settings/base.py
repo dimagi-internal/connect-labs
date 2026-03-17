@@ -439,6 +439,7 @@ LABS_EXPORTS_BUCKET = env("LABS_EXPORTS_BUCKET", default=None)
 # (leave these unset in production). Set in .env for local testing.
 LABS_AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID", default=None)
 LABS_AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY", default=None)
+LABS_AWS_SESSION_TOKEN = env("AWS_SESSION_TOKEN", default=None)
 LABS_AWS_DEFAULT_REGION = env("AWS_DEFAULT_REGION", default="us-east-1")
 
 # Open Chat Studio OAuth (for OCS API access)

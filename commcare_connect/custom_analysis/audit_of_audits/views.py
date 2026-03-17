@@ -120,6 +120,7 @@ class AuditOfAuditsView(LoginRequiredMixin, DimagiUserRequiredMixin, TemplateVie
         user_opps: list[dict] = org_data.get("opportunities", []) or []
 
         context["user_email"] = _dimagi_display_name(self.request.user)
+        context["user_username"] = getattr(self.request.user, "username", "") or ""
         context["user_orgs"] = user_orgs
 
         # ── Config mode: no org selection yet — just show the form ───────────
@@ -169,7 +170,7 @@ class AuditOfAuditsView(LoginRequiredMixin, DimagiUserRequiredMixin, TemplateVie
             if o.get("id") in selected_org_id_set and o.get("slug")
         }
 
-        user_programs: list[dict] = getattr(self.request.user, "programs", []) or []
+        user_programs: list[dict] = org_data.get("programs", []) or []
         selected_program_ids: set = {
             p["id"]
             for p in user_programs
