@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block content %}
+<!-- AI Chat Mount Point -->
+<div id="solicitation-chat-root"></div>
 <div class="max-w-screen-xl mx-auto px-4 py-6">
 
     <!-- Page Header -->
@@ -119,3 +122,8 @@
 
 </div>
 {% endblock %}
+
+{% block javascript %}
+  {{ block.super }}
+  <script src="{% static 'bundles/js/solicitation-chat-bundle.js' %}" defer></script>
+{% endblock javascript %}

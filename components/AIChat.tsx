@@ -40,8 +40,8 @@ interface ActiveContext {
 }
 
 interface AIChatProps {
-  /** Agent type: 'workflow' or 'pipeline' */
-  agentType: 'workflow' | 'pipeline';
+  /** Agent type: 'workflow', 'pipeline', or 'solicitations' */
+  agentType: 'workflow' | 'pipeline' | 'solicitations';
   /** Definition ID - used to scope chat history */
   definitionId: number | string;
   /** Opportunity ID - used to scope API requests */
@@ -152,13 +152,25 @@ export function AIChat({
 
   // Default values based on agent type
   const defaultTitle =
-    agentType === 'workflow' ? 'Workflow AI Editor' : 'Pipeline AI Editor';
+    agentType === 'solicitations'
+      ? 'Solicitations AI'
+      : agentType === 'workflow'
+      ? 'Workflow AI Editor'
+      : 'Pipeline AI Editor';
   const defaultPlaceholder =
-    agentType === 'workflow'
+    agentType === 'solicitations'
+      ? 'Ask about solicitations...'
+      : agentType === 'workflow'
       ? 'Describe changes to make...'
       : 'Ask about your pipeline...';
   const defaultExamples =
-    agentType === 'workflow'
+    agentType === 'solicitations'
+      ? [
+          'List all active solicitations',
+          'Create an RFP for CHW training',
+          'Show responses for solicitation 42',
+        ]
+      : agentType === 'workflow'
       ? [
           'Add a new status called "On Hold"',
           'Show pipeline data in the table',
