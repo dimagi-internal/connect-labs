@@ -32,10 +32,10 @@ class ManagerRequiredMixin(LabsLoginRequiredMixin, UserPassesTestMixin):
 # -- Helpers ----------------------------------------------------------------
 
 
-def _has_program_context(request):
-    """Check if the request has a program_id in labs_context."""
+def _has_context(request):
+    """Check if the request has a program_id or organization_id in labs_context."""
     labs_context = getattr(request, "labs_context", {})
-    return bool(labs_context.get("program_id"))
+    return bool(labs_context.get("program_id") or labs_context.get("organization_id"))
 
 
 def _get_data_access(request):
@@ -94,7 +94,7 @@ class ManageSolicitationsView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["has_context"] = _has_program_context(self.request)
+        ctx["has_context"] = _has_context(self.request)
         if not ctx["has_context"]:
             ctx["solicitations"] = []
             return ctx
@@ -121,16 +121,18 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["has_context"] = _has_program_context(self.request)
+        ctx["has_context"] = _has_context(self.request)
         ctx["form"] = SolicitationForm()
         ctx["is_create"] = True
         ctx["existing_questions_json"] = "[]"
         return ctx
 
     def post(self, request, *args, **kwargs):
-        if not _has_program_context(request):
+        if not _has_context(request):
             ctx = self.get_context_data(**kwargs)
-            ctx["error"] = "Please select a program from the context selector before creating a solicitation."
+            ctx[
+                "error"
+            ] = "Please select a program or organization from the context selector before creating a solicitation."
             return self.render_to_response(ctx)
 
         form = SolicitationForm(request.POST)
@@ -162,7 +164,7 @@ class SolicitationEditView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["has_context"] = _has_program_context(self.request)
+        ctx["has_context"] = _has_context(self.request)
         pk = kwargs["pk"]
         try:
             da = _get_data_access(self.request)
