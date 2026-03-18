@@ -137,7 +137,6 @@ class SolicitationsDataAccess:
             kwargs["solicitation_type"] = solicitation_type
 
         return self.labs_api.get_records(
-            experiment=self.experiment,
             type=SOLICITATION_TYPE,
             public=True,
             model_class=SolicitationRecord,
