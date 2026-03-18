@@ -14,7 +14,7 @@ from django import forms
 # =========================================================================
 
 _INPUT_CLASSES = "base-input"
-_TEXTAREA_CLASSES = "base-textarea"
+_TEXTAREA_CLASSES = "base-input"
 _SELECT_CLASSES = "base-dropdown"
 
 # =========================================================================
@@ -68,7 +68,7 @@ class SolicitationForm(forms.Form):
             attrs={
                 "rows": 6,
                 "placeholder": "Describe the solicitation, its objectives, and requirements...",
-                "class": _TEXTAREA_CLASSES,
+                "class": f"{_TEXTAREA_CLASSES} h-auto min-h-40",
             }
         ),
     )
@@ -80,7 +80,7 @@ class SolicitationForm(forms.Form):
             attrs={
                 "rows": 4,
                 "placeholder": "Define the scope of work...",
-                "class": _TEXTAREA_CLASSES,
+                "class": f"{_TEXTAREA_CLASSES} h-auto min-h-28",
             }
         ),
     )
