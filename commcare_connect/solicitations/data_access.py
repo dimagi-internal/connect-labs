@@ -42,23 +42,31 @@ class SolicitationsDataAccess:
     def __init__(
         self,
         program_id: str | None = None,
+        organization_id: str | None = None,
         access_token: str | None = None,
         request: HttpRequest | None = None,
     ):
         """Initialize solicitations data access.
 
         Args:
-            program_id: Program ID string used as experiment for solicitations
+            program_id: Program ID string (optional scope for solicitations)
+            organization_id: Organization ID or slug (fallback scope when no program)
             access_token: OAuth Bearer token for production API
             request: HttpRequest object (for extracting token and context in labs mode)
         """
         self.program_id = program_id
+        self.organization_id = organization_id
 
         # Use labs_context from middleware if available
         if request and hasattr(request, "labs_context"):
             labs_context = request.labs_context
             if not program_id and "program_id" in labs_context:
                 self.program_id = str(labs_context["program_id"])
+            if not organization_id and "organization_id" in labs_context:
+                self.organization_id = str(labs_context["organization_id"])
+
+        # Determine the experiment scope: prefer program_id, fall back to organization_id
+        self.experiment = self.program_id or self.organization_id
 
         # Get OAuth token from labs session
         if not access_token and request:
@@ -76,6 +84,7 @@ class SolicitationsDataAccess:
         self.labs_api = LabsRecordAPIClient(
             access_token,
             program_id=int(self.program_id) if self.program_id else None,
+            organization_id=self.organization_id,
         )
 
     # =========================================================================
@@ -104,7 +113,7 @@ class SolicitationsDataAccess:
             kwargs["solicitation_type"] = solicitation_type
 
         return self.labs_api.get_records(
-            experiment=self.program_id,
+            experiment=self.experiment,
             type=SOLICITATION_TYPE,
             model_class=SolicitationRecord,
             **kwargs,
@@ -128,7 +137,7 @@ class SolicitationsDataAccess:
             kwargs["solicitation_type"] = solicitation_type
 
         return self.labs_api.get_records(
-            experiment=self.program_id,
+            experiment=self.experiment,
             type=SOLICITATION_TYPE,
             public=True,
             model_class=SolicitationRecord,
@@ -147,7 +156,7 @@ class SolicitationsDataAccess:
         """
         return self.labs_api.get_record_by_id(
             record_id=solicitation_id,
-            experiment=self.program_id,
+            experiment=self.experiment,
             type=SOLICITATION_TYPE,
             model_class=SolicitationRecord,
         )
@@ -165,7 +174,7 @@ class SolicitationsDataAccess:
         is_public = data.get("is_public", False)
 
         record = self.labs_api.create_record(
-            experiment=self.program_id,
+            experiment=self.experiment,
             type=SOLICITATION_TYPE,
             data=data,
             program_id=int(self.program_id) if self.program_id else None,
@@ -186,7 +195,7 @@ class SolicitationsDataAccess:
         """
         record = self.labs_api.update_record(
             record_id=solicitation_id,
-            experiment=self.program_id,
+            experiment=self.experiment,
             type=SOLICITATION_TYPE,
             data=data,
         )

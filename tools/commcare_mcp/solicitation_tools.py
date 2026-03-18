@@ -37,13 +37,15 @@ def _serialize_record(record: dict) -> dict:
 
 async def list_solicitations(
     program_id: str | None = None,
+    organization_id: str | None = None,
     status: str | None = None,
     solicitation_type: str | None = None,
 ) -> list[dict]:
     """List solicitations from the Labs Record API."""
     params: dict[str, str] = {"type": "solicitation"}
-    if program_id:
-        params["experiment"] = program_id
+    experiment = program_id or organization_id
+    if experiment:
+        params["experiment"] = experiment
     if status:
         params["data__status"] = status
     if solicitation_type:
@@ -68,20 +70,30 @@ async def get_solicitation(solicitation_id: int) -> dict | None:
 
 
 async def create_solicitation(
-    program_id: str,
-    data: dict,
+    program_id: str | None = None,
+    organization_id: str | None = None,
+    data: dict | None = None,
 ) -> dict:
-    """Create a new solicitation via the Labs Record API."""
+    """Create a new solicitation via the Labs Record API.
+
+    Requires either program_id or organization_id for scoping.
+    """
+    if not data:
+        raise ValueError("data is required")
+    experiment = program_id or organization_id
+    if not experiment:
+        raise ValueError("Either program_id or organization_id is required")
+
     is_public = data.get("is_public", False)
-    payload = [
-        {
-            "experiment": program_id,
-            "type": "solicitation",
-            "data": data,
-            "program_id": int(program_id),
-            "public": is_public,
-        }
-    ]
+    record: dict = {
+        "experiment": experiment,
+        "type": "solicitation",
+        "data": data,
+        "public": is_public,
+    }
+    if program_id:
+        record["program_id"] = int(program_id)
+    payload = [record]
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
         resp = await client.post(LABS_RECORD_URL, json=payload, headers=_headers())

@@ -240,13 +240,15 @@ async def get_form_json_paths(
 @mcp.tool()
 async def list_solicitations(
     program_id: str = "",
+    organization_id: str = "",
     status: str = "",
     solicitation_type: str = "",
 ) -> dict:
-    """List solicitations, optionally filtered by program, status, or type.
+    """List solicitations, optionally filtered by program or organization, status, or type.
 
     Args:
         program_id: Filter by program ID (e.g., "42")
+        organization_id: Filter by organization ID or slug (alternative to program_id)
         status: Filter by status ("draft", "active", "closed")
         solicitation_type: Filter by type ("eoi", "rfp")
     """
@@ -255,6 +257,7 @@ async def list_solicitations(
     try:
         results = await _list(
             program_id=program_id or None,
+            organization_id=organization_id or None,
             status=status or None,
             solicitation_type=solicitation_type or None,
         )
@@ -283,9 +286,10 @@ async def get_solicitation(solicitation_id: int) -> dict:
 
 @mcp.tool()
 async def create_solicitation(
-    program_id: str,
     title: str,
     description: str = "",
+    program_id: str = "",
+    organization_id: str = "",
     solicitation_type: str = "eoi",
     status: str = "draft",
     is_public: bool = False,
@@ -299,9 +303,10 @@ async def create_solicitation(
     """Create a new solicitation.
 
     Args:
-        program_id: Program ID to create the solicitation under (required)
         title: Solicitation title (required)
         description: Detailed description
+        program_id: Program ID (provide this or organization_id)
+        organization_id: Organization ID or slug (alternative to program_id)
         solicitation_type: "eoi" (Expression of Interest) or "rfp" (Request for Proposal)
         status: Initial status ("draft", "active", "closed")
         is_public: Whether the solicitation is publicly visible
@@ -336,7 +341,11 @@ async def create_solicitation(
         if contact_email:
             data["contact_email"] = contact_email
 
-        return await _create(program_id=program_id, data=data)
+        return await _create(
+            program_id=program_id or None,
+            organization_id=organization_id or None,
+            data=data,
+        )
     except Exception as e:
         return {"error": str(e)}
 
