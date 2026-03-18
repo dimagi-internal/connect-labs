@@ -17,6 +17,8 @@ from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
+from commcare_connect.labs import s3_export
+from commcare_connect.labs.context import get_org_data
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 from commcare_connect.workflow.templates import TEMPLATES
 from commcare_connect.workflow.templates import create_workflow_from_template as create_from_template
@@ -243,6 +245,16 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         period_start=week_start.isoformat(),
                         period_end=week_end.isoformat(),
                         initial_state={"worker_states": {}},
+                    )
+                    org_data = get_org_data(request)
+                    opp_map = {o["id"]: o.get("name", "") for o in org_data.get("opportunities", [])}
+                    # definition_name and template_type omitted — require loading the
+                    # definition record (extra API call); definition_id in the row
+                    # allows downstream joins.
+                    s3_export.upsert_workflow_run(
+                        run,
+                        opportunity_name=opp_map.get(run.opportunity_id, ""),
+                        username=getattr(request.user, "username", "") or "",
                     )
                 except Exception:
                     logger.exception("Failed to create run for opp %s", opportunity_id)
@@ -656,6 +668,10 @@ def update_state_api(request, run_id):
         updated_run = data_access.update_run_state(run_id, new_state)
 
         if updated_run:
+            s3_export.upsert_workflow_run(
+                updated_run,
+                username=getattr(request.user, "username", "") or "",
+            )
             return JsonResponse(
                 {
                     "success": True,

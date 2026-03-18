@@ -430,6 +430,17 @@ CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
 # Example: LABS_ADMIN_USERNAMES=matt
 LABS_ADMIN_USERNAMES = env.list("LABS_ADMIN_USERNAMES", default=[])
 
+# S3 bucket for exporting audit/workflow records as CSV backups.
+# When None (default), all export calls are silently skipped.
+LABS_EXPORTS_BUCKET = env("LABS_EXPORTS_BUCKET", default=None)
+
+# AWS credentials for S3 export. On ECS the task IAM role is used instead
+# (leave these unset in production). Set in .env for local testing.
+LABS_AWS_ACCESS_KEY_ID = env("LABS_AWS_ACCESS_KEY_ID", default=None)
+LABS_AWS_SECRET_ACCESS_KEY = env("LABS_AWS_SECRET_ACCESS_KEY", default=None)
+LABS_AWS_SESSION_TOKEN = env("LABS_AWS_SESSION_TOKEN", default=None)
+LABS_AWS_DEFAULT_REGION = env("LABS_AWS_DEFAULT_REGION", default="us-east-1")
+
 # Open Chat Studio OAuth (for OCS API access)
 OCS_URL = env("OCS_URL", default="https://www.openchatstudio.com")
 OCS_OAUTH_CLIENT_ID = env("OCS_OAUTH_CLIENT_ID", default="")
