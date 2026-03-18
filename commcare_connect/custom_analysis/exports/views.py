@@ -70,10 +70,15 @@ class DownloadExportView(LoginRequiredMixin, DimagiUserRequiredMixin, View):
         if not bucket:
             return HttpResponse("Export storage is not configured.", status=404)
 
+        filename = key.split("/")[-1]
         s3 = _get_s3_client()
         url = s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": bucket, "Key": key},
+            Params={
+                "Bucket": bucket,
+                "Key": key,
+                "ResponseContentDisposition": f"attachment; filename={filename}",
+            },
             ExpiresIn=900,
         )
         return HttpResponseRedirect(url)
