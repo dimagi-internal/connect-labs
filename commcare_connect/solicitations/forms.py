@@ -13,11 +13,9 @@ from django import forms
 # Shared widget classes
 # =========================================================================
 
-_INPUT_CLASSES = (
-    "w-full px-3 py-2 border border-gray-300 rounded-md text-sm "
-    "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-)
-_SELECT_CLASSES = _INPUT_CLASSES
+_INPUT_CLASSES = "base-input"
+_TEXTAREA_CLASSES = "base-textarea"
+_SELECT_CLASSES = "base-dropdown"
 
 # =========================================================================
 # Choice Constants
@@ -70,7 +68,7 @@ class SolicitationForm(forms.Form):
             attrs={
                 "rows": 6,
                 "placeholder": "Describe the solicitation, its objectives, and requirements...",
-                "class": _INPUT_CLASSES,
+                "class": _TEXTAREA_CLASSES,
             }
         ),
     )
@@ -82,7 +80,7 @@ class SolicitationForm(forms.Form):
             attrs={
                 "rows": 4,
                 "placeholder": "Define the scope of work...",
-                "class": _INPUT_CLASSES,
+                "class": _TEXTAREA_CLASSES,
             }
         ),
     )
@@ -202,7 +200,7 @@ class SolicitationResponseForm(forms.Form):
                 field = forms.CharField(
                     label=q_text,
                     required=q_required,
-                    widget=forms.Textarea(attrs={"rows": 4, "class": _INPUT_CLASSES}),
+                    widget=forms.Textarea(attrs={"rows": 4, "class": _TEXTAREA_CLASSES}),
                 )
             elif q_type == "number":
                 field = forms.IntegerField(
@@ -270,7 +268,7 @@ class ReviewForm(forms.Form):
     notes = forms.CharField(
         label="Review Notes",
         required=False,
-        widget=forms.Textarea(attrs={"rows": 4, "class": _INPUT_CLASSES}),
+        widget=forms.Textarea(attrs={"rows": 4, "class": _TEXTAREA_CLASSES}),
     )
 
     tags = forms.CharField(
