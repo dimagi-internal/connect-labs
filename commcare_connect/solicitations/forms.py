@@ -262,6 +262,6 @@ class ReviewForm(forms.Form):
     reward_budget = forms.IntegerField(
         label="Award Budget",
         required=False,
-        help_text="Budget to award this grantee (smallest currency unit)",
+        help_text="Budget to award this grantee",
         widget=forms.NumberInput(attrs={"placeholder": "e.g. 500000"}),
     )

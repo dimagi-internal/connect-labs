@@ -47,10 +47,10 @@ class FundForm(forms.Form):
     )
     total_budget = forms.IntegerField(
         required=False,
-        label="Total Budget (smallest currency unit)",
+        label="Total Budget",
         widget=forms.NumberInput(
             attrs={
-                "placeholder": "e.g. 3000000",
+                "placeholder": "e.g. 500000",
                 "class": _INPUT_CLASSES,
             }
         ),
