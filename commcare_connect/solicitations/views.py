@@ -43,6 +43,19 @@ def _get_data_access(request):
     return SolicitationsDataAccess(request=request)
 
 
+def _get_public_data_access(request):
+    """Create data access for public views — uses CLI token as fallback if no session."""
+    try:
+        return SolicitationsDataAccess(request=request)
+    except ValueError:
+        # No OAuth session (unauthenticated user) — use CLI token
+        from commcare_connect.labs.integrations.connect.cli import TokenManager
+
+        tm = TokenManager()
+        token = tm.get_valid_token()
+        return SolicitationsDataAccess(access_token=token)
+
+
 # -- Public Views (no login) -----------------------------------------------
 
 
@@ -53,7 +66,7 @@ class PublicSolicitationListView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         solicitation_type = self.request.GET.get("type")
         try:
-            da = _get_data_access(self.request)
+            da = _get_public_data_access(self.request)
             ctx["solicitations"] = da.get_public_solicitations(
                 solicitation_type=solicitation_type,
             )
@@ -71,7 +84,7 @@ class PublicSolicitationDetailView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         pk = kwargs["pk"]
         try:
-            da = _get_data_access(self.request)
+            da = _get_public_data_access(self.request)
             solicitation = da.get_solicitation_by_id(pk)
             if not solicitation:
                 raise Http404("Solicitation not found")

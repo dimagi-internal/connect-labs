@@ -153,11 +153,18 @@ class SolicitationsDataAccess:
         Returns:
             SolicitationRecord instance or None
         """
-        return self.labs_api.get_record_by_id(
-            record_id=solicitation_id,
+        # Use public=True to skip scope params — IDs are globally unique
+        # and solicitations may belong to a different program/org than
+        # the user's current context
+        records = self.labs_api.get_records(
             type=SOLICITATION_TYPE,
+            public=True,
             model_class=SolicitationRecord,
         )
+        for record in records:
+            if record.id == solicitation_id:
+                return record
+        return None
 
     def create_solicitation(self, data: dict) -> SolicitationRecord:
         """
