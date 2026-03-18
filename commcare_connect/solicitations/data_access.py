@@ -155,7 +155,6 @@ class SolicitationsDataAccess:
         """
         return self.labs_api.get_record_by_id(
             record_id=solicitation_id,
-            experiment=self.experiment,
             type=SOLICITATION_TYPE,
             model_class=SolicitationRecord,
         )
