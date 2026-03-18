@@ -7,10 +7,61 @@ Most production apps have been removed from this codebase. The remaining non-lab
 ## Architecture at a Glance
 
 - **OAuth + Django User** — OAuth login via production Connect creates/updates a Django User via `User.objects.update_or_create()`. OAuth tokens stored in `request.session["labs_oauth"]` for API calls. Org data (organizations, programs, opportunities) available via `get_org_data(request)` from `labs/context.py`, and in templates via `user_organizations`, `user_programs`, `user_opportunities` context variables.
-- **All data via API** — `LabsRecordAPIClient` (`commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to `/export/labs_record/` on production for all CRUD. The production data export API code lives in the **`dimagi/commcare-connect`** repo at `commcare_connect/data_export/` (views, serializers, URLs). Use `gh api repos/dimagi/commcare-connect/contents/commcare_connect/data_export/views.py` to read it. **Note:** The CSV export serializes Python dicts with `str()`, producing Python repr format (single quotes), not JSON — use `ast.literal_eval` as fallback when parsing.
+- **All data via API** — `LabsRecordAPIClient` (`commcare_connect/labs/integrations/connect/api_client.py`) makes HTTP calls to `/export/labs_record/` on production for all CRUD. See [Production API Reference](#production-api-reference) below for endpoint details. The production code lives in **`dimagi/commcare-connect`** at `commcare_connect/data_export/` (views, serializers, URLs). Use `gh api repos/dimagi/commcare-connect/contents/commcare_connect/data_export/views.py` to read it.
 - **data_access.py pattern** — each app wraps `LabsRecordAPIClient` in a `data_access.py` class with domain-specific methods.
 - **Proxy models** — `LocalLabsRecord` subclasses provide typed `@property` access to JSON data. They cannot be `.save()`d locally.
 - **Context middleware** — `request.labs_context` provides `opportunity_id`, `program_id`, `organization_id` on every request.
+
+## Production API Reference
+
+The Labs Record API on production Connect (`/export/labs_record/`) is the single endpoint for all CRUD operations. Auth uses OAuth Bearer tokens with the `export` scope — this scope covers **both read and write** operations.
+
+### LabsRecord Model (production side)
+
+Fields: `id`, `experiment` (text), `type` (char), `data` (JSONField), `public` (bool), plus FK references to `user`, `organization`, `opportunity`, `program`, `labs_record` (self-referential parent).
+
+### Endpoints
+
+**GET** `/export/labs_record/` — List/filter records. Query params are passed directly to Django ORM `.filter()`:
+
+- `type=solicitation` — filter by record type
+- `experiment=<program_id>` — filter by experiment (typically program ID)
+- `data__<field>=<value>` — JSONField lookups (e.g., `data__status=active`)
+- `program_id=<id>` — scope by program (triggers membership permission check)
+- `opportunity_id=<id>` — scope by opportunity (triggers access permission check)
+- `organization_id=<id>` — scope by organization (triggers membership check)
+- If none of the above scope params are provided, returns only `public=True` records
+
+**POST** `/export/labs_record/` — Create or upsert records. Body is a JSON **list** of record objects:
+
+```json
+[{"experiment": "25", "type": "solicitation", "data": {...}, "program_id": 25, "public": true}]
+```
+
+Each item in the list can include `program_id`, `opportunity_id`, or `organization_id` to scope the write (each triggers a membership/access permission check). Include `id` to upsert an existing record. Include `username` to associate with a user.
+
+**DELETE** `/export/labs_record/` — Delete records. Body is a JSON list with `id` fields:
+
+```json
+[{ "id": 123 }, { "id": 456 }]
+```
+
+### Permission Model
+
+- **OAuth scope:** `export` — single scope for all read AND write operations
+- **GET permissions:** If `program_id`, `opportunity_id`, or `organization_id` query param is present, the API checks the token's user has membership/access to that entity. Without these params, only `public=True` records are returned.
+- **POST/DELETE permissions:** Each record in the payload is checked — any `program_id`, `opportunity_id`, or `organization_id` must belong to an entity the user has membership in. A 404 is returned if the user lacks access.
+- **Common 404 cause:** Sending `program_id` in query params (GET) or payload (POST) when the authenticated user is not a member of the organization that owns that program.
+
+### Record Type Conventions
+
+| App            | experiment       | type                    | Notes                 |
+| -------------- | ---------------- | ----------------------- | --------------------- |
+| Solicitations  | `program_id`     | `solicitation`          | Scoped by program     |
+| Sol. Responses | `llo_entity_id`  | `solicitation_response` | Scoped by entity      |
+| Sol. Reviews   | `llo_entity_id`  | `solicitation_review`   | Scoped by entity      |
+| Audits         | `opportunity_id` | varies                  | Scoped by opportunity |
+| Workflows      | `opportunity_id` | varies                  | Scoped by opportunity |
 
 ## App Map
 
