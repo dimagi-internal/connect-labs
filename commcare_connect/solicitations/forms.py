@@ -10,6 +10,16 @@ import json
 from django import forms
 
 # =========================================================================
+# Shared widget classes
+# =========================================================================
+
+_INPUT_CLASSES = (
+    "w-full px-3 py-2 border border-gray-300 rounded-md text-sm "
+    "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+)
+_SELECT_CLASSES = _INPUT_CLASSES
+
+# =========================================================================
 # Choice Constants
 # =========================================================================
 
@@ -50,7 +60,7 @@ class SolicitationForm(forms.Form):
         max_length=255,
         required=True,
         label="Solicitation Title",
-        widget=forms.TextInput(attrs={"placeholder": "Enter solicitation title..."}),
+        widget=forms.TextInput(attrs={"placeholder": "Enter solicitation title...", "class": _INPUT_CLASSES}),
     )
 
     description = forms.CharField(
@@ -60,6 +70,7 @@ class SolicitationForm(forms.Form):
             attrs={
                 "rows": 6,
                 "placeholder": "Describe the solicitation, its objectives, and requirements...",
+                "class": _INPUT_CLASSES,
             }
         ),
     )
@@ -71,6 +82,7 @@ class SolicitationForm(forms.Form):
             attrs={
                 "rows": 4,
                 "placeholder": "Define the scope of work...",
+                "class": _INPUT_CLASSES,
             }
         ),
     )
@@ -79,12 +91,14 @@ class SolicitationForm(forms.Form):
         choices=SOLICITATION_TYPE_CHOICES,
         required=True,
         label="Type",
+        widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
     )
 
     status = forms.ChoiceField(
         choices=STATUS_CHOICES,
         required=True,
         label="Status",
+        widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
     )
 
     is_public = forms.BooleanField(
@@ -97,30 +111,31 @@ class SolicitationForm(forms.Form):
     application_deadline = forms.DateField(
         required=False,
         label="Application Deadline",
-        widget=forms.DateInput(attrs={"type": "date"}),
+        widget=forms.DateInput(attrs={"type": "date", "class": _INPUT_CLASSES}),
     )
 
     expected_start_date = forms.DateField(
         required=False,
         label="Expected Start Date",
-        widget=forms.DateInput(attrs={"type": "date"}),
+        widget=forms.DateInput(attrs={"type": "date", "class": _INPUT_CLASSES}),
     )
 
     expected_end_date = forms.DateField(
         required=False,
         label="Expected End Date",
-        widget=forms.DateInput(attrs={"type": "date"}),
+        widget=forms.DateInput(attrs={"type": "date", "class": _INPUT_CLASSES}),
     )
 
     estimated_scale = forms.CharField(
         required=False,
         label="Estimated Scale",
-        widget=forms.TextInput(attrs={"placeholder": "e.g. 1000 beneficiaries"}),
+        widget=forms.TextInput(attrs={"placeholder": "e.g. 1000 beneficiaries", "class": _INPUT_CLASSES}),
     )
 
     contact_email = forms.EmailField(
         required=False,
         label="Contact Email",
+        widget=forms.EmailInput(attrs={"placeholder": "contact@example.com", "class": _INPUT_CLASSES}),
     )
 
     questions_json = forms.CharField(
@@ -187,12 +202,13 @@ class SolicitationResponseForm(forms.Form):
                 field = forms.CharField(
                     label=q_text,
                     required=q_required,
-                    widget=forms.Textarea(attrs={"rows": 4}),
+                    widget=forms.Textarea(attrs={"rows": 4, "class": _INPUT_CLASSES}),
                 )
             elif q_type == "number":
                 field = forms.IntegerField(
                     label=q_text,
                     required=q_required,
+                    widget=forms.NumberInput(attrs={"class": _INPUT_CLASSES}),
                 )
             elif q_type == "multiple_choice":
                 choices = [(opt, opt) for opt in q_options]
@@ -200,6 +216,7 @@ class SolicitationResponseForm(forms.Form):
                     label=q_text,
                     required=q_required,
                     choices=choices,
+                    widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
                 )
             else:
                 # Default: text / short_text / unknown types
@@ -207,6 +224,7 @@ class SolicitationResponseForm(forms.Form):
                     label=q_text,
                     required=q_required,
                     max_length=500,
+                    widget=forms.TextInput(attrs={"class": _INPUT_CLASSES}),
                 )
 
             self.fields[field_name] = field
@@ -239,29 +257,32 @@ class ReviewForm(forms.Form):
         min_value=1,
         max_value=100,
         required=True,
+        widget=forms.NumberInput(attrs={"class": _INPUT_CLASSES, "placeholder": "1-100"}),
     )
 
     recommendation = forms.ChoiceField(
         label="Recommendation",
         choices=RECOMMENDATION_CHOICES,
         required=True,
+        widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
     )
 
     notes = forms.CharField(
         label="Review Notes",
         required=False,
-        widget=forms.Textarea(attrs={"rows": 4}),
+        widget=forms.Textarea(attrs={"rows": 4, "class": _INPUT_CLASSES}),
     )
 
     tags = forms.CharField(
         label="Tags",
         required=False,
         help_text="Comma-separated tags",
+        widget=forms.TextInput(attrs={"class": _INPUT_CLASSES, "placeholder": "e.g. quality, scalable"}),
     )
 
     reward_budget = forms.IntegerField(
         label="Award Budget",
         required=False,
         help_text="Budget to award this grantee",
-        widget=forms.NumberInput(attrs={"placeholder": "e.g. 500000"}),
+        widget=forms.NumberInput(attrs={"placeholder": "e.g. 500000", "class": _INPUT_CLASSES}),
     )
