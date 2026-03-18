@@ -121,8 +121,8 @@ class AIStreamView(LoginRequiredMixin, View):
         # Validate required parameters
         if not agent_type:
             return JsonResponse({"error": "agent is required"}, status=400)
-        if agent_type not in ("workflow", "pipeline"):
-            return JsonResponse({"error": "agent must be 'workflow' or 'pipeline'"}, status=400)
+        if agent_type not in ("workflow", "pipeline", "solicitations"):
+            return JsonResponse({"error": "agent must be 'workflow', 'pipeline', or 'solicitations'"}, status=400)
         if not prompt:
             return JsonResponse({"error": "prompt is required"}, status=400)
 
@@ -212,6 +212,16 @@ class AIStreamView(LoginRequiredMixin, View):
                         conversation_history=conversation_history,
                     )
 
+                elif agent_type == "solicitations":
+                    from commcare_connect.ai.agents.solicitation_agent import (
+                        SolicitationAgentDeps,
+                        create_solicitation_agent_with_model,
+                    )
+
+                    agent = create_solicitation_agent_with_model(model)
+                    deps = SolicitationAgentDeps(user_deps=user_deps)
+                    full_prompt = prompt
+
                 else:  # pipeline
                     from commcare_connect.ai.agents.pipeline_agent import (
                         PipelineAgentDeps,
@@ -274,6 +284,10 @@ class AIStreamView(LoginRequiredMixin, View):
                             "pipeline_actions": deps.pending_pipeline_actions,
                             "pipeline_schema_updates": deps.pending_pipeline_schema_updates,
                             "pipeline_schema_changed": deps.pipeline_schema_changed,
+                        }
+                    elif agent_type == "solicitations":
+                        completion_data = {
+                            "message": final_text,
                         }
                     else:  # pipeline
                         completion_data = {

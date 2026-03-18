@@ -38,6 +38,10 @@ module.exports = {
       __dirname,
       '../commcare_connect/static/js/task-progress.ts',
     ),
+    'solicitation-chat': path.resolve(
+      __dirname,
+      '../commcare_connect/static/js/solicitation-chat.tsx',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../commcare_connect/static/bundles/'),

@@ -33,7 +33,10 @@ mcp = FastMCP(
         "schemas (PIPELINE_SCHEMAS) that map form fields to data extraction paths.\n\n"
         "WORKFLOW: Start with get_opportunity_apps(opportunity_id) to discover the "
         "domain and app IDs, then use get_app_structure, get_form_questions, or "
-        "get_form_json_paths to drill into specific forms."
+        "get_form_json_paths to drill into specific forms.\n\n"
+        "SOLICITATIONS: Use list_solicitations, get_solicitation, create_solicitation, "
+        "update_solicitation, list_responses, and get_response to manage solicitations "
+        "and their responses via the Connect Labs Record API."
     ),
 )
 
@@ -226,6 +229,170 @@ async def get_form_json_paths(
         result = extract_form_json_paths(app, xmlns)
         if result is None:
             return {"error": f"Form with xmlns '{xmlns}' not found in app {resolved_app_id}"}
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# --- Solicitation Tools ---
+
+
+@mcp.tool()
+async def list_solicitations(
+    program_id: str = "",
+    status: str = "",
+    solicitation_type: str = "",
+) -> dict:
+    """List solicitations, optionally filtered by program, status, or type.
+
+    Args:
+        program_id: Filter by program ID (e.g., "42")
+        status: Filter by status ("draft", "active", "closed")
+        solicitation_type: Filter by type ("eoi", "rfp")
+    """
+    from solicitation_tools import list_solicitations as _list
+
+    try:
+        results = await _list(
+            program_id=program_id or None,
+            status=status or None,
+            solicitation_type=solicitation_type or None,
+        )
+        return {"solicitations": results, "count": len(results)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def get_solicitation(solicitation_id: int) -> dict:
+    """Get a single solicitation by ID.
+
+    Args:
+        solicitation_id: The solicitation record ID
+    """
+    from solicitation_tools import get_solicitation as _get
+
+    try:
+        result = await _get(solicitation_id)
+        if result is None:
+            return {"error": f"Solicitation {solicitation_id} not found"}
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def create_solicitation(
+    program_id: str,
+    title: str,
+    description: str = "",
+    solicitation_type: str = "eoi",
+    status: str = "draft",
+    is_public: bool = False,
+    scope_of_work: str = "",
+    application_deadline: str = "",
+    expected_start_date: str = "",
+    expected_end_date: str = "",
+    estimated_scale: str = "",
+    contact_email: str = "",
+) -> dict:
+    """Create a new solicitation.
+
+    Args:
+        program_id: Program ID to create the solicitation under (required)
+        title: Solicitation title (required)
+        description: Detailed description
+        solicitation_type: "eoi" (Expression of Interest) or "rfp" (Request for Proposal)
+        status: Initial status ("draft", "active", "closed")
+        is_public: Whether the solicitation is publicly visible
+        scope_of_work: Scope of work description
+        application_deadline: Deadline for applications (ISO date string, e.g. "2026-04-01")
+        expected_start_date: Expected start date (ISO date string)
+        expected_end_date: Expected end date (ISO date string)
+        estimated_scale: Scale estimate (e.g. "1000 beneficiaries")
+        contact_email: Contact email for inquiries
+    """
+    from solicitation_tools import create_solicitation as _create
+
+    try:
+        data = {
+            "title": title,
+            "description": description,
+            "solicitation_type": solicitation_type,
+            "status": status,
+            "is_public": is_public,
+        }
+        # Only include optional fields if provided
+        if scope_of_work:
+            data["scope_of_work"] = scope_of_work
+        if application_deadline:
+            data["application_deadline"] = application_deadline
+        if expected_start_date:
+            data["expected_start_date"] = expected_start_date
+        if expected_end_date:
+            data["expected_end_date"] = expected_end_date
+        if estimated_scale:
+            data["estimated_scale"] = estimated_scale
+        if contact_email:
+            data["contact_email"] = contact_email
+
+        return await _create(program_id=program_id, data=data)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def update_solicitation(solicitation_id: int, data_json: str) -> dict:
+    """Update an existing solicitation.
+
+    Merges the provided fields into the existing solicitation data.
+
+    Args:
+        solicitation_id: The solicitation record ID to update
+        data_json: JSON string of fields to update (e.g. '{"status": "active", "title": "New Title"}')
+    """
+    import json as _json
+
+    from solicitation_tools import update_solicitation as _update
+
+    try:
+        update_data = _json.loads(data_json)
+        return await _update(solicitation_id, update_data)
+    except _json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON in data_json: {e}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def list_responses(solicitation_id: int) -> dict:
+    """List all responses for a solicitation.
+
+    Args:
+        solicitation_id: The solicitation record ID to get responses for
+    """
+    from solicitation_tools import list_responses as _list
+
+    try:
+        results = await _list(solicitation_id)
+        return {"responses": results, "count": len(results)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def get_response(response_id: int) -> dict:
+    """Get a single solicitation response by ID.
+
+    Args:
+        response_id: The response record ID
+    """
+    from solicitation_tools import get_response as _get
+
+    try:
+        result = await _get(response_id)
+        if result is None:
+            return {"error": f"Response {response_id} not found"}
         return result
     except Exception as e:
         return {"error": str(e)}

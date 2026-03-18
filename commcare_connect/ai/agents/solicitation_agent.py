@@ -1,301 +1,258 @@
-from datetime import date
+"""
+Solicitation AI agent for creating, managing, and querying solicitations.
 
-from pydantic import BaseModel
+Used by both the in-app AI chat panel and the Celery task runner.
+"""
+import logging
+from dataclasses import dataclass
+
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.settings import ModelSettings
 
 from commcare_connect.ai.types import UserDependencies
 from commcare_connect.solicitations.data_access import SolicitationsDataAccess
-from commcare_connect.solicitations.models import SolicitationRecord
+
+logger = logging.getLogger(__name__)
 
 INSTRUCTIONS = """
-You are a helpful assistant for working with solicitations.
-You can help users list and find solicitations. Be concise and helpful.
+You are a solicitations assistant for CommCare Connect. You help users create,
+manage, and review solicitations (RFPs and EOIs) for community health programs.
 
-If the user does not specify a filter, just look up all of the solicitations you have access to.
+You can:
+- List and search existing solicitations
+- Create new solicitations with all required details
+- Update existing solicitations
+- List responses to solicitations
+
+When creating a solicitation, ask for key details if not provided:
+- Title and description
+- Type (EOI or RFP)
+- Whether it should be publicly listed
+- Application deadline, start/end dates
+- Scope of work and estimated scale
+
+Be concise and action-oriented. When the user asks you to create or update
+something, call the appropriate tool immediately rather than just describing
+what you would do.
 """
 
 
-class SolicitationData(BaseModel):
-    """Solicitation information."""
+@dataclass
+class SolicitationAgentDeps:
+    """Dependencies for solicitation agent."""
 
-    id: int
-    title: str
-    description: str
-    scope_of_work: str
-    solicitation_type: str  # 'eoi' or 'rfp'
-    status: str  # 'active', 'closed', 'draft'
-    is_public: bool
-    program_name: str
-    application_deadline: date | None = None
-    expected_start_date: date | None = None
-    expected_end_date: date | None = None
-    estimated_scale: str
-    contact_email: str
-    date_created: str | None = None
-    date_modified: str | None = None
-
-    @classmethod
-    def from_solicitation_record(cls, record: SolicitationRecord) -> "SolicitationData":
-        """Create SolicitationData from a SolicitationRecord."""
-        return cls(
-            id=record.id,
-            title=record.title,
-            description=record.description,
-            scope_of_work=record.scope_of_work,
-            solicitation_type=record.solicitation_type,
-            status=record.status,
-            is_public=record.is_public,
-            program_name=record.program_name,
-            application_deadline=record.application_deadline,
-            expected_start_date=record.expected_start_date,
-            expected_end_date=record.expected_end_date,
-            estimated_scale=record.estimated_scale,
-            contact_email=record.contact_email,
-        )
+    user_deps: UserDependencies
 
 
-async def list_solicitations(
-    ctx: RunContext["UserDependencies"],
-    status: str | None = None,
-    solicitation_type: str | None = None,
-) -> list[SolicitationData]:
-    """List solicitations with optional filters.
-
-    Args:
-        ctx: The run context with user dependencies.
-        status: Filter by status ('active', 'closed', 'draft').
-        solicitation_type: Filter by type ('eoi', 'rfp').
-    """
-    if not ctx.deps.request:
-        raise ValueError("Request object is required to access solicitations")
-
-    # program_id is required in UserDependencies and validated at initialization
-    data_access = SolicitationsDataAccess(request=ctx.deps.request, program_id=str(ctx.deps.program_id))
-
-    solicitations = data_access.get_solicitations(
-        status=status,
-        solicitation_type=solicitation_type,
+def _get_data_access(ctx: RunContext[SolicitationAgentDeps]) -> SolicitationsDataAccess:
+    """Create a SolicitationsDataAccess from agent context."""
+    deps = ctx.deps.user_deps
+    program_id = str(deps.program_id) if deps.program_id else None
+    return SolicitationsDataAccess(
+        request=deps.request,
+        program_id=program_id,
     )
 
-    return [SolicitationData.from_solicitation_record(sol) for sol in solicitations]
+
+def _serialize_solicitation(s) -> dict:
+    return {
+        "id": s.pk,
+        "title": s.title,
+        "description": s.description,
+        "scope_of_work": s.scope_of_work,
+        "solicitation_type": s.solicitation_type,
+        "status": s.status,
+        "is_public": s.is_public,
+        "program_name": s.program_name,
+        "application_deadline": str(s.application_deadline) if s.application_deadline else None,
+        "expected_start_date": str(s.expected_start_date) if s.expected_start_date else None,
+        "expected_end_date": str(s.expected_end_date) if s.expected_end_date else None,
+        "estimated_scale": s.estimated_scale,
+        "contact_email": s.contact_email,
+    }
 
 
-class ProgramData(BaseModel):
-    """Program information."""
+def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentDeps, str]:
+    """Create the solicitation agent with a specific model."""
+    logger.info(f"[Solicitation Agent] Creating agent with model: {model}")
 
-    id: int
-    name: str
-    organization: str
-    currency: str | None = None
-    delivery_type: str | None = None
+    agent = Agent(
+        model,
+        deps_type=SolicitationAgentDeps,
+        output_type=str,
+        instructions=INSTRUCTIONS,
+        model_settings=ModelSettings(max_tokens=4096),
+    )
 
+    @agent.tool
+    async def list_solicitations(
+        ctx: RunContext[SolicitationAgentDeps],
+        status: str | None = None,
+        solicitation_type: str | None = None,
+    ) -> str:
+        """List solicitations, optionally filtered by status or type.
 
-class OrganizationData(BaseModel):
-    """Organization information."""
+        Args:
+            status: Filter by status ('active', 'closed', 'draft', 'awarded').
+            solicitation_type: Filter by type ('eoi', 'rfp').
+        """
+        da = _get_data_access(ctx)
+        results = da.get_solicitations(status=status, solicitation_type=solicitation_type)
+        serialized = [_serialize_solicitation(s) for s in results]
+        if not serialized:
+            return "No solicitations found."
+        return f"Found {len(serialized)} solicitations: {serialized}"
 
-    id: int | None = None
-    slug: str
-    name: str
+    @agent.tool
+    async def get_solicitation(
+        ctx: RunContext[SolicitationAgentDeps],
+        solicitation_id: int,
+    ) -> str:
+        """Get details of a specific solicitation by ID.
 
+        Args:
+            solicitation_id: The solicitation record ID.
+        """
+        da = _get_data_access(ctx)
+        result = da.get_solicitation_by_id(solicitation_id)
+        if not result:
+            return f"Solicitation {solicitation_id} not found."
+        return f"Solicitation details: {_serialize_solicitation(result)}"
 
-class OpportunityData(BaseModel):
-    """Opportunity information."""
+    @agent.tool
+    async def create_solicitation(
+        ctx: RunContext[SolicitationAgentDeps],
+        title: str,
+        description: str,
+        solicitation_type: str = "rfp",
+        status: str = "draft",
+        is_public: bool = True,
+        scope_of_work: str = "",
+        application_deadline: str | None = None,
+        expected_start_date: str | None = None,
+        expected_end_date: str | None = None,
+        estimated_scale: str = "",
+        contact_email: str = "",
+    ) -> str:
+        """Create a new solicitation.
 
-    id: int
-    name: str
-    program: int | None = None
+        Args:
+            title: Solicitation title.
+            description: Full description of the solicitation.
+            solicitation_type: 'eoi' (Expression of Interest) or 'rfp' (Request for Proposal).
+            status: 'draft', 'active', 'closed', or 'awarded'.
+            is_public: Whether to list publicly.
+            scope_of_work: Detailed scope of work.
+            application_deadline: Deadline date (YYYY-MM-DD format).
+            expected_start_date: Expected start date (YYYY-MM-DD format).
+            expected_end_date: Expected end date (YYYY-MM-DD format).
+            estimated_scale: Scale description (e.g. '1000 beneficiaries').
+            contact_email: Contact email for inquiries.
+        """
+        deps = ctx.deps.user_deps
+        data = {
+            "title": title,
+            "description": description,
+            "solicitation_type": solicitation_type,
+            "status": status,
+            "is_public": is_public,
+            "scope_of_work": scope_of_work,
+            "application_deadline": application_deadline,
+            "expected_start_date": expected_start_date,
+            "expected_end_date": expected_end_date,
+            "estimated_scale": estimated_scale,
+            "contact_email": contact_email,
+            "created_by": deps.user.username if deps.user else "",
+        }
+        da = _get_data_access(ctx)
+        result = da.create_solicitation(data)
+        return f"Created solicitation '{result.title}' (ID: {result.pk}, status: {result.status})"
 
+    @agent.tool
+    async def update_solicitation(
+        ctx: RunContext[SolicitationAgentDeps],
+        solicitation_id: int,
+        title: str | None = None,
+        description: str | None = None,
+        solicitation_type: str | None = None,
+        status: str | None = None,
+        is_public: bool | None = None,
+        scope_of_work: str | None = None,
+        application_deadline: str | None = None,
+        expected_start_date: str | None = None,
+        expected_end_date: str | None = None,
+        estimated_scale: str | None = None,
+        contact_email: str | None = None,
+    ) -> str:
+        """Update an existing solicitation. Only provided fields are changed.
 
-async def get_program_details(ctx: RunContext["UserDependencies"]) -> ProgramData:
-    """Get details about the current program.
+        Args:
+            solicitation_id: The solicitation record ID to update.
+            title: New title (optional).
+            description: New description (optional).
+            solicitation_type: New type - 'eoi' or 'rfp' (optional).
+            status: New status - 'draft', 'active', 'closed', 'awarded' (optional).
+            is_public: Whether to list publicly (optional).
+            scope_of_work: New scope of work (optional).
+            application_deadline: New deadline - YYYY-MM-DD (optional).
+            expected_start_date: New start date - YYYY-MM-DD (optional).
+            expected_end_date: New end date - YYYY-MM-DD (optional).
+            estimated_scale: New scale description (optional).
+            contact_email: New contact email (optional).
+        """
+        data = {}
+        for field_name, value in [
+            ("title", title),
+            ("description", description),
+            ("solicitation_type", solicitation_type),
+            ("status", status),
+            ("is_public", is_public),
+            ("scope_of_work", scope_of_work),
+            ("application_deadline", application_deadline),
+            ("expected_start_date", expected_start_date),
+            ("expected_end_date", expected_end_date),
+            ("estimated_scale", estimated_scale),
+            ("contact_email", contact_email),
+        ]:
+            if value is not None:
+                data[field_name] = value
 
-    Args:
-        ctx: The run context with user dependencies.
+        if not data:
+            return "No fields provided to update."
 
-    Returns:
-        ProgramData with program information.
-    """
-    if not ctx.deps.request:
-        raise ValueError("Request object is required to access program details")
+        da = _get_data_access(ctx)
+        result = da.update_solicitation(solicitation_id, data)
+        return f"Updated solicitation '{result.title}' (ID: {result.pk}). Changed fields: {list(data.keys())}"
 
-    # Get program from user's OAuth data
-    user = ctx.deps.user
-    program_id = ctx.deps.program_id
+    @agent.tool
+    async def list_responses(
+        ctx: RunContext[SolicitationAgentDeps],
+        solicitation_id: int,
+    ) -> str:
+        """List all responses submitted for a solicitation.
 
-    # Check if user has programs data (available from session org data)
-    if hasattr(user, "programs"):
-        for program in user.programs:
-            if program.get("id") == program_id:
-                return ProgramData(
-                    id=program_id,
-                    name=program.get("name", "Unknown Program"),
-                    organization=program.get("organization", "Unknown Organization"),
-                    currency=program.get("currency"),
-                    delivery_type=program.get("delivery_type"),
-                )
+        Args:
+            solicitation_id: The solicitation record ID.
+        """
+        da = _get_data_access(ctx)
+        results = da.get_responses_for_solicitation(solicitation_id)
+        if not results:
+            return f"No responses found for solicitation {solicitation_id}."
+        serialized = [
+            {
+                "id": r.pk,
+                "status": r.status,
+                "submitted_by": r.submitted_by_name,
+                "llo_entity": r.llo_entity_name,
+            }
+            for r in results
+        ]
+        return f"Found {len(serialized)} responses: {serialized}"
 
-    # Fallback: if program not found in user's programs, raise error
-    raise ValueError(f"Program {program_id} not found in user's accessible programs")
-
-
-async def list_programs(ctx: RunContext["UserDependencies"]) -> list[ProgramData]:
-    """List all programs the user has access to.
-
-    Args:
-        ctx: The run context with user dependencies.
-
-    Returns:
-        List of ProgramData with program information.
-    """
-    user = ctx.deps.user
-
-    # Check if user has programs data (available from session org data)
-    if not hasattr(user, "programs"):
-        return []
-
-    programs = []
-    for program in user.programs:
-        programs.append(
-            ProgramData(
-                id=program.get("id"),
-                name=program.get("name", "Unknown Program"),
-                organization=program.get("organization", "Unknown Organization"),
-                currency=program.get("currency"),
-                delivery_type=program.get("delivery_type"),
-            )
-        )
-
-    return programs
-
-
-async def list_organizations(ctx: RunContext["UserDependencies"]) -> list[OrganizationData]:
-    """List all organizations the user is a member of.
-
-    Args:
-        ctx: The run context with user dependencies.
-
-    Returns:
-        List of OrganizationData with organization information.
-    """
-    user = ctx.deps.user
-
-    # Check if user has organizations data (available from session org data)
-    if not hasattr(user, "organizations"):
-        return []
-
-    organizations = []
-    for org in user.organizations:
-        organizations.append(
-            OrganizationData(
-                id=org.get("id"),
-                slug=org.get("slug", ""),
-                name=org.get("name", "Unknown Organization"),
-            )
-        )
-
-    return organizations
-
-
-async def list_opportunities(ctx: RunContext["UserDependencies"]) -> list[OpportunityData]:
-    """List all opportunities the user has access to.
-
-    Args:
-        ctx: The run context with user dependencies.
-
-    Returns:
-        List of OpportunityData with opportunity information.
-    """
-    user = ctx.deps.user
-
-    # Check if user has opportunities data (available from session org data)
-    if not hasattr(user, "opportunities"):
-        return []
-
-    opportunities = []
-    for opp in user.opportunities:
-        opportunities.append(
-            OpportunityData(
-                id=opp.get("id"),
-                name=opp.get("name", "Unknown Opportunity"),
-                program=opp.get("program"),
-            )
-        )
-
-    return opportunities
-
-
-# TODO: Implement create_solicitation function
-# def create_solicitation(
-#     ctx: RunContext["UserDependencies"], solicitation_data: SolicitationData
-# ) -> SolicitationData:
-#     """Create a solicitation.
-#
-#     Args:
-#         solicitation_data: The solicitation data.
-#     """
-#     pass
-
-
-# TODO: Implement update_solicitation function
-# def update_solicitation(
-#     ctx: RunContext["UserDependencies"], solicitation_data: SolicitationData
-# ) -> SolicitationData:
-#     """Update a solicitation.
-#
-#     Args:
-#         solicitation_data: The solicitation data.
-#     """
-#     pass
-
-
-# TODO: Implement delete_solicitation function
-# def delete_solicitation(
-#     ctx: RunContext["UserDependencies"], solicitation_id: int
-# ) -> SolicitationData:
-#     """Delete a solicitation.
-#
-#     Args:
-#         solicitation_id: The solicitation ID.
-#     """
-#     pass
-
-
-solicitation_toolset = FunctionToolset(
-    tools=[
-        list_solicitations,
-        get_program_details,
-        list_programs,
-        list_organizations,
-        list_opportunities,
-        # TODO: Add create_solicitation, update_solicitation, delete_solicitation
-    ]
-)
-
-# Lazy-loaded agent instance
-_agent_instance = None
+    return agent
 
 
+# Legacy function kept for Celery task compatibility
 def get_solicitation_agent() -> Agent:
-    """
-    Get or create the solicitation agent instance.
-
-    This function lazy-loads the agent to avoid requiring OPENAI_API_KEY
-    at import time. The agent is only created when actually needed.
-
-    Returns:
-        Agent: The solicitation agent instance
-
-    Raises:
-        ValueError: If OPENAI_API_KEY is not set when the agent is first accessed
-    """
-    global _agent_instance
-    if _agent_instance is None:
-        _agent_instance = Agent(
-            "openai:gpt-4o-mini",
-            instructions=INSTRUCTIONS,
-            deps_type=UserDependencies,
-            toolsets=[solicitation_toolset],
-            retries=2,
-        )
-    return _agent_instance
+    """Get a solicitation agent with default model."""
+    return create_solicitation_agent_with_model("openai:gpt-4o-mini")
