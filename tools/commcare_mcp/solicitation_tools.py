@@ -44,7 +44,6 @@ async def list_solicitations(
     params: dict[str, str] = {"type": "solicitation"}
     if program_id:
         params["experiment"] = program_id
-        params["program_id"] = program_id
     if status:
         params["data__status"] = status
     if solicitation_type:
