@@ -19,6 +19,7 @@ import logging
 from datetime import datetime, timezone
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from django.conf import settings
 
@@ -89,6 +90,7 @@ def _get_s3_client():
     if token:
         kwargs["aws_session_token"] = token
     kwargs["region_name"] = region
+    kwargs["config"] = Config(signature_version="s3v4")
     return boto3.client("s3", **kwargs)
 
 
