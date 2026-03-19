@@ -161,6 +161,39 @@
         </div>
         {% endif %}
 
+        <!-- Evaluation Criteria -->
+        {% if solicitation.evaluation_criteria %}
+        <div class="bg-white rounded-xl shadow-sm p-8">
+            <h2 class="text-lg font-semibold text-brand-deep-purple mb-2 pb-3 border-b border-gray-100">
+                <i class="fa-solid fa-scale-balanced mr-2 text-brand-cornflower-blue"></i>Evaluation Criteria
+            </h2>
+            <p class="text-sm text-gray-500 mb-6">
+                Responses will be evaluated against the following criteria. Total weight: {{ solicitation.evaluation_criteria|length }} criteria.
+            </p>
+            <div class="space-y-4">
+                {% for criterion in solicitation.evaluation_criteria %}
+                <div class="p-5 rounded-lg border border-gray-100 bg-gray-50/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-sm font-semibold text-gray-800">{{ criterion.name }}</h3>
+                        <span class="text-xs font-bold text-brand-indigo bg-brand-indigo/10 px-3 py-1 rounded-full">
+                            {{ criterion.weight }}%
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-2">{{ criterion.description }}</p>
+                    {% if criterion.scoring_guide %}
+                    <details class="text-xs text-gray-500">
+                        <summary class="cursor-pointer font-medium hover:text-brand-cornflower-blue transition-colors">
+                            <i class="fa-solid fa-lightbulb mr-1 text-brand-marigold"></i>What makes a strong response?
+                        </summary>
+                        <p class="mt-2 pl-4 border-l-2 border-brand-cornflower-blue/30 text-gray-600">{{ criterion.scoring_guide }}</p>
+                    </details>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Bottom CTA -->
         {% if solicitation.status == 'active' %}
         <div class="bg-brand-indigo/5 border border-brand-indigo/10 rounded-xl p-8 text-center">
