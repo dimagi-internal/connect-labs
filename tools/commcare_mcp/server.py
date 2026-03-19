@@ -299,6 +299,7 @@ async def create_solicitation(
     expected_end_date: str = "",
     estimated_scale: str = "",
     contact_email: str = "",
+    evaluation_criteria_json: str = "",
 ) -> dict:
     """Create a new solicitation.
 
@@ -316,6 +317,7 @@ async def create_solicitation(
         expected_end_date: Expected end date (ISO date string)
         estimated_scale: Scale estimate (e.g. "1000 beneficiaries")
         contact_email: Contact email for inquiries
+        evaluation_criteria_json: JSON array of evaluation criteria objects
     """
     from solicitation_tools import create_solicitation as _create
 
@@ -340,6 +342,10 @@ async def create_solicitation(
             data["estimated_scale"] = estimated_scale
         if contact_email:
             data["contact_email"] = contact_email
+        if evaluation_criteria_json:
+            import json as _json
+
+            data["evaluation_criteria"] = _json.loads(evaluation_criteria_json)
 
         return await _create(
             program_id=program_id or None,
