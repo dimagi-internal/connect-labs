@@ -1,7 +1,7 @@
 # ==== pytest ====
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ds=config.settings.test --reuse-db --ignore=commcare_connect/workflow/tests/e2e --ignore=commcare_connect/labs/tests/e2e --ignore=commcare_connect/audit/management/commands/test_search_readers.py"
+addopts = "--ds=config.settings.test --reuse-db --ignore=commcare_connect/workflow/tests/e2e --ignore=commcare_connect/labs/tests/e2e --ignore=commcare_connect/solicitations/tests/e2e --ignore=commcare_connect/audit/management/commands/test_search_readers.py"
 python_files = [
     "tests.py",
     "test_*.py",
