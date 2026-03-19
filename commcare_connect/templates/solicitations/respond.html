@@ -74,9 +74,28 @@
                     </h2>
 
                     <div class="space-y-6">
-                        {% for field in form %}
-                            <div>
-                                {{ field|as_crispy_field }}
+                        {% for qf in question_fields %}
+                            <div class="mb-6">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    {{ qf.question.text }}
+                                    {% if qf.question.required %}<span class="text-red-500 ml-1">*</span>{% endif %}
+                                </label>
+
+                                {% if qf.criteria %}
+                                <div class="mb-2 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                                    {% for criterion in qf.criteria %}
+                                    <div class="flex items-center gap-2 text-xs text-indigo-700">
+                                        <i class="fa-solid fa-scale-balanced"></i>
+                                        <span class="font-semibold">{{ criterion.name }} ({{ criterion.weight }}%)</span>
+                                        <span class="text-indigo-500">— {{ criterion.scoring_guide }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+
+                                {% if qf.field %}
+                                    {{ qf.field }}
+                                {% endif %}
                             </div>
                         {% endfor %}
                     </div>

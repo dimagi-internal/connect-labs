@@ -280,7 +280,29 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
             if not solicitation.can_accept_responses():
                 ctx["not_accepting"] = True
             ctx["solicitation"] = solicitation
-            ctx["form"] = SolicitationResponseForm(questions=solicitation.questions)
+            form = SolicitationResponseForm(questions=solicitation.questions)
+            ctx["form"] = form
+
+            # Build zipped question + field + criteria list for template rendering
+            criteria_by_question = {}
+            for criterion in solicitation.evaluation_criteria:
+                for q_id in criterion.get("linked_questions", []):
+                    criteria_by_question.setdefault(q_id, []).append(criterion)
+
+            question_fields = []
+            for question in solicitation.questions:
+                q_id = question.get("id", "")
+                field_name = f"question_{q_id}"
+                field = form[field_name] if field_name in form.fields else None
+                question_fields.append(
+                    {
+                        "question": question,
+                        "field": field,
+                        "field_name": field_name,
+                        "criteria": criteria_by_question.get(q_id, []),
+                    }
+                )
+            ctx["question_fields"] = question_fields
         except Http404:
             raise
         except Exception:
