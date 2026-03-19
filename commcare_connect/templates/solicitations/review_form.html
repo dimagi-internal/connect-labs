@@ -118,3 +118,40 @@
     </form>
 </div>
 {% endblock %}
+
+{% block inline_javascript %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var criteriaWeights = {
+        {% for criterion in solicitation.evaluation_criteria %}
+        "{{ criterion.id }}": {{ criterion.weight }},
+        {% endfor %}
+    };
+
+    var criteriaInputs = document.querySelectorAll('input[name^="criteria_score_"]');
+    var overallScoreInput = document.querySelector('input[name="score"]');
+
+    function recalculate() {
+        var totalWeight = 0;
+        var weightedSum = 0;
+        criteriaInputs.forEach(function(input) {
+            var val = parseInt(input.value);
+            if (!isNaN(val) && val >= 1 && val <= 10) {
+                var criterionId = input.name.replace('criteria_score_', '');
+                var weight = criteriaWeights[criterionId] || 0;
+                weightedSum += val * weight;
+                totalWeight += weight;
+            }
+        });
+        if (totalWeight > 0 && overallScoreInput) {
+            // Convert 1-10 scale to 1-100 scale
+            overallScoreInput.value = Math.round(weightedSum / totalWeight * 10);
+        }
+    }
+
+    criteriaInputs.forEach(function(input) {
+        input.addEventListener('input', recalculate);
+    });
+});
+</script>
+{% endblock %}
