@@ -5,6 +5,14 @@ from django.utils.safestring import mark_safe
 register = template.Library()
 
 
+@register.filter(name="dict_lookup")
+def dict_lookup(d, key):
+    """Look up a key in a dictionary."""
+    if isinstance(d, dict):
+        return d.get(key, [])
+    return []
+
+
 @register.filter(name="markdown")
 def render_markdown(value):
     """Render a string as Markdown HTML."""
