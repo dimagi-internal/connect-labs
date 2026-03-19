@@ -226,6 +226,7 @@ class SolicitationsDataAccess:
         return self.labs_api.get_records(
             type=RESPONSE_TYPE,
             labs_record_id=solicitation_id,
+            public=True,
             model_class=ResponseRecord,
         )
 
@@ -267,6 +268,7 @@ class SolicitationsDataAccess:
             type=RESPONSE_TYPE,
             data=data,
             labs_record_id=solicitation_id,
+            public=True,
         )
         return ResponseRecord(record.to_api_dict())
 
@@ -353,6 +355,7 @@ class SolicitationsDataAccess:
         return self.labs_api.get_records(
             type=REVIEW_TYPE,
             labs_record_id=response_id,
+            public=True,
             model_class=ReviewRecord,
         )
 
@@ -390,6 +393,7 @@ class SolicitationsDataAccess:
             type=REVIEW_TYPE,
             data=data,
             labs_record_id=response_id,
+            public=True,
         )
         return ReviewRecord(record.to_api_dict())
 
