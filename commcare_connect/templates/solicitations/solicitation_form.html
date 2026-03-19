@@ -310,12 +310,18 @@
                 </template>
             </div>
 
-            <!-- Add Criterion Button -->
-            <div class="mt-4">
+            <!-- Add Criterion / Generate with AI Buttons -->
+            <div class="mt-4 flex gap-3">
                 <button type="button" @click="addCriterion()"
                         class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition">
                     <i class="fa-solid fa-plus mr-2"></i>
                     Add Criterion
+                </button>
+                <button type="button" @click="generateWithAI()"
+                        :disabled="generating"
+                        class="inline-flex items-center px-3 py-2 bg-brand-indigo text-white text-sm font-medium rounded-md hover:bg-brand-deep-purple transition disabled:opacity-50">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2" :class="generating ? 'animate-spin' : ''"></i>
+                    <span x-text="generating ? 'Generating...' : 'Generate with AI'"></span>
                 </button>
             </div>
 
@@ -423,6 +429,7 @@ function questionBuilder() {
 function criteriaBuilder() {
     return {
         criteria: [],
+        generating: false,
 
         init() {
             // Load existing criteria from server data
@@ -471,6 +478,66 @@ function criteriaBuilder() {
 
         removeCriterion(index) {
             this.criteria.splice(index, 1);
+        },
+
+        generateWithAI() {
+            var self = this;
+            self.generating = true;
+
+            // Gather description and questions from the form
+            var form = document.getElementById('solicitation-form');
+            var description = form.querySelector('[name="description"]').value;
+            var scopeOfWork = form.querySelector('[name="scope_of_work"]').value;
+
+            // Get questions from the question builder via Alpine
+            var questionsData = [];
+            try {
+                var qbRoot = document.querySelector('[x-data="questionBuilder()"]');
+                if (qbRoot && qbRoot.__x) {
+                    questionsData = qbRoot.__x.$data.questions.map(function(q, i) {
+                        return {id: q.id || ('q_' + (i+1)), text: q.text, type: q.type};
+                    });
+                }
+            } catch(e) {
+                console.warn('Could not read questions:', e);
+            }
+
+            var csrfToken = form.querySelector('[name="csrfmiddlewaretoken"]').value;
+
+            fetch('/solicitations/api/generate-criteria/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                    description: description,
+                    scope_of_work: scopeOfWork,
+                    questions: questionsData,
+                }),
+            })
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                if (data.criteria && Array.isArray(data.criteria)) {
+                    self.criteria = data.criteria.map(function(c) {
+                        return {
+                            id: c.id || ('ec_' + (self.criteria.length + 1)),
+                            name: c.name || '',
+                            weight: c.weight || 0,
+                            description: c.description || '',
+                            scoring_guide: c.scoring_guide || '',
+                            linked_questions_text: (c.linked_questions || []).join(', '),
+                        };
+                    });
+                } else if (data.error) {
+                    alert('Error generating criteria: ' + data.error);
+                }
+                self.generating = false;
+            })
+            .catch(function(err) {
+                alert('Error: ' + err.message);
+                self.generating = false;
+            });
         },
 
         serializeCriteria() {

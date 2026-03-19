@@ -20,6 +20,8 @@ urlpatterns = [
     path("response/<int:pk>/award/", views.AwardView.as_view(), name="award"),
     # Review (manager required)
     path("response/<int:pk>/review/", views.ReviewView.as_view(), name="review"),
+    # AI-assisted generation
+    path("api/generate-criteria/", views.generate_criteria_api, name="generate_criteria"),
     # JSON API
     path("api/solicitations/", api_views.api_solicitations_list, name="api_solicitations_list"),
     path("api/solicitations/<int:pk>/", api_views.api_solicitation_detail, name="api_solicitation_detail"),

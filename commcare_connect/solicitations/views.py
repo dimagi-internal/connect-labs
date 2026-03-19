@@ -2,9 +2,10 @@ import json
 import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.shortcuts import redirect
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from commcare_connect.solicitations.data_access import SolicitationsDataAccess
@@ -54,6 +55,77 @@ def _get_public_data_access(request):
         tm = TokenManager()
         token = tm.get_valid_token()
         return SolicitationsDataAccess(access_token=token)
+
+
+# -- AI Criteria Generation ------------------------------------------------
+
+
+@require_POST
+def generate_criteria_api(request):
+    """Generate evaluation criteria from solicitation description and questions using AI."""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Authentication required"}, status=401)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    description = body.get("description", "")
+    scope_of_work = body.get("scope_of_work", "")
+    questions = body.get("questions", [])
+
+    if not description:
+        return JsonResponse({"error": "Description is required"}, status=400)
+
+    # Build prompt
+    questions_text = "\n".join(f"Q{i+1}: {q.get('text', '')}" for i, q in enumerate(questions))
+
+    prompt = f"""Based on this solicitation, generate 3-5 evaluation criteria for scoring responses.
+
+SOLICITATION DESCRIPTION:
+{description}
+
+SCOPE OF WORK:
+{scope_of_work}
+
+APPLICATION QUESTIONS:
+{questions_text}
+
+Return a JSON array where each criterion has:
+- id: unique identifier like "ec_1", "ec_2", etc.
+- name: short name (2-4 words)
+- weight: percentage weight (all weights should sum to 100)
+- description: one sentence describing what this criterion evaluates
+- scoring_guide: what makes a strong vs weak response
+- linked_questions: array of question IDs (q_1, q_2, etc.) this criterion evaluates
+
+Return ONLY the JSON array, no other text."""
+
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        # Parse the response text as JSON
+        response_text = response.content[0].text.strip()
+        # Handle markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+
+        criteria = json.loads(response_text)
+        return JsonResponse({"criteria": criteria})
+    except json.JSONDecodeError:
+        logger.exception("Failed to parse AI response as JSON")
+        return JsonResponse({"error": "Failed to parse AI response"}, status=500)
+    except Exception:
+        logger.exception("Failed to generate criteria via AI")
+        return JsonResponse({"error": "Failed to generate criteria. Please try again."}, status=500)
 
 
 # -- Public Views (no login) -----------------------------------------------
