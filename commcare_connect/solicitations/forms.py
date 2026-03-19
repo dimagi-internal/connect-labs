@@ -248,6 +248,9 @@ class SolicitationResponseForm(forms.Form):
 class ReviewForm(forms.Form):
     """
     Form for reviewing a solicitation response.
+
+    Accepts an optional ``evaluation_criteria`` list to dynamically add
+    per-criterion score fields (1-10) alongside the overall review fields.
     """
 
     score = forms.IntegerField(
@@ -284,3 +287,25 @@ class ReviewForm(forms.Form):
         help_text="Budget to award this grantee",
         widget=forms.NumberInput(attrs={"placeholder": "e.g. 500000", "class": _INPUT_CLASSES}),
     )
+
+    def __init__(self, evaluation_criteria=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.evaluation_criteria = evaluation_criteria or []
+        for criterion in self.evaluation_criteria:
+            field_name = f"criteria_score_{criterion['id']}"
+            self.fields[field_name] = forms.IntegerField(
+                label=criterion["name"],
+                min_value=1,
+                max_value=10,
+                required=False,
+                widget=forms.NumberInput(attrs={"class": _INPUT_CLASSES, "placeholder": "1-10"}),
+            )
+
+    def get_criteria_scores(self) -> dict:
+        """Return a ``{criterion_id: score}`` dict from the cleaned criteria fields."""
+        scores = {}
+        for criterion in self.evaluation_criteria:
+            field_name = f"criteria_score_{criterion['id']}"
+            if field_name in self.cleaned_data and self.cleaned_data[field_name] is not None:
+                scores[criterion["id"]] = self.cleaned_data[field_name]
+        return scores
