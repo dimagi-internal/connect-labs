@@ -42,6 +42,10 @@ class SolicitationRecord(LocalLabsRecord):
         return self.data.get("questions", [])
 
     @property
+    def evaluation_criteria(self):
+        return self.data.get("evaluation_criteria", [])
+
+    @property
     def application_deadline(self):
         date_str = self.data.get("application_deadline")
         if date_str:
@@ -171,6 +175,10 @@ class ReviewRecord(LocalLabsRecord):
     @property
     def reviewer_username(self):
         return self.data.get("reviewer_username", "")
+
+    @property
+    def criteria_scores(self):
+        return self.data.get("criteria_scores", {})
 
     @property
     def reward_budget(self):
