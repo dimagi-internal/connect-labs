@@ -7,7 +7,7 @@ Persona 3 (Reviewer/James): Reviews response via web UI, scores against criteria
 
 All personas use jjackson+test account (profile: test-user).
 """
-import asyncio
+import concurrent.futures
 import os
 import sys
 import time
@@ -118,7 +118,14 @@ class TestSolicitationLifecycle:
             ],
         }
 
-        result = asyncio.run(create_solicitation(organization_id=org_id, data=data))
+        # Run async MCP call in a separate thread (Playwright's sync API uses the event loop)
+        import asyncio as _asyncio
+
+        def _run():
+            return _asyncio.run(create_solicitation(organization_id=org_id, data=data))
+
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = pool.submit(_run).result(timeout=30)
         assert result.get("id"), f"Failed to create solicitation: {result}"
         solicitation_id = result["id"]
 
