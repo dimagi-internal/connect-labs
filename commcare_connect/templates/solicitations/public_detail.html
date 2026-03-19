@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load markdown_filters %}
 
 {% block content %}
 <div class="max-w-screen-xl mx-auto px-4 py-6">
@@ -109,7 +110,7 @@
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-6 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-file-lines mr-2 text-brand-cornflower-blue"></i>Description
             </h2>
-            <div class="text-gray-600 leading-relaxed whitespace-pre-line max-w-none">{{ solicitation.description }}</div>
+            <div class="markdown-content">{{ solicitation.description|markdown }}</div>
         </div>
 
         <!-- Scope of Work -->
@@ -118,7 +119,7 @@
             <h2 class="text-lg font-semibold text-brand-deep-purple mb-6 pb-3 border-b border-gray-100">
                 <i class="fa-solid fa-list-check mr-2 text-brand-cornflower-blue"></i>Scope of Work
             </h2>
-            <div class="text-gray-600 leading-relaxed whitespace-pre-line max-w-none">{{ solicitation.scope_of_work }}</div>
+            <div class="markdown-content">{{ solicitation.scope_of_work|markdown }}</div>
         </div>
         {% endif %}
 
