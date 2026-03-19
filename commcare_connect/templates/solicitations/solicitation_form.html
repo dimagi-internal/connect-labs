@@ -311,7 +311,7 @@
             </div>
 
             <!-- Add Criterion / Generate with AI Buttons -->
-            <div class="mt-4 flex gap-3">
+            <div class="mt-4 flex flex-wrap items-center gap-3">
                 <button type="button" @click="addCriterion()"
                         class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition">
                     <i class="fa-solid fa-plus mr-2"></i>
@@ -323,6 +323,18 @@
                     <i class="fa-solid fa-wand-magic-sparkles mr-2" :class="generating ? 'animate-spin' : ''"></i>
                     <span x-text="generating ? 'Generating...' : 'Generate with AI'"></span>
                 </button>
+                <label class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition cursor-pointer">
+                    <i class="fa-solid fa-paperclip mr-2"></i>
+                    <span x-text="referenceFile ? referenceFile.name : 'Attach Reference File'"></span>
+                    <input type="file" x-ref="fileInput" @change="referenceFile = $event.target.files[0]"
+                           accept=".pdf,.txt,.md,.csv,.doc,.docx" class="hidden">
+                </label>
+                <template x-if="referenceFile">
+                    <button type="button" @click="referenceFile = null; $refs.fileInput.value = ''"
+                            class="text-xs text-red-500 hover:text-red-700">
+                        <i class="fa-solid fa-times"></i> Remove
+                    </button>
+                </template>
             </div>
 
             <!-- Hidden field -->
@@ -430,6 +442,7 @@ function criteriaBuilder() {
     return {
         criteria: [],
         generating: false,
+        referenceFile: null,
 
         init() {
             // Load existing criteria from server data
@@ -504,18 +517,35 @@ function criteriaBuilder() {
 
             var csrfToken = form.querySelector('[name="csrfmiddlewaretoken"]').value;
 
-            fetch('/solicitations/api/generate-criteria/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrfToken,
-                },
-                body: JSON.stringify({
-                    description: description,
-                    scope_of_work: scopeOfWork,
-                    questions: questionsData,
-                }),
-            })
+            var fetchOptions;
+            if (self.referenceFile) {
+                // Use FormData for file upload
+                var formData = new FormData();
+                formData.append('description', description);
+                formData.append('scope_of_work', scopeOfWork);
+                formData.append('questions_json', JSON.stringify(questionsData));
+                formData.append('files', self.referenceFile);
+                fetchOptions = {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken},
+                    body: formData,
+                };
+            } else {
+                fetchOptions = {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                    },
+                    body: JSON.stringify({
+                        description: description,
+                        scope_of_work: scopeOfWork,
+                        questions: questionsData,
+                    }),
+                };
+            }
+
+            fetch('/solicitations/api/generate-criteria/', fetchOptions)
             .then(function(resp) { return resp.json(); })
             .then(function(data) {
                 if (data.criteria && Array.isArray(data.criteria)) {

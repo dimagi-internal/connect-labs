@@ -60,6 +60,30 @@ def _get_public_data_access(request):
 # -- AI Criteria Generation ------------------------------------------------
 
 
+def _extract_file_text(uploaded_file, max_chars: int = 15000) -> str:
+    """Extract text content from an uploaded file."""
+    name = uploaded_file.name.lower()
+
+    if name.endswith(".pdf"):
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(uploaded_file)
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            return text[:max_chars]
+        except Exception as e:
+            return f"[Failed to read PDF: {e}]"
+
+    # Plain text / markdown / csv / etc.
+    try:
+        content = uploaded_file.read()
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", errors="replace")
+        return content[:max_chars]
+    except Exception as e:
+        return f"[Failed to read file: {e}]"
+
+
 def _fetch_url_content(url: str, max_chars: int = 10000) -> str:
     """Fetch a URL and return its text content, truncated."""
     import re
@@ -101,24 +125,45 @@ def _extract_and_fetch_urls(text: str) -> str:
 def generate_criteria_api(request):
     """Generate evaluation criteria from solicitation description and questions using AI.
 
-    Accepts optional 'urls' list or detects URLs in the description to fetch
-    reference content for better criteria generation.
+    Accepts JSON body or multipart form data (for file uploads).
+    - JSON: {"description": "...", "scope_of_work": "...", "questions": [...], "urls": [...]}
+    - Multipart: description, scope_of_work, questions_json fields + 'files' file uploads
     """
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Authentication required"}, status=401)
 
-    try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    description = body.get("description", "")
-    scope_of_work = body.get("scope_of_work", "")
-    questions = body.get("questions", [])
-    urls = body.get("urls", [])
+    # Handle both JSON and multipart form data
+    if request.content_type and "multipart" in request.content_type:
+        description = request.POST.get("description", "")
+        scope_of_work = request.POST.get("scope_of_work", "")
+        questions_raw = request.POST.get("questions_json", "[]")
+        try:
+            questions = json.loads(questions_raw)
+        except json.JSONDecodeError:
+            questions = []
+        urls = []
+    else:
+        try:
+            body = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        description = body.get("description", "")
+        scope_of_work = body.get("scope_of_work", "")
+        questions = body.get("questions", [])
+        urls = body.get("urls", [])
 
     if not description:
         return JsonResponse({"error": "Description is required"}, status=400)
+
+    # Extract content from uploaded files
+    file_context = ""
+    if request.FILES:
+        file_texts = []
+        for uploaded_file in list(request.FILES.values())[:3]:
+            text = _extract_file_text(uploaded_file)
+            if text and not text.startswith("[Failed"):
+                file_texts.append(f"CONTENT FROM FILE '{uploaded_file.name}':\n{text}")
+        file_context = "\n\n".join(file_texts)
 
     # Fetch URL content — from explicit urls list or detected in description/scope
     url_context = ""
@@ -143,10 +188,11 @@ APPLICATION QUESTIONS:
 {questions_text}
 """
 
-    if url_context:
+    reference_material = "\n\n".join(filter(None, [file_context, url_context]))
+    if reference_material:
         prompt += f"""
-REFERENCE MATERIAL (fetched from linked URLs — use this to inform criteria):
-{url_context}
+REFERENCE MATERIAL (from uploaded files and/or linked URLs — use this to inform criteria):
+{reference_material}
 """
 
     prompt += """
