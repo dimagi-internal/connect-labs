@@ -23,3 +23,12 @@ def render_markdown(value):
         extensions=["nl2br", "sane_lists", "smarty"],
     )
     return mark_safe(html)
+
+
+@register.filter(name="get_criteria_field")
+def get_criteria_field(form, criterion_id):
+    """Get the criteria score field from a form by criterion ID."""
+    field_name = f"criteria_score_{criterion_id}"
+    if hasattr(form, "fields") and field_name in form.fields:
+        return form[field_name]
+    return ""

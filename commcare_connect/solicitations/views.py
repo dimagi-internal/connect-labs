@@ -473,7 +473,14 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
             solicitation = da.get_solicitation_by_id(response.solicitation_id)
             ctx["solicitation"] = solicitation
 
-            # Build Q&A pairs for context
+            # Build criteria-by-question lookup
+            criteria_by_question = {}
+            eval_criteria = solicitation.evaluation_criteria if solicitation else []
+            for criterion in eval_criteria:
+                for q_id in criterion.get("linked_questions", []):
+                    criteria_by_question.setdefault(q_id, []).append(criterion)
+
+            # Build Q&A pairs with linked criteria for inline scoring
             qa_pairs = []
             if solicitation and solicitation.questions:
                 for question in solicitation.questions:
@@ -482,6 +489,8 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
                         {
                             "question": question.get("text", ""),
                             "answer": response.responses.get(q_id, ""),
+                            "question_id": q_id,
+                            "criteria": criteria_by_question.get(q_id, []),
                         }
                     )
             ctx["qa_pairs"] = qa_pairs
@@ -499,16 +508,17 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
                 ctx["existing_review"] = existing_review
                 ctx["is_update"] = True
                 ctx["form"] = ReviewForm(
+                    evaluation_criteria=eval_criteria,
                     initial={
                         "score": existing_review.score,
                         "recommendation": existing_review.recommendation,
                         "notes": existing_review.notes,
                         "tags": existing_review.tags,
-                    }
+                    },
                 )
             else:
                 ctx["is_update"] = False
-                ctx["form"] = ReviewForm()
+                ctx["form"] = ReviewForm(evaluation_criteria=eval_criteria)
         except Http404:
             raise
         except Exception:
@@ -529,7 +539,14 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
             logger.exception("Failed to load response %s for review POST", pk)
             raise Http404("Response not found")
 
-        form = ReviewForm(request.POST)
+        # Load solicitation for evaluation criteria
+        try:
+            solicitation = da.get_solicitation_by_id(response.solicitation_id)
+            eval_criteria = solicitation.evaluation_criteria if solicitation else []
+        except Exception:
+            eval_criteria = []
+
+        form = ReviewForm(eval_criteria, request.POST)
         if form.is_valid():
             reviewer_username = request.user.username
             data = {
@@ -541,6 +558,7 @@ class ReviewView(ManagerRequiredMixin, TemplateView):
                 "tags": form.cleaned_data["tags"],
                 "reviewer_username": reviewer_username,
                 "review_date": timezone.now().isoformat(),
+                "criteria_scores": form.get_criteria_scores(),
             }
 
             try:
