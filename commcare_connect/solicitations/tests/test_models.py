@@ -107,6 +107,16 @@ class TestSolicitationRecord:
         rec = self._make()
         assert rec.program_name == "Test Program"
 
+    def test_evaluation_criteria_property(self):
+        criteria = [{"id": "c1", "name": "Quality", "weight": 0.5}]
+        rec = self._make(data={"evaluation_criteria": criteria})
+        assert rec.evaluation_criteria == criteria
+
+    def test_evaluation_criteria_default_empty(self):
+        rec = self._make()
+        rec.data.pop("evaluation_criteria", None)
+        assert rec.evaluation_criteria == []
+
 
 class TestSolicitationRecordFundId:
     def test_fund_id(self):
@@ -273,3 +283,13 @@ class TestReviewRecord:
     def test_review_date(self):
         rec = self._make()
         assert rec.review_date is not None
+
+    def test_criteria_scores_property(self):
+        scores = {"c1": 4, "c2": 5}
+        rec = self._make(data={"criteria_scores": scores})
+        assert rec.criteria_scores == scores
+
+    def test_criteria_scores_default_empty(self):
+        rec = self._make()
+        rec.data.pop("criteria_scores", None)
+        assert rec.criteria_scores == {}
