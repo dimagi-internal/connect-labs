@@ -60,9 +60,50 @@ def _get_public_data_access(request):
 # -- AI Criteria Generation ------------------------------------------------
 
 
+def _fetch_url_content(url: str, max_chars: int = 10000) -> str:
+    """Fetch a URL and return its text content, truncated."""
+    import re
+
+    import httpx
+
+    try:
+        resp = httpx.get(url, follow_redirects=True, timeout=15.0)
+        resp.raise_for_status()
+        html = resp.text
+        # Strip HTML tags for a rough text extraction
+        text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
+        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:max_chars]
+    except Exception as e:
+        return f"[Failed to fetch {url}: {e}]"
+
+
+def _extract_and_fetch_urls(text: str) -> str:
+    """Find URLs in text, fetch their content, and return as context."""
+    import re
+
+    url_pattern = re.compile(r"https?://[^\s<>\"']+")
+    urls = url_pattern.findall(text)
+    if not urls:
+        return ""
+
+    fetched = []
+    for url in urls[:3]:  # Max 3 URLs to avoid abuse
+        content = _fetch_url_content(url)
+        fetched.append(f"CONTENT FROM {url}:\n{content}")
+
+    return "\n\n".join(fetched)
+
+
 @require_POST
 def generate_criteria_api(request):
-    """Generate evaluation criteria from solicitation description and questions using AI."""
+    """Generate evaluation criteria from solicitation description and questions using AI.
+
+    Accepts optional 'urls' list or detects URLs in the description to fetch
+    reference content for better criteria generation.
+    """
     if not request.user.is_authenticated:
         return JsonResponse({"error": "Authentication required"}, status=401)
 
@@ -74,12 +115,21 @@ def generate_criteria_api(request):
     description = body.get("description", "")
     scope_of_work = body.get("scope_of_work", "")
     questions = body.get("questions", [])
+    urls = body.get("urls", [])
 
     if not description:
         return JsonResponse({"error": "Description is required"}, status=400)
 
+    # Fetch URL content — from explicit urls list or detected in description/scope
+    url_context = ""
+    if urls:
+        fetched = [_fetch_url_content(u) for u in urls[:3]]
+        url_context = "\n\n".join(f"REFERENCE CONTENT:\n{c}" for c in fetched if c)
+    else:
+        url_context = _extract_and_fetch_urls(f"{description} {scope_of_work}")
+
     # Build prompt
-    questions_text = "\n".join(f"Q{i+1}: {q.get('text', '')}" for i, q in enumerate(questions))
+    questions_text = "\n".join(f"Q{i+1} (id: q_{i+1}): {q.get('text', '')}" for i, q in enumerate(questions))
 
     prompt = f"""Based on this solicitation, generate 3-5 evaluation criteria for scoring responses.
 
@@ -91,13 +141,21 @@ SCOPE OF WORK:
 
 APPLICATION QUESTIONS:
 {questions_text}
+"""
 
+    if url_context:
+        prompt += f"""
+REFERENCE MATERIAL (fetched from linked URLs — use this to inform criteria):
+{url_context}
+"""
+
+    prompt += """
 Return a JSON array where each criterion has:
 - id: unique identifier like "ec_1", "ec_2", etc.
 - name: short name (2-4 words)
 - weight: percentage weight (all weights should sum to 100)
 - description: one sentence describing what this criterion evaluates
-- scoring_guide: what makes a strong vs weak response
+- scoring_guide: what makes a strong vs weak response (be specific, reference the solicitation content)
 - linked_questions: array of question IDs (q_1, q_2, etc.) this criterion evaluates
 
 Return ONLY the JSON array, no other text."""

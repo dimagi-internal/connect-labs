@@ -249,6 +249,25 @@ def create_solicitation_agent_with_model(model: str) -> Agent[SolicitationAgentD
         ]
         return f"Found {len(serialized)} responses: {serialized}"
 
+    @agent.tool
+    async def fetch_url(
+        ctx: RunContext[SolicitationAgentDeps],
+        url: str,
+    ) -> str:
+        """Fetch the text content of a URL. Use this when the user provides a link
+        to reference material, a program page, or any web content they want to
+        inform the solicitation.
+
+        Args:
+            url: The URL to fetch content from.
+        """
+        from commcare_connect.solicitations.views import _fetch_url_content
+
+        content = _fetch_url_content(url, max_chars=8000)
+        if content.startswith("[Failed"):
+            return content
+        return f"Content from {url} ({len(content)} chars):\n\n{content}"
+
     return agent
 
 
