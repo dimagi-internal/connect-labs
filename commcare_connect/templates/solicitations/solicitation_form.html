@@ -238,6 +238,91 @@
             <input type="hidden" name="questions_json" id="questions_json" x-ref="questionsJson">
         </div>
 
+        <!-- Evaluation Criteria Builder -->
+        <div class="bg-white rounded-xl shadow-sm p-8"
+             x-data="criteriaBuilder()">
+
+            <h2 class="text-xl font-semibold text-brand-deep-purple mb-6 pb-2 border-b border-gray-200">
+                <i class="fa-solid fa-scale-balanced mr-2"></i>
+                Evaluation Criteria
+            </h2>
+
+            <p class="text-sm text-gray-600 mb-4">
+                Define how responses will be scored. These criteria are visible to respondents so they know what matters.
+            </p>
+
+            <!-- Criteria List -->
+            <div class="space-y-4">
+                <template x-for="(criterion, index) in criteria" :key="index">
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <div class="space-y-3">
+                            <div class="flex items-start justify-between">
+                                <span class="text-sm font-medium text-gray-500" x-text="'Criterion ' + (index + 1)"></span>
+                                <button type="button" @click="removeCriterion(index)"
+                                        class="text-red-500 hover:text-red-700 text-sm">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div class="md:col-span-3">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Criterion Name</label>
+                                    <input type="text" x-model="criterion.name"
+                                           class="base-input"
+                                           placeholder="e.g. Technical Approach">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Weight (%)</label>
+                                    <input type="number" x-model.number="criterion.weight" min="0" max="100"
+                                           class="base-input"
+                                           placeholder="e.g. 30">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                <textarea x-model="criterion.description" rows="2"
+                                          class="base-input h-auto"
+                                          placeholder="What does this criterion evaluate?"></textarea>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Scoring Guide</label>
+                                <textarea x-model="criterion.scoring_guide" rows="2"
+                                          class="base-input h-auto"
+                                          placeholder="What makes a strong vs weak response?"></textarea>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Linked Questions</label>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="(q, qi) in $root.querySelector('#solicitation-form') ? [] : []" :key="qi">
+                                        <!-- We'll use a simpler approach: comma-separated question IDs -->
+                                    </template>
+                                    <input type="text" x-model="criterion.linked_questions_text"
+                                           class="base-input"
+                                           placeholder="e.g. q_1, q_2">
+                                    <p class="text-xs text-gray-400 mt-1">Comma-separated question IDs that this criterion evaluates</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Add Criterion Button -->
+            <div class="mt-4">
+                <button type="button" @click="addCriterion()"
+                        class="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition">
+                    <i class="fa-solid fa-plus mr-2"></i>
+                    Add Criterion
+                </button>
+            </div>
+
+            <!-- Hidden field -->
+            <input type="hidden" name="evaluation_criteria_json" x-ref="criteriaJson">
+        </div>
+
         <!-- Form Actions -->
         <div class="flex justify-end gap-4 pt-2 pb-8">
             <a href="{% url 'solicitations:manage_list' %}"
@@ -264,6 +349,7 @@
 
 {% block inline_javascript %}
 <script type="text/plain" id="existing-questions-data">{{ existing_questions_json|default:"[]" }}</script>
+<script type="text/plain" id="existing-criteria-data">{{ existing_criteria_json|default:"[]" }}</script>
 <script>
 function questionBuilder() {
     return {
@@ -330,6 +416,78 @@ function questionBuilder() {
                 return item;
             });
             this.$refs.questionsJson.value = JSON.stringify(output);
+        }
+    };
+}
+
+function criteriaBuilder() {
+    return {
+        criteria: [],
+
+        init() {
+            // Load existing criteria from server data
+            try {
+                const dataEl = document.getElementById('existing-criteria-data');
+                if (dataEl) {
+                    const raw = JSON.parse(dataEl.textContent || '[]');
+                    if (Array.isArray(raw)) {
+                        this.criteria = raw.map(function(c, i) {
+                            return {
+                                id: c.id || ('ec_' + (i + 1)),
+                                name: c.name || '',
+                                weight: c.weight || 0,
+                                description: c.description || '',
+                                scoring_guide: c.scoring_guide || '',
+                                linked_questions_text: (c.linked_questions || []).join(', ')
+                            };
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('Error loading existing criteria:', e);
+                this.criteria = [];
+            }
+
+            // Serialize criteria on form submit
+            var self = this;
+            var form = document.getElementById('solicitation-form');
+            if (form) {
+                form.addEventListener('submit', function() {
+                    self.serializeCriteria();
+                });
+            }
+        },
+
+        addCriterion() {
+            this.criteria.push({
+                id: 'ec_' + (this.criteria.length + 1),
+                name: '',
+                weight: 0,
+                description: '',
+                scoring_guide: '',
+                linked_questions_text: ''
+            });
+        },
+
+        removeCriterion(index) {
+            this.criteria.splice(index, 1);
+        },
+
+        serializeCriteria() {
+            var output = this.criteria.map(function(c) {
+                var linked = c.linked_questions_text
+                    ? c.linked_questions_text.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; })
+                    : [];
+                return {
+                    id: c.id,
+                    name: c.name,
+                    weight: parseInt(c.weight) || 0,
+                    description: c.description,
+                    scoring_guide: c.scoring_guide,
+                    linked_questions: linked
+                };
+            });
+            this.$refs.criteriaJson.value = JSON.stringify(output);
         }
     };
 }

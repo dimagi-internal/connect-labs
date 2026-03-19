@@ -141,6 +141,11 @@ class SolicitationForm(forms.Form):
         widget=forms.HiddenInput(),
     )
 
+    evaluation_criteria_json = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
     def to_data_dict(self) -> dict:
         """Convert cleaned form data to a dict for the data access layer.
 
@@ -166,6 +171,16 @@ class SolicitationForm(forms.Form):
                 data["questions"] = []
         else:
             data["questions"] = []
+
+        # Parse evaluation_criteria_json into a list
+        raw_criteria = data.pop("evaluation_criteria_json", "")
+        if raw_criteria:
+            try:
+                data["evaluation_criteria"] = json.loads(raw_criteria)
+            except (json.JSONDecodeError, TypeError):
+                data["evaluation_criteria"] = []
+        else:
+            data["evaluation_criteria"] = []
 
         return data
 
