@@ -8,9 +8,12 @@
  *   renderKPIs(visits, payments, container)
  *   renderImpactHeadline(visits, payments, container)
  *   renderPerformanceTable(visits, payments, container)
+ *   renderRecentActivity(visits, payments, container)
+ *   renderAlerts(visits, payments, container)
  *   renderVisitsChart(visits)
  *   renderPaymentsChart(payments)
  *   renderMap(visits)
+ *   animateCounters()
  */
 
 /* eslint-disable no-var */
@@ -297,7 +300,9 @@ function renderKPIs(visits, payments, container) {
     '<i class="fa-solid fa-check-circle text-green-600"></i></div>' +
     '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Approved Visits</div>' +
     '<div class="text-xl font-bold text-gray-900">' +
-    fmtNum(approvedCount) +
+    '<span data-animate-value="' +
+    approvedCount +
+    '" data-animate-prefix="" data-animate-suffix="">0</span>' +
     '</div></div></div>' +
     '<div class="text-xs text-gray-500">This week: ' +
     fmtNum(thisWeekVisits) +
@@ -313,7 +318,9 @@ function renderKPIs(visits, payments, container) {
     '<i class="fa-solid fa-dollar-sign text-indigo-600"></i></div>' +
     '<div><div class="text-xs text-gray-500 uppercase tracking-wider">USD Distributed</div>' +
     '<div class="text-xl font-bold text-gray-900">' +
-    fmtUSD(totalUSD) +
+    '<span data-animate-value="' +
+    Math.round(totalUSD) +
+    '" data-animate-prefix="$" data-animate-suffix="">0</span>' +
     '</div></div></div>' +
     '<div class="text-xs text-gray-500">This week: ' +
     fmtUSD(thisWeekUSD) +
@@ -330,8 +337,10 @@ function renderKPIs(visits, payments, container) {
       '<i class="fa-solid fa-chart-pie text-amber-600"></i></div>' +
       '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Budget Utilization</div>' +
       '<div class="text-xl font-bold text-gray-900">' +
+      '<span data-animate-value="' +
       budgetPct +
-      '%</div></div></div>' +
+      '" data-animate-prefix="" data-animate-suffix="%">0</span>' +
+      '</div></div></div>' +
       '<div class="w-full bg-gray-200 rounded-full h-2 mt-1">' +
       '<div class="h-2 rounded-full ' +
       (budgetPct >= 90
@@ -361,7 +370,9 @@ function renderKPIs(visits, payments, container) {
       '<i class="fa-solid fa-globe text-amber-600"></i></div>' +
       '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Countries</div>' +
       '<div class="text-xl font-bold text-gray-900">' +
-      fmtNum(Object.keys(countrySet).length) +
+      '<span data-animate-value="' +
+      Object.keys(countrySet).length +
+      '" data-animate-prefix="" data-animate-suffix="">0</span>' +
       '</div></div></div></div>';
   }
 
@@ -373,7 +384,9 @@ function renderKPIs(visits, payments, container) {
     '<i class="fa-solid fa-users text-blue-600"></i></div>' +
     '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Active FLWs</div>' +
     '<div class="text-xl font-bold text-gray-900">' +
-    fmtNum(activeCount) +
+    '<span data-animate-value="' +
+    activeCount +
+    '" data-animate-prefix="" data-animate-suffix="">0</span>' +
     ' <span class="text-sm font-normal text-gray-400">of ' +
     fmtNum(totalFLWs) +
     '</span></div></div></div></div>';
@@ -446,16 +459,16 @@ function renderImpactHeadline(visits, payments, container) {
   var html =
     '<div class="bg-white rounded-xl shadow-sm p-6 mb-6 border border-gray-200 text-center">' +
     '<p class="text-lg md:text-xl font-semibold text-brand-deep-purple">' +
-    'Your fund has reached <span class="text-2xl font-bold">' +
-    fmtNum(familyCount) +
-    '</span> families across ' +
-    '<span class="text-2xl font-bold">' +
-    fmtNum(countryCount) +
-    '</span> ' +
+    'Your fund has reached <span class="text-2xl font-bold" data-animate-value="' +
+    familyCount +
+    '" data-animate-prefix="" data-animate-suffix="">0</span> families across ' +
+    '<span class="text-2xl font-bold" data-animate-value="' +
+    countryCount +
+    '" data-animate-prefix="" data-animate-suffix="">0</span> ' +
     (countryCount === 1 ? 'country' : 'countries') +
-    ' through <span class="text-2xl font-bold">' +
-    fmtNum(flwCount) +
-    '</span> community health workers' +
+    ' through <span class="text-2xl font-bold" data-animate-value="' +
+    flwCount +
+    '" data-animate-prefix="" data-animate-suffix="">0</span> community health workers' +
     '</p>' +
     '<p class="text-sm text-gray-500 mt-2">' +
     '$' +
@@ -1010,17 +1023,44 @@ function renderMap(visits) {
     clusterGroup = L.layerGroup();
   }
 
+  // Pre-compute density for each point (count neighbors within 0.01 degrees)
+  // Skip density computation for very large datasets to avoid O(n^2) perf hit
+  var densities = [];
+  var useDensity = located.length <= 5000;
+  if (useDensity) {
+    for (var i = 0; i < located.length; i++) {
+      var neighbors = 0;
+      for (var j = 0; j < located.length; j++) {
+        if (i === j) continue;
+        var dLat = Math.abs(located[i].lat - located[j].lat);
+        var dLon = Math.abs(located[i].lon - located[j].lon);
+        if (dLat <= 0.01 && dLon <= 0.01) neighbors++;
+      }
+      densities.push(neighbors);
+    }
+  } else {
+    for (var i = 0; i < located.length; i++) densities.push(0);
+  }
+  var maxDensity = 1;
+  for (var i = 0; i < densities.length; i++) {
+    if (densities[i] > maxDensity) maxDensity = densities[i];
+  }
+
   var bounds = [];
   for (var i = 0; i < located.length; i++) {
     var pt = located[i];
     var color = oppColor(String(pt.row.opp_id));
+    // Density-based radius (6-12px) and opacity (lower for denser areas)
+    var densityRatio = densities[i] / maxDensity;
+    var radius = 6 + Math.round(densityRatio * 6);
+    var fillOpacity = 0.6 - densityRatio * 0.35; // 0.6 to 0.25
     var marker = L.circleMarker([pt.lat, pt.lon], {
-      radius: 5,
+      radius: radius,
       fillColor: color,
       color: color,
       weight: 1,
       opacity: 0.8,
-      fillOpacity: 0.6,
+      fillOpacity: fillOpacity,
     });
 
     var visitDate = pt.row.visit_date
@@ -1047,11 +1087,259 @@ function renderMap(visits) {
   clusterGroup.addTo(map);
 
   if (bounds.length > 0) {
-    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
   }
 
   // Fix Leaflet map rendering in hidden containers
   setTimeout(function () {
     map.invalidateSize();
   }, 100);
+}
+
+// ---------------------------------------------------------------------------
+// renderRecentActivity
+// ---------------------------------------------------------------------------
+
+function renderRecentActivity(visits, payments, container) {
+  if (!container) return;
+
+  var maxVD = maxVisitDate(visits);
+  if (!maxVD) {
+    container.innerHTML = '';
+    return;
+  }
+
+  var maxD = new Date(maxVD + 'T00:00:00');
+  var cutoff = new Date(maxD);
+  cutoff.setDate(cutoff.getDate() - 7);
+
+  // Visits in last 7 days
+  var recentVisits = 0;
+  var recentOppIds = {};
+  var recentFLWs = {};
+  for (var i = 0; i < visits.length; i++) {
+    if (!visits[i].visit_date) continue;
+    var vd = new Date(visits[i].visit_date + 'T00:00:00');
+    if (vd >= cutoff && vd <= maxD) {
+      if (visits[i].status === 'approved') recentVisits++;
+      if (visits[i].opp_id) recentOppIds[visits[i].opp_id] = true;
+      if (visits[i].username) recentFLWs[visits[i].username] = true;
+    }
+  }
+
+  // Payments in last 7 days
+  var recentUSD = 0;
+  for (var i = 0; i < payments.length; i++) {
+    var dateStr = payments[i].status_modified_date || payments[i].payment_date;
+    if (!dateStr) continue;
+    var pd = new Date(dateStr + 'T00:00:00');
+    if (pd >= cutoff && pd <= maxD) {
+      recentUSD +=
+        (parseFloat(payments[i].usd_flw) || 0) +
+        (parseFloat(payments[i].usd_org) || 0);
+    }
+  }
+
+  var oppCount = Object.keys(recentOppIds).length;
+  var flwCount = Object.keys(recentFLWs).length;
+
+  if (recentVisits === 0 && recentUSD === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  var parts = [];
+  if (recentVisits > 0) {
+    parts.push(
+      fmtNum(recentVisits) +
+        ' visits across ' +
+        oppCount +
+        ' opp' +
+        (oppCount !== 1 ? 's' : ''),
+    );
+  }
+  if (recentUSD > 0) {
+    parts.push(fmtUSD(Math.round(recentUSD)) + ' distributed');
+  }
+  if (flwCount > 0) {
+    parts.push(fmtNum(flwCount) + ' FLWs active');
+  }
+
+  container.innerHTML =
+    '<div class="bg-indigo-50 rounded-xl px-5 py-3 mb-4 flex items-center gap-3">' +
+    '<i class="fa-solid fa-chart-bar text-indigo-500"></i>' +
+    '<span class="text-sm font-medium text-indigo-900">' +
+    'Last 7 days: ' +
+    parts.join(' | ') +
+    '</span></div>';
+}
+
+// ---------------------------------------------------------------------------
+// renderAlerts
+// ---------------------------------------------------------------------------
+
+function renderAlerts(visits, payments, container) {
+  if (!container) return;
+
+  var maxVD = maxVisitDate(visits);
+  if (!maxVD) {
+    container.innerHTML = '';
+    return;
+  }
+
+  var maxD = new Date(maxVD + 'T00:00:00');
+  var byOpp = groupByOpp(visits);
+  var oppIds = Object.keys(byOpp);
+
+  // Compute reference weeks
+  var allVisitDates = [];
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].visit_date) allVisitDates.push(visits[i].visit_date);
+  }
+  var weeks = referenceWeeks(allVisitDates);
+
+  var alerts = [];
+
+  for (var idx = 0; idx < oppIds.length; idx++) {
+    var id = oppIds[idx];
+    var opp = byOpp[id];
+    var oppName = opp.opp_name;
+
+    // Find max visit date for this opp
+    var oppMaxDate = null;
+    for (var j = 0; j < opp.rows.length; j++) {
+      if (
+        opp.rows[j].visit_date &&
+        (!oppMaxDate || opp.rows[j].visit_date > oppMaxDate)
+      ) {
+        oppMaxDate = opp.rows[j].visit_date;
+      }
+    }
+
+    // Red alert: no visits in 14+ days
+    if (oppMaxDate) {
+      var daysSince = Math.floor(
+        (maxD - new Date(oppMaxDate + 'T00:00:00')) / 86400000,
+      );
+      if (daysSince >= 14) {
+        alerts.push({
+          level: 'red',
+          icon: 'fa-circle-exclamation',
+          bg: 'bg-red-50',
+          text: oppName + ' has had no visits in ' + daysSince + ' days',
+          sort: 0,
+        });
+        continue; // skip trend checks for inactive opps
+      }
+    }
+
+    // Weekly trend checks
+    if (weeks.thisWeekStart && weeks.lastWeekStart) {
+      var twVisits = countVisitsInWeek(opp.rows, weeks.thisWeekStart);
+      var lwVisits = countVisitsInWeek(opp.rows, weeks.lastWeekStart);
+
+      if (lwVisits > 0) {
+        var changePct = Math.round(((twVisits - lwVisits) / lwVisits) * 100);
+
+        // Yellow alert: dropped >50%
+        if (changePct <= -50) {
+          alerts.push({
+            level: 'yellow',
+            icon: 'fa-triangle-exclamation',
+            bg: 'bg-amber-50',
+            text:
+              oppName +
+              ' visits dropped ' +
+              Math.abs(changePct) +
+              '% this week',
+            sort: 1,
+          });
+        }
+        // Green alert: increased >25%
+        else if (changePct >= 25) {
+          alerts.push({
+            level: 'green',
+            icon: 'fa-circle-check',
+            bg: 'bg-green-50',
+            text: oppName + ' is growing: +' + changePct + '% visits this week',
+            sort: 2,
+          });
+        }
+      }
+    }
+  }
+
+  if (alerts.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  // Sort: red first, then yellow, then green. Limit to 5.
+  alerts.sort(function (a, b) {
+    return a.sort - b.sort;
+  });
+  if (alerts.length > 5) alerts = alerts.slice(0, 5);
+
+  var colorMap = {
+    red: 'text-red-600',
+    yellow: 'text-amber-600',
+    green: 'text-green-600',
+  };
+
+  var html = '<div class="space-y-2 mb-6">';
+  for (var i = 0; i < alerts.length; i++) {
+    var a = alerts[i];
+    html +=
+      '<div class="' +
+      a.bg +
+      ' rounded-xl px-5 py-3 flex items-center gap-3">' +
+      '<i class="fa-solid ' +
+      a.icon +
+      ' ' +
+      colorMap[a.level] +
+      '"></i>' +
+      '<span class="text-sm font-medium text-gray-800">' +
+      a.text +
+      '</span>' +
+      '</div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// animateCounters
+// ---------------------------------------------------------------------------
+
+function animateCounters() {
+  var elements = document.querySelectorAll('[data-animate-value]');
+  if (!elements.length) return;
+
+  var duration = 1000; // ms
+  var startTime = null;
+
+  function step(timestamp) {
+    if (!startTime) startTime = timestamp;
+    var elapsed = timestamp - startTime;
+    var progress = Math.min(elapsed / duration, 1);
+    // Ease-out cubic
+    var eased = 1 - Math.pow(1 - progress, 3);
+
+    for (var i = 0; i < elements.length; i++) {
+      var el = elements[i];
+      var target = parseInt(el.getAttribute('data-animate-value'), 10);
+      var prefix = el.getAttribute('data-animate-prefix') || '';
+      var suffix = el.getAttribute('data-animate-suffix') || '';
+      if (isNaN(target)) continue;
+
+      var current = Math.round(eased * target);
+      el.textContent = prefix + fmtNum(current) + suffix;
+    }
+
+    if (progress < 1) {
+      requestAnimationFrame(step);
+    }
+  }
+
+  requestAnimationFrame(step);
 }
