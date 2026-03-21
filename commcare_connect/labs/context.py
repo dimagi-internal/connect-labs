@@ -284,6 +284,7 @@ class LabsContextMiddleware(MiddlewareMixin):
                 "/labs/scout/",
                 "/coverage/",
                 "/custom_analysis/",
+                "/funder/",
             ]
             is_whitelisted = any(path.startswith(prefix) for prefix in whitelisted_prefixes)
 

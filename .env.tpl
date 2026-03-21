@@ -29,6 +29,10 @@ ANTHROPIC_API_KEY={{ op://Employee/Connect Labs .env/ANTHROPIC_API_KEY }}
 SCALE_VALIDATION_API_URL={{ op://Employee/Connect Labs .env/SCALE_VALIDATION_API_URL }}
 SCALE_VALIDATION_API_KEY={{ op://Employee/Connect Labs .env/SCALE_VALIDATION_API_KEY }}
 
+# Google OAuth (for Sheets/Drive MCP tools)
+GOOGLE_OAUTH_CLIENT_ID={{ op://Employee/Connect Labs .env/GOOGLE_OAUTH_CLIENT_ID }}
+GOOGLE_OAUTH_CLIENT_SECRET={{ op://Employee/Connect Labs .env/GOOGLE_OAUTH_CLIENT_SECRET }}
+
 # Superset
 SUPERSET_URL={{ op://Employee/Connect Labs .env/SUPERSET_URL }}
 SUPERSET_USERNAME={{ op://Employee/Connect Labs .env/SUPERSET_USERNAME }}

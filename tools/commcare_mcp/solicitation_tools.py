@@ -174,3 +174,95 @@ async def get_response(response_id: int) -> dict | None:
             if r.get("id") == response_id:
                 return _serialize_record(r)
     return None
+
+
+async def _get_raw_response(response_id: int) -> dict | None:
+    """Get the raw LabsRecord dict for a response (needed for updates)."""
+    params = {"type": "solicitation_response"}
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        resp = await client.get(LABS_RECORD_URL, params=params, headers=_headers())
+        resp.raise_for_status()
+        for r in resp.json():
+            if r.get("id") == response_id:
+                return r
+    return None
+
+
+async def award_response(
+    response_id: int,
+    reward_budget: int,
+    org_id: str,
+    fund_id: int | None = None,
+) -> dict:
+    """Award a response: mark as awarded and optionally allocate from a fund.
+
+    The fund_id is an explicit argument (not looked up from the solicitation)
+    so callers have full control. This differs from the Django-side
+    SolicitationsDataAccess.award_response which derives fund_id from the
+    solicitation's fund_id field.
+
+    Flow:
+    1. GET response to get current data
+    2. POST update with status=awarded, reward_budget, org_id
+    3. If fund_id: GET solicitation for title, then add fund allocation
+    4. Return updated response
+    """
+    from fund_tools import add_fund_allocation
+
+    # 1. Fetch current response
+    raw = await _get_raw_response(response_id)
+    if not raw:
+        raise ValueError(f"Response {response_id} not found")
+
+    # 2. Update response status
+    current_data = dict(raw.get("data", {}))
+    current_data["status"] = "awarded"
+    current_data["reward_budget"] = reward_budget
+    current_data["org_id"] = org_id
+
+    payload = [
+        {
+            "id": response_id,
+            "experiment": raw["experiment"],
+            "type": raw["type"],
+            "data": current_data,
+            "public": True,
+        }
+    ]
+    if raw.get("labs_record_id"):
+        payload[0]["labs_record_id"] = raw["labs_record_id"]
+
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        resp = await client.post(LABS_RECORD_URL, json=payload, headers=_headers())
+        resp.raise_for_status()
+        result = resp.json()
+        if not result:
+            raise ValueError("API returned empty response after award update")
+        updated_response = _serialize_record(result[0])
+
+    # 3. Auto-allocate from fund if fund_id provided
+    if fund_id:
+        solicitation_id = current_data.get("solicitation_id")
+        solicitation_title = ""
+        org_name = current_data.get("llo_entity_name", "")
+
+        # Try to get solicitation title for the allocation notes
+        if solicitation_id:
+            sol = await get_solicitation(int(solicitation_id))
+            if sol:
+                solicitation_title = sol.get("title", "")
+
+        await add_fund_allocation(
+            fund_id=fund_id,
+            allocation={
+                "amount": reward_budget,
+                "type": "award",
+                "solicitation_id": solicitation_id,
+                "response_id": response_id,
+                "org_id": org_id,
+                "org_name": org_name,
+                "notes": f"Award from {solicitation_title}" if solicitation_title else "Award",
+            },
+        )
+
+    return updated_response

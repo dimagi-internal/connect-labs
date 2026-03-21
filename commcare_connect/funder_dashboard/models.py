@@ -8,11 +8,15 @@ from commcare_connect.labs.models import LocalLabsRecord
 
 
 class FundRecord(LocalLabsRecord):
-    """Proxy model for fund records. Scoped by org_id."""
+    """Proxy model for fund records. Scoped by program_id for ACL."""
 
     @property
     def name(self):
         return self.data.get("name", "")
+
+    @property
+    def funder_slug(self):
+        return self.data.get("funder_slug", "")
 
     @property
     def description(self):

@@ -1,0 +1,1057 @@
+/**
+ * Funder Dashboard — Chart Rendering
+ *
+ * Vanilla JS (no build step). Expects window.Chart (Chart.js 4.x) and
+ * window.L (Leaflet 1.9.x + MarkerCluster) to be loaded before this file.
+ *
+ * Exports top-level functions consumed by the SSE client in the template:
+ *   renderKPIs(visits, payments, container)
+ *   renderImpactHeadline(visits, payments, container)
+ *   renderPerformanceTable(visits, payments, container)
+ *   renderVisitsChart(visits)
+ *   renderPaymentsChart(payments)
+ *   renderMap(visits)
+ */
+
+/* eslint-disable no-var */
+/* global Chart, L */
+
+var OPP_COLORS = [
+  '#6366f1',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#8b5cf6',
+  '#06b6d4',
+  '#ec4899',
+  '#84cc16',
+  '#f97316',
+  '#14b8a6',
+  '#a855f7',
+  '#64748b',
+  '#e11d48',
+  '#0ea5e9',
+  '#22c55e',
+];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Group a flat array of rows by opp_id, returning { [oppId]: { rows, opp_name, country, delivery_type } }. */
+function groupByOpp(rows) {
+  var result = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var id = String(r.opp_id);
+    if (!result[id]) {
+      result[id] = {
+        rows: [],
+        opp_name: r.opp_name || 'Opp ' + id,
+        country: r.country || '',
+        delivery_type: r.delivery_type || '',
+      };
+    }
+    result[id].rows.push(r);
+  }
+  return result;
+}
+
+/** Return ISO week-start (Monday) string for a date. */
+function weekStart(dateStr) {
+  var d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  var day = d.getDay();
+  var diff = (day === 0 ? -6 : 1) - day; // Monday
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Get sorted unique week-start strings from an array of date strings. */
+function uniqueWeeks(dates) {
+  var set = {};
+  for (var i = 0; i < dates.length; i++) {
+    var ws = weekStart(dates[i]);
+    if (ws) set[ws] = true;
+  }
+  return Object.keys(set).sort();
+}
+
+/** Assign a consistent color index for an opp id. */
+var _oppColorMap = {};
+var _oppColorIdx = 0;
+function oppColor(oppId) {
+  if (_oppColorMap[oppId] === undefined) {
+    _oppColorMap[oppId] = _oppColorIdx++;
+  }
+  return OPP_COLORS[_oppColorMap[oppId] % OPP_COLORS.length];
+}
+
+/** Reset the color map (useful if re-rendering). */
+function resetColors() {
+  _oppColorMap = {};
+  _oppColorIdx = 0;
+}
+
+/** Format a number with comma separators. */
+function fmtNum(n) {
+  if (n == null) return '0';
+  return Number(n).toLocaleString('en-US');
+}
+
+/** Format a dollar amount. */
+function fmtUSD(n) {
+  if (n == null) return '$0';
+  return (
+    '$' +
+    Number(n).toLocaleString('en-US', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })
+  );
+}
+
+/** Show an empty-state message inside a container. */
+function showEmpty(el, msg) {
+  el.innerHTML =
+    '<div class="flex items-center justify-center h-full text-gray-400 text-sm">' +
+    '<div class="text-center"><i class="fa-solid fa-chart-simple text-3xl mb-2 block"></i>' +
+    msg +
+    '</div></div>';
+}
+
+// ---------------------------------------------------------------------------
+// Weekly stats helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute "this week" and "last week" relative to the max date in the data.
+ * Returns { thisWeekStart, lastWeekStart } as ISO date strings.
+ */
+function referenceWeeks(dates) {
+  if (!dates.length) return { thisWeekStart: null, lastWeekStart: null };
+  var maxDate = dates[0];
+  for (var i = 1; i < dates.length; i++) {
+    if (dates[i] > maxDate) maxDate = dates[i];
+  }
+  var ws = weekStart(maxDate);
+  if (!ws) return { thisWeekStart: null, lastWeekStart: null };
+  var d = new Date(ws + 'T00:00:00');
+  d.setDate(d.getDate() - 7);
+  return { thisWeekStart: ws, lastWeekStart: d.toISOString().slice(0, 10) };
+}
+
+/** Count approved visits in a specific week (by weekStart). */
+function countVisitsInWeek(visits, ws) {
+  var count = 0;
+  for (var i = 0; i < visits.length; i++) {
+    if (
+      visits[i].status === 'approved' &&
+      weekStart(visits[i].visit_date) === ws
+    )
+      count++;
+  }
+  return count;
+}
+
+/** Sum USD payments in a specific week (by weekStart of status_modified_date). */
+function sumUSDInWeek(payments, ws) {
+  var total = 0;
+  for (var i = 0; i < payments.length; i++) {
+    var dateStr = payments[i].status_modified_date || payments[i].payment_date;
+    if (weekStart(dateStr) === ws) {
+      total +=
+        (parseFloat(payments[i].usd_flw) || 0) +
+        (parseFloat(payments[i].usd_org) || 0);
+    }
+  }
+  return total;
+}
+
+/** Compute percent change, returning { pct, direction }. */
+function trendInfo(thisVal, lastVal) {
+  if (lastVal === 0 && thisVal === 0) return { pct: 0, direction: 'flat' };
+  if (lastVal === 0) return { pct: 100, direction: 'up' };
+  var pct = Math.round(((thisVal - lastVal) / lastVal) * 100);
+  if (pct > 0) return { pct: pct, direction: 'up' };
+  if (pct < 0) return { pct: Math.abs(pct), direction: 'down' };
+  return { pct: 0, direction: 'flat' };
+}
+
+/** Render a trend arrow+text span. */
+function trendHTML(trend) {
+  if (trend.direction === 'up') {
+    return (
+      '<span class="text-green-600 text-xs font-medium"><i class="fa-solid fa-arrow-up mr-0.5"></i>+' +
+      trend.pct +
+      '%</span>'
+    );
+  }
+  if (trend.direction === 'down') {
+    return (
+      '<span class="text-red-600 text-xs font-medium"><i class="fa-solid fa-arrow-down mr-0.5"></i>-' +
+      trend.pct +
+      '%</span>'
+    );
+  }
+  return '<span class="text-gray-400 text-xs font-medium"><i class="fa-solid fa-minus mr-0.5"></i>0%</span>';
+}
+
+/** Count distinct usernames with a visit_date within the last N days of maxDate. */
+function activeFLWs(visits, maxDateStr, days) {
+  if (!maxDateStr) return 0;
+  var maxD = new Date(maxDateStr + 'T00:00:00');
+  var cutoff = new Date(maxD);
+  cutoff.setDate(cutoff.getDate() - days);
+  var set = {};
+  for (var i = 0; i < visits.length; i++) {
+    if (!visits[i].username || !visits[i].visit_date) continue;
+    var vd = new Date(visits[i].visit_date + 'T00:00:00');
+    if (vd >= cutoff && vd <= maxD) {
+      set[visits[i].username] = true;
+    }
+  }
+  return Object.keys(set).length;
+}
+
+/** Find the max visit_date string in a visits array. */
+function maxVisitDate(visits) {
+  var max = null;
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].visit_date && (!max || visits[i].visit_date > max)) {
+      max = visits[i].visit_date;
+    }
+  }
+  return max;
+}
+
+// ---------------------------------------------------------------------------
+// renderKPIs (enhanced)
+// ---------------------------------------------------------------------------
+
+function renderKPIs(visits, payments, container) {
+  // Count approved visits
+  var approvedCount = 0;
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].status === 'approved') approvedCount++;
+  }
+
+  // Sum USD
+  var totalUSD = 0;
+  for (var i = 0; i < payments.length; i++) {
+    totalUSD +=
+      (parseFloat(payments[i].usd_flw) || 0) +
+      (parseFloat(payments[i].usd_org) || 0);
+  }
+
+  // Distinct FLWs (total)
+  var flwSet = {};
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].username) flwSet[visits[i].username] = true;
+  }
+  var totalFLWs = Object.keys(flwSet).length;
+
+  // Weekly stats
+  var visitDates = [];
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].visit_date) visitDates.push(visits[i].visit_date);
+  }
+  var weeks = referenceWeeks(visitDates);
+  var thisWeekVisits = weeks.thisWeekStart
+    ? countVisitsInWeek(visits, weeks.thisWeekStart)
+    : 0;
+  var lastWeekVisits = weeks.lastWeekStart
+    ? countVisitsInWeek(visits, weeks.lastWeekStart)
+    : 0;
+  var visitTrend = trendInfo(thisWeekVisits, lastWeekVisits);
+
+  var thisWeekUSD = weeks.thisWeekStart
+    ? sumUSDInWeek(payments, weeks.thisWeekStart)
+    : 0;
+  var lastWeekUSD = weeks.lastWeekStart
+    ? sumUSDInWeek(payments, weeks.lastWeekStart)
+    : 0;
+  var usdTrend = trendInfo(thisWeekUSD, lastWeekUSD);
+
+  // Active FLWs (last 14 days relative to max visit date)
+  var maxVD = maxVisitDate(visits);
+  var activeCount = activeFLWs(visits, maxVD, 14);
+
+  // Budget utilization
+  var budgetTotal =
+    typeof fundTotalBudget !== 'undefined' && fundTotalBudget
+      ? Number(fundTotalBudget)
+      : 0;
+  var budgetPct =
+    budgetTotal > 0
+      ? Math.min(100, Math.round((totalUSD / budgetTotal) * 100))
+      : 0;
+
+  var html = '<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">';
+
+  // Card 1: Approved Visits
+  html +=
+    '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">' +
+    '<div class="flex items-center gap-3 mb-2">' +
+    '<div class="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">' +
+    '<i class="fa-solid fa-check-circle text-green-600"></i></div>' +
+    '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Approved Visits</div>' +
+    '<div class="text-xl font-bold text-gray-900">' +
+    fmtNum(approvedCount) +
+    '</div></div></div>' +
+    '<div class="text-xs text-gray-500">This week: ' +
+    fmtNum(thisWeekVisits) +
+    ' <span class="mx-1">|</span> ' +
+    trendHTML(visitTrend) +
+    ' vs last week</div></div>';
+
+  // Card 2: USD Distributed
+  html +=
+    '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">' +
+    '<div class="flex items-center gap-3 mb-2">' +
+    '<div class="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center">' +
+    '<i class="fa-solid fa-dollar-sign text-indigo-600"></i></div>' +
+    '<div><div class="text-xs text-gray-500 uppercase tracking-wider">USD Distributed</div>' +
+    '<div class="text-xl font-bold text-gray-900">' +
+    fmtUSD(totalUSD) +
+    '</div></div></div>' +
+    '<div class="text-xs text-gray-500">This week: ' +
+    fmtUSD(thisWeekUSD) +
+    ' <span class="mx-1">|</span> ' +
+    trendHTML(usdTrend) +
+    ' vs last week</div></div>';
+
+  // Card 3: Budget Utilization (only if budget is set)
+  if (budgetTotal > 0) {
+    html +=
+      '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">' +
+      '<div class="flex items-center gap-3 mb-2">' +
+      '<div class="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">' +
+      '<i class="fa-solid fa-chart-pie text-amber-600"></i></div>' +
+      '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Budget Utilization</div>' +
+      '<div class="text-xl font-bold text-gray-900">' +
+      budgetPct +
+      '%</div></div></div>' +
+      '<div class="w-full bg-gray-200 rounded-full h-2 mt-1">' +
+      '<div class="h-2 rounded-full ' +
+      (budgetPct >= 90
+        ? 'bg-red-500'
+        : budgetPct >= 70
+        ? 'bg-amber-500'
+        : 'bg-green-500') +
+      '" style="width: ' +
+      budgetPct +
+      '%"></div></div>' +
+      '<div class="text-xs text-gray-400 mt-1">' +
+      fmtUSD(totalUSD) +
+      ' of ' +
+      fmtUSD(budgetTotal) +
+      '</div></div>';
+  } else {
+    // Fallback: show countries card if no budget
+    var countrySet = {};
+    var allOpps = Object.assign({}, groupByOpp(visits), groupByOpp(payments));
+    for (var id in allOpps) {
+      if (allOpps[id].country) countrySet[allOpps[id].country] = true;
+    }
+    html +=
+      '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">' +
+      '<div class="flex items-center gap-3">' +
+      '<div class="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center">' +
+      '<i class="fa-solid fa-globe text-amber-600"></i></div>' +
+      '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Countries</div>' +
+      '<div class="text-xl font-bold text-gray-900">' +
+      fmtNum(Object.keys(countrySet).length) +
+      '</div></div></div></div>';
+  }
+
+  // Card 4: Active FLWs
+  html +=
+    '<div class="bg-white rounded-xl shadow-sm p-5 border border-gray-200">' +
+    '<div class="flex items-center gap-3">' +
+    '<div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">' +
+    '<i class="fa-solid fa-users text-blue-600"></i></div>' +
+    '<div><div class="text-xs text-gray-500 uppercase tracking-wider">Active FLWs</div>' +
+    '<div class="text-xl font-bold text-gray-900">' +
+    fmtNum(activeCount) +
+    ' <span class="text-sm font-normal text-gray-400">of ' +
+    fmtNum(totalFLWs) +
+    '</span></div></div></div></div>';
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// renderImpactHeadline
+// ---------------------------------------------------------------------------
+
+function renderImpactHeadline(visits, payments, container) {
+  if (!container) return;
+
+  // Distinct entity_names (families)
+  var entitySet = {};
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].entity_name) entitySet[visits[i].entity_name] = true;
+  }
+  var familyCount = Object.keys(entitySet).length;
+
+  // Distinct countries
+  var countrySet = {};
+  var allOpps = Object.assign({}, groupByOpp(visits), groupByOpp(payments));
+  for (var id in allOpps) {
+    if (allOpps[id].country) countrySet[allOpps[id].country] = true;
+  }
+  var countryCount = Object.keys(countrySet).length;
+
+  // Distinct FLWs
+  var flwSet = {};
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].username) flwSet[visits[i].username] = true;
+  }
+  var flwCount = Object.keys(flwSet).length;
+
+  // Total USD
+  var totalUSD = 0;
+  for (var i = 0; i < payments.length; i++) {
+    totalUSD +=
+      (parseFloat(payments[i].usd_flw) || 0) +
+      (parseFloat(payments[i].usd_org) || 0);
+  }
+
+  // Approved visits count for cost/visit
+  var approvedCount = 0;
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].status === 'approved') approvedCount++;
+  }
+  var costPerVisit = approvedCount > 0 ? totalUSD / approvedCount : 0;
+
+  // Date range
+  var dates = [];
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].visit_date) dates.push(visits[i].visit_date);
+  }
+  dates.sort();
+  var rangeStr = '';
+  if (dates.length > 0) {
+    var fmtDate = function (ds) {
+      var d = new Date(ds);
+      if (isNaN(d.getTime())) d = new Date(ds.substring(0, 10) + 'T00:00:00');
+      return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    };
+    rangeStr =
+      fmtDate(dates[0]) + ' \u2014 ' + fmtDate(dates[dates.length - 1]);
+  }
+
+  var html =
+    '<div class="bg-white rounded-xl shadow-sm p-6 mb-6 border border-gray-200 text-center">' +
+    '<p class="text-lg md:text-xl font-semibold text-brand-deep-purple">' +
+    'Your fund has reached <span class="text-2xl font-bold">' +
+    fmtNum(familyCount) +
+    '</span> families across ' +
+    '<span class="text-2xl font-bold">' +
+    fmtNum(countryCount) +
+    '</span> ' +
+    (countryCount === 1 ? 'country' : 'countries') +
+    ' through <span class="text-2xl font-bold">' +
+    fmtNum(flwCount) +
+    '</span> community health workers' +
+    '</p>' +
+    '<p class="text-sm text-gray-500 mt-2">' +
+    '$' +
+    costPerVisit.toFixed(2) +
+    ' per visit' +
+    (rangeStr ? ' <span class="mx-1">|</span> ' + rangeStr : '') +
+    '</p></div>';
+
+  container.innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// renderPerformanceTable
+// ---------------------------------------------------------------------------
+
+function renderPerformanceTable(visits, payments, container) {
+  if (!container) return;
+
+  var approvedVisits = [];
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].status === 'approved') approvedVisits.push(visits[i]);
+  }
+
+  var visitsByOpp = groupByOpp(approvedVisits);
+  var paymentsByOpp = groupByOpp(payments);
+
+  // Merge opp sets
+  var allOppIds = {};
+  var id;
+  for (id in visitsByOpp) allOppIds[id] = true;
+  for (id in paymentsByOpp) allOppIds[id] = true;
+  var oppIds = Object.keys(allOppIds);
+
+  if (oppIds.length === 0) {
+    container.innerHTML =
+      '<div class="bg-white rounded-xl shadow-sm p-8 mb-6 border border-gray-200 text-center">' +
+      '<i class="fa-solid fa-table text-3xl text-gray-300 mb-2 block"></i>' +
+      '<p class="text-sm text-gray-500">No allocation data to display.</p></div>';
+    return;
+  }
+
+  // Find global max visit date for "this week" / "last week"
+  var allVisitDates = [];
+  for (var i = 0; i < visits.length; i++) {
+    if (visits[i].visit_date) allVisitDates.push(visits[i].visit_date);
+  }
+  var weeks = referenceWeeks(allVisitDates);
+  var globalMaxDate = maxVisitDate(visits);
+
+  // Build allocations lookup from template-injected var (if available)
+  var allocLookup = {};
+  if (typeof fundAllocations !== 'undefined' && fundAllocations) {
+    for (var a = 0; a < fundAllocations.length; a++) {
+      var alloc = fundAllocations[a];
+      if (alloc.opportunity_id) {
+        allocLookup[String(alloc.opportunity_id)] = alloc;
+      }
+    }
+  }
+
+  // Compute per-opp stats
+  var rows = [];
+  for (var idx = 0; idx < oppIds.length; idx++) {
+    id = oppIds[idx];
+    var vOpp = visitsByOpp[id] || {
+      rows: [],
+      opp_name: '',
+      country: '',
+      delivery_type: '',
+    };
+    var pOpp = paymentsByOpp[id] || {
+      rows: [],
+      opp_name: '',
+      country: '',
+      delivery_type: '',
+    };
+    var oppName = vOpp.opp_name || pOpp.opp_name || 'Opportunity ' + id;
+    var country = vOpp.country || pOpp.country || '';
+    var alloc = allocLookup[id] || {};
+    var lloName = alloc.llo_name || '';
+
+    // Visit count
+    var visitCount = vOpp.rows.length;
+
+    // USD total
+    var usdTotal = 0;
+    for (var j = 0; j < pOpp.rows.length; j++) {
+      usdTotal +=
+        (parseFloat(pOpp.rows[j].usd_flw) || 0) +
+        (parseFloat(pOpp.rows[j].usd_org) || 0);
+    }
+    var costPerVisit = visitCount > 0 ? usdTotal / visitCount : 0;
+
+    // Active FLWs for this opp (last 14 days)
+    var oppMaxDate = null;
+    for (var j = 0; j < vOpp.rows.length; j++) {
+      if (
+        vOpp.rows[j].visit_date &&
+        (!oppMaxDate || vOpp.rows[j].visit_date > oppMaxDate)
+      ) {
+        oppMaxDate = vOpp.rows[j].visit_date;
+      }
+    }
+    var oppActive = activeFLWs(vOpp.rows, globalMaxDate, 14);
+
+    // This week / last week for this opp
+    var twVisits = weeks.thisWeekStart
+      ? countVisitsInWeek(vOpp.rows, weeks.thisWeekStart)
+      : 0;
+    var lwVisits = weeks.lastWeekStart
+      ? countVisitsInWeek(vOpp.rows, weeks.lastWeekStart)
+      : 0;
+    var trend = trendInfo(twVisits, lwVisits);
+
+    // Status: based on most recent visit relative to global max date
+    var statusColor = '#ef4444'; // red by default
+    if (oppMaxDate && globalMaxDate) {
+      var daysSince = Math.floor(
+        (new Date(globalMaxDate + 'T00:00:00') -
+          new Date(oppMaxDate + 'T00:00:00')) /
+          86400000,
+      );
+      if (daysSince <= 7) statusColor = '#10b981';
+      else if (daysSince <= 14) statusColor = '#f59e0b';
+    }
+
+    // Sparkline data: last 8 weeks of approved visits
+    var sparkWeeks = uniqueWeeks(
+      vOpp.rows.map(function (r) {
+        return r.visit_date;
+      }),
+    );
+    // Take only the last 8 weeks
+    if (sparkWeeks.length > 8)
+      sparkWeeks = sparkWeeks.slice(sparkWeeks.length - 8);
+    var sparkData = [];
+    for (var w = 0; w < sparkWeeks.length; w++) {
+      var wCount = 0;
+      for (var j = 0; j < vOpp.rows.length; j++) {
+        if (weekStart(vOpp.rows[j].visit_date) === sparkWeeks[w]) wCount++;
+      }
+      sparkData.push(wCount);
+    }
+
+    rows.push({
+      id: id,
+      oppName: oppName,
+      lloName: lloName,
+      country: country,
+      visitCount: visitCount,
+      sparkData: sparkData,
+      usdTotal: usdTotal,
+      costPerVisit: costPerVisit,
+      activeFLWs: oppActive,
+      trend: trend,
+      statusColor: statusColor,
+    });
+  }
+
+  // Sort by approved visits descending
+  rows.sort(function (a, b) {
+    return b.visitCount - a.visitCount;
+  });
+
+  // Build table HTML
+  var html =
+    '<div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 overflow-x-auto">' +
+    '<table class="min-w-full divide-y divide-gray-200">' +
+    '<thead><tr>' +
+    '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opportunity</th>' +
+    '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visits</th>' +
+    '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">USD Distributed</th>' +
+    '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Active FLWs</th>' +
+    '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trend</th>' +
+    '<th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>' +
+    '</tr></thead><tbody class="divide-y divide-gray-100">';
+
+  for (var r = 0; r < rows.length; r++) {
+    var row = rows[r];
+    html += '<tr>';
+
+    // Opportunity name + llo_name + country
+    html +=
+      '<td class="px-4 py-3 text-sm">' +
+      '<div class="font-medium text-gray-900">' +
+      row.oppName +
+      '</div>' +
+      (row.lloName
+        ? '<div class="text-xs text-gray-400">' + row.lloName + '</div>'
+        : '') +
+      (row.country
+        ? '<div class="text-xs text-gray-400">' + row.country + '</div>'
+        : '') +
+      '</td>';
+
+    // Visits + sparkline placeholder
+    html +=
+      '<td class="px-4 py-3 text-sm">' +
+      '<div class="font-medium text-gray-900">' +
+      fmtNum(row.visitCount) +
+      '</div>' +
+      '<canvas id="spark-' +
+      row.id +
+      '" width="60" height="24" class="mt-1"></canvas>' +
+      '</td>';
+
+    // USD Distributed + cost/visit
+    html +=
+      '<td class="px-4 py-3 text-sm">' +
+      '<div class="font-medium text-gray-900">' +
+      fmtUSD(row.usdTotal) +
+      '</div>' +
+      '<div class="text-xs text-gray-400">$' +
+      row.costPerVisit.toFixed(2) +
+      '/visit</div>' +
+      '</td>';
+
+    // Active FLWs
+    html +=
+      '<td class="px-4 py-3 text-sm font-medium text-gray-900">' +
+      fmtNum(row.activeFLWs) +
+      '</td>';
+
+    // Trend
+    html += '<td class="px-4 py-3 text-sm">' + trendHTML(row.trend) + '</td>';
+
+    // Status dot
+    html +=
+      '<td class="px-4 py-3 text-center">' +
+      '<span class="inline-block w-2 h-2 rounded-full" style="background-color: ' +
+      row.statusColor +
+      '"></span>' +
+      '</td>';
+
+    html += '</tr>';
+  }
+
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+
+  // Render sparklines after DOM is updated
+  for (var r = 0; r < rows.length; r++) {
+    _renderSparkline('spark-' + rows[r].id, rows[r].sparkData);
+  }
+}
+
+/** Render a tiny sparkline chart on a canvas. */
+function _renderSparkline(canvasId, data) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas || !data.length) return;
+
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: data.map(function (_, i) {
+        return i;
+      }),
+      datasets: [
+        {
+          data: data,
+          borderColor: '#6366f1',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      responsive: false,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false },
+      },
+      scales: {
+        x: { display: false },
+        y: { display: false },
+      },
+      animation: false,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// renderVisitsChart
+// ---------------------------------------------------------------------------
+
+function renderVisitsChart(visits) {
+  var canvas = document.getElementById('visits-chart');
+  if (!canvas) return;
+  var wrapper = canvas.parentElement;
+
+  var approved = visits.filter(function (v) {
+    return v.status === 'approved';
+  });
+  if (approved.length === 0) {
+    showEmpty(wrapper, 'No visit data available');
+    canvas.style.display = 'none';
+    return;
+  }
+
+  var byOpp = groupByOpp(approved);
+  var oppIds = Object.keys(byOpp);
+
+  // Collect all visit dates to determine weeks
+  var allDates = approved.map(function (v) {
+    return v.visit_date;
+  });
+  var weeks = uniqueWeeks(allDates);
+
+  // Build datasets
+  var datasets = [];
+  for (var idx = 0; idx < oppIds.length; idx++) {
+    var id = oppIds[idx];
+    var opp = byOpp[id];
+    var color = oppColor(id);
+
+    // Count visits per week
+    var weekCounts = {};
+    for (var j = 0; j < opp.rows.length; j++) {
+      var ws = weekStart(opp.rows[j].visit_date);
+      if (ws) weekCounts[ws] = (weekCounts[ws] || 0) + 1;
+    }
+
+    var data = weeks.map(function (w) {
+      return weekCounts[w] || 0;
+    });
+    datasets.push({
+      label: opp.opp_name,
+      data: data,
+      backgroundColor: color,
+      borderColor: color,
+      borderWidth: 1,
+    });
+  }
+
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: weeks,
+      datasets: datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Approved Visits by Week',
+          font: { size: 14 },
+        },
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } },
+        tooltip: {
+          callbacks: {
+            title: function (items) {
+              return 'Week of ' + items[0].label;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          title: { display: true, text: 'Week' },
+          ticks: {
+            maxRotation: 45,
+            callback: function (val, idx) {
+              var label = this.getLabelForValue(val);
+              // Show abbreviated date
+              var d = new Date(label + 'T00:00:00');
+              if (isNaN(d.getTime())) return label;
+              return d.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+            },
+          },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          title: { display: true, text: 'Visits' },
+          ticks: { precision: 0 },
+        },
+      },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// renderPaymentsChart
+// ---------------------------------------------------------------------------
+
+function renderPaymentsChart(payments) {
+  var canvas = document.getElementById('payments-chart');
+  if (!canvas) return;
+  var wrapper = canvas.parentElement;
+
+  if (payments.length === 0) {
+    showEmpty(wrapper, 'No payment data available');
+    canvas.style.display = 'none';
+    return;
+  }
+
+  var byOpp = groupByOpp(payments);
+  var oppIds = Object.keys(byOpp);
+
+  // Use status_modified_date or payment_date
+  var allDates = payments
+    .map(function (p) {
+      return p.status_modified_date || p.payment_date;
+    })
+    .filter(Boolean);
+  var weeks = uniqueWeeks(allDates);
+
+  var datasets = [];
+  for (var idx = 0; idx < oppIds.length; idx++) {
+    var id = oppIds[idx];
+    var opp = byOpp[id];
+    var color = oppColor(id);
+
+    // Sum per week
+    var weekSums = {};
+    for (var j = 0; j < opp.rows.length; j++) {
+      var dateStr =
+        opp.rows[j].status_modified_date || opp.rows[j].payment_date;
+      var ws = weekStart(dateStr);
+      if (ws) {
+        var amt =
+          (parseFloat(opp.rows[j].usd_flw) || 0) +
+          (parseFloat(opp.rows[j].usd_org) || 0);
+        weekSums[ws] = (weekSums[ws] || 0) + amt;
+      }
+    }
+
+    // Cumulative
+    var cumulative = [];
+    var running = 0;
+    for (var w = 0; w < weeks.length; w++) {
+      running += weekSums[weeks[w]] || 0;
+      cumulative.push(Math.round(running));
+    }
+
+    datasets.push({
+      label: opp.opp_name,
+      data: cumulative,
+      borderColor: color,
+      backgroundColor: color + '20', // 12% opacity
+      fill: true,
+      tension: 0.3,
+      pointRadius: 2,
+      pointHoverRadius: 5,
+    });
+  }
+
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: weeks,
+      datasets: datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Cumulative Payments (USD)',
+          font: { size: 14 },
+        },
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } },
+        tooltip: {
+          callbacks: {
+            label: function (ctx) {
+              return ctx.dataset.label + ': $' + fmtNum(ctx.raw);
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Week' },
+          ticks: {
+            maxRotation: 45,
+            callback: function (val, idx) {
+              var label = this.getLabelForValue(val);
+              var d = new Date(label + 'T00:00:00');
+              if (isNaN(d.getTime())) return label;
+              return d.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+            },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'USD' },
+          ticks: {
+            callback: function (val) {
+              return '$' + fmtNum(val);
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// renderMap
+// ---------------------------------------------------------------------------
+
+function renderMap(visits) {
+  var mapDiv = document.getElementById('visits-map');
+  if (!mapDiv) return;
+  var wrapper = mapDiv.parentElement;
+
+  // Filter to rows with valid locations
+  var located = [];
+  for (var i = 0; i < visits.length; i++) {
+    var loc = visits[i].location;
+    if (!loc || typeof loc !== 'string') continue;
+    var parts = loc.trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    var lat = parseFloat(parts[0]);
+    var lon = parseFloat(parts[1]);
+    if (isNaN(lat) || isNaN(lon) || (lat === 0 && lon === 0)) continue;
+    located.push({ row: visits[i], lat: lat, lon: lon });
+  }
+
+  if (located.length === 0) {
+    showEmpty(wrapper, 'No location data available');
+    mapDiv.style.display = 'none';
+    return;
+  }
+
+  // Initialize map
+  var map = L.map(mapDiv).setView([0, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:
+      '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 18,
+  }).addTo(map);
+
+  // Marker cluster with fallback
+  var clusterGroup;
+  if (typeof L.markerClusterGroup === 'function') {
+    clusterGroup = L.markerClusterGroup({ maxClusterRadius: 40 });
+  } else {
+    clusterGroup = L.layerGroup();
+  }
+
+  var bounds = [];
+  for (var i = 0; i < located.length; i++) {
+    var pt = located[i];
+    var color = oppColor(String(pt.row.opp_id));
+    var marker = L.circleMarker([pt.lat, pt.lon], {
+      radius: 5,
+      fillColor: color,
+      color: color,
+      weight: 1,
+      opacity: 0.8,
+      fillOpacity: 0.6,
+    });
+
+    var visitDate = pt.row.visit_date
+      ? new Date(pt.row.visit_date).toLocaleDateString()
+      : '';
+    marker.bindPopup(
+      '<div class="text-sm">' +
+        '<div class="font-medium">' +
+        (pt.row.entity_name || 'Unknown') +
+        '</div>' +
+        '<div class="text-gray-500">' +
+        (pt.row.opp_name || '') +
+        '</div>' +
+        (visitDate
+          ? '<div class="text-gray-400 text-xs">' + visitDate + '</div>'
+          : '') +
+        '</div>',
+    );
+
+    clusterGroup.addLayer(marker);
+    bounds.push([pt.lat, pt.lon]);
+  }
+
+  clusterGroup.addTo(map);
+
+  if (bounds.length > 0) {
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+  }
+
+  // Fix Leaflet map rendering in hidden containers
+  setTimeout(function () {
+    map.invalidateSize();
+  }, 100);
+}

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load humanize %}
+{% load static %}
 
 {% block content %}
 <div class="max-w-screen-xl mx-auto px-4 py-6">
@@ -89,99 +90,137 @@
         </div>
     </div>
 
-    <!-- Allocations -->
-    <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
-        <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
-            <i class="fa-solid fa-file-invoice-dollar mr-2"></i>
-            Allocations
-        </h2>
-        {% if fund.allocations %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead>
-                        <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program / Recipient</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        {% for alloc in fund.allocations %}
-                        <tr>
-                            <td class="px-4 py-3 text-sm text-gray-900">
-                                {{ alloc.program_name|default:alloc.org_name|default:"—" }}
-                                {% if alloc.program_id %}
-                                    <span class="text-xs text-gray-400 ml-1">#{{ alloc.program_id }}</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-3 text-sm font-medium text-gray-900">${{ alloc.amount|intcomma }}</td>
-                            <td class="px-4 py-3 text-sm">
-                                {% if alloc.type == 'award' %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Award</span>
-                                {% elif alloc.type == 'retroactive' %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">Retroactive</span>
-                                {% else %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Manual</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-3 text-sm text-gray-500">{{ alloc.notes|default:"" }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% else %}
-            <div class="text-center py-6">
-                <i class="fa-solid fa-file-invoice text-3xl text-gray-300 mb-2"></i>
-                <p class="text-sm text-gray-500">No allocations yet. Edit this fund to add allocations.</p>
-            </div>
-        {% endif %}
-    </div>
+    <!-- CDN: Chart.js, Leaflet, MarkerCluster -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 
-    <!-- Programs -->
-    <div class="bg-white rounded-xl shadow-sm p-8 mb-6">
+    <!-- Pipeline Charts Section -->
+    <div class="mt-8">
         <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
-            <i class="fa-solid fa-diagram-project mr-2"></i>
-            Linked Programs
+            <i class="fa-solid fa-chart-line mr-2"></i>
+            Activity &amp; Payments
         </h2>
-        {% if fund.program_ids %}
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {% for pid in fund.program_ids %}
-                    <div class="flex items-center gap-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                        <div class="w-8 h-8 bg-indigo-100 rounded flex items-center justify-center">
-                            <i class="fa-solid fa-folder text-indigo-500 text-sm"></i>
-                        </div>
-                        <div>
-                            <div class="text-sm font-medium text-gray-900">Program #{{ pid }}</div>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <div class="text-center py-6">
-                <i class="fa-solid fa-link text-3xl text-gray-300 mb-2"></i>
-                <p class="text-sm text-gray-500">No programs linked to this fund yet.</p>
-            </div>
-        {% endif %}
-    </div>
 
-    <!-- Delivery Types -->
-    {% if fund.delivery_types %}
-    <div class="bg-white rounded-xl shadow-sm p-8">
-        <h2 class="text-lg font-semibold text-brand-deep-purple mb-4">
-            <i class="fa-solid fa-truck-medical mr-2"></i>
-            Delivery Types
-        </h2>
-        <div class="flex flex-wrap gap-2">
-            {% for dt in fund.delivery_types %}
-                <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-                    {{ dt }}
-                </span>
-            {% endfor %}
+        <!-- Impact Headline (hidden until data loads) -->
+        <div id="impact-headline" class="hidden"></div>
+
+        <!-- Loading State -->
+        <div id="charts-loading" class="bg-white rounded-xl shadow-sm p-8 mb-6 text-center">
+            <div class="inline-flex items-center gap-3">
+                <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span id="charts-status" class="text-sm text-gray-600">Connecting to data pipeline...</span>
+            </div>
+        </div>
+
+        <!-- KPI Cards (hidden until data loads) -->
+        <div id="charts-kpis" class="hidden"></div>
+
+        <!-- Performance Table (hidden until data loads) -->
+        <div id="performance-table" class="hidden"></div>
+
+        <!-- Charts Grid (hidden until data loads) -->
+        <div id="charts-container" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                    <canvas id="visits-chart" style="height: 300px;"></canvas>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                    <canvas id="payments-chart" style="height: 300px;"></canvas>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">
+                    <i class="fa-solid fa-map-location-dot mr-1"></i> Visit Locations
+                </h3>
+                <div id="visits-map" style="height: 400px; border-radius: 0.5rem;"></div>
+            </div>
         </div>
     </div>
-    {% endif %}
+
+    <!-- Chart rendering library -->
+    <script src="{% static 'js/funder-charts.js' %}"></script>
+
+    <!-- Fund data for JS -->
+    {{ fund.allocations|json_script:"fund-allocations-data" }}
+    <script>
+    var fundTotalBudget = {{ fund.total_budget|default:"null" }};
+    var fundAllocations = JSON.parse(document.getElementById('fund-allocations-data').textContent);
+    </script>
+
+    <!-- SSE Client -->
+    <script>
+    (function() {
+        var loading = document.getElementById('charts-loading');
+        var status = document.getElementById('charts-status');
+        var kpis = document.getElementById('charts-kpis');
+        var container = document.getElementById('charts-container');
+        var impactHeadline = document.getElementById('impact-headline');
+        var perfTable = document.getElementById('performance-table');
+
+        // Build SSE URL with current query string (for cache-busting etc.)
+        var sseUrl = '{% url "funder_dashboard:fund_pipeline_data" pk=fund.pk %}' + window.location.search;
+
+        var es = new EventSource(sseUrl);
+
+        es.onmessage = function(event) {
+            try {
+                var data = JSON.parse(event.data);
+
+                // Error
+                if (data.error) {
+                    status.textContent = 'Error: ' + data.error;
+                    status.classList.add('text-red-600');
+                    es.close();
+                    return;
+                }
+
+                // Progress update
+                if (!data.complete) {
+                    status.textContent = data.message || 'Processing...';
+                    return;
+                }
+
+                // Complete — render charts
+                es.close();
+                loading.classList.add('hidden');
+                kpis.classList.remove('hidden');
+                container.classList.remove('hidden');
+                impactHeadline.classList.remove('hidden');
+                perfTable.classList.remove('hidden');
+
+                // View sends flat arrays with opp metadata on each row
+                var visits = (data.data && data.data.visits) || [];
+                var payments = (data.data && data.data.payments) || [];
+
+                renderImpactHeadline(visits, payments, impactHeadline);
+                renderKPIs(visits, payments, kpis);
+                renderPerformanceTable(visits, payments, perfTable);
+                renderVisitsChart(visits);
+                renderPaymentsChart(payments);
+                renderMap(visits);
+
+            } catch (e) {
+                console.error('[FundCharts] Failed to parse SSE event:', e);
+            }
+        };
+
+        es.onerror = function() {
+            // Only show error if we haven't already closed the connection
+            if (es.readyState === EventSource.CLOSED) return;
+            status.textContent = 'Connection lost. Reload to retry.';
+            status.classList.add('text-red-600');
+            es.close();
+        };
+    })();
+    </script>
 
 </div>
 {% endblock %}
