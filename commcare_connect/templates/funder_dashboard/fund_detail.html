@@ -173,7 +173,36 @@
         var recentActivity = document.getElementById('recent-activity');
         var alertsSection = document.getElementById('alerts-section');
 
-        // Build SSE URL with current query string (for cache-busting etc.)
+        // Safety check: confirm before loading large funds (10+ opps)
+        var oppCount = fundAllocations.filter(function(a) { return a.opportunity_id; }).length;
+        if (oppCount >= 10) {
+            loading.querySelector('.inline-flex').innerHTML =
+                '<div class="text-center">' +
+                '<i class="fa-solid fa-triangle-exclamation text-amber-500 text-2xl mb-3"></i>' +
+                '<p class="text-sm text-gray-700 mb-3">This fund has <strong>' + oppCount + ' opportunities</strong>. Loading all visit data may take a while.</p>' +
+                '<button id="confirm-load" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">' +
+                'Load Data</button>' +
+                '<button id="skip-load" class="ml-2 px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 transition">' +
+                'Skip</button></div>';
+            document.getElementById('skip-load').onclick = function() {
+                loading.classList.add('hidden');
+            };
+            document.getElementById('confirm-load').onclick = function() {
+                loading.querySelector('.inline-flex').innerHTML =
+                    '<svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">' +
+                    '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>' +
+                    '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>' +
+                    '<span id="charts-status" class="text-sm text-gray-600">Connecting...</span>';
+                status = document.getElementById('charts-status');
+                startSSE();
+            };
+            return;
+        }
+
+        startSSE();
+
+        function startSSE() {
+        // Build SSE URL with current query string
         var sseUrl = '{% url "funder_dashboard:fund_pipeline_data" pk=fund.pk %}' + window.location.search;
 
         var es = new EventSource(sseUrl);
@@ -232,6 +261,7 @@
             status.classList.add('text-red-600');
             es.close();
         };
+        } // end startSSE
     })();
     </script>
 
