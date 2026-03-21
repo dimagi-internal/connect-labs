@@ -106,6 +106,9 @@
             Activity &amp; Payments
         </h2>
 
+        <!-- Recent Activity Banner (hidden until data loads) -->
+        <div id="recent-activity" class="hidden"></div>
+
         <!-- Impact Headline (hidden until data loads) -->
         <div id="impact-headline" class="hidden"></div>
 
@@ -125,6 +128,9 @@
 
         <!-- Performance Table (hidden until data loads) -->
         <div id="performance-table" class="hidden"></div>
+
+        <!-- Alerts Section (hidden until data loads) -->
+        <div id="alerts-section" class="hidden"></div>
 
         <!-- Charts Grid (hidden until data loads) -->
         <div id="charts-container" class="hidden">
@@ -164,6 +170,8 @@
         var container = document.getElementById('charts-container');
         var impactHeadline = document.getElementById('impact-headline');
         var perfTable = document.getElementById('performance-table');
+        var recentActivity = document.getElementById('recent-activity');
+        var alertsSection = document.getElementById('alerts-section');
 
         // Build SSE URL with current query string (for cache-busting etc.)
         var sseUrl = '{% url "funder_dashboard:fund_pipeline_data" pk=fund.pk %}' + window.location.search;
@@ -200,12 +208,17 @@
                 var visits = (data.data && data.data.visits) || [];
                 var payments = (data.data && data.data.payments) || [];
 
+                renderRecentActivity(visits, payments, recentActivity);
+                recentActivity.classList.remove('hidden');
                 renderImpactHeadline(visits, payments, impactHeadline);
                 renderKPIs(visits, payments, kpis);
                 renderPerformanceTable(visits, payments, perfTable);
+                renderAlerts(visits, payments, alertsSection);
+                alertsSection.classList.remove('hidden');
                 renderVisitsChart(visits);
                 renderPaymentsChart(payments);
                 renderMap(visits);
+                animateCounters();
 
             } catch (e) {
                 console.error('[FundCharts] Failed to parse SSE event:', e);
