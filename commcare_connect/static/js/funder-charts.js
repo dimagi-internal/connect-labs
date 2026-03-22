@@ -12,8 +12,12 @@
  *   renderAlerts(visits, payments, container)
  *   renderVisitsChart(visits)
  *   renderPaymentsChart(payments)
+ *   renderForecast(payments, budget, container)
  *   renderMap(visits)
  *   animateCounters()
+ *   initFilterBus(allVisits, allPayments, renderCallback)
+ *   aggregateForReport(visits, payments, allocations, budget)
+ *   prepareForPrint()
  */
 
 /* eslint-disable no-var */
@@ -1305,6 +1309,531 @@ function renderAlerts(visits, payments, container) {
   }
   html += '</div>';
   container.innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// renderForecast — Delivery Pace Chart (#2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a delivery pace forecast chart showing actual cumulative spend
+ * plus a projected trajectory line. Positive framing: "On track to deliver
+ * full impact by {date}".
+ *
+ * @param {Array} payments - flat array of payment objects
+ * @param {number|null} budget - total fund budget (null if not set)
+ * @param {HTMLElement} container - DOM element to render into
+ */
+function renderForecast(payments, budget, container) {
+  if (!container) return;
+  if (!payments || payments.length === 0) {
+    container.innerHTML =
+      '<div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">' +
+      '<div class="flex items-center justify-center h-40 text-gray-400 text-sm">' +
+      '<div class="text-center"><i class="fa-solid fa-chart-line text-3xl mb-2 block"></i>' +
+      'Not enough data to forecast delivery pace</div></div></div>';
+    return;
+  }
+
+  // Sum all payments per week
+  var allDates = payments
+    .map(function (p) {
+      return p.status_modified_date || p.payment_date;
+    })
+    .filter(Boolean);
+  var weeks = uniqueWeeks(allDates);
+  if (weeks.length < 2) {
+    container.innerHTML =
+      '<div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">' +
+      '<div class="flex items-center justify-center h-40 text-gray-400 text-sm">' +
+      '<div class="text-center"><i class="fa-solid fa-chart-line text-3xl mb-2 block"></i>' +
+      'Need at least 2 weeks of data to forecast</div></div></div>';
+    return;
+  }
+
+  var weeklyTotals = {};
+  for (var i = 0; i < payments.length; i++) {
+    var dateStr = payments[i].status_modified_date || payments[i].payment_date;
+    var ws = weekStart(dateStr);
+    if (ws) {
+      var amt =
+        (parseFloat(payments[i].usd_flw) || 0) +
+        (parseFloat(payments[i].usd_org) || 0);
+      weeklyTotals[ws] = (weeklyTotals[ws] || 0) + amt;
+    }
+  }
+
+  // Build cumulative actual spend
+  var cumulative = [];
+  var running = 0;
+  for (var w = 0; w < weeks.length; w++) {
+    running += weeklyTotals[weeks[w]] || 0;
+    cumulative.push(Math.round(running));
+  }
+  var totalSpent = cumulative[cumulative.length - 1] || 0;
+
+  // Linear regression on last 8 weeks (or all if fewer)
+  var regressN = Math.min(8, cumulative.length);
+  var regressStart = cumulative.length - regressN;
+  var sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumX2 = 0;
+  for (var i = 0; i < regressN; i++) {
+    sumX += i;
+    sumY += cumulative[regressStart + i];
+    sumXY += i * cumulative[regressStart + i];
+    sumX2 += i * i;
+  }
+  var slope =
+    (regressN * sumXY - sumX * sumY) / (regressN * sumX2 - sumX * sumX);
+  if (isNaN(slope) || slope <= 0) slope = 0;
+
+  // Project forward (weekly slope) to budget completion or 26 more weeks
+  var projectedWeeks = [];
+  var projectedValues = [];
+  var lastWeekDate = new Date(weeks[weeks.length - 1] + 'T00:00:00');
+  var projectedCompletion = null;
+  var maxProjectWeeks =
+    budget && budget > totalSpent
+      ? Math.ceil((budget - totalSpent) / Math.max(slope, 1)) + 4
+      : 26;
+  maxProjectWeeks = Math.min(maxProjectWeeks, 52); // cap at 1 year
+
+  for (var p = 1; p <= maxProjectWeeks; p++) {
+    var nextDate = new Date(lastWeekDate);
+    nextDate.setDate(nextDate.getDate() + 7 * p);
+    var projWeek = nextDate.toISOString().slice(0, 10);
+    var projValue = Math.round(totalSpent + slope * p);
+    projectedWeeks.push(projWeek);
+    projectedValues.push(projValue);
+    if (budget && projValue >= budget && !projectedCompletion) {
+      projectedCompletion = projWeek;
+    }
+  }
+
+  // Headline
+  var headlineText = '';
+  if (budget && budget > 0) {
+    if (totalSpent >= budget) {
+      headlineText =
+        'Full impact delivered! ' + fmtUSD(totalSpent) + ' distributed.';
+    } else if (slope > 0 && projectedCompletion) {
+      var compDate = new Date(projectedCompletion + 'T00:00:00');
+      var compStr = compDate.toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+      });
+      headlineText = 'On track to deliver full impact by ' + compStr;
+    } else if (slope === 0) {
+      headlineText =
+        'Delivery pace is steady — ' +
+        fmtUSD(totalSpent) +
+        ' distributed so far';
+    } else {
+      headlineText = fmtUSD(totalSpent) + ' impact delivered so far';
+    }
+  } else {
+    headlineText = fmtUSD(totalSpent) + ' total impact delivered';
+  }
+
+  // Build chart container
+  container.innerHTML =
+    '<div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">' +
+    '<div class="text-center mb-4">' +
+    '<div class="text-lg font-semibold text-brand-deep-purple">' +
+    '<i class="fa-solid fa-rocket mr-2 text-indigo-500"></i>' +
+    headlineText +
+    '</div>' +
+    (slope > 0
+      ? '<div class="text-xs text-gray-500 mt-1">~' +
+        fmtUSD(Math.round(slope)) +
+        ' per week delivery pace</div>'
+      : '') +
+    '</div>' +
+    '<canvas id="forecast-chart" style="height: 280px;"></canvas>' +
+    '</div>';
+
+  // Render chart
+  var canvas = document.getElementById('forecast-chart');
+  if (!canvas) return;
+
+  // Combine labels: actual weeks + projected weeks
+  var allLabels = weeks.concat(projectedWeeks);
+  // Actual data: fill projected portion with null
+  var actualData = cumulative.concat(
+    projectedWeeks.map(function () {
+      return null;
+    }),
+  );
+  // Projected data: null for actuals, then connect from last actual
+  var projData = weeks.map(function () {
+    return null;
+  });
+  projData[projData.length - 1] = totalSpent; // connect point
+  projData = projData.concat(projectedValues);
+
+  var datasets = [
+    {
+      label: 'Impact Delivered',
+      data: actualData,
+      borderColor: '#6366f1',
+      backgroundColor: '#6366f120',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      borderWidth: 2,
+    },
+    {
+      label: 'Projected Pace',
+      data: projData,
+      borderColor: '#6366f1',
+      borderDash: [8, 4],
+      backgroundColor: 'transparent',
+      tension: 0.3,
+      pointRadius: 0,
+      borderWidth: 2,
+    },
+  ];
+
+  // Budget line
+  if (budget && budget > 0) {
+    datasets.push({
+      label: 'Total Budget',
+      data: allLabels.map(function () {
+        return budget;
+      }),
+      borderColor: '#10b981',
+      borderDash: [4, 4],
+      backgroundColor: 'transparent',
+      pointRadius: 0,
+      borderWidth: 1.5,
+    });
+  }
+
+  new Chart(canvas, {
+    type: 'line',
+    data: { labels: allLabels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: 'Delivery Pace & Forecast',
+          font: { size: 14 },
+        },
+        legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } },
+        tooltip: {
+          callbacks: {
+            label: function (ctx) {
+              return ctx.dataset.label + ': ' + fmtUSD(ctx.raw);
+            },
+            title: function (items) {
+              var d = new Date(items[0].label + 'T00:00:00');
+              if (isNaN(d.getTime())) return items[0].label;
+              return (
+                'Week of ' +
+                d.toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })
+              );
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Week' },
+          ticks: {
+            maxRotation: 45,
+            maxTicksLimit: 20,
+            callback: function (val) {
+              var label = this.getLabelForValue(val);
+              var d = new Date(label + 'T00:00:00');
+              if (isNaN(d.getTime())) return label;
+              return d.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+            },
+          },
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'USD Distributed' },
+          ticks: {
+            callback: function (val) {
+              return '$' + fmtNum(val);
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Filter Bus (#3a-b) — Cross-chart filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Initialize the filter bus. Returns an object with methods to apply/clear filters.
+ * All render functions are stateless and accept data arrays, so filtering happens
+ * at the data level before calling them.
+ *
+ * @param {Array} allVisits - unfiltered visits array
+ * @param {Array} allPayments - unfiltered payments array
+ * @param {Function} renderCallback - function(filteredVisits, filteredPayments) to re-render all charts
+ * @returns {Object} { applyFilters(filters), clearFilters(), getAvailableFilters() }
+ */
+function initFilterBus(allVisits, allPayments, renderCallback) {
+  var currentFilters = {
+    deliveryTypes: [], // empty = all
+    countries: [], // empty = all
+    dateFrom: null,
+    dateTo: null,
+    oppIds: [], // empty = all (used by cross-chart click)
+  };
+
+  function getAvailableFilters() {
+    var deliveryTypes = {};
+    var countries = {};
+    function collect(rows) {
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].delivery_type) deliveryTypes[rows[i].delivery_type] = true;
+        if (rows[i].country) countries[rows[i].country] = true;
+      }
+    }
+    collect(allVisits);
+    collect(allPayments);
+    return {
+      deliveryTypes: Object.keys(deliveryTypes).sort(),
+      countries: Object.keys(countries).sort(),
+    };
+  }
+
+  function filterRows(rows, dateField) {
+    return rows.filter(function (r) {
+      if (
+        currentFilters.deliveryTypes.length > 0 &&
+        currentFilters.deliveryTypes.indexOf(r.delivery_type) === -1
+      )
+        return false;
+      if (
+        currentFilters.countries.length > 0 &&
+        currentFilters.countries.indexOf(r.country) === -1
+      )
+        return false;
+      if (
+        currentFilters.oppIds.length > 0 &&
+        currentFilters.oppIds.indexOf(String(r.opp_id)) === -1
+      )
+        return false;
+      var dateVal = r[dateField];
+      if (dateVal) {
+        if (currentFilters.dateFrom && dateVal < currentFilters.dateFrom)
+          return false;
+        if (currentFilters.dateTo && dateVal > currentFilters.dateTo)
+          return false;
+      }
+      return true;
+    });
+  }
+
+  function applyFilters(filters) {
+    if (filters) {
+      if (filters.deliveryTypes !== undefined)
+        currentFilters.deliveryTypes = filters.deliveryTypes;
+      if (filters.countries !== undefined)
+        currentFilters.countries = filters.countries;
+      if (filters.dateFrom !== undefined)
+        currentFilters.dateFrom = filters.dateFrom;
+      if (filters.dateTo !== undefined) currentFilters.dateTo = filters.dateTo;
+      if (filters.oppIds !== undefined) currentFilters.oppIds = filters.oppIds;
+    }
+    var filteredVisits = filterRows(allVisits, 'visit_date');
+    var filteredPayments = filterRows(
+      allPayments,
+      currentFilters.dateFrom ? 'status_modified_date' : 'status_modified_date',
+    );
+    resetColors();
+    renderCallback(filteredVisits, filteredPayments);
+  }
+
+  function clearFilters() {
+    currentFilters = {
+      deliveryTypes: [],
+      countries: [],
+      dateFrom: null,
+      dateTo: null,
+      oppIds: [],
+    };
+    resetColors();
+    renderCallback(allVisits, allPayments);
+  }
+
+  function getCurrentFilters() {
+    return JSON.parse(JSON.stringify(currentFilters));
+  }
+
+  function isFiltered() {
+    return (
+      currentFilters.deliveryTypes.length > 0 ||
+      currentFilters.countries.length > 0 ||
+      currentFilters.oppIds.length > 0 ||
+      currentFilters.dateFrom !== null ||
+      currentFilters.dateTo !== null
+    );
+  }
+
+  return {
+    applyFilters: applyFilters,
+    clearFilters: clearFilters,
+    getAvailableFilters: getAvailableFilters,
+    getCurrentFilters: getCurrentFilters,
+    isFiltered: isFiltered,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// aggregateForReport — Summarize data for AI report generation (#1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregate visit/payment data into summary statistics for the AI report.
+ * Returns a compact object (few KB) suitable for POSTing to the AI endpoint.
+ */
+function aggregateForReport(visits, payments, allocations, budget) {
+  var approved = visits.filter(function (v) {
+    return v.status === 'approved';
+  });
+  var byOpp = groupByOpp(approved);
+  var payByOpp = groupByOpp(payments);
+  var oppIds = Object.keys(Object.assign({}, byOpp, payByOpp));
+
+  // Per-opportunity summary
+  var oppSummaries = [];
+  for (var i = 0; i < oppIds.length; i++) {
+    var id = oppIds[i];
+    var vRows = byOpp[id] ? byOpp[id].rows : [];
+    var pRows = payByOpp[id] ? payByOpp[id].rows : [];
+    var totalUSD = 0;
+    for (var j = 0; j < pRows.length; j++) {
+      totalUSD +=
+        (parseFloat(pRows[j].usd_flw) || 0) +
+        (parseFloat(pRows[j].usd_org) || 0);
+    }
+    var flws = {};
+    for (var j = 0; j < vRows.length; j++) {
+      if (vRows[j].username) flws[vRows[j].username] = true;
+    }
+    var oppMeta = byOpp[id] || payByOpp[id] || {};
+    oppSummaries.push({
+      opp_id: id,
+      opp_name: oppMeta.opp_name || 'Opp ' + id,
+      country: oppMeta.country || '',
+      delivery_type: oppMeta.delivery_type || '',
+      visit_count: vRows.length,
+      payment_total_usd: Math.round(totalUSD),
+      flw_count: Object.keys(flws).length,
+      cost_per_visit:
+        vRows.length > 0 ? Math.round(totalUSD / vRows.length) : 0,
+    });
+  }
+
+  // Unique countries and families
+  var countrySet = {};
+  var entitySet = {};
+  for (var i = 0; i < approved.length; i++) {
+    if (approved[i].country) countrySet[approved[i].country] = true;
+    if (approved[i].entity_name) entitySet[approved[i].entity_name] = true;
+  }
+
+  // Total USD
+  var totalUSD = 0;
+  for (var i = 0; i < payments.length; i++) {
+    totalUSD +=
+      (parseFloat(payments[i].usd_flw) || 0) +
+      (parseFloat(payments[i].usd_org) || 0);
+  }
+
+  // Weekly delivery pace
+  var allDates = payments
+    .map(function (p) {
+      return p.status_modified_date || p.payment_date;
+    })
+    .filter(Boolean);
+  var weeks = uniqueWeeks(allDates);
+  var weeklySpend = [];
+  for (var w = 0; w < weeks.length; w++) {
+    weeklySpend.push({
+      week: weeks[w],
+      usd: Math.round(sumUSDInWeek(payments, weeks[w])),
+    });
+  }
+
+  return {
+    total_visits: approved.length,
+    total_usd_distributed: Math.round(totalUSD),
+    total_budget: budget || null,
+    budget_utilization_pct: budget
+      ? Math.round((totalUSD / budget) * 100)
+      : null,
+    country_count: Object.keys(countrySet).length,
+    countries: Object.keys(countrySet),
+    families_reached: Object.keys(entitySet).length,
+    opportunity_summaries: oppSummaries,
+    weekly_spend: weeklySpend.slice(-12), // last 12 weeks
+    allocations: allocations || [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// prepareForPrint — Canvas-to-image conversion for PDF export (#7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert all Chart.js canvas elements to img tags, call window.print(),
+ * then restore canvases. This ensures charts appear in the printed PDF.
+ */
+function prepareForPrint() {
+  var canvases = document.querySelectorAll('canvas');
+  var replacements = [];
+
+  for (var i = 0; i < canvases.length; i++) {
+    var canvas = canvases[i];
+    // Get the Chart.js instance if any
+    var chartInstance = Chart.getChart(canvas);
+    if (!chartInstance) continue;
+
+    var img = document.createElement('img');
+    img.src = canvas.toDataURL('image/png', 1.0);
+    img.style.width = '100%';
+    img.style.height = canvas.style.height || 'auto';
+    img.className = canvas.className;
+
+    canvas.parentNode.insertBefore(img, canvas);
+    canvas.style.display = 'none';
+    replacements.push({ canvas: canvas, img: img });
+  }
+
+  // Print after a brief delay to let images render
+  setTimeout(function () {
+    window.print();
+    // Restore canvases after print dialog closes
+    setTimeout(function () {
+      for (var i = 0; i < replacements.length; i++) {
+        replacements[i].canvas.style.display = '';
+        if (replacements[i].img.parentNode) {
+          replacements[i].img.parentNode.removeChild(replacements[i].img);
+        }
+      }
+    }, 500);
+  }, 200);
 }
 
 // ---------------------------------------------------------------------------

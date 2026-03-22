@@ -102,6 +102,41 @@
                 </div>
             {% endif %}
 
+            <!-- AI Coach Panel — always visible, inviting -->
+            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 overflow-hidden">
+                <div class="p-5">
+                    <div class="flex items-start gap-4">
+                        <div class="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <i class="fa-solid fa-graduation-cap text-indigo-600 text-lg"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-sm font-semibold text-indigo-900 mb-1">Need help strengthening your application?</h3>
+                            <p class="text-xs text-indigo-700 mb-3">
+                                Our AI coach reviews your draft answers against the evaluation criteria and suggests
+                                specific improvements. Your answers are never changed or submitted — it's like having
+                                a grants advisor look over your shoulder.
+                            </p>
+                            <button type="button" id="coach-btn"
+                                    class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Get Feedback on My Answers
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="coach-loading" class="hidden p-5 pt-0 text-center">
+                    <div class="inline-flex items-center gap-3">
+                        <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span class="text-sm text-indigo-600">Your coach is reviewing your answers...</span>
+                    </div>
+                </div>
+                <div id="coach-content" class="hidden border-t border-indigo-200 bg-white p-5">
+                    <div id="coach-text" class="prose prose-sm max-w-none text-gray-700"></div>
+                </div>
+            </div>
+
             <!-- Form Actions -->
             <div class="flex justify-end gap-4 pt-2 pb-8">
                 <a href="{% url 'solicitations:public_detail' pk=solicitation.pk %}"
@@ -121,6 +156,119 @@
                 </button>
             </div>
         </form>
+
+        <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+        <script>
+        (function() {
+            var btn = document.getElementById('coach-btn');
+            if (!btn) return;
+            var loadingEl = document.getElementById('coach-loading');
+            var contentEl = document.getElementById('coach-content');
+            var textEl = document.getElementById('coach-text');
+
+            btn.onclick = function() {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Reviewing...';
+                loadingEl.classList.remove('hidden');
+                contentEl.classList.add('hidden');
+                textEl.innerHTML = '';
+
+                // Collect answers with their QUESTION TEXT (not just field names)
+                var form = document.querySelector('form');
+                var questionAnswers = [];
+                var questionDivs = form.querySelectorAll('.mb-6');
+                questionDivs.forEach(function(div) {
+                    var label = div.querySelector('label');
+                    var textarea = div.querySelector('textarea');
+                    var input = div.querySelector('input[type="text"]');
+                    var field = textarea || input;
+                    if (label && field && field.value) {
+                        questionAnswers.push({
+                            question: label.textContent.trim().replace(/\s*\*$/, ''),
+                            answer: field.value.trim(),
+                        });
+                    }
+                });
+
+                if (questionAnswers.length === 0) {
+                    loadingEl.classList.add('hidden');
+                    contentEl.classList.remove('hidden');
+                    textEl.innerHTML = '<p class="text-amber-700"><i class="fa-solid fa-pen mr-2"></i>Write some answers first, then click "Get Feedback" to receive coaching suggestions.</p>';
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Get Feedback on My Answers';
+                    return;
+                }
+
+                var prompt = 'I am applying for: "{{ solicitation.title|escapejs }}"\n';
+                prompt += 'Description: {{ solicitation.description|escapejs|truncatewords:150 }}\n\n';
+                prompt += 'Here are my draft answers to each question:\n\n';
+                for (var i = 0; i < questionAnswers.length; i++) {
+                    prompt += '**Question ' + (i+1) + ':** ' + questionAnswers[i].question + '\n';
+                    prompt += '**My answer:** ' + questionAnswers[i].answer + '\n\n';
+                }
+                prompt += 'Please review each answer and suggest specific improvements.';
+
+                fetch('{% url "ai:ai_stream" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}',
+                    },
+                    body: JSON.stringify({
+                        agent: 'application_coach',
+                        prompt: prompt,
+                    }),
+                }).then(function(response) {
+                    var reader = response.body.getReader();
+                    var decoder = new TextDecoder();
+                    var buffer = '';
+                    var fullText = '';
+
+                    loadingEl.classList.add('hidden');
+                    contentEl.classList.remove('hidden');
+
+                    function read() {
+                        reader.read().then(function(result) {
+                            if (result.done) {
+                                btn.disabled = false;
+                                btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Get Feedback Again';
+                                return;
+                            }
+                            buffer += decoder.decode(result.value, { stream: true });
+                            var lines = buffer.split('\n');
+                            buffer = lines.pop();
+                            for (var i = 0; i < lines.length; i++) {
+                                var line = lines[i].trim();
+                                if (!line.startsWith('data: ')) continue;
+                                try {
+                                    var evt = JSON.parse(line.slice(6));
+                                    if (evt.event_type === 'delta' && evt.message) {
+                                        fullText += evt.message;
+                                        textEl.innerHTML = (typeof marked !== 'undefined')
+                                            ? marked.parse(fullText)
+                                            : fullText.replace(/\n/g, '<br>');
+                                    }
+                                    if (evt.event_type === 'error') {
+                                        textEl.innerHTML = '<p class="text-red-600">' + (evt.error || 'Coach failed') + '</p>';
+                                        btn.disabled = false;
+                                        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Try Again';
+                                    }
+                                } catch(e) {}
+                            }
+                            read();
+                        });
+                    }
+                    read();
+                }).catch(function(err) {
+                    loadingEl.classList.add('hidden');
+                    contentEl.classList.remove('hidden');
+                    textEl.innerHTML = '<p class="text-red-600">Failed: ' + err.message + '</p>';
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Try Again';
+                });
+            };
+        })();
+        </script>
 
     {% endif %}
 

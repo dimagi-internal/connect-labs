@@ -143,6 +143,23 @@ class SolicitationsDataAccess:
             **kwargs,
         )
 
+    def get_solicitations_by_fund_id(self, fund_id: int) -> list[SolicitationRecord]:
+        """
+        Get solicitations linked to a specific fund.
+
+        Args:
+            fund_id: ID of the fund record
+
+        Returns:
+            List of SolicitationRecord instances with this fund_id
+        """
+        return self.labs_api.get_records(
+            type=SOLICITATION_TYPE,
+            public=True,
+            model_class=SolicitationRecord,
+            fund_id=str(fund_id),
+        )
+
     def get_solicitation_by_id(self, solicitation_id: int) -> SolicitationRecord | None:
         """
         Get a single solicitation record by ID.

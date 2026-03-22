@@ -67,8 +67,26 @@
                         {% else %}
                             <span class="text-gray-400">No budget set</span>
                         {% endif %}
-                        <span class="text-gray-500">{{ fund.program_ids|length }} program{{ fund.program_ids|length|pluralize }}</span>
+                        <div class="flex items-center gap-3 text-gray-500">
+                            <span>{{ fund.program_ids|length }} program{{ fund.program_ids|length|pluralize }}</span>
+                            {% with sol_count=solicitation_counts|default_if_none:"" %}
+                                {% if sol_count and fund.pk in sol_count and sol_count|dictsort:fund.pk %}
+                                {% endif %}
+                            {% endwith %}
+                        </div>
                     </div>
+                    {% if solicitation_counts and fund.pk %}
+                        {% for pk, count in solicitation_counts.items %}
+                            {% if pk == fund.pk and count > 0 %}
+                            <div class="mt-2 pt-2 border-t border-gray-50">
+                                <span class="text-xs text-indigo-600 font-medium">
+                                    <i class="fa-solid fa-file-lines mr-1"></i>
+                                    {{ count }} solicitation{{ count|pluralize }}
+                                </span>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
                 </div>
             </a>
             {% endfor %}

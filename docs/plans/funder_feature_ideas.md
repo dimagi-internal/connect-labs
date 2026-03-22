@@ -34,7 +34,7 @@ Captured during brainstorming on 2026-03-20. Grouped by priority.
 - **Beneficiary impact tracking** — downstream health outcomes when available
 - **Geographic coverage analysis** — which areas are well-served vs underserved
 - **Cost efficiency benchmarking** — compare cost/visit across opps, countries, delivery types
-- **Forecasting** — "at current burn rate, fund depletes by X date"
+- **Forecasting** — "at current delivery pace, full impact delivered by X date"
 
 ## Data Notes
 - All phase 1-4 features use data already available from `user_visits` and `completed_works` CSV endpoints

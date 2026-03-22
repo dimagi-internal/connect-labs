@@ -33,10 +33,15 @@
                     <p class="text-sm text-gray-600 max-w-2xl">{{ fund.description }}</p>
                 {% endif %}
             </div>
-            <a href="{% url 'funder_dashboard:fund_edit' pk=fund.pk %}"
-               class="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 transition">
-                <i class="fa-solid fa-edit mr-2"></i> Edit Fund
-            </a>
+            <div class="flex items-center gap-2">
+                <button onclick="prepareForPrint()" class="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 transition" title="Print / Export PDF">
+                    <i class="fa-solid fa-file-pdf mr-2"></i> Export PDF
+                </button>
+                <a href="{% url 'funder_dashboard:fund_edit' pk=fund.pk %}"
+                   class="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-sm font-medium rounded-lg hover:bg-gray-50 transition">
+                    <i class="fa-solid fa-edit mr-2"></i> Edit Fund
+                </a>
+            </div>
         </div>
     </div>
 
@@ -90,7 +95,8 @@
         </div>
     </div>
 
-    <!-- CDN: Chart.js, Leaflet, MarkerCluster -->
+    <!-- CDN: Chart.js, Leaflet, MarkerCluster, Marked (markdown) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -105,6 +111,28 @@
             <i class="fa-solid fa-chart-line mr-2"></i>
             Activity &amp; Payments
         </h2>
+
+        <!-- Filter Controls (hidden until data loads) -->
+        <div id="filter-controls" class="hidden mb-4">
+            <div class="bg-white rounded-xl shadow-sm p-4 border border-gray-200">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-1">
+                        <i class="fa-solid fa-filter mr-1"></i> Filter
+                    </span>
+                    <div id="filter-pills-delivery" class="flex flex-wrap gap-1.5"></div>
+                    <div id="filter-pills-country" class="flex flex-wrap gap-1.5"></div>
+                    <div class="flex items-center gap-1.5 ml-1">
+                        <input type="date" id="filter-date-from" class="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-28" placeholder="From" title="From date">
+                        <span class="text-xs text-gray-400">to</span>
+                        <input type="date" id="filter-date-to" class="text-xs border border-gray-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-28" placeholder="To" title="To date">
+                    </div>
+                    <button id="clear-filters-btn" class="hidden px-2.5 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full hover:bg-gray-200 transition ml-1">
+                        <i class="fa-solid fa-times mr-1"></i> Clear all
+                    </button>
+                    <span id="filter-status" class="text-xs text-gray-400 ml-auto"></span>
+                </div>
+            </div>
+        </div>
 
         <!-- Recent Activity Banner (hidden until data loads) -->
         <div id="recent-activity" class="hidden"></div>
@@ -149,6 +177,36 @@
                 <div id="visits-map" style="height: 400px; border-radius: 0.5rem;"></div>
             </div>
         </div>
+
+        <!-- Delivery Pace Forecast (hidden until data loads) -->
+        <div id="forecast-container" class="hidden mt-6"></div>
+
+        <!-- AI Report Section -->
+        <div id="ai-report-section" class="hidden mt-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold text-gray-700">
+                        <i class="fa-solid fa-robot mr-2 text-indigo-500"></i> AI Impact Report
+                    </h3>
+                    <button id="generate-report-btn"
+                            class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Generate Report
+                    </button>
+                </div>
+                <div id="ai-report-content" class="hidden p-6">
+                    <div id="ai-report-text" class="prose prose-sm max-w-none text-gray-700"></div>
+                </div>
+                <div id="ai-report-loading" class="hidden p-6 text-center">
+                    <div class="inline-flex items-center gap-3">
+                        <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span class="text-sm text-gray-600">Generating impact report...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Chart rendering library -->
@@ -172,6 +230,14 @@
         var perfTable = document.getElementById('performance-table');
         var recentActivity = document.getElementById('recent-activity');
         var alertsSection = document.getElementById('alerts-section');
+        var filterControls = document.getElementById('filter-controls');
+        var forecastContainer = document.getElementById('forecast-container');
+        var aiReportSection = document.getElementById('ai-report-section');
+
+        // Store loaded data globally for filter bus and AI report
+        var _allVisits = [];
+        var _allPayments = [];
+        var _filterBus = null;
 
         // Safety check: confirm before loading large funds (10+ opps)
         var oppCount = fundAllocations.filter(function(a) { return a.opportunity_id; }).length;
@@ -200,6 +266,234 @@
         }
 
         startSSE();
+
+        /** Render all charts with given data. Used by both initial load and filter bus. */
+        function renderAll(visits, payments) {
+            renderRecentActivity(visits, payments, recentActivity);
+            recentActivity.classList.remove('hidden');
+            renderImpactHeadline(visits, payments, impactHeadline);
+            renderKPIs(visits, payments, kpis);
+            renderPerformanceTable(visits, payments, perfTable);
+            renderAlerts(visits, payments, alertsSection);
+            alertsSection.classList.remove('hidden');
+
+            // Destroy existing Chart.js instances before re-render
+            var visitsCanvas = document.getElementById('visits-chart');
+            var paymentsCanvas = document.getElementById('payments-chart');
+            if (visitsCanvas) { var c = Chart.getChart(visitsCanvas); if (c) c.destroy(); }
+            if (paymentsCanvas) { var c = Chart.getChart(paymentsCanvas); if (c) c.destroy(); }
+            // Also destroy forecast chart
+            var forecastCanvas = document.getElementById('forecast-chart');
+            if (forecastCanvas) { var c = Chart.getChart(forecastCanvas); if (c) c.destroy(); }
+
+            renderVisitsChart(visits);
+            renderPaymentsChart(payments);
+            renderForecast(payments, fundTotalBudget, forecastContainer);
+            renderMap(visits);
+            animateCounters();
+
+            // Update filter status
+            if (_filterBus && _filterBus.isFiltered()) {
+                document.getElementById('filter-status').textContent =
+                    'Showing ' + visits.length + ' visits, ' + payments.length + ' payments';
+                document.getElementById('clear-filters-btn').classList.remove('hidden');
+            } else {
+                document.getElementById('filter-status').textContent = '';
+                document.getElementById('clear-filters-btn').classList.add('hidden');
+            }
+        }
+
+        /** Initialize filter controls with pill toggle buttons. */
+        function initFilters(visits, payments) {
+            _allVisits = visits;
+            _allPayments = payments;
+            _filterBus = initFilterBus(visits, payments, renderAll);
+
+            var available = _filterBus.getAvailableFilters();
+            var selectedDT = {};
+            var selectedCountry = {};
+
+            function makePill(value, label, selectedMap, filterKey) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = label;
+                btn.className = 'px-2.5 py-1 text-xs font-medium rounded-full border transition cursor-pointer ' +
+                    'border-gray-300 text-gray-600 bg-white hover:bg-gray-50';
+                btn.onclick = function() {
+                    if (selectedMap[value]) {
+                        delete selectedMap[value];
+                        btn.className = 'px-2.5 py-1 text-xs font-medium rounded-full border transition cursor-pointer ' +
+                            'border-gray-300 text-gray-600 bg-white hover:bg-gray-50';
+                    } else {
+                        selectedMap[value] = true;
+                        btn.className = 'px-2.5 py-1 text-xs font-medium rounded-full border transition cursor-pointer ' +
+                            'border-indigo-500 text-indigo-700 bg-indigo-50';
+                    }
+                    applyCurrentFilters();
+                };
+                return btn;
+            }
+
+            function applyCurrentFilters() {
+                var dtValues = Object.keys(selectedDT);
+                var cValues = Object.keys(selectedCountry);
+                var dateFrom = document.getElementById('filter-date-from').value || null;
+                var dateTo = document.getElementById('filter-date-to').value || null;
+                _filterBus.applyFilters({
+                    deliveryTypes: dtValues,
+                    countries: cValues,
+                    dateFrom: dateFrom,
+                    dateTo: dateTo,
+                });
+            }
+
+            // Populate delivery type pills
+            var dtContainer = document.getElementById('filter-pills-delivery');
+            if (available.deliveryTypes.length > 1) {
+                for (var i = 0; i < available.deliveryTypes.length; i++) {
+                    dtContainer.appendChild(makePill(
+                        available.deliveryTypes[i], available.deliveryTypes[i], selectedDT, 'deliveryTypes'));
+                }
+            }
+
+            // Populate country pills
+            var cContainer = document.getElementById('filter-pills-country');
+            if (available.countries.length > 1) {
+                for (var i = 0; i < available.countries.length; i++) {
+                    cContainer.appendChild(makePill(
+                        available.countries[i], available.countries[i], selectedCountry, 'countries'));
+                }
+            }
+
+            // Only show filter bar if there's something to filter
+            if (available.deliveryTypes.length > 1 || available.countries.length > 1) {
+                filterControls.classList.remove('hidden');
+            }
+
+            // Date inputs apply on change (instant, no Apply button needed)
+            document.getElementById('filter-date-from').onchange = applyCurrentFilters;
+            document.getElementById('filter-date-to').onchange = applyCurrentFilters;
+
+            // Clear button
+            document.getElementById('clear-filters-btn').onclick = function() {
+                selectedDT = {};
+                selectedCountry = {};
+                document.getElementById('filter-date-from').value = '';
+                document.getElementById('filter-date-to').value = '';
+                // Reset all pills to unselected
+                var pills = filterControls.querySelectorAll('button[type="button"]');
+                pills.forEach(function(p) {
+                    if (p.id === 'clear-filters-btn') return;
+                    p.className = 'px-2.5 py-1 text-xs font-medium rounded-full border transition cursor-pointer ' +
+                        'border-gray-300 text-gray-600 bg-white hover:bg-gray-50';
+                });
+                _filterBus.clearFilters();
+            };
+        }
+
+        /** Set up the AI report generation button. */
+        function initAIReport() {
+            var btn = document.getElementById('generate-report-btn');
+            var contentEl = document.getElementById('ai-report-content');
+            var textEl = document.getElementById('ai-report-text');
+            var loadingEl = document.getElementById('ai-report-loading');
+
+            btn.onclick = function() {
+                btn.disabled = true;
+                contentEl.classList.add('hidden');
+                loadingEl.classList.remove('hidden');
+                textEl.innerHTML = '';
+
+                // Aggregate data for AI
+                var summary = aggregateForReport(_allVisits, _allPayments, fundAllocations, fundTotalBudget);
+
+                // Build a human-readable prompt (not just a JSON dump)
+                var prompt = 'Write an impact report for the fund "' + '{{ fund.name|escapejs }}' + '".\n';
+                {% if fund.description %}prompt += 'Fund description: {{ fund.description|escapejs }}\n';{% endif %}
+                prompt += '\nKey metrics:\n';
+                prompt += '- Total approved visits: ' + summary.total_visits.toLocaleString() + '\n';
+                prompt += '- Total USD distributed: $' + summary.total_usd_distributed.toLocaleString() + '\n';
+                if (summary.total_budget) {
+                    prompt += '- Total budget: $' + summary.total_budget.toLocaleString() + '\n';
+                    prompt += '- Budget utilization: ' + summary.budget_utilization_pct + '%\n';
+                }
+                prompt += '- Families/beneficiaries reached: ' + summary.families_reached.toLocaleString() + '\n';
+                prompt += '- Countries: ' + summary.countries.join(', ') + '\n';
+                prompt += '\nGrantee performance:\n';
+                for (var g = 0; g < summary.opportunity_summaries.length; g++) {
+                    var opp = summary.opportunity_summaries[g];
+                    prompt += '- ' + opp.opp_name + ' (' + opp.country + ', ' + opp.delivery_type + '): ';
+                    prompt += opp.visit_count + ' visits, $' + opp.payment_total_usd.toLocaleString() + ' distributed, ';
+                    prompt += opp.flw_count + ' health workers, $' + opp.cost_per_visit + '/visit\n';
+                }
+                if (summary.weekly_spend.length > 0) {
+                    prompt += '\nRecent weekly delivery pace (last ' + summary.weekly_spend.length + ' weeks):\n';
+                    for (var w = 0; w < summary.weekly_spend.length; w++) {
+                        prompt += '- Week of ' + summary.weekly_spend[w].week + ': $' + summary.weekly_spend[w].usd.toLocaleString() + '\n';
+                    }
+                }
+
+                // POST to AI stream endpoint
+                fetch('{% url "ai:ai_stream" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}',
+                    },
+                    body: JSON.stringify({
+                        agent: 'fund_report',
+                        prompt: prompt,
+                        fund_name: '{{ fund.name|escapejs }}',
+                        fund_description: '{{ fund.description|escapejs }}',
+                    }),
+                }).then(function(response) {
+                    var reader = response.body.getReader();
+                    var decoder = new TextDecoder();
+                    var buffer = '';
+                    var fullText = '';
+
+                    loadingEl.classList.add('hidden');
+                    contentEl.classList.remove('hidden');
+
+                    function read() {
+                        reader.read().then(function(result) {
+                            if (result.done) {
+                                btn.disabled = false;
+                                return;
+                            }
+                            buffer += decoder.decode(result.value, { stream: true });
+                            var lines = buffer.split('\n');
+                            buffer = lines.pop(); // keep incomplete line
+
+                            for (var i = 0; i < lines.length; i++) {
+                                var line = lines[i].trim();
+                                if (!line.startsWith('data: ')) continue;
+                                try {
+                                    var evt = JSON.parse(line.slice(6));
+                                    if (evt.event_type === 'delta' && evt.message) {
+                                        fullText += evt.message;
+                                        textEl.innerHTML = (typeof marked !== 'undefined')
+                                            ? marked.parse(fullText)
+                                            : fullText.replace(/\n/g, '<br>');
+                                    }
+                                    if (evt.event_type === 'error') {
+                                        textEl.innerHTML = '<p class="text-red-600">' + (evt.error || 'Report generation failed') + '</p>';
+                                        btn.disabled = false;
+                                    }
+                                } catch(e) { /* skip malformed lines */ }
+                            }
+                            read();
+                        });
+                    }
+                    read();
+                }).catch(function(err) {
+                    loadingEl.classList.add('hidden');
+                    contentEl.classList.remove('hidden');
+                    textEl.innerHTML = '<p class="text-red-600">Failed to connect: ' + err.message + '</p>';
+                    btn.disabled = false;
+                });
+            };
+        }
 
         function startSSE() {
         // Build SSE URL with current query string
@@ -232,22 +526,19 @@
                 container.classList.remove('hidden');
                 impactHeadline.classList.remove('hidden');
                 perfTable.classList.remove('hidden');
+                forecastContainer.classList.remove('hidden');
+                aiReportSection.classList.remove('hidden');
 
                 // View sends flat arrays with opp metadata on each row
                 var visits = (data.data && data.data.visits) || [];
                 var payments = (data.data && data.data.payments) || [];
 
-                renderRecentActivity(visits, payments, recentActivity);
-                recentActivity.classList.remove('hidden');
-                renderImpactHeadline(visits, payments, impactHeadline);
-                renderKPIs(visits, payments, kpis);
-                renderPerformanceTable(visits, payments, perfTable);
-                renderAlerts(visits, payments, alertsSection);
-                alertsSection.classList.remove('hidden');
-                renderVisitsChart(visits);
-                renderPaymentsChart(payments);
-                renderMap(visits);
-                animateCounters();
+                // Render all charts
+                renderAll(visits, payments);
+
+                // Initialize filter bus and AI report
+                initFilters(visits, payments);
+                initAIReport();
 
             } catch (e) {
                 console.error('[FundCharts] Failed to parse SSE event:', e);
@@ -264,6 +555,42 @@
         } // end startSSE
     })();
     </script>
+
+    <!-- Print styles -->
+    <style>
+    @media print {
+        /* Hide interactive elements */
+        nav, .no-print, button, [id="filter-controls"],
+        [id="ai-report-loading"], [id="charts-loading"],
+        #generate-report-btn, .fa-edit { display: none !important; }
+
+        /* Clean layout */
+        .shadow-sm { box-shadow: none !important; }
+        body { background: white !important; font-size: 11pt; }
+        .max-w-screen-xl { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+
+        /* Page setup */
+        @page { margin: 1.5cm; size: A4; }
+
+        /* Avoid breaking charts across pages */
+        #ai-report-content, .rounded-xl { break-inside: avoid; }
+        canvas, img { max-width: 100% !important; break-inside: avoid; }
+
+        /* Show AI report in print if generated */
+        #ai-report-content { display: block !important; }
+
+        /* Add a header for the printed page */
+        .bg-white.rounded-xl.shadow-sm.p-8.mb-6:first-child::after {
+            content: "Impact Report — Printed {{ "now"|date:"M d, Y" }}";
+            display: block;
+            font-size: 9pt;
+            color: #666;
+            margin-top: 8px;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 4px;
+        }
+    }
+    </style>
 
 </div>
 {% endblock %}

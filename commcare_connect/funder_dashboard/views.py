@@ -47,11 +47,29 @@ class PortfolioDashboardView(ManagerRequiredMixin, TemplateView):
             ctx["funds"] = funds
             ctx["active_count"] = sum(1 for f in funds if f.status == "active")
             ctx["total_programs"] = sum(len(f.program_ids) for f in funds)
+
+            # Fetch solicitation counts per fund
+            try:
+                from commcare_connect.solicitations.data_access import SolicitationsDataAccess
+
+                sol_da = SolicitationsDataAccess(request=self.request)
+                sol_counts = {}
+                for fund in funds:
+                    try:
+                        sols = sol_da.get_solicitations_by_fund_id(fund.pk)
+                        sol_counts[fund.pk] = len(sols)
+                    except Exception:
+                        sol_counts[fund.pk] = 0
+                ctx["solicitation_counts"] = sol_counts
+            except Exception:
+                logger.debug("Could not load solicitation counts for portfolio")
+                ctx["solicitation_counts"] = {}
         except Exception:
             logger.exception("Failed to load funds for portfolio")
             ctx["funds"] = []
             ctx["active_count"] = 0
             ctx["total_programs"] = 0
+            ctx["solicitation_counts"] = {}
         return ctx
 
 

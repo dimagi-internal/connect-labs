@@ -121,8 +121,21 @@ class AIStreamView(LoginRequiredMixin, View):
         # Validate required parameters
         if not agent_type:
             return JsonResponse({"error": "agent is required"}, status=400)
-        if agent_type not in ("workflow", "pipeline", "solicitations"):
-            return JsonResponse({"error": "agent must be 'workflow', 'pipeline', or 'solicitations'"}, status=400)
+        if agent_type not in (
+            "workflow",
+            "pipeline",
+            "solicitations",
+            "fund_report",
+            "solicitation_review",
+            "application_coach",
+        ):
+            return JsonResponse(
+                {
+                    "error": "Invalid agent type. Must be one of: workflow, pipeline,"
+                    " solicitations, fund_report, solicitation_review, application_coach"
+                },
+                status=400,
+            )
         if not prompt:
             return JsonResponse({"error": "prompt is required"}, status=400)
 
@@ -154,6 +167,7 @@ class AIStreamView(LoginRequiredMixin, View):
                 opportunity_id=opportunity_id,
                 active_context=active_context,
                 conversation_history=conversation_history,
+                extra_body=body,
             )
 
         response = StreamingHttpResponse(
@@ -178,6 +192,7 @@ class AIStreamView(LoginRequiredMixin, View):
         opportunity_id: str | None,
         active_context: dict | None = None,
         conversation_history: list | None = None,
+        extra_body: dict | None = None,
     ):
         """
         Run the streaming agent, yielding SSE events in real-time.
@@ -220,6 +235,45 @@ class AIStreamView(LoginRequiredMixin, View):
 
                     agent = create_solicitation_agent_with_model(model)
                     deps = SolicitationAgentDeps(user_deps=user_deps)
+                    full_prompt = prompt
+
+                elif agent_type == "fund_report":
+                    from commcare_connect.ai.agents.fund_report_agent import (
+                        FundReportAgentDeps,
+                        create_fund_report_agent_with_model,
+                    )
+
+                    agent = create_fund_report_agent_with_model(model)
+                    fund_name = extra_body.get("fund_name", "") if extra_body else ""
+                    fund_description = extra_body.get("fund_description", "") if extra_body else ""
+                    deps = FundReportAgentDeps(
+                        user_deps=user_deps,
+                        fund_name=fund_name,
+                        fund_description=fund_description,
+                    )
+                    full_prompt = prompt
+
+                elif agent_type == "solicitation_review":
+                    from commcare_connect.ai.agents.solicitation_review_agent import (
+                        SolicitationReviewAgentDeps,
+                        create_solicitation_review_agent_with_model,
+                    )
+
+                    agent = create_solicitation_review_agent_with_model(model)
+                    deps = SolicitationReviewAgentDeps(
+                        user_deps=user_deps,
+                        access_token=access_token,
+                    )
+                    full_prompt = prompt
+
+                elif agent_type == "application_coach":
+                    from commcare_connect.ai.agents.application_coach_agent import (
+                        ApplicationCoachAgentDeps,
+                        create_application_coach_agent_with_model,
+                    )
+
+                    agent = create_application_coach_agent_with_model(model)
+                    deps = ApplicationCoachAgentDeps(user_deps=user_deps)
                     full_prompt = prompt
 
                 else:  # pipeline
@@ -265,12 +319,14 @@ class AIStreamView(LoginRequiredMixin, View):
                             event_queue.put(send_sse_event(message=final_text, event_type="delta"))
 
                     # Log tool call results
+                    def_changed = getattr(deps, "definition_changed", False)
+                    render_changed = getattr(deps, "render_code_changed", False)
                     logger.info(
                         f"[AI Stream] Agent finished. Response length: {len(final_text)}, "
-                        f"definition_changed: {deps.definition_changed}, "
-                        f"render_code_changed: {deps.render_code_changed}"
+                        f"definition_changed: {def_changed}, "
+                        f"render_code_changed: {render_changed}"
                     )
-                    if deps.render_code_changed and deps.pending_render_code:
+                    if render_changed and getattr(deps, "pending_render_code", None):
                         logger.info(f"[AI Stream] New render code length: {len(deps.pending_render_code)}")
 
                     # Build completion data based on agent type
@@ -285,7 +341,7 @@ class AIStreamView(LoginRequiredMixin, View):
                             "pipeline_schema_updates": deps.pending_pipeline_schema_updates,
                             "pipeline_schema_changed": deps.pipeline_schema_changed,
                         }
-                    elif agent_type == "solicitations":
+                    elif agent_type in ("solicitations", "fund_report", "solicitation_review", "application_coach"):
                         completion_data = {
                             "message": final_text,
                         }
@@ -307,16 +363,17 @@ class AIStreamView(LoginRequiredMixin, View):
 
                     event_queue.put(send_sse_event(message="Complete", event_type="complete", data=completion_data))
 
-                    # Save chat history
-                    self._save_chat_history_sync(
-                        agent_type=agent_type,
-                        definition_id=definition_id,
-                        opportunity_id=opportunity_id,
-                        access_token=access_token,
-                        program_id=program_id,
-                        user_prompt=prompt,
-                        assistant_response=final_text,
-                    )
+                    # Save chat history (only for agents with persistent context)
+                    if agent_type in ("workflow", "pipeline", "solicitations"):
+                        self._save_chat_history_sync(
+                            agent_type=agent_type,
+                            definition_id=definition_id,
+                            opportunity_id=opportunity_id,
+                            access_token=access_token,
+                            program_id=program_id,
+                            user_prompt=prompt,
+                            assistant_response=final_text,
+                        )
 
                 except Exception as e:
                     logger.error(f"[AI Stream] Agent error: {e}", exc_info=True)
