@@ -97,6 +97,35 @@ async def get_opportunity_apps(opportunity_id: int) -> dict:
 
 
 @mcp.tool()
+async def get_opportunity_url(opportunity_id: int) -> dict:
+    """Get the full production Connect URL for an opportunity.
+
+    Looks up the opportunity's org_slug and returns the URL you can use
+    to view or manage the opportunity in the Connect web interface.
+
+    Args:
+        opportunity_id: The Connect opportunity ID (e.g., 874)
+    """
+    from connect_client import CONNECT_URL
+    from connect_client import get_opportunity_apps as _get_opp
+
+    try:
+        opp = await _get_opp(opportunity_id)
+        org_slug = opp.get("org_slug", "")
+        if not org_slug:
+            return {"error": f"Opportunity {opportunity_id} has no organization slug"}
+        url = f"{CONNECT_URL}/a/{org_slug}/opportunity/{opportunity_id}/"
+        return {
+            "opportunity_id": opportunity_id,
+            "opportunity_name": opp.get("opportunity_name", ""),
+            "org_slug": org_slug,
+            "url": url,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
 async def list_apps(domain: str = "") -> dict:
     """List all CommCare applications for a domain.
 
