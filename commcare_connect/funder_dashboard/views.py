@@ -2,6 +2,7 @@ import json
 import logging
 from collections.abc import Generator
 
+from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.http import Http404
 from django.shortcuts import redirect
@@ -85,6 +86,11 @@ class FundDetailView(ManagerRequiredMixin, TemplateView):
             if not fund:
                 raise Http404("Fund not found")
             ctx["fund"] = fund
+            labs_context = getattr(self.request, "labs_context", {})
+            org_slug = labs_context.get("organization_slug", "")
+            ctx["connect_opp_base_url"] = (
+                f"{settings.CONNECT_PRODUCTION_URL}/a/{org_slug}/opportunity" if org_slug else ""
+            )
         except Http404:
             raise
         except Exception:

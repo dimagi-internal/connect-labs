@@ -217,6 +217,7 @@
     <script>
     var fundTotalBudget = {{ fund.total_budget|default:"null" }};
     var fundAllocations = JSON.parse(document.getElementById('fund-allocations-data').textContent);
+    var connectOppBaseUrl = '{{ connect_opp_base_url|escapejs }}';
     </script>
 
     <!-- SSE Client -->

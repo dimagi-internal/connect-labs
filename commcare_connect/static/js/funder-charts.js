@@ -664,10 +664,26 @@ function renderPerformanceTable(visits, payments, container) {
     html += '<tr>';
 
     // Opportunity name + llo_name + country
+    var oppNameHtml = row.oppName;
+    if (
+      typeof connectOppBaseUrl !== 'undefined' &&
+      connectOppBaseUrl &&
+      row.id
+    ) {
+      oppNameHtml =
+        '<a href="' +
+        connectOppBaseUrl +
+        '/' +
+        row.id +
+        '/" target="_blank" rel="noopener" ' +
+        'class="text-indigo-600 hover:text-indigo-800 hover:underline">' +
+        row.oppName +
+        ' <i class="fa-solid fa-arrow-up-right-from-square text-[10px] ml-0.5 opacity-60"></i></a>';
+    }
     html +=
       '<td class="px-4 py-3 text-sm">' +
       '<div class="font-medium text-gray-900">' +
-      row.oppName +
+      oppNameHtml +
       '</div>' +
       (row.lloName
         ? '<div class="text-xs text-gray-400">' + row.lloName + '</div>'
