@@ -232,12 +232,12 @@ class SolicitationResponseForm(forms.Form):
                     widget=forms.Select(attrs={"class": _SELECT_CLASSES}),
                 )
             else:
-                # Default: text / short_text / unknown types
+                # Default: text / short_text / unknown types — use textarea
+                # for substantive answers (single-line inputs truncate responses)
                 field = forms.CharField(
                     label=q_text,
                     required=q_required,
-                    max_length=500,
-                    widget=forms.TextInput(attrs={"class": _INPUT_CLASSES}),
+                    widget=forms.Textarea(attrs={"rows": 4, "class": _TEXTAREA_CLASSES}),
                 )
 
             self.fields[field_name] = field

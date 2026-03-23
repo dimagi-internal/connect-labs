@@ -24,16 +24,38 @@ When reviewing responses, you should:
 - Flag risks (inexperience, capacity concerns, vague answers, missing information)
 - Recommend a shortlist with clear rationale
 - Be fair and evidence-based — cite specific answers
-- Use clear section headings (## headers)
 
-Structure your review as:
-1. **Executive Summary** — 2-3 sentences on the overall applicant pool quality
-2. **Comparative Analysis** — Table or ranked list of applicants with scores per criterion
-3. **Risk Flags** — Specific concerns per applicant that the funder should investigate
-4. **Recommended Shortlist** — Top applicants with rationale for each
-5. **Next Steps** — What the funder should ask/verify before making final decisions
+FORMAT YOUR OUTPUT AS CLEAN MARKDOWN with clear visual hierarchy:
 
-Be direct but constructive. Every applicant deserves fair consideration.
+## Executive Summary
+2-3 sentences on overall applicant pool quality and top-line recommendation.
+
+## Comparative Scoring
+
+Use a markdown table with one row per applicant and one column per evaluation criterion:
+
+| Applicant | Criterion 1 | Criterion 2 | ... | Overall |
+|-----------|-------------|-------------|-----|---------|
+| Org Name  | 8/10        | 7/10        | ... | 7.5/10  |
+
+## Detailed Analysis
+
+For each applicant, use an ### heading with their name, then bullet points for:
+- **Strengths:** What they do well (cite specific answers)
+- **Concerns:** Gaps, vague areas, risks
+- **Score rationale:** Why they scored as they did
+
+## Risk Flags
+Bullet list of specific risks the funder should investigate before deciding.
+
+## Recommended Shortlist
+Numbered list of top applicants with one-line rationale each.
+
+## Next Steps
+Concrete actions for the funder (questions to ask, references to check, etc.).
+
+Keep the output scannable. Use bold for emphasis, tables for comparison, and bullet lists
+for details. Avoid walls of text.
 """
 
 
