@@ -109,6 +109,25 @@ Labs deploys to **AWS ECS Fargate** via `.github/workflows/deploy-labs.yml`.
 - **ECS cluster:** `labs-jj-cluster` in `us-east-1`
 - **Services:** `labs-jj-web` (web), `labs-jj-worker` (celery)
 
+## Git Worktrees and Virtualenv
+
+This repo uses emdash which manages git worktrees. In a worktree, the virtualenv
+lives in the **main repo** at `~/emdash-projects/connect-labs/.venv`, NOT in the
+worktree directory. Pre-commit hooks will fail if the virtualenv is not on PATH.
+
+To commit from a worktree, either activate the venv first or prepend it to PATH:
+
+```bash
+# Option 1: activate the main repo's venv
+. ~/emdash-projects/connect-labs/.venv/bin/activate
+
+# Option 2: prepend PATH inline for a single commit
+PATH="$HOME/emdash-projects/connect-labs/.venv/bin:$PATH" git commit
+
+# Option 3: use the Makefile target (works from any worktree)
+make commit
+```
+
 ## Key Commands
 
 ```bash
@@ -120,6 +139,7 @@ pytest                              # Run tests
 pytest commcare_connect/audit/      # Run tests for one app
 celery -A config.celery_app worker -l info   # Celery worker (async audit creation, AI tasks)
 pre-commit run --all-files          # Run linters/formatters
+make commit                         # Git commit with correct venv PATH (works in worktrees)
 ```
 
 ## Critical Warnings
