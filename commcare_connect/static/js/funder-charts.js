@@ -930,11 +930,12 @@ function renderPaymentsChart(payments) {
       label: opp.opp_name,
       data: cumulative,
       borderColor: color,
-      backgroundColor: color + '20', // 12% opacity
-      fill: true,
+      backgroundColor: color + '40', // 25% opacity for stacked visibility
+      fill: 'origin',
       tension: 0.3,
       pointRadius: 2,
       pointHoverRadius: 5,
+      borderWidth: 1.5,
     });
   }
 
@@ -964,6 +965,7 @@ function renderPaymentsChart(payments) {
       },
       scales: {
         x: {
+          stacked: true,
           title: { display: true, text: 'Week' },
           ticks: {
             maxRotation: 45,
@@ -979,6 +981,7 @@ function renderPaymentsChart(payments) {
           },
         },
         y: {
+          stacked: true,
           beginAtZero: true,
           title: { display: true, text: 'USD' },
           ticks: {
