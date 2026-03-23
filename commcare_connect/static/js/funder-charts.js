@@ -64,14 +64,23 @@ function groupByOpp(rows) {
   return result;
 }
 
-/** Return ISO week-start (Monday) string for a date. */
+/** Return ISO week-start (Monday) string for a date.
+ *  IMPORTANT: parse as local time (T00:00:00) to avoid UTC offset shifting
+ *  the day-of-week calculation (e.g. UTC Monday midnight → local Sunday in US). */
 function weekStart(dateStr) {
-  var d = new Date(dateStr);
+  if (!dateStr) return null;
+  // Normalize: take only the YYYY-MM-DD portion to avoid time/timezone issues
+  var datePart = String(dateStr).slice(0, 10);
+  var d = new Date(datePart + 'T00:00:00');
   if (isNaN(d.getTime())) return null;
   var day = d.getDay();
   var diff = (day === 0 ? -6 : 1) - day; // Monday
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  // Build YYYY-MM-DD manually from local date parts (not toISOString which uses UTC)
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var dd = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + dd;
 }
 
 /** Get sorted unique week-start strings from an array of date strings. */
@@ -921,11 +930,12 @@ function renderPaymentsChart(payments) {
       label: opp.opp_name,
       data: cumulative,
       borderColor: color,
-      backgroundColor: color + '20', // 12% opacity
-      fill: true,
+      backgroundColor: color + '40', // 25% opacity for stacked visibility
+      fill: 'origin',
       tension: 0.3,
       pointRadius: 2,
       pointHoverRadius: 5,
+      borderWidth: 1.5,
     });
   }
 
@@ -955,6 +965,7 @@ function renderPaymentsChart(payments) {
       },
       scales: {
         x: {
+          stacked: true,
           title: { display: true, text: 'Week' },
           ticks: {
             maxRotation: 45,
@@ -970,6 +981,7 @@ function renderPaymentsChart(payments) {
           },
         },
         y: {
+          stacked: true,
           beginAtZero: true,
           title: { display: true, text: 'USD' },
           ticks: {

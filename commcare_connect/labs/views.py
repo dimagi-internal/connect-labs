@@ -97,6 +97,12 @@ class ScoutEmbedView(LoginRequiredMixin, TemplateView):
         return ctx
 
 
+class StatusView(LoginRequiredMixin, TemplateView):
+    """Status page that tests key URLs against the production API."""
+
+    template_name = "labs/status.html"
+
+
 class LabsOverviewView(LoginRequiredMixin, TemplateView):
     """
     Main landing page for labs projects.
