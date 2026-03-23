@@ -67,7 +67,7 @@
                 </div>
                 <div>
                     <div class="text-xs text-gray-500 uppercase tracking-wider">USD Distributed</div>
-                    <div id="kpi-distributed" class="text-xl font-bold text-amber-600">${{ fund.committed_amount|intcomma }}</div>
+                    <div id="kpi-distributed" class="text-xl font-bold text-gray-400"><span class="text-sm font-normal">loading...</span></div>
                 </div>
             </div>
         </div>
@@ -78,7 +78,7 @@
                 </div>
                 <div>
                     <div class="text-xs text-gray-500 uppercase tracking-wider">Remaining</div>
-                    <div id="kpi-remaining" class="text-xl font-bold {% if fund.remaining_amount > 0 %}text-green-600{% else %}text-red-600{% endif %}">${{ fund.remaining_amount|intcomma }}</div>
+                    <div id="kpi-remaining" class="text-xl font-bold text-gray-400"><span class="text-sm font-normal">loading...</span></div>
                 </div>
             </div>
         </div>
