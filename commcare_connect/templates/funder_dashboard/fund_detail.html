@@ -241,7 +241,8 @@
 
         // Safety check: confirm before loading large funds (10+ opps)
         var oppCount = fundAllocations.filter(function(a) { return a.opportunity_id; }).length;
-        if (oppCount >= 10) {
+        var autoLoad = new URLSearchParams(window.location.search).get('auto_load') === 'true';
+        if (oppCount >= 10 && !autoLoad) {
             loading.querySelector('.inline-flex').innerHTML =
                 '<div class="text-center">' +
                 '<i class="fa-solid fa-triangle-exclamation text-amber-500 text-2xl mb-3"></i>' +
