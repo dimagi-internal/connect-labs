@@ -1900,3 +1900,69 @@ function animateCounters() {
 
   requestAnimationFrame(step);
 }
+
+// ---------------------------------------------------------------------------
+// Module exports (for unit testing — no-op in browser)
+// ---------------------------------------------------------------------------
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    weekStart: weekStart,
+    uniqueWeeks: uniqueWeeks,
+    groupByOpp: groupByOpp,
+    oppColor: oppColor,
+    resetColors: resetColors,
+    fmtNum: fmtNum,
+    fmtUSD: fmtUSD,
+    referenceWeeks: referenceWeeks,
+    countVisitsInWeek: countVisitsInWeek,
+    sumUSDInWeek: sumUSDInWeek,
+    trendInfo: trendInfo,
+    activeFLWs: activeFLWs,
+    maxVisitDate: maxVisitDate,
+    aggregateForReport: aggregateForReport,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Module exports (for unit testing — no-op in browser)
+// ---------------------------------------------------------------------------
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    weekStart: weekStart,
+    uniqueWeeks: uniqueWeeks,
+    groupByOpp: groupByOpp,
+    oppColor: oppColor,
+    resetColors: resetColors,
+    fmtNum: fmtNum,
+    fmtUSD: fmtUSD,
+    referenceWeeks: referenceWeeks,
+    countVisitsInWeek: countVisitsInWeek,
+    sumUSDInWeek: sumUSDInWeek,
+    trendInfo: trendInfo,
+    activeFLWs: activeFLWs,
+    maxVisitDate: maxVisitDate,
+    aggregateForReport: aggregateForReport,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Module exports (for unit testing — no-op in browser)
+// ---------------------------------------------------------------------------
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    weekStart: weekStart,
+    uniqueWeeks: uniqueWeeks,
+    groupByOpp: groupByOpp,
+    oppColor: oppColor,
+    resetColors: resetColors,
+    fmtNum: fmtNum,
+    fmtUSD: fmtUSD,
+    referenceWeeks: referenceWeeks,
+    countVisitsInWeek: countVisitsInWeek,
+    sumUSDInWeek: sumUSDInWeek,
+    trendInfo: trendInfo,
+    activeFLWs: activeFLWs,
+    maxVisitDate: maxVisitDate,
+    aggregateForReport: aggregateForReport,
+  };
+}
