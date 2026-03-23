@@ -97,9 +97,11 @@ For each scene in the spec, follow this process:
    $B wait --networkidle
    ```
 
-4. **Take screenshots.** Capture the key state:
+4. **Take screenshots.** First neutralize fixed/sticky elements so they don't
+   float over content in full-page captures, then screenshot:
 
    ```bash
+   $B js "document.querySelectorAll('*').forEach(function(el){var s=getComputedStyle(el);if(s.position==='fixed'||s.position==='sticky')el.style.position='absolute'})"
    $B screenshot /tmp/walkthrough-screenshots/scene_{n}.png
    ```
 
