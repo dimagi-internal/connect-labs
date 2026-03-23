@@ -22,6 +22,8 @@ urlpatterns = [
     path("test-auth/", views_test_auth.test_auth_view, name="test_auth"),
     # Labs Overview
     path("overview/", views.LabsOverviewView.as_view(), name="overview"),
+    # Status page
+    path("status/", views.StatusView.as_view(), name="status"),
     # Scout data agent
     path("scout/", views.ScoutEmbedView.as_view(), name="scout_embed"),
     # CommCare OAuth (for API access)
