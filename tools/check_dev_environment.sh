@@ -43,18 +43,26 @@ header() {
 header "Virtual environment"
 # ---------------------------------------------------------------------------
 
-if [ -d "venv" ] || [ -d ".venv" ]; then
-    pass "Virtual environment directory found"
+VENV_DIR=""
+if [ -d ".venv" ]; then
+    VENV_DIR=".venv"
+elif [ -d "venv" ]; then
+    VENV_DIR="venv"
+fi
+
+if [ -n "$VENV_DIR" ]; then
+    pass "Virtual environment directory found ($VENV_DIR/)"
 else
     fail "No venv/ or .venv/ directory found" \
-         "python3 -m venv venv && source venv/bin/activate && pip install -r requirements-dev.txt"
+         "python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt"
 fi
 
 if [ -n "${VIRTUAL_ENV:-}" ]; then
     pass "Virtual environment is activated ($VIRTUAL_ENV)"
 else
+    activate_path="${VENV_DIR:-venv}/bin/activate"
     fail "Virtual environment is not activated" \
-         "source venv/bin/activate"
+         "source $activate_path"
 fi
 
 # ---------------------------------------------------------------------------
