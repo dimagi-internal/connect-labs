@@ -66,8 +66,8 @@
                     <i class="fa-solid fa-file-invoice-dollar text-amber-600"></i>
                 </div>
                 <div>
-                    <div class="text-xs text-gray-500 uppercase tracking-wider">Committed</div>
-                    <div class="text-xl font-bold text-amber-600">${{ fund.committed_amount|intcomma }}</div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider">USD Distributed</div>
+                    <div id="kpi-distributed" class="text-xl font-bold text-amber-600">${{ fund.committed_amount|intcomma }}</div>
                 </div>
             </div>
         </div>
@@ -78,7 +78,7 @@
                 </div>
                 <div>
                     <div class="text-xs text-gray-500 uppercase tracking-wider">Remaining</div>
-                    <div class="text-xl font-bold {% if fund.remaining_amount > 0 %}text-green-600{% else %}text-red-600{% endif %}">${{ fund.remaining_amount|intcomma }}</div>
+                    <div id="kpi-remaining" class="text-xl font-bold {% if fund.remaining_amount > 0 %}text-green-600{% else %}text-red-600{% endif %}">${{ fund.remaining_amount|intcomma }}</div>
                 </div>
             </div>
         </div>
@@ -162,7 +162,7 @@
 
         <!-- Charts Grid (hidden until data loads) -->
         <div id="charts-container" class="hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div class="space-y-6 mb-6">
                 <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
                     <canvas id="visits-chart" style="height: 300px;"></canvas>
                 </div>
@@ -291,6 +291,22 @@
             renderForecast(payments, fundTotalBudget, forecastContainer);
             renderMap(visits);
             animateCounters();
+
+            // Update static KPI cards with actual USD distributed from pipeline data
+            var totalDistributed = 0;
+            for (var i = 0; i < payments.length; i++) {
+                totalDistributed += (parseFloat(payments[i].usd_flw) || 0) + (parseFloat(payments[i].usd_org) || 0);
+            }
+            var kpiDistEl = document.getElementById('kpi-distributed');
+            if (kpiDistEl) {
+                kpiDistEl.textContent = '$' + Math.round(totalDistributed).toLocaleString('en-US');
+            }
+            var kpiRemEl = document.getElementById('kpi-remaining');
+            if (kpiRemEl && fundTotalBudget) {
+                var remaining = Math.max(0, fundTotalBudget - totalDistributed);
+                kpiRemEl.textContent = '$' + Math.round(remaining).toLocaleString('en-US');
+                kpiRemEl.className = 'text-xl font-bold ' + (remaining > 0 ? 'text-green-600' : 'text-red-600');
+            }
 
             // Update filter status
             if (_filterBus && _filterBus.isFiltered()) {
