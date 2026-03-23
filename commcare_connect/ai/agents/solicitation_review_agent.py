@@ -71,7 +71,7 @@ def create_solicitation_review_agent_with_model(model: str) -> Agent[Solicitatio
 
         try:
             da = SolicitationsDataAccess(
-                request=ctx.deps.user_deps.request,
+                access_token=ctx.deps.access_token,
                 program_id=str(ctx.deps.user_deps.program_id) if ctx.deps.user_deps.program_id else None,
             )
 
