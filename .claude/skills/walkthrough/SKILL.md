@@ -146,10 +146,20 @@ For each scene in the spec, follow this process:
    empty state), note it as an issue with severity (error/warning) and description.
 
 8. **Handle failures gracefully.** If a scene can't complete:
+
    - Screenshot the error state
    - Log the issue
    - Skip to the next scene
    - Partial decks are better than no deck
+
+9. **Flag test data problems.** Before taking a screenshot, check for signs that
+   test/sample data doesn't look realistic:
+   - Organization names like "Unknown Organization" or "None None"
+   - Placeholder usernames like "test-user" or blank names
+   - Empty states that should have data (charts with "no data", maps with no markers)
+   - IDs or slugs showing instead of human-readable names
+     If found, note it as an issue so the user knows the demo won't look right
+     with this data.
 
 ### Data Collection
 
