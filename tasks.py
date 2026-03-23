@@ -116,3 +116,9 @@ def deploy(c: Context, env="staging"):
     """Deploy the app to prod servers"""
     with c.cd(PROJECT_DIR / "deploy"):
         c.run(f"kamal deploy -d {env}")
+
+
+@task
+def check(c: Context):
+    """Validate the development environment before starting the backend"""
+    c.run(f"bash {PROJECT_DIR / 'tools' / 'check_dev_environment.sh'}", warn=True)
