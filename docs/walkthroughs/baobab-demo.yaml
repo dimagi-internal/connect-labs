@@ -1,0 +1,66 @@
+name: "Baobab Regranting Platform Demo"
+narrative: "Connect serves both sides — funders get an AI analyst, applicants get an AI coach"
+base_url: "http://localhost:8000"
+auth_url: "/labs/test-auth/?profile=test-user"
+
+personas:
+  sarah:
+    name: "Sarah Chen"
+    role: "Senior Program Manager, Dimagi"
+    color: "#2563eb"
+    intro: "Sarah manages programs and sources implementing partners. She wants to create a professional solicitation quickly."
+  amina:
+    name: "Amina Okafor"
+    role: "Program Director, Health Bridge Nigeria"
+    color: "#059669"
+    intro: "Amina leads a community health org in Nigeria. She responds to funding opportunities and needs clarity on expectations."
+  james:
+    name: "James Mwangi"
+    role: "Technical Advisor, Dimagi"
+    color: "#d97706"
+    intro: "James evaluates responses and manages selected LLOs post-award. He needs structured scoring and comparison."
+
+scenes:
+  - persona: sarah
+    title: "Here's your fund"
+    show: "Fund dashboard with KPIs, charts, delivery map — all loaded and interactive"
+    impressive_because: "Data streams in real-time, KPIs animate, map shows actual grantee locations"
+
+  - persona: sarah
+    title: "Post a solicitation with AI criteria"
+    show: "Create an RFP describing a CHW training program, generate evaluation criteria with AI"
+    impressive_because: "AI writes relevant, well-weighted criteria she'd spend hours on manually"
+    ai_quality: "Criteria specific to CHW training scope, not generic grant criteria. Weights should be balanced. Scoring guides should distinguish strong vs weak clearly."
+
+  - persona: amina
+    title: "AI helps applicants write stronger responses"
+    show: "Amina sees the solicitation with criteria upfront, starts a response, gets AI coaching"
+    impressive_because: "Coach gives specific feedback tied to evaluation criteria — tells her how to score higher"
+    ai_quality: "Coaching must reference specific evaluation criteria, not just say 'add more detail'. Suggestions should be actionable and encouraging."
+
+  - persona: james
+    title: "AI reviews all responses"
+    show: "James triggers AI comparative review of all submitted responses"
+    impressive_because: "AI ranks applicants, flags risks, recommends a shortlist — like having a grants analyst"
+    ai_quality: "Analysis is comparative (not per-response), flags real differentiators between applicants. Should include risk flags and a recommended shortlist."
+
+  - persona: james
+    title: "Select your grantees"
+    show: "James awards the winning response, allocation auto-created"
+    impressive_because: "One click from review to award — budget allocated, org assigned"
+
+  - persona: sarah
+    title: "Monitor delivery"
+    show: "Return to fund dashboard, filter by delivery type and region, explore charts interactively"
+    impressive_because: "Cross-chart filtering lets Sarah explore the data like a dashboard, not a static report"
+
+  - persona: sarah
+    title: "Forecast your impact"
+    show: "Delivery pace chart showing projected completion date"
+    impressive_because: "Positive framing — 'on track to deliver full impact by August' — not burn rate language"
+
+  - persona: sarah
+    title: "Report to Bloomberg"
+    show: "AI generates narrative report, export to PDF one-pager"
+    impressive_because: "AI writes the donor report in minutes — highlights, risks, recommendations"
+    ai_quality: "Report should reference specific grantee performance and delivery data, not generic language. Framing should use 'delivery pace' not 'burn rate'."
