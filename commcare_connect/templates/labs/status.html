@@ -40,16 +40,27 @@
 
 <script>
 const CHECKS = [
-  { url: '/health/', label: 'Health Check', auth: false },
+  { url: '/health/', label: 'Health Check' },
   { url: '/labs/overview/', label: 'Labs Overview' },
   { url: '/labs/workflow/', label: 'Workflow List' },
   { url: '/labs/workflow/pipelines/', label: 'Pipeline List' },
+  { url: '/labs/workflow/summary/', label: 'Opp Summary' },
   { url: '/audit/', label: 'Audit List' },
   { url: '/audit/create/', label: 'Audit Create' },
   { url: '/tasks/', label: 'Tasks List' },
   { url: '/solicitations/', label: 'Solicitations' },
   { url: '/labs/explorer/', label: 'Data Explorer' },
-  { url: '/labs/refresh-org-data/', label: 'Refresh Org Data' },
+];
+
+// Patterns in response body that indicate server-side errors
+// (pages that return 200 but failed to load data from production API)
+const ERROR_PATTERNS = [
+  { regex: /text-red-700[^>]*>([^<]{0,200})/i, extract: true },
+  { regex: /Failed to fetch records/i },
+  { regex: /timed?\s*out/i },
+  { regex: /502 Bad Gateway/i },
+  { regex: /504 Gateway/i },
+  { regex: /LabsAPIError/i },
 ];
 
 function createRow(check) {
@@ -63,7 +74,7 @@ function createRow(check) {
     </td>
     <td class="px-4 py-3 font-mono text-sm" data-code>-</td>
     <td class="px-4 py-3 font-mono text-sm" data-time>-</td>
-    <td class="px-4 py-3 text-sm text-gray-500" data-detail></td>
+    <td class="px-4 py-3 text-sm text-gray-500 max-w-xs truncate" data-detail></td>
   `;
   return tr;
 }
@@ -75,48 +86,74 @@ function updateRow(tr, result) {
   const detail = tr.querySelector('[data-detail]');
 
   indicator.classList.remove('animate-pulse', 'bg-gray-300');
-
-  if (result.ok) {
-    indicator.classList.add('bg-green-500');
-    code.textContent = result.status;
-    code.classList.add('text-green-700');
-  } else {
-    indicator.classList.add('bg-red-500');
-    code.textContent = result.status || 'ERR';
-    code.classList.add('text-red-700');
-    if (result.error) {
-      detail.textContent = result.error;
-      detail.classList.add('text-red-600');
-    }
-  }
-
+  code.textContent = result.status || 'ERR';
   time.textContent = result.ms + 'ms';
+
   if (result.ms > 5000) {
     time.classList.add('text-amber-600', 'font-bold');
+  }
+
+  if (result.ok && !result.bodyError) {
+    // Clean pass
+    indicator.classList.add('bg-green-500');
+    code.classList.add('text-green-700');
+  } else if (result.ok && result.bodyError) {
+    // 200 but body contains errors (e.g. API timeout caught by view)
+    indicator.classList.add('bg-amber-500');
+    code.textContent = '200*';
+    code.classList.add('text-amber-700');
+    detail.textContent = result.bodyError;
+    detail.classList.add('text-amber-700');
+    detail.title = result.bodyError;
+  } else {
+    // HTTP error
+    indicator.classList.add('bg-red-500');
+    code.classList.add('text-red-700');
+    detail.textContent = result.error || '';
+    detail.classList.add('text-red-600');
+    detail.title = result.error || '';
   }
 }
 
 function updateSummary(results) {
   const el = document.getElementById('summary');
   const total = results.length;
-  const pass = results.filter(r => r.ok).length;
-  const fail = total - pass;
+  const pass = results.filter(r => r.ok && !r.bodyError).length;
+  const warn = results.filter(r => r.ok && r.bodyError).length;
+  const fail = results.filter(r => !r.ok).length;
   const avgMs = Math.round(results.reduce((s, r) => s + r.ms, 0) / total);
 
-  if (fail === 0) {
+  const parts = [];
+  if (pass > 0) parts.push(`<span class="text-green-700">${pass} passed</span>`);
+  if (warn > 0) parts.push(`<span class="text-amber-700">${warn} loaded with errors</span>`);
+  if (fail > 0) parts.push(`<span class="text-red-700">${fail} failed</span>`);
+  parts.push(`<span class="text-gray-500">Avg: ${avgMs}ms</span>`);
+
+  if (fail === 0 && warn === 0) {
     el.className = 'mb-6 p-4 bg-green-50 rounded-lg border border-green-200 flex items-center gap-6 text-sm';
-    el.innerHTML = `
-      <span class="text-green-700 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i> All ${total} checks passed</span>
-      <span class="text-gray-500">Avg response: ${avgMs}ms</span>
-    `;
+    el.innerHTML = `<span class="text-green-700 font-semibold"><i class="fa-solid fa-circle-check mr-1"></i> All ${total} checks passed</span>` + parts.slice(1).map(p => p).join('');
   } else {
-    el.className = 'mb-6 p-4 bg-red-50 rounded-lg border border-red-200 flex items-center gap-6 text-sm';
-    el.innerHTML = `
-      <span class="text-red-700 font-semibold"><i class="fa-solid fa-circle-xmark mr-1"></i> ${fail} of ${total} checks failed</span>
-      <span class="text-green-600">${pass} passed</span>
-      <span class="text-gray-500">Avg response: ${avgMs}ms</span>
-    `;
+    const bg = fail > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200';
+    const icon = fail > 0
+      ? '<i class="fa-solid fa-circle-xmark text-red-600 mr-1"></i>'
+      : '<i class="fa-solid fa-triangle-exclamation text-amber-600 mr-1"></i>';
+    el.className = `mb-6 p-4 ${bg} rounded-lg border flex items-center gap-6 text-sm`;
+    el.innerHTML = icon + parts.join(' &middot; ');
   }
+}
+
+function checkBody(html) {
+  for (const pattern of ERROR_PATTERNS) {
+    const match = html.match(pattern.regex);
+    if (match) {
+      if (pattern.extract && match[1]) {
+        // Clean up extracted text
+        return match[1].replace(/&[^;]+;/g, ' ').trim();
+      }
+      return match[0];
+    }
+  }
+  return null;
 }
 
 async function checkUrl(check) {
@@ -124,10 +161,21 @@ async function checkUrl(check) {
   try {
     const resp = await fetch(check.url, { credentials: 'same-origin', redirect: 'follow' });
     const ms = Math.round(performance.now() - start);
-    return { ok: resp.ok, status: resp.status, ms, error: resp.ok ? null : resp.statusText };
+    const result = { ok: resp.ok, status: resp.status, ms, error: resp.ok ? null : resp.statusText, bodyError: null };
+
+    // Read body and scan for error patterns
+    try {
+      const body = await resp.text();
+      const bodyError = checkBody(body);
+      if (bodyError) result.bodyError = bodyError;
+    } catch (e) {
+      // Body read failed — still report HTTP status
+    }
+
+    return result;
   } catch (e) {
     const ms = Math.round(performance.now() - start);
-    return { ok: false, status: null, ms, error: e.message };
+    return { ok: false, status: null, ms, error: e.message, bodyError: null };
   }
 }
 
