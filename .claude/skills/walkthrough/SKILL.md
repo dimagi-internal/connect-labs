@@ -65,12 +65,32 @@ mkdir -p /tmp/walkthrough-screenshots
 
 ### 5. Authenticate
 
+First check if the CLI token is valid. If expired or missing, ask the user to re-authenticate:
+
+```bash
+cd <repo_root>
+python manage.py get_cli_token --list-profiles
+```
+
+If the desired profile shows `Expired: yes` or is missing, ask the user which profile to use
+and have them run the OAuth login interactively (opens browser):
+
+> "Your CLI token for profile `<name>` is expired. Please run this to re-authenticate
+> (it will open your browser):"
+>
+> `! python manage.py get_cli_token --profile <name>`
+
+Wait for the user to confirm they've logged in before proceeding.
+
+Then inject the token into the browse session:
+
 ```bash
 $B goto <base_url><auth_url>
 $B text
 ```
 
-Verify the response contains `"success": true`.
+Verify the response contains `"success": true`. If it shows `"error": "CLI token expired"`,
+ask the user to re-run `get_cli_token`.
 
 ## Execution
 
