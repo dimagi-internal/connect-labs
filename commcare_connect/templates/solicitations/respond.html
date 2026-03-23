@@ -179,9 +179,7 @@
                 var questionDivs = form.querySelectorAll('.mb-6');
                 questionDivs.forEach(function(div) {
                     var label = div.querySelector('label');
-                    var textarea = div.querySelector('textarea');
-                    var input = div.querySelector('input[type="text"]');
-                    var field = textarea || input;
+                    var field = div.querySelector('textarea, input[type="text"], select');
                     if (label && field && field.value) {
                         questionAnswers.push({
                             question: label.textContent.trim().replace(/\s*\*$/, ''),
