@@ -127,20 +127,93 @@ For each scene in the spec, follow this process:
 
 5. **Show the screenshot to the user** using the Read tool on the PNG file.
 
-6. **Evaluate AI quality** (if the scene has `ai_quality`):
+6. **Evaluate EVERY scene.** Be an extremely tough judge. You are evaluating whether
+   this is ready to project in front of a stakeholder deciding whether to use this product.
 
-   - Read the AI-generated text from the page:
-     ```bash
-     $B text
-     ```
-   - Evaluate the text against the `ai_quality` rubric in the spec.
-   - Score 1-5 using this calibration:
-     - **5/5** — Specific to context, references concrete details, would impress a stakeholder
-     - **4/5** — Good quality, relevant, but missing one specific detail or slightly generic
-     - **3/5** — Correct but generic — could apply to any similar program
-     - **2/5** — Partially relevant but contains irrelevant or confusing content
-     - **1/5** — Wrong, empty, or completely generic boilerplate
-   - Write a 1-3 sentence commentary explaining the score.
+   Read the FULL page text carefully — every word, not just headings:
+
+   ```bash
+   $B text
+   ```
+
+   Score on 5 dimensions. The overall scene score is the LOWEST of all applicable
+   dimensions (weakest link). ALL scenes get scored, not just AI ones.
+
+   **A. Content Quality** (EVERY scene, not just AI):
+
+   For AI scenes: You MUST read the AI output word by word. Do not skim.
+
+   - **Quote the worst sentence** verbatim. If you can't find anything bad, score may be high.
+   - **Check for demo data artifacts:** same person/org appearing multiple times as different
+     applicants, "Unknown Organization", "None None", identical responses. Any = max 2.
+   - **Verify factual claims:** numbers cited by AI must match the actual page data. Wrong = max 3.
+   - **Stakeholder smell test:** read as the CEO of Baobab. What makes you raise an eyebrow?
+
+   For non-AI scenes: Check the DATA on the page.
+
+   - Are KPIs populated or showing "loading..."/"—"?
+   - Do organization/user names look real or like test data?
+   - Are charts populated with meaningful data or empty?
+   - Do numbers make sense (e.g., $0 distributed, 0 families)?
+   - Is there anything embarrassing a stakeholder would notice?
+
+   Scoring:
+
+   - **5** — All data/content accurate, specific, and impressive. Nothing embarrassing.
+   - **4** — Mostly good but one item is slightly off or one field shows placeholder data
+   - **3** — Noticeable issues a careful reader would catch (loading states, generic content)
+   - **2** — Demo data artifacts, wrong facts, or embarrassing content
+   - **1** — Would actively damage credibility
+
+   **B. App Page Quality** — How does the CONNECT LABS PAGE look? (NOT the walkthrough slide)
+   This evaluates the actual product being demoed, not the walkthrough HTML.
+
+   - **5** — Professional, polished UI a designer would approve. Clear hierarchy, good spacing.
+   - **4** — Good layout but one area feels cramped or unpolished
+   - **3** — Functional but looks like a developer tool — dense text, no visual hierarchy
+   - **2** — Messy layout, overlapping elements, broken styling
+   - **1** — Broken or unusable
+
+   **C. Screenshot Quality** — Is the capture clean and complete?
+
+   - **5** — Clean, properly framed, content starts at top, nothing cut off
+   - **4** — Good but slightly cropped or minor framing issue
+   - **3** — Content visible but awkwardly framed — header overlap, too much whitespace
+   - **2** — Important content missing or wrong scroll position
+   - **1** — Wrong page, blank, or mostly empty
+
+   **D. Walkthrough Slide Quality** — How does THIS SLIDE in the deck look?
+   This evaluates the walkthrough presentation, not the app.
+
+   - **5** — Screenshot is readable, narration tells the story, persona badge is clear
+   - **4** — Good but narration could be more specific or screenshot needs scroll to see key part
+   - **3** — Slide works but doesn't highlight the impressive thing about this scene
+   - **2** — Screenshot dominates with no clear story, or narration is generic
+   - **1** — Slide adds no value — just a raw screenshot dump
+
+   **E. Demo Readiness** — Would you show this to Baobab without apologizing?
+
+   - **5** — Yes, confidently. Clear story, polished look, accurate content.
+   - **4** — Yes, with one minor caveat
+   - **3** — Maybe, but you'd talk over the rough spots
+   - **2** — You'd skip this slide or preface with "still a prototype"
+   - **1** — Would hurt credibility
+
+   Write commentary that:
+
+   1. Quotes the worst thing you found (verbatim) — from CONTENT, not styling
+   2. Names the WEAKEST dimension and why — be specific
+   3. Suggests ONE concrete fix that would have the most impact
+
+   **BLOCKING RULE:** If ANY scene scores 2 or below on Demo Readiness, STOP the
+   walkthrough and tell the user:
+
+   > "Scene {n} scored {score}/5 on Demo Readiness — this would hurt the demo.
+   > The issue is: {quote the problem}. Recommended fix: {fix}.
+   > Should I fix this now before continuing, or skip this scene?"
+
+   Do NOT silently log a 2/5 and keep going. A 2/5 means the slide would embarrass
+   you in a meeting — that's a blocker, not a warning. Either fix it or drop it.
 
 7. **Record issues.** If anything goes wrong (element not found, page error, slow load,
    empty state), note it as an issue with severity (error/warning) and description.
