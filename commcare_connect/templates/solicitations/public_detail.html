@@ -168,29 +168,61 @@
                 <i class="fa-solid fa-scale-balanced mr-2 text-brand-cornflower-blue"></i>Evaluation Criteria
             </h2>
             <p class="text-sm text-gray-500 mb-6">
-                Responses will be evaluated against the following criteria. Total weight: {{ solicitation.evaluation_criteria|length }} criteria.
+                Responses will be scored across {{ solicitation.evaluation_criteria|length }} criteria. Weights reflect the relative importance of each area.
             </p>
-            <div class="space-y-4">
+
+            {# Build a lookup dict: question id → question text for linked question tags #}
+            {% with questions_list=solicitation.questions %}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {% for criterion in solicitation.evaluation_criteria %}
-                <div class="p-5 rounded-lg border border-gray-100 bg-gray-50/50">
-                    <div class="flex items-center justify-between mb-2">
-                        <h3 class="text-sm font-semibold text-gray-800">{{ criterion.name }}</h3>
-                        <span class="text-xs font-bold text-brand-indigo bg-brand-indigo/10 px-3 py-1 rounded-full">
+                <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm flex flex-col gap-3">
+
+                    <!-- Name + weight badge -->
+                    <div class="flex items-start justify-between gap-3">
+                        <h3 class="font-semibold text-gray-900 text-sm leading-snug">{{ criterion.name }}</h3>
+                        {% if criterion.weight %}
+                        <span class="flex-shrink-0 bg-indigo-100 text-indigo-700 text-xs font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap">
                             {{ criterion.weight }}%
                         </span>
+                        {% endif %}
                     </div>
-                    <p class="text-sm text-gray-600 mb-2">{{ criterion.description }}</p>
-                    {% if criterion.scoring_guide %}
-                    <details class="text-xs text-gray-500">
-                        <summary class="cursor-pointer font-medium hover:text-brand-cornflower-blue transition-colors">
-                            <i class="fa-solid fa-lightbulb mr-1 text-brand-marigold"></i>What makes a strong response?
-                        </summary>
-                        <p class="mt-2 pl-4 border-l-2 border-brand-cornflower-blue/30 text-gray-600">{{ criterion.scoring_guide }}</p>
-                    </details>
+
+                    <!-- Description -->
+                    {% if criterion.description %}
+                    <p class="text-sm text-gray-600 leading-relaxed">{{ criterion.description }}</p>
                     {% endif %}
+
+                    <!-- Scoring guide -->
+                    {% if criterion.scoring_guide %}
+                    <div class="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-md p-3 leading-relaxed">
+                        <p class="font-medium text-gray-600 mb-1 flex items-center gap-1">
+                            <i class="fa-solid fa-lightbulb text-amber-400"></i>
+                            What makes a strong response?
+                        </p>
+                        {{ criterion.scoring_guide }}
+                    </div>
+                    {% endif %}
+
+                    <!-- Linked questions -->
+                    {% if criterion.linked_questions %}
+                    <div class="flex flex-wrap gap-1.5 pt-1">
+                        {% for q_id in criterion.linked_questions %}
+                            {% for question in questions_list %}
+                                {% if question.id == q_id %}
+                                <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full border border-blue-100" title="{{ question.text }}">
+                                    <i class="fa-solid fa-link text-blue-400 text-[10px]"></i>
+                                    Q: {{ question.text|truncatewords:6 }}
+                                </span>
+                                {% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
                 </div>
                 {% endfor %}
             </div>
+            {% endwith %}
         </div>
         {% endif %}
 
