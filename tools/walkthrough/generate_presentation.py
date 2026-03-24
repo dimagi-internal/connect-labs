@@ -19,6 +19,24 @@ def _render_stars(score, max_score=5):
     return f'<span class="stars">{filled}{empty}</span> ({score}/{max_score})'
 
 
+def _render_score_bar(score, max_score=5):
+    """Render a visual score bar with stars."""
+    if score >= 5:
+        bar_color = "#059669"
+    elif score >= 4:
+        bar_color = "#2563eb"
+    elif score >= 3:
+        bar_color = "#d97706"
+    else:
+        bar_color = "#dc2626"
+    pct = int((score / max_score) * 100)
+    stars = _render_stars(score, max_score)
+    return f"""<div class="score-bar-row">
+  <div class="score-bar-bg"><div class="score-bar-fill" style="width:{pct}%;background:{bar_color};"></div></div>
+  {stars}
+</div>"""
+
+
 def _render_title_slide(run_data):
     """Render the title slide HTML."""
     name = html.escape(run_data["name"])
@@ -28,10 +46,14 @@ def _render_title_slide(run_data):
     persona_count = len(run_data["personas"])
     ai_count = sum(1 for s in run_data["slides"] if s.get("type") == "scene" and s.get("ai_evaluation"))
     return f"""<div class="slide slide-title">
-  <h1>{name}</h1>
-  <p class="narrative">&#8220;{narrative}&#8221;</p>
-  <p class="meta">Generated: {generated} &middot; {scene_count} scenes &middot;
-  {persona_count} personas &middot; {ai_count} AI features evaluated</p>
+  <div class="title-accent-bar"></div>
+  <div class="title-content">
+    <h1>{name}</h1>
+    <p class="narrative">&#8220;{narrative}&#8221;</p>
+    <hr class="title-divider">
+    <p class="meta">Generated: {generated} &middot; {scene_count} scenes &middot;
+    {persona_count} personas &middot; {ai_count} AI features evaluated</p>
+  </div>
 </div>"""
 
 
@@ -43,7 +65,7 @@ def _render_persona_intro(persona_key, personas):
     intro = html.escape(p["intro"])
     color = html.escape(p["color"])
     initials = "".join(w[0] for w in p["name"].split()[:2])
-    return f"""<div class="slide slide-persona">
+    return f"""<div class="slide slide-persona" style="background-color: {color}0d;">
   <div class="persona-card">
     <div class="persona-avatar" style="background-color: {color}">{initials}</div>
     <h2>{name}</h2>
@@ -61,6 +83,10 @@ def _render_scene_slide(slide, personas, slide_index, total_slides):
     title = html.escape(slide["title"])
     narration = html.escape(slide.get("narration", ""))
 
+    # Progress bar percentage
+    scene_slides_total = max(total_slides, 1)
+    progress_pct = int((slide_index / scene_slides_total) * 100)
+
     # Screenshot or placeholder
     if slide.get("screenshot_b64"):
         img_html = f'<img src="data:image/png;base64,{slide["screenshot_b64"]}" alt="{title}" class="screenshot">'
@@ -75,17 +101,18 @@ def _render_scene_slide(slide, personas, slide_index, total_slides):
         stars = _render_stars(ai["score"], ai.get("max_score", 5))
         commentary = html.escape(ai["commentary"])
         ai_html = f"""<div class="ai-quality-card">
-    <div class="ai-quality-header">AI Quality {stars}</div>
+    <div class="ai-quality-header">&#10024; AI Quality {stars}</div>
     <p>{commentary}</p>
   </div>"""
 
-    return f"""<div class="slide slide-scene">
+    return f"""<div class="slide slide-scene" style="border-top: 3px solid {p_color};">
   <div class="slide-header">
     <span class="persona-badge" style="background-color: {p_color}">{p_name}</span>
-    <span class="slide-counter">[{slide_index}/{total_slides}]</span>
+    <div class="slide-progress-bar"><div class="slide-progress-fill"
+      style="width:{progress_pct}%;background:{p_color};"></div></div>
   </div>
   <h2>{title}</h2>
-  <p class="narration">{narration}</p>
+  <div class="narration-box"><p class="narration">{narration}</p></div>
   {img_html}
   {ai_html}
 </div>"""
@@ -99,13 +126,25 @@ def _render_summary_slide(slide, run_data):
     total = slide["scenes_total"]
     generated = html.escape(run_data["generated_at"][:16].replace("T", " "))
 
-    # AI scores
+    # Verdict headline based on average AI score
+    ai_scores_list = slide.get("ai_scores", [])
+    verdict_html = ""
+    if ai_scores_list:
+        avg = sum(s["score"] for s in ai_scores_list) / len(ai_scores_list)
+        if avg >= 4:
+            verdict_html = '<p class="verdict verdict-green">Demo Ready &#10003;</p>'
+        elif avg >= 3:
+            verdict_html = '<p class="verdict verdict-amber">Needs Polish</p>'
+        else:
+            verdict_html = '<p class="verdict verdict-red">Needs Work</p>'
+
+    # AI scores with visual bars
     scores_html = ""
-    for ai in slide.get("ai_scores", []):
+    for ai in ai_scores_list:
         feature = html.escape(ai["feature"])
-        stars = _render_stars(ai["score"], ai.get("max_score", 5))
+        bar = _render_score_bar(ai["score"], ai.get("max_score", 5))
         flag = ' <span class="focus-flag">&larr; needs work</span>' if ai["score"] <= 3 else ""
-        scores_html += f"<li>{feature}: {stars}{flag}</li>\n"
+        scores_html += f"<li><span class='score-feature'>{feature}</span>{bar}{flag}</li>\n"
 
     # Issues
     issues_html = ""
@@ -121,23 +160,26 @@ def _render_summary_slide(slide, run_data):
         prev_date = html.escape(prev["generated_at"][:16].replace("T", " "))
         prev_html = f'<h3>Previous Run ({prev_date})</h3><ul class="comparison">'
         prev_scores = {s["feature"]: s["score"] for s in prev.get("ai_scores", [])}
-        for ai in slide.get("ai_scores", []):
+        for ai in ai_scores_list:
             feat = ai["feature"]
             prev_score = prev_scores.get(feat)
             if prev_score is not None:
                 if ai["score"] > prev_score:
-                    arrow = f"&uarr; {feat}: {prev_score}&rarr;{ai['score']}"
+                    arrow = f'<span class="arrow-up">&#8593;</span> {feat}: {prev_score}&rarr;{ai["score"]}'
                 elif ai["score"] < prev_score:
-                    arrow = f"&darr; {feat}: {prev_score}&rarr;{ai['score']}"
+                    arrow = f'<span class="arrow-down">&#8595;</span> {feat}: {prev_score}&rarr;{ai["score"]}'
                 else:
                     arrow = f"= {feat}: unchanged"
                 prev_html += f"<li>{arrow}</li>"
         prev_html += "</ul>"
 
+    scenes_badge = f'<span class="scenes-badge">Scenes: {completed}/{total} completed</span>'
+
     return f"""<div class="slide slide-summary">
   <h2>Walkthrough Summary</h2>
   <p class="meta">Run: {generated} | Duration: {mins}m {secs:02d}s</p>
-  <p>Scenes: {completed}/{total} completed</p>
+  {scenes_badge}
+  {verdict_html}
   {"<h3>AI Quality Scores</h3><ul>" + scores_html + "</ul>" if scores_html else ""}
   {"<h3>Issues Found</h3><ul>" + issues_html + "</ul>" if issues_html else ""}
   {prev_html}
@@ -179,6 +221,17 @@ body {
 
 .slide.active {
   display: block;
+  animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Scene slides get more room for screenshots */
+.slide-scene {
+  max-width: 1040px;
 }
 
 /* Typography */
@@ -227,25 +280,51 @@ ul li {
   align-items: flex-start;
   justify-content: center;
   flex-direction: column;
-  padding-top: 4rem;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
 }
 
 .slide-title.active {
   display: flex;
 }
 
+
+.title-accent-bar {
+  width: 100%;
+  height: 6px;
+  background: linear-gradient(90deg, #2563eb, #7c3aed);
+  flex-shrink: 0;
+}
+
+.title-content {
+  padding: 4rem 2rem 3rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+}
+
+.title-divider {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 1.5rem 0 1rem;
+  max-width: 640px;
+}
+
 .slide-title .narrative {
   font-size: 1.25rem;
   font-style: italic;
   color: #6b7280;
-  margin: 1rem 0 1.5rem;
+  margin: 1rem 0 0;
   max-width: 640px;
 }
 
 .slide-title .meta {
-  font-size: 0.875rem;
+  font-size: 0.95rem;
   color: #9ca3af;
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0;
 }
 
 /* Persona slides */
@@ -262,16 +341,19 @@ ul li {
 }
 
 .persona-card {
-  max-width: 480px;
-  padding: 2rem;
+  max-width: 560px;
+  padding: 3rem;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
 }
 
 .persona-avatar {
-  width: 80px;
-  height: 80px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
   color: #ffffff;
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -295,8 +377,9 @@ ul li {
 .slide-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
 
 .persona-badge {
@@ -306,17 +389,35 @@ ul li {
   color: #ffffff;
   font-size: 0.875rem;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
-.slide-counter {
-  font-size: 0.875rem;
-  color: #9ca3af;
+.slide-progress-bar {
+  flex: 1;
+  height: 3px;
+  background: #f3f4f6;
+  border-radius: 9999px;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.slide-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.narration-box {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .narration {
   font-size: 1.05rem;
   color: #4b5563;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0;
   font-style: italic;
 }
 
@@ -325,6 +426,7 @@ ul li {
   max-width: 100%;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e5e7eb;
   display: block;
   margin: 1rem 0;
 }
@@ -382,19 +484,105 @@ ul li {
   color: #dc2626;
 }
 
+/* Summary slide */
+.verdict {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.verdict-green {
+  color: #059669;
+}
+
+.verdict-amber {
+  color: #d97706;
+}
+
+.verdict-red {
+  color: #dc2626;
+}
+
+.scenes-badge {
+  display: inline-block;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 9999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.875rem;
+  color: #374151;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+}
+
+.score-feature {
+  display: block;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.25rem;
+}
+
+.score-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.score-bar-bg {
+  flex: 1;
+  height: 8px;
+  background: #f3f4f6;
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 80px;
+  max-width: 200px;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
 /* Summary slide comparison */
 .comparison li {
   color: #374151;
+}
+
+.arrow-up {
+  color: #059669;
+  font-weight: 700;
+}
+
+.arrow-down {
+  color: #dc2626;
+  font-weight: 700;
 }
 
 /* Summary meta */
 .slide-summary .meta {
   font-size: 0.9rem;
   color: #6b7280;
-  margin-bottom: 1rem;
+  margin-bottom: 0.5rem;
 }
 
 /* Navigation controls */
+#nav-progress-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: #f3f4f6;
+  z-index: 99;
+}
+
+#nav-progress-bar-fill {
+  height: 100%;
+  background: #2563eb;
+  transition: width 0.2s ease;
+}
+
 #nav-controls {
   position: fixed;
   bottom: 1.5rem;
@@ -402,7 +590,7 @@ ul li {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid #e5e7eb;
   border-radius: 9999px;
@@ -433,6 +621,15 @@ ul li {
   text-align: center;
 }
 
+#nav-slide-title {
+  font-size: 0.8rem;
+  color: #6b7280;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Print styles */
 @media print {
   body {
@@ -443,8 +640,13 @@ ul li {
     display: none;
   }
 
+  #nav-progress-bar {
+    display: none;
+  }
+
   .slide {
     display: block !important;
+    opacity: 1 !important;
     page-break-after: always;
     min-height: auto;
     border: none;
@@ -480,7 +682,7 @@ JS_NAVIGATION = """
       slides[i].classList.remove('active');
     }
 
-    // Activate target slide
+    // Activate target slide (CSS animation handles the fade)
     slides[n].classList.add('active');
     currentSlide = n;
 
@@ -488,6 +690,20 @@ JS_NAVIGATION = """
     var progress = document.getElementById('nav-progress');
     if (progress) {
       progress.textContent = (currentSlide + 1) + ' / ' + totalSlides;
+    }
+
+    // Update slide title in nav
+    var titleEl = document.getElementById('nav-slide-title');
+    if (titleEl) {
+      var h2 = slides[n].querySelector('h2');
+      var h1 = slides[n].querySelector('h1');
+      titleEl.textContent = (h2 && h2.textContent) || (h1 && h1.textContent) || '';
+    }
+
+    // Update bottom progress bar
+    var barFill = document.getElementById('nav-progress-bar-fill');
+    if (barFill) {
+      barFill.style.width = Math.round(((currentSlide + 1) / totalSlides) * 100) + '%';
     }
 
     // Scroll to top of slide
@@ -513,6 +729,14 @@ JS_NAVIGATION = """
     }
   });
 
+  // Build bottom progress bar
+  var progressBar = document.createElement('div');
+  progressBar.id = 'nav-progress-bar';
+  var progressBarFill = document.createElement('div');
+  progressBarFill.id = 'nav-progress-bar-fill';
+  progressBar.appendChild(progressBarFill);
+  document.body.appendChild(progressBar);
+
   // Build nav controls
   var nav = document.createElement('div');
   nav.id = 'nav-controls';
@@ -525,6 +749,9 @@ JS_NAVIGATION = """
   var progress = document.createElement('span');
   progress.id = 'nav-progress';
 
+  var slideTitle = document.createElement('span');
+  slideTitle.id = 'nav-slide-title';
+
   var nextBtn = document.createElement('button');
   nextBtn.textContent = '\\u2192';
   nextBtn.title = 'Next slide (ArrowRight)';
@@ -532,6 +759,7 @@ JS_NAVIGATION = """
 
   nav.appendChild(prevBtn);
   nav.appendChild(progress);
+  nav.appendChild(slideTitle);
   nav.appendChild(nextBtn);
   document.body.appendChild(nav);
 
