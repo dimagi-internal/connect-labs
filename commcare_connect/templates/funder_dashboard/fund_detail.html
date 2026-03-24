@@ -184,25 +184,33 @@
         <!-- AI Report Section -->
         <div id="ai-report-section" class="hidden mt-6">
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div class="p-6 border-b border-gray-100 flex items-center justify-between">
-                    <h3 class="text-sm font-semibold text-gray-700">
-                        <i class="fa-solid fa-robot mr-2 text-indigo-500"></i> AI Impact Report
-                    </h3>
+                <!-- Header: gradient background with icon + title -->
+                <div class="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center">
+                            <i class="fa-solid fa-wand-magic-sparkles text-white text-base"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-semibold text-white leading-tight">AI Impact Report</h3>
+                            <p class="text-xs text-indigo-200 leading-tight">Generated narrative analysis of fund performance</p>
+                        </div>
+                    </div>
                     <button id="generate-report-btn"
-                            class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Generate Report
+                            class="inline-flex items-center px-4 py-2 bg-white text-indigo-700 text-sm font-semibold rounded-lg hover:bg-indigo-50 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fa-solid fa-rotate mr-2 text-indigo-500"></i> Generate Report
                     </button>
                 </div>
-                <div id="ai-report-content" class="hidden p-6">
-                    <div id="ai-report-text" class="prose prose-sm max-w-none text-gray-700"></div>
+                <!-- Report content with max-height scroll -->
+                <div id="ai-report-content" class="hidden">
+                    <div id="ai-report-text" class="ai-report-prose prose prose-lg max-w-none px-8 py-6 overflow-y-auto" style="max-height: 600px;"></div>
                 </div>
-                <div id="ai-report-loading" class="hidden p-6 text-center">
-                    <div class="inline-flex items-center gap-3">
-                        <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <div id="ai-report-loading" class="hidden px-8 py-10 text-center">
+                    <div class="inline-flex flex-col items-center gap-3">
+                        <svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                         </svg>
-                        <span class="text-sm text-gray-600">Generating impact report...</span>
+                        <span class="text-sm text-gray-500 font-medium">Generating impact report&hellip;</span>
                     </div>
                 </div>
             </div>
@@ -573,6 +581,83 @@
         } // end startSSE
     })();
     </script>
+
+    <!-- AI Report prose styles -->
+    <style>
+    /* Heading hierarchy */
+    .ai-report-prose h1,
+    .ai-report-prose h2 {
+        color: #4338ca; /* indigo-700 */
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-top: 1.75rem;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.35rem;
+        border-bottom: 2px solid #e0e7ff; /* indigo-100 */
+    }
+    .ai-report-prose h2:first-child,
+    .ai-report-prose h1:first-child {
+        margin-top: 0;
+    }
+    .ai-report-prose h3 {
+        color: #1e1b4b; /* indigo-950 */
+        font-size: 1rem;
+        font-weight: 700;
+        margin-top: 1.25rem;
+        margin-bottom: 0.35rem;
+    }
+    .ai-report-prose h4 {
+        color: #374151; /* gray-700 */
+        font-size: 0.9375rem;
+        font-weight: 600;
+        margin-top: 1rem;
+        margin-bottom: 0.25rem;
+    }
+    /* Body text */
+    .ai-report-prose p {
+        color: #374151; /* gray-700 */
+        line-height: 1.75;
+        margin-bottom: 0.85rem;
+    }
+    /* Bold / strong */
+    .ai-report-prose strong,
+    .ai-report-prose b {
+        color: #111827; /* gray-900 */
+        font-weight: 700;
+    }
+    /* Lists */
+    .ai-report-prose ul {
+        list-style-type: disc;
+        padding-left: 1.5rem;
+        margin-bottom: 0.85rem;
+    }
+    .ai-report-prose ol {
+        list-style-type: decimal;
+        padding-left: 1.5rem;
+        margin-bottom: 0.85rem;
+    }
+    .ai-report-prose li {
+        color: #374151;
+        line-height: 1.7;
+        margin-bottom: 0.3rem;
+    }
+    .ai-report-prose li::marker {
+        color: #6366f1; /* indigo-500 */
+    }
+    /* Horizontal rules */
+    .ai-report-prose hr {
+        border-color: #e5e7eb;
+        margin: 1.5rem 0;
+    }
+    /* Scroll bar styling */
+    .ai-report-prose {
+        scrollbar-width: thin;
+        scrollbar-color: #c7d2fe #f5f3ff;
+    }
+    .ai-report-prose::-webkit-scrollbar { width: 6px; }
+    .ai-report-prose::-webkit-scrollbar-track { background: #f5f3ff; border-radius: 3px; }
+    .ai-report-prose::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 3px; }
+    </style>
 
     <!-- Print styles -->
     <style>

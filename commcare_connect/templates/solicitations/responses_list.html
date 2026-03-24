@@ -43,33 +43,133 @@
     {% if responses %}
         <!-- AI Review Section -->
         <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
-        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-6">
-            <div class="p-4 flex items-center justify-between border-b border-gray-100">
-                <div>
-                    <span class="text-sm font-semibold text-gray-700">
-                        <i class="fa-solid fa-robot mr-2 text-indigo-500"></i> AI Comparative Review
-                    </span>
-                    <span class="text-xs text-gray-500 ml-2">Compare all applicants side by side</span>
+        <style>
+            /* AI review prose overrides — applied via inline styles on rendered HTML */
+            #ai-review-text h2 {
+                font-size: 1.2rem;
+                font-weight: 700;
+                color: #3730a3;
+                border-bottom: 2px solid #e0e7ff;
+                padding-bottom: 0.4rem;
+                margin-top: 1.75rem;
+                margin-bottom: 0.75rem;
+            }
+            #ai-review-text h3 {
+                font-size: 1rem;
+                font-weight: 700;
+                color: #4338ca;
+                margin-top: 1.25rem;
+                margin-bottom: 0.5rem;
+            }
+            #ai-review-text h4 {
+                font-size: 0.95rem;
+                font-weight: 600;
+                color: #4f46e5;
+                margin-top: 1rem;
+                margin-bottom: 0.4rem;
+            }
+            #ai-review-text p {
+                margin-top: 0.5rem;
+                margin-bottom: 0.5rem;
+                line-height: 1.75;
+                color: #374151;
+            }
+            #ai-review-text table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.875rem;
+                margin-top: 0.75rem;
+                margin-bottom: 1rem;
+            }
+            #ai-review-text thead tr {
+                background-color: #eef2ff;
+                position: sticky;
+                top: 0;
+                z-index: 1;
+            }
+            #ai-review-text th {
+                padding: 0.6rem 0.9rem;
+                text-align: left;
+                font-weight: 600;
+                color: #3730a3;
+                border-bottom: 2px solid #c7d2fe;
+                white-space: nowrap;
+            }
+            #ai-review-text td {
+                padding: 0.55rem 0.9rem;
+                border-bottom: 1px solid #e5e7eb;
+                color: #374151;
+                vertical-align: top;
+            }
+            #ai-review-text tbody tr:nth-child(even) {
+                background-color: #f8faff;
+            }
+            #ai-review-text tbody tr:hover {
+                background-color: #eef2ff;
+            }
+            #ai-review-text ul {
+                padding-left: 1.5rem;
+                margin-top: 0.4rem;
+                margin-bottom: 0.4rem;
+            }
+            #ai-review-text ul li {
+                list-style-type: disc;
+                color: #374151;
+                margin-bottom: 0.25rem;
+                line-height: 1.6;
+            }
+            #ai-review-text ul li::marker {
+                color: #6366f1;
+            }
+            #ai-review-text ol li::marker {
+                color: #6366f1;
+                font-weight: 600;
+            }
+            #ai-review-text strong {
+                color: #1f2937;
+                font-weight: 700;
+            }
+            /* Fade-in for scroll indicator */
+            #ai-review-scroll-hint {
+                transition: opacity 0.3s ease;
+            }
+        </style>
+        <div class="bg-white rounded-xl shadow-sm border border-indigo-100 overflow-hidden mb-6">
+            <!-- Card header -->
+            <div class="bg-gradient-to-r from-indigo-50 to-blue-50 px-5 py-4 flex items-center justify-between border-b border-indigo-100">
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white text-sm shadow-sm">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div>
+                        <span class="text-sm font-semibold text-indigo-900">AI Comparative Review</span>
+                        <span class="text-xs text-indigo-400 ml-2">Compare all applicants side by side</span>
+                    </div>
                 </div>
                 <button id="ai-review-btn"
-                        class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> AI Review All ({{ responses|length }} responses)
+                        class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Review All ({{ responses|length }} responses)
                 </button>
             </div>
-            <div id="ai-review-loading" class="hidden p-6 text-center">
+            <!-- Loading state -->
+            <div id="ai-review-loading" class="hidden px-6 py-8 text-center bg-indigo-50/30">
                 <div class="inline-flex items-center gap-3">
-                    <svg class="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg class="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                     </svg>
-                    <span class="text-sm text-gray-600">AI is reviewing all responses...</span>
+                    <span class="text-sm text-indigo-700 font-medium">AI is reviewing all responses…</span>
                 </div>
             </div>
-            <div id="ai-review-content" class="hidden p-6">
-                <div id="ai-review-text" class="prose max-w-none text-gray-700
-                    prose-headings:text-indigo-900 prose-headings:border-b prose-headings:border-gray-200 prose-headings:pb-2
-                    prose-table:text-sm prose-th:bg-gray-50 prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2
-                    prose-strong:text-gray-900 prose-li:marker:text-indigo-400"></div>
+            <!-- Review content -->
+            <div id="ai-review-content" class="hidden">
+                <div class="max-h-[600px] overflow-y-auto px-6 py-5 scroll-smooth" id="ai-review-scroll">
+                    <div id="ai-review-text" class="text-base leading-relaxed"></div>
+                </div>
+                <!-- Scroll hint — shown until user scrolls -->
+                <div id="ai-review-scroll-hint" class="flex items-center justify-center gap-1.5 py-2 bg-gradient-to-t from-white to-transparent text-xs text-indigo-400 border-t border-indigo-50 select-none pointer-events-none">
+                    <i class="fa-solid fa-angles-down text-[10px]"></i> Scroll to read more
+                </div>
             </div>
         </div>
 
@@ -79,12 +179,25 @@
             var loadingEl = document.getElementById('ai-review-loading');
             var contentEl = document.getElementById('ai-review-content');
             var textEl = document.getElementById('ai-review-text');
+            var scrollEl = document.getElementById('ai-review-scroll');
+            var scrollHint = document.getElementById('ai-review-scroll-hint');
+
+            // Hide scroll hint once user has scrolled a bit
+            if (scrollEl) {
+                scrollEl.addEventListener('scroll', function() {
+                    if (scrollEl.scrollTop > 40 && scrollHint) {
+                        scrollHint.style.opacity = '0';
+                    }
+                }, { passive: true });
+            }
 
             btn.onclick = function() {
                 btn.disabled = true;
                 loadingEl.classList.remove('hidden');
                 contentEl.classList.add('hidden');
                 textEl.innerHTML = '';
+                if (scrollHint) { scrollHint.style.opacity = '1'; }
+                if (scrollEl) { scrollEl.scrollTop = 0; }
 
                 fetch('{% url "ai:ai_stream" %}', {
                     method: 'POST',
@@ -106,6 +219,13 @@
                     loadingEl.classList.add('hidden');
                     contentEl.classList.remove('hidden');
 
+                    // Hide scroll hint if content doesn't overflow
+                    function updateScrollHint() {
+                        if (scrollHint && scrollEl) {
+                            scrollHint.style.opacity = (scrollEl.scrollHeight > scrollEl.clientHeight + 10) ? '1' : '0';
+                        }
+                    }
+
                     function read() {
                         reader.read().then(function(result) {
                             if (result.done) { btn.disabled = false; return; }
@@ -122,6 +242,7 @@
                                         textEl.innerHTML = (typeof marked !== 'undefined')
                                             ? marked.parse(fullText)
                                             : fullText.replace(/\n/g, '<br>');
+                                        updateScrollHint();
                                     }
                                     if (evt.event_type === 'error') {
                                         textEl.innerHTML = '<p class="text-red-600">' + (evt.error || 'Review failed') + '</p>';
