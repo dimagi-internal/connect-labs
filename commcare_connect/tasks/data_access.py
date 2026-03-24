@@ -12,90 +12,15 @@ This is a pure API client with no local database storage.
 
 from datetime import datetime
 
-import httpx
-from django.conf import settings
-from django.http import HttpRequest
-
-from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
 from commcare_connect.tasks.models import TaskRecord
+from commcare_connect.workflow.data_access import BaseDataAccess
 
 
-class TaskDataAccess:
+class TaskDataAccess(BaseDataAccess):
     """
     Data access layer for tasks that uses LabsRecordAPIClient for state
     and fetches opportunity/user data via OAuth APIs.
     """
-
-    def __init__(
-        self,
-        opportunity_id: int | None = None,
-        organization_id: int | None = None,
-        program_id: int | None = None,
-        user=None,
-        request: HttpRequest | None = None,
-        access_token: str | None = None,
-    ):
-        """
-        Initialize the task data access layer.
-
-        Args:
-            opportunity_id: Optional opportunity ID for scoped API requests
-            organization_id: Optional organization ID for scoped API requests
-            program_id: Optional program ID for scoped API requests
-            user: Django User object (for OAuth token extraction)
-            request: HttpRequest object (for extracting token and org context in labs mode)
-            access_token: OAuth token for Connect production APIs
-        """
-        self.opportunity_id = opportunity_id
-        self.organization_id = organization_id
-        self.program_id = program_id
-        self.user = user
-        self.request = request
-
-        # Use labs_context from middleware if available (takes precedence)
-        if request and hasattr(request, "labs_context"):
-            labs_context = request.labs_context
-            if not opportunity_id and "opportunity_id" in labs_context:
-                self.opportunity_id = labs_context["opportunity_id"]
-            if not program_id and "program_id" in labs_context:
-                self.program_id = labs_context["program_id"]
-            if not organization_id and "organization_id" in labs_context:
-                self.organization_id = labs_context["organization_id"]
-
-        # Get OAuth token
-        if not access_token and request:
-            # Try to get token from labs session or SocialAccount
-            if hasattr(request, "session") and "labs_oauth" in request.session:
-                access_token = request.session["labs_oauth"].get("access_token")
-            elif user:
-                # allauth SocialAccount was removed during labs simplification.
-                # Non-labs users won't have Connect tokens via this path.
-                pass
-
-        if not access_token:
-            raise ValueError("OAuth access token required for task data access")
-
-        self.access_token = access_token
-        self.production_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
-
-        # Initialize HTTP client with Bearer token
-        self.http_client = httpx.Client(
-            headers={"Authorization": f"Bearer {self.access_token}"},
-            timeout=120.0,
-        )
-
-        # Initialize Labs API client for state management
-        self.labs_api = LabsRecordAPIClient(
-            access_token,
-            opportunity_id=self.opportunity_id,
-            organization_id=self.organization_id,
-            program_id=self.program_id,
-        )
-
-    def close(self):
-        """Close HTTP client."""
-        if self.http_client:
-            self.http_client.close()
 
     # Task CRUD Methods
 
@@ -384,13 +309,6 @@ class TaskDataAccess:
         )
 
     # Connect API Integration Methods
-
-    def _call_connect_api(self, endpoint: str) -> httpx.Response:
-        """Call Connect production API with OAuth token."""
-        url = f"{self.production_url}{endpoint}"
-        response = self.http_client.get(url)
-        response.raise_for_status()
-        return response
 
     def search_opportunities(self, query: str = "", limit: int = 100) -> list[dict]:
         """

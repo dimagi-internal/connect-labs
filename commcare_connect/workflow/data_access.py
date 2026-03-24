@@ -286,6 +286,12 @@ class BaseDataAccess:
         if self.http_client:
             self.http_client.close()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def _call_connect_api(self, endpoint: str) -> httpx.Response:
         """Call Connect production API with OAuth token."""
         url = f"{self.production_url}{endpoint}"

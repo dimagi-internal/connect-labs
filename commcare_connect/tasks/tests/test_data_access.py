@@ -58,11 +58,11 @@ def _make_update_return_value(task):
 @pytest.fixture
 def task_data_access():
     """Create a TaskDataAccess instance with a mocked LabsRecordAPIClient."""
-    with patch("commcare_connect.tasks.data_access.LabsRecordAPIClient") as MockAPIClient:
+    with patch("commcare_connect.workflow.data_access.LabsRecordAPIClient") as MockAPIClient:
         mock_api = MagicMock()
         MockAPIClient.return_value = mock_api
 
-        with patch("commcare_connect.tasks.data_access.settings") as mock_settings:
+        with patch("commcare_connect.workflow.data_access.settings") as mock_settings:
             mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
 
             from commcare_connect.tasks.data_access import TaskDataAccess

@@ -17,7 +17,6 @@ from dataclasses import dataclass
 
 import httpx
 import pandas as pd
-from django.conf import settings
 from django.http import HttpRequest
 
 from commcare_connect.audit.analysis_config import AUDIT_EXTRACTION_CONFIG
@@ -26,6 +25,7 @@ from commcare_connect.labs.analysis.computations import compute_visit_fields
 from commcare_connect.labs.analysis.models import LocalUserVisit
 from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from commcare_connect.workflow.data_access import BaseDataAccess
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ def generate_audit_description(criteria: AuditCriteria) -> str:
 # =============================================================================
 
 
-class AuditDataAccess:
+class AuditDataAccess(BaseDataAccess):
     """
     Optimized data access layer for audit operations.
 
@@ -242,61 +242,14 @@ class AuditDataAccess:
         access_token: str | None = None,
         request: HttpRequest | None = None,
     ):
-        """
-        Initialize the audit data access layer.
-
-        Supports both old signature (access_token) and new (request).
-        """
-        self.request = request
-        self.opportunity_id = opportunity_id
-        self.organization_id = organization_id
-        self.program_id = program_id
-
-        # Use labs_context from middleware if available (takes precedence)
-        if request and hasattr(request, "labs_context"):
-            labs_context = request.labs_context or {}
-            if not opportunity_id and "opportunity_id" in labs_context:
-                self.opportunity_id = labs_context["opportunity_id"]
-            if not program_id and "program_id" in labs_context:
-                self.program_id = labs_context["program_id"]
-            if not organization_id and "organization_id" in labs_context:
-                self.organization_id = labs_context["organization_id"]
-
-        # Get OAuth token from labs session if not provided
-        if not access_token and request:
-            labs_oauth = request.session.get("labs_oauth", {})
-            access_token = labs_oauth.get("access_token")
-
-        if not access_token:
-            raise ValueError("OAuth access token required")
-
-        self.access_token = access_token
-        self.production_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
-
-        # Lazy-initialized clients
-        self._http_client: httpx.Client | None = None
-        self._labs_api: LabsRecordAPIClient | None = None
+        super().__init__(
+            opportunity_id=opportunity_id,
+            organization_id=organization_id,
+            program_id=program_id,
+            request=request,
+            access_token=access_token,
+        )
         self._pipeline: AnalysisPipeline | None = None
-
-    @property
-    def http_client(self) -> httpx.Client:
-        if self._http_client is None:
-            self._http_client = httpx.Client(
-                headers={"Authorization": f"Bearer {self.access_token}"},
-                timeout=120.0,
-            )
-        return self._http_client
-
-    @property
-    def labs_api(self) -> LabsRecordAPIClient:
-        if self._labs_api is None:
-            self._labs_api = LabsRecordAPIClient(
-                self.access_token,
-                opportunity_id=self.opportunity_id,
-                organization_id=self.organization_id,
-                program_id=self.program_id,
-            )
-        return self._labs_api
 
     @property
     def pipeline(self) -> AnalysisPipeline:
@@ -306,18 +259,6 @@ class AuditDataAccess:
                 raise ValueError("Request required for pipeline access")
             self._pipeline = AnalysisPipeline(self.request)
         return self._pipeline
-
-    def close(self):
-        if self._http_client:
-            self._http_client.close()
-        if self._labs_api:
-            self._labs_api.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
 
     # =========================================================================
     # Visit Fetching (via AnalysisPipeline)
