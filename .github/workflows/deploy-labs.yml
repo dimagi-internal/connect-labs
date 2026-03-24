@@ -55,6 +55,33 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Wait for base image build if running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Check if a "Build Base Image" workflow is currently running
+          RUNNING=$(gh run list \
+            --workflow="Build Base Image" \
+            --status=in_progress \
+            --json databaseId \
+            --jq '.[0].databaseId' 2>/dev/null || true)
+          if [ -n "$RUNNING" ]; then
+            echo "Base image build in progress (run $RUNNING), waiting for it to complete..."
+            gh run watch "$RUNNING" --exit-status
+            echo "Base image build completed."
+          fi
+          # Also check queued runs
+          QUEUED=$(gh run list \
+            --workflow="Build Base Image" \
+            --status=queued \
+            --json databaseId \
+            --jq '.[0].databaseId' 2>/dev/null || true)
+          if [ -n "$QUEUED" ]; then
+            echo "Base image build queued (run $QUEUED), waiting for it to complete..."
+            gh run watch "$QUEUED" --exit-status
+            echo "Base image build completed."
+          fi
+
       - name: Check base image exists
         id: base-check
         run: |
