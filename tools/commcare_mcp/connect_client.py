@@ -66,6 +66,7 @@ async def get_opportunity_apps(opportunity_id: int) -> dict:
         {
             "opportunity_id": int,
             "opportunity_name": str,
+            "org_slug": str,
             "learn_app": {"cc_domain": str, "cc_app_id": str, "name": str} | None,
             "deliver_app": {"cc_domain": str, "cc_app_id": str, "name": str} | None,
         }
@@ -97,6 +98,7 @@ async def get_opportunity_apps(opportunity_id: int) -> dict:
     result = {
         "opportunity_id": opportunity_id,
         "opportunity_name": data.get("name", ""),
+        "org_slug": data.get("organization", ""),
         "learn_app": _extract_app(data.get("learn_app")),
         "deliver_app": _extract_app(data.get("deliver_app")),
     }

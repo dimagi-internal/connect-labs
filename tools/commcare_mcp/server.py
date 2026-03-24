@@ -44,7 +44,10 @@ mcp = FastMCP(
         "scoped by organization_id. Awards can auto-allocate from funds.\n\n"
         "GOOGLE SHEETS: Use read_google_sheet to read data from Google Sheets and "
         "list_sheet_tabs to see available tabs. Requires OAuth login first via "
-        "python tools/commcare_mcp/google_auth.py login"
+        "python tools/commcare_mcp/google_auth.py login\n\n"
+        "SAMPLE IDS: Use get_sample_ids to discover real fund, solicitation, and "
+        "program IDs from the current environment. Useful for constructing valid "
+        "localhost URLs or testing API calls without manual lookups."
     ),
 )
 
@@ -89,6 +92,35 @@ async def get_opportunity_apps(opportunity_id: int) -> dict:
 
     try:
         return await _get_opp(opportunity_id)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+async def get_opportunity_url(opportunity_id: int) -> dict:
+    """Get the full production Connect URL for an opportunity.
+
+    Looks up the opportunity's org_slug and returns the URL you can use
+    to view or manage the opportunity in the Connect web interface.
+
+    Args:
+        opportunity_id: The Connect opportunity ID (e.g., 874)
+    """
+    from connect_client import CONNECT_URL
+    from connect_client import get_opportunity_apps as _get_opp
+
+    try:
+        opp = await _get_opp(opportunity_id)
+        org_slug = opp.get("org_slug", "")
+        if not org_slug:
+            return {"error": f"Opportunity {opportunity_id} has no organization slug"}
+        url = f"{CONNECT_URL}/a/{org_slug}/opportunity/{opportunity_id}/"
+        return {
+            "opportunity_id": opportunity_id,
+            "opportunity_name": opp.get("opportunity_name", ""),
+            "org_slug": org_slug,
+            "url": url,
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -745,6 +777,32 @@ async def list_sheet_tabs(url: str) -> dict:
         return await _list(url)
     except PermissionError as e:
         return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# --- Sample IDs Tool ---
+
+
+@mcp.tool()
+async def get_sample_ids() -> dict:
+    """Get a small set of real fund, solicitation, and program IDs from the current environment.
+
+    Returns IDs and human-readable names for each category (up to 5 per category).
+    Use this to discover valid IDs for constructing localhost URLs or testing
+    API calls without needing manual curl commands.
+
+    Returns:
+        {
+            "funds": [{"id": 123, "name": "ECF"}, ...],
+            "solicitations": [{"id": 456, "name": "CHC EOI Nigeria"}, ...],
+            "programs": [{"id": 42, "name": "CHC Nigeria"}, ...],
+        }
+    """
+    from sample_ids_tools import get_sample_ids as _get
+
+    try:
+        return await _get()
     except Exception as e:
         return {"error": str(e)}
 
