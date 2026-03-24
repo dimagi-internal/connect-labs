@@ -1,7 +1,6 @@
 name: Deploy to AWS Labs
 
 on:
-  # Manual trigger with options
   workflow_dispatch:
     inputs:
       run_migrations:
@@ -9,19 +8,6 @@ on:
         type: boolean
         required: true
         default: false
-      wait_for_stable:
-        description: 'Wait for ECS services to stabilize (uncheck for fast hotfixes)'
-        type: boolean
-        required: true
-        default: true
-
-  # Optionally enable auto-deploy on push
-  # Uncomment and customize branches to enable:
-  # push:
-  #   branches:
-  #     - main
-  #     - staging
-  #     - 'feature/*'
 
 env:
   AWS_REGION: us-east-1
@@ -36,7 +22,6 @@ jobs:
     name: Deploy to Fargate
     runs-on: ubuntu-latest
 
-    # Required for OIDC authentication
     permissions:
       id-token: write
       contents: read
@@ -87,7 +72,6 @@ jobs:
         run: |
           BASE_TAG="base-latest"
           BASE_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${BASE_TAG}"
-          # Use list-images + jq to check tag existence (more reliable than describe-images with OCI manifests)
           TAG_EXISTS=$(aws ecr list-images \
             --repository-name ${{ env.ECR_REPOSITORY }} \
             --query "imageIds[?imageTag=='${BASE_TAG}'].imageTag" \
@@ -132,17 +116,17 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ steps.base-check.outputs.base_image }}
             NODE_IMAGE=${{ steps.node-check.outputs.node_image }}
+          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
 
       - name: Run database migrations
         if: ${{ github.event.inputs.run_migrations == 'true' }}
         run: |
-          # Get the latest task definition
           TASK_DEF_ARN=$(aws ecs describe-task-definition \
             --task-definition ${{ env.ECS_WEB_SERVICE }} \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
 
-          # Run migration task
           TASK_ARN=$(aws ecs run-task \
             --cluster ${{ env.ECS_CLUSTER }} \
             --task-definition $TASK_DEF_ARN \
@@ -154,12 +138,10 @@ jobs:
 
           echo "Migration task: $TASK_ARN"
 
-          # Wait for task to complete
           aws ecs wait tasks-stopped \
             --cluster ${{ env.ECS_CLUSTER }} \
             --tasks $TASK_ARN
 
-          # Check exit code
           EXIT_CODE=$(aws ecs describe-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
             --tasks $TASK_ARN \
@@ -174,27 +156,37 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy web service
+      - name: Deploy services (hard cutover)
         run: |
+          # Stop existing tasks first for instant cutover (no rolling deploy)
+          # This causes ~10s downtime but avoids waiting for graceful rolling update
+          echo "Stopping old tasks..."
+          for SERVICE in ${{ env.ECS_WEB_SERVICE }} ${{ env.ECS_WORKER_SERVICE }}; do
+            TASK_ARNS=$(aws ecs list-tasks \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --service-name $SERVICE \
+              --query 'taskArns[]' \
+              --output text 2>/dev/null) || true
+            if [ -n "$TASK_ARNS" ] && [ "$TASK_ARNS" != "None" ]; then
+              for TASK in $TASK_ARNS; do
+                aws ecs stop-task --cluster ${{ env.ECS_CLUSTER }} --task $TASK --output text > /dev/null 2>&1 || true
+              done
+            fi
+          done
+
+          echo "Forcing new deployment..."
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_WEB_SERVICE }} \
             --task-definition ${{ env.ECS_WEB_SERVICE }} \
             --force-new-deployment \
-            --output text
+            --output text > /dev/null
 
-      - name: Deploy worker service
-        run: |
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_WORKER_SERVICE }} \
             --task-definition ${{ env.ECS_WORKER_SERVICE }} \
             --force-new-deployment \
-            --output text
+            --output text > /dev/null
 
-      - name: Wait for services to stabilize
-        if: ${{ github.event.inputs.wait_for_stable != 'false' }}
-        run: |
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_WEB_SERVICE }} ${{ env.ECS_WORKER_SERVICE }}
+          echo "Deploy triggered. New tasks starting (~30s to healthy)."
