@@ -48,3 +48,4 @@ pandas
 pydantic-ai
 shapely>=2.0.0  # For coverage maps WKT parsing
 geopandas>=0.14.0  # For coverage maps spatial operations
+markdown  # For solicitation markdown rendering
