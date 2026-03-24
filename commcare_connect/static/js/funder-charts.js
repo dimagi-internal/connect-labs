@@ -946,12 +946,12 @@ function renderPaymentsChart(payments) {
       label: opp.opp_name,
       data: cumulative,
       borderColor: color,
-      backgroundColor: color + '40', // 25% opacity for stacked visibility
-      fill: 'origin',
+      backgroundColor: color + '99', // 60% opacity for solid stacked areas
+      fill: true,
       tension: 0.3,
-      pointRadius: 2,
-      pointHoverRadius: 5,
-      borderWidth: 1.5,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      borderWidth: 2,
     });
   }
 
