@@ -979,7 +979,7 @@ class AuditDataAccess:
                     finally:
                         temp_labs_api.close()
             except Exception:
-                pass
+                logger.debug("Cross-opportunity session search failed for session %s", session_id)
 
         return None
 
@@ -1067,8 +1067,15 @@ class AuditDataAccess:
 
     def get_opportunity_details(self, opportunity_id: int) -> dict | None:
         url = f"{self.production_url}/export/opp_org_program_list/"
-        response = self.http_client.get(url)
-        response.raise_for_status()
+        try:
+            response = self.http_client.get(url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[Audit] HTTP {e.response.status_code} fetching opportunity details: {e}")
+            return None
+        except httpx.RequestError as e:
+            logger.error(f"[Audit] Request error fetching opportunity details: {e}")
+            return None
 
         for opp in response.json().get("opportunities", []):
             if opp.get("id") == opportunity_id:
@@ -1078,8 +1085,15 @@ class AuditDataAccess:
     def search_opportunities(self, query: str = "", limit: int = 100, program_id: int | None = None) -> list[dict]:
         """Search for opportunities."""
         url = f"{self.production_url}/export/opp_org_program_list/"
-        response = self.http_client.get(url)
-        response.raise_for_status()
+        try:
+            response = self.http_client.get(url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[Audit] HTTP {e.response.status_code} searching opportunities: {e}")
+            return []
+        except httpx.RequestError as e:
+            logger.error(f"[Audit] Request error searching opportunities: {e}")
+            return []
 
         results = []
         query_lower = query.lower().strip()
@@ -1103,11 +1117,21 @@ class AuditDataAccess:
 
     def download_image_from_connect(self, blob_id: str, opportunity_id: int) -> bytes:
         """Download image from Connect API."""
-        response = self.http_client.get(
-            f"{self.production_url}/export/opportunity/{opportunity_id}/image/",
-            params={"blob_id": blob_id},
-        )
-        response.raise_for_status()
+        try:
+            response = self.http_client.get(
+                f"{self.production_url}/export/opportunity/{opportunity_id}/image/",
+                params={"blob_id": blob_id},
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"[Audit] HTTP {e.response.status_code} downloading image blob_id={blob_id} "
+                f"opp={opportunity_id}: {e}"
+            )
+            raise ValueError(f"Failed to download image (HTTP {e.response.status_code})") from e
+        except httpx.RequestError as e:
+            logger.error(f"[Audit] Request error downloading image blob_id={blob_id} opp={opportunity_id}: {e}")
+            raise ValueError("Failed to download image due to a connection error") from e
         return response.content
 
     def get_flw_names(self, opportunity_id: int | None = None) -> dict[str, str]:
@@ -1303,7 +1327,8 @@ class AuditDataAccess:
         try:
             self.labs_api.delete_record(job_id)
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to delete audit creation job %s: %s", job_id, e)
             return False
 
     def delete_audit_session(self, session_id: int) -> bool:

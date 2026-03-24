@@ -12,9 +12,8 @@ It handles:
 This is a pure API client with no local database storage.
 """
 
+import io
 import logging
-import os
-import tempfile
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -543,10 +542,6 @@ class WorkflowDataAccess(BaseDataAccess):
             records = [r for r in records if r.data.get("definition_id") == definition_id]
         return records
 
-    def list_instances(self, definition_id: int | None = None) -> list[WorkflowRunRecord]:
-        """Alias for list_runs (deprecated)."""
-        return self.list_runs(definition_id)
-
     def get_run(self, run_id: int) -> WorkflowRunRecord | None:
         """Get a workflow run by ID."""
         return self.labs_api.get_record_by_id(
@@ -641,10 +636,6 @@ class WorkflowDataAccess(BaseDataAccess):
 
         return deleted_counts
 
-    def get_instance(self, instance_id: int) -> WorkflowRunRecord | None:
-        """Alias for get_run (deprecated)."""
-        return self.get_run(instance_id)
-
     def get_or_create_run(self, definition_id: int, opportunity_id: int) -> WorkflowRunRecord:
         """Get or create a workflow run for the current week."""
         today = datetime.now(timezone.utc).date()
@@ -680,10 +671,6 @@ class WorkflowDataAccess(BaseDataAccess):
                 "opportunity_id": record.opportunity_id,
             }
         )
-
-    def get_or_create_instance(self, definition_id: int, opportunity_id: int) -> WorkflowRunRecord:
-        """Alias for get_or_create_run (deprecated)."""
-        return self.get_or_create_run(definition_id, opportunity_id)
 
     def update_run_state(
         self, run_id: int, new_state: dict, run: WorkflowRunRecord | None = None
@@ -728,10 +715,6 @@ class WorkflowDataAccess(BaseDataAccess):
                 }
             )
         return None
-
-    def update_instance_state(self, instance_id: int, new_state: dict) -> WorkflowRunRecord | None:
-        """Alias for update_run_state (deprecated)."""
-        return self.update_run_state(instance_id, new_state)
 
     def save_run_snapshot(self, run_id: int, snapshot: dict) -> WorkflowRunRecord | None:
         """Save a data snapshot on the run (writes to run.data['snapshot']).
@@ -1143,35 +1126,27 @@ class WorkflowDataAccess(BaseDataAccess):
         endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
         response = self._call_connect_api(endpoint)
 
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".csv")
-        try:
-            with os.fdopen(tmp_fd, "wb") as f:
-                f.write(response.content)
+        df = pd.read_csv(io.BytesIO(response.content))
 
-            df = pd.read_csv(tmp_path)
+        workers = []
+        for idx, row in df.iterrows():
+            username = str(row["username"]) if pd.notna(row.get("username")) else None
+            if username:
+                worker = {
+                    "username": username,
+                    "name": str(row.get("name", username)) if pd.notna(row.get("name")) else username,
+                    "visit_count": int(row.get("total_visits", 0)) if pd.notna(row.get("total_visits")) else 0,
+                    "last_active": str(row.get("last_active")) if pd.notna(row.get("last_active")) else None,
+                }
 
-            workers = []
-            for idx, row in df.iterrows():
-                username = str(row["username"]) if pd.notna(row.get("username")) else None
-                if username:
-                    worker = {
-                        "username": username,
-                        "name": str(row.get("name", username)) if pd.notna(row.get("name")) else username,
-                        "visit_count": int(row.get("total_visits", 0)) if pd.notna(row.get("total_visits")) else 0,
-                        "last_active": str(row.get("last_active")) if pd.notna(row.get("last_active")) else None,
-                    }
+                optional_fields = ["phone_number", "approved_visits", "flagged_visits", "rejected_visits", "email"]
+                for field in optional_fields:
+                    if field in row and pd.notna(row[field]):
+                        worker[field] = str(row[field]) if not isinstance(row[field], (int, float)) else row[field]
 
-                    optional_fields = ["phone_number", "approved_visits", "flagged_visits", "rejected_visits", "email"]
-                    for field in optional_fields:
-                        if field in row and pd.notna(row[field]):
-                            worker[field] = str(row[field]) if not isinstance(row[field], (int, float)) else row[field]
+                workers.append(worker)
 
-                    workers.append(worker)
-
-            return workers
-
-        finally:
-            os.unlink(tmp_path)
+        return workers
 
 
 # =============================================================================

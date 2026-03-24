@@ -252,11 +252,9 @@ class ExperimentSaveAuditView(LoginRequiredMixin, View):
             finally:
                 data_access.close()
 
-        except Exception as e:
-            import traceback
-
-            print(f"[ERROR] {traceback.format_exc()}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to load audit session data")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class ExperimentAuditCompleteView(LoginRequiredMixin, View):
@@ -302,8 +300,9 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
             finally:
                 data_access.close()
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to complete audit session")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
@@ -322,8 +321,9 @@ class ExperimentAuditUncompleteView(LoginRequiredMixin, View):
             session = data_access.save_audit_session(session)
             return JsonResponse({"success": True})
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to uncomplete audit session")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             data_access.close()
 
@@ -388,8 +388,9 @@ class ExperimentApplyAssessmentResultsView(LoginRequiredMixin, View):
                 }
             )
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to apply assessment results")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             data_access.close()
 
@@ -633,11 +634,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
 
             return JsonResponse(response_data)
 
-        except Exception as e:
-            import traceback
-
-            print(f"[ERROR] {traceback.format_exc()}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to load bulk assessment data")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             data_access.close()
 
@@ -894,11 +893,9 @@ class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):
                 }
             )
 
-        except Exception as e:
-            import traceback
-
-            print(f"[ERROR] {traceback.format_exc()}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to create audit")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             if data_access:
                 data_access.close()
@@ -989,11 +986,9 @@ class ExperimentAuditCreateAsyncAPIView(LoginRequiredMixin, View):
                 }
             )
 
-        except Exception as e:
-            import traceback
-
-            print(f"[ERROR] {traceback.format_exc()}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to create async audit")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             if data_access:
                 data_access.close()
@@ -1030,11 +1025,9 @@ class AuditCreationJobsAPIView(LoginRequiredMixin, View):
                 }
             )
 
-        except Exception as e:
-            import traceback
-
-            print(f"[ERROR] {traceback.format_exc()}")
-            return JsonResponse({"error": str(e), "jobs": []}, status=500)
+        except Exception:
+            logger.exception("Failed to list audit creation jobs")
+            return JsonResponse({"error": "An internal error occurred", "jobs": []}, status=500)
         finally:
             if data_access:
                 data_access.close()
@@ -1063,9 +1056,9 @@ class AuditCreationJobCancelAPIView(LoginRequiredMixin, View):
                 }
             )
 
-        except Exception as e:
-            logger.error(f"[AuditJobCancel] Error: {e}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("[AuditJobCancel] Failed to cancel job")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             if data_access:
                 data_access.close()
@@ -1094,9 +1087,9 @@ class AuditCreationTaskCancelAPIView(LoginRequiredMixin, View):
                 }
             )
 
-        except Exception as e:
-            logger.error(f"[AuditTaskCancel] Error: {e}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("[AuditTaskCancel] Failed to cancel task")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             if data_access:
                 data_access.close()
@@ -1208,11 +1201,11 @@ class ExperimentOpportunitySearchAPIView(LoginRequiredMixin, View):
 
             return JsonResponse({"success": True, "opportunities": opportunities_data})
 
-        except Exception as e:
-            import traceback
-
-            print(f"[ERROR] {traceback.format_exc()}")
-            return JsonResponse({"success": False, "error": str(e), "opportunities": []}, status=500)
+        except Exception:
+            logger.exception("Failed to list opportunities")
+            return JsonResponse(
+                {"success": False, "error": "An internal error occurred", "opportunities": []}, status=500
+            )
         finally:
             data_access.close()
 
@@ -1359,11 +1352,9 @@ class ExperimentAuditPreviewAPIView(LoginRequiredMixin, View):
                 }
             )
 
-        except Exception as e:
-            import traceback
-
-            print(f"[ERROR] {traceback.format_exc()}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to preview audit creation")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             if data_access:
                 data_access.close()
@@ -1632,9 +1623,9 @@ class WorkflowSessionsAPIView(LoginRequiredMixin, View):
                 )
             finally:
                 data_access.close()
-        except Exception as e:
-            logger.error(f"Error fetching workflow sessions: {e}")
-            return JsonResponse({"success": False, "error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Error fetching workflow sessions")
+            return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
 class AIReviewAPIView(LoginRequiredMixin, View):
@@ -1777,11 +1768,9 @@ class AIReviewAPIView(LoginRequiredMixin, View):
 
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
-        except Exception as e:
-            import traceback
-
-            logger.error(f"AI review API error: {traceback.format_exc()}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("AI review API error")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
@@ -1892,9 +1881,9 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
             status = e.response.status_code
             logger.error(f"[ImageTypes] Connect API returned {status} for opp {opp_id}")
             return JsonResponse({"error": f"Connect API error: {status}"}, status=502)
-        except Exception as e:
-            logger.error(f"[ImageTypes] Failed to discover image types for opp {opp_id}: {e}")
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("[ImageTypes] Failed to discover image types for opp %s", opp_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
         result = [{"id": qid, "label": qid.rsplit("/", 1)[-1], "path": qid} for qid in sorted(seen_question_ids)]
         return JsonResponse(result, safe=False)

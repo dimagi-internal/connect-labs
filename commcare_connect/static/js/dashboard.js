@@ -1,5 +1,3 @@
-console.log('dashboard.js loaded');
-
 // colors to use for the categories
 // soft green, yellow, red
 const visitColors = ['#4ade80', '#fbbf24', '#f87171'];

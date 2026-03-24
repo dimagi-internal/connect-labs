@@ -68,7 +68,7 @@
     <h1 class="text-2xl font-bold text-brand-deep-purple">
       View Visit #{{ visit_id }}
     </h1>
-    <a href="/labs/explorer/visit-inspector/download/{{ visit_id }}/"
+    <a href="{% url 'explorer:download_visit' visit_id %}"
        class="button button-sm primary-dark"
        download>
       <i class="fa-solid fa-download"></i>

@@ -50,27 +50,27 @@
     </div>
 
     <div class="space-y-3">
-      <a href="/labs/overview/" class="button button-md primary-dark w-full px-6 py-3">
+      <a href="{% url 'labs:overview' %}" class="button button-md primary-dark w-full px-6 py-3">
         <i class="fa-solid fa-gauge-high mr-2"></i>
         <span class="relative z-20">Go to Labs Overview</span>
       </a>
 
-      <a href="/audit/" class="button button-md primary-dark w-full px-6 py-3">
+      <a href="{% url 'audit:session_list' %}" class="button button-md primary-dark w-full px-6 py-3">
         <i class="fa-solid fa-clipboard-check mr-2"></i>
         <span class="relative z-20">Go to Audit</span>
       </a>
 
-      <a href="/tasks/" class="button button-md primary-dark w-full px-6 py-3">
+      <a href="{% url 'tasks:list' %}" class="button button-md primary-dark w-full px-6 py-3">
         <i class="fa-solid fa-list-check mr-2"></i>
         <span class="relative z-20">Go to Tasks</span>
       </a>
 
-      <a href="/solicitations/" class="button button-md primary-dark w-full px-6 py-3">
+      <a href="{% url 'solicitations:public_list' %}" class="button button-md primary-dark w-full px-6 py-3">
         <i class="fa-solid fa-file-contract mr-2"></i>
         <span class="relative z-20">Go to Solicitations</span>
       </a>
 
-      <a href="/labs/workflow/" class="button button-md primary-dark w-full px-6 py-3">
+      <a href="{% url 'labs:workflow:list' %}" class="button button-md primary-dark w-full px-6 py-3">
         <i class="fa-solid fa-diagram-project mr-2"></i>
         <span class="relative z-20">Go to Workflows</span>
       </a>

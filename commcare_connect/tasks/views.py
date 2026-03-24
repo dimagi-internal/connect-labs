@@ -315,8 +315,9 @@ class OpportunitySearchAPIView(LoginRequiredMixin, View):
 
             return JsonResponse({"success": True, "opportunities": opportunities})
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to search opportunities")
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class OpportunityWorkersAPIView(LoginRequiredMixin, View):
@@ -330,8 +331,9 @@ class OpportunityWorkersAPIView(LoginRequiredMixin, View):
 
             return JsonResponse({"success": True, "workers": workers})
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to fetch workers for opportunity %s", opportunity_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class OpportunityLearningModulesAPIView(LoginRequiredMixin, View):
@@ -345,8 +347,9 @@ class OpportunityLearningModulesAPIView(LoginRequiredMixin, View):
 
             return JsonResponse({"success": True, "modules": modules})
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to fetch learning modules for opportunity %s", opportunity_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class CompletedModulesAPIView(LoginRequiredMixin, View):
@@ -365,8 +368,9 @@ class CompletedModulesAPIView(LoginRequiredMixin, View):
 
             return JsonResponse({"success": True, "completed_modules": completed_modules})
 
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+        except Exception:
+            logger.exception("Failed to fetch completed modules for opportunity %s", opportunity_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 # Task Bulk Creation API
@@ -428,9 +432,9 @@ def task_bulk_create(request):
 
     except json.JSONDecodeError:
         return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Error in bulk task creation: {e}", exc_info=True)
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Error in bulk task creation")
+        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
 # Single Task Creation API (for combined create/edit page)
@@ -620,9 +624,9 @@ def task_update(request, task_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Error updating task {task_id}: {e}", exc_info=True)
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Error updating task %s", task_id)
+        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -665,9 +669,9 @@ def task_add_comment(request, task_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Error adding comment to task {task_id}: {e}", exc_info=True)
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Error adding comment to task %s", task_id)
+        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
 # OCS Integration API Views
@@ -705,12 +709,12 @@ class OCSBotsListAPIView(LoginRequiredMixin, View):
 
             return JsonResponse({"success": True, "bots": bots})
 
-        except OCSAPIError as e:
-            logger.error(f"OCS API error listing bots: {e}")
-            return JsonResponse({"success": False, "error": str(e)}, status=500)
-        except Exception as e:
-            logger.error(f"Error listing OCS bots: {e}", exc_info=True)
-            return JsonResponse({"success": False, "error": str(e)}, status=500)
+        except OCSAPIError:
+            logger.exception("OCS API error listing bots")
+            return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
+        except Exception:
+            logger.exception("Error listing OCS bots")
+            return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
 # AI Assistant Integration Views
@@ -821,14 +825,14 @@ def task_initiate_ai(request, task_id):
             }
         )
 
-    except OCSAPIError as e:
-        logger.error(f"OCS error when initiating AI for task {task_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except OCSAPIError:
+        logger.exception("OCS error when initiating AI for task %s", task_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON in request body"}, status=400)
-    except Exception as e:
-        logger.error(f"Unexpected error when initiating AI for task {task_id}: {e}")
-        return JsonResponse({"error": f"Unexpected error: {str(e)}"}, status=500)
+    except Exception:
+        logger.exception("Unexpected error when initiating AI for task %s", task_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1025,10 +1029,10 @@ def task_ai_transcript(request, task_id):
             data_access.close()
             return JsonResponse({"success": False, "error": "Invalid transcript format from OCS"}, status=500)
 
-    except OCSAPIError as e:
-        logger.error(f"Error fetching transcript from OCS: {e}")
+    except OCSAPIError:
+        logger.exception("Error fetching transcript from OCS")
         data_access.close()
-        return JsonResponse({"success": False, "error": f"Failed to fetch transcript: {str(e)}"}, status=500)
+        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1078,7 +1082,7 @@ def task_ai_save_transcript(request, task_id):
     except json.JSONDecodeError:
         data_access.close()
         return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Error saving transcript: {e}")
+    except Exception:
+        logger.exception("Error saving transcript")
         data_access.close()
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)

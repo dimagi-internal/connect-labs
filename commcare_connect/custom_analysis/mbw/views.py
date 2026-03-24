@@ -17,7 +17,10 @@ from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
-from commcare_connect.custom_analysis.mbw.gps_analysis import (
+from commcare_connect.labs.analysis.data_access import get_flw_names_for_opportunity
+from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
+from commcare_connect.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
+from commcare_connect.workflow.templates.mbw_monitoring.gps_analysis import (
     DailyTravel,
     FLWSummary,
     GPSAnalysisResult,
@@ -25,10 +28,7 @@ from commcare_connect.custom_analysis.mbw.gps_analysis import (
     analyze_gps_metrics,
     build_result_from_analyzed_visits,
 )
-from commcare_connect.custom_analysis.mbw.pipeline_config import MBW_GPS_PIPELINE_CONFIG
-from commcare_connect.labs.analysis.data_access import get_flw_names_for_opportunity
-from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
-from commcare_connect.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, BaseSSEStreamView, send_sse_event
+from commcare_connect.workflow.templates.mbw_monitoring.pipeline_config import MBW_GPS_PIPELINE_CONFIG
 
 logger = logging.getLogger(__name__)
 

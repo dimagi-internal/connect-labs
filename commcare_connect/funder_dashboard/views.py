@@ -288,6 +288,6 @@ class FundPipelineDataView(BaseSSEStreamView):
                 data={"visits": all_visits, "payments": all_payments},
             )
 
-        except Exception as e:
-            logger.error("FundPipelineDataView error: %s", e, exc_info=True)
-            yield send_sse_event("Error", error=str(e))
+        except Exception:
+            logger.exception("FundPipelineDataView error")
+            yield send_sse_event("Error", error="An internal error occurred")

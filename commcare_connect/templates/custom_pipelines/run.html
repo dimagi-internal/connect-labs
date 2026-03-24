@@ -6,7 +6,7 @@
 {% block javascript %}
 {{ block.super }}
 {% if has_context and has_oauth and not error %}
-<script src="{% static 'bundles/js/pipeline-runner-bundle.js' %}" defer></script>
+<script src="{% static 'bundles/js/pipeline-editor-bundle.js' %}" defer></script>
 {% endif %}
 {% endblock javascript %}
 

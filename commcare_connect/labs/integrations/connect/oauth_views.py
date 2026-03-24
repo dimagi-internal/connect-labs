@@ -20,6 +20,7 @@ from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
 from commcare_connect.users.models import User
@@ -182,6 +183,21 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     expires_in = token_json.get("expires_in", 1209600)  # Default 2 weeks
     expires_at = timezone.now() + datetime.timedelta(seconds=expires_in)
 
+    # Fetch OIDC userinfo for reliable email
+    try:
+        userinfo_resp = httpx.get(
+            f"{settings.CONNECT_PRODUCTION_URL}/o/userinfo/",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        if userinfo_resp.status_code == 200:
+            userinfo = userinfo_resp.json()
+            if userinfo.get("email"):
+                profile_data["email"] = userinfo["email"]
+                logger.info(f"Got email from OIDC userinfo for {profile_data.get('username')}")
+    except Exception:
+        logger.warning("Failed to fetch OIDC userinfo", exc_info=True)
+
     # Fetch organization data from production API
     org_data = fetch_user_organization_data(access_token)
 
@@ -246,6 +262,9 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     # Use first name if available, otherwise username
     display_name = profile_data.get("first_name") or username
     messages.success(request, f"Welcome, {display_name}!")
+
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        next_url = "/labs/overview/"
 
     return redirect(next_url)
 

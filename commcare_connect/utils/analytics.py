@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 import httpx
 from django.conf import settings
 
+from commcare_connect.utils.dimagi_user import is_dimagi_user
 from config import celery_app
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class GATrackingInfo:
     def from_request(cls, request):
         client_id = _get_ga_client_id(request)
         session_id = _get_ga_session_id(request)
-        is_dimagi = _is_dimagi_user(request)
+        is_dimagi = is_dimagi_user(request.user)
         return cls(client_id, session_id, is_dimagi)
 
 
@@ -107,9 +108,3 @@ def _get_ga_session_id(request):
         if len(parts) == 4:
             return parts[2]
     return None
-
-
-def _is_dimagi_user(request):
-    # TODO: Re-enable once Connect server PR is merged (email not yet available from OAuth).
-    return True
-    return getattr(request.user, "email", "").endswith("@dimagi.com")  # noqa: F401

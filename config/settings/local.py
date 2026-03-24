@@ -37,7 +37,7 @@ CELERY_TASK_STORE_EAGER_RESULT = True  # Store results even in eager mode so we 
 IS_LABS_ENVIRONMENT = True
 
 # OAuth configuration
-LABS_OAUTH_SCOPES = ["export"]
+LABS_OAUTH_SCOPES = ["export", "openid"]
 
 # CLI OAuth Configuration (for get_cli_token management command)
 # Register a "Public" OAuth application at your production instance with:

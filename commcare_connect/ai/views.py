@@ -375,9 +375,9 @@ class AIStreamView(LoginRequiredMixin, View):
                             assistant_response=final_text,
                         )
 
-                except Exception as e:
-                    logger.error(f"[AI Stream] Agent error: {e}", exc_info=True)
-                    event_queue.put(send_sse_event(error=str(e), event_type="error"))
+                except Exception:
+                    logger.exception("[AI Stream] Agent error")
+                    event_queue.put(send_sse_event(error="An internal error occurred", event_type="error"))
 
             asyncio.run(run_agent())
             event_queue.put(DONE_SENTINEL)

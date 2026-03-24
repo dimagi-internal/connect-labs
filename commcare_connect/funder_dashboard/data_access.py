@@ -6,10 +6,14 @@ Funds use experiment=funder_slug and are scoped by program_id for ACL.
 
 Type constant: type="fund"
 """
+import logging
+
 from django.http import HttpRequest
 
 from commcare_connect.funder_dashboard.models import FundRecord
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+
+logger = logging.getLogger(__name__)
 
 FUND_TYPE = "fund"
 
@@ -127,9 +131,16 @@ class FunderDashboardDataAccess:
 
         import httpx
 
-        with httpx.Client(timeout=120) as client:
-            resp = client.get(url, headers={"Authorization": f"Bearer {self.access_token}"})
-            resp.raise_for_status()
+        try:
+            with httpx.Client(timeout=120) as client:
+                resp = client.get(url, headers={"Authorization": f"Bearer {self.access_token}"})
+                resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[FunderDashboard] HTTP {e.response.status_code} fetching CSV from {url}: {e}")
+            return []
+        except httpx.RequestError as e:
+            logger.error(f"[FunderDashboard] Request error fetching CSV from {url}: {e}")
+            return []
         reader = csv.DictReader(io.StringIO(resp.text))
         return list(reader)
 

@@ -1,5 +1,6 @@
 from django.conf import settings
 
+from commcare_connect.utils.dimagi_user import is_dimagi_user
 from commcare_connect.utils.tables import DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS
 
 
@@ -10,8 +11,7 @@ def page_settings(request):
 
 def gtm_context(request):
     """Provide Google Tag Manager context variables to templates."""
-    # TODO: Re-enable once Connect server PR is merged (email not yet available from OAuth).
-    is_dimagi = request.user.is_authenticated  # temporarily treat all logged-in users as dimagi for GTM
+    is_dimagi = is_dimagi_user(request.user) if request.user.is_authenticated else False
     user_id = request.user.id if request.user.is_authenticated else None
     return {
         "GTM_VARS_JSON": {

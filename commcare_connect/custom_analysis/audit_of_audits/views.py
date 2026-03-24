@@ -9,13 +9,13 @@ from the overview page for non-@dimagi.com users.
 
 import logging
 
-from django.conf import settings
 from django.contrib.auth.mixins import AccessMixin, LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.views.generic import TemplateView
 
 from commcare_connect.labs.context import get_org_data
 from commcare_connect.labs.integrations.connect.api_client import LabsAPIError
+from commcare_connect.utils.dimagi_user import is_dimagi_user
 from commcare_connect.workflow.templates import list_templates
 
 from .data_access import AuditOfAuditsDataAccess
@@ -43,23 +43,6 @@ def _registry_template_labels() -> dict[str, str]:
         return {}
 
 
-def _is_dimagi_user(user) -> bool:
-    """
-    Return True if the user is a Dimagi staff member.
-
-    TODO: Re-enable email detection once Connect server PR is merged and deployed.
-    The email field is currently empty because /o/introspect/ and /o/userinfo/ don't
-    return it; the fix adds it to /export/opp_org_program_list/ instead.
-    """
-    return True
-    email = getattr(user, "email", "") or ""  # noqa: F401
-    username = getattr(user, "username", "") or ""  # noqa: F401
-    if email.endswith(DIMAGI_EMAIL_DOMAIN) or username.endswith(DIMAGI_EMAIL_DOMAIN):  # noqa: F401
-        return True
-    allowlist = getattr(settings, "LABS_ADMIN_USERNAMES", [])  # noqa: F401
-    return bool(username and username in allowlist)
-
-
 def _dimagi_display_name(user) -> str:
     """Return the best available identifier to display for the current user."""
     email = getattr(user, "email", "") or ""
@@ -84,7 +67,7 @@ class DimagiUserRequiredMixin(AccessMixin):
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
-        if not _is_dimagi_user(request.user):
+        if not is_dimagi_user(request.user):
             raise PermissionDenied("This report is restricted to Dimagi staff.")
         return super().dispatch(request, *args, **kwargs)
 

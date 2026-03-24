@@ -19,26 +19,13 @@ from django.views.generic import TemplateView
 
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.context import get_org_data
+from commcare_connect.utils.dimagi_user import is_dimagi_user
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 from commcare_connect.workflow.templates import TEMPLATES
 from commcare_connect.workflow.templates import create_workflow_from_template as create_from_template
 from commcare_connect.workflow.templates import list_templates
 
 logger = logging.getLogger(__name__)
-
-
-def _is_dimagi_user(user) -> bool:
-    """Return True if the user is a @dimagi.com staff member or in the local dev allowlist."""
-    # TODO: Re-enable email detection once Connect server PR is merged and deployed.
-    # The email field is currently empty because /o/introspect/ and /o/userinfo/ don't
-    # return it; the fix adds it to /export/opp_org_program_list/ instead.
-    return True
-    email = getattr(user, "email", "") or ""  # noqa: F401
-    username = getattr(user, "username", "") or ""  # noqa: F401
-    allowlist = getattr(settings, "LABS_ADMIN_USERNAMES", [])  # noqa: F401
-    return (
-        email.endswith("@dimagi.com") or username.endswith("@dimagi.com") or bool(username and username in allowlist)
-    )
 
 
 class WorkflowTemplateListAPIView(LoginRequiredMixin, View):
@@ -64,7 +51,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         context["opportunity_name"] = labs_context.get("opportunity_name")
 
         # Restrict Create Workflow button to @dimagi.com users / allowlist
-        context["is_dimagi"] = _is_dimagi_user(self.request.user)
+        context["is_dimagi"] = is_dimagi_user(self.request.user)
 
         # Get workflow definitions and their runs
         if context["has_context"]:
@@ -648,9 +635,9 @@ def get_workers_api(request):
         data_access = WorkflowDataAccess(request=request)
         workers = data_access.get_workers(opportunity_id)
         return JsonResponse({"workers": workers})
-    except Exception as e:
-        logger.error(f"Failed to fetch workers: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to fetch workers")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -686,9 +673,9 @@ def update_state_api(request, run_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to update run state: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to update run state")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -775,9 +762,9 @@ def save_worker_result_api(request, run_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to save worker result for run {run_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to save worker result for run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
         if data_access:
             data_access.close()
@@ -828,9 +815,9 @@ def complete_run_api(request, run_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to complete run {run_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to complete run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
         if data_access:
             data_access.close()
@@ -859,13 +846,11 @@ def get_run_api(request, run_id):
         else:
             return JsonResponse({"error": "Run not found"}, status=404)
 
-    except Exception as e:
-        logger.error(f"Failed to get run: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to get run")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
-@login_required
-@require_POST
 @login_required
 @require_POST
 def create_workflow_from_template_view(request):
@@ -874,7 +859,7 @@ def create_workflow_from_template_view(request):
     from django.core.exceptions import PermissionDenied
     from django.shortcuts import redirect
 
-    if not _is_dimagi_user(request.user):
+    if not is_dimagi_user(request.user):
         raise PermissionDenied
 
     template_key = request.POST.get("template", "performance_review")
@@ -928,9 +913,9 @@ def get_chat_history_api(request, definition_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Failed to get chat history for definition {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to get chat history for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -949,9 +934,9 @@ def clear_chat_history_api(request, definition_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Failed to clear chat history for definition {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to clear chat history for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -981,9 +966,9 @@ def add_chat_message_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to add chat message for definition {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to add chat message for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1021,9 +1006,9 @@ def save_render_code_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to save render code for definition {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to save render code for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1083,9 +1068,9 @@ def sync_template_render_code_api(request, definition_id):
         )
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to sync template render code for definition {definition_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to sync template render code for definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
         if data_access:
             data_access.close()
@@ -1150,12 +1135,12 @@ def ocs_bots_api(request):
 
         return JsonResponse({"success": True, "bots": bots})
 
-    except OCSAPIError as e:
-        logger.error(f"OCS API error listing bots: {e}")
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
-    except Exception as e:
-        logger.error(f"Error listing OCS bots: {e}", exc_info=True)
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+    except OCSAPIError:
+        logger.exception("OCS API error listing bots")
+        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
+    except Exception:
+        logger.exception("Error listing OCS bots")
+        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
 
 
 # =============================================================================
@@ -1184,9 +1169,9 @@ def get_pipeline_data_api(request, definition_id):
 
         return JsonResponse(pipeline_data)
 
-    except Exception as e:
-        logger.error(f"Failed to fetch pipeline data for workflow {definition_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to fetch pipeline data for workflow %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1217,9 +1202,9 @@ def list_available_pipelines_api(request):
 
         return JsonResponse({"pipelines": result})
 
-    except Exception as e:
-        logger.error(f"Failed to list available pipelines: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to list available pipelines")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1253,9 +1238,9 @@ def add_pipeline_source_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to add pipeline source: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to add pipeline source")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1288,9 +1273,9 @@ def remove_pipeline_source_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to remove pipeline source: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to remove pipeline source")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 # =============================================================================
@@ -1327,9 +1312,9 @@ def share_workflow_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to share workflow {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to share workflow %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1352,9 +1337,9 @@ def unshare_workflow_api(request, definition_id):
         else:
             return JsonResponse({"error": "Workflow not found"}, status=404)
 
-    except Exception as e:
-        logger.error(f"Failed to unshare workflow {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to unshare workflow %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1387,9 +1372,9 @@ def delete_workflow_api(request, definition_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Failed to delete workflow {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to delete workflow %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1419,9 +1404,9 @@ def rename_workflow_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to rename workflow {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to rename workflow %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1437,9 +1422,9 @@ def delete_pipeline_api(request, definition_id):
 
         return JsonResponse({"success": True, "definition_id": definition_id})
 
-    except Exception as e:
-        logger.error(f"Failed to delete pipeline {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to delete pipeline %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1465,9 +1450,9 @@ def list_shared_workflows_api(request):
 
         return JsonResponse({"workflows": result})
 
-    except Exception as e:
-        logger.error(f"Failed to list shared workflows: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to list shared workflows")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1496,9 +1481,9 @@ def copy_workflow_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to copy workflow {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to copy workflow %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 # =============================================================================
@@ -1535,9 +1520,9 @@ def share_pipeline_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to share pipeline {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to share pipeline %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1560,9 +1545,9 @@ def unshare_pipeline_api(request, definition_id):
         else:
             return JsonResponse({"error": "Pipeline not found"}, status=404)
 
-    except Exception as e:
-        logger.error(f"Failed to unshare pipeline {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to unshare pipeline %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1588,9 +1573,9 @@ def list_shared_pipelines_api(request):
 
         return JsonResponse({"pipelines": result})
 
-    except Exception as e:
-        logger.error(f"Failed to list shared pipelines: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to list shared pipelines")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1619,9 +1604,9 @@ def copy_pipeline_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to copy pipeline {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to copy pipeline %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 # =============================================================================
@@ -1734,9 +1719,9 @@ def get_pipeline_definition_api(request, definition_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Failed to get pipeline definition {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to get pipeline definition %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1781,9 +1766,9 @@ def update_pipeline_schema_api(request, definition_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to update pipeline schema {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to update pipeline schema %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1816,9 +1801,9 @@ def execute_pipeline_preview_api(request, definition_id):
 
         return JsonResponse(result)
 
-    except Exception as e:
-        logger.error(f"Failed to execute pipeline preview {definition_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to execute pipeline preview %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1866,9 +1851,9 @@ def get_pipeline_sql_preview_api(request, definition_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Failed to generate SQL preview for pipeline {definition_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to generate SQL preview for pipeline %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1890,9 +1875,9 @@ def get_pipeline_chat_history_api(request, definition_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Failed to get pipeline chat history {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to get pipeline chat history %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 @login_required
@@ -1914,9 +1899,9 @@ def clear_pipeline_chat_history_api(request, definition_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"Failed to clear pipeline chat history {definition_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to clear pipeline chat history %s", definition_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 # =============================================================================
@@ -1973,9 +1958,9 @@ def start_job_api(request, run_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to start job for run {run_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to start job for run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class JobStatusStreamView(LoginRequiredMixin, View):
@@ -2122,9 +2107,9 @@ def cancel_job_api(request, task_id):
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-    except Exception as e:
-        logger.error(f"Failed to cancel job {task_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Failed to cancel job %s", task_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
 class PipelineDataStreamView(LoginRequiredMixin, View):
@@ -2270,9 +2255,9 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                     data={"pipelines": pipeline_data},
                 )
 
-            except Exception as e:
-                logger.error(f"[PipelineStream] Error: {e}", exc_info=True)
-                yield send_sse_event("Error", error=str(e))
+            except Exception:
+                logger.exception("[PipelineStream] Error")
+                yield send_sse_event("Error", error="An internal error occurred")
 
         response = StreamingHttpResponse(
             stream_data(),
@@ -2347,9 +2332,9 @@ def delete_run_api(request, run_id):
             }
         )
 
-    except Exception as e:
-        logger.error(f"[DeleteRun] Failed to delete run {run_id}: {e}", exc_info=True)
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("[DeleteRun] Failed to delete run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
         if data_access:
             try:
@@ -2438,6 +2423,6 @@ def visit_images_api(request, opp_id):
                 result[vid] = images
 
         return JsonResponse({"visit_images": result})
-    except Exception as e:
-        logger.error(f"Visit images fetch failed: opp_id={opp_id}: {e}")
-        return JsonResponse({"error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Visit images fetch failed: opp_id=%s", opp_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)

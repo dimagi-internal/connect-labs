@@ -92,19 +92,26 @@ class CoverageDataAccess:
 
         # Paginate through results
         page = 0
-        while next_url:
-            page += 1
-            response = httpx.get(
-                next_url, params=params if next_url == endpoint else None, headers=headers, timeout=60.0
-            )
-            response.raise_for_status()
+        try:
+            while next_url:
+                page += 1
+                response = httpx.get(
+                    next_url, params=params if next_url == endpoint else None, headers=headers, timeout=60.0
+                )
+                response.raise_for_status()
 
-            data = response.json()
-            cases = data.get("cases", [])
-            all_cases.extend(cases)
+                data = response.json()
+                cases = data.get("cases", [])
+                all_cases.extend(cases)
 
-            next_url = data.get("next")
-            params = None  # Don't send params for next page URLs
+                next_url = data.get("next")
+                params = None  # Don't send params for next page URLs
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[Coverage] HTTP {e.response.status_code} fetching DUs from CommCare: {e}")
+            return all_cases
+        except httpx.RequestError as e:
+            logger.error(f"[Coverage] Request error fetching DUs from CommCare: {e}")
+            return all_cases
 
         logger.info(f"[Coverage] Fetched {len(all_cases)} DUs from CommCare ({page} pages)")
         return all_cases

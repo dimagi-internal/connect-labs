@@ -84,11 +84,58 @@ def _extract_file_text(uploaded_file, max_chars: int = 15000) -> str:
         return f"[Failed to read file: {e}]"
 
 
+def validate_url_safe(url: str) -> str | None:
+    """Validate that a URL does not point to a private/internal address.
+
+    Returns None if the URL is safe, or an error message string if blocked.
+    Resolves the hostname before checking to prevent DNS rebinding attacks.
+    """
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return "[Blocked: URL points to internal/private address]"
+
+        # Block loopback hostnames
+        if hostname in ("localhost", "localhost.localdomain", "127.0.0.1", "::1", "0.0.0.0"):
+            return "[Blocked: URL points to internal/private address]"
+
+        # Resolve hostname to IP addresses to prevent DNS rebinding
+        try:
+            addr_infos = socket.getaddrinfo(hostname, parsed.port or 80, proto=socket.IPPROTO_TCP)
+        except socket.gaierror:
+            return "[Blocked: URL points to internal/private address]"
+
+        for addr_info in addr_infos:
+            ip_str = addr_info[4][0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except ValueError:
+                return "[Blocked: URL points to internal/private address]"
+
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return "[Blocked: URL points to internal/private address]"
+
+    except Exception:
+        return "[Blocked: URL points to internal/private address]"
+
+    return None
+
+
 def _fetch_url_content(url: str, max_chars: int = 10000) -> str:
     """Fetch a URL and return its text content, truncated."""
     import re
 
     import httpx
+
+    # Validate the URL is not pointing to an internal/private address
+    block_reason = validate_url_safe(url)
+    if block_reason:
+        return block_reason
 
     try:
         resp = httpx.get(url, follow_redirects=True, timeout=15.0)

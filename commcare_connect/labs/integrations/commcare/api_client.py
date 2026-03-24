@@ -178,28 +178,37 @@ class CommCareDataAccess:
 
         # Paginate through results
         page = 0
-        while next_url:
-            page += 1
-            logger.info(f"Fetching page {page} from {next_url}")
+        try:
+            while next_url:
+                page += 1
+                logger.info(f"Fetching page {page} from {next_url}")
 
-            response = httpx.get(
-                next_url,
-                params=params if next_url == endpoint else None,
-                headers=headers,
-                timeout=60.0,
+                response = httpx.get(
+                    next_url,
+                    params=params if next_url == endpoint else None,
+                    headers=headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                cases = data.get("cases", [])
+                all_cases.extend(cases)
+
+                logger.info(f"Retrieved {len(cases)} cases (total so far: {len(all_cases)})")
+
+                next_url = data.get("next")
+                if next_url and not self._validate_pagination_url(next_url):
+                    break
+                params = None  # Don't send params for next page URLs
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"HTTP {e.response.status_code} fetching {case_type} cases from CommCare " f"(page {page}): {e}"
             )
-            response.raise_for_status()
-
-            data = response.json()
-            cases = data.get("cases", [])
-            all_cases.extend(cases)
-
-            logger.info(f"Retrieved {len(cases)} cases (total so far: {len(all_cases)})")
-
-            next_url = data.get("next")
-            if next_url and not self._validate_pagination_url(next_url):
-                break
-            params = None  # Don't send params for next page URLs
+            return all_cases
+        except httpx.RequestError as e:
+            logger.error(f"Request error fetching {case_type} cases from CommCare (page {page}): {e}")
+            return all_cases
 
         logger.info(f"Fetched total of {len(all_cases)} {case_type} cases from CommCare")
         return all_cases
@@ -311,33 +320,40 @@ class CommCareDataAccess:
         all_forms = []
         next_url = endpoint
         page = 0
-        while next_url:
-            page += 1
-            logger.info(f"Fetching forms page {page} from {next_url}")
+        try:
+            while next_url:
+                page += 1
+                logger.info(f"Fetching forms page {page} from {next_url}")
 
-            response = httpx.get(
-                next_url,
-                params=params if next_url == endpoint else None,
-                headers=headers,
-                timeout=60.0,
-            )
-            response.raise_for_status()
-            data = response.json()
-            forms = data.get("objects", [])
-            all_forms.extend(forms)
+                response = httpx.get(
+                    next_url,
+                    params=params if next_url == endpoint else None,
+                    headers=headers,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+                forms = data.get("objects", [])
+                all_forms.extend(forms)
 
-            logger.info(f"Retrieved {len(forms)} forms (total so far: {len(all_forms)})")
+                logger.info(f"Retrieved {len(forms)} forms (total so far: {len(all_forms)})")
 
-            next_url = data.get("meta", {}).get("next")
-            if next_url and not next_url.startswith("http"):
-                if next_url.startswith("?"):
-                    # Query-params-only relative URL — prepend full endpoint path
-                    next_url = f"{endpoint}{next_url}"
-                else:
-                    # Path-based relative URL (e.g., /a/domain/api/...)
-                    next_url = f"{self.base_url}{next_url}"
-            if next_url and not self._validate_pagination_url(next_url):
-                break
+                next_url = data.get("meta", {}).get("next")
+                if next_url and not next_url.startswith("http"):
+                    if next_url.startswith("?"):
+                        # Query-params-only relative URL — prepend full endpoint path
+                        next_url = f"{endpoint}{next_url}"
+                    else:
+                        # Path-based relative URL (e.g., /a/domain/api/...)
+                        next_url = f"{self.base_url}{next_url}"
+                if next_url and not self._validate_pagination_url(next_url):
+                    break
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP {e.response.status_code} fetching forms from CommCare (page {page}): {e}")
+            return all_forms
+        except httpx.RequestError as e:
+            logger.error(f"Request error fetching forms from CommCare (page {page}): {e}")
+            return all_forms
 
         logger.info(f"Fetched total of {len(all_forms)} forms from CommCare")
         return all_forms

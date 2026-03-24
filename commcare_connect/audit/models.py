@@ -9,69 +9,6 @@ that deserializes production API responses - no database storage.
 from commcare_connect.labs.models import LocalLabsRecord
 
 
-class AuditTemplateRecord(LocalLabsRecord):
-    """
-    Proxy model for AuditTemplate-type LocalLabsRecords.
-
-    DEPRECATED: AuditTemplates are no longer created. Sessions now store their
-    own criteria directly and optionally link to workflow runs instead of templates.
-
-    This class is kept for backward compatibility to read existing template records
-    that older sessions may reference via labs_record_id.
-    """
-
-    # Properties for convenient access to template configuration
-    @property
-    def opportunity_ids(self):
-        """List of opportunity IDs to audit."""
-        return self.data.get("opportunity_ids", [])
-
-    @property
-    def audit_type(self):
-        """Audit type: date_range, last_n_per_flw, last_n_per_opp, last_n_across_all."""
-        return self.data.get("audit_type", "")
-
-    @property
-    def granularity(self):
-        """Granularity: combined, per_opp, per_flw."""
-        return self.data.get("granularity", "combined")
-
-    @property
-    def start_date(self):
-        """Start date for date_range audits."""
-        return self.data.get("start_date")
-
-    @property
-    def end_date(self):
-        """End date for date_range audits."""
-        return self.data.get("end_date")
-
-    @property
-    def count_per_flw(self):
-        """Count for last_n_per_flw audits."""
-        return self.data.get("count_per_flw")
-
-    @property
-    def count_per_opp(self):
-        """Count for last_n_per_opp audits."""
-        return self.data.get("count_per_opp")
-
-    @property
-    def count_across_all(self):
-        """Count for last_n_across_all audits."""
-        return self.data.get("count_across_all")
-
-    @property
-    def sample_percentage(self):
-        """Sample percentage (1-100)."""
-        return self.data.get("sample_percentage", 100)
-
-    @property
-    def preview_data(self):
-        """Preview statistics from preview step."""
-        return self.data.get("preview_data", [])
-
-
 class AuditSessionRecord(LocalLabsRecord):
     """Proxy model for AuditSession-type LocalLabsRecords with nested visit results."""
 

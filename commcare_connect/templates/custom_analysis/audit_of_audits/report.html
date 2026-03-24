@@ -8,7 +8,7 @@
 
   {# ── Back link ── #}
   <div class="mb-4">
-    <a href="/custom_analysis/audit_of_audits/"
+    <a href="{% url 'audit_of_audits:report' %}"
        class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-purple-600 hover:underline transition-colors">
       <i class="fa-solid fa-arrow-left text-xs"></i>
       Change organization selection
@@ -201,7 +201,7 @@
 
             {# Run ID — clickable badge #}
             <td class="px-4 py-3">
-              <a href="/labs/workflow/{{ row.definition_id }}/run/?run_id={{ row.run_id }}&opportunity_id={{ row.opportunity_id }}"
+              <a href="{% url 'labs:workflow:run' row.definition_id %}?run_id={{ row.run_id }}&opportunity_id={{ row.opportunity_id }}"
                  class="inline-flex items-center gap-1 font-mono text-sm font-semibold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 hover:border-purple-300 px-2.5 py-1 rounded-md transition-colors"
                  title="Open run #{{ row.run_id }}">
                 <i class="fa-solid fa-arrow-up-right-from-square text-xs opacity-60"></i>

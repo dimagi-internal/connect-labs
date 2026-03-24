@@ -30,7 +30,7 @@ os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 
 # Disable eager mode so Celery tasks route to a real worker instead of
 # running synchronously in the request thread (which blocks the server).
-os.environ["CELERY_TASK_ALWAYS_EAGER"] = "False"
+os.environ["CELERY_TASK_ALWAYS_EAGER"] = "0"
 
 
 @pytest.fixture(scope="session")
@@ -88,13 +88,15 @@ def live_server_url():
             time.sleep(0.5)
     else:
         proc.kill()
+        server_log.close()
         raise RuntimeError(f"Django server failed to start on {E2E_HOST}:{E2E_PORT}")
 
-    yield f"http://{E2E_HOST}:{E2E_PORT}"
-
-    proc.terminate()
-    proc.wait(timeout=10)
-    server_log.close()
+    try:
+        yield f"http://{E2E_HOST}:{E2E_PORT}"
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+        server_log.close()
 
 
 @pytest.fixture(scope="session")
@@ -134,14 +136,15 @@ def celery_worker():
             logs = f.read()
         raise RuntimeError(f"Celery worker exited immediately with code {worker.returncode}\n{logs}")
 
-    yield worker
-
-    worker.terminate()
     try:
-        worker.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        worker.kill()
-    log_file.close()
+        yield worker
+    finally:
+        worker.terminate()
+        try:
+            worker.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            worker.kill()
+        log_file.close()
 
 
 @pytest.fixture(scope="session")

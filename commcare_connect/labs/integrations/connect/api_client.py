@@ -166,6 +166,9 @@ class LabsRecordAPIClient:
     ) -> LocalLabsRecord | None:
         """Get a single record by ID.
 
+        Uses server-side id filtering for O(1) lookup instead of fetching
+        all records and scanning.
+
         Args:
             record_id: Record ID
             experiment: Optional experiment name filter (optimization hint)
@@ -175,12 +178,26 @@ class LabsRecordAPIClient:
         Returns:
             LocalLabsRecord instance (or proxy model) or None if not found
         """
-        # Fetch records using current context and filter by ID
-        records = self.get_records(experiment=experiment, type=type, model_class=model_class)
-        for record in records:
-            if record.id == record_id:
-                return record
-        return None
+        try:
+            url = f"{self.base_url}/export/labs_record/"
+            params = {"id": record_id}
+            if experiment:
+                params["experiment"] = experiment
+            if type:
+                params["type"] = type
+
+            response = self.http_client.get(url, params=params)
+            response.raise_for_status()
+
+            records_data = response.json()
+            if records_data:
+                record_class = model_class if model_class else LocalLabsRecord
+                return record_class(records_data[0])
+            return None
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to fetch record {record_id}: {e}", exc_info=True)
+            raise LabsAPIError(f"Failed to fetch record {record_id}: {e}") from e
 
     def create_record(
         self,
@@ -232,7 +249,7 @@ class LabsRecordAPIClient:
 
         try:
             url = f"{self.base_url}/export/labs_record/"
-            logger.info(f"POST {url} payload: {payload}")
+            logger.debug(f"POST {url} payload: {payload}")
 
             response = self.http_client.post(url, json=[payload])
             if response.status_code >= 400:

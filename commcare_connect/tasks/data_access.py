@@ -276,7 +276,12 @@ class TaskDataAccess:
             Updated TaskRecord
         """
         task.add_event(event_type, actor, description, **kwargs)
-        return self.labs_api.update_record(task.id, task.data)
+        return self.labs_api.update_record(
+            record_id=task.id,
+            experiment="tasks",
+            type="Task",
+            data=task.data,
+        )
 
     def add_comment(self, task: TaskRecord, actor: str, content: str) -> TaskRecord:
         """
@@ -291,7 +296,12 @@ class TaskDataAccess:
             Updated TaskRecord
         """
         task.add_comment(actor, content)
-        return self.labs_api.update_record(task.id, task.data)
+        return self.labs_api.update_record(
+            record_id=task.id,
+            experiment="tasks",
+            type="Task",
+            data=task.data,
+        )
 
     def add_ai_session(self, task: TaskRecord, actor: str, session_params: dict, **kwargs) -> TaskRecord:
         """
@@ -307,7 +317,12 @@ class TaskDataAccess:
             Updated TaskRecord
         """
         task.add_ai_session(actor, session_params, **kwargs)
-        return self.labs_api.update_record(task.id, task.data)
+        return self.labs_api.update_record(
+            record_id=task.id,
+            experiment="tasks",
+            type="Task",
+            data=task.data,
+        )
 
     def update_status(self, task: TaskRecord, new_status: str, actor: str) -> TaskRecord:
         """
@@ -331,7 +346,12 @@ class TaskDataAccess:
             description=f"Status changed from {old_status} to {new_status}",
         )
 
-        return self.labs_api.update_record(task.id, task.data)
+        return self.labs_api.update_record(
+            record_id=task.id,
+            experiment="tasks",
+            type="Task",
+            data=task.data,
+        )
 
     def assign_task(self, task: TaskRecord, assigned_to_name: str, assigned_to_type: str, actor: str) -> TaskRecord:
         """
@@ -356,7 +376,12 @@ class TaskDataAccess:
             description=f"Assigned to {assigned_to_name}",
         )
 
-        return self.labs_api.update_record(task.id, task.data)
+        return self.labs_api.update_record(
+            record_id=task.id,
+            experiment="tasks",
+            type="Task",
+            data=task.data,
+        )
 
     # Connect API Integration Methods
 
@@ -436,61 +461,49 @@ class TaskDataAccess:
         Returns:
             List of user dicts with username (no user_id available from API)
         """
-        import os
-        import tempfile
+        import io
+        import logging
 
         import pandas as pd
+
+        logger = logging.getLogger(__name__)
 
         # Download user data CSV
         endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
         response = self._call_connect_api(endpoint)
 
-        # Save to temp file
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".csv")
-        try:
-            with os.fdopen(tmp_fd, "wb") as f:
-                f.write(response.content)
+        # Parse CSV from response bytes
+        df = pd.read_csv(io.BytesIO(response.content))
 
-            # Parse CSV
-            df = pd.read_csv(tmp_path)
+        # Log CSV structure for debugging
+        logger.info(f"CSV columns for opportunity {opportunity_id}: {list(df.columns)}")
+        logger.info(f"CSV has {len(df)} rows")
 
-            # Log CSV structure for debugging
-            import logging
+        users = []
+        for idx, row in df.iterrows():
+            username = str(row["username"]) if pd.notna(row.get("username")) else None
+            if username:
+                # Parse all available fields from CSV
+                user_dict = {"username": username}
 
-            logger = logging.getLogger(__name__)
-            logger.info(f"CSV columns for opportunity {opportunity_id}: {list(df.columns)}")
-            logger.info(f"CSV has {len(df)} rows")
+                # Add optional fields if they exist in the CSV
+                optional_fields = [
+                    "name",
+                    "phone_number",
+                    "total_visits",
+                    "approved_visits",
+                    "flagged_visits",
+                    "rejected_visits",
+                    "last_active",
+                    "email",
+                ]
+                for field in optional_fields:
+                    if field in row and pd.notna(row[field]):
+                        user_dict[field] = str(row[field]) if not isinstance(row[field], (int, float)) else row[field]
 
-            users = []
-            for idx, row in df.iterrows():
-                username = str(row["username"]) if pd.notna(row.get("username")) else None
-                if username:
-                    # Parse all available fields from CSV
-                    user_dict = {"username": username}
+                users.append(user_dict)
 
-                    # Add optional fields if they exist in the CSV
-                    optional_fields = [
-                        "name",
-                        "phone_number",
-                        "total_visits",
-                        "approved_visits",
-                        "flagged_visits",
-                        "rejected_visits",
-                        "last_active",
-                        "email",
-                    ]
-                    for field in optional_fields:
-                        if field in row and pd.notna(row[field]):
-                            user_dict[field] = (
-                                str(row[field]) if not isinstance(row[field], (int, float)) else row[field]
-                            )
-
-                    users.append(user_dict)
-
-            return users
-
-        finally:
-            os.unlink(tmp_path)
+        return users
 
     def get_learning_modules(self, opportunity_id: int) -> list[dict]:
         """
@@ -535,9 +548,8 @@ class TaskDataAccess:
         Returns:
             List of completed module dicts with username, module, opportunity_id, date, duration
         """
+        import io
         import logging
-        import os
-        import tempfile
 
         import pandas as pd
 
@@ -547,38 +559,29 @@ class TaskDataAccess:
         endpoint = f"/export/opportunity/{opportunity_id}/completed_module/"
         response = self._call_connect_api(endpoint)
 
-        # Save to temp file
-        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".csv")
-        try:
-            with os.fdopen(tmp_fd, "wb") as f:
-                f.write(response.content)
+        # Parse CSV from response bytes
+        df = pd.read_csv(io.BytesIO(response.content))
 
-            # Parse CSV
-            df = pd.read_csv(tmp_path)
+        logger.info(f"CSV columns for completed modules: {list(df.columns)}")
+        logger.info(f"CSV has {len(df)} completed module records")
 
-            logger.info(f"CSV columns for completed modules: {list(df.columns)}")
-            logger.info(f"CSV has {len(df)} completed module records")
+        # Filter by username if provided
+        if username:
+            df = df[df["username"] == username]
+            logger.info(f"Filtered to {len(df)} records for user {username}")
 
-            # Filter by username if provided
-            if username:
-                df = df[df["username"] == username]
-                logger.info(f"Filtered to {len(df)} records for user {username}")
+        completed_modules = []
+        for idx, row in df.iterrows():
+            module_dict = {
+                "username": str(row["username"]) if pd.notna(row.get("username")) else None,
+                "module": int(row["module"]) if pd.notna(row.get("module")) else None,
+                "opportunity_id": int(row["opportunity_id"]) if pd.notna(row.get("opportunity_id")) else None,
+                "date": str(row["date"]) if pd.notna(row.get("date")) else None,
+                "duration": str(row["duration"]) if pd.notna(row.get("duration")) else None,
+            }
+            completed_modules.append(module_dict)
 
-            completed_modules = []
-            for idx, row in df.iterrows():
-                module_dict = {
-                    "username": str(row["username"]) if pd.notna(row.get("username")) else None,
-                    "module": int(row["module"]) if pd.notna(row.get("module")) else None,
-                    "opportunity_id": int(row["opportunity_id"]) if pd.notna(row.get("opportunity_id")) else None,
-                    "date": str(row["date"]) if pd.notna(row.get("date")) else None,
-                    "duration": str(row["duration"]) if pd.notna(row.get("duration")) else None,
-                }
-                completed_modules.append(module_dict)
+        # Sort by date descending (most recent first)
+        completed_modules.sort(key=lambda x: x.get("date") or "", reverse=True)
 
-            # Sort by date descending (most recent first)
-            completed_modules.sort(key=lambda x: x.get("date") or "", reverse=True)
-
-            return completed_modules
-
-        finally:
-            os.unlink(tmp_path)
+        return completed_modules

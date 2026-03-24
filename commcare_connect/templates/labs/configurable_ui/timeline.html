@@ -151,7 +151,7 @@
                                      class="bg-white border rounded p-2 cursor-pointer hover:border-blue-400 transition-all">
                                     <div class="flex gap-2">
                                         <template x-if="getVisitPhoto(visit)">
-                                            <img :src="getVisitPhoto(visit)" class="w-12 h-12 rounded object-cover flex-shrink-0" />
+                                            <img :src="getVisitPhoto(visit)" alt="Visit photo" class="w-12 h-12 rounded object-cover flex-shrink-0" />
                                         </template>
                                         <template x-if="!getVisitPhoto(visit)">
                                             <div class="w-12 h-12 bg-gray-200 rounded flex-shrink-0"></div>

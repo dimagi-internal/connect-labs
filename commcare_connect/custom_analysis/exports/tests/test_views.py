@@ -36,7 +36,7 @@ def dimagi_client(db):
     """Authenticated client with a @dimagi.com username."""
     user, _ = User.objects.update_or_create(
         username="reviewer@dimagi.com",
-        defaults={"email": ""},
+        defaults={"email": "reviewer@dimagi.com"},
     )
     client = Client(enforce_csrf_checks=False)
     client.force_login(user)
@@ -89,10 +89,6 @@ def test_exports_page_shows_unconfigured_state(dimagi_client):
     assert b"workflow_runs.csv" not in response.content
 
 
-@pytest.mark.xfail(
-    reason="_is_dimagi_user() returns True unconditionally until OAuth email fix is deployed",
-    strict=False,
-)
 @override_settings(**LABS_SETTINGS)
 def test_exports_page_requires_dimagi_user(non_dimagi_client):
     """Non-Dimagi users receive 403."""
