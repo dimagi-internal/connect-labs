@@ -50,9 +50,9 @@ def _render_title_slide(run_data):
   <div class="title-content">
     <h1>{name}</h1>
     <p class="narrative">&#8220;{narrative}&#8221;</p>
+    <p class="title-subtitle">Walkthrough Demo &mdash; {scene_count} scenes across {persona_count} personas</p>
     <hr class="title-divider">
-    <p class="meta">Generated: {generated} &middot; {scene_count} scenes &middot;
-    {persona_count} personas &middot; {ai_count} AI features evaluated</p>
+    <p class="meta">Generated: {generated} &middot; {ai_count} AI features evaluated</p>
   </div>
 </div>"""
 
@@ -67,10 +67,11 @@ def _render_persona_intro(persona_key, personas):
     initials = "".join(w[0] for w in p["name"].split()[:2])
     return f"""<div class="slide slide-persona" style="background-color: {color}0d;">
   <div class="persona-card">
+    <p class="persona-up-next">Up next:</p>
     <div class="persona-avatar" style="background-color: {color}">{initials}</div>
     <h2>{name}</h2>
     <p class="persona-role">{role}</p>
-    <p class="persona-intro">&#8220;{intro}&#8221;</p>
+    <p class="persona-intro">{intro}</p>
   </div>
 </div>"""
 
@@ -212,8 +213,7 @@ body {
   display: none;
   max-width: 960px;
   margin: 0 auto;
-  padding: 3rem 2rem;
-  min-height: 100vh;
+  padding: 3rem 2rem 6rem;
   background: #ffffff;
   border-left: 1px solid #e5e7eb;
   border-right: 1px solid #e5e7eb;
@@ -231,7 +231,8 @@ body {
 
 /* Scene slides get more room for screenshots */
 .slide-scene {
-  max-width: 1040px;
+  max-width: 1100px;
+  padding-top: 2rem;
 }
 
 /* Typography */
@@ -280,6 +281,7 @@ ul li {
   align-items: flex-start;
   justify-content: center;
   flex-direction: column;
+  min-height: 100vh;
   padding: 0;
   position: relative;
   overflow: hidden;
@@ -320,8 +322,16 @@ ul li {
   max-width: 640px;
 }
 
+.title-subtitle {
+  font-size: 1rem;
+  color: #6b7280;
+  font-weight: 500;
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
 .slide-title .meta {
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   color: #9ca3af;
   margin-top: 0.25rem;
   margin-bottom: 0;
@@ -333,6 +343,7 @@ ul li {
   align-items: center;
   justify-content: center;
   flex-direction: column;
+  min-height: 100vh;
   text-align: center;
 }
 
@@ -361,6 +372,15 @@ ul li {
   margin: 0 auto 1rem;
 }
 
+.persona-up-next {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  margin-bottom: 1rem;
+}
+
 .persona-role {
   font-size: 1rem;
   color: #6b7280;
@@ -369,8 +389,9 @@ ul li {
 }
 
 .persona-intro {
-  font-style: italic;
-  color: #4b5563;
+  font-size: 1.05rem;
+  color: #374151;
+  line-height: 1.7;
 }
 
 /* Scene slides */
@@ -423,7 +444,7 @@ ul li {
 
 /* Screenshot */
 .screenshot {
-  max-width: 100%;
+  width: 100%;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   border: 1px solid #e5e7eb;
@@ -557,6 +578,11 @@ ul li {
 .arrow-down {
   color: #dc2626;
   font-weight: 700;
+}
+
+/* Summary slide */
+.slide-summary {
+  padding-bottom: 8rem;
 }
 
 /* Summary meta */
