@@ -339,6 +339,8 @@ logfire-api==4.29.0
     # via
     #   pydantic-evals
     #   pydantic-graph
+markdown==3.10.2
+    # via -r requirements/base.in
 markdown-it-py==4.0.0
     # via rich
 mcp==1.26.0
