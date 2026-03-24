@@ -81,6 +81,7 @@ def _no_such_key_error():
 
 # ── upsert_workflow_run ───────────────────────────────────────────────────────
 
+
 @patch("commcare_connect.labs.s3_export.boto3")
 def test_upsert_workflow_run_creates_new_file(mock_boto3, settings):
     """When CSV doesn't exist yet, creates it with header + one row."""
@@ -154,6 +155,7 @@ def test_upsert_workflow_run_s3_error_is_silenced(mock_boto3, settings):
 
 
 # ── upsert_audit_session ──────────────────────────────────────────────────────
+
 
 @patch("commcare_connect.labs.s3_export.boto3")
 def test_upsert_audit_session_creates_new_file(mock_boto3, settings):
@@ -258,9 +260,7 @@ def test_row_count_in_metadata(mock_boto3, settings):
     # Second call: simulate S3 returning what was just written
     first_body = first_call["Body"]
     mock_s3.get_object.side_effect = None
-    mock_s3.get_object.return_value = {
-        "Body": MagicMock(read=lambda: first_body)
-    }
+    mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: first_body)}
     s3_export.upsert_workflow_run(_make_run(run_id=2))
 
     second_call = mock_s3.put_object.call_args_list[1][1]

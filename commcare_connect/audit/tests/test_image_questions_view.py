@@ -8,30 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import Client, override_settings
 
-LABS_MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.locale.LocaleMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django_htmx.middleware.HtmxMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "commcare_connect.labs.context.LabsContextMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
-    "commcare_connect.utils.middleware.CurrentVersionMiddleware",
-    "commcare_connect.utils.middleware.CustomPGHistoryMiddleware",
-]
-
-LABS_SETTINGS = dict(
-    IS_LABS_ENVIRONMENT=True,
-    MIDDLEWARE=LABS_MIDDLEWARE,
-    LOGIN_URL="/labs/login/",
-    CONNECT_PRODUCTION_URL="https://connect.example.com",
-)
+from commcare_connect.labs.tests.test_settings import LABS_SETTINGS
 
 CSV_COLUMNS = ["id", "form_json", "images", "username"]
 

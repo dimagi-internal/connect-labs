@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import httpx
-import pytest
 
 # Add the commcare_mcp package to sys.path so imports resolve
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sample_ids_tools import get_sample_ids  # noqa: E402
+
+
+def _run(coro):
+    """Run an async coroutine synchronously, safe when event loop is already running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    # If loop is already running (e.g. Playwright left one), use a new thread
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _make_response(json_data, status_code=200):
@@ -24,8 +36,7 @@ def _make_response(json_data, status_code=200):
     )
 
 
-@pytest.mark.asyncio
-async def test_get_sample_ids_returns_all_categories():
+def test_get_sample_ids_returns_all_categories():
     """get_sample_ids returns funds, solicitations, and programs."""
     org_data = {
         "programs": [
@@ -59,7 +70,7 @@ async def test_get_sample_ids_returns_all_categories():
             mock_instance = MockClient.return_value.__aenter__.return_value
             mock_instance.get = mock_get
 
-            result = await get_sample_ids()
+            result = _run(get_sample_ids())
 
     assert "funds" in result
     assert "solicitations" in result
@@ -78,8 +89,7 @@ async def test_get_sample_ids_returns_all_categories():
     assert result["funds"][1] == {"id": 202, "name": "GiveWell"}
 
 
-@pytest.mark.asyncio
-async def test_get_sample_ids_limits_to_five():
+def test_get_sample_ids_limits_to_five():
     """Results are capped at 5 per category."""
     org_data = {
         "programs": [{"id": i, "name": f"Program {i}"} for i in range(10)],
@@ -97,13 +107,12 @@ async def test_get_sample_ids_limits_to_five():
             mock_instance = MockClient.return_value.__aenter__.return_value
             mock_instance.get = mock_get
 
-            result = await get_sample_ids()
+            result = _run(get_sample_ids())
 
     assert len(result["programs"]) == 5
 
 
-@pytest.mark.asyncio
-async def test_get_sample_ids_handles_empty_data():
+def test_get_sample_ids_handles_empty_data():
     """Returns empty lists when no data is available."""
     org_data = {"programs": [], "organizations": [], "opportunities": []}
 
@@ -117,13 +126,12 @@ async def test_get_sample_ids_handles_empty_data():
             mock_instance = MockClient.return_value.__aenter__.return_value
             mock_instance.get = mock_get
 
-            result = await get_sample_ids()
+            result = _run(get_sample_ids())
 
     assert result == {"funds": [], "solicitations": [], "programs": []}
 
 
-@pytest.mark.asyncio
-async def test_get_sample_ids_uses_program_id_for_scoping():
+def test_get_sample_ids_uses_program_id_for_scoping():
     """Solicitation and fund queries use the first program_id for API scoping."""
     org_data = {
         "programs": [{"id": 42, "name": "CHC Nigeria"}],
@@ -145,7 +153,7 @@ async def test_get_sample_ids_uses_program_id_for_scoping():
             mock_instance = MockClient.return_value.__aenter__.return_value
             mock_instance.get = mock_get
 
-            await get_sample_ids()
+            _run(get_sample_ids())
 
     # The solicitation and fund queries should include program_id=42
     sol_params = [p for p in captured_params if p.get("type") == "solicitation"]
@@ -157,8 +165,7 @@ async def test_get_sample_ids_uses_program_id_for_scoping():
     assert fund_params[0]["program_id"] == "42"
 
 
-@pytest.mark.asyncio
-async def test_get_sample_ids_fallback_names():
+def test_get_sample_ids_fallback_names():
     """Uses fallback name fields when 'title'/'name' is missing."""
     org_data = {
         "programs": [{"id": 1, "slug": "chc-slug"}],
@@ -187,15 +194,14 @@ async def test_get_sample_ids_fallback_names():
             mock_instance = MockClient.return_value.__aenter__.return_value
             mock_instance.get = mock_get
 
-            result = await get_sample_ids()
+            result = _run(get_sample_ids())
 
     assert result["programs"][0] == {"id": 1, "name": "chc-slug"}
     assert result["solicitations"][0] == {"id": 10, "name": "Solicitation 10"}
     assert result["funds"][0] == {"id": 20, "name": "ecf"}
 
 
-@pytest.mark.asyncio
-async def test_get_sample_ids_partial_api_failure():
+def test_get_sample_ids_partial_api_failure():
     """Gracefully handles partial API failures."""
     org_data = {
         "programs": [{"id": 42, "name": "CHC Nigeria"}],
@@ -218,7 +224,7 @@ async def test_get_sample_ids_partial_api_failure():
             mock_instance = MockClient.return_value.__aenter__.return_value
             mock_instance.get = mock_get
 
-            result = await get_sample_ids()
+            result = _run(get_sample_ids())
 
     assert len(result["programs"]) == 1
     assert len(result["solicitations"]) == 1

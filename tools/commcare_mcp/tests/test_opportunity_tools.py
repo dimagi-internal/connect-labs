@@ -59,8 +59,16 @@ def clear_cache():
 
 
 def _run(coro):
-    """Run an async coroutine synchronously."""
-    return asyncio.run(coro)
+    """Run an async coroutine synchronously, safe when event loop is already running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    # If loop is already running (e.g. Playwright left one), use a new thread
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _make_mock_client(api_response):

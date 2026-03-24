@@ -193,4 +193,4 @@ class TestURLResolution:
         """Ensure we have exactly the expected number of URL patterns (16 total)."""
         from commcare_connect.solicitations.urls import urlpatterns
 
-        assert len(urlpatterns) == 16
+        assert len(urlpatterns) == 17

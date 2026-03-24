@@ -141,7 +141,7 @@ class TestConstructor:
     @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_creates_api_client_with_token(self, MockClient):
         SolicitationsDataAccess(program_id="42", access_token="tok")
-        MockClient.assert_called_once_with("tok", program_id=42)
+        MockClient.assert_called_once_with("tok", program_id=42, organization_id=None)
 
     @patch("commcare_connect.solicitations.data_access.LabsRecordAPIClient")
     def test_extracts_context_from_request(self, MockClient):
@@ -224,7 +224,6 @@ class TestGetPublicSolicitations:
         data_access.get_public_solicitations()
 
         mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
             type=SOLICITATION_TYPE,
             public=True,
             model_class=SolicitationRecord,
@@ -236,7 +235,6 @@ class TestGetPublicSolicitations:
         data_access.get_public_solicitations(solicitation_type="eoi")
 
         mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
             type=SOLICITATION_TYPE,
             public=True,
             model_class=SolicitationRecord,
@@ -247,20 +245,26 @@ class TestGetPublicSolicitations:
 class TestGetSolicitationById:
     def test_returns_record(self, data_access, mock_api_client):
         record = _make_solicitation_record(id=5)
-        mock_api_client.get_record_by_id.return_value = record
+        mock_api_client.get_records.return_value = [
+            _make_solicitation_record(id=3),
+            record,
+            _make_solicitation_record(id=7),
+        ]
 
         result = data_access.get_solicitation_by_id(5)
 
         assert result is record
-        mock_api_client.get_record_by_id.assert_called_once_with(
-            record_id=5,
-            experiment="42",
+        mock_api_client.get_records.assert_called_once_with(
             type=SOLICITATION_TYPE,
+            public=True,
             model_class=SolicitationRecord,
         )
 
     def test_returns_none_when_not_found(self, data_access, mock_api_client):
-        mock_api_client.get_record_by_id.return_value = None
+        mock_api_client.get_records.return_value = [
+            _make_solicitation_record(id=1),
+            _make_solicitation_record(id=2),
+        ]
 
         result = data_access.get_solicitation_by_id(999)
 
@@ -359,6 +363,7 @@ class TestGetResponsesForSolicitation:
         mock_api_client.get_records.assert_called_once_with(
             type=RESPONSE_TYPE,
             labs_record_id=1,
+            public=True,
             model_class=ResponseRecord,
         )
 
@@ -416,6 +421,7 @@ class TestCreateResponse:
             type=RESPONSE_TYPE,
             data=input_data,
             labs_record_id=1,
+            public=True,
         )
 
 
@@ -500,6 +506,7 @@ class TestGetReviewsForResponse:
         mock_api_client.get_records.assert_called_once_with(
             type=REVIEW_TYPE,
             labs_record_id=10,
+            public=True,
             model_class=ReviewRecord,
         )
 
@@ -555,6 +562,7 @@ class TestCreateReview:
             type=REVIEW_TYPE,
             data=input_data,
             labs_record_id=10,
+            public=True,
         )
 
 

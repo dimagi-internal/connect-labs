@@ -5,30 +5,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.test import Client, override_settings
 
+from commcare_connect.labs.tests.test_settings import LABS_SETTINGS
 from commcare_connect.users.models import User
-
-LABS_MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.locale.LocaleMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django_htmx.middleware.HtmxMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "commcare_connect.labs.context.LabsContextMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
-    "commcare_connect.utils.middleware.CurrentVersionMiddleware",
-]
-
-LABS_SETTINGS = dict(
-    IS_LABS_ENVIRONMENT=True,
-    MIDDLEWARE=LABS_MIDDLEWARE,
-    LOGIN_URL="/labs/login/",
-)
 
 
 @pytest.fixture
@@ -121,7 +99,11 @@ def test_download_redirects_to_presigned_url(mock_boto3, dimagi_client):
     assert response["Location"] == "https://s3.example.com/presigned"
     mock_s3.generate_presigned_url.assert_called_once_with(
         "get_object",
-        Params={"Bucket": "test-bucket", "Key": WORKFLOW_RUNS_KEY},
+        Params={
+            "Bucket": "test-bucket",
+            "Key": WORKFLOW_RUNS_KEY,
+            "ResponseContentDisposition": "attachment; filename=workflow_runs.csv",
+        },
         ExpiresIn=900,
     )
 

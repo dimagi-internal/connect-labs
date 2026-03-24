@@ -91,6 +91,7 @@ def _make_request(path="/", method="GET", data=None, user=None):
     if user is None:
         user = MagicMock(is_authenticated=True, username="manager_user")
         user.id = 1
+        user.email = "test@dimagi.com"
     request.user = user
     request.labs_context = {"program_id": 42}
     request.session = {"labs_oauth": {"access_token": "tok", "expires_at": 9999999999}}

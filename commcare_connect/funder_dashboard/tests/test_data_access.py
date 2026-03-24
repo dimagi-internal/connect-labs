@@ -44,7 +44,7 @@ def mock_api_client():
 
 @pytest.fixture
 def data_access(mock_api_client):
-    da = FunderDashboardDataAccess(org_id="42", access_token="test-token")
+    da = FunderDashboardDataAccess(program_id="42", access_token="test-token")
     da.labs_api = mock_api_client
     return da
 
@@ -52,17 +52,17 @@ def data_access(mock_api_client):
 class TestConstructor:
     def test_requires_access_token(self):
         with pytest.raises(ValueError, match="OAuth access token required"):
-            FunderDashboardDataAccess(org_id="42")
+            FunderDashboardDataAccess(program_id="42")
 
     @patch("commcare_connect.funder_dashboard.data_access.LabsRecordAPIClient")
-    def test_stores_org_id(self, MockClient):
-        da = FunderDashboardDataAccess(org_id="42", access_token="tok")
-        assert da.org_id == "42"
+    def test_stores_program_id(self, MockClient):
+        da = FunderDashboardDataAccess(program_id="42", access_token="tok")
+        assert da.program_id == "42"
 
     @patch("commcare_connect.funder_dashboard.data_access.LabsRecordAPIClient")
     def test_creates_api_client_with_token(self, MockClient):
-        FunderDashboardDataAccess(org_id="42", access_token="tok")
-        MockClient.assert_called_once_with("tok", organization_id=42)
+        FunderDashboardDataAccess(program_id="42", access_token="tok")
+        MockClient.assert_called_once_with("tok", program_id=42)
 
 
 class TestGetFunds:
@@ -72,8 +72,8 @@ class TestGetFunds:
         result = data_access.get_funds()
         assert result == records
         mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
             type=FUND_TYPE,
+            public=True,
             model_class=FundRecord,
         )
 
@@ -81,8 +81,8 @@ class TestGetFunds:
         mock_api_client.get_records.return_value = []
         data_access.get_funds(status="active")
         mock_api_client.get_records.assert_called_once_with(
-            experiment="42",
             type=FUND_TYPE,
+            public=True,
             model_class=FundRecord,
             status="active",
         )
@@ -91,18 +91,17 @@ class TestGetFunds:
 class TestGetFundById:
     def test_returns_record(self, data_access, mock_api_client):
         record = _make_fund_record(id=5)
-        mock_api_client.get_record_by_id.return_value = record
+        mock_api_client.get_records.return_value = [record]
         result = data_access.get_fund_by_id(5)
         assert result is record
-        mock_api_client.get_record_by_id.assert_called_once_with(
-            record_id=5,
-            experiment="42",
+        mock_api_client.get_records.assert_called_once_with(
             type=FUND_TYPE,
+            public=True,
             model_class=FundRecord,
         )
 
     def test_returns_none_when_not_found(self, data_access, mock_api_client):
-        mock_api_client.get_record_by_id.return_value = None
+        mock_api_client.get_records.return_value = []
         assert data_access.get_fund_by_id(999) is None
 
 
@@ -110,25 +109,27 @@ class TestCreateFund:
     def test_creates_record(self, data_access, mock_api_client):
         input_data = {"name": "New Fund", "status": "active"}
         api_return = LocalLabsRecord(
-            {"id": 100, "experiment": "42", "type": FUND_TYPE, "data": input_data, "opportunity_id": 0}
+            {"id": 100, "experiment": "new-fund", "type": FUND_TYPE, "data": input_data, "opportunity_id": 0}
         )
         mock_api_client.create_record.return_value = api_return
         result = data_access.create_fund(input_data)
         assert isinstance(result, FundRecord)
         assert result.id == 100
+        # create_fund derives funder_slug from name and passes it as experiment
         mock_api_client.create_record.assert_called_once_with(
-            experiment="42",
+            experiment="new-fund",
             type=FUND_TYPE,
             data=input_data,
-            organization_id=42,
+            program_id=42,
+            public=True,
         )
 
 
 class TestUpdateFund:
     def test_updates_record(self, data_access, mock_api_client):
-        updated_data = {"name": "Updated Fund", "status": "closed"}
+        updated_data = {"name": "Updated Fund", "status": "closed", "funder_slug": "updated-fund"}
         api_return = LocalLabsRecord(
-            {"id": 5, "experiment": "42", "type": FUND_TYPE, "data": updated_data, "opportunity_id": 0}
+            {"id": 5, "experiment": "updated-fund", "type": FUND_TYPE, "data": updated_data, "opportunity_id": 0}
         )
         mock_api_client.update_record.return_value = api_return
         result = data_access.update_fund(5, updated_data)
@@ -136,7 +137,7 @@ class TestUpdateFund:
         assert result.id == 5
         mock_api_client.update_record.assert_called_once_with(
             record_id=5,
-            experiment="42",
+            experiment="updated-fund",
             type=FUND_TYPE,
             data=updated_data,
         )
@@ -154,7 +155,7 @@ class TestAddAllocation:
             {"id": 1, "experiment": "1", "type": "fund", "opportunity_id": None, "data": updated_data}
         )
 
-        da = FunderDashboardDataAccess(org_id="1", access_token="tok")
+        da = FunderDashboardDataAccess(program_id="1", access_token="tok")
         with patch.object(da, "get_fund_by_id", return_value=mock_fund):
             with patch.object(da, "update_fund", return_value=mock_updated) as mock_update:
                 da.add_allocation(
@@ -180,7 +181,7 @@ class TestRemoveAllocation:
             {"id": 1, "experiment": "1", "type": "fund", "opportunity_id": None, "data": expected_data}
         )
 
-        da = FunderDashboardDataAccess(org_id="1", access_token="tok")
+        da = FunderDashboardDataAccess(program_id="1", access_token="tok")
         with patch.object(da, "get_fund_by_id", return_value=mock_fund):
             with patch.object(da, "update_fund", return_value=mock_updated) as mock_update:
                 da.remove_allocation(fund_id=1, index=0)

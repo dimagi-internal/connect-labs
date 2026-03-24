@@ -10,9 +10,3 @@ import pytest
 def media_storage():
     """Override root media_storage fixture — no DB needed for proxy model tests."""
     pass
-
-
-@pytest.fixture(autouse=True)
-def ensure_currency_country_data():
-    """Override root ensure_currency_country_data fixture — no DB needed."""
-    pass

@@ -26,12 +26,7 @@ from django.views.generic import TemplateView
 
 from commcare_connect.custom_analysis.chc_nutrition.analysis_config import CHC_NUTRITION_CONFIG
 from commcare_connect.labs.analysis.data_access import get_flw_names_for_opportunity
-from commcare_connect.labs.analysis.pipeline import (
-    EVENT_DOWNLOAD,
-    EVENT_RESULT,
-    EVENT_STATUS,
-    AnalysisPipeline,
-)
+from commcare_connect.labs.analysis.pipeline import EVENT_DOWNLOAD, EVENT_RESULT, EVENT_STATUS, AnalysisPipeline
 
 logger = logging.getLogger(__name__)
 
