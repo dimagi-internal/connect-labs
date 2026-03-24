@@ -217,16 +217,16 @@ body {
   background: #ffffff;
   border-left: 1px solid #e5e7eb;
   border-right: 1px solid #e5e7eb;
-  opacity: 0;
-  transition: opacity 0.2s ease;
 }
 
 .slide.active {
   display: block;
+  animation: fadeIn 0.25s ease;
 }
 
-.slide.fade-in {
-  opacity: 1;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Scene slides get more room for screenshots */
@@ -289,9 +289,6 @@ ul li {
   display: flex;
 }
 
-.slide-title.fade-in {
-  opacity: 1;
-}
 
 .title-accent-bar {
   width: 100%;
@@ -341,10 +338,6 @@ ul li {
 
 .slide-persona.active {
   display: flex;
-}
-
-.slide-persona.fade-in {
-  opacity: 1;
 }
 
 .persona-card {
@@ -686,19 +679,12 @@ JS_NAVIGATION = """
 
     // Deactivate all slides
     for (var i = 0; i < totalSlides; i++) {
-      slides[i].classList.remove('active', 'fade-in');
+      slides[i].classList.remove('active');
     }
 
-    // Activate target slide
+    // Activate target slide (CSS animation handles the fade)
     slides[n].classList.add('active');
     currentSlide = n;
-
-    // Trigger fade-in on next frame
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        slides[n].classList.add('fade-in');
-      });
-    });
 
     // Update progress indicator
     var progress = document.getElementById('nav-progress');
