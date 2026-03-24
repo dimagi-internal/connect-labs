@@ -162,11 +162,11 @@
                         <tr class="hover:bg-gray-50 transition">
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="text-sm font-medium text-gray-900">
-                                    {{ response.llo_entity_name|default:"Unknown Organization" }}
+                                    {{ response.org_name|default:response.llo_entity_name|default:"Unknown Organization" }}
                                 </div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm text-gray-900">{{ response.submitted_by_name|default:"-" }}</div>
+                                <div class="text-sm text-gray-900">{{ response.submitted_by_name|default:response.submitted_by_email|default:"-" }}</div>
                                 {% if response.submitted_by_email %}
                                     <div class="text-xs text-gray-500">{{ response.submitted_by_email }}</div>
                                 {% endif %}

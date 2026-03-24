@@ -512,12 +512,18 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
             else:
                 status = "submitted"
 
+            # Pull org info from context for display on responses list
+            labs_context = getattr(request, "labs_context", {})
+            org = labs_context.get("organization", {})
+
             data = {
                 "solicitation_id": pk,
                 "responses": form.get_responses_dict(),
                 "status": status,
-                "submitted_by_name": request.user.get_full_name() or request.user.username,
+                "submitted_by_name": request.user.name or request.user.username,
                 "submitted_by_email": request.user.email,
+                "org_id": org.get("id", ""),
+                "org_name": org.get("name", ""),
                 "submission_date": timezone.now().isoformat(),
             }
 
