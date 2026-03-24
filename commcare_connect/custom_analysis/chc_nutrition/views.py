@@ -3,7 +3,7 @@ Views for CHC Nutrition analysis.
 
 Provides FLW-level analysis of nutrition metrics using the labs analysis framework.
 
-Uses the unified pipeline pattern via run_analysis_pipeline() which handles:
+Uses the unified pipeline pattern via AnalysisPipeline which handles:
 - Multi-tier caching (LabsRecord, Redis, file)
 - Automatic terminal stage detection from config
 
@@ -30,8 +30,7 @@ from commcare_connect.labs.analysis.pipeline import (
     EVENT_DOWNLOAD,
     EVENT_RESULT,
     EVENT_STATUS,
-    run_analysis_pipeline,
-    stream_analysis_pipeline,
+    AnalysisPipeline,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,7 +90,7 @@ class CHCNutritionDataView(LoginRequiredMixin, View):
             # Run the unified analysis pipeline
             # This handles all caching (LabsRecord if ?use_labs_record_cache=true, Redis, file)
             logger.info("[CHC Nutrition API] Step 1/3: Running analysis pipeline...")
-            flw_result = run_analysis_pipeline(request, CHC_NUTRITION_CONFIG)
+            flw_result = AnalysisPipeline(request).stream_analysis_ignore_events(CHC_NUTRITION_CONFIG)
             logger.info(f"[CHC Nutrition API] Got {len(flw_result.rows)} FLWs from pipeline")
 
             # Step 2: Get FLW display names
@@ -276,7 +275,7 @@ class CHCNutritionStreamView(LoginRequiredMixin, View):
         flw_result = None
         from_cache = False
 
-        for event_type, data in stream_analysis_pipeline(request, CHC_NUTRITION_CONFIG, opportunity_id):
+        for event_type, data in AnalysisPipeline(request).stream_analysis(CHC_NUTRITION_CONFIG, opportunity_id):
             if event_type == EVENT_STATUS:
                 from_cache = from_cache or "Cache hit" in data["message"]
                 yield send_sse(data["message"])

@@ -659,36 +659,3 @@ class AnalysisPipeline:
             logger.error(f"[Pipeline/{self.backend_name}] Error: {e}", exc_info=True)
             sentry_sdk.capture_exception(e)
             yield (EVENT_ERROR, {"message": str(e)})
-
-
-# =============================================================================
-# Legacy Functions (for backward compatibility during migration)
-# =============================================================================
-
-
-def stream_analysis_pipeline(
-    request: HttpRequest,
-    config: AnalysisPipelineConfig,
-    opportunity_id: int | None = None,
-) -> Generator[tuple[str, Any], None, None]:
-    """
-    Stream analysis pipeline with progress events.
-
-    DEPRECATED: Use AnalysisPipeline(request).stream_analysis(config) instead.
-    """
-    pipeline = AnalysisPipeline(request)
-    yield from pipeline.stream_analysis(config, opportunity_id)
-
-
-def run_analysis_pipeline(
-    request: HttpRequest,
-    config: AnalysisPipelineConfig,
-    opportunity_id: int | None = None,
-) -> VisitAnalysisResult | FLWAnalysisResult:
-    """
-    Synchronous wrapper around stream_analysis_pipeline.
-
-    DEPRECATED: Use AnalysisPipeline(request).stream_analysis_ignore_events(config) instead.
-    """
-    pipeline = AnalysisPipeline(request)
-    return pipeline.stream_analysis_ignore_events(config, opportunity_id)

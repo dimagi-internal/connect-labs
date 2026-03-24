@@ -12,7 +12,7 @@ from django.views import View
 
 from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, CacheStage
 from commcare_connect.labs.analysis.models import FLWAnalysisResult
-from commcare_connect.labs.analysis.pipeline import run_analysis_pipeline
+from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class FLWAnalysisAPIView(LoginRequiredMixin, View):
 
             # Run the unified analysis pipeline
             # This handles all caching (LabsRecord if ?use_labs_record_cache=true, Redis, file)
-            result = run_analysis_pipeline(request, config)
+            result = AnalysisPipeline(request).stream_analysis_ignore_events(config)
 
             # Ensure we got an FLW result (not visit-level)
             if not isinstance(result, FLWAnalysisResult):

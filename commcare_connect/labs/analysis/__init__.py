@@ -11,18 +11,16 @@ Uses PostgreSQL table caching with SQL computation (SQLBackend).
 
 Usage:
     # Using the streaming pipeline (recommended for dashboards)
-    from commcare_connect.labs.analysis.pipeline import stream_analysis_pipeline
+    from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
 
-    for event_type, data in stream_analysis_pipeline(request, config):
+    for event_type, data in AnalysisPipeline(request).stream_analysis(config):
         if event_type == "status":
             yield format_sse(data)
         elif event_type == "result":
             return data
 
     # Synchronous use (tests, Celery, management commands)
-    from commcare_connect.labs.analysis.pipeline import run_analysis_pipeline
-
-    result = run_analysis_pipeline(request, config)
+    result = AnalysisPipeline(request).stream_analysis_ignore_events(config)
 """
 
 # Shared computation functions (used by audit and pipeline backends)
@@ -51,15 +49,11 @@ from commcare_connect.labs.analysis.pipeline import (
     EVENT_RESULT,
     EVENT_STATUS,
     AnalysisPipeline,
-    run_analysis_pipeline,
-    stream_analysis_pipeline,
 )
 
 __all__ = [
     # Pipeline (recommended entry points)
     "AnalysisPipeline",
-    "stream_analysis_pipeline",
-    "run_analysis_pipeline",
     "EVENT_STATUS",
     "EVENT_DOWNLOAD",
     "EVENT_RESULT",
