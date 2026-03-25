@@ -1,7 +1,12 @@
 name: "Baobab Regranting Platform Demo"
 narrative: "Connect serves both sides — funders get an AI analyst, applicants get an AI coach"
 base_url: "http://localhost:8000"
-auth_url: "/labs/test-auth/?profile=test-user"
+
+auth:
+  type: command
+  check: "cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate && python manage.py get_cli_token --list-profiles 2>&1 | grep -E 'main.*no'"
+  login: "cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate && python manage.py get_cli_token --profile main"
+  inject_url: "/labs/test-auth/?profile=main"
 
 personas:
   sarah:
