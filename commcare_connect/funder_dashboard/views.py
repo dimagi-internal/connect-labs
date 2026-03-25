@@ -38,10 +38,7 @@ class PortfolioDashboardView(ManagerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["has_context"] = _has_org_context(self.request)
-        if not ctx["has_context"]:
-            ctx["funds"] = []
-            return ctx
+        ctx["has_context"] = True  # Funds are public — always load
         try:
             da = _get_data_access(self.request)
             funds = da.get_funds()

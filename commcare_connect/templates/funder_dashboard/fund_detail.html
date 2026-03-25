@@ -248,10 +248,10 @@
         var _allPayments = [];
         var _filterBus = null;
 
-        // Safety check: confirm before loading large funds (10+ opps)
+        // Safety check: confirm before loading very large funds (100+ opps)
         var oppCount = fundAllocations.filter(function(a) { return a.opportunity_id; }).length;
-        var autoLoad = new URLSearchParams(window.location.search).get('auto_load') === 'true';
-        if (oppCount >= 10 && !autoLoad) {
+        var autoLoad = new URLSearchParams(window.location.search).get('auto_load') !== 'false';
+        if (oppCount >= 100 && !autoLoad) {
             loading.querySelector('.inline-flex').innerHTML =
                 '<div class="text-center">' +
                 '<i class="fa-solid fa-triangle-exclamation text-amber-500 text-2xl mb-3"></i>' +

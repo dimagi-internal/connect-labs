@@ -1479,7 +1479,7 @@ function renderForecast(payments, budget, container) {
         ' per week delivery pace</div>'
       : '') +
     '</div>' +
-    '<canvas id="forecast-chart" style="height: 280px;"></canvas>' +
+    '<div style="position: relative; height: 280px;"><canvas id="forecast-chart"></canvas></div>' +
     '</div>';
 
   // Render chart
