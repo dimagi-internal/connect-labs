@@ -186,6 +186,14 @@ class LabsRecordAPIClient:
             if type:
                 params["type"] = type
 
+            # Include scope params so the API can authorize access to non-public records
+            if self.organization_id and isinstance(self.organization_id, int):
+                params["organization_id"] = self.organization_id
+            if self.program_id:
+                params["program_id"] = self.program_id
+            if self.opportunity_id:
+                params["opportunity_id"] = self.opportunity_id
+
             response = self.http_client.get(url, params=params)
             response.raise_for_status()
 
