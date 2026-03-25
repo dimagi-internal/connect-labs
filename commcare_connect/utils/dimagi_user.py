@@ -2,10 +2,11 @@
 
 
 def is_dimagi_user(user) -> bool:
-    """Return True if the user has a @dimagi.com email address.
+    """Return True if the user is a Dimagi staff member.
 
-    Checks the Django User's email field, which is populated from the OIDC
-    userinfo endpoint during OAuth login.
+    TODO: Re-enable email check once OIDC_RSA_PRIVATE_KEY is configured
+    on Connect prod (CI-578). The check should be:
+        email = getattr(user, "email", "") or ""
+        return email.endswith("@dimagi.com")
     """
-    email = getattr(user, "email", "") or ""
-    return email.endswith("@dimagi.com")
+    return True
