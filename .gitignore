@@ -377,3 +377,4 @@ docs/.dry-run/
 
 # Local debug/utility scripts
 scripts/
+.gstack/
