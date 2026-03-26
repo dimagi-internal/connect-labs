@@ -1026,10 +1026,10 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                 <h1 className="text-2xl font-bold text-gray-900">{definition.name}</h1>
                 <p className="text-gray-600 mt-1">{definition.description}</p>
             </div>
-            {phase === 'config' && ConfigPhase()}
-            {phase === 'creating' && CreatingPhase()}
-            {phase === 'reviewing' && ReviewPhase()}
-            {phase === 'completed' && CompletedPhase()}
+            {phase === 'config' && <ConfigPhase />}
+            {phase === 'creating' && <CreatingPhase />}
+            {phase === 'reviewing' && <ReviewPhase />}
+            {phase === 'completed' && <CompletedPhase />}
         </div>
     );
 }"""
