@@ -148,6 +148,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
         "client_id": settings.CONNECT_OAUTH_CLIENT_ID,
         "client_secret": settings.CONNECT_OAUTH_CLIENT_SECRET,
         "code_verifier": code_verifier,
+        "response_type": "token",
     }
 
     try:
