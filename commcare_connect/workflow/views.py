@@ -19,10 +19,11 @@ from django.views.generic import TemplateView
 
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.context import get_org_data
-from commcare_connect.utils.feature_access import can_create_from_template, get_allowed_templates
+from commcare_connect.utils.dimagi_user import is_dimagi_user
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 from commcare_connect.workflow.templates import TEMPLATES
 from commcare_connect.workflow.templates import create_workflow_from_template as create_from_template
+from commcare_connect.workflow.templates import list_templates
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class WorkflowTemplateListAPIView(LoginRequiredMixin, View):
 
     def get(self, request):
         """Return list of workflow templates with metadata for UI rendering."""
-        return JsonResponse({"templates": get_allowed_templates(request.user)})
+        return JsonResponse({"templates": list_templates()})
 
 
 class WorkflowListView(LoginRequiredMixin, TemplateView):
@@ -49,9 +50,8 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         context["opportunity_id"] = labs_context.get("opportunity_id")
         context["opportunity_name"] = labs_context.get("opportunity_name")
 
-        # Show Create Workflow button if user has at least one allowed template
-        allowed_templates = get_allowed_templates(self.request.user)
-        context["can_create_workflow"] = bool(allowed_templates)
+        # Restrict Create Workflow button to @dimagi.com users / allowlist
+        context["is_dimagi"] = is_dimagi_user(self.request.user)
 
         # Get workflow definitions and their runs
         if context["has_context"]:
@@ -113,12 +113,12 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
 
                 context["workflows"] = workflows_with_runs
                 context["definitions"] = definitions  # Keep for backwards compatibility
-                context["available_templates"] = allowed_templates
+                context["available_templates"] = list_templates()
             except Exception as e:
                 logger.error(f"Failed to load workflow definitions: {e}", exc_info=True)
                 context["workflows"] = []
                 context["definitions"] = []
-                context["available_templates"] = allowed_templates
+                context["available_templates"] = list_templates()
                 context["error"] = str(e)
             finally:
                 if pipeline_access is not None:
@@ -128,7 +128,7 @@ class WorkflowListView(LoginRequiredMixin, TemplateView):
         else:
             context["workflows"] = []
             context["definitions"] = []
-            context["available_templates"] = allowed_templates
+            context["available_templates"] = list_templates()
 
         return context
 
@@ -859,10 +859,10 @@ def create_workflow_from_template_view(request):
     from django.core.exceptions import PermissionDenied
     from django.shortcuts import redirect
 
-    template_key = request.POST.get("template", "performance_review")
-
-    if not can_create_from_template(request.user, template_key):
+    if not is_dimagi_user(request.user):
         raise PermissionDenied
+
+    template_key = request.POST.get("template", "performance_review")
 
     if template_key not in TEMPLATES:
         messages.error(request, f"Unknown template: {template_key}")
