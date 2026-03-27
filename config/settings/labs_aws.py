@@ -82,7 +82,7 @@ IS_LABS_ENVIRONMENT = True
 DEPLOY_ENVIRONMENT = "labs"
 
 # OAuth configuration
-LABS_OAUTH_SCOPES = ["export", "openid"]
+LABS_OAUTH_SCOPES = ["export"]  # TODO: re-enable "openid" after fixing OAuth app config on Connect prod
 LOGIN_URL = "/labs/login/"
 
 # Add labs app and custom_analysis
