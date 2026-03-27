@@ -243,8 +243,6 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "color": "purple",
             },
         ]
-        context["custom_analysis_projects"] = (
-            _all_custom_analysis_projects if _has_access("custom_analysis") else []
-        )
+        context["custom_analysis_projects"] = _all_custom_analysis_projects if _has_access("custom_analysis") else []
 
         return context
