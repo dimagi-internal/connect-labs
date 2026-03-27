@@ -155,7 +155,9 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
         response.raise_for_status()
         token_json = response.json()
     except httpx.HTTPStatusError as e:
-        logger.error(f"OAuth token exchange failed with status {e.response.status_code}", exc_info=True)
+        logger.error(
+            f"OAuth token exchange failed with status {e.response.status_code}: {e.response.text}", exc_info=True
+        )
         messages.error(request, "Failed to authenticate with Connect. Please try again.")
         return redirect("labs:oauth_initiate")
     except Exception as e:

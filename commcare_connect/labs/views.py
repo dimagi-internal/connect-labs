@@ -9,7 +9,7 @@ from django.views.generic import TemplateView
 
 from commcare_connect.labs.context import clear_context_from_session
 from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data
-from commcare_connect.utils.dimagi_user import is_dimagi_user
+from commcare_connect.utils.feature_access import user_has_feature_access
 
 
 @login_required
@@ -153,34 +153,19 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
         else:
             coverage_url = "/coverage/?config=chc_nutrition"
 
-        _is_dimagi = is_dimagi_user(self.request.user)
+        user = self.request.user
+        _has_access = lambda feature: user_has_feature_access(user, feature)  # noqa: E731
 
         # ── Labs projects ──────────────────────────────────────────────────────
-        # Tasks + Workflows: visible to all authenticated users.
-        # Audit + Solicitations: Dimagi staff only.
-        _open_labs_projects = [
-            {
-                "name": "Tasks",
-                "url": "/tasks/",
-                "icon": "fa-tasks",
-                "description": "Task management and workflow tracking for program managers and network managers",
-                "color": "purple",
-            },
-            {
-                "name": "Workflows",
-                "url": "/labs/workflow/",
-                "icon": "fa-diagram-project",
-                "description": "Build and run automated data pipelines with AI-powered agents",
-                "color": "amber",
-            },
-        ]
-        _dimagi_labs_projects = [
+        # Each card is shown only if the user has access to that feature.
+        _all_labs_projects = [
             {
                 "name": "Audit",
                 "url": "/audit/",
                 "icon": "fa-clipboard-check",
                 "description": "Data quality auditing tools for program monitoring",
                 "color": "blue",
+                "feature": "audit",
             },
             {
                 "name": "Solicitations",
@@ -188,61 +173,78 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "icon": "fa-file-contract",
                 "description": "RFP management system for posting Solicitations and receiving responses",
                 "color": "indigo",
+                "feature": "solicitations",
+            },
+            {
+                "name": "Tasks",
+                "url": "/tasks/",
+                "icon": "fa-tasks",
+                "description": "Task management and workflow tracking for program managers and network managers",
+                "color": "purple",
+                "feature": "tasks",
+            },
+            {
+                "name": "Workflows",
+                "url": "/labs/workflow/",
+                "icon": "fa-diagram-project",
+                "description": "Build and run automated data pipelines with AI-powered agents",
+                "color": "amber",
+                "feature": "workflow",
             },
         ]
-        context["labs_projects"] = _dimagi_labs_projects + _open_labs_projects if _is_dimagi else _open_labs_projects
+        context["labs_projects"] = [p for p in _all_labs_projects if _has_access(p["feature"])]
 
-        # ── Custom Analysis projects — all Dimagi staff only ──────────────────
-        if _is_dimagi:
-            context["custom_analysis_projects"] = [
-                {
-                    "name": "Coverage",
-                    "url": "/coverage/",
-                    "icon": "fa-map-marked-alt",
-                    "description": "Geographic coverage analysis and mapping for Service Areas and Delivery Units",
-                    "color": "green",
-                    "buttons": [
-                        {"label": "CHC Nutrition View", "url": coverage_url},
-                        {"label": "Generic View", "url": "/coverage/"},
-                    ],
-                },
-                {
-                    "name": "CHC Nutrition",
-                    "url": "/custom_analysis/chc_nutrition/",
-                    "icon": "fa-heartbeat",
-                    "description": "Nutrition and health metrics analysis for the Child Health Campaign",
-                    "color": "rose",
-                },
-                {
-                    "name": "KMC Timeline",
-                    "url": "/custom_analysis/kmc/children/",
-                    "icon": "fa-baby",
-                    "description": "Individual child timelines for Kangaroo Mother Care programs",
-                    "color": "blue",
-                },
-                {
-                    "name": "MBW GPS Analysis",
-                    "url": "/custom_analysis/mbw/gps/",
-                    "icon": "fa-location-dot",
-                    "description": "GPS distance metrics and travel analysis for Mother Baby Wellness",
-                    "color": "emerald",
-                },
-                {
-                    "name": "RUTF Timeline",
-                    "url": "/custom_analysis/rutf/children/",
-                    "icon": "fa-weight-scale",
-                    "description": "SAM follow-up tracking with MUAC measurements for malnutrition programs",
-                    "color": "orange",
-                },
-                {
-                    "name": "Audit of Audits",
-                    "url": "/custom_analysis/audit_of_audits/",
-                    "icon": "fa-magnifying-glass-chart",
-                    "description": "Cross-opportunity admin report of all workflow runs and audit sessions",
-                    "color": "purple",
-                },
-            ]
-        else:
-            context["custom_analysis_projects"] = []
+        # ── Custom Analysis projects — all require the "custom_analysis" feature ──
+        _all_custom_analysis_projects = [
+            {
+                "name": "Coverage",
+                "url": "/coverage/",
+                "icon": "fa-map-marked-alt",
+                "description": "Geographic coverage analysis and mapping for Service Areas and Delivery Units",
+                "color": "green",
+                "buttons": [
+                    {"label": "CHC Nutrition View", "url": coverage_url},
+                    {"label": "Generic View", "url": "/coverage/"},
+                ],
+            },
+            {
+                "name": "CHC Nutrition",
+                "url": "/custom_analysis/chc_nutrition/",
+                "icon": "fa-heartbeat",
+                "description": "Nutrition and health metrics analysis for the Child Health Campaign",
+                "color": "rose",
+            },
+            {
+                "name": "KMC Timeline",
+                "url": "/custom_analysis/kmc/children/",
+                "icon": "fa-baby",
+                "description": "Individual child timelines for Kangaroo Mother Care programs",
+                "color": "blue",
+            },
+            {
+                "name": "MBW GPS Analysis",
+                "url": "/custom_analysis/mbw/gps/",
+                "icon": "fa-location-dot",
+                "description": "GPS distance metrics and travel analysis for Mother Baby Wellness",
+                "color": "emerald",
+            },
+            {
+                "name": "RUTF Timeline",
+                "url": "/custom_analysis/rutf/children/",
+                "icon": "fa-weight-scale",
+                "description": "SAM follow-up tracking with MUAC measurements for malnutrition programs",
+                "color": "orange",
+            },
+            {
+                "name": "Audit of Audits",
+                "url": "/custom_analysis/audit_of_audits/",
+                "icon": "fa-magnifying-glass-chart",
+                "description": "Cross-opportunity admin report of all workflow runs and audit sessions",
+                "color": "purple",
+            },
+        ]
+        context["custom_analysis_projects"] = (
+            _all_custom_analysis_projects if _has_access("custom_analysis") else []
+        )
 
         return context
