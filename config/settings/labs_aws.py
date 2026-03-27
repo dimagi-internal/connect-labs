@@ -82,7 +82,7 @@ IS_LABS_ENVIRONMENT = True
 DEPLOY_ENVIRONMENT = "labs"
 
 # OAuth configuration
-LABS_OAUTH_SCOPES = ["export", "openid"]
+LABS_OAUTH_SCOPES = ["export"]
 LOGIN_URL = "/labs/login/"
 
 # Add labs app and custom_analysis
