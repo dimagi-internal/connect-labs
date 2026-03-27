@@ -185,17 +185,25 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
 
     # Fetch OIDC userinfo for reliable email
     try:
+        userinfo_url = f"{settings.CONNECT_PRODUCTION_URL}/o/userinfo/"
         userinfo_resp = httpx.get(
-            f"{settings.CONNECT_PRODUCTION_URL}/o/userinfo/",
+            userinfo_url,
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
+        )
+        # TEMPORARY DEBUG — remove after confirming email flow works
+        messages.info(
+            request,
+            f"[DEBUG] userinfo URL={userinfo_url} status={userinfo_resp.status_code} body={userinfo_resp.text[:300]}",
         )
         if userinfo_resp.status_code == 200:
             userinfo = userinfo_resp.json()
             if userinfo.get("email"):
                 profile_data["email"] = userinfo["email"]
                 logger.info(f"Got email from OIDC userinfo for {profile_data.get('username')}")
-    except Exception:
+    except Exception as e:
+        # TEMPORARY DEBUG — remove after confirming email flow works
+        messages.error(request, f"[DEBUG] userinfo failed: {str(e)}")
         logger.warning("Failed to fetch OIDC userinfo", exc_info=True)
 
     # Fetch organization data from production API
