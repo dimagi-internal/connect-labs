@@ -56,6 +56,11 @@ class TaskListView(LoginRequiredMixin, ListView):
             search_lower = search_query.lower()
             tasks = [t for t in tasks if search_lower in t.title.lower()]
 
+        task_ids_param = self.request.GET.get("task_ids")
+        if task_ids_param:
+            allowed_ids = {int(tid) for tid in task_ids_param.split(",") if tid.strip().isdigit()}
+            tasks = [t for t in tasks if t.id in allowed_ids]
+
         # Sort by id descending (higher IDs are more recent)
         return sorted(tasks, key=lambda x: x.id, reverse=True)
 
@@ -107,6 +112,7 @@ class TaskListView(LoginRequiredMixin, ListView):
                 "has_connect_token": has_token,
                 "token_expires_at": token_expires_at,
                 "has_context": has_context,
+                "task_ids_filter": self.request.GET.get("task_ids", ""),
             }
         )
 

@@ -91,6 +91,7 @@ class TaskDataAccess(BaseDataAccess):
             "assigned_to_name": kwargs.get("assigned_to_name", creator_name),
             # Optional references
             "audit_session_id": kwargs.get("audit_session_id"),
+            "workflow_run_id": kwargs.get("workflow_run_id"),
             "resolution_details": {},
             # Events (timeline)
             "events": [initial_event],

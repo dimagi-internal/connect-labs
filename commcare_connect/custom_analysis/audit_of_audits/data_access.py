@@ -314,6 +314,12 @@ class AuditOfAuditsDataAccess:
                 except (TypeError, ValueError):
                     pass
 
+            # ── Task IDs — individual task IDs created by this run ──────────
+            # Stored by the bulk assessment page as run.state["flw_tasks"]
+            # which is a dict of {username: task_id}.
+            flw_tasks = state.get("flw_tasks") or {}
+            task_ids = [str(tid) for tid in flw_tasks.values() if tid]
+
             # ── Images reviewed — total images reviewed in this run ───────────
             raw_images = state.get("images_reviewed")
             images_reviewed: int | None = None
@@ -349,6 +355,7 @@ class AuditOfAuditsDataAccess:
                     "avg_pct_passed": avg_pct_passed,
                     "pct_passing": pct_passing,
                     "tasks_created": tasks_created,
+                    "task_ids": task_ids,
                     "images_reviewed": images_reviewed,
                     "pct_sampled": pct_sampled,
                 }

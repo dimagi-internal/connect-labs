@@ -74,6 +74,17 @@
     </div>
   </div>
 
+  {% if task_ids_filter %}
+  <!-- Filtered Tasks Banner -->
+  <div class="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 mb-4 flex items-center justify-between">
+    <div class="flex items-center gap-2 text-sm text-indigo-800">
+      <i class="fa-solid fa-filter"></i>
+      <span>Showing filtered tasks</span>
+    </div>
+    <a href="{% url 'tasks:list' %}" class="text-xs text-indigo-600 hover:text-indigo-800 underline">Clear filter</a>
+  </div>
+  {% endif %}
+
   <!-- Filters and Controls -->
   <div class="bg-white rounded-lg shadow-sm p-4 mb-4">
     <div class="flex flex-wrap gap-4 items-center justify-between">
