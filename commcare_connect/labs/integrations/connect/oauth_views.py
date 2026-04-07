@@ -148,6 +148,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
         "client_id": settings.CONNECT_OAUTH_CLIENT_ID,
         "client_secret": settings.CONNECT_OAUTH_CLIENT_SECRET,
         "code_verifier": code_verifier,
+        "response_type": "token",
     }
 
     try:
@@ -185,8 +186,9 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
 
     # Fetch OIDC userinfo for reliable email
     try:
+        userinfo_url = f"{settings.CONNECT_PRODUCTION_URL}/o/userinfo/"
         userinfo_resp = httpx.get(
-            f"{settings.CONNECT_PRODUCTION_URL}/o/userinfo/",
+            userinfo_url,
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
         )

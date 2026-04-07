@@ -309,7 +309,19 @@
 
             {# Tasks Created — number of CommCare tasks created by this run #}
             <td class="px-4 py-3 text-right">
-              {% if row.tasks_created is not None %}
+              {% if row.task_ids|length == 1 %}
+              <a href="{% url 'tasks:edit' task_id=row.task_ids.0 %}?opportunity_id={{ row.opportunity_id }}"
+                 class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 tabular-nums underline"
+                 title="View task #{{ row.task_ids.0 }}">
+                {{ row.tasks_created }}
+              </a>
+              {% elif row.task_ids|length > 1 %}
+              <a href="{% url 'tasks:list' %}?task_ids={{ row.task_ids|join:',' }}&opportunity_id={{ row.opportunity_id }}"
+                 class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 tabular-nums underline"
+                 title="View {{ row.task_ids|length }} tasks from run #{{ row.run_id }}">
+                {{ row.tasks_created }}
+              </a>
+              {% elif row.tasks_created is not None %}
               <span class="text-xs font-semibold text-gray-700 tabular-nums">{{ row.tasks_created }}</span>
               {% else %}
               <span class="text-gray-300">—</span>
