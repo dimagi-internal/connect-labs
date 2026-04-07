@@ -72,8 +72,8 @@ def test_auth_view(request):
         expires_at = (timezone.now() + timezone.timedelta(seconds=expires_in)).timestamp()
 
     # Create or update Django User and log in (mirrors OAuth callback)
-    first_name = profile_data.get("first_name", "")
-    last_name = profile_data.get("last_name", "")
+    first_name = profile_data.get("first_name") or ""
+    last_name = profile_data.get("last_name") or ""
     name = f"{first_name} {last_name}".strip() or profile_data.get("username", "")
     defaults = {"name": name}
     email = profile_data.get("email", "")

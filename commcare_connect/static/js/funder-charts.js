@@ -213,7 +213,7 @@ function trendHTML(trend) {
   return '<span class="text-gray-400 text-xs font-medium"><i class="fa-solid fa-minus mr-0.5"></i>0%</span>';
 }
 
-/** Count distinct usernames with a visit_date within the last N days of maxDate. */
+/** Count distinct usernames with an approved visit_date within the last N days of maxDate. */
 function activeFLWs(visits, maxDateStr, days) {
   if (!maxDateStr) return 0;
   // Normalize to YYYY-MM-DD (visit_date may be a datetime like 2026-03-15T10:30:00Z)
@@ -222,6 +222,7 @@ function activeFLWs(visits, maxDateStr, days) {
   cutoff.setDate(cutoff.getDate() - days);
   var set = {};
   for (var i = 0; i < visits.length; i++) {
+    if (visits[i].status !== 'approved') continue;
     if (!visits[i].username || !visits[i].visit_date) continue;
     var vd = new Date(String(visits[i].visit_date).slice(0, 10) + 'T00:00:00');
     if (vd >= cutoff && vd <= maxD) {
@@ -231,10 +232,11 @@ function activeFLWs(visits, maxDateStr, days) {
   return Object.keys(set).length;
 }
 
-/** Find the max visit_date string in a visits array (normalized to YYYY-MM-DD). */
+/** Find the max approved visit_date in a visits array (normalized to YYYY-MM-DD). */
 function maxVisitDate(visits) {
   var max = null;
   for (var i = 0; i < visits.length; i++) {
+    if (visits[i].status !== 'approved') continue;
     var vd = visits[i].visit_date
       ? String(visits[i].visit_date).slice(0, 10)
       : '';
@@ -264,10 +266,11 @@ function renderKPIs(visits, payments, container) {
       (parseFloat(payments[i].usd_org) || 0);
   }
 
-  // Distinct FLWs (total)
+  // Distinct FLWs (total, approved visits only)
   var flwSet = {};
   for (var i = 0; i < visits.length; i++) {
-    if (visits[i].username) flwSet[visits[i].username] = true;
+    if (visits[i].status === 'approved' && visits[i].username)
+      flwSet[visits[i].username] = true;
   }
   var totalFLWs = Object.keys(flwSet).length;
 
@@ -1043,13 +1046,32 @@ function renderMap(visits) {
     return;
   }
 
-  // Initialize map
+  // Initialize map with fallback tile provider
   var map = L.map(mapDiv).setView([0, 0], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution:
-      '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 18,
-  }).addTo(map);
+  var osmLayer = L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+      attribution:
+        '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 18,
+    },
+  );
+  var cartoLayer = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {
+      attribution:
+        '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      maxZoom: 19,
+    },
+  );
+  var failedOver = false;
+  osmLayer.on('tileerror', function () {
+    if (failedOver) return;
+    failedOver = true;
+    map.removeLayer(osmLayer);
+    cartoLayer.addTo(map);
+  });
+  osmLayer.addTo(map);
 
   // Marker cluster with fallback
   var clusterGroup;

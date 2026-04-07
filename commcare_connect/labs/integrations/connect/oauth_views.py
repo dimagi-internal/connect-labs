@@ -238,8 +238,8 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     }
 
     # Create or update Django User from OAuth profile
-    first_name = profile_data.get("first_name", "")
-    last_name = profile_data.get("last_name", "")
+    first_name = profile_data.get("first_name") or ""
+    last_name = profile_data.get("last_name") or ""
     name = f"{first_name} {last_name}".strip() or profile_data.get("username", "")
 
     user, created = User.objects.update_or_create(
