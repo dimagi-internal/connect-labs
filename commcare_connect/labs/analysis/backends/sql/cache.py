@@ -240,6 +240,30 @@ class SQLCacheManager:
             f"[SQLCache] Finalized {updated} raw visits for opp {self.opportunity_id} " f"(visit_count={actual_count})"
         )
 
+    def store_raw_visits_abort(self):
+        """
+        Abort an in-progress streaming write started by store_raw_visits_start().
+
+        Deletes all sentinel rows for this writer (rows tagged with the unique
+        negative _pending_visit_count). Safe to call multiple times. Should be
+        called from an exception handler when streaming fails partway through,
+        so orphan sentinel rows don't accumulate until TTL expiry.
+
+        Old finalized rows from previous successful runs are NOT touched —
+        readers continue to see the previous successful cache.
+        """
+        if getattr(self, "_pending_visit_count", None) is None:
+            return  # nothing to abort
+
+        deleted, _ = RawVisitCache.objects.filter(
+            opportunity_id=self.opportunity_id,
+            visit_count=self._pending_visit_count,
+        ).delete()
+        logger.info(
+            f"[SQLCache] Aborted streaming write for opp {self.opportunity_id}: " f"deleted {deleted} sentinel rows"
+        )
+        self._pending_visit_count = None
+
     def get_raw_visits_queryset(self):
         """Get queryset of cached raw visits (excludes in-progress sentinel rows)."""
         return RawVisitCache.objects.filter(

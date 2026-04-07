@@ -339,7 +339,7 @@ class AnalysisPipeline:
         Yields:
             Tuples of (event_type, event_data):
             - ("status", {"message": "..."}) - progress updates
-            - ("download", {"bytes": N, "total": M}) - download progress
+            - ("download", {"rows": N, "total": M}) - download progress
             - ("result", FLWAnalysisResult|VisitAnalysisResult) - final result
             - ("error", {"message": "..."}) - error (terminates stream)
 

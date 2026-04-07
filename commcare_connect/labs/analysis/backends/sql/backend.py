@@ -226,6 +226,7 @@ class SQLBackend:
                     yield ("progress", rows_so_far, expected_visit_count or 0)
 
         except ExportAPIError as e:
+            cache_manager.store_raw_visits_abort()
             logger.error(f"[SQL] Export API failure for opp {opportunity_id}: {e}")
             sentry_sdk.capture_exception(e)
             raise RuntimeError(f"Connect export API error: {e}") from e
