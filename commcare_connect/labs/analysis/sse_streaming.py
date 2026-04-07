@@ -223,9 +223,9 @@ class AnalysisPipelineSSEMixin:
         formatted SSE events. Stores the final result in self._pipeline_result
         and cache status in self._pipeline_from_cache.
 
-        Download progress events are yielded every ~5MB (configured by backends
-        using DOWNLOAD_PROGRESS_INTERVAL_BYTES). Each download event is immediately
-        converted to an SSE event for real-time UI updates.
+        Fetch progress events are yielded once per page from the v2 paginated API
+        (up to 1000 rows per page). Each event is immediately converted to an SSE
+        event for real-time UI updates.
 
         Args:
             pipeline_stream: Generator from pipeline.stream_analysis()
@@ -250,19 +250,16 @@ class AnalysisPipelineSSEMixin:
                 yield send_sse_func(message)
 
             elif event_type == EVENT_DOWNLOAD:
-                # Download progress event - yield immediately for real-time UI updates
-                # These events are generated every 5MB by the backend (see DOWNLOAD_PROGRESS_INTERVAL_BYTES)
-                bytes_dl = event_data.get("bytes", 0)
-                total_bytes = event_data.get("total", 0)
-                if total_bytes > 0:
-                    mb_dl = bytes_dl / (1024 * 1024)
-                    mb_total = total_bytes / (1024 * 1024)
-                    pct = int(bytes_dl / total_bytes * 100)
-                    message = f"Downloading: {mb_dl:.1f} / {mb_total:.1f} MB ({pct}%)"
+                # Fetch progress event - yield immediately for real-time UI updates
+                # Each page (up to 1000 rows) from the paginated API triggers one event.
+                rows_so_far = event_data.get("rows", 0)
+                expected_count = event_data.get("total", 0)
+                if expected_count > 0:
+                    pct = int(rows_so_far / expected_count * 100)
+                    message = f"Fetching visits: {rows_so_far:,} / {expected_count:,} rows ({pct}%)"
                 else:
-                    mb_dl = bytes_dl / (1024 * 1024)
-                    message = f"Downloading: {mb_dl:.1f} MB..."
-                logger.debug(f"[SSE Mixin] Download progress: {message}")
+                    message = f"Fetching visits: {rows_so_far:,} rows..."
+                logger.debug(f"[SSE Mixin] Fetch progress: {message}")
                 yield send_sse_func(message)
 
             elif event_type == EVENT_RESULT:
