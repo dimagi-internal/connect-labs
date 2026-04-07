@@ -178,12 +178,6 @@
             var textEl = document.getElementById('coach-text');
 
             btn.onclick = function() {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Reviewing...';
-                loadingEl.classList.remove('hidden');
-                contentEl.classList.add('hidden');
-                textEl.innerHTML = '';
-
                 // Collect answers with their QUESTION TEXT (not just field names)
                 var form = document.querySelector('form.space-y-8');
                 var questionAnswers = [];
@@ -200,13 +194,16 @@
                 });
 
                 if (questionAnswers.length === 0) {
-                    loadingEl.classList.add('hidden');
                     contentEl.classList.remove('hidden');
                     textEl.innerHTML = '<p class="text-amber-700"><i class="fa-solid fa-pen mr-2"></i>Write some answers first, then click "Get Feedback" to receive coaching suggestions.</p>';
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Get Feedback on My Answers';
                     return;
                 }
+
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Reviewing...';
+                loadingEl.classList.remove('hidden');
+                contentEl.classList.add('hidden');
+                textEl.innerHTML = '';
 
                 var prompt = 'I am applying for: "{{ solicitation.title|escapejs }}"\n';
                 prompt += 'Description: {{ solicitation.description|escapejs|truncatewords:150 }}\n\n';

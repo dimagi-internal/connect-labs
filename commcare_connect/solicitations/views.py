@@ -567,7 +567,7 @@ class RespondView(LabsLoginRequiredMixin, TemplateView):
                 "solicitation_id": pk,
                 "responses": form.get_responses_dict(),
                 "status": status,
-                "submitted_by_name": request.user.name or request.user.username,
+                "submitted_by_name": (request.user.name or "").strip() or request.user.username,
                 "submitted_by_email": request.user.email,
                 "org_id": org.get("id", ""),
                 "org_name": org.get("name", ""),

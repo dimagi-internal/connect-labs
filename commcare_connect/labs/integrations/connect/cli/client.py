@@ -299,7 +299,7 @@ def get_labs_user_from_token(
         username=user_profile.get("username"),
         defaults={
             "email": user_profile.get("email", ""),
-            "name": f"{user_profile.get('first_name', '')} {user_profile.get('last_name', '')}".strip(),
+            "name": f"{user_profile.get('first_name') or ''} {user_profile.get('last_name') or ''}".strip(),
         },
     )
     return user
@@ -378,8 +378,8 @@ def create_cli_request(
         org_data = {}
 
     # Create Django User from profile data
-    first_name = user_profile.get("first_name", "")
-    last_name = user_profile.get("last_name", "")
+    first_name = user_profile.get("first_name") or ""
+    last_name = user_profile.get("last_name") or ""
     name = f"{first_name} {last_name}".strip() or user_profile.get("username", "")
     user, _ = User.objects.update_or_create(
         username=user_profile.get("username"),
