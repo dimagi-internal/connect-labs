@@ -1060,7 +1060,10 @@ function renderMap(visits) {
       maxZoom: 19,
     },
   );
+  var failedOver = false;
   osmLayer.on('tileerror', function () {
+    if (failedOver) return;
+    failedOver = true;
     map.removeLayer(osmLayer);
     cartoLayer.addTo(map);
   });

@@ -10,8 +10,10 @@ Usage:
 """
 
 import json
+from datetime import timedelta
 
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from commcare_connect.labs.integrations.connect.cli.token_manager import TokenManager
 from commcare_connect.solicitations.data_access import SolicitationsDataAccess
@@ -309,9 +311,10 @@ class Command(BaseCommand):
         # Check which demo orgs already have responses
         existing_entities = {r.llo_entity_id for r in existing}
 
-        # Create new demo responses
+        # Create new demo responses (stagger submission dates over the past week)
+        now = timezone.now()
         self.stdout.write(self.style.WARNING("\nCreating demo responses..."))
-        for org_info in DEMO_RESPONSES:
+        for idx, org_info in enumerate(DEMO_RESPONSES):
             entity_id = org_info["llo_entity_id"]
             if entity_id in existing_entities:
                 self.stdout.write(f"  Skipping {org_info['org_name']} — response already exists")
@@ -337,7 +340,7 @@ class Command(BaseCommand):
                 "submitted_by_email": org_info["submitted_by_email"],
                 "org_id": org_info["org_id"],
                 "org_name": org_info["org_name"],
-                "submission_date": "2026-03-20T14:00:00Z",
+                "submission_date": (now - timedelta(days=idx + 1)).isoformat(),
             }
 
             if options["dry_run"]:
