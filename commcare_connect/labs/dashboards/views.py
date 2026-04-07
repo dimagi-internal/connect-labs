@@ -4,12 +4,9 @@ Labs Dashboard Prototype Views
 Multiple visualization approaches for hierarchical program data:
 - Program Type → Program → Opportunity → FLWs
 """
-import csv
-import io
 import json
 import logging
 
-import httpx
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -101,52 +98,18 @@ def fetch_flws(request: HttpRequest, opp_id: int) -> JsonResponse:
 
     # Call production API
     try:
-        url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opp_id}/user_data/"
-        response = httpx.get(
-            url,
-            headers={"Authorization": f"Bearer {access_token}"},
-            timeout=30,
-        )
-        response.raise_for_status()
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
 
-        # Log response details for debugging
-        content_type = response.headers.get("content-type", "")
-        logger.info(
-            f"Response from production API: status={response.status_code}, "
-            f"content-type={content_type}, length={len(response.content)}"
-        )
+        with ExportAPIClient(
+            base_url=settings.CONNECT_PRODUCTION_URL,
+            access_token=access_token,
+            timeout=30.0,
+        ) as client:
+            flw_data = client.fetch_all(f"/export/opportunity/{opp_id}/user_data/")
 
-        # Parse CSV response (production API returns CSV, not JSON)
-        if "text/csv" in content_type or "application/csv" in content_type:
-            # Parse CSV and convert to list of dicts
-            csv_text = response.text
-            csv_reader = csv.DictReader(io.StringIO(csv_text))
-            flw_data = list(csv_reader)
-            logger.info(f"Fetched {len(flw_data)} FLWs for opportunity {opp_id}")
-            return JsonResponse({"flws": flw_data, "opportunity_id": opp_id})
-        elif "application/json" in content_type:
-            # Fallback for JSON (in case API changes)
-            flw_data = response.json()
-            logger.info(f"Fetched {len(flw_data)} FLWs for opportunity {opp_id}")
-            return JsonResponse({"flws": flw_data, "opportunity_id": opp_id})
-        else:
-            # Unexpected format
-            logger.error(f"Unexpected content type from production API: {content_type}")
-            logger.debug(f"Response body preview: {response.text[:200]}")
-            return JsonResponse(
-                {"error": f"Production API returned {content_type}, expected CSV or JSON"},
-                status=500,
-            )
+        logger.info(f"Fetched {len(flw_data)} FLWs for opportunity {opp_id}")
+        return JsonResponse({"flws": flw_data, "opportunity_id": opp_id})
 
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Failed to fetch FLW data for opp {opp_id}: HTTP {e.response.status_code}", exc_info=True)
-        return JsonResponse(
-            {"error": f"Failed to fetch FLW data: HTTP {e.response.status_code}"},
-            status=e.response.status_code,
-        )
-    except httpx.TimeoutException:
-        logger.error(f"Timeout fetching FLW data for opp {opp_id}")
-        return JsonResponse({"error": "Request timeout - production API took too long"}, status=504)
-    except Exception as e:
-        logger.error(f"Unexpected error fetching FLW data for opp {opp_id}: {str(e)}", exc_info=True)
-        return JsonResponse({"error": f"Unexpected error: {str(e)}"}, status=500)
+    except ExportAPIError as e:
+        logger.error(f"Failed to fetch FLWs for opp {opp_id}: {e}")
+        return JsonResponse({"error": str(e)}, status=502)
