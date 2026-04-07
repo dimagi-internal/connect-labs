@@ -349,7 +349,7 @@ class SQLBackend:
             with ExportAPIClient(
                 base_url=settings.CONNECT_PRODUCTION_URL,
                 access_token=access_token,
-                timeout=120.0,
+                timeout=180.0,
             ) as client:
                 visits: list[dict] = []
                 for page in client.paginate(endpoint, params=params):
