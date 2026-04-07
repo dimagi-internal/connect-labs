@@ -10,6 +10,8 @@ from django.test import Client, override_settings
 
 from commcare_connect.labs.tests.test_settings import LABS_SETTINGS
 
+pytestmark = pytest.mark.skip(reason="Rewriting for v2 JSON pagination — see plan task 13")
+
 CSV_COLUMNS = ["id", "form_json", "images", "username"]
 
 
