@@ -20,7 +20,7 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.utils.dateparse import parse_date
 
-from commcare_connect.labs.analysis.backends.csv_parsing import parse_csv_bytes, parse_csv_file_chunks
+from commcare_connect.labs.analysis.backends.csv_parsing import parse_csv_file_chunks
 from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
 from commcare_connect.labs.analysis.backends.sql.query_builder import execute_flw_aggregation, execute_visit_extraction
 from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, CacheStage
@@ -139,10 +139,7 @@ class SQLBackend:
 
         # Cache miss or force refresh - fetch from API
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, fetching from API")
-        csv_bytes = self._fetch_from_api(opportunity_id, access_token, include_images=include_images)
-
-        # Parse full data (always with form_json for storage)
-        visit_dicts = parse_csv_bytes(csv_bytes, opportunity_id, skip_form_json=False)
+        visit_dicts = self._fetch_from_api(opportunity_id, access_token, include_images=include_images)
 
         # Store full data to SQL cache
         visit_count = len(visit_dicts)
@@ -151,7 +148,7 @@ class SQLBackend:
 
         # Apply filters for return value
         # Normalize to strings for comparison — visit_id is CharField in cache
-        # but parse_csv_bytes returns int IDs, and callers may pass either type.
+        # but record_to_visit_dict returns int IDs, and callers may pass either type.
         if filter_visit_ids:
             str_filter = {str(vid) for vid in filter_visit_ids}
             visit_dicts = [v for v in visit_dicts if str(v.get("id")) in str_filter]
@@ -330,24 +327,38 @@ class SQLBackend:
         logger.info(f"[SQL] Loaded {len(visits)} visits from RawVisitCache")
         return visits
 
-    def _fetch_from_api(self, opportunity_id: int, access_token: str, include_images: bool = False) -> bytes:
-        """Fetch raw CSV bytes from Connect API."""
-        url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/user_visits/"
-        if include_images:
-            url += "?images=true"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept-Encoding": "gzip, deflate",
-        }
+    def _fetch_from_api(
+        self,
+        opportunity_id: int,
+        access_token: str,
+        include_images: bool = False,
+    ) -> list[dict]:
+        """Fetch all user visits from Connect v2 export API as a list of visit dicts.
+
+        Memory note: each page is bounded at 1000 records (~15 MB with form_json).
+        Total memory peaks at the full visit count, same as the previous CSV path,
+        but without the additional pandas DataFrame copy.
+        """
+        from commcare_connect.labs.analysis.backends.visit_record import record_to_visit_dict
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+
+        endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
+        params = {"images": "true"} if include_images else None
 
         try:
-            response = httpx.get(url, headers=headers, timeout=580.0)
-            response.raise_for_status()
-            return response.content
-        except httpx.TimeoutException as e:
-            logger.error(f"[SQL] Timeout fetching visits for opp {opportunity_id}: {e}")
+            with ExportAPIClient(
+                base_url=settings.CONNECT_PRODUCTION_URL,
+                access_token=access_token,
+                timeout=120.0,
+            ) as client:
+                visits: list[dict] = []
+                for page in client.paginate(endpoint, params=params):
+                    visits.extend(record_to_visit_dict(record, opportunity_id) for record in page)
+                return visits
+        except ExportAPIError as e:
+            logger.error(f"[SQL] Export API failure for opp {opportunity_id}: {e}")
             sentry_sdk.capture_exception(e)
-            raise RuntimeError("Connect API timeout") from e
+            raise RuntimeError(f"Connect export API error: {e}") from e
 
     # -------------------------------------------------------------------------
     # Analysis Results Layer
