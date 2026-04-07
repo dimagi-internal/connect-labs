@@ -29,5 +29,11 @@ TEMPLATES[0]["OPTIONS"]["debug"] = True  # type: ignore # noqa: F405
 
 STORAGES["staticfiles"]["BACKEND"] = "django.contrib.staticfiles.storage.StaticFilesStorage"  # noqa: F405
 
+# Register the labs app so its models (RawVisitCache, ComputedVisitCache, etc.)
+# get migrations applied to the test database. Mirrors the registration in
+# local.py and labs_aws.py — base.py does not include it because those two
+# files already opt in and double-registration raises ImproperlyConfigured.
+INSTALLED_APPS = INSTALLED_APPS + ["commcare_connect.labs"]  # noqa: F405
+
 # CommCareConnect
 # ------------------------------------------------------------------------------
