@@ -5,10 +5,7 @@ Provides utility functions for fetching data from Connect API.
 """
 
 import logging
-from io import StringIO
 
-import httpx
-import pandas as pd
 from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpRequest
@@ -65,40 +62,37 @@ def fetch_flw_names(
         except Exception as e:
             logger.warning(f"Cache get failed for {cache_key}: {e}")
 
-    # Fetch from API
-    url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/user_data/"
-    logger.info(f"Fetching FLW names from {url}")
+    # Fetch from API (v2 paginated JSON)
+    from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
 
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept-Encoding": "gzip, deflate",
-    }
+    endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
+    logger.info(f"Fetching FLW names from {endpoint}")
+
     try:
-        response = httpx.get(url, headers=headers, timeout=30.0)
-        response.raise_for_status()
-    except httpx.TimeoutException as e:
-        logger.error(f"Timeout fetching FLW names for opportunity {opportunity_id}: {e}")
-        raise RuntimeError("Connect API timeout while fetching FLW names") from e
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Failed to fetch FLW names: {e}")
-        raise
+        with ExportAPIClient(
+            base_url=settings.CONNECT_PRODUCTION_URL,
+            access_token=access_token,
+            timeout=30.0,
+        ) as client:
+            records = client.fetch_all(endpoint)
+    except ExportAPIError as e:
+        logger.error(f"Failed to fetch FLW names for opportunity {opportunity_id}: {e}")
+        raise RuntimeError(f"Connect export API error while fetching FLW names: {e}") from e
 
-    # Parse CSV response
-    df = pd.read_csv(StringIO(response.text))
-    logger.info(f"Fetched {len(df)} FLWs from Connect. CSV columns: {list(df.columns)}")
+    logger.info(f"Fetched {len(records)} FLWs from Connect")
 
     # Build mapping: username -> name (fallback to username if name is empty)
-    # Also extract last_active for the "Last Active" dashboard column
-    flw_names = {}
-    flw_last_active = {}
-    for _, row in df.iterrows():
+    flw_names: dict[str, str] = {}
+    flw_last_active: dict[str, str] = {}
+    for row in records:
         username = row.get("username")
+        if not username:
+            continue
         name = row.get("name")
-        if username:
-            flw_names[username] = name if name else username
-            last_active = row.get("last_active")
-            if pd.notna(last_active):
-                flw_last_active[username] = str(last_active)
+        flw_names[username] = name if name else username
+        last_active = row.get("last_active")
+        if last_active:
+            flw_last_active[username] = str(last_active)
 
     # Populate caller's dict directly (avoids cache dependency)
     if last_active_out is not None:
