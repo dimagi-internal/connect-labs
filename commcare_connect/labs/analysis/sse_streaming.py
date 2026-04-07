@@ -18,10 +18,6 @@ from django.views import View
 
 logger = logging.getLogger(__name__)
 
-# Download progress interval - yield progress updates every 5MB
-# This is used by backends to throttle download progress events
-DOWNLOAD_PROGRESS_INTERVAL_BYTES = 5 * 1024 * 1024  # 5MB
-
 
 def send_sse_event(message: str, data: dict | None = None, error: str | None = None) -> str:
     """
@@ -100,7 +96,7 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
         """Wrap a generator with periodic SSE heartbeat comments.
 
         Prevents ALB/browser timeouts during long-running blocking operations
-        (CSV parsing, data processing) by sending SSE comment lines every
+        (JSON pagination, data processing) by sending SSE comment lines every
         ``interval`` seconds when the generator isn't yielding real data.
 
         SSE comment format ``: heartbeat\\n\\n`` keeps the TCP connection

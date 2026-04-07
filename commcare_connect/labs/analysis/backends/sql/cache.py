@@ -106,7 +106,7 @@ class SQLCacheManager:
         Store raw visit data to SQL cache.
 
         Args:
-            visit_dicts: List of visit dicts from CSV parsing
+            visit_dicts: List of visit dicts (from `record_to_visit_dict`)
             visit_count: Total visit count for invalidation
         """
         expires_at = self._get_expires_at()
