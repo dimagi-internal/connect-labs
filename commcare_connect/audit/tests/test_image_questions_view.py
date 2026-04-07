@@ -1,59 +1,46 @@
-"""Tests for OpportunityImageTypesAPIView (streaming CSV image type discovery)."""
-import csv
-import io
-import json
+"""Tests for OpportunityImageTypesAPIView (v2 paginated JSON image type discovery)."""
 import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 from django.test import Client, override_settings
 
 from commcare_connect.labs.tests.test_settings import LABS_SETTINGS
 
-pytestmark = pytest.mark.skip(reason="Rewriting for v2 JSON pagination — see plan task 13")
+# URL the view is mounted at (config/urls.py: path("audit/", ...) + audit/urls.py)
+ENDPOINT = "/audit/api/opportunity/42/image-questions/"
 
-CSV_COLUMNS = ["id", "form_json", "images", "username"]
+# The Connect API URL that ExportAPIClient will call
+CONNECT_URL = "https://connect.example.com/export/opportunity/42/user_visits/?images=true"
 
-
-def _build_csv_line(fields):
-    """Write a single CSV row using Python's csv module for correct quoting."""
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(fields)
-    return buf.getvalue().rstrip("\r\n")
-
-
-def _build_csv_lines(rows, use_python_repr=False):
-    """Build properly-quoted CSV lines from a list of dicts.
-
-    Args:
-        rows: List of dicts with id/form_json/images/username.
-        use_python_repr: If True, serialize with repr() (single quotes) to match
-            the actual Connect production API format. If False, use json.dumps.
-    """
-    lines = [_build_csv_line(CSV_COLUMNS)]
-    serialize = repr if use_python_repr else json.dumps
-    for row in rows:
-        fields = [
-            row.get("id", ""),
-            serialize(row.get("form_json", {})),
-            serialize(row.get("images", [])),
-            row.get("username", "user1"),
-        ]
-        lines.append(_build_csv_line(fields))
-    return lines
+# ---- Fixtures for form_json / images shapes -----
+#
+# extract_images_with_question_ids does:
+#   form_data = form_json.get("form", form_json)
+#   filename_map = _build_filename_map(form_data)
+#   for each image: question_id = filename_map.get(image["name"])
+#
+# _build_filename_map builds path by joining keys with "/" starting from root of form_data.
+# So {"group": {"photo_a": "img1.jpg"}} → filename_map = {"img1.jpg": "group/photo_a"}
+#
+# A record must have:
+#   - form_json: {"form": {"group": {"photo_a": "img1.jpg"}}}
+#   - images: [{"blob_id": "b1", "name": "img1.jpg"}]
+# This produces question_id "group/photo_a".
 
 
-def _mock_stream_context(lines):
-    """Create a mock httpx.stream context manager that yields lines."""
-    mock_response = MagicMock()
-    mock_response.raise_for_status = MagicMock()
-    mock_response.iter_lines.return_value = iter(lines)
+def _make_record(record_id: int, form_json: dict, images: list, username: str = "user1") -> dict:
+    """Build a single v2 user_visits record as returned by the Connect API."""
+    return {
+        "id": record_id,
+        "username": username,
+        "form_json": form_json,
+        "images": images,
+    }
 
-    mock_cm = MagicMock()
-    mock_cm.__enter__ = MagicMock(return_value=mock_response)
-    mock_cm.__exit__ = MagicMock(return_value=False)
-    return mock_cm
+
+def _page(records: list, next_url: str | None = None) -> dict:
+    """Build a v2 paginated response payload."""
+    return {"next": next_url, "results": records}
 
 
 @pytest.fixture
@@ -77,116 +64,139 @@ def labs_client(db):
     return client
 
 
-@override_settings(**LABS_SETTINGS)
-def test_image_types_returns_unique_question_ids(labs_client):
-    """View returns unique question_ids discovered from streamed CSV rows."""
-    rows = [
-        {
-            "id": 1,
-            "form_json": {"form": {"group": {"photo_a": "img1.jpg"}}},
-            "images": [{"blob_id": "b1", "name": "img1.jpg"}],
-            "username": "user1",
-        },
-        {
-            "id": 2,
-            "form_json": {"form": {"group": {"photo_b": "img2.jpg"}}},
-            "images": [{"blob_id": "b2", "name": "img2.jpg"}],
-            "username": "user2",
-        },
-    ]
-    lines = _build_csv_lines(rows)
-    mock_cm = _mock_stream_context(lines)
+# ---- Sanity check: extract_images_with_question_ids produces IDs with our fixture ----
 
-    with patch("commcare_connect.audit.views.httpx.stream", return_value=mock_cm):
-        response = labs_client.get("/audit/api/opportunity/42/image-questions/")
+
+def test_extract_images_with_question_ids_sanity():
+    """Verify our fixture shapes actually produce non-empty question_ids.
+
+    This test catches fixture regressions before the integration tests run.
+    """
+    from commcare_connect.audit.analysis_config import extract_images_with_question_ids
+
+    visit_data = {
+        "form_json": {"form": {"group": {"photo_a": "img1.jpg"}}},
+        "images": [{"blob_id": "b1", "name": "img1.jpg"}],
+    }
+    result = extract_images_with_question_ids(visit_data)
+    assert len(result) == 1
+    assert result[0]["question_id"] == "group/photo_a"
+
+
+# ---- Integration tests ----
+
+
+@override_settings(**LABS_SETTINGS)
+def test_image_types_returns_unique_question_ids(labs_client, httpx_mock):
+    """View returns unique question_ids from a single page of records."""
+    records = [
+        _make_record(
+            1,
+            form_json={"form": {"group": {"photo_a": "img1.jpg"}}},
+            images=[{"blob_id": "b1", "name": "img1.jpg"}],
+            username="user1",
+        ),
+        _make_record(
+            2,
+            form_json={"form": {"group": {"photo_b": "img2.jpg"}}},
+            images=[{"blob_id": "b2", "name": "img2.jpg"}],
+            username="user2",
+        ),
+    ]
+    httpx_mock.add_response(
+        url=CONNECT_URL,
+        json=_page(records),
+    )
+
+    response = labs_client.get(ENDPOINT)
 
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) == 2
     ids = {item["id"] for item in data}
     assert "group/photo_a" in ids
     assert "group/photo_b" in ids
+    assert len(ids) == 2
 
 
 @override_settings(**LABS_SETTINGS)
-def test_image_types_requires_auth(db):
-    """Unauthenticated request redirects to login."""
-    client = Client()
-    response = client.get("/audit/api/opportunity/42/image-questions/")
-    assert response.status_code in (302, 401)
+def test_image_types_paginates_across_multiple_pages(labs_client, httpx_mock):
+    """View follows pagination and returns IDs found across all pages."""
+    page1_url = CONNECT_URL
+    page2_url = "https://connect.example.com/export/opportunity/42/user_visits/?images=true&last_id=1"
+
+    page1_records = [
+        _make_record(
+            1,
+            form_json={"form": {"section_a": {"photo_front": "front.jpg"}}},
+            images=[{"blob_id": "ba1", "name": "front.jpg"}],
+            username="user1",
+        ),
+    ]
+    page2_records = [
+        _make_record(
+            2,
+            form_json={"form": {"section_b": {"photo_back": "back.jpg"}}},
+            images=[{"blob_id": "bb1", "name": "back.jpg"}],
+            username="user2",
+        ),
+    ]
+
+    httpx_mock.add_response(url=page1_url, json=_page(page1_records, next_url=page2_url))
+    httpx_mock.add_response(url=page2_url, json=_page(page2_records, next_url=None))
+
+    response = labs_client.get(ENDPOINT)
+
+    assert response.status_code == 200
+    data = response.json()
+    ids = {item["id"] for item in data}
+    assert "section_a/photo_front" in ids, f"Expected section_a/photo_front in {ids}"
+    assert "section_b/photo_back" in ids, f"Expected section_b/photo_back in {ids}"
+    assert len(ids) == 2
 
 
 @override_settings(**LABS_SETTINGS)
-def test_image_types_empty_csv(labs_client):
-    """Returns empty list when CSV has no header."""
-    mock_cm = _mock_stream_context([])
+def test_image_types_returns_empty_list_when_no_images(labs_client, httpx_mock):
+    """Records with empty image lists produce an empty question_id response."""
+    records = [
+        _make_record(1, form_json={}, images=[], username="user1"),
+        _make_record(2, form_json={}, images=[], username="user2"),
+    ]
+    httpx_mock.add_response(url=CONNECT_URL, json=_page(records))
 
-    with patch("commcare_connect.audit.views.httpx.stream", return_value=mock_cm):
-        response = labs_client.get("/audit/api/opportunity/42/image-questions/")
+    response = labs_client.get(ENDPOINT)
 
     assert response.status_code == 200
     assert response.json() == []
 
 
 @override_settings(**LABS_SETTINGS)
-def test_image_types_no_images_column(labs_client):
-    """Returns empty list when CSV has no images column."""
-    header_no_images = _build_csv_line(["id", "form_json", "username"])
-    data_row = _build_csv_line([1, "{}", "user1"])
-    lines = [header_no_images, data_row]
-    mock_cm = _mock_stream_context(lines)
+def test_image_types_returns_502_on_api_error(labs_client, httpx_mock):
+    """Returns 502 when the Connect API returns a 5xx error."""
+    httpx_mock.add_response(url=CONNECT_URL, status_code=500)
 
-    with patch("commcare_connect.audit.views.httpx.stream", return_value=mock_cm):
-        response = labs_client.get("/audit/api/opportunity/42/image-questions/")
+    response = labs_client.get(ENDPOINT)
 
-    assert response.status_code == 200
-    assert response.json() == []
+    assert response.status_code == 502
+    data = response.json()
+    assert "error" in data
 
 
 @override_settings(**LABS_SETTINGS)
-def test_image_types_python_repr_format(labs_client):
-    """CSV from Connect uses Python repr (single quotes), not JSON. View must handle both."""
-    rows = [
-        {
-            "id": 1,
-            "form_json": {"form": {"group": {"photo_a": "img1.jpg"}}},
-            "images": [{"blob_id": "b1", "name": "img1.jpg", "parent_id": "xf1"}],
-            "username": "user1",
-        },
-    ]
-    lines = _build_csv_lines(rows, use_python_repr=True)
-    mock_cm = _mock_stream_context(lines)
+def test_image_types_returns_401_when_no_oauth_token(db):
+    """Returns 401 when no labs_oauth token is in the session."""
+    from commcare_connect.users.models import User
 
-    with patch("commcare_connect.audit.views.httpx.stream", return_value=mock_cm):
-        response = labs_client.get("/audit/api/opportunity/42/image-questions/")
+    user, _ = User.objects.update_or_create(
+        username="testuser_notoken",
+        defaults={"email": "testuser_notoken@example.com"},
+    )
+    client = Client(enforce_csrf_checks=False)
+    client.force_login(user)
+    # Intentionally do NOT set labs_oauth in the session
 
-    assert response.status_code == 200
+    response = client.get(ENDPOINT)
+
+    assert response.status_code == 401
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == "group/photo_a"
-
-
-@override_settings(**LABS_SETTINGS)
-def test_image_types_skips_rows_without_images(labs_client):
-    """Rows with empty images are skipped; only rows with images contribute."""
-    rows = [
-        {"id": 1, "form_json": {}, "images": [], "username": "user1"},
-        {"id": 2, "form_json": {}, "images": [], "username": "user2"},
-        {
-            "id": 3,
-            "form_json": {"form": {"group": {"photo_a": "img1.jpg"}}},
-            "images": [{"blob_id": "b1", "name": "img1.jpg"}],
-            "username": "user3",
-        },
-    ]
-    lines = _build_csv_lines(rows)
-    mock_cm = _mock_stream_context(lines)
-
-    with patch("commcare_connect.audit.views.httpx.stream", return_value=mock_cm):
-        response = labs_client.get("/audit/api/opportunity/42/image-questions/")
-
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["id"] == "group/photo_a"
+    assert "error" in data
