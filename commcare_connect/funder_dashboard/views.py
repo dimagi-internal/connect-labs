@@ -248,7 +248,7 @@ class FundPipelineDataView(BaseSSEStreamView):
                     yield send_sse_event(f"Got {len(opp_visits)} visits for {opp_name}")
                 except Exception as e:
                     logger.warning("Failed to load visits for opp %s: %s", opp_id, e)
-                    yield send_sse_event(f"Skipping visits for {opp_name}: {e}")
+                    yield send_sse_event(f"Skipping visits for {opp_name} (data unavailable)")
 
                 # Fetch completed_works CSV for payment data
                 try:
@@ -277,7 +277,7 @@ class FundPipelineDataView(BaseSSEStreamView):
                     yield send_sse_event(f"Got {len(opp_payments)} payments for {opp_name}")
                 except Exception as e:
                     logger.warning("Completed works fetch failed for opp %s: %s", opp_id, e)
-                    yield send_sse_event(f"Skipping payments for {opp_name}: {e}")
+                    yield send_sse_event(f"Skipping payments for {opp_name} (data unavailable)")
 
             # Send final SSE event with all data
             yield send_sse_event(

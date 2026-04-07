@@ -216,13 +216,14 @@ function trendHTML(trend) {
 /** Count distinct usernames with a visit_date within the last N days of maxDate. */
 function activeFLWs(visits, maxDateStr, days) {
   if (!maxDateStr) return 0;
-  var maxD = new Date(maxDateStr + 'T00:00:00');
+  // Normalize to YYYY-MM-DD (visit_date may be a datetime like 2026-03-15T10:30:00Z)
+  var maxD = new Date(String(maxDateStr).slice(0, 10) + 'T00:00:00');
   var cutoff = new Date(maxD);
   cutoff.setDate(cutoff.getDate() - days);
   var set = {};
   for (var i = 0; i < visits.length; i++) {
     if (!visits[i].username || !visits[i].visit_date) continue;
-    var vd = new Date(visits[i].visit_date + 'T00:00:00');
+    var vd = new Date(String(visits[i].visit_date).slice(0, 10) + 'T00:00:00');
     if (vd >= cutoff && vd <= maxD) {
       set[visits[i].username] = true;
     }
@@ -230,12 +231,15 @@ function activeFLWs(visits, maxDateStr, days) {
   return Object.keys(set).length;
 }
 
-/** Find the max visit_date string in a visits array. */
+/** Find the max visit_date string in a visits array (normalized to YYYY-MM-DD). */
 function maxVisitDate(visits) {
   var max = null;
   for (var i = 0; i < visits.length; i++) {
-    if (visits[i].visit_date && (!max || visits[i].visit_date > max)) {
-      max = visits[i].visit_date;
+    var vd = visits[i].visit_date
+      ? String(visits[i].visit_date).slice(0, 10)
+      : '';
+    if (vd && (!max || vd > max)) {
+      max = vd;
     }
   }
   return max;
@@ -600,8 +604,8 @@ function renderPerformanceTable(visits, payments, container) {
     var statusColor = '#ef4444'; // red by default
     if (oppMaxDate && globalMaxDate) {
       var daysSince = Math.floor(
-        (new Date(globalMaxDate + 'T00:00:00') -
-          new Date(oppMaxDate + 'T00:00:00')) /
+        (new Date(String(globalMaxDate).slice(0, 10) + 'T00:00:00') -
+          new Date(String(oppMaxDate).slice(0, 10) + 'T00:00:00')) /
           86400000,
       );
       if (daysSince <= 7) statusColor = '#10b981';
@@ -1141,7 +1145,7 @@ function renderRecentActivity(visits, payments, container) {
     return;
   }
 
-  var maxD = new Date(maxVD + 'T00:00:00');
+  var maxD = new Date(String(maxVD).slice(0, 10) + 'T00:00:00');
   var cutoff = new Date(maxD);
   cutoff.setDate(cutoff.getDate() - 7);
 
@@ -1151,7 +1155,7 @@ function renderRecentActivity(visits, payments, container) {
   var recentFLWs = {};
   for (var i = 0; i < visits.length; i++) {
     if (!visits[i].visit_date) continue;
-    var vd = new Date(visits[i].visit_date + 'T00:00:00');
+    var vd = new Date(String(visits[i].visit_date).slice(0, 10) + 'T00:00:00');
     if (vd >= cutoff && vd <= maxD) {
       if (visits[i].status === 'approved') recentVisits++;
       if (visits[i].opp_id) recentOppIds[visits[i].opp_id] = true;
@@ -1164,7 +1168,7 @@ function renderRecentActivity(visits, payments, container) {
   for (var i = 0; i < payments.length; i++) {
     var dateStr = payments[i].status_modified_date || payments[i].payment_date;
     if (!dateStr) continue;
-    var pd = new Date(dateStr + 'T00:00:00');
+    var pd = new Date(String(dateStr).slice(0, 10) + 'T00:00:00');
     if (pd >= cutoff && pd <= maxD) {
       recentUSD +=
         (parseFloat(payments[i].usd_flw) || 0) +
@@ -1219,7 +1223,7 @@ function renderAlerts(visits, payments, container) {
     return;
   }
 
-  var maxD = new Date(maxVD + 'T00:00:00');
+  var maxD = new Date(String(maxVD).slice(0, 10) + 'T00:00:00');
   var byOpp = groupByOpp(visits);
   var oppIds = Object.keys(byOpp);
 
@@ -1251,7 +1255,8 @@ function renderAlerts(visits, payments, container) {
     // Red alert: no visits in 14+ days
     if (oppMaxDate) {
       var daysSince = Math.floor(
-        (maxD - new Date(oppMaxDate + 'T00:00:00')) / 86400000,
+        (maxD - new Date(String(oppMaxDate).slice(0, 10) + 'T00:00:00')) /
+          86400000,
       );
       if (daysSince >= 14) {
         alerts.push({

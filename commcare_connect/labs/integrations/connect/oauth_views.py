@@ -197,7 +197,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
             if userinfo.get("email"):
                 profile_data["email"] = userinfo["email"]
                 logger.info(f"Got email from OIDC userinfo for {profile_data.get('username')}")
-    except Exception as e:
+    except Exception:
         logger.warning("Failed to fetch OIDC userinfo", exc_info=True)
 
     # Fetch organization data from production API

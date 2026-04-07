@@ -42,11 +42,17 @@ class TestSolicitationLifecycle:
         timestamp = int(time.time())
         data = {
             "title": f"E2E: Community Health Worker Training Program {timestamp}",
-            "description": "Seeking qualified organizations to design and deliver CHW training programs focused on integrated maternal and child health service delivery in rural communities.",
+            "description": (
+                "Seeking qualified organizations to design and deliver CHW training programs focused on "
+                "integrated maternal and child health service delivery in rural communities."
+            ),
             "solicitation_type": "rfp",
             "status": "active",
             "is_public": True,
-            "scope_of_work": "Train 200+ CHWs in integrated RMNCH service delivery. Develop mobile-based learning modules. Establish mentorship program.",
+            "scope_of_work": (
+                "Train 200+ CHWs in integrated RMNCH service delivery. "
+                "Develop mobile-based learning modules. Establish mentorship program."
+            ),
             "application_deadline": "2026-06-30",
             "expected_start_date": "2026-09-01",
             "expected_end_date": "2028-08-31",
@@ -166,9 +172,18 @@ class TestSolicitationLifecycle:
             f"{live_server_url}/solicitations/{solicitation_id}/respond/",
             form={
                 "csrfmiddlewaretoken": csrf_token,
-                "question_q_1": "Health Bridge Nigeria has trained over 500 CHWs across 3 states over 5 years, achieving 40% increase in facility deliveries and 65% improvement in postnatal visits.",
-                "question_q_2": "Blended learning: 2-week classroom intensive, 3 months supervised field practice with weekly mobile micro-learning modules. Each CHW paired with an experienced mentor.",
-                "question_q_3": "Kano, Kaduna, and Niger states — existing relationships with State PHCDAs and 12 operational LGAs.",
+                "question_q_1": (
+                    "Health Bridge Nigeria has trained over 500 CHWs across 3 states over 5 years, "
+                    "achieving 40% increase in facility deliveries and 65% improvement in postnatal visits."
+                ),
+                "question_q_2": (
+                    "Blended learning: 2-week classroom intensive, 3 months supervised field practice "
+                    "with weekly mobile micro-learning modules. Each CHW paired with an experienced mentor."
+                ),
+                "question_q_3": (
+                    "Kano, Kaduna, and Niger states — existing relationships with State PHCDAs "
+                    "and 12 operational LGAs."
+                ),
                 "question_q_4": "$250K-$500K",
                 "submit": "true",
             },
@@ -214,7 +229,10 @@ class TestSolicitationLifecycle:
             "csrfmiddlewaretoken": csrf_token,
             "score": "82",
             "recommendation": "approved",
-            "notes": "Strong candidate with proven CHW training experience in northern Nigeria. Blended learning approach is well-designed. Budget is competitive.",
+            "notes": (
+                "Strong candidate with proven CHW training experience in northern Nigeria. "
+                "Blended learning approach is well-designed. Budget is competitive."
+            ),
             "tags": "experienced, nigeria, blended-learning",
         }
 
