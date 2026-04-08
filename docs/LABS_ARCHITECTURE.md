@@ -13,7 +13,7 @@ Labs Django (labs.connect.dimagi.com / localhost:8000)
   ├── OAuth session auth ──────────► Connect Production (connect.dimagi.com)
   │                                    ├── /o/authorize/ (OAuth flow)
   │                                    ├── /export/labs_record/ (CRUD API)
-  │                                    └── /export/opportunity/<id>/... (CSV streams)
+  │                                    └── /export/opportunity/<id>/... (v2 paginated JSON)
   │
   ├── CommCare HQ OAuth ───────────► CommCare HQ (commcarehq.org)
   │                                    └── Case API v2 (coverage app only)
@@ -79,7 +79,7 @@ Used by audit (visit filtering) and workflow (pipeline data).
        │
        ▼
 3. Pipeline fetches data from source
-   ├── connect_csv: GET /export/opportunity/<id>/user_visits/ (streaming CSV)
+   ├── connect_json: GET /export/opportunity/<id>/user_visits/ (v2 paginated JSON)
    └── cchq_forms: CommCare HQ Form API (via CommCareDataAccess)
        │
        ▼
@@ -168,7 +168,7 @@ What data do you need?
 │       ├── Create DataAccess class wrapping LabsRecordAPIClient
 │       └── Use experiment="your_app", type="YourType"
 │
-├── Production visit/user CSV data (for analysis)
+├── Production visit/user data (for analysis)
 │   └── Use AnalysisPipeline
 │       └── It handles fetching, caching, and computation transparently
 │

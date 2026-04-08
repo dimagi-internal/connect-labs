@@ -12,12 +12,10 @@ It handles:
 This is a pure API client with no local database storage.
 """
 
-import io
 import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
-import pandas as pd
 from django.conf import settings
 from django.http import HttpRequest
 
@@ -1127,30 +1125,40 @@ class WorkflowDataAccess(BaseDataAccess):
         Get workers for an opportunity from Connect API.
 
         Returns:
-            List of worker dicts with username, name, visit_count, last_active
+            List of worker dicts with username, name, visit_count, last_active.
+            Note: visit_count is not in the v2 serializer; it will default to 0
+            unless the serializer is extended on the production side.
         """
-        endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
-        response = self._call_connect_api(endpoint)
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
 
-        df = pd.read_csv(io.BytesIO(response.content))
+        endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
+        try:
+            with ExportAPIClient(
+                base_url=self.production_url,
+                access_token=self.access_token,
+                timeout=60.0,
+            ) as client:
+                records = client.fetch_all(endpoint)
+        except ExportAPIError as e:
+            logger.error(f"Failed to fetch workers for opp {opportunity_id}: {e}")
+            return []
 
         workers = []
-        for idx, row in df.iterrows():
-            username = str(row["username"]) if pd.notna(row.get("username")) else None
-            if username:
-                worker = {
-                    "username": username,
-                    "name": str(row.get("name", username)) if pd.notna(row.get("name")) else username,
-                    "visit_count": int(row.get("total_visits", 0)) if pd.notna(row.get("total_visits")) else 0,
-                    "last_active": str(row.get("last_active")) if pd.notna(row.get("last_active")) else None,
-                }
-
-                optional_fields = ["phone_number", "approved_visits", "flagged_visits", "rejected_visits", "email"]
-                for field in optional_fields:
-                    if field in row and pd.notna(row[field]):
-                        worker[field] = str(row[field]) if not isinstance(row[field], (int, float)) else row[field]
-
-                workers.append(worker)
+        for row in records:
+            username = row.get("username")
+            if not username:
+                continue
+            worker = {
+                "username": str(username),
+                "name": str(row.get("name") or username),
+                "visit_count": int(row.get("total_visits") or 0),
+                "last_active": str(row["last_active"]) if row.get("last_active") else None,
+            }
+            # Pass through any other fields the v2 serializer happens to include
+            for key in ("phone_number", "approved_visits", "flagged_visits", "rejected_visits", "email"):
+                if row.get(key) is not None:
+                    worker[key] = row[key]
+            workers.append(worker)
 
         return workers
 

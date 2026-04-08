@@ -124,36 +124,31 @@ class FunderDashboardDataAccess:
         data["allocations"] = allocations
         return self.update_fund(fund_id, data)
 
-    def _fetch_csv(self, url: str) -> list[dict]:
-        """Fetch a CSV endpoint from Connect API and parse to list of dicts."""
-        import csv
-        import io
+    def _fetch_paginated(self, endpoint: str) -> list[dict]:
+        """Fetch a paginated v2 export endpoint and return all rows.
 
-        import httpx
+        Note: this materializes all pages into memory. For very large opportunities,
+        consider iterating pages directly to avoid peak memory spikes.
+        """
+        from django.conf import settings
+
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
 
         try:
-            with httpx.Client(timeout=120) as client:
-                resp = client.get(url, headers={"Authorization": f"Bearer {self.access_token}"})
-                resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"[FunderDashboard] HTTP {e.response.status_code} fetching CSV from {url}: {e}")
+            with ExportAPIClient(
+                base_url=settings.CONNECT_PRODUCTION_URL,
+                access_token=self.access_token,
+                timeout=120.0,
+            ) as client:
+                return client.fetch_all(endpoint)
+        except ExportAPIError as e:
+            logger.error(f"[FunderDashboard] Export API error for {endpoint}: {e}")
             return []
-        except httpx.RequestError as e:
-            logger.error(f"[FunderDashboard] Request error fetching CSV from {url}: {e}")
-            return []
-        reader = csv.DictReader(io.StringIO(resp.text))
-        return list(reader)
 
     def fetch_completed_works(self, opportunity_id: int) -> list[dict]:
-        """Fetch completed_works CSV from Connect API."""
-        from django.conf import settings
-
-        url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/completed_works/"
-        return self._fetch_csv(url)
+        """Fetch completed_works from Connect API."""
+        return self._fetch_paginated(f"/export/opportunity/{opportunity_id}/completed_works/")
 
     def fetch_user_visits(self, opportunity_id: int) -> list[dict]:
-        """Fetch user_visits CSV from Connect API."""
-        from django.conf import settings
-
-        url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/user_visits/"
-        return self._fetch_csv(url)
+        """Fetch user_visits from Connect API."""
+        return self._fetch_paginated(f"/export/opportunity/{opportunity_id}/user_visits/")

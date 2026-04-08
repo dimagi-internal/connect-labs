@@ -41,8 +41,10 @@ class DataSourceConfig:
     Configuration for where a pipeline fetches its raw data.
 
     Attributes:
-        type: Data source type. "connect_csv" fetches from Connect production
-              CSV export. "cchq_forms" fetches from CommCare HQ Form API.
+        type: Data source type. "connect_csv" fetches from the Connect production
+              paginated JSON export (the literal token name predates the v2 migration
+              and is retained for stable identifiers across pipeline templates).
+              "cchq_forms" fetches from CommCare HQ Form API.
         form_name: (cchq_forms only) Form name for xmlns discovery,
                    e.g., "Register Mother", "Gold Standard Visit Checklist"
         app_id: (cchq_forms only) Explicit CommCare app ID.

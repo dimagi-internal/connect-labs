@@ -7,20 +7,16 @@ All analysis is done via SQL queries, not Python/pandas.
 
 import json
 import logging
-import os
-import tempfile
 from collections.abc import Generator
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-import httpx
 import sentry_sdk
 from django.conf import settings
 from django.http import HttpRequest
 from django.utils.dateparse import parse_date
 
-from commcare_connect.labs.analysis.backends.csv_parsing import parse_csv_bytes, parse_csv_file_chunks
 from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
 from commcare_connect.labs.analysis.backends.sql.query_builder import execute_flw_aggregation, execute_visit_extraction
 from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, CacheStage
@@ -139,10 +135,7 @@ class SQLBackend:
 
         # Cache miss or force refresh - fetch from API
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, fetching from API")
-        csv_bytes = self._fetch_from_api(opportunity_id, access_token, include_images=include_images)
-
-        # Parse full data (always with form_json for storage)
-        visit_dicts = parse_csv_bytes(csv_bytes, opportunity_id, skip_form_json=False)
+        visit_dicts = self._fetch_from_api(opportunity_id, access_token, include_images=include_images)
 
         # Store full data to SQL cache
         visit_count = len(visit_dicts)
@@ -151,7 +144,7 @@ class SQLBackend:
 
         # Apply filters for return value
         # Normalize to strings for comparison — visit_id is CharField in cache
-        # but parse_csv_bytes returns int IDs, and callers may pass either type.
+        # but record_to_visit_dict returns int IDs, and callers may pass either type.
         if filter_visit_ids:
             str_filter = {str(vid) for vid in filter_visit_ids}
             visit_dicts = [v for v in visit_dicts if str(v.get("id")) in str_filter]
@@ -171,136 +164,78 @@ class SQLBackend:
         tolerance_pct: int = 100,
     ) -> Generator[tuple[str, Any], None, None]:
         """
-        Stream raw visit data with progress events.
+        Stream raw visit data with progress events using v2 paginated JSON.
 
-        SQL backend checks RawVisitCache first. If hit, yields immediately.
-        Otherwise streams download to temp file, then parses and stores in
-        memory-efficient batches (1000 rows at a time).
+        Behavior:
+        - Cache HIT: yield ("cached", slim_dicts) and return.
+        - Cache MISS: paginate the v2 export endpoint, write each page to the
+          SQL cache, strip form_json, accumulate slim dicts. Yield
+          ("progress", rows_so_far, expected_visit_count) after each page,
+          then ("complete", slim_dicts) at the end.
 
-        On cache hit, yields slim dicts (no form_json) since the raw data
-        is already in the database for SQL extraction.
-
-        On cache miss, downloads to temp file (0 bytes in Python memory),
-        parses CSV in chunks, stores each chunk to DB with form_json,
-        and yields slim dicts (form_json stripped after DB storage).
-        Peak memory: ~50 MB instead of ~2 GB.
+        Memory note: each page is bounded at 1000 records (~15 MB peak),
+        so we never need a temp file like the v1 streaming CSV path did.
         """
+        from commcare_connect.labs.analysis.backends.visit_record import record_to_visit_dict
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+
         cache_manager = SQLCacheManager(opportunity_id, config=None)
 
-        # Check SQL cache first. Accept any non-expired cache when expected_visit_count is unknown.
+        # Check SQL cache first
         if not force_refresh:
             effective_count = expected_visit_count or 0
             if cache_manager.has_valid_raw_cache(effective_count, tolerance_pct=tolerance_pct):
                 logger.info(f"[SQL] Raw cache HIT for opp {opportunity_id}")
-                # Load slim dicts (no form_json) — SQL extraction reads from DB directly
                 visit_dicts = self._load_from_cache(cache_manager, skip_form_json=True, filter_visit_ids=None)
                 yield ("cached", visit_dicts)
                 return
 
-        # Cache miss - stream download to temp file (0 bytes in Python memory)
-        logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, streaming to temp file")
+        logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, paginating export API")
 
-        url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/user_visits/"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept-Encoding": "gzip, deflate",
-        }
+        endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
 
-        # Use shared progress interval from SSE streaming module
-        from commcare_connect.labs.analysis.sse_streaming import DOWNLOAD_PROGRESS_INTERVAL_BYTES
+        # Prepare cache for batched inserts. estimated_count is just a hint
+        # for the cache; finalize() will set the real count below.
+        cache_manager.store_raw_visits_start(expected_visit_count or 0)
 
-        progress_interval = DOWNLOAD_PROGRESS_INTERVAL_BYTES  # 5MB progress intervals
-        csv_tmpfile = None
+        slim_dicts: list[dict] = []
+        rows_so_far = 0
 
         try:
-            # Download directly to temp file — never hold CSV bytes in memory
-            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
-                csv_tmpfile = f.name
-                raw_line_count = 0
-                bytes_downloaded = 0
+            with ExportAPIClient(
+                base_url=settings.CONNECT_PRODUCTION_URL,
+                access_token=access_token,
+                timeout=180.0,
+            ) as client:
+                for page in client.paginate(endpoint):
+                    # Convert v2 records to visit dicts (with form_json)
+                    batch = [record_to_visit_dict(record, opportunity_id) for record in page]
+                    if not batch:
+                        continue
 
-                try:
-                    with httpx.stream("GET", url, headers=headers, timeout=580.0) as response:
-                        response.raise_for_status()
-                        total_bytes = int(response.headers.get("content-length", 0))
-                        last_progress_at = 0
+                    # Store the full batch (with form_json) to the SQL cache
+                    cache_manager.store_raw_visits_batch(batch)
 
-                        for chunk in response.iter_bytes(chunk_size=65536):
-                            f.write(chunk)
-                            raw_line_count += chunk.count(b"\n")
-                            bytes_downloaded = response.num_bytes_downloaded
+                    # Strip form_json from in-memory dicts to save memory; the
+                    # SQL extraction step reads form_json from the DB.
+                    for v in batch:
+                        v["form_json"] = {}
+                    slim_dicts.extend(batch)
+                    rows_so_far += len(batch)
 
-                            if bytes_downloaded - last_progress_at >= progress_interval:
-                                yield ("progress", bytes_downloaded, total_bytes)
-                                last_progress_at = bytes_downloaded
+                    yield ("progress", rows_so_far, expected_visit_count or 0)
 
-                        # Always yield final progress to ensure UI shows 100%
-                        if bytes_downloaded > last_progress_at:
-                            yield ("progress", bytes_downloaded, total_bytes)
+        except ExportAPIError as e:
+            cache_manager.store_raw_visits_abort()
+            logger.error(f"[SQL] Export API failure for opp {opportunity_id}: {e}")
+            sentry_sdk.capture_exception(e)
+            raise RuntimeError(f"Connect export API error: {e}") from e
 
-                except httpx.TimeoutException as e:
-                    logger.error(f"[SQL] Timeout downloading for opp {opportunity_id}: {e}")
-                    sentry_sdk.capture_exception(e)
-                    raise RuntimeError("Connect API timeout") from e
+        # Atomically finalize cache with the real count
+        cache_manager.store_raw_visits_finalize(rows_so_far)
+        logger.info(f"[SQL] Streamed {rows_so_far} visits to DB, keeping {len(slim_dicts)} slim dicts")
 
-            csv_size = os.path.getsize(csv_tmpfile)
-            logger.info(
-                f"[SQL] Download complete: {csv_size} bytes on disk, "
-                f"{raw_line_count} raw lines (expect ~{expected_visit_count}+1 if complete)"
-            )
-
-            # Yield status before slow CSV parsing so frontend can show progress
-            yield ("parsing", csv_size, raw_line_count)
-
-            # Parse and store in streaming batches (memory-efficient)
-            _, slim_dicts = self._parse_and_store_streaming(csv_tmpfile, opportunity_id, raw_line_count)
-
-            yield ("complete", slim_dicts)
-
-        finally:
-            if csv_tmpfile and os.path.exists(csv_tmpfile):
-                os.unlink(csv_tmpfile)
-
-    def _parse_and_store_streaming(
-        self, csv_path: str, opportunity_id: int, raw_line_count: int
-    ) -> tuple[int, list[dict]]:
-        """
-        Parse CSV from file and store to DB in streaming batches.
-
-        For each chunk of 1000 rows:
-        1. Parse rows from CSV (with form_json) — ~15 MB per chunk
-        2. Store to RawVisitCache via bulk_create
-        3. Strip form_json from dicts — frees ~15 MB
-        4. Append slim dicts to result list — ~200 bytes per dict
-
-        Returns:
-            (visit_count, slim_dicts) where slim_dicts have form_json={}
-            Peak memory: ~50 MB instead of ~2 GB
-        """
-        cache_manager = SQLCacheManager(opportunity_id, config=None)
-        estimated_count = max(0, raw_line_count - 1)
-
-        # Clear existing cache and prepare for batched inserts
-        cache_manager.store_raw_visits_start(estimated_count)
-
-        slim_dicts = []
-        actual_count = 0
-
-        for batch in parse_csv_file_chunks(csv_path, opportunity_id, chunksize=1000):
-            # Store full dicts (with form_json) to DB
-            cache_manager.store_raw_visits_batch(batch)
-            actual_count += len(batch)
-
-            # Strip form_json to save memory, keep slim versions for pipeline
-            for v in batch:
-                v["form_json"] = {}
-            slim_dicts.extend(batch)
-
-        # Atomically make rows visible with accurate count
-        cache_manager.store_raw_visits_finalize(actual_count)
-
-        logger.info(f"[SQL] Streamed {actual_count} visits to DB, keeping {len(slim_dicts)} slim dicts")
-        return actual_count, slim_dicts
+        yield ("complete", slim_dicts)
 
     def has_valid_raw_cache(self, opportunity_id: int, expected_visit_count: int, tolerance_pct: int = 100) -> bool:
         """Check if valid raw cache exists in SQL."""
@@ -330,24 +265,38 @@ class SQLBackend:
         logger.info(f"[SQL] Loaded {len(visits)} visits from RawVisitCache")
         return visits
 
-    def _fetch_from_api(self, opportunity_id: int, access_token: str, include_images: bool = False) -> bytes:
-        """Fetch raw CSV bytes from Connect API."""
-        url = f"{settings.CONNECT_PRODUCTION_URL}/export/opportunity/{opportunity_id}/user_visits/"
-        if include_images:
-            url += "?images=true"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept-Encoding": "gzip, deflate",
-        }
+    def _fetch_from_api(
+        self,
+        opportunity_id: int,
+        access_token: str,
+        include_images: bool = False,
+    ) -> list[dict]:
+        """Fetch all user visits from Connect v2 export API as a list of visit dicts.
+
+        Memory note: each page is bounded at 1000 records (~15 MB with form_json).
+        Total memory peaks at the full visit count, same as the previous CSV path,
+        but without the additional pandas DataFrame copy.
+        """
+        from commcare_connect.labs.analysis.backends.visit_record import record_to_visit_dict
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+
+        endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
+        params = {"images": "true"} if include_images else None
 
         try:
-            response = httpx.get(url, headers=headers, timeout=580.0)
-            response.raise_for_status()
-            return response.content
-        except httpx.TimeoutException as e:
-            logger.error(f"[SQL] Timeout fetching visits for opp {opportunity_id}: {e}")
+            with ExportAPIClient(
+                base_url=settings.CONNECT_PRODUCTION_URL,
+                access_token=access_token,
+                timeout=180.0,
+            ) as client:
+                visits: list[dict] = []
+                for page in client.paginate(endpoint, params=params):
+                    visits.extend(record_to_visit_dict(record, opportunity_id) for record in page)
+                return visits
+        except ExportAPIError as e:
+            logger.error(f"[SQL] Export API failure for opp {opportunity_id}: {e}")
             sentry_sdk.capture_exception(e)
-            raise RuntimeError("Connect API timeout") from e
+            raise RuntimeError(f"Connect export API error: {e}") from e
 
     # -------------------------------------------------------------------------
     # Analysis Results Layer

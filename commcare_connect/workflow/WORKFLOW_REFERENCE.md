@@ -183,14 +183,14 @@ A pipeline schema defines how raw form submission data is extracted, transformed
 
 #### `data_source`
 
-| Property        | Values          | Description                                                                                      |
-| --------------- | --------------- | ------------------------------------------------------------------------------------------------ |
-| `type`          | `"connect_csv"` | Fetch from Connect production CSV export (default). Most templates use this.                     |
-| `type`          | `"cchq_forms"`  | Fetch from CommCare HQ Form API. Requires `form_name` or `app_id`.                               |
-| `form_name`     | string          | (cchq_forms only) Human-readable form name, e.g., `"Register Mother"`. Used for xmlns discovery. |
-| `app_id_source` | `"opportunity"` | (cchq_forms only) Derive the CommCare app ID from opportunity metadata.                          |
-| `app_id`        | string          | (cchq_forms only) Explicit CommCare application ID.                                              |
-| `gs_app_id`     | string          | (cchq_forms only) Explicit Gold Standard supervisor app ID.                                      |
+| Property        | Values          | Description                                                                                                                   |
+| --------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `type`          | `"connect_csv"` | Fetch from Connect production paginated JSON export (default). Token name predates the v2 migration; most templates use this. |
+| `type`          | `"cchq_forms"`  | Fetch from CommCare HQ Form API. Requires `form_name` or `app_id`.                                                            |
+| `form_name`     | string          | (cchq_forms only) Human-readable form name, e.g., `"Register Mother"`. Used for xmlns discovery.                              |
+| `app_id_source` | `"opportunity"` | (cchq_forms only) Derive the CommCare app ID from opportunity metadata.                                                       |
+| `app_id`        | string          | (cchq_forms only) Explicit CommCare application ID.                                                                           |
+| `gs_app_id`     | string          | (cchq_forms only) Explicit Gold Standard supervisor app ID.                                                                   |
 
 #### `grouping_key`
 

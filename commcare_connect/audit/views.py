@@ -1787,100 +1787,63 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
     MAX_ROWS = 200
     STABLE_THRESHOLD = 50
 
-    @staticmethod
-    def _parse_python_literal(raw: str):
-        """Parse a CSV field that may be Python repr or JSON."""
-        import ast
-
-        if not raw:
-            return None
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            pass
-        try:
-            return ast.literal_eval(raw)
-        except (ValueError, SyntaxError):
-            return None
-
     def get(self, request, opp_id: int):
-        import csv
-        import io
-
         labs_oauth = request.session.get("labs_oauth", {})
         access_token = labs_oauth.get("access_token", "")
         if not access_token:
             return JsonResponse({"error": "No OAuth token"}, status=401)
 
-        url = f"{settings.CONNECT_PRODUCTION_URL}" f"/export/opportunity/{opp_id}/user_visits/?images=true"
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept-Encoding": "gzip, deflate",
-        }
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
 
-        seen_question_ids = set()
+        endpoint = f"/export/opportunity/{opp_id}/user_visits/"
+        params = {"images": "true"}
+
+        seen_question_ids: set[str] = set()
         rows_with_images = 0
+        rows_processed = 0
+        stop_early = False
 
         try:
-            with httpx.stream("GET", url, headers=headers, timeout=60.0) as response:
-                response.raise_for_status()
-                lines = response.iter_lines()
-                header_line = next(lines, None)
-                if not header_line:
-                    return JsonResponse([], safe=False)
+            with ExportAPIClient(
+                base_url=settings.CONNECT_PRODUCTION_URL,
+                access_token=access_token,
+                timeout=60.0,
+            ) as client:
+                for page in client.paginate(endpoint, params=params):
+                    for record in page:
+                        rows_processed += 1
+                        if rows_processed > self.MAX_ROWS:
+                            stop_early = True
+                            break
 
-                reader_fields = next(csv.reader(io.StringIO(header_line)))
-                form_json_idx = None
-                images_idx = None
-                for i, field in enumerate(reader_fields):
-                    if field == "form_json":
-                        form_json_idx = i
-                    elif field == "images":
-                        images_idx = i
+                        images = record.get("images") or []
+                        if not images:
+                            continue
 
-                if images_idx is None:
-                    return JsonResponse([], safe=False)
+                        form_json = record.get("form_json") or {}
+                        if not isinstance(form_json, dict):
+                            form_json = {}
 
-                row_count = 0
-                for line in lines:
-                    row_count += 1
-                    if row_count > self.MAX_ROWS:
+                        visit_data = {"images": images, "form_json": form_json}
+                        extracted = extract_images_with_question_ids(visit_data)
+                        new_found = False
+                        for img in extracted:
+                            qid = img.get("question_id")
+                            if qid and qid not in seen_question_ids:
+                                seen_question_ids.add(qid)
+                                new_found = True
+
+                        rows_with_images += 1
+                        if not new_found and rows_with_images >= self.STABLE_THRESHOLD:
+                            stop_early = True
+                            break
+
+                    if stop_early:
                         break
 
-                    row = next(csv.reader(io.StringIO(line)))
-
-                    images_raw = row[images_idx] if images_idx < len(row) else ""
-                    if not images_raw or images_raw == "[]":
-                        continue
-
-                    images = self._parse_python_literal(images_raw)
-                    if not images or not isinstance(images, list):
-                        continue
-
-                    form_json_raw = (
-                        row[form_json_idx] if form_json_idx is not None and form_json_idx < len(row) else ""
-                    )
-                    form_json = self._parse_python_literal(form_json_raw)
-                    if not isinstance(form_json, dict):
-                        form_json = {}
-
-                    visit_data = {"images": images, "form_json": form_json}
-                    extracted = extract_images_with_question_ids(visit_data)
-                    new_found = False
-                    for img in extracted:
-                        qid = img.get("question_id")
-                        if qid and qid not in seen_question_ids:
-                            seen_question_ids.add(qid)
-                            new_found = True
-
-                    rows_with_images += 1
-                    if not new_found and rows_with_images >= self.STABLE_THRESHOLD:
-                        break
-
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            logger.error(f"[ImageTypes] Connect API returned {status} for opp {opp_id}")
-            return JsonResponse({"error": f"Connect API error: {status}"}, status=502)
+        except ExportAPIError as e:
+            logger.error(f"[ImageTypes] Connect export API failure for opp {opp_id}: {e}")
+            return JsonResponse({"error": "Connect API error"}, status=502)
         except Exception:
             logger.exception("[ImageTypes] Failed to discover image types for opp %s", opp_id)
             return JsonResponse({"error": "An internal error occurred"}, status=500)

@@ -291,7 +291,7 @@ class AnalysisPipeline:
         """
         Consume stream_raw_visits events and yield SSE pipeline events.
 
-        Translates backend events (cached/progress/parsing/complete) into
+        Translates backend events (cached/progress/complete) into
         pipeline events (EVENT_STATUS/EVENT_DOWNLOAD). After iteration,
         self._visit_dicts and self._raw_data_already_stored are set.
 
@@ -317,14 +317,8 @@ class AnalysisPipeline:
                 logger.info(f"[Pipeline/{self.backend_name}] Raw data CACHE HIT: {len(self._visit_dicts)} visits")
                 yield (EVENT_STATUS, {"message": f"Using cached raw data ({len(self._visit_dicts)} visits)..."})
             elif event_type == "progress":
-                _, bytes_downloaded, total_bytes = event
-                yield (EVENT_DOWNLOAD, {"bytes": bytes_downloaded, "total": total_bytes})
-            elif event_type == "parsing":
-                csv_size = event[1]
-                raw_lines = event[2] if len(event) > 2 else None
-                size_mb = csv_size / (1024 * 1024)
-                lines_msg = f" ({raw_lines} raw lines)" if raw_lines else ""
-                yield (EVENT_STATUS, {"message": f"Parsing {size_mb:.1f} MB of data{lines_msg}..."})
+                _, rows_so_far, expected_count = event
+                yield (EVENT_DOWNLOAD, {"rows": rows_so_far, "total": expected_count})
             elif event_type == "complete":
                 self._visit_dicts = event[1]
                 self._raw_data_already_stored = True
@@ -345,7 +339,7 @@ class AnalysisPipeline:
         Yields:
             Tuples of (event_type, event_data):
             - ("status", {"message": "..."}) - progress updates
-            - ("download", {"bytes": N, "total": M}) - download progress
+            - ("download", {"rows": N, "total": M}) - download progress
             - ("result", FLWAnalysisResult|VisitAnalysisResult) - final result
             - ("error", {"message": "..."}) - error (terminates stream)
 

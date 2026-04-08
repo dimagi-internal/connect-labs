@@ -372,55 +372,47 @@ class TaskDataAccess(BaseDataAccess):
         Get users for an opportunity from Connect API.
 
         Note: The /export/opportunity/<id>/user_data/ endpoint does NOT include user_id,
-        only username. This is a limitation of the current data export API.
+        only username. This is a limitation of the data export API.
 
         Args:
             opportunity_id: Opportunity ID
 
         Returns:
-            List of user dicts with username (no user_id available from API)
+            List of user dicts with at least `username`, plus any optional fields
+            present in the v2 serializer (`name`, `phone`, `last_active`, etc.).
         """
-        import io
         import logging
 
-        import pandas as pd
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
 
         logger = logging.getLogger(__name__)
 
-        # Download user data CSV
         endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
-        response = self._call_connect_api(endpoint)
+        try:
+            with ExportAPIClient(
+                base_url=self.production_url,
+                access_token=self.access_token,
+                timeout=120.0,
+            ) as client:
+                records = client.fetch_all(endpoint)
+        except ExportAPIError as e:
+            logger.error(f"Failed to fetch users for opp {opportunity_id}: {e}")
+            return []
 
-        # Parse CSV from response bytes
-        df = pd.read_csv(io.BytesIO(response.content))
-
-        # Log CSV structure for debugging
-        logger.info(f"CSV columns for opportunity {opportunity_id}: {list(df.columns)}")
-        logger.info(f"CSV has {len(df)} rows")
+        logger.info(f"Fetched {len(records)} users for opportunity {opportunity_id}")
 
         users = []
-        for idx, row in df.iterrows():
-            username = str(row["username"]) if pd.notna(row.get("username")) else None
-            if username:
-                # Parse all available fields from CSV
-                user_dict = {"username": username}
-
-                # Add optional fields if they exist in the CSV
-                optional_fields = [
-                    "name",
-                    "phone_number",
-                    "total_visits",
-                    "approved_visits",
-                    "flagged_visits",
-                    "rejected_visits",
-                    "last_active",
-                    "email",
-                ]
-                for field in optional_fields:
-                    if field in row and pd.notna(row[field]):
-                        user_dict[field] = str(row[field]) if not isinstance(row[field], (int, float)) else row[field]
-
-                users.append(user_dict)
+        for row in records:
+            username = row.get("username")
+            if not username:
+                continue
+            user_dict: dict = {"username": str(username)}
+            # Pass through any other non-null fields the serializer returns.
+            for key, value in row.items():
+                if key == "username" or value in (None, ""):
+                    continue
+                user_dict[key] = value
+            users.append(user_dict)
 
         return users
 
@@ -465,38 +457,40 @@ class TaskDataAccess(BaseDataAccess):
             username: Optional username to filter by specific user
 
         Returns:
-            List of completed module dicts with username, module, opportunity_id, date, duration
+            List of completed module dicts with username, module, opportunity_id,
+            date, duration. Sorted by date descending (most recent first).
         """
-        import io
         import logging
 
-        import pandas as pd
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
 
         logger = logging.getLogger(__name__)
 
-        # Download completed modules CSV
         endpoint = f"/export/opportunity/{opportunity_id}/completed_module/"
-        response = self._call_connect_api(endpoint)
+        # Server-side filter is supported on this endpoint
+        params = {"username": username} if username else None
 
-        # Parse CSV from response bytes
-        df = pd.read_csv(io.BytesIO(response.content))
+        try:
+            with ExportAPIClient(
+                base_url=self.production_url,
+                access_token=self.access_token,
+                timeout=60.0,
+            ) as client:
+                records = client.fetch_all(endpoint, params=params)
+        except ExportAPIError as e:
+            logger.error(f"Failed to fetch completed modules for opp {opportunity_id}: {e}")
+            return []
 
-        logger.info(f"CSV columns for completed modules: {list(df.columns)}")
-        logger.info(f"CSV has {len(df)} completed module records")
-
-        # Filter by username if provided
-        if username:
-            df = df[df["username"] == username]
-            logger.info(f"Filtered to {len(df)} records for user {username}")
+        logger.info(f"Fetched {len(records)} completed modules for opportunity {opportunity_id}")
 
         completed_modules = []
-        for idx, row in df.iterrows():
+        for row in records:
             module_dict = {
-                "username": str(row["username"]) if pd.notna(row.get("username")) else None,
-                "module": int(row["module"]) if pd.notna(row.get("module")) else None,
-                "opportunity_id": int(row["opportunity_id"]) if pd.notna(row.get("opportunity_id")) else None,
-                "date": str(row["date"]) if pd.notna(row.get("date")) else None,
-                "duration": str(row["duration"]) if pd.notna(row.get("duration")) else None,
+                "username": row.get("username"),
+                "module": row.get("module"),
+                "opportunity_id": row.get("opportunity_id"),
+                "date": row.get("date"),
+                "duration": row.get("duration"),
             }
             completed_modules.append(module_dict)
 
