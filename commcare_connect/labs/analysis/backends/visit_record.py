@@ -74,12 +74,18 @@ def record_to_visit_dict(
     if not isinstance(images, list):
         images = []
 
+    # v2 JSON returns `deliver_unit` as an integer FK PK; v1 CSV stringified it
+    # and the RawVisitCache.deliver_unit CharField stores it as a string. Coerce
+    # here so the in-memory dict matches the cache round-trip and the v1 contract.
+    deliver_unit_raw = record.get("deliver_unit")
+    deliver_unit = str(deliver_unit_raw) if deliver_unit_raw is not None else None
+
     return {
         "id": record.get("id"),
         "xform_id": xform_id,
         "opportunity_id": record.get("opportunity_id") or opportunity_id,
         "username": record.get("username"),
-        "deliver_unit": record.get("deliver_unit"),
+        "deliver_unit": deliver_unit,
         "deliver_unit_id": record.get("deliver_unit_id"),
         "entity_id": record.get("entity_id"),
         "entity_name": record.get("entity_name"),

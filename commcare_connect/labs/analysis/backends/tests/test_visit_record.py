@@ -91,3 +91,25 @@ def test_slim_visit_keys_excludes_form_json():
     assert "id" in SLIM_VISIT_KEYS
     assert "username" in SLIM_VISIT_KEYS
     assert "images" in SLIM_VISIT_KEYS
+
+
+def test_deliver_unit_int_coerced_to_string_for_cache_parity():
+    """v2 JSON returns deliver_unit as an int FK PK; labs code expects a string
+    (RawVisitCache.deliver_unit is CharField, v1 CSV always returned strings)."""
+    record = {"id": 1, "deliver_unit": 1707}
+    visit = record_to_visit_dict(record, opportunity_id=42)
+    assert visit["deliver_unit"] == "1707"
+    assert isinstance(visit["deliver_unit"], str)
+
+
+def test_deliver_unit_none_stays_none():
+    record = {"id": 1, "deliver_unit": None}
+    visit = record_to_visit_dict(record, opportunity_id=42)
+    assert visit["deliver_unit"] is None
+
+
+def test_deliver_unit_string_passes_through():
+    """Defensive: if v1 code path ever hits this, strings pass through unchanged."""
+    record = {"id": 1, "deliver_unit": "1707"}
+    visit = record_to_visit_dict(record, opportunity_id=42)
+    assert visit["deliver_unit"] == "1707"
