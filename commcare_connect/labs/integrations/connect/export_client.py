@@ -38,6 +38,11 @@ class ExportAPIClient:
     ):
         self.base_url = base_url.rstrip("/")
         self.access_token = access_token
+        # follow_redirects=True works around a production bug in dimagi/commcare-connect
+        # where gunicorn strips X-Forwarded-Proto (no --forwarded-allow-ips flag), causing
+        # `request.scheme` to be 'http' in pagination's get_next_link(). The server then
+        # emits `next` URLs with http:// scheme, and the reverse proxy 301-redirects them
+        # back to https://. Following redirects here makes pagination robust regardless.
         self.http_client = httpx.Client(
             headers={
                 "Authorization": f"Bearer {access_token}",
@@ -45,6 +50,7 @@ class ExportAPIClient:
                 "Accept-Encoding": "gzip, deflate",
             },
             timeout=timeout,
+            follow_redirects=True,
         )
 
     def close(self):
