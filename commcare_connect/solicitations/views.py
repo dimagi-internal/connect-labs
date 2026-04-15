@@ -360,8 +360,8 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
         ctx["has_context"] = _has_context(self.request)
         ctx["form"] = SolicitationForm()
         ctx["is_create"] = True
-        ctx["existing_questions_json"] = "[]"
-        ctx["existing_criteria_json"] = "[]"
+        ctx["existing_questions"] = []
+        ctx["existing_criteria"] = []
         return ctx
 
     def post(self, request, *args, **kwargs):
@@ -425,8 +425,8 @@ class SolicitationEditView(ManagerRequiredMixin, TemplateView):
             }
             ctx["form"] = SolicitationForm(initial=initial)
             ctx["is_create"] = False
-            ctx["existing_questions_json"] = json.dumps(solicitation.questions)
-            ctx["existing_criteria_json"] = json.dumps(solicitation.evaluation_criteria)
+            ctx["existing_questions"] = solicitation.questions or []
+            ctx["existing_criteria"] = solicitation.evaluation_criteria or []
         except Http404:
             raise
         except Exception:
