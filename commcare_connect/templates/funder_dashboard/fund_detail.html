@@ -312,10 +312,16 @@
                 kpiDistEl.textContent = '$' + Math.round(totalDistributed).toLocaleString('en-US');
             }
             var kpiRemEl = document.getElementById('kpi-remaining');
-            if (kpiRemEl && fundTotalBudget) {
-                var remaining = Math.max(0, fundTotalBudget - totalDistributed);
-                kpiRemEl.textContent = '$' + Math.round(remaining).toLocaleString('en-US');
-                kpiRemEl.className = 'text-xl font-bold ' + (remaining > 0 ? 'text-green-600' : 'text-red-600');
+            if (kpiRemEl) {
+                if (fundTotalBudget) {
+                    var remaining = Math.max(0, fundTotalBudget - totalDistributed);
+                    kpiRemEl.textContent = '$' + Math.round(remaining).toLocaleString('en-US');
+                    kpiRemEl.className = 'text-xl font-bold ' + (remaining > 0 ? 'text-green-600' : 'text-red-600');
+                } else {
+                    // No budget set — match the Total Budget card's em-dash empty state
+                    kpiRemEl.textContent = '\u2014';
+                    kpiRemEl.className = 'text-xl font-bold text-gray-400';
+                }
             }
 
             // Update filter status
