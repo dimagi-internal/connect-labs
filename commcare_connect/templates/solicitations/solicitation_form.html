@@ -366,8 +366,8 @@
 {% endblock javascript %}
 
 {% block inline_javascript %}
-<script type="text/plain" id="existing-questions-data">{{ existing_questions_json|default:"[]" }}</script>
-<script type="text/plain" id="existing-criteria-data">{{ existing_criteria_json|default:"[]" }}</script>
+{{ existing_questions|json_script:"existing-questions-data" }}
+{{ existing_criteria|json_script:"existing-criteria-data" }}
 <script>
 function questionBuilder() {
     return {

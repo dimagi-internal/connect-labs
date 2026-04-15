@@ -1,0 +1,57 @@
+name: "Funder Dashboard Walkthrough"
+narrative: "Funders manage their full grantee portfolio — KPIs, delivery pace, maps, and AI-generated reports"
+base_url: "http://localhost:8000"
+
+auth:
+  type: command
+  check: "cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate && python manage.py get_cli_token --list-profiles 2>&1 | grep -E 'main.*no'"
+  login: "cd /Users/jjackson/emdash-projects/connect-labs && source .venv/bin/activate && python manage.py get_cli_token --profile main"
+  inject_url: "/labs/test-auth/?profile=main"
+
+personas:
+  sarah:
+    name: "Sarah Chen"
+    role: "Senior Program Manager, Dimagi"
+    color: "#2563eb"
+    intro: "Sarah oversees multiple funder relationships and needs real-time visibility into delivery across every grantee."
+
+scenes:
+  - persona: sarah
+    title: "Portfolio dashboard"
+    show: "Portfolio page listing all funds (Founders Pledge, Gavi, ECF) with status, budget, and linked programs"
+    impressive_because: "Sarah sees every funder relationship at a glance — KPIs, budget, and linked program count on a single scroll-free page"
+
+  - persona: sarah
+    title: "Fund detail — KPIs"
+    show: "Fund detail page for Founders Pledge showing the header, status badge, four KPI cards (Total Budget, USD Distributed, Remaining, Status)"
+    impressive_because: "KPIs stream in live from Connect API — no manual export, no dashboard refresh lag"
+
+  - persona: sarah
+    title: "Performance table"
+    show: "Fund detail page scrolled to the performance table with one row per opportunity — cost per visit, visits last 7 days with sparkline, budget status"
+    impressive_because: "Ranked by live activity — Sarah instantly sees which grantees are on track and which need a check-in"
+
+  - persona: sarah
+    title: "Activity + Payments charts"
+    show: "Two-chart row — weekly visits stacked by opportunity and cumulative payments trajectory"
+    impressive_because: "Cross-chart filtering lets Sarah explore delivery data like a dashboard, not a static report"
+
+  - persona: sarah
+    title: "Delivery map"
+    show: "Leaflet map with marker clusters showing visit locations across the fund's operating geographies"
+    impressive_because: "See exactly where FLW visits are happening — zoom in to a single facility or pan out to see continental coverage"
+
+  - persona: sarah
+    title: "Delivery pace forecast"
+    show: "Forecast chart projecting cumulative spend with 'on track to deliver full impact by {date}' headline"
+    impressive_because: "Positive framing — delivery pace as impact delivered, not burn rate"
+
+  - persona: sarah
+    title: "AI impact report"
+    show: "Generate Report button triggering AI narrative with per-grantee highlights, recommendations"
+    impressive_because: "Board-meeting-ready donor report generated in seconds, referencing real delivery numbers"
+
+  - persona: sarah
+    title: "Export PDF"
+    show: "Print-optimized one-pager with fund header, KPIs, charts, and AI narrative"
+    impressive_because: "Shareable with funders in one click — no screenshotting, no copy-paste"
