@@ -207,3 +207,89 @@ class TestCreateWorkflowFromTemplateOpportunityIds:
             assert kwargs["opportunity_ids"] == []
         finally:
             del TEMPLATES["__test_single_create__"]
+
+
+class TestGetPipelineDataMultiOpp:
+    def _make_definition(self, opportunity_ids=None, pipeline_sources=None):
+        data = {
+            "name": "WF",
+            "description": "d",
+            "pipeline_sources": pipeline_sources or [{"pipeline_id": 101, "alias": "visits"}],
+            "opportunity_ids": opportunity_ids or [],
+        }
+        return _make_definition_record(definition_id=1, data=data)
+
+    def test_falls_back_to_primary_when_opportunity_ids_empty(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        definition = self._make_definition(opportunity_ids=[])
+        wda.get_definition = MagicMock(return_value=definition)
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+            mock_instance.execute_pipeline.return_value = {
+                "rows": [{"username": "a"}],
+                "metadata": {"row_count": 1},
+            }
+
+            result = wda.get_pipeline_data(definition_id=1, opportunity_id=700)
+
+            # Only primary opp used
+            mock_instance.execute_pipeline.assert_called_once_with(101, 700)
+            assert result["visits"]["metadata"]["opportunity_ids"] == [700]
+            assert result["visits"]["rows"][0]["opportunity_id"] == 700
+
+    def test_iterates_all_opps_and_tags_rows(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        definition = self._make_definition(opportunity_ids=[700, 825])
+        wda.get_definition = MagicMock(return_value=definition)
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+
+            def fake_execute(pipeline_id, opp_id):
+                return {
+                    "rows": [{"username": f"u_{opp_id}"}],
+                    "metadata": {"row_count": 1, "opp": opp_id},
+                }
+
+            mock_instance.execute_pipeline.side_effect = fake_execute
+
+            result = wda.get_pipeline_data(definition_id=1, opportunity_id=700)
+
+            assert mock_instance.execute_pipeline.call_count == 2
+            rows = result["visits"]["rows"]
+            assert len(rows) == 2
+            assert {r["opportunity_id"] for r in rows} == {700, 825}
+            # Row from opp 700 keeps its own username
+            row700 = next(r for r in rows if r["opportunity_id"] == 700)
+            assert row700["username"] == "u_700"
+            meta = result["visits"]["metadata"]
+            assert meta["opportunity_ids"] == [700, 825]
+            assert meta["row_count"] == 2
+            assert set(meta["per_opp"].keys()) == {700, 825}
+
+    def test_per_opp_failure_records_error_and_continues(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        definition = self._make_definition(opportunity_ids=[700, 825])
+        wda.get_definition = MagicMock(return_value=definition)
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+
+            def fake_execute(pipeline_id, opp_id):
+                if opp_id == 825:
+                    raise RuntimeError("boom")
+                return {"rows": [{"username": "a"}], "metadata": {}}
+
+            mock_instance.execute_pipeline.side_effect = fake_execute
+
+            result = wda.get_pipeline_data(definition_id=1, opportunity_id=700)
+
+            rows = result["visits"]["rows"]
+            assert len(rows) == 1
+            assert rows[0]["opportunity_id"] == 700
+            per_opp = result["visits"]["metadata"]["per_opp"]
+            assert "error" in per_opp[825]
