@@ -918,9 +918,9 @@ class WorkflowDataAccess(BaseDataAccess):
                 for opp_id in opp_ids:
                     try:
                         pipeline_result = pipeline_access.execute_pipeline(pipeline_id, opp_id)
-                        for row in pipeline_result.get("rows", []):
-                            row["opportunity_id"] = opp_id
-                        merged_rows.extend(pipeline_result.get("rows", []))
+                        merged_rows.extend(
+                            {**row, "opportunity_id": opp_id} for row in pipeline_result.get("rows", [])
+                        )
                         per_opp_meta[opp_id] = pipeline_result.get("metadata", {})
                     except Exception as e:
                         logger.exception("Pipeline %s failed for opp %s", pipeline_id, opp_id)
