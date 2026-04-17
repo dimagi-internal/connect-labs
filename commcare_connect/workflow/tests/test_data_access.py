@@ -128,3 +128,35 @@ class TestUpdateOpportunityIds:
         result = wda.update_opportunity_ids(999, [700])
         assert result is None
         mock_api.update_record.assert_not_called()
+
+
+class TestListTemplatesMultiOpp:
+    def test_multi_opp_defaults_false(self):
+        from commcare_connect.workflow.templates import TEMPLATES, list_templates
+
+        # Force a known single-opp template into the registry for the test
+        TEMPLATES["__test_single__"] = {
+            "key": "__test_single__",
+            "name": "T",
+            "description": "d",
+        }
+        try:
+            listed = {t["key"]: t for t in list_templates()}
+            assert listed["__test_single__"]["multi_opp"] is False
+        finally:
+            del TEMPLATES["__test_single__"]
+
+    def test_multi_opp_true_when_template_sets_it(self):
+        from commcare_connect.workflow.templates import TEMPLATES, list_templates
+
+        TEMPLATES["__test_multi__"] = {
+            "key": "__test_multi__",
+            "name": "T",
+            "description": "d",
+            "multi_opp": True,
+        }
+        try:
+            listed = {t["key"]: t for t in list_templates()}
+            assert listed["__test_multi__"]["multi_opp"] is True
+        finally:
+            del TEMPLATES["__test_multi__"]

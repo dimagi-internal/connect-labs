@@ -100,7 +100,7 @@ def list_templates() -> list[dict]:
     List all available templates.
 
     Returns:
-        List of dicts with 'key', 'name', 'description', 'icon', 'color'
+        List of dicts with 'key', 'name', 'description', 'icon', 'color', 'multi_opp'
     """
     return [
         {
@@ -109,6 +109,7 @@ def list_templates() -> list[dict]:
             "description": t["description"],
             "icon": t.get("icon", "fa-cog"),
             "color": t.get("color", "gray"),
+            "multi_opp": bool(t.get("multi_opp", False)),
         }
         for key, t in TEMPLATES.items()
     ]
