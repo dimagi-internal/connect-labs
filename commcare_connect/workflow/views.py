@@ -269,6 +269,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         context["opportunity_id"] = opportunity_id
         context["opportunity_name"] = labs_context.get("opportunity_name")
         context["has_context"] = bool(opportunity_id)
+        context["user_opportunities"] = (get_org_data(self.request) or {}).get("opportunities", [])
 
         if not opportunity_id:
             context["error"] = "Please select an opportunity to run this workflow."
