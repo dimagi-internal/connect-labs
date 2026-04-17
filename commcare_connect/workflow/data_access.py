@@ -55,6 +55,15 @@ class WorkflowDefinitionRecord(LocalLabsRecord):
         return self.data.get("pipeline_sources", [])
 
     @property
+    def opportunity_ids(self) -> list[int]:
+        """List of opportunity IDs this workflow pulls data from.
+
+        Empty list means legacy single-opp behavior; callers should fall back
+        to [primary_opportunity_id] in that case.
+        """
+        return self.data.get("opportunity_ids", []) or []
+
+    @property
     def template_type(self) -> str:
         return self.data.get("config", {}).get("templateType", "")
 
