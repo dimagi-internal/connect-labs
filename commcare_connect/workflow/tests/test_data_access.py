@@ -3,6 +3,12 @@
 All tests mock LabsRecordAPIClient to avoid real API calls.
 """
 
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from commcare_connect.labs.models import LocalLabsRecord
+
 
 def _make_definition_record(definition_id=1, data=None, opportunity_id=700):
     """Build a WorkflowDefinitionRecord-like raw dict for tests."""
@@ -31,3 +37,56 @@ class TestOpportunityIdsProperty:
     def test_returns_empty_list_when_explicitly_empty(self):
         rec = _make_definition_record(data={"name": "X", "description": "Y", "opportunity_ids": []})
         assert rec.opportunity_ids == []
+
+
+@pytest.fixture
+def workflow_data_access():
+    """Instantiate WorkflowDataAccess with a mocked LabsRecordAPIClient."""
+    with patch("commcare_connect.workflow.data_access.LabsRecordAPIClient") as MockAPI:
+        mock_api = MagicMock()
+        MockAPI.return_value = mock_api
+        with patch("commcare_connect.workflow.data_access.settings") as mock_settings:
+            mock_settings.CONNECT_PRODUCTION_URL = "https://example.com"
+            from commcare_connect.workflow.data_access import WorkflowDataAccess
+
+            wda = WorkflowDataAccess(opportunity_id=700, access_token="fake")
+        wda.labs_api = mock_api
+        yield wda, mock_api
+
+
+class TestCreateDefinitionOpportunityIds:
+    def test_opportunity_ids_stored_when_provided(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        mock_api.create_record.return_value = LocalLabsRecord(
+            {
+                "id": 1,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "data": {},
+                "opportunity_id": 700,
+            }
+        )
+
+        wda.create_definition(name="WF", description="d", opportunity_ids=[700, 825, 912])
+
+        mock_api.create_record.assert_called_once()
+        sent_data = mock_api.create_record.call_args.kwargs["data"]
+        assert sent_data["opportunity_ids"] == [700, 825, 912]
+
+    def test_opportunity_ids_absent_when_not_provided(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        mock_api.create_record.return_value = LocalLabsRecord(
+            {
+                "id": 1,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "data": {},
+                "opportunity_id": 700,
+            }
+        )
+
+        wda.create_definition(name="WF", description="d")
+
+        sent_data = mock_api.create_record.call_args.kwargs["data"]
+        # Either absent or empty list is acceptable for legacy behavior
+        assert sent_data.get("opportunity_ids", []) == []

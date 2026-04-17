@@ -393,6 +393,7 @@ class WorkflowDataAccess(BaseDataAccess):
             ),
             "config": kwargs.get("config", {"showSummaryCards": True, "showFilters": True}),
             "pipeline_sources": kwargs.get("pipeline_sources", []),
+            "opportunity_ids": kwargs.get("opportunity_ids", []),
             "is_shared": False,
             "shared_scope": "global",
         }
