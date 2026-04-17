@@ -90,3 +90,41 @@ class TestCreateDefinitionOpportunityIds:
         sent_data = mock_api.create_record.call_args.kwargs["data"]
         # Either absent or empty list is acceptable for legacy behavior
         assert sent_data.get("opportunity_ids", []) == []
+
+
+class TestUpdateOpportunityIds:
+    def test_updates_opportunity_ids_preserving_other_fields(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        existing = LocalLabsRecord(
+            {
+                "id": 5,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "data": {
+                    "name": "WF",
+                    "description": "d",
+                    "opportunity_ids": [700],
+                    "pipeline_sources": [{"pipeline_id": 1, "alias": "a"}],
+                },
+                "opportunity_id": 700,
+            }
+        )
+        mock_api.get_record_by_id.return_value = existing
+        mock_api.update_record.return_value = existing
+
+        wda.update_opportunity_ids(5, [700, 825, 912])
+
+        mock_api.update_record.assert_called_once()
+        sent_data = mock_api.update_record.call_args.kwargs["data"]
+        assert sent_data["opportunity_ids"] == [700, 825, 912]
+        # Other fields preserved
+        assert sent_data["name"] == "WF"
+        assert sent_data["pipeline_sources"] == [{"pipeline_id": 1, "alias": "a"}]
+
+    def test_returns_none_when_definition_not_found(self, workflow_data_access):
+        wda, mock_api = workflow_data_access
+        mock_api.get_record_by_id.return_value = None
+
+        result = wda.update_opportunity_ids(999, [700])
+        assert result is None
+        mock_api.update_record.assert_not_called()

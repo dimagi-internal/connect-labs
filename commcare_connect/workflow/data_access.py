@@ -434,6 +434,20 @@ class WorkflowDataAccess(BaseDataAccess):
             )
         return None
 
+    def update_opportunity_ids(
+        self, definition_id: int, opportunity_ids: list[int]
+    ) -> WorkflowDefinitionRecord | None:
+        """Replace the opportunity_ids list on a workflow definition.
+
+        Other fields in `data` are preserved.
+        """
+        existing = self.get_definition(definition_id)
+        if not existing:
+            return None
+
+        updated_data = {**existing.data, "opportunity_ids": list(opportunity_ids)}
+        return self.update_definition(definition_id, updated_data)
+
     def delete_definition(self, definition_id: int, delete_linked: bool = False) -> dict:
         """Delete a workflow definition and optionally related records.
 
