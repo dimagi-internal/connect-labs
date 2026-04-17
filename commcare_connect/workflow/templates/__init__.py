@@ -119,6 +119,7 @@ def create_workflow_from_template(
     data_access: WorkflowDataAccess,
     template_key: str,
     request=None,
+    opportunity_ids: list[int] | None = None,
 ) -> tuple:
     """
     Create a workflow from a template using the data access layer.
@@ -130,6 +131,8 @@ def create_workflow_from_template(
         data_access: WorkflowDataAccess instance with valid OAuth
         template_key: Template key (e.g., 'performance_review')
         request: Optional HttpRequest for creating pipelines (needed for PipelineDataAccess)
+        opportunity_ids: Optional list of opp IDs this workflow should pull data from
+            (multi-opp templates only; ignored for single-opp templates).
 
     Returns:
         Tuple of (definition_record, render_code_record, pipeline_record or None)
@@ -201,6 +204,7 @@ def create_workflow_from_template(
         statuses=template_def.get("statuses", []),
         config=config,
         pipeline_sources=pipeline_sources,
+        opportunity_ids=list(opportunity_ids or []),
     )
 
     # Create the render code

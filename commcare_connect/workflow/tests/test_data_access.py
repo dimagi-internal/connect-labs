@@ -160,3 +160,50 @@ class TestListTemplatesMultiOpp:
             assert listed["__test_multi__"]["multi_opp"] is True
         finally:
             del TEMPLATES["__test_multi__"]
+
+
+class TestCreateWorkflowFromTemplateOpportunityIds:
+    def test_opportunity_ids_passed_to_create_definition(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        from commcare_connect.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_multi_create__"] = {
+            "key": "__test_multi_create__",
+            "name": "T",
+            "description": "d",
+            "multi_opp": True,
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+        }
+        try:
+            wda.create_definition = MagicMock(return_value=_make_definition_record(definition_id=10))
+            wda.save_render_code = MagicMock()
+
+            create_workflow_from_template(wda, "__test_multi_create__", opportunity_ids=[700, 825])
+
+            kwargs = wda.create_definition.call_args.kwargs
+            assert kwargs["opportunity_ids"] == [700, 825]
+        finally:
+            del TEMPLATES["__test_multi_create__"]
+
+    def test_opportunity_ids_default_empty_list_when_omitted(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        from commcare_connect.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_single_create__"] = {
+            "key": "__test_single_create__",
+            "name": "T",
+            "description": "d",
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+        }
+        try:
+            wda.create_definition = MagicMock(return_value=_make_definition_record(definition_id=11))
+            wda.save_render_code = MagicMock()
+
+            create_workflow_from_template(wda, "__test_single_create__")
+
+            kwargs = wda.create_definition.call_args.kwargs
+            assert kwargs["opportunity_ids"] == []
+        finally:
+            del TEMPLATES["__test_single_create__"]
