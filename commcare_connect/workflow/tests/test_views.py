@@ -132,3 +132,81 @@ class TestCreateWorkflowOpportunityIds:
                 assert response.status_code in (302, 303)
         finally:
             del TEMPLATES["__tv_multi2__"]
+
+
+class TestUpdateOpportunityIdsView:
+    def test_updates_on_valid_payload(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = rf.post(
+            "/labs/workflow/api/1/opportunity-ids/",
+            data=json.dumps({"opportunity_ids": [700, 825]}),
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {
+            "labs_oauth": {
+                "access_token": "t",
+                "organization_data": {
+                    "opportunities": [
+                        {"id": 700, "name": "A"},
+                        {"id": 825, "name": "B"},
+                    ]
+                },
+            },
+        }
+
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.update_opportunity_ids.return_value = MagicMock(id=1)
+
+            from commcare_connect.workflow.views import UpdateOpportunityIdsView
+
+            response = UpdateOpportunityIdsView.as_view()(request, definition_id=1)
+
+            assert response.status_code == 200
+            mock_wda.update_opportunity_ids.assert_called_once_with(1, [700, 825])
+
+    def test_rejects_unauthorized_opportunity(self, dimagi_user, rf: RequestFactory):
+        import json
+
+        request = rf.post(
+            "/labs/workflow/api/1/opportunity-ids/",
+            data=json.dumps({"opportunity_ids": [9999]}),
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {
+            "labs_oauth": {
+                "access_token": "t",
+                "organization_data": {"opportunities": [{"id": 700, "name": "A"}]},
+            },
+        }
+
+        from commcare_connect.workflow.views import UpdateOpportunityIdsView
+
+        response = UpdateOpportunityIdsView.as_view()(request, definition_id=1)
+        assert response.status_code == 403
+
+    def test_rejects_invalid_json(self, dimagi_user, rf: RequestFactory):
+        request = rf.post(
+            "/labs/workflow/api/1/opportunity-ids/",
+            data="not-json",
+            content_type="application/json",
+        )
+        request.user = dimagi_user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {
+            "labs_oauth": {
+                "access_token": "t",
+                "organization_data": {"opportunities": [{"id": 700, "name": "A"}]},
+            },
+        }
+
+        from commcare_connect.workflow.views import UpdateOpportunityIdsView
+
+        response = UpdateOpportunityIdsView.as_view()(request, definition_id=1)
+        assert response.status_code == 400

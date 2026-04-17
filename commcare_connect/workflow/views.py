@@ -2468,3 +2468,57 @@ def visit_images_api(request, opp_id):
     except Exception:
         logger.exception("Visit images fetch failed: opp_id=%s", opp_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+class UpdateOpportunityIdsView(LoginRequiredMixin, View):
+    """API endpoint to replace the opportunity_ids list on a workflow definition.
+
+    POST JSON body: {"opportunity_ids": [int, ...]}
+    All IDs are validated against the user's accessible opportunities.
+    """
+
+    def post(self, request, definition_id):
+        from commcare_connect.labs.context import get_org_data
+
+        try:
+            body = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        raw = body.get("opportunity_ids", [])
+        if not isinstance(raw, list):
+            return JsonResponse({"error": "opportunity_ids must be a list"}, status=400)
+
+        try:
+            opportunity_ids = [int(x) for x in raw]
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid opportunity_ids"}, status=400)
+
+        # Validate against user's accessible opportunities
+        user_opp_ids = {
+            int(o["id"]) for o in (get_org_data(request) or {}).get("opportunities", []) if o.get("id") is not None
+        }
+        unauthorized = [oid for oid in opportunity_ids if oid not in user_opp_ids]
+        if unauthorized:
+            return JsonResponse(
+                {"error": f"Not authorized for opportunities: {unauthorized}"},
+                status=403,
+            )
+
+        data_access = WorkflowDataAccess(request=request)
+        try:
+            result = data_access.update_opportunity_ids(definition_id, opportunity_ids)
+            if not result:
+                return JsonResponse({"error": "Workflow not found"}, status=404)
+            return JsonResponse(
+                {
+                    "success": True,
+                    "definition_id": definition_id,
+                    "opportunity_ids": opportunity_ids,
+                }
+            )
+        except Exception:
+            logger.exception("Failed to update opportunity_ids for %s", definition_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
+        finally:
+            data_access.close()
