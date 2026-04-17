@@ -331,8 +331,18 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 render_code = data_access.get_render_code(definition_id)
                 context["render_code"] = render_code.data.get("component_code") if render_code else None
 
-            # Get workers for the opportunity
-            workers = data_access.get_workers(opportunity_id)
+            # Determine effective opportunity list (fallback to primary)
+            effective_opp_ids = definition.opportunity_ids or [opportunity_id]
+
+            # Fetch workers for each opp and tag with opportunity_id
+            workers: list[dict] = []
+            for oid in effective_opp_ids:
+                try:
+                    for w in data_access.get_workers(oid):
+                        w["opportunity_id"] = oid
+                        workers.append(w)
+                except Exception:
+                    logger.exception("Failed to load workers for opp %s", oid)
             context["workers"] = workers
 
             # Get or create run based on mode
@@ -348,6 +358,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "id": 0,  # Temporary ID
                     "definition_id": definition_id,
                     "opportunity_id": opportunity_id,
+                    "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
                     "status": "preview",
                     "state": {"worker_states": {}},
@@ -365,6 +376,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "id": run.id,
                     "definition_id": definition_id,
                     "opportunity_id": opportunity_id,
+                    "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
                     "status": run.data.get("status", "in_progress"),
                     "state": run.data.get("state", {}),
@@ -388,6 +400,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "definition": definition.data,
                 "definition_id": definition.id,
                 "opportunity_id": opportunity_id,
+                "opportunity_ids": effective_opp_ids,
                 "render_code": context.get("render_code"),
                 "instance": run_data,
                 "is_edit_mode": is_edit_mode,
