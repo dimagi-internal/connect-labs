@@ -854,10 +854,16 @@ def get_run_api(request, run_id):
 @login_required
 @require_POST
 def create_workflow_from_template_view(request):
-    """Create a workflow from a template."""
+    """Create a workflow from a template.
+
+    For multi_opp templates, accepts an `opportunity_ids` POST field (getlist)
+    and validates each ID against the user's accessible opportunities.
+    """
     from django.contrib import messages
     from django.core.exceptions import PermissionDenied
     from django.shortcuts import redirect
+
+    from commcare_connect.workflow.templates import get_template
 
     template_key = request.POST.get("template", "performance_review")
 
@@ -868,20 +874,56 @@ def create_workflow_from_template_view(request):
         messages.error(request, f"Unknown template: {template_key}")
         return redirect("labs:workflow:list")
 
+    # Parse opportunity_ids, if provided
+    raw_opp_ids = request.POST.getlist("opportunity_ids")
+    opportunity_ids: list[int] = []
+    if raw_opp_ids:
+        try:
+            opportunity_ids = [int(x) for x in raw_opp_ids if str(x).strip()]
+        except (TypeError, ValueError):
+            messages.error(request, "Invalid opportunity_ids.")
+            return redirect("labs:workflow:list")
+
+        # Validate against user's accessible opportunities
+        user_opp_ids = {
+            int(o["id"]) for o in (get_org_data(request) or {}).get("opportunities", []) if o.get("id") is not None
+        }
+        invalid = [oid for oid in opportunity_ids if oid not in user_opp_ids]
+        if invalid:
+            messages.error(
+                request,
+                f"You do not have access to opportunities: {invalid}",
+            )
+            return redirect("labs:workflow:list")
+
+    # Only multi_opp templates should receive opportunity_ids
+    template = get_template(template_key)
+    if not template.get("multi_opp"):
+        opportunity_ids = []  # silently ignored for single-opp templates
+
     try:
         data_access = WorkflowDataAccess(request=request)
-        definition, render_code, pipeline = create_from_template(data_access, template_key, request=request)
+        definition, render_code, pipeline = create_from_template(
+            data_access,
+            template_key,
+            request=request,
+            opportunity_ids=opportunity_ids,
+        )
 
         if pipeline:
             messages.success(
-                request, f"Created workflow: {definition.name} (ID: {definition.id}) with pipeline: {pipeline.name}"
+                request,
+                f"Created workflow: {definition.name} (ID: {definition.id}) with pipeline: {pipeline.name}",
             )
         else:
             messages.success(request, f"Created workflow: {definition.name} (ID: {definition.id})")
         return redirect("labs:workflow:list")
 
     except Exception as e:
-        logger.error(f"Failed to create workflow from template {template_key}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to create workflow from template {template_key}: {e}",
+            exc_info=True,
+        )
         messages.error(request, f"Failed to create workflow: {e}")
         return redirect("labs:workflow:list")
 
