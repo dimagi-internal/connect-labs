@@ -1057,6 +1057,7 @@ class WorkflowDataAccess(BaseDataAccess):
             "statuses": source.data.get("statuses", []),
             "config": source.data.get("config", {}),
             "pipeline_sources": source.data.get("pipeline_sources", []),
+            "opportunity_ids": source.data.get("opportunity_ids", []),
             "is_shared": False,
             "shared_scope": "global",
         }
