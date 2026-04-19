@@ -9,7 +9,7 @@ Auth is automatic:
 - Connect API: reads CLI OAuth token from ~/.commcare-connect/token.json
 
 Usage (stdio, for Claude Code):
-    python tools/commcare_mcp/server.py
+    python tools/commcare_hq_mcp/server.py
 """
 
 from __future__ import annotations
@@ -42,9 +42,6 @@ mcp = FastMCP(
         "FUNDS: Use list_funds, get_fund, create_fund, update_fund, add_fund_allocation, "
         "and remove_fund_allocation to manage funder budgets and allocations. Funds are "
         "scoped by organization_id. Awards can auto-allocate from funds.\n\n"
-        "GOOGLE SHEETS: Use read_google_sheet to read data from Google Sheets and "
-        "list_sheet_tabs to see available tabs. Requires OAuth login first via "
-        "python tools/commcare_mcp/google_auth.py login\n\n"
         "SAMPLE IDS: Use get_sample_ids to discover real fund, solicitation, and "
         "program IDs from the current environment. Useful for constructing valid "
         "localhost URLs or testing API calls without manual lookups."
@@ -292,7 +289,7 @@ async def list_solicitations(
         status: Filter by status ("draft", "active", "closed")
         solicitation_type: Filter by type ("eoi", "rfp")
     """
-    from solicitation_tools import list_solicitations as _list
+    from _pending_migration.solicitation_tools import list_solicitations as _list
 
     try:
         results = await _list(
@@ -313,7 +310,7 @@ async def get_solicitation(solicitation_id: int) -> dict:
     Args:
         solicitation_id: The solicitation record ID
     """
-    from solicitation_tools import get_solicitation as _get
+    from _pending_migration.solicitation_tools import get_solicitation as _get
 
     try:
         result = await _get(solicitation_id)
@@ -359,7 +356,7 @@ async def create_solicitation(
         contact_email: Contact email for inquiries
         evaluation_criteria_json: JSON array of evaluation criteria objects
     """
-    from solicitation_tools import create_solicitation as _create
+    from _pending_migration.solicitation_tools import create_solicitation as _create
 
     try:
         data = {
@@ -408,7 +405,7 @@ async def update_solicitation(solicitation_id: int, data_json: str) -> dict:
     """
     import json as _json
 
-    from solicitation_tools import update_solicitation as _update
+    from _pending_migration.solicitation_tools import update_solicitation as _update
 
     try:
         update_data = _json.loads(data_json)
@@ -426,7 +423,7 @@ async def list_responses(solicitation_id: int) -> dict:
     Args:
         solicitation_id: The solicitation record ID to get responses for
     """
-    from solicitation_tools import list_responses as _list
+    from _pending_migration.solicitation_tools import list_responses as _list
 
     try:
         results = await _list(solicitation_id)
@@ -442,7 +439,7 @@ async def get_response(response_id: int) -> dict:
     Args:
         response_id: The response record ID
     """
-    from solicitation_tools import get_response as _get
+    from _pending_migration.solicitation_tools import get_response as _get
 
     try:
         result = await _get(response_id)
@@ -474,7 +471,7 @@ async def award_response(
         org_id: Organization ID receiving the award
         fund_id: Fund ID to allocate from (optional — 0 means no fund allocation)
     """
-    from solicitation_tools import award_response as _award
+    from _pending_migration.solicitation_tools import award_response as _award
 
     try:
         return await _award(
@@ -497,7 +494,7 @@ async def list_funds(program_id: str) -> dict:
     Args:
         program_id: Program ID for ACL scoping
     """
-    from fund_tools import list_funds as _list
+    from _pending_migration.fund_tools import list_funds as _list
 
     try:
         results = await _list(program_id)
@@ -513,7 +510,7 @@ async def get_fund(fund_id: int) -> dict:
     Args:
         fund_id: The fund record ID
     """
-    from fund_tools import get_fund as _get
+    from _pending_migration.fund_tools import get_fund as _get
 
     try:
         result = await _get(fund_id)
@@ -549,7 +546,7 @@ async def create_fund(
     """
     import json as _json
 
-    from fund_tools import create_fund as _create
+    from _pending_migration.fund_tools import create_fund as _create
 
     try:
         program_ids = _json.loads(program_ids_json) if program_ids_json else None
@@ -581,7 +578,7 @@ async def update_fund(fund_id: int, data_json: str) -> dict:
     """
     import json as _json
 
-    from fund_tools import update_fund as _update
+    from _pending_migration.fund_tools import update_fund as _update
 
     try:
         update_data = _json.loads(data_json)
@@ -603,7 +600,7 @@ async def add_fund_allocation(fund_id: int, allocation_json: str) -> dict:
     """
     import json as _json
 
-    from fund_tools import add_fund_allocation as _add
+    from _pending_migration.fund_tools import add_fund_allocation as _add
 
     try:
         allocation = _json.loads(allocation_json)
@@ -622,7 +619,7 @@ async def remove_fund_allocation(fund_id: int, index: int) -> dict:
         fund_id: The fund record ID
         index: Zero-based index of the allocation to remove
     """
-    from fund_tools import remove_fund_allocation as _remove
+    from _pending_migration.fund_tools import remove_fund_allocation as _remove
 
     try:
         return await _remove(fund_id, index)
@@ -640,7 +637,7 @@ async def list_reviews(response_id: int) -> dict:
     Args:
         response_id: The response record ID to get reviews for
     """
-    from review_tools import list_reviews as _list
+    from _pending_migration.review_tools import list_reviews as _list
 
     try:
         results = await _list(response_id)
@@ -656,7 +653,7 @@ async def get_review(review_id: int) -> dict:
     Args:
         review_id: The review record ID
     """
-    from review_tools import get_review as _get
+    from _pending_migration.review_tools import get_review as _get
 
     try:
         result = await _get(review_id)
@@ -692,7 +689,7 @@ async def create_review(
     """
     import json as _json
 
-    from review_tools import create_review as _create
+    from _pending_migration.review_tools import create_review as _create
 
     try:
         criteria_scores = _json.loads(criteria_scores_json) if criteria_scores_json else None
@@ -723,60 +720,13 @@ async def update_review(review_id: int, data_json: str) -> dict:
     """
     import json as _json
 
-    from review_tools import update_review as _update
+    from _pending_migration.review_tools import update_review as _update
 
     try:
         update_data = _json.loads(data_json)
         return await _update(review_id, update_data)
     except _json.JSONDecodeError as e:
         return {"error": f"Invalid JSON in data_json: {e}"}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# --- Google Sheets Tools ---
-
-
-@mcp.tool()
-async def read_google_sheet(
-    url: str,
-    tab_name: str = "",
-    cell_range: str = "",
-) -> dict:
-    """Read data from a Google Sheet by URL.
-
-    Returns headers and rows as dicts. Requires Google OAuth login first
-    (run: python tools/commcare_mcp/google_auth.py login).
-
-    Args:
-        url: Google Sheets URL (e.g. https://docs.google.com/spreadsheets/d/...)
-             or just the spreadsheet ID
-        tab_name: Sheet tab name (optional — auto-detected from URL gid or uses first tab)
-        cell_range: A1 notation range like "A1:D10" (optional — reads all data if empty)
-    """
-    from google_tools import read_google_sheet as _read
-
-    try:
-        return await _read(url, tab_name=tab_name, cell_range=cell_range)
-    except PermissionError as e:
-        return {"error": str(e)}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@mcp.tool()
-async def list_sheet_tabs(url: str) -> dict:
-    """List all tabs in a Google Sheet.
-
-    Args:
-        url: Google Sheets URL or spreadsheet ID
-    """
-    from google_tools import list_sheet_tabs as _list
-
-    try:
-        return await _list(url)
-    except PermissionError as e:
-        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -799,7 +749,7 @@ async def get_sample_ids() -> dict:
             "programs": [{"id": 42, "name": "CHC Nigeria"}, ...],
         }
     """
-    from sample_ids_tools import get_sample_ids as _get
+    from _pending_migration.sample_ids_tools import get_sample_ids as _get
 
     try:
         return await _get()

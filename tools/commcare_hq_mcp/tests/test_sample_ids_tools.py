@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import httpx
 
-# Add the commcare_mcp package to sys.path so imports resolve
+# Add the commcare_hq_mcp package to sys.path so imports resolve
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sample_ids_tools import get_sample_ids  # noqa: E402

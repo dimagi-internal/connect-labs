@@ -149,19 +149,39 @@ make commit                         # Git commit with correct venv PATH (works i
 - **DO NOT** call `.save()` on `LocalLabsRecord` — it raises `NotImplementedError`. Use `LabsRecordAPIClient` for persistence.
 - **DO NOT** modify models in the retained non-labs apps (`opportunity/`, `organization/`, `program/`, `users/`). They exist only for migrations and FK references.
 
-## CommCare MCP Server
+## MCP Servers
 
-A local MCP server (`tools/commcare_mcp/`) gives Claude access to CommCare application structure for building workflow pipeline schemas.
+Two MCP servers serve this project, split by product concern.
 
-**Tools:** `get_opportunity_apps`, `list_apps`, `get_app_structure`, `get_form_questions`, `get_form_json_paths`
+### `commcare_hq_mcp` (local stdio)
 
-**Key tool:** `get_form_json_paths` maps form questions to their exact JSON submission paths (e.g., `form.anthropometric.child_weight_visit`) for use in `PIPELINE_SCHEMAS` field definitions.
+A local MCP server (`tools/commcare_hq_mcp/`) gives Claude access to CommCare HQ
+application structure for building workflow pipeline schemas.
 
-**Data safety:** The server calls only the CommCare HQ application definition API (`GET /a/{domain}/api/v0.5/application/`) — app schema metadata only. It does **not** access form submissions, case data, user data, or any patient-level information.
+**Tools:** `get_opportunity_apps`, `list_apps`, `get_app_structure`,
+`get_form_questions`, `get_form_json_paths`
 
-**Runs locally** as a stdio subprocess in Claude Code. Config in `.claude/mcp.json`. Auth via CommCare API key (`.env`) and Connect OAuth token (`~/.commcare-connect/token.json`).
+**Key tool:** `get_form_json_paths` maps form questions to their exact JSON
+submission paths (e.g., `form.anthropometric.child_weight_visit`) for use in
+`PIPELINE_SCHEMAS` field definitions.
 
-**Source:** `server.py` (tool definitions), `hq_client.py` (HQ API), `connect_client.py` (Connect API), `extractors.py` (schema parsing)
+**Data safety:** HQ app-definition API only. No form submissions, case data,
+user data, or patient-level information.
+
+**Runs locally** as a stdio subprocess. Auth via CommCare API key (`.env`) and
+Connect OAuth token (`~/.commcare-connect/token.json`).
+
+### `connect_labs` (remote HTTP)
+
+A remote MCP server hosted inside the labs Django app (`commcare_connect/mcp/`)
+at `https://labs.connect.dimagi.com/mcp/`. Plan 1 (this PR) ships the server
+with authentication and an empty tools catalog. Plans 2 and 3 add workflow,
+pipeline, and migrated solicitation/review/fund tools.
+
+**Auth:** Personal Access Tokens (PAT) in Plan 1; OAuth 2.1 bridged to Connect
+in a later phase.
+
+**Setup:** see `docs/MCP_SETUP.md`.
 
 ## Deeper Documentation
 
