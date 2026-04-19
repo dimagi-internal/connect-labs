@@ -55,6 +55,15 @@ class WorkflowDefinitionRecord(LocalLabsRecord):
         return self.data.get("pipeline_sources", [])
 
     @property
+    def opportunity_ids(self) -> list[int]:
+        """List of opportunity IDs this workflow pulls data from.
+
+        Empty list means legacy single-opp behavior; callers should fall back
+        to [primary_opportunity_id] in that case.
+        """
+        return self.data.get("opportunity_ids", []) or []
+
+    @property
     def template_type(self) -> str:
         return self.data.get("config", {}).get("templateType", "")
 
@@ -384,6 +393,7 @@ class WorkflowDataAccess(BaseDataAccess):
             ),
             "config": kwargs.get("config", {"showSummaryCards": True, "showFilters": True}),
             "pipeline_sources": kwargs.get("pipeline_sources", []),
+            "opportunity_ids": kwargs.get("opportunity_ids", []),
             "is_shared": False,
             "shared_scope": "global",
         }
@@ -423,6 +433,20 @@ class WorkflowDataAccess(BaseDataAccess):
                 }
             )
         return None
+
+    def update_opportunity_ids(
+        self, definition_id: int, opportunity_ids: list[int]
+    ) -> WorkflowDefinitionRecord | None:
+        """Replace the opportunity_ids list on a workflow definition.
+
+        Other fields in `data` are preserved.
+        """
+        existing = self.get_definition(definition_id)
+        if not existing:
+            return None
+
+        updated_data = {**existing.data, "opportunity_ids": list(opportunity_ids)}
+        return self.update_definition(definition_id, updated_data)
 
     def delete_definition(self, definition_id: int, delete_linked: bool = False) -> dict:
         """Delete a workflow definition and optionally related records.
@@ -845,8 +869,23 @@ class WorkflowDataAccess(BaseDataAccess):
         """
         Fetch data from all pipeline sources defined in a workflow.
 
+        If the workflow has a non-empty `opportunity_ids` list, each pipeline is
+        executed once per opp and rows are concatenated with an `opportunity_id`
+        tag on every row. Otherwise, falls back to [opportunity_id] (the primary
+        opp passed in), preserving legacy single-opp behavior.
+
         Returns:
-            Dict mapping alias to pipeline result: {"visits": {"rows": [...], "metadata": {...}}}
+            Dict mapping alias to pipeline result:
+                {
+                    "visits": {
+                        "rows": [{...fields, "opportunity_id": int}, ...],
+                        "metadata": {
+                            "opportunity_ids": [int, ...],
+                            "per_opp": {opp_id: {...per-opp metadata or {"error": str}}},
+                            "row_count": int,
+                        },
+                    },
+                }
         """
         definition = self.get_definition(definition_id)
         if not definition:
@@ -855,6 +894,8 @@ class WorkflowDataAccess(BaseDataAccess):
         sources = definition.pipeline_sources
         if not sources:
             return {}
+
+        opp_ids = definition.opportunity_ids or [opportunity_id]
 
         results = {}
         pipeline_access = PipelineDataAccess(
@@ -865,21 +906,37 @@ class WorkflowDataAccess(BaseDataAccess):
             program_id=self.program_id,
         )
 
-        for source in sources:
-            pipeline_id = source.get("pipeline_id")
-            alias = source.get("alias")
+        try:
+            for source in sources:
+                pipeline_id = source.get("pipeline_id")
+                alias = source.get("alias")
+                if not pipeline_id or not alias:
+                    continue
 
-            if not pipeline_id or not alias:
-                continue
+                merged_rows: list[dict] = []
+                per_opp_meta: dict[int, dict] = {}
+                for opp_id in opp_ids:
+                    try:
+                        pipeline_result = pipeline_access.execute_pipeline(pipeline_id, opp_id)
+                        merged_rows.extend(
+                            {**row, "opportunity_id": opp_id} for row in pipeline_result.get("rows", [])
+                        )
+                        per_opp_meta[opp_id] = pipeline_result.get("metadata", {})
+                    except Exception as e:
+                        logger.exception("Pipeline %s failed for opp %s", pipeline_id, opp_id)
+                        per_opp_meta[opp_id] = {"error": str(e)}
 
-            try:
-                pipeline_result = pipeline_access.execute_pipeline(pipeline_id, opportunity_id)
-                results[alias] = pipeline_result
-            except Exception as e:
-                logger.error(f"Failed to execute pipeline {pipeline_id}: {e}")
-                results[alias] = {"rows": [], "metadata": {"error": str(e)}}
+                results[alias] = {
+                    "rows": merged_rows,
+                    "metadata": {
+                        "opportunity_ids": list(opp_ids),
+                        "per_opp": per_opp_meta,
+                        "row_count": len(merged_rows),
+                    },
+                }
+        finally:
+            pipeline_access.close()
 
-        pipeline_access.close()
         return results
 
     # -------------------------------------------------------------------------
@@ -1000,6 +1057,7 @@ class WorkflowDataAccess(BaseDataAccess):
             "statuses": source.data.get("statuses", []),
             "config": source.data.get("config", {}),
             "pipeline_sources": source.data.get("pipeline_sources", []),
+            "opportunity_ids": source.data.get("opportunity_ids", []),
             "is_shared": False,
             "shared_scope": "global",
         }

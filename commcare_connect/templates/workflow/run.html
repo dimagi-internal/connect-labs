@@ -27,6 +27,84 @@
         </ol>
     </nav>
 
+    {% if has_context and not error and workflow_data %}
+    {{ user_opportunities|json_script:"user-opportunities" }}
+    <div x-data="{
+            show: false,
+            saving: false,
+            availableOpps: [],
+            pickedOppIds: {{ workflow_data.opportunity_ids|default:'[]' }},
+            definitionId: {{ workflow_data.definition_id }},
+            csrf: '{{ csrf_token }}',
+            loadOpps() {
+                if (this.availableOpps.length > 0) return;
+                try {
+                    const el = document.getElementById('user-opportunities');
+                    if (el) this.availableOpps = JSON.parse(el.textContent);
+                } catch (e) {}
+            },
+            toggleOpp(oid) {
+                const i = this.pickedOppIds.indexOf(oid);
+                if (i >= 0) this.pickedOppIds.splice(i, 1);
+                else this.pickedOppIds.push(oid);
+            },
+            async save() {
+                if (this.saving) return;
+                this.saving = true;
+                try {
+                    const response = await fetch('/labs/workflow/api/' + this.definitionId + '/opportunity-ids/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrf },
+                        body: JSON.stringify({ opportunity_ids: this.pickedOppIds }),
+                    });
+                    if (response.ok) { window.location.reload(); }
+                    else { alert('Save failed: ' + response.status); this.saving = false; }
+                } catch (e) { alert('Save failed: ' + e); this.saving = false; }
+            },
+        }"
+         x-init="loadOpps()"
+         class="mb-4 text-sm text-gray-600 flex items-center gap-2"
+         x-show="pickedOppIds.length > 1 || availableOpps.length > 1">
+        <span class="font-medium">Opportunities:</span>
+        <span x-text="pickedOppIds.length + ' selected'"></span>
+        <button type="button" @click="show = true" class="text-blue-600 hover:text-blue-800">
+            <i class="fa-solid fa-pen-to-square"></i> Edit
+        </button>
+
+        <div x-show="show" x-cloak class="fixed inset-0 z-50">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75" @click="!saving && (show = false)"></div>
+            <div class="flex min-h-full items-center justify-center p-4">
+                <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full p-6" @click.stop>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Edit Opportunities</h3>
+                    <p class="text-sm text-gray-500 mb-4">Data will be pulled from the selected opportunities.</p>
+                    <div class="max-h-96 overflow-y-auto border rounded p-2 mb-4">
+                        <template x-for="opp in availableOpps" :key="opp.id">
+                            <label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                <input type="checkbox"
+                                       :value="opp.id"
+                                       :checked="pickedOppIds.includes(opp.id)"
+                                       @change="toggleOpp(opp.id)">
+                                <span x-text="opp.name"></span>
+                            </label>
+                        </template>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" @click="show = false"
+                                class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200">
+                            Cancel
+                        </button>
+                        <button type="button" :disabled="saving" @click="save()"
+                                class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
+                            <span x-show="!saving">Save & Reload</span>
+                            <span x-show="saving" x-cloak><i class="fa-solid fa-spinner fa-spin mr-1"></i>Saving...</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {% if is_edit_mode %}
     <!-- Edit Mode Banner -->
     <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">

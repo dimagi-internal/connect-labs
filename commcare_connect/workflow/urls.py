@@ -86,6 +86,11 @@ urlpatterns = [
     # API endpoints - Workflow management
     path("api/<int:definition_id>/delete/", views.delete_workflow_api, name="api_delete"),
     path("api/<int:definition_id>/rename/", views.rename_workflow_api, name="api_rename"),
+    path(
+        "api/<int:definition_id>/opportunity-ids/",
+        views.UpdateOpportunityIdsView.as_view(),
+        name="api_update_opportunity_ids",
+    ),
     # API endpoints - Pipeline management
     path("api/pipeline/<int:definition_id>/delete/", views.delete_pipeline_api, name="api_pipeline_delete"),
     # API endpoints - Workflow Jobs

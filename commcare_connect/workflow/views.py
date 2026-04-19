@@ -269,6 +269,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         context["opportunity_id"] = opportunity_id
         context["opportunity_name"] = labs_context.get("opportunity_name")
         context["has_context"] = bool(opportunity_id)
+        context["user_opportunities"] = (get_org_data(self.request) or {}).get("opportunities", [])
 
         if not opportunity_id:
             context["error"] = "Please select an opportunity to run this workflow."
@@ -331,8 +332,18 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 render_code = data_access.get_render_code(definition_id)
                 context["render_code"] = render_code.data.get("component_code") if render_code else None
 
-            # Get workers for the opportunity
-            workers = data_access.get_workers(opportunity_id)
+            # Determine effective opportunity list (fallback to primary)
+            effective_opp_ids = definition.opportunity_ids or [opportunity_id]
+
+            # Fetch workers for each opp and tag with opportunity_id
+            workers: list[dict] = []
+            for oid in effective_opp_ids:
+                try:
+                    for w in data_access.get_workers(oid):
+                        w["opportunity_id"] = oid
+                        workers.append(w)
+                except Exception:
+                    logger.exception("Failed to load workers for opp %s", oid)
             context["workers"] = workers
 
             # Get or create run based on mode
@@ -348,6 +359,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "id": 0,  # Temporary ID
                     "definition_id": definition_id,
                     "opportunity_id": opportunity_id,
+                    "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
                     "status": "preview",
                     "state": {"worker_states": {}},
@@ -365,6 +377,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "id": run.id,
                     "definition_id": definition_id,
                     "opportunity_id": opportunity_id,
+                    "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
                     "status": run.data.get("status", "in_progress"),
                     "state": run.data.get("state", {}),
@@ -388,6 +401,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "definition": definition.data,
                 "definition_id": definition.id,
                 "opportunity_id": opportunity_id,
+                "opportunity_ids": effective_opp_ids,
                 "render_code": context.get("render_code"),
                 "instance": run_data,
                 "is_edit_mode": is_edit_mode,
@@ -854,10 +868,16 @@ def get_run_api(request, run_id):
 @login_required
 @require_POST
 def create_workflow_from_template_view(request):
-    """Create a workflow from a template."""
+    """Create a workflow from a template.
+
+    For multi_opp templates, accepts an `opportunity_ids` POST field (getlist)
+    and validates each ID against the user's accessible opportunities.
+    """
     from django.contrib import messages
     from django.core.exceptions import PermissionDenied
     from django.shortcuts import redirect
+
+    from commcare_connect.workflow.templates import get_template
 
     template_key = request.POST.get("template", "performance_review")
 
@@ -868,20 +888,56 @@ def create_workflow_from_template_view(request):
         messages.error(request, f"Unknown template: {template_key}")
         return redirect("labs:workflow:list")
 
+    # Parse opportunity_ids, if provided
+    raw_opp_ids = request.POST.getlist("opportunity_ids")
+    opportunity_ids: list[int] = []
+    if raw_opp_ids:
+        try:
+            opportunity_ids = [int(x) for x in raw_opp_ids if str(x).strip()]
+        except (TypeError, ValueError):
+            messages.error(request, "Invalid opportunity_ids.")
+            return redirect("labs:workflow:list")
+
+        # Validate against user's accessible opportunities
+        user_opp_ids = {
+            int(o["id"]) for o in (get_org_data(request) or {}).get("opportunities", []) if o.get("id") is not None
+        }
+        invalid = [oid for oid in opportunity_ids if oid not in user_opp_ids]
+        if invalid:
+            messages.error(
+                request,
+                f"You do not have access to opportunities: {invalid}",
+            )
+            return redirect("labs:workflow:list")
+
+    # Only multi_opp templates should receive opportunity_ids
+    template = get_template(template_key)
+    if not template.get("multi_opp"):
+        opportunity_ids = []  # silently ignored for single-opp templates
+
     try:
         data_access = WorkflowDataAccess(request=request)
-        definition, render_code, pipeline = create_from_template(data_access, template_key, request=request)
+        definition, render_code, pipeline = create_from_template(
+            data_access,
+            template_key,
+            request=request,
+            opportunity_ids=opportunity_ids,
+        )
 
         if pipeline:
             messages.success(
-                request, f"Created workflow: {definition.name} (ID: {definition.id}) with pipeline: {pipeline.name}"
+                request,
+                f"Created workflow: {definition.name} (ID: {definition.id}) with pipeline: {pipeline.name}",
             )
         else:
             messages.success(request, f"Created workflow: {definition.name} (ID: {definition.id})")
         return redirect("labs:workflow:list")
 
     except Exception as e:
-        logger.error(f"Failed to create workflow from template {template_key}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to create workflow from template {template_key}: {e}",
+            exc_info=True,
+        )
         messages.error(request, f"Failed to create workflow: {e}")
         return redirect("labs:workflow:list")
 
@@ -2131,8 +2187,6 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
 
         def stream_data() -> Generator[str, None, None]:
             """Stream pipeline data loading progress via SSE."""
-            mixin = AnalysisPipelineSSEMixin()
-
             try:
                 if not opportunity_id:
                     yield send_sse_event("Error", error="No opportunity selected")
@@ -2158,95 +2212,118 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
 
                 yield send_sse_event("Loading pipeline configurations...")
 
-                # Execute each pipeline source with streaming
+                # Determine which opps to pull data from
+                opp_ids = definition.opportunity_ids or [int(opportunity_id)]
+
+                # Execute each pipeline source with streaming.
+                # Pipeline definitions are scoped to the primary opp (where the
+                # workflow record was created), so we use one pipeline_access
+                # bound to the primary opp for definition lookup, and pass the
+                # per-opp value at execute time.
                 pipeline_data = {}
+                pipeline_access = PipelineDataAccess(
+                    request=request,
+                    access_token=labs_oauth.get("access_token"),
+                    opportunity_id=int(opportunity_id),
+                )
 
-                for source in definition.pipeline_sources:
-                    pipeline_id = source.get("pipeline_id")
-                    alias = source.get("alias", f"pipeline_{pipeline_id}")
+                try:
+                    for source in definition.pipeline_sources:
+                        pipeline_id = source.get("pipeline_id")
+                        alias = source.get("alias", f"pipeline_{pipeline_id}")
 
-                    if not pipeline_id:
-                        continue
+                        if not pipeline_id:
+                            continue
 
-                    # Get pipeline definition
-                    pipeline_access = PipelineDataAccess(
-                        request=request,
-                        access_token=labs_oauth.get("access_token"),
-                        opportunity_id=opportunity_id,
-                    )
-
-                    pipeline_def = pipeline_access.get_definition(pipeline_id)
-                    if not pipeline_def:
-                        yield send_sse_event(f"Pipeline {pipeline_id} not found")
-                        continue
-
-                    yield send_sse_event(f"Executing pipeline: {pipeline_def.name}...")
-
-                    # Convert schema to config
-                    config = pipeline_access._schema_to_config(pipeline_def.schema, pipeline_id)
-
-                    # Execute with streaming using AnalysisPipeline
-                    pipeline = AnalysisPipeline(request)
-                    pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opportunity_id)
-
-                    logger.info(f"[PipelineStream] Starting stream for pipeline {pipeline_id}, opp {opportunity_id}")
-
-                    # Stream all pipeline events as SSE (using mixin pattern)
-                    yield from mixin.stream_pipeline_events(pipeline_stream)
-
-                    # Result is now available
-                    result = mixin._pipeline_result
-                    from_cache = mixin._pipeline_from_cache
-
-                    if result:
-                        logger.info(
-                            f"[PipelineStream] Got {len(result.rows) if hasattr(result, 'rows') else 0} rows"
-                            f" (cache: {from_cache})"
-                        )
-
-                        yield send_sse_event(f"Processing {alias} data...")
-
-                        # Convert result to serializable format
-                        rows = []
-                        for row in result.rows:
-                            # Handle dates - may be datetime or string depending on backend
-                            def format_date(d):
-                                if d and hasattr(d, "isoformat"):
-                                    return d.isoformat()
-                                return d
-
-                            row_dict = {
-                                "id": getattr(row, "id", None),
-                                "entity_id": row.entity_id,
-                                "entity_name": row.entity_name,
-                                "username": row.username,
-                                "visit_date": format_date(row.visit_date),
-                                # Built-in FLW aggregation fields
-                                "total_visits": getattr(row, "total_visits", 0),
-                                "approved_visits": getattr(row, "approved_visits", 0),
-                                "pending_visits": getattr(row, "pending_visits", 0),
-                                "rejected_visits": getattr(row, "rejected_visits", 0),
-                                "flagged_visits": getattr(row, "flagged_visits", 0),
-                                "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
-                                "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
+                        pipeline_def = pipeline_access.get_definition(pipeline_id)
+                        if not pipeline_def:
+                            yield send_sse_event(f"Pipeline {pipeline_id} not found")
+                            pipeline_data[alias] = {
+                                "rows": [],
+                                "metadata": {
+                                    "pipeline_id": pipeline_id,
+                                    "pipeline_name": None,
+                                    "row_count": 0,
+                                    "opportunity_ids": list(opp_ids),
+                                    "per_opp": {oid: {"error": "Pipeline not found"} for oid in opp_ids},
+                                },
                             }
-                            # Add computed fields (custom fields from config)
-                            # FLWRow uses custom_fields, VisitRow uses computed
-                            custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
-                            if custom:
-                                row_dict.update(custom)
-                            rows.append(row_dict)
+                            continue
+
+                        merged_rows: list[dict] = []
+                        per_opp_meta: dict[int, dict] = {}
+
+                        for i, opp_id in enumerate(opp_ids):
+                            # Fresh mixin per (source, opp) so state doesn't leak.
+                            mixin = AnalysisPipelineSSEMixin()
+                            suffix = f" (opp {i + 1}/{len(opp_ids)})" if len(opp_ids) > 1 else ""
+                            yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
+
+                            try:
+                                config = pipeline_access._schema_to_config(pipeline_def.schema, pipeline_id)
+                                pipeline = AnalysisPipeline(request)
+                                pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
+                                logger.info(
+                                    f"[PipelineStream] Starting stream for pipeline {pipeline_id}, opp {opp_id}"
+                                )
+                                yield from mixin.stream_pipeline_events(pipeline_stream)
+
+                                result = mixin._pipeline_result
+                                from_cache = mixin._pipeline_from_cache
+
+                                row_count = len(result.rows) if result else 0
+                                per_opp_meta[opp_id] = {
+                                    "row_count": row_count,
+                                    "from_cache": from_cache,
+                                }
+
+                                if result:
+                                    yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
+                                    for row in result.rows:
+
+                                        def format_date(d):
+                                            if d and hasattr(d, "isoformat"):
+                                                return d.isoformat()
+                                            return d
+
+                                        row_dict = {
+                                            "id": getattr(row, "id", None),
+                                            "entity_id": row.entity_id,
+                                            "entity_name": row.entity_name,
+                                            "username": row.username,
+                                            "visit_date": format_date(row.visit_date),
+                                            "total_visits": getattr(row, "total_visits", 0),
+                                            "approved_visits": getattr(row, "approved_visits", 0),
+                                            "pending_visits": getattr(row, "pending_visits", 0),
+                                            "rejected_visits": getattr(row, "rejected_visits", 0),
+                                            "flagged_visits": getattr(row, "flagged_visits", 0),
+                                            "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
+                                            "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
+                                            "opportunity_id": opp_id,
+                                        }
+                                        custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
+                                        if custom:
+                                            row_dict.update(custom)
+                                        merged_rows.append(row_dict)
+                            except Exception as e:
+                                logger.exception(
+                                    "[PipelineStream] Pipeline %s failed for opp %s",
+                                    pipeline_id,
+                                    opp_id,
+                                )
+                                per_opp_meta[opp_id] = {"error": str(e)}
 
                         pipeline_data[alias] = {
-                            "rows": rows,
+                            "rows": merged_rows,
                             "metadata": {
                                 "pipeline_id": pipeline_id,
                                 "pipeline_name": pipeline_def.name,
-                                "row_count": len(rows),
-                                "from_cache": from_cache,
+                                "row_count": len(merged_rows),
+                                "opportunity_ids": list(opp_ids),
+                                "per_opp": per_opp_meta,
                             },
                         }
-
+                finally:
                     pipeline_access.close()
 
                 # Send final complete event with all data
@@ -2426,3 +2503,57 @@ def visit_images_api(request, opp_id):
     except Exception:
         logger.exception("Visit images fetch failed: opp_id=%s", opp_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+class UpdateOpportunityIdsView(LoginRequiredMixin, View):
+    """API endpoint to replace the opportunity_ids list on a workflow definition.
+
+    POST JSON body: {"opportunity_ids": [int, ...]}
+    All IDs are validated against the user's accessible opportunities.
+    """
+
+    def post(self, request, definition_id):
+        from commcare_connect.labs.context import get_org_data
+
+        try:
+            body = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+        raw = body.get("opportunity_ids", [])
+        if not isinstance(raw, list):
+            return JsonResponse({"error": "opportunity_ids must be a list"}, status=400)
+
+        try:
+            opportunity_ids = [int(x) for x in raw]
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid opportunity_ids"}, status=400)
+
+        # Validate against user's accessible opportunities
+        user_opp_ids = {
+            int(o["id"]) for o in (get_org_data(request) or {}).get("opportunities", []) if o.get("id") is not None
+        }
+        unauthorized = [oid for oid in opportunity_ids if oid not in user_opp_ids]
+        if unauthorized:
+            return JsonResponse(
+                {"error": f"Not authorized for opportunities: {unauthorized}"},
+                status=403,
+            )
+
+        data_access = WorkflowDataAccess(request=request)
+        try:
+            result = data_access.update_opportunity_ids(definition_id, opportunity_ids)
+            if not result:
+                return JsonResponse({"error": "Workflow not found"}, status=404)
+            return JsonResponse(
+                {
+                    "success": True,
+                    "definition_id": definition_id,
+                    "opportunity_ids": opportunity_ids,
+                }
+            )
+        except Exception:
+            logger.exception("Failed to update opportunity_ids for %s", definition_id)
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
+        finally:
+            data_access.close()

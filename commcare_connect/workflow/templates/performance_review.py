@@ -193,6 +193,9 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                                 Worker
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                                Opp
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                                 Visits
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -216,6 +219,9 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                                             {worker.name || worker.username}
                                         </div>
                                         <div className="text-sm text-gray-500">{worker.username}</div>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {worker.opportunity_id}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                         {worker.visit_count || 0}
@@ -272,6 +278,7 @@ TEMPLATE = {
     "description": "Review worker performance and mark as confirmed, needs audit, or create tasks",
     "icon": "fa-clipboard-check",
     "color": "green",
+    "multi_opp": True,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": PIPELINE_SCHEMA,
