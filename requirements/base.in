@@ -49,3 +49,5 @@ pydantic-ai
 shapely>=2.0.0  # For coverage maps WKT parsing
 geopandas>=0.14.0  # For coverage maps spatial operations
 markdown  # For solicitation markdown rendering
+mcp>=1.0.0  # MCP server (remote labs MCP)
+django-ratelimit>=4.1.0  # Rate limiting for MCP endpoints

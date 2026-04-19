@@ -172,6 +172,8 @@ django-pghistory==3.9.2
     # via -r requirements/base.in
 django-pgtrigger==4.17.0
     # via django-pghistory
+django-ratelimit==4.1.0
+    # via -r requirements/base.in
 django-redis==6.0.0
     # via -r requirements/base.in
 django-storages[boto3]==1.14.6
@@ -345,6 +347,7 @@ markdown-it-py==4.0.0
     # via rich
 mcp==1.26.0
     # via
+    #   -r requirements/base.in
     #   fastmcp
     #   pydantic-ai-slim
 mdurl==0.1.2
