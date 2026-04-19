@@ -1,6 +1,10 @@
-"""Integration tests for workflow views.
+"""Unit tests for workflow views.
 
-Mocks WorkflowDataAccess and other external dependencies; uses Django test client.
+Uses Django's RequestFactory to construct bare requests and invokes view
+functions / class-based-view dispatchers directly. External dependencies
+like WorkflowDataAccess are mocked. Because RequestFactory does not run
+middleware, middleware-dependent behaviour (CSRF, session, etc.) is
+simulated by attaching the required attributes to the request in each test.
 """
 
 from unittest.mock import MagicMock, patch

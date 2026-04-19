@@ -68,6 +68,19 @@ def workflow_data_access():
         yield wda, mock_api
 
 
+class TestCloseIdempotency:
+    def test_close_is_safe_to_call_twice(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        mock_client = MagicMock()
+        wda.http_client = mock_client
+
+        wda.close()
+        wda.close()  # second call should be a no-op
+
+        mock_client.close.assert_called_once()
+        assert wda.http_client is None
+
+
 class TestCreateDefinitionOpportunityIds:
     def test_opportunity_ids_stored_when_provided(self, workflow_data_access):
         wda, mock_api = workflow_data_access
@@ -308,3 +321,30 @@ class TestGetPipelineDataMultiOpp:
             assert rows[0]["opportunity_id"] == 700
             per_opp = result["visits"]["metadata"]["per_opp"]
             assert "error" in per_opp["825"]
+
+    def test_per_opp_error_metadata_from_execute_pipeline_is_surfaced(self, workflow_data_access):
+        """execute_pipeline's documented contract: never raises, returns
+        {"rows": [], "metadata": {"error": ...}} on failure. Verify
+        get_pipeline_data forwards that error into per_opp[opp_id]."""
+        wda, _ = workflow_data_access
+        definition = self._make_definition(opportunity_ids=[700, 825])
+        wda.get_definition = MagicMock(return_value=definition)
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+
+            def fake_execute(pipeline_id, opp_id):
+                if opp_id == 825:
+                    return {"rows": [], "metadata": {"error": "schema invalid"}}
+                return {"rows": [{"username": "a"}], "metadata": {"row_count": 1}}
+
+            mock_instance.execute_pipeline.side_effect = fake_execute
+
+            result = wda.get_pipeline_data(definition_id=1, opportunity_id=700)
+
+            rows = result["visits"]["rows"]
+            assert len(rows) == 1
+            assert rows[0]["opportunity_id"] == 700
+            per_opp = result["visits"]["metadata"]["per_opp"]
+            assert per_opp["825"].get("error") == "schema invalid"
