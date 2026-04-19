@@ -4,7 +4,12 @@ Labs Models
 LocalLabsRecord and SQL cache models for the labs environment.
 """
 
+from datetime import timedelta
 from typing import Any
+
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
 
 
 class LocalLabsRecord:
@@ -81,3 +86,35 @@ from commcare_connect.labs.analysis.backends.sql.models import (  # noqa: E402, 
     ComputedVisitCache,
     RawVisitCache,
 )
+
+
+class UserConnectToken(models.Model):
+    """Persistent store of a user's production-Connect OAuth token.
+
+    Populated when the user logs into labs via the Connect OAuth flow. Looked up
+    by the MCP server (and eventually by celery tasks) to act on a user's behalf
+    without a browser session.
+
+    The refresh_token is used to extend the access_token when it expires.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="connect_token",
+    )
+    access_token = models.TextField()
+    refresh_token = models.TextField(blank=True)
+    expires_at = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "labs_user_connect_token"
+
+    def __str__(self) -> str:
+        return f"ConnectToken({self.user.username})"
+
+    @property
+    def is_expired(self) -> bool:
+        # Treat tokens within 60 seconds of expiry as expired to avoid races.
+        return timezone.now() >= (self.expires_at - timedelta(seconds=60))
