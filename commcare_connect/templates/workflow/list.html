@@ -4,6 +4,7 @@
 {% block title %}Workflows{% endblock %}
 
 {% block content %}
+{{ user_opportunities|json_script:"user-opportunities" }}
 <style>[x-cloak] { display: none !important; }</style>
 <div class="max-w-6xl mx-auto px-4 py-6">
     <!-- Header -->
@@ -14,11 +15,16 @@
         </div>
         <div class="flex items-center gap-4" x-data="{
             showTemplateModal: false,
+            showOppPickerModal: false,
             creating: false,
             selectedTemplate: null,
+            selectedTemplateMultiOpp: false,
             abortController: null,
             templates: [],
             loadingTemplates: false,
+            availableOpps: [],
+            pickedOppIds: [],
+            primaryOppId: {{ opportunity_id|default:'null' }},
             colorClasses: {
                 green: { bg: 'bg-green-100', text: 'text-green-600', hover: 'hover:border-green-400 hover:bg-green-50' },
                 blue: { bg: 'bg-blue-100', text: 'text-blue-600', hover: 'hover:border-blue-400 hover:bg-blue-50' },
@@ -27,6 +33,13 @@
                 red: { bg: 'bg-red-100', text: 'text-red-600', hover: 'hover:border-red-400 hover:bg-red-50' },
                 gray: { bg: 'bg-gray-100', text: 'text-gray-600', hover: 'hover:border-gray-400 hover:bg-gray-50' }
             },
+            loadAvailableOpps() {
+                if (this.availableOpps.length > 0) return;
+                try {
+                    const el = document.getElementById('user-opportunities');
+                    if (el) this.availableOpps = JSON.parse(el.textContent);
+                } catch (e) { console.error('Failed to parse user-opportunities', e); }
+            },
             async loadTemplates() {
                 if (this.templates.length > 0) return;
                 this.loadingTemplates = true;
@@ -34,11 +47,43 @@
                     const response = await fetch('{% url 'labs:workflow:api_templates' %}');
                     const data = await response.json();
                     this.templates = data.templates || [];
-                } catch (e) {
-                    console.error('Failed to load templates:', e);
-                } finally {
-                    this.loadingTemplates = false;
+                } catch (e) { console.error('Failed to load templates:', e); }
+                finally { this.loadingTemplates = false; }
+            },
+            openOppPicker(templateKey) {
+                this.selectedTemplate = templateKey;
+                this.selectedTemplateMultiOpp = true;
+                this.loadAvailableOpps();
+                this.pickedOppIds = this.primaryOppId ? [this.primaryOppId] : [];
+                this.showTemplateModal = false;
+                this.showOppPickerModal = true;
+            },
+            submitCreate(templateKey, form) {
+                const isMulti = (this.templates.find(t => t.key === templateKey) || {}).multi_opp;
+                if (isMulti) { this.openOppPicker(templateKey); return; }
+                this.createWorkflow(templateKey, form);
+            },
+            toggleOpp(oppId) {
+                const i = this.pickedOppIds.indexOf(oppId);
+                if (i >= 0) this.pickedOppIds.splice(i, 1);
+                else this.pickedOppIds.push(oppId);
+            },
+            async createWorkflowMultiOpp() {
+                if (this.creating) return;
+                if (this.pickedOppIds.length === 0) {
+                    alert('Pick at least one opportunity.');
+                    return;
                 }
+                this.creating = true;
+                const form = new FormData();
+                form.append('template', this.selectedTemplate);
+                form.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+                for (const oid of this.pickedOppIds) form.append('opportunity_ids', oid);
+                try {
+                    const response = await fetch('{% url 'labs:workflow:create_from_template' %}', { method: 'POST', body: form });
+                    if (response.ok || response.redirected) window.location.href = response.url;
+                    else { console.error('Failed to create workflow', response.status); this.creating = false; }
+                } catch (e) { console.error(e); this.creating = false; }
             },
             async createWorkflow(templateKey, form) {
                 if (this.creating) return;
@@ -71,6 +116,7 @@
                 this.creating = false;
                 this.selectedTemplate = null;
                 this.showTemplateModal = false;
+                this.showOppPickerModal = false;
             },
             getColorClass(color, type) {
                 return (this.colorClasses[color] || this.colorClasses.gray)[type];
@@ -124,7 +170,7 @@
                             <!-- Dynamic Template List -->
                             <template x-for="t in templates" :key="t.key">
                                 <form method="post" action="{% url 'labs:workflow:create_from_template' %}"
-                                      @submit.prevent="createWorkflow(t.key, $el)">
+                                      @submit.prevent="submitCreate(t.key, $el)">
                                     {% csrf_token %}
                                     <input type="hidden" name="template" :value="t.key">
                                     <button type="submit"
@@ -142,7 +188,13 @@
                                                    :class="getColorClass(t.color, 'text')"></i>
                                             </div>
                                             <div class="flex-1">
-                                                <h4 class="font-medium text-gray-900 group-hover:text-blue-700" x-text="t.name"></h4>
+                                                <h4 class="font-medium text-gray-900 group-hover:text-blue-700">
+                                                    <span x-text="t.name"></span>
+                                                    <span x-show="t.multi_opp"
+                                                          class="ml-2 inline-block px-2 py-0.5 rounded text-xs font-normal bg-indigo-100 text-indigo-700">
+                                                        Multi-opp
+                                                    </span>
+                                                </h4>
                                                 <p class="text-sm text-gray-500 mt-1" x-text="t.description"></p>
                                             </div>
                                             <div class="flex-shrink-0 text-gray-400 group-hover:text-blue-600">
@@ -160,6 +212,52 @@
                                     type="button"
                                     class="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
                                 Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Opp Picker Modal (for multi_opp templates) -->
+            <div x-show="showOppPickerModal"
+                 x-cloak
+                 class="fixed inset-0 z-50 overflow-y-auto"
+                 @keydown.escape.window="cancelCreating()">
+                <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                     @click="!creating && (showOppPickerModal = false)"></div>
+                <div class="flex min-h-full items-center justify-center p-4">
+                    <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full p-6" @click.stop>
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">Select Opportunities</h3>
+                        <p class="text-sm text-gray-500 mb-4">
+                            This workflow can pull data from multiple opportunities. Pick the ones you want.
+                        </p>
+                        <div class="max-h-96 overflow-y-auto border border-gray-200 rounded p-2 mb-4">
+                            <template x-for="opp in availableOpps" :key="opp.id">
+                                <label class="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                                    <input type="checkbox"
+                                           :value="opp.id"
+                                           :checked="pickedOppIds.includes(opp.id)"
+                                           @change="toggleOpp(opp.id)">
+                                    <span x-text="opp.name"></span>
+                                    <span x-show="opp.id === primaryOppId"
+                                          class="text-xs text-gray-500">(current)</span>
+                                </label>
+                            </template>
+                        </div>
+                        <div class="flex justify-end gap-2">
+                            <button type="button"
+                                    @click="showOppPickerModal = false"
+                                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200">
+                                Cancel
+                            </button>
+                            <button type="button"
+                                    :disabled="creating || pickedOppIds.length === 0"
+                                    @click="createWorkflowMultiOpp()"
+                                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50">
+                                <span x-show="!creating">Create</span>
+                                <span x-show="creating" x-cloak>
+                                    <i class="fa-solid fa-spinner fa-spin mr-1"></i>Creating...
+                                </span>
                             </button>
                         </div>
                     </div>
