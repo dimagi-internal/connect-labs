@@ -103,3 +103,38 @@ class MCPAccessToken(models.Model):
         """Update last_used_at. Call on every successful request."""
         self.last_used_at = timezone.now()
         self.save(update_fields=["last_used_at"])
+
+
+class MCPAuditLog(models.Model):
+    """Audit trail of every MCP tool call.
+
+    Writes are logged in full (args, version transitions). Reads log the tool
+    name and scope only (args omitted to save storage — argument shapes for
+    reads are trivial).
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="mcp_audit_logs",
+    )
+    tool_name = models.CharField(max_length=100, db_index=True)
+    is_write = models.BooleanField(default=False)
+    arguments = models.JSONField(default=dict, blank=True)
+    success = models.BooleanField()
+    error_code = models.CharField(max_length=50, blank=True)
+    version_before = models.IntegerField(null=True, blank=True)
+    version_after = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "mcp_audit_log"
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["tool_name", "-created_at"]),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.tool_name} by {self.user} at {self.created_at}"
