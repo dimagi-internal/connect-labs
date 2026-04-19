@@ -172,8 +172,6 @@ django-pghistory==3.9.2
     # via -r requirements/base.in
 django-pgtrigger==4.17.0
     # via django-pghistory
-django-ratelimit==4.1.0
-    # via -r requirements/base.in
 django-redis==6.0.0
     # via -r requirements/base.in
 django-storages[boto3]==1.14.6

@@ -41,4 +41,8 @@ def enforce_write_limit(user) -> None:
     if count == 0:
         cache.set(key, 1, window_sec)
     else:
-        cache.incr(key)
+        try:
+            cache.incr(key)
+        except ValueError:
+            # Key expired between cache.get() and cache.incr() — re-seed it.
+            cache.set(key, 1, window_sec)
