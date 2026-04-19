@@ -294,9 +294,10 @@ class BaseDataAccess:
         )
 
     def close(self):
-        """Close HTTP client."""
+        """Close HTTP client. Safe to call multiple times (idempotent)."""
         if self.http_client:
             self.http_client.close()
+            self.http_client = None
 
     def __enter__(self):
         return self
@@ -1689,8 +1690,19 @@ class PipelineDataAccess(BaseDataAccess):
         """
         Execute a pipeline and return results.
 
+        Contract: this method never raises. On any failure (pipeline not
+        found, missing schema, analysis error) it returns the same shape
+        as the success case with `metadata["error"]` populated and an empty
+        `rows` list. Callers iterating over multiple opportunities should
+        inspect `result["metadata"].get("error")` to detect per-opp failures
+        rather than wrapping the call in try/except.
+
         Returns:
-            Dict with rows and metadata
+            Dict with keys:
+                "rows": list of row dicts (empty on failure)
+                "metadata": dict with at least one of:
+                    - {"row_count", "from_cache", "pipeline_name", "terminal_stage"} on success
+                    - {"error": <str>} on failure
         """
         from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
 
@@ -1755,7 +1767,7 @@ class PipelineDataAccess(BaseDataAccess):
             }
 
         except Exception as e:
-            logger.error(f"Pipeline execution failed: {e}", exc_info=True)
+            logger.exception("Pipeline execution failed")
             return {"rows": [], "metadata": {"error": str(e)}}
 
     def _schema_to_config(self, schema: dict, definition_id: int):
