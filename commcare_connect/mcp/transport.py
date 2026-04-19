@@ -9,6 +9,7 @@ import logging
 from django.http import HttpRequest, JsonResponse
 
 from .models import MCPAuditLog
+from .rate_limit import enforce_write_limit
 from .tool_registry import MCPToolError, get_tool, list_tools
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,14 @@ def _handle_tools_call(params: dict, user) -> dict:
     if tool is None:
         _log(user, name, arguments, success=False, error_code="NOT_FOUND")
         raise MCPToolError("NOT_FOUND", f"Unknown tool: {name}")
+
+    is_write = _is_write_tool(name)
+    if is_write:
+        try:
+            enforce_write_limit(user)
+        except MCPToolError as e:
+            _log(user, name, arguments, success=False, error_code=e.code, is_write=True)
+            raise
 
     try:
         result = tool.handler(user=user, **arguments)
