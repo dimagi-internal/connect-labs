@@ -8,6 +8,7 @@ import logging
 
 from django.http import HttpRequest, JsonResponse
 
+from .models import MCPAuditLog
 from .tool_registry import MCPToolError, get_tool, list_tools
 
 logger = logging.getLogger(__name__)
@@ -84,14 +85,83 @@ def _handle_tools_call(params: dict, user) -> dict:
 
     tool = get_tool(name)
     if tool is None:
+        _log(user, name, arguments, success=False, error_code="NOT_FOUND")
         raise MCPToolError("NOT_FOUND", f"Unknown tool: {name}")
 
-    result = tool.handler(user=user, **arguments)
+    try:
+        result = tool.handler(user=user, **arguments)
+    except MCPToolError as e:
+        _log(user, name, arguments, success=False, error_code=e.code, is_write=_is_write_tool(name))
+        raise
+    except Exception:
+        _log(user, name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=_is_write_tool(name))
+        raise
+
+    version_before = None
+    version_after = None
+    if isinstance(result, dict):
+        version_before = result.get("_version_before")
+        version_after = result.get("_version_after")
+        # Strip private keys before returning to caller
+        result = {k: v for k, v in result.items() if not k.startswith("_")}
+
+    _log(
+        user,
+        name,
+        arguments,
+        success=True,
+        is_write=_is_write_tool(name),
+        version_before=version_before,
+        version_after=version_after,
+    )
     return {
         "isError": False,
         "content": [{"type": "text", "text": json.dumps(result)}],
         "structuredContent": result if isinstance(result, dict) else {"value": result},
     }
+
+
+def _is_write_tool(name: str) -> bool:
+    # Writes have these prefixes; extended in Plan 2 as tools are added.
+    return any(
+        name.startswith(p)
+        for p in (
+            "workflow_update",
+            "workflow_clone",
+            "workflow_revert",
+            "workflow_set_template",
+            "workflow_create_from_template",
+            "pipeline_update",
+        )
+    )
+
+
+def _log(
+    user,
+    tool_name: str,
+    arguments: dict,
+    *,
+    success: bool,
+    is_write: bool = False,
+    error_code: str = "",
+    version_before: int | None = None,
+    version_after: int | None = None,
+) -> None:
+    """Best-effort audit write. Never raises — failure to log must not
+    abort a tool call."""
+    try:
+        MCPAuditLog.objects.create(
+            user=user if (user and user.is_authenticated) else None,
+            tool_name=tool_name,
+            is_write=is_write,
+            arguments=arguments if is_write else {},
+            success=success,
+            error_code=error_code or "",
+            version_before=version_before,
+            version_after=version_after,
+        )
+    except Exception:
+        logger.exception("Failed to write MCPAuditLog row (non-fatal)")
 
 
 def _jsonrpc_error(msg_id, code: int, message: str) -> JsonResponse:
