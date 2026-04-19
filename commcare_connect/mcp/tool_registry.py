@@ -14,6 +14,7 @@ class Tool:
     description: str
     input_schema: dict
     handler: Callable[..., Any]
+    is_write: bool = False
 
 
 _REGISTRY: dict[str, Tool] = {}
@@ -24,12 +25,13 @@ def register(
     name: str,
     description: str,
     input_schema: dict,
+    is_write: bool = False,
 ) -> Callable[[Callable], Callable]:
     """Decorator that registers a tool handler.
 
-    The handler receives kwargs matching `input_schema.properties` plus a
-    `user` kwarg (Django User, from the authenticated PAT). It should return
-    a JSON-serializable value on success or raise MCPToolError on failure.
+    Set is_write=True for tools that mutate labs state. Write tools are
+    subject to per-user rate limiting and have their full arguments captured
+    in the audit log.
     """
 
     def decorator(fn: Callable) -> Callable:
@@ -40,6 +42,7 @@ def register(
             description=description,
             input_schema=input_schema,
             handler=fn,
+            is_write=is_write,
         )
         return fn
 
