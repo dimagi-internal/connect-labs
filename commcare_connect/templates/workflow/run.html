@@ -27,7 +27,7 @@
         </ol>
     </nav>
 
-    {% if has_context and not error and workflow_data %}
+    {% if has_context and not error and workflow_data and workflow_data.multi_opp %}
     {{ user_opportunities|json_script:"user-opportunities" }}
     <div x-data="{
             show: false,

@@ -68,6 +68,11 @@ class WorkflowDefinitionRecord(LocalLabsRecord):
         return self.data.get("config", {}).get("templateType", "")
 
     @property
+    def multi_opp(self) -> bool:
+        """Whether this workflow was created from a multi-opp template."""
+        return bool(self.data.get("config", {}).get("multi_opp", False))
+
+    @property
     def is_shared(self) -> bool:
         return self.data.get("is_shared", False)
 
@@ -914,17 +919,20 @@ class WorkflowDataAccess(BaseDataAccess):
                     continue
 
                 merged_rows: list[dict] = []
-                per_opp_meta: dict[int, dict] = {}
+                # Keys are stringified because JSON serialization coerces dict
+                # keys to strings. Using str keys here matches what JS clients
+                # see, so `metadata.per_opp[String(oppId)]` works end-to-end.
+                per_opp_meta: dict[str, dict] = {}
                 for opp_id in opp_ids:
                     try:
                         pipeline_result = pipeline_access.execute_pipeline(pipeline_id, opp_id)
                         merged_rows.extend(
                             {**row, "opportunity_id": opp_id} for row in pipeline_result.get("rows", [])
                         )
-                        per_opp_meta[opp_id] = pipeline_result.get("metadata", {})
+                        per_opp_meta[str(opp_id)] = pipeline_result.get("metadata", {})
                     except Exception as e:
                         logger.exception("Pipeline %s failed for opp %s", pipeline_id, opp_id)
-                        per_opp_meta[opp_id] = {"error": str(e)}
+                        per_opp_meta[str(opp_id)] = {"error": str(e)}
 
                 results[alias] = {
                     "rows": merged_rows,
