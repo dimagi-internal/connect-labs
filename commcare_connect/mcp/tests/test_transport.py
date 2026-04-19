@@ -36,10 +36,11 @@ def test_initialize_returns_server_info(client, auth_header):
 
 
 @pytest.mark.django_db
-def test_tools_list_returns_empty_catalog(client, auth_header):
+def test_tools_list_returns_catalog(client, auth_header):
     resp, data = _rpc(client, "tools/list", headers=auth_header)
     assert resp.status_code == 200
-    assert data["result"] == {"tools": []}
+    tool_names = [t["name"] for t in data["result"]["tools"]]
+    assert "workflow_list" in tool_names
 
 
 @pytest.mark.django_db
