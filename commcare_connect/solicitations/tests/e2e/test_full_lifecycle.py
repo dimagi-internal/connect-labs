@@ -20,8 +20,11 @@ SCREENSHOTS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "..", "..", "screenshots", "e2e", "solicitation_lifecycle"
 )
 
-# Add MCP tools to path — 4 levels up from e2e/ to project root
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "tools", "commcare_mcp"))
+# Add MCP tools to path — 4 levels up from e2e/ to project root, then into _pending_migration
+sys.path.insert(
+    0,
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "tools", "commcare_hq_mcp", "_pending_migration"),
+)
 
 
 def _screenshot(page, name):

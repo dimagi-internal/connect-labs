@@ -9,7 +9,7 @@ Auth is automatic:
 - Connect API: reads CLI OAuth token from ~/.commcare-connect/token.json
 
 Usage (stdio, for Claude Code):
-    python tools/commcare_mcp/server.py
+    python tools/commcare_hq_mcp/server.py
 """
 
 from __future__ import annotations
