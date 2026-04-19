@@ -375,7 +375,7 @@ class WorkflowDataAccess(BaseDataAccess):
         Args:
             name: Workflow name
             description: Workflow description
-            **kwargs: Additional data fields (statuses, config, pipeline_sources)
+            **kwargs: Additional data fields (statuses, config, pipeline_sources, opportunity_ids)
 
         Returns:
             Created WorkflowDefinitionRecord

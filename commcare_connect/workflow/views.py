@@ -340,8 +340,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             for oid in effective_opp_ids:
                 try:
                     for w in data_access.get_workers(oid):
-                        w["opportunity_id"] = oid
-                        workers.append(w)
+                        workers.append({**w, "opportunity_id": oid})
                 except Exception:
                     logger.exception("Failed to load workers for opp %s", oid)
             context["workers"] = workers
@@ -421,6 +420,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     # MBW monitoring actions
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
                     "completeRun": f"/labs/workflow/api/run/{run_data['id']}/complete/",
+                    "updateOpportunityIds": f"/labs/workflow/api/{definition_id}/opportunity-ids/",
                 },
             }
 
@@ -2215,6 +2215,11 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                 # Determine which opps to pull data from
                 opp_ids = definition.opportunity_ids or [int(opportunity_id)]
 
+                def format_date(d):
+                    if d and hasattr(d, "isoformat"):
+                        return d.isoformat()
+                    return d
+
                 # Execute each pipeline source with streaming.
                 # Pipeline definitions are scoped to the primary opp (where the
                 # workflow record was created), so we use one pipeline_access
@@ -2264,7 +2269,9 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                                 pipeline = AnalysisPipeline(request)
                                 pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
                                 logger.info(
-                                    f"[PipelineStream] Starting stream for pipeline {pipeline_id}, opp {opp_id}"
+                                    "[PipelineStream] Starting stream for pipeline %s, opp %s",
+                                    pipeline_id,
+                                    opp_id,
                                 )
                                 yield from mixin.stream_pipeline_events(pipeline_stream)
 
@@ -2280,12 +2287,6 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                                 if result:
                                     yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
                                     for row in result.rows:
-
-                                        def format_date(d):
-                                            if d and hasattr(d, "isoformat"):
-                                                return d.isoformat()
-                                            return d
-
                                         row_dict = {
                                             "id": getattr(row, "id", None),
                                             "entity_id": row.entity_id,

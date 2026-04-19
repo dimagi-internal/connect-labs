@@ -14,6 +14,9 @@ Each template file should export a TEMPLATE dict with:
 - render_code: JSX render code string
 - pipeline_schema: Optional pipeline schema dict
 - pipeline_schemas: Optional list of pipeline schema dicts (for multi-source templates)
+- multi_opp: Optional bool (default False). When True, the template opts in to
+  multi-opportunity support: the create flow shows an opp picker, the run page
+  shows an opp editor, and pipeline rows/workers are tagged with opportunity_id.
 
 Usage:
     from commcare_connect.workflow.templates import (

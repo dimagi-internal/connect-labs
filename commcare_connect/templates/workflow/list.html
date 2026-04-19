@@ -81,7 +81,7 @@
                 for (const oid of this.pickedOppIds) form.append('opportunity_ids', oid);
                 try {
                     const response = await fetch('{% url 'labs:workflow:create_from_template' %}', { method: 'POST', body: form });
-                    if (response.ok || response.redirected) window.location.href = response.url;
+                    if (response.redirected) window.location.href = response.url;
                     else { console.error('Failed to create workflow', response.status); this.creating = false; }
                 } catch (e) { console.error(e); this.creating = false; }
             },

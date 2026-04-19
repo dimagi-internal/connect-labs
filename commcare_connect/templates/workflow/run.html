@@ -41,7 +41,7 @@
                 try {
                     const el = document.getElementById('user-opportunities');
                     if (el) this.availableOpps = JSON.parse(el.textContent);
-                } catch (e) {}
+                } catch (e) { console.error('Failed to parse user-opportunities', e); }
             },
             toggleOpp(oid) {
                 const i = this.pickedOppIds.indexOf(oid);
@@ -52,7 +52,7 @@
                 if (this.saving) return;
                 this.saving = true;
                 try {
-                    const response = await fetch('/labs/workflow/api/' + this.definitionId + '/opportunity-ids/', {
+                    const response = await fetch('{{ workflow_data.apiEndpoints.updateOpportunityIds }}', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': this.csrf },
                         body: JSON.stringify({ opportunity_ids: this.pickedOppIds }),
