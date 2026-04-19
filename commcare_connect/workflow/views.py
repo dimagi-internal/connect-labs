@@ -2215,103 +2215,116 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                 # Determine which opps to pull data from
                 opp_ids = definition.opportunity_ids or [int(opportunity_id)]
 
-                # Execute each pipeline source with streaming
+                # Execute each pipeline source with streaming.
+                # Pipeline definitions are scoped to the primary opp (where the
+                # workflow record was created), so we use one pipeline_access
+                # bound to the primary opp for definition lookup, and pass the
+                # per-opp value at execute time.
                 pipeline_data = {}
+                pipeline_access = PipelineDataAccess(
+                    request=request,
+                    access_token=labs_oauth.get("access_token"),
+                    opportunity_id=int(opportunity_id),
+                )
 
-                for source in definition.pipeline_sources:
-                    pipeline_id = source.get("pipeline_id")
-                    alias = source.get("alias", f"pipeline_{pipeline_id}")
+                try:
+                    for source in definition.pipeline_sources:
+                        pipeline_id = source.get("pipeline_id")
+                        alias = source.get("alias", f"pipeline_{pipeline_id}")
 
-                    if not pipeline_id:
-                        continue
-
-                    merged_rows: list[dict] = []
-                    per_opp_meta: dict[int, dict] = {}
-                    pipeline_name = None
-
-                    for i, opp_id in enumerate(opp_ids):
-                        # Fresh mixin per iteration so state doesn't leak across opps
-                        mixin = AnalysisPipelineSSEMixin()
-                        pipeline_access = PipelineDataAccess(
-                            request=request,
-                            access_token=labs_oauth.get("access_token"),
-                            opportunity_id=opp_id,
-                        )
+                        if not pipeline_id:
+                            continue
 
                         pipeline_def = pipeline_access.get_definition(pipeline_id)
                         if not pipeline_def:
-                            per_opp_meta[opp_id] = {"error": f"Pipeline {pipeline_id} not found"}
                             yield send_sse_event(f"Pipeline {pipeline_id} not found")
-                            pipeline_access.close()
+                            pipeline_data[alias] = {
+                                "rows": [],
+                                "metadata": {
+                                    "pipeline_id": pipeline_id,
+                                    "pipeline_name": None,
+                                    "row_count": 0,
+                                    "opportunity_ids": list(opp_ids),
+                                    "per_opp": {oid: {"error": "Pipeline not found"} for oid in opp_ids},
+                                },
+                            }
                             continue
-                        pipeline_name = pipeline_def.name
 
-                        suffix = f" (opp {i + 1}/{len(opp_ids)})" if len(opp_ids) > 1 else ""
-                        yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
+                        merged_rows: list[dict] = []
+                        per_opp_meta: dict[int, dict] = {}
 
-                        try:
-                            config = pipeline_access._schema_to_config(pipeline_def.schema, pipeline_id)
-                            pipeline = AnalysisPipeline(request)
-                            pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
-                            logger.info(f"[PipelineStream] Starting stream for pipeline {pipeline_id}, opp {opp_id}")
-                            yield from mixin.stream_pipeline_events(pipeline_stream)
+                        for i, opp_id in enumerate(opp_ids):
+                            # Fresh mixin per (source, opp) so state doesn't leak.
+                            mixin = AnalysisPipelineSSEMixin()
+                            suffix = f" (opp {i + 1}/{len(opp_ids)})" if len(opp_ids) > 1 else ""
+                            yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
 
-                            result = mixin._pipeline_result
-                            from_cache = mixin._pipeline_from_cache
+                            try:
+                                config = pipeline_access._schema_to_config(pipeline_def.schema, pipeline_id)
+                                pipeline = AnalysisPipeline(request)
+                                pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
+                                logger.info(
+                                    f"[PipelineStream] Starting stream for pipeline {pipeline_id}, opp {opp_id}"
+                                )
+                                yield from mixin.stream_pipeline_events(pipeline_stream)
 
-                            if result:
-                                yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
-                                for row in result.rows:
+                                result = mixin._pipeline_result
+                                from_cache = mixin._pipeline_from_cache
 
-                                    def format_date(d):
-                                        if d and hasattr(d, "isoformat"):
-                                            return d.isoformat()
-                                        return d
-
-                                    row_dict = {
-                                        "id": getattr(row, "id", None),
-                                        "entity_id": row.entity_id,
-                                        "entity_name": row.entity_name,
-                                        "username": row.username,
-                                        "visit_date": format_date(row.visit_date),
-                                        "total_visits": getattr(row, "total_visits", 0),
-                                        "approved_visits": getattr(row, "approved_visits", 0),
-                                        "pending_visits": getattr(row, "pending_visits", 0),
-                                        "rejected_visits": getattr(row, "rejected_visits", 0),
-                                        "flagged_visits": getattr(row, "flagged_visits", 0),
-                                        "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
-                                        "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
-                                        "opportunity_id": opp_id,
-                                    }
-                                    custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
-                                    if custom:
-                                        row_dict.update(custom)
-                                    merged_rows.append(row_dict)
-
+                                row_count = len(result.rows) if result else 0
                                 per_opp_meta[opp_id] = {
-                                    "row_count": len(result.rows),
+                                    "row_count": row_count,
                                     "from_cache": from_cache,
                                 }
-                        except Exception as e:
-                            logger.exception(
-                                "[PipelineStream] Pipeline %s failed for opp %s",
-                                pipeline_id,
-                                opp_id,
-                            )
-                            per_opp_meta[opp_id] = {"error": str(e)}
-                        finally:
-                            pipeline_access.close()
 
-                    pipeline_data[alias] = {
-                        "rows": merged_rows,
-                        "metadata": {
-                            "pipeline_id": pipeline_id,
-                            "pipeline_name": pipeline_name,
-                            "row_count": len(merged_rows),
-                            "opportunity_ids": list(opp_ids),
-                            "per_opp": per_opp_meta,
-                        },
-                    }
+                                if result:
+                                    yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
+                                    for row in result.rows:
+
+                                        def format_date(d):
+                                            if d and hasattr(d, "isoformat"):
+                                                return d.isoformat()
+                                            return d
+
+                                        row_dict = {
+                                            "id": getattr(row, "id", None),
+                                            "entity_id": row.entity_id,
+                                            "entity_name": row.entity_name,
+                                            "username": row.username,
+                                            "visit_date": format_date(row.visit_date),
+                                            "total_visits": getattr(row, "total_visits", 0),
+                                            "approved_visits": getattr(row, "approved_visits", 0),
+                                            "pending_visits": getattr(row, "pending_visits", 0),
+                                            "rejected_visits": getattr(row, "rejected_visits", 0),
+                                            "flagged_visits": getattr(row, "flagged_visits", 0),
+                                            "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
+                                            "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
+                                            "opportunity_id": opp_id,
+                                        }
+                                        custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
+                                        if custom:
+                                            row_dict.update(custom)
+                                        merged_rows.append(row_dict)
+                            except Exception as e:
+                                logger.exception(
+                                    "[PipelineStream] Pipeline %s failed for opp %s",
+                                    pipeline_id,
+                                    opp_id,
+                                )
+                                per_opp_meta[opp_id] = {"error": str(e)}
+
+                        pipeline_data[alias] = {
+                            "rows": merged_rows,
+                            "metadata": {
+                                "pipeline_id": pipeline_id,
+                                "pipeline_name": pipeline_def.name,
+                                "row_count": len(merged_rows),
+                                "opportunity_ids": list(opp_ids),
+                                "per_opp": per_opp_meta,
+                            },
+                        }
+                finally:
+                    pipeline_access.close()
 
                 # Send final complete event with all data
                 yield send_sse_event(
