@@ -1,6 +1,7 @@
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
+from . import tools  # noqa: F401  — trigger tool registration at import time
 from .auth import authenticate_request
 from .transport import handle_request
 
