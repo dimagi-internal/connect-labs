@@ -137,6 +137,7 @@ LOCAL_APPS = [
     "commcare_connect.coverage",
     "commcare_connect.commcarehq",  # stub: HQServer model for FK references
     "commcare_connect.labs.admin_boundaries",
+    "commcare_connect.mcp",
     "commcare_connect.multidb",
     "commcare_connect.opportunity",
     "commcare_connect.organization",
@@ -481,3 +482,7 @@ SCALE_VALIDATION_API_KEY = env("SCALE_VALIDATION_API_KEY", default="")
 # Chatbot Widget Settings
 CHATBOT_ID = env("CHATBOT_ID", default="")
 CHATBOT_EMBED_KEY = env("CHATBOT_EMBED_KEY", default="")
+
+# Labs MCP rate limits (per-user, per-time-window)
+MCP_WRITE_RATE_LIMIT = env("MCP_WRITE_RATE_LIMIT", default="30/m")
+# "30/m" → 30 writes per minute per user. Reads uncapped.

@@ -1,0 +1,54 @@
+"""Create an MCP Personal Access Token.
+
+Usage:
+    python manage.py mcp_create_token --user alice --name my-laptop
+    python manage.py mcp_create_token --user alice --name ci --ttl-days 30
+"""
+from django.core.management.base import BaseCommand, CommandError
+
+from commcare_connect.mcp.models import MCPAccessToken
+from commcare_connect.users.models import User
+
+
+class Command(BaseCommand):
+    help = "Create an MCP Personal Access Token. Prints the raw token to stdout (only shown once)."
+
+    def add_arguments(self, parser):
+        parser.add_argument("--user", required=True, help="Username to issue token for")
+        parser.add_argument("--name", required=True, help="Label for this token (e.g. 'laptop')")
+        parser.add_argument(
+            "--ttl-days",
+            type=int,
+            default=90,
+            help="Lifetime in days (default: 90). Pass 0 for no expiry.",
+        )
+
+    def handle(self, *args, **opts):
+        username = opts["user"]
+        name = opts["name"]
+        ttl = opts["ttl_days"] or None
+
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            raise CommandError(f"No user with username {username!r}")
+
+        _, raw = MCPAccessToken.create_token(user, name=name, ttl_days=ttl)
+
+        self.stdout.write(self.style.SUCCESS("Token created. Store it now — it is not retrievable later.\n"))
+        self.stdout.write(f"Token: {raw}\n")
+        self.stdout.write("\nAdd this to your .claude/mcp.json:\n")
+        config_snippet = (
+            "{\n"
+            '  "mcpServers": {\n'
+            '    "connect_labs": {\n'
+            '      "type": "http",\n'
+            '      "url": "https://labs.connect.dimagi.com/mcp/",\n'
+            '      "headers": {\n'
+            f'        "Authorization": "Bearer {raw}"\n'
+            "      }\n"
+            "    }\n"
+            "  }\n"
+            "}\n"
+        )
+        self.stdout.write(self.style.WARNING(config_snippet))
