@@ -89,8 +89,7 @@ def _handle_tools_call(params: dict, user) -> dict:
         _log(user, name, arguments, success=False, error_code="NOT_FOUND")
         raise MCPToolError("NOT_FOUND", f"Unknown tool: {name}")
 
-    is_write = _is_write_tool(name)
-    if is_write:
+    if tool.is_write:
         try:
             enforce_write_limit(user)
         except MCPToolError as e:
@@ -100,10 +99,10 @@ def _handle_tools_call(params: dict, user) -> dict:
     try:
         result = tool.handler(user=user, **arguments)
     except MCPToolError as e:
-        _log(user, name, arguments, success=False, error_code=e.code, is_write=_is_write_tool(name))
+        _log(user, name, arguments, success=False, error_code=e.code, is_write=tool.is_write)
         raise
     except Exception:
-        _log(user, name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=_is_write_tool(name))
+        _log(user, name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=tool.is_write)
         raise
 
     version_before = None
@@ -119,7 +118,7 @@ def _handle_tools_call(params: dict, user) -> dict:
         name,
         arguments,
         success=True,
-        is_write=_is_write_tool(name),
+        is_write=tool.is_write,
         version_before=version_before,
         version_after=version_after,
     )
@@ -128,21 +127,6 @@ def _handle_tools_call(params: dict, user) -> dict:
         "content": [{"type": "text", "text": json.dumps(result)}],
         "structuredContent": result if isinstance(result, dict) else {"value": result},
     }
-
-
-def _is_write_tool(name: str) -> bool:
-    # Writes have these prefixes; extended in Plan 2 as tools are added.
-    return any(
-        name.startswith(p)
-        for p in (
-            "workflow_update",
-            "workflow_clone",
-            "workflow_revert",
-            "workflow_set_template",
-            "workflow_create_from_template",
-            "pipeline_update",
-        )
-    )
 
 
 def _log(

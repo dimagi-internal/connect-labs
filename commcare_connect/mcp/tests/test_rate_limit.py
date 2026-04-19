@@ -23,6 +23,7 @@ def write_tool():
         name="workflow_update_ratetest",
         description="rate-limit test tool",
         input_schema={"type": "object"},
+        is_write=True,
     )
     def _handler(user):
         return {"ok": True}
@@ -75,4 +76,41 @@ def test_rate_limit_is_per_user(client, write_tool):
     _call(client, a_raw)  # alice hits her cap
     # Bob should still be allowed
     resp = _call(client, b_raw)
+    assert resp.json()["result"]["isError"] is False
+
+
+@pytest.fixture
+def read_only_tool():
+    @register(
+        name="workflow_get_readtest",
+        description="read tool",
+        input_schema={"type": "object"},
+        is_write=False,
+    )
+    def _handler(user):
+        return {"ok": True}
+
+    yield
+    _REGISTRY.pop("workflow_get_readtest", None)
+
+
+@pytest.mark.django_db
+@override_settings(MCP_WRITE_RATE_LIMIT="0/m")
+def test_read_tool_bypasses_rate_limit(client, read_only_tool):
+    """Reads are not rate-limited even if writes cap is 0."""
+    user = User.objects.create(username="read-nolimit")
+    _, raw = MCPAccessToken.create_token(user, name="t")
+    resp = client.post(
+        reverse("mcp:endpoint"),
+        data=json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "workflow_get_readtest", "arguments": {}},
+            }
+        ),
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"Bearer {raw}",
+    )
     assert resp.json()["result"]["isError"] is False
