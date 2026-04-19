@@ -174,7 +174,9 @@ pipelines: {
     rows: [{ ...fields, opportunity_id }],  // every row tagged
     metadata: {
       opportunity_ids: number[],
-      per_opp: { [opp_id]: { row_count, from_cache, error? } },
+      // Keys are strings because JSON serialization coerces dict keys to strings.
+      // JS access pattern: `metadata.per_opp[String(oppId)]`.
+      per_opp: { [opp_id_as_string: string]: { row_count, from_cache, error? } },
       row_count: number,
     }
   }

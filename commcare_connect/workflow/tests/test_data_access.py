@@ -39,6 +39,20 @@ class TestOpportunityIdsProperty:
         assert rec.opportunity_ids == []
 
 
+class TestMultiOppProperty:
+    def test_defaults_false(self):
+        rec = _make_definition_record(data={"name": "X", "description": "Y"})
+        assert rec.multi_opp is False
+
+    def test_true_when_config_sets_it(self):
+        rec = _make_definition_record(data={"name": "X", "description": "Y", "config": {"multi_opp": True}})
+        assert rec.multi_opp is True
+
+    def test_false_when_config_explicitly_false(self):
+        rec = _make_definition_record(data={"name": "X", "description": "Y", "config": {"multi_opp": False}})
+        assert rec.multi_opp is False
+
+
 @pytest.fixture
 def workflow_data_access():
     """Instantiate WorkflowDataAccess with a mocked LabsRecordAPIClient."""
@@ -268,7 +282,8 @@ class TestGetPipelineDataMultiOpp:
             meta = result["visits"]["metadata"]
             assert meta["opportunity_ids"] == [700, 825]
             assert meta["row_count"] == 2
-            assert set(meta["per_opp"].keys()) == {700, 825}
+            # per_opp keys are strings so the shape matches JSON-serialized form
+            assert set(meta["per_opp"].keys()) == {"700", "825"}
 
     def test_per_opp_failure_records_error_and_continues(self, workflow_data_access):
         wda, _ = workflow_data_access
@@ -292,4 +307,4 @@ class TestGetPipelineDataMultiOpp:
             assert len(rows) == 1
             assert rows[0]["opportunity_id"] == 700
             per_opp = result["visits"]["metadata"]["per_opp"]
-            assert "error" in per_opp[825]
+            assert "error" in per_opp["825"]

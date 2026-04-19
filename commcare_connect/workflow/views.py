@@ -401,6 +401,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "definition_id": definition.id,
                 "opportunity_id": opportunity_id,
                 "opportunity_ids": effective_opp_ids,
+                "multi_opp": definition.multi_opp,
                 "render_code": context.get("render_code"),
                 "instance": run_data,
                 "is_edit_mode": is_edit_mode,
@@ -2198,9 +2199,15 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                     yield send_sse_event("Error", error="No OAuth token found. Please log in to Connect.")
                     return
 
-                # Get workflow definition to find pipeline sources
+                # Get workflow definition to find pipeline sources.
+                # data_access is only used for this single lookup; close as
+                # soon as we have the record so the HTTP client doesn't leak
+                # for the duration of the pipeline streaming below.
                 data_access = WorkflowDataAccess(request=request)
-                definition = data_access.get_definition(definition_id)
+                try:
+                    definition = data_access.get_definition(definition_id)
+                finally:
+                    data_access.close()
 
                 if not definition:
                     yield send_sse_event("Error", error=f"Workflow {definition_id} not found")
@@ -2250,13 +2257,14 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                                     "pipeline_name": None,
                                     "row_count": 0,
                                     "opportunity_ids": list(opp_ids),
-                                    "per_opp": {oid: {"error": "Pipeline not found"} for oid in opp_ids},
+                                    "per_opp": {str(oid): {"error": "Pipeline not found"} for oid in opp_ids},
                                 },
                             }
                             continue
 
                         merged_rows: list[dict] = []
-                        per_opp_meta: dict[int, dict] = {}
+                        # Keys stringified to match JSON serialization shape.
+                        per_opp_meta: dict[str, dict] = {}
 
                         for i, opp_id in enumerate(opp_ids):
                             # Fresh mixin per (source, opp) so state doesn't leak.
@@ -2279,7 +2287,7 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                                 from_cache = mixin._pipeline_from_cache
 
                                 row_count = len(result.rows) if result else 0
-                                per_opp_meta[opp_id] = {
+                                per_opp_meta[str(opp_id)] = {
                                     "row_count": row_count,
                                     "from_cache": from_cache,
                                 }
@@ -2312,7 +2320,7 @@ class PipelineDataStreamView(LoginRequiredMixin, View):
                                     pipeline_id,
                                     opp_id,
                                 )
-                                per_opp_meta[opp_id] = {"error": str(e)}
+                                per_opp_meta[str(opp_id)] = {"error": str(e)}
 
                         pipeline_data[alias] = {
                             "rows": merged_rows,
@@ -2530,6 +2538,12 @@ class UpdateOpportunityIdsView(LoginRequiredMixin, View):
         except (TypeError, ValueError):
             return JsonResponse({"error": "Invalid opportunity_ids"}, status=400)
 
+        if not opportunity_ids:
+            return JsonResponse(
+                {"error": "opportunity_ids must contain at least one opportunity"},
+                status=400,
+            )
+
         # Validate against user's accessible opportunities
         user_opp_ids = {
             int(o["id"]) for o in (get_org_data(request) or {}).get("opportunities", []) if o.get("id") is not None
@@ -2543,6 +2557,15 @@ class UpdateOpportunityIdsView(LoginRequiredMixin, View):
 
         data_access = WorkflowDataAccess(request=request)
         try:
+            existing = data_access.get_definition(definition_id)
+            if not existing:
+                return JsonResponse({"error": "Workflow not found"}, status=404)
+            if not existing.multi_opp:
+                return JsonResponse(
+                    {"error": "Workflow is not multi-opp"},
+                    status=400,
+                )
+
             result = data_access.update_opportunity_ids(definition_id, opportunity_ids)
             if not result:
                 return JsonResponse({"error": "Workflow not found"}, status=404)
