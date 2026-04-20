@@ -2,10 +2,26 @@
 
 import re
 
+from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
+
+
+def _collect_user_opportunity_ids(access_token: str) -> set[int]:
+    """Return the set of opportunity IDs the caller can see on production Connect.
+
+    Used to validate opportunity_ids before persisting them on a workflow
+    definition — matches the validation the Labs web-app does at
+    ``workflow/views.py`` so multi-opp writes from the MCP stay in lockstep.
+    Returns an empty set if the upstream call fails; the caller is expected to
+    treat that as \"cannot validate\" and either error or skip as appropriate.
+    """
+    data = fetch_user_organization_data(access_token)
+    if not data:
+        return set()
+    return {opp.get("id") for opp in data.get("opportunities") or [] if opp.get("id") is not None}
 
 
 def _data_access(user, opportunity_id=None, program_id=None, organization_id=None) -> WorkflowDataAccess:
@@ -246,6 +262,121 @@ def workflow_update_definition(
         new_version = updated.data.get("version", expected_version + 1)
         return {
             "workflow_id": workflow_id,
+            "new_version": new_version,
+            "_version_before": expected_version,
+            "_version_after": new_version,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
+    name="workflow_update_opportunity_ids",
+    description=(
+        "Replace the opportunity_ids list on a multi-opportunity workflow "
+        "definition. Every id must be an opportunity the caller has access "
+        "to (validated against /export/opp_org_program_list/). Pass an empty "
+        "list to revert the workflow to single-opportunity behaviour. Uses "
+        "expected_version for optimistic concurrency; other definition data "
+        "(name, statuses, config, etc.) is preserved. This is the only way to "
+        "set opportunity_ids via the MCP — workflow_update_definition does "
+        "not accept it."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": (
+                    "The owning opportunity (scoping the Labs record), not one "
+                    "of the opportunity_ids being set. Usually the primary opp "
+                    "the workflow was created under."
+                ),
+            },
+            "opportunity_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+            },
+            "expected_version": {"type": "integer"},
+        },
+        "required": [
+            "workflow_id",
+            "opportunity_id",
+            "opportunity_ids",
+            "expected_version",
+        ],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_update_opportunity_ids(
+    user,
+    workflow_id: int,
+    opportunity_id: int,
+    opportunity_ids: list[int],
+    expected_version: int,
+):
+    # De-dupe while preserving order; reject non-int entries early.
+    seen: set[int] = set()
+    cleaned: list[int] = []
+    for oid in opportunity_ids:
+        if not isinstance(oid, int) or isinstance(oid, bool):
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"opportunity_ids must be a list of ints. Got {oid!r}.",
+            )
+        if oid not in seen:
+            seen.add(oid)
+            cleaned.append(oid)
+
+    token = require_connect_token(user)
+
+    if cleaned:
+        # Validate every id is something the caller can actually access. Mirrors
+        # the check Labs does at workflow/views.py so we don't persist ids the
+        # user couldn't otherwise set via the UI.
+        user_opp_ids = _collect_user_opportunity_ids(token)
+        if not user_opp_ids:
+            raise MCPToolError(
+                "UPSTREAM_ERROR",
+                "Could not fetch caller's opportunities from production Connect to validate opportunity_ids.",
+            )
+        invalid = [oid for oid in cleaned if oid not in user_opp_ids]
+        if invalid:
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"Caller has no access to opportunity_ids {sorted(invalid)}.",
+                details={"invalid_opportunity_ids": sorted(invalid)},
+            )
+
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        current = wda.get_definition(workflow_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+
+        current_version = current.data.get("version", 1)
+        if current_version != expected_version:
+            raise MCPToolError(
+                "VERSION_CONFLICT",
+                f"workflow definition is at version {current_version}, not {expected_version}. "
+                "Call workflow_get to re-read and retry.",
+                details={"server_version": current_version, "expected": expected_version},
+            )
+
+        # Build the updated payload. update_opportunity_ids() preserves other
+        # data but doesn't bump version — do that ourselves so the concurrency
+        # check on the next write is consistent with workflow_update_definition.
+        new_data = {**current.data, "opportunity_ids": list(cleaned)}
+        new_data["version"] = expected_version + 1
+
+        updated = wda.update_definition(definition_id=workflow_id, data=new_data)
+        new_version = updated.data.get("version", expected_version + 1)
+        return {
+            "workflow_id": workflow_id,
+            "opportunity_ids": list(cleaned),
             "new_version": new_version,
             "_version_before": expected_version,
             "_version_after": new_version,
