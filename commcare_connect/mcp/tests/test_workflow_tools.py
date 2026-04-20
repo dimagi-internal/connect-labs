@@ -94,3 +94,78 @@ def test_workflow_list_rejects_user_without_connect_token(client, db):
     data = _call_tool(client, raw, "workflow_list", {"opportunity_id": 1})
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.PipelineDataAccess")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_get_returns_full_bundle(mock_wda_cls, mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+
+    mock_def = MagicMock(
+        id=42,
+        description="Test",
+        data={
+            "pipeline_sources": [{"pipeline_id": 7, "alias": "data"}],
+            "statuses": [{"key": "open", "label": "Open"}],
+            "config": {"templateType": "perf"},
+        },
+    )
+    # MagicMock(name=...) sets the mock's internal name, not an attribute — override explicitly.
+    mock_def.name = "My Workflow"
+    mock_def.template_type = "perf"
+    mock_wda_cls.return_value.get_definition.return_value = mock_def
+    mock_wda_cls.return_value.get_render_code.return_value = MagicMock(
+        component_code="function WorkflowUI(){}",
+        version=3,
+    )
+
+    mock_pipeline = MagicMock(
+        data={"schema": {"fields": [{"name": "a"}, {"name": "b"}, {"name": "c"}]}},
+    )
+    # MagicMock auto-creates .name as Mock; override explicitly to a string.
+    mock_pipeline.name = "P1"
+    mock_pda_cls.return_value.get_definition.return_value = mock_pipeline
+
+    data = _call_tool(client, raw, "workflow_get", {"workflow_id": 42, "opportunity_id": 100})
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["id"] == 42
+    assert content["render_code"] == "function WorkflowUI(){}"
+    assert content["render_code_version"] == 3
+    assert content["template_type"] == "perf"
+    assert content["pipeline_sources"][0]["pipeline_id"] == 7
+    assert content["pipeline_sources"][0]["alias"] == "data"
+    assert content["pipeline_sources"][0]["name"] == "P1"
+    assert content["pipeline_sources"][0]["schema_summary"]["field_count"] == 3
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_get_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = None
+
+    data = _call_tool(client, raw, "workflow_get", {"workflow_id": 999, "opportunity_id": 100})
+    assert data["result"]["isError"] is True
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_workflow_get_rejects_user_without_connect_token(client, db):
+    user = User.objects.create(username="no-connect")
+    _, raw = MCPAccessToken.create_token(user, name="t")
+    data = _call_tool(client, raw, "workflow_get", {"workflow_id": 1, "opportunity_id": 100})
+    assert data["result"]["isError"] is True
+    assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_workflow_get_rejects_missing_required_args(client, auth_user):
+    _, raw = auth_user
+    # Missing opportunity_id
+    data = _call_tool(client, raw, "workflow_get", {"workflow_id": 42})
+    # Missing a required positional arg raises TypeError which the transport catches
+    # as an unhandled exception and returns a JSON-RPC level error (data["error"])
+    # rather than a tool-level isError result.  Either format signals failure.
+    assert "error" in data or data.get("result", {}).get("isError") is True
