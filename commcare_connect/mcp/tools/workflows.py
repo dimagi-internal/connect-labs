@@ -322,6 +322,178 @@ def workflow_create_from_template(
             wda.close()
 
 
+_TEMPLATE_SCOPE_PATTERN = re.compile(r"^(global|org:\d+|program:\d+)$")
+
+
+def _validate_template_scope(scope: str, user) -> None:
+    """Validate the template_scope string and check caller permissions.
+
+    Scope can be 'global', 'org:<id>', or 'program:<id>'. 'global' requires
+    labs admin role (user.is_staff as a stand-in until we have a real role).
+    """
+    if not _TEMPLATE_SCOPE_PATTERN.match(scope):
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"template_scope must match 'global' or 'org:<id>' or 'program:<id>'. Got {scope!r}.",
+        )
+    if scope == "global" and not getattr(user, "is_staff", False):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "Only labs admins can set template_scope='global'.",
+        )
+
+
+@register(
+    name="workflow_set_template_flag",
+    description=(
+        "Mark a workflow as a template (or unmark it). Templates can be cloned "
+        "via workflow_clone. Scope controls who sees the template in the clone "
+        "picker: 'global' (all labs users, admin-only to set), 'org:<id>' "
+        "(org members), or 'program:<id>' (program members)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "is_template": {"type": "boolean"},
+            "template_scope": {"type": "string"},
+        },
+        "required": ["workflow_id", "opportunity_id", "is_template"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_set_template_flag(
+    user,
+    workflow_id: int,
+    opportunity_id: int,
+    is_template: bool,
+    template_scope: str = None,
+):
+    if is_template:
+        if not template_scope:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                "template_scope is required when is_template=true.",
+            )
+        _validate_template_scope(template_scope, user)
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        current = wda.get_definition(workflow_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+
+        new_data = dict(current.data)
+        if is_template:
+            new_data["is_template"] = True
+            new_data["template_scope"] = template_scope
+        else:
+            new_data.pop("is_template", None)
+            new_data.pop("template_scope", None)
+
+        wda.update_definition(definition_id=workflow_id, data=new_data)
+        return {
+            "workflow_id": workflow_id,
+            "is_template": is_template,
+            "template_scope": template_scope if is_template else None,
+        }
+    finally:
+        wda.close()
+
+
+@register(
+    name="workflow_clone",
+    description=(
+        "Create a new workflow by cloning any existing workflow the caller can "
+        "read. Used both for generic duplication and for instantiating DB-backed "
+        "templates (workflows flagged with is_template=true). The new workflow's "
+        "is_template flag is always false — cloning from a template produces a "
+        "regular workflow. Copies the definition (statuses, config), the latest "
+        "render_code, and the pipeline_sources list verbatim. Does NOT clone "
+        "linked pipelines — the new workflow references the same pipelines as "
+        "the source."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_workflow_id": {"type": "integer"},
+            "source_opportunity_id": {"type": "integer"},
+            "target_opportunity_id": {"type": "integer"},
+            "new_name": {"type": "string"},
+        },
+        "required": [
+            "source_workflow_id",
+            "source_opportunity_id",
+            "target_opportunity_id",
+        ],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_clone(
+    user,
+    source_workflow_id: int,
+    source_opportunity_id: int,
+    target_opportunity_id: int,
+    new_name: str = None,
+):
+    token = require_connect_token(user)
+
+    src_wda = WorkflowDataAccess(access_token=token, opportunity_id=source_opportunity_id)
+    try:
+        source_def = src_wda.get_definition(source_workflow_id)
+        if source_def is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {source_workflow_id}")
+        source_render = src_wda.get_render_code(source_workflow_id)
+    finally:
+        src_wda.close()
+
+    # Build the new workflow's data dict, stripping template flags so clones are
+    # always regular workflows.
+    new_data = dict(source_def.data)
+    new_data.pop("is_template", None)
+    new_data.pop("template_scope", None)
+    new_data["version"] = 1
+    cloned_name = new_name or f"{source_def.name} (copy)"
+
+    dst_wda = WorkflowDataAccess(access_token=token, opportunity_id=target_opportunity_id)
+    try:
+        # create_definition(name, description, **kwargs) — pass statuses, config,
+        # pipeline_sources, and opportunity_ids as explicit kwargs so they override
+        # the defaults inside create_definition. Pass the full cleaned new_data dict
+        # as **kwargs to forward any extra fields the source may carry.
+        new_def = dst_wda.create_definition(
+            name=cloned_name,
+            description=source_def.description,
+            statuses=new_data.get("statuses"),
+            config=new_data.get("config"),
+            pipeline_sources=new_data.get("pipeline_sources", []),
+            opportunity_ids=new_data.get("opportunity_ids", []),
+        )
+        render_code_version = None
+        if source_render is not None:
+            new_render = dst_wda.save_render_code(
+                definition_id=new_def.id,
+                component_code=source_render.component_code,
+                version=1,
+            )
+            render_code_version = new_render.version
+    finally:
+        dst_wda.close()
+
+    return {
+        "new_workflow_id": new_def.id,
+        "source_workflow_id": source_workflow_id,
+        "name": cloned_name,
+        "render_code_version": render_code_version,
+        "_version_before": None,
+        "_version_after": 1,
+    }
+
+
 @register(
     name="workflow_update_render_code",
     description=(

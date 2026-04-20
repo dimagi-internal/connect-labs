@@ -474,3 +474,255 @@ def test_create_from_template_unknown_template(client, auth_user):
     )
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] in ("NOT_FOUND", "UPSTREAM_ERROR")
+
+
+# =============================================================================
+# workflow_clone tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_happy_path(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    src = MagicMock()
+    dst = MagicMock()
+    mock_wda_cls.side_effect = [src, dst]
+
+    source_def = MagicMock(
+        id=1,
+        description="orig",
+        data={
+            "version": 5,
+            "config": {},
+            "statuses": [],
+            "pipeline_sources": [],
+            "opportunity_ids": [],
+            "is_template": True,
+            "template_scope": "global",
+        },
+    )
+    source_def.name = "Template WF"
+    src.get_definition.return_value = source_def
+    src.get_render_code.return_value = MagicMock(
+        component_code="function WorkflowUI(){}",
+        version=3,
+    )
+
+    dst.create_definition.return_value = MagicMock(id=42)
+    dst.save_render_code.return_value = MagicMock(version=1)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 1,
+            "source_opportunity_id": 10,
+            "target_opportunity_id": 20,
+            "new_name": "My Copy",
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["new_workflow_id"] == 42
+    assert content["name"] == "My Copy"
+    assert content["render_code_version"] == 1
+
+    # Template flags must have been stripped — create_definition receives
+    # explicit kwargs (statuses, config, etc.), not a raw data dict.
+    create_call = dst.create_definition.call_args
+    assert create_call.kwargs["name"] == "My Copy"
+    # is_template and template_scope must NOT be forwarded as kwargs
+    assert "is_template" not in create_call.kwargs
+    assert "template_scope" not in create_call.kwargs
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_without_new_name_uses_copy_suffix(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    src, dst = MagicMock(), MagicMock()
+    mock_wda_cls.side_effect = [src, dst]
+    source_def = MagicMock(
+        id=1,
+        description="",
+        data={
+            "version": 1,
+            "statuses": [],
+            "config": {},
+            "pipeline_sources": [],
+            "opportunity_ids": [],
+        },
+    )
+    source_def.name = "Original"
+    src.get_definition.return_value = source_def
+    src.get_render_code.return_value = None
+    dst.create_definition.return_value = MagicMock(id=99)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 1,
+            "source_opportunity_id": 10,
+            "target_opportunity_id": 20,
+        },
+    )
+    content = data["result"]["structuredContent"]
+    assert content["name"] == "Original (copy)"
+    assert content["render_code_version"] is None
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_source_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    src = MagicMock()
+    mock_wda_cls.return_value = src
+    src.get_definition.return_value = None
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 999,
+            "source_opportunity_id": 10,
+            "target_opportunity_id": 20,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+# =============================================================================
+# workflow_set_template_flag tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_set_template_flag_org_scope_non_admin_ok(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    current = MagicMock(data={"version": 1})
+    mock_wda_cls.return_value.get_definition.return_value = current
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_set_template_flag",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "is_template": True,
+            "template_scope": "org:7",
+        },
+    )
+    assert data["result"]["isError"] is False
+    content = data["result"]["structuredContent"]
+    assert content["is_template"] is True
+    assert content["template_scope"] == "org:7"
+
+
+@pytest.mark.django_db
+def test_set_template_flag_global_rejected_for_non_admin(client, auth_user):
+    user, raw = auth_user
+    assert user.is_staff is False
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_set_template_flag",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "is_template": True,
+            "template_scope": "global",
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_set_template_flag_global_accepted_for_admin(mock_wda_cls, client, db):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from commcare_connect.labs.models import UserConnectToken
+    from commcare_connect.mcp.models import MCPAccessToken
+    from commcare_connect.users.models import User
+
+    admin = User.objects.create(username="admin-user", is_staff=True)
+    _, raw = MCPAccessToken.create_token(admin, name="t")
+    UserConnectToken.objects.create(
+        user=admin,
+        access_token="ok",
+        expires_at=timezone.now() + timedelta(hours=1),
+    )
+    mock_wda_cls.return_value.get_definition.return_value = MagicMock(data={"version": 1})
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_set_template_flag",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "is_template": True,
+            "template_scope": "global",
+        },
+    )
+    assert data["result"]["isError"] is False
+
+
+@pytest.mark.django_db
+def test_set_template_flag_invalid_scope_string(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_set_template_flag",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "is_template": True,
+            "template_scope": "group:7",
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+def test_set_template_flag_missing_scope_when_flagging(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_set_template_flag",
+        {"workflow_id": 42, "opportunity_id": 100, "is_template": True},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+    assert "template_scope is required" in err["message"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_set_template_flag_unmark(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    current = MagicMock(data={"version": 1, "is_template": True, "template_scope": "org:7"})
+    mock_wda_cls.return_value.get_definition.return_value = current
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_set_template_flag",
+        {"workflow_id": 42, "opportunity_id": 100, "is_template": False},
+    )
+    assert data["result"]["isError"] is False
+    # update_definition was called with a data dict missing the template keys
+    call_kwargs = mock_wda_cls.return_value.update_definition.call_args.kwargs
+    assert "is_template" not in call_kwargs["data"]
+    assert "template_scope" not in call_kwargs["data"]
