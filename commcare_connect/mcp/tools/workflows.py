@@ -392,9 +392,10 @@ def workflow_update_opportunity_ids(
         "Create a new workflow from a built-in Python seed template. "
         "template_key is one of the registered templates in "
         "commcare_connect/workflow/templates/*.py (e.g. 'performance_review'). "
-        "Returns the new workflow_id. Pipelines linked in the template are NOT "
-        "created automatically (they require a Django request context); use "
-        "workflow_get to see pipeline_sources after creation."
+        "Returns the new workflow_id. If the template declares a pipeline_schema "
+        "(or pipeline_schemas), the pipeline(s) are created and linked "
+        "automatically — check the returned pipeline_id or call workflow_get to "
+        "see pipeline_sources."
     ),
     input_schema={
         "type": "object",
