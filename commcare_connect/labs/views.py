@@ -84,20 +84,34 @@ def refresh_org_data(request):
 
 
 class ScoutEmbedView(LoginRequiredMixin, TemplateView):
-    """Embeds the Scout data agent widget via the widget SDK."""
+    """Embeds the Scout data agent widget via the widget SDK.
+
+    ``scout_url_env`` selects which env var provides the Scout origin, so a single
+    view can back multiple routes (e.g. /labs/scout/ → SCOUT_URL, /labs/scout-prod/
+    → SCOUT_PROD_URL) without duplicating the embed plumbing.
+    """
 
     template_name = "labs/scout.html"
+    scout_url_env = "SCOUT_URL"
+    scout_url_default = "http://localhost:5173"
 
     def get_context_data(self, **kwargs):
         from .context import extract_context_from_session
 
         ctx = super().get_context_data(**kwargs)
         # Strip trailing slash — template adds slashes where needed
-        ctx["scout_url"] = os.environ.get("SCOUT_URL", "http://localhost:5173").rstrip("/")
+        ctx["scout_url"] = os.environ.get(self.scout_url_env, self.scout_url_default).rstrip("/")
         # Pass the current labs opportunity as the Scout tenant
         labs_ctx = extract_context_from_session(self.request)
         ctx["opportunity_id"] = labs_ctx.get("opportunity_id", "")
         return ctx
+
+
+class ScoutProdEmbedView(ScoutEmbedView):
+    """Embeds the production Scout deployment (scout.dimagi.com) for side-by-side testing."""
+
+    scout_url_env = "SCOUT_PROD_URL"
+    scout_url_default = "https://scout.dimagi.com"
 
 
 class StatusView(LoginRequiredMixin, TemplateView):
