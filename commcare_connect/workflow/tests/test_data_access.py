@@ -236,6 +236,97 @@ class TestCreateWorkflowFromTemplateOpportunityIds:
             del TEMPLATES["__test_single_create__"]
 
 
+class TestCreateWorkflowFromTemplatePipelineCreation:
+    """Regression tests for the MCP path: ``request`` is None but the caller's
+    ``data_access`` holds a valid access_token, so pipelines should still get
+    created. Prior to the fix in PR #71 this was silently skipped, leaving the
+    workflow with an empty pipeline_sources and no worker data at render time.
+    """
+
+    def test_pipeline_created_with_access_token_only(self, workflow_data_access):
+        """When request=None but data_access.access_token is set, pipelines
+        are created and returned just like the web-view path."""
+        wda, _ = workflow_data_access
+        from commcare_connect.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_mcp_pipeline__"] = {
+            "key": "__test_mcp_pipeline__",
+            "name": "T",
+            "description": "d",
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "pipeline_schema": {
+                "name": "Test Pipeline",
+                "description": "p",
+                "version": 1,
+                "grouping_key": "u",
+                "terminal_stage": "agg",
+                "fields": [],
+            },
+        }
+        try:
+            wda.create_definition = MagicMock(return_value=_make_definition_record(definition_id=10))
+            wda.save_render_code = MagicMock()
+            # workflow_data_access fixture already gives wda an access_token
+
+            with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+                mock_instance = MagicMock()
+                mock_pipeline = MagicMock()
+                mock_pipeline.id = 555
+                mock_instance.create_definition.return_value = mock_pipeline
+                MockPipelineAccess.return_value = mock_instance
+
+                _, _, pipeline_record = create_workflow_from_template(wda, "__test_mcp_pipeline__", request=None)
+
+                # Pipeline was created despite request=None.
+                assert pipeline_record is mock_pipeline
+                MockPipelineAccess.assert_called_once()
+                # Token was forwarded to the PipelineDataAccess constructor.
+                call_kwargs = MockPipelineAccess.call_args.kwargs
+                assert call_kwargs["request"] is None
+                assert call_kwargs["access_token"] == wda.access_token
+
+                # The new pipeline was linked as a source on the workflow definition.
+                create_def_kwargs = wda.create_definition.call_args.kwargs
+                assert create_def_kwargs["pipeline_sources"] == [{"pipeline_id": 555, "alias": "data"}]
+        finally:
+            del TEMPLATES["__test_mcp_pipeline__"]
+
+    def test_pipeline_skipped_when_no_request_and_no_token(self):
+        """If neither request nor access_token is available, we still skip
+        pipeline creation rather than crashing — preserves prior behaviour
+        for any caller that never had auth in the first place."""
+        from commcare_connect.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_no_auth__"] = {
+            "key": "__test_no_auth__",
+            "name": "T",
+            "description": "d",
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "pipeline_schema": {
+                "name": "P",
+                "description": "p",
+                "version": 1,
+                "grouping_key": "u",
+                "terminal_stage": "agg",
+                "fields": [],
+            },
+        }
+        try:
+            wda = MagicMock()
+            # No access_token attribute on this mock → getattr returns None.
+            del wda.access_token
+            wda.create_definition.return_value = _make_definition_record(definition_id=10)
+
+            with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+                _, _, pipeline_record = create_workflow_from_template(wda, "__test_no_auth__", request=None)
+                assert pipeline_record is None
+                MockPipelineAccess.assert_not_called()
+        finally:
+            del TEMPLATES["__test_no_auth__"]
+
+
 class TestGetPipelineDataMultiOpp:
     def _make_definition(self, opportunity_ids=None, pipeline_sources=None):
         data = {
