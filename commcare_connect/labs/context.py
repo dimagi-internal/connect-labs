@@ -282,6 +282,7 @@ class LabsContextMiddleware(MiddlewareMixin):
                 "/labs/workflow/",
                 "/labs/pipelines/",
                 "/labs/scout/",
+                "/labs/scout-prod/",
                 "/coverage/",
                 "/custom_analysis/",
                 "/funder/",

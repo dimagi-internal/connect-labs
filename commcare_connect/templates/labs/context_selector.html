@@ -297,6 +297,7 @@ function labsContextSelector() {
       '/labs/workflow/': ['opps'],
       '/labs/pipelines/': ['opps'],
       '/labs/scout/': ['opps'],
+      '/labs/scout-prod/': ['opps'],
       '/solicitations/': ['programs'],
       '/explorer/': ['orgs', 'programs', 'opps'],
       '/audit/': ['programs', 'opps'],
@@ -431,9 +432,11 @@ function labsContextSelector() {
         const newUrl = url.toString();
         const currentUrl = window.location.href;
 
-        // On the Scout page, tell the embedded widget to switch tenant
-        // so the iframe updates without waiting for the full reload.
-        if (this.currentPath.includes('/labs/scout/') && this.selectedOpp && window._scoutWidget) {
+        // On a Scout page (either deployment), tell the embedded widget to switch
+        // tenant so the iframe updates without waiting for the full reload.
+        const onScoutPage = this.currentPath.includes('/labs/scout/')
+          || this.currentPath.includes('/labs/scout-prod/');
+        if (onScoutPage && this.selectedOpp && window._scoutWidget) {
           window._scoutWidget.setTenant(this.selectedOpp.id);
         }
 
