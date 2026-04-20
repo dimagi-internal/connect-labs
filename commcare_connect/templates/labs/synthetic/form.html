@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Synthetic Opportunity — {% if form.instance.pk %}Edit{% else %}New{% endif %}{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 720px;">
+  <h1 class="h3 mb-3">
+    {% if form.instance.pk %}Edit synthetic opportunity{% else %}New synthetic opportunity{% endif %}
+  </h1>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+
+    <div class="mb-3">
+      <label class="form-label" for="id_opportunity_id">Connect opportunity ID</label>
+      {{ form.opportunity_id }}
+      {% if form.opportunity_id.errors %}<div class="text-danger small">{{ form.opportunity_id.errors }}</div>{% endif %}
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label" for="id_label">Label (human-readable)</label>
+      {{ form.label }}
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label" for="id_gdrive_folder_id">Google Drive folder ID</label>
+      <div class="input-group">
+        {{ form.gdrive_folder_id }}
+        <button class="btn btn-outline-secondary" type="button" id="test-access-btn">Test access</button>
+      </div>
+      <div id="test-access-result" class="small mt-2"></div>
+      {% if form.gdrive_folder_id.errors %}<div class="text-danger small">{{ form.gdrive_folder_id.errors }}</div>{% endif %}
+    </div>
+
+    <div class="mb-3 form-check">
+      {{ form.enabled }}
+      <label class="form-check-label" for="id_enabled">Enabled</label>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label" for="id_notes">Notes</label>
+      {{ form.notes }}
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{% url 'labs:synthetic:list' %}" class="btn btn-link">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+document.getElementById('test-access-btn').addEventListener('click', async () => {
+  const folderId = document.getElementById('id_gdrive_folder_id').value.trim();
+  const result = document.getElementById('test-access-result');
+  result.textContent = 'Checking...';
+  try {
+    const resp = await fetch(`{% url 'labs:synthetic:test_access' %}?folder_id=${encodeURIComponent(folderId)}`);
+    const data = await resp.json();
+    if (data.ok) {
+      result.innerHTML = `<span class="text-success">Found ${data.files.length} file(s):</span> <code>${data.files.join(', ') || '(empty)'}</code>`;
+    } else {
+      result.innerHTML = `<span class="text-danger">${data.error}</span>`;
+    }
+  } catch (e) {
+    result.innerHTML = `<span class="text-danger">Request failed: ${e}</span>`;
+  }
+});
+</script>
+{% endblock %}

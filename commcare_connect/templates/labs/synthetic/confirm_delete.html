@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4" style="max-width: 640px;">
+  <h1 class="h3">Delete synthetic opportunity?</h1>
+  <p>Opportunity ID <strong>{{ object.opportunity_id }}</strong>{% if object.label %} — {{ object.label }}{% endif %}.</p>
+  <p class="text-muted small">This only removes the registry entry. Drive contents are untouched.</p>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Delete</button>
+    <a href="{% url 'labs:synthetic:list' %}" class="btn btn-link">Cancel</a>
+  </form>
+</div>
+{% endblock %}
