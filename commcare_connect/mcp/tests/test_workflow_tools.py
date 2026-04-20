@@ -169,3 +169,156 @@ def test_workflow_get_rejects_missing_required_args(client, auth_user):
     # as an unhandled exception and returns a JSON-RPC level error (data["error"])
     # rather than a tool-level isError result.  Either format signals failure.
     assert "error" in data or data.get("result", {}).get("isError") is True
+
+
+VALID_JSX = "function WorkflowUI(props) { var x = 1; return null; }"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_render_code_happy_path(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_render_code.return_value = MagicMock(version=3)
+    mock_wda_cls.return_value.save_render_code.return_value = MagicMock(version=4)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "component_code": VALID_JSX,
+            "expected_version": 3,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["new_version"] == 4
+    # Private _version_* keys must NOT leak to the client
+    assert "_version_before" not in content
+    assert "_version_after" not in content
+
+
+@pytest.mark.django_db
+def test_update_render_code_rejects_missing_workflowui(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "component_code": "function NotWorkflowUI() { var x = 1; }",
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["isError"] is True
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_JSX"
+
+
+@pytest.mark.django_db
+def test_update_render_code_rejects_const_let(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "component_code": "function WorkflowUI() { const x = 1; }",
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["isError"] is True
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_JSX"
+    assert "const" in err["message"]
+
+
+@pytest.mark.django_db
+def test_update_render_code_rejects_empty(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "component_code": "   ",
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_JSX"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_render_code_version_conflict(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_render_code.return_value = MagicMock(version=5)
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "component_code": VALID_JSX,
+            "expected_version": 3,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "VERSION_CONFLICT"
+    assert err["details"]["server_version"] == 5
+    assert err["details"]["expected"] == 3
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_render_code_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_render_code.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 999,
+            "opportunity_id": 100,
+            "component_code": VALID_JSX,
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_render_code_audits_version_transition(mock_wda_cls, client, auth_user):
+    """The transport's audit hook should capture _version_before/_version_after."""
+    from commcare_connect.mcp.models import MCPAuditLog
+
+    user, raw = auth_user
+    mock_wda_cls.return_value.get_render_code.return_value = MagicMock(version=7)
+    mock_wda_cls.return_value.save_render_code.return_value = MagicMock(version=8)
+
+    _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "component_code": VALID_JSX,
+            "expected_version": 7,
+        },
+    )
+    log = MCPAuditLog.objects.get(user=user, tool_name="workflow_update_render_code")
+    assert log.success is True
+    assert log.is_write is True
+    assert log.version_before == 7
+    assert log.version_after == 8
