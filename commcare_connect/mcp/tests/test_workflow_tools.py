@@ -474,3 +474,123 @@ def test_create_from_template_unknown_template(client, auth_user):
     )
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] in ("NOT_FOUND", "UPSTREAM_ERROR")
+
+
+# =============================================================================
+# workflow_clone tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_happy_path(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    src = MagicMock()
+    dst = MagicMock()
+    mock_wda_cls.side_effect = [src, dst]
+
+    source_def = MagicMock(
+        id=1,
+        description="orig",
+        data={
+            "version": 5,
+            "config": {},
+            "statuses": [],
+            "pipeline_sources": [],
+            "opportunity_ids": [],
+            "is_template": True,
+            "template_scope": "global",
+        },
+    )
+    source_def.name = "Template WF"
+    src.get_definition.return_value = source_def
+    src.get_render_code.return_value = MagicMock(
+        component_code="function WorkflowUI(){}",
+        version=3,
+    )
+
+    dst.create_definition.return_value = MagicMock(id=42)
+    dst.save_render_code.return_value = MagicMock(version=1)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 1,
+            "source_opportunity_id": 10,
+            "target_opportunity_id": 20,
+            "new_name": "My Copy",
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["new_workflow_id"] == 42
+    assert content["name"] == "My Copy"
+    assert content["render_code_version"] == 1
+
+    # Template flags must have been stripped — create_definition receives
+    # explicit kwargs (statuses, config, etc.), not a raw data dict.
+    create_call = dst.create_definition.call_args
+    assert create_call.kwargs["name"] == "My Copy"
+    # is_template and template_scope must NOT be forwarded as kwargs
+    assert "is_template" not in create_call.kwargs
+    assert "template_scope" not in create_call.kwargs
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_without_new_name_uses_copy_suffix(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    src, dst = MagicMock(), MagicMock()
+    mock_wda_cls.side_effect = [src, dst]
+    source_def = MagicMock(
+        id=1,
+        description="",
+        data={
+            "version": 1,
+            "statuses": [],
+            "config": {},
+            "pipeline_sources": [],
+            "opportunity_ids": [],
+        },
+    )
+    source_def.name = "Original"
+    src.get_definition.return_value = source_def
+    src.get_render_code.return_value = None
+    dst.create_definition.return_value = MagicMock(id=99)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 1,
+            "source_opportunity_id": 10,
+            "target_opportunity_id": 20,
+        },
+    )
+    content = data["result"]["structuredContent"]
+    assert content["name"] == "Original (copy)"
+    assert content["render_code_version"] is None
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_clone_source_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    src = MagicMock()
+    mock_wda_cls.return_value = src
+    src.get_definition.return_value = None
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_clone",
+        {
+            "source_workflow_id": 999,
+            "source_opportunity_id": 10,
+            "target_opportunity_id": 20,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
