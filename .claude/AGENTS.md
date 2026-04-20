@@ -160,9 +160,10 @@ Data-driven workflows with custom React UIs and pipeline integration.
 - **DataAccess:** `WorkflowDataAccess`, `PipelineDataAccess` (both extend `BaseDataAccess`) in `workflow/data_access.py`
 - **Proxy models:** `WorkflowDefinitionRecord`, `WorkflowRenderCodeRecord`, `WorkflowRunRecord`, `WorkflowChatHistoryRecord`, `PipelineDefinitionRecord` (experiment=`"workflow"` / `"pipeline"`)
 - **Key views:** Workflow list (`/workflow/`), definition view, run view
-- **Templates:** Predefined workflow templates in `workflow/templates/` (audit_with_ai_review, bulk_image_audit, mbw_monitoring_v2, performance_review, ocs_outreach)
+- **Templates:** Predefined workflow templates in `workflow/templates/` (audit_with_ai_review, bulk_image_audit, mbw_monitoring_v2, performance_review [multi-opp], ocs_outreach)
 - **Render code:** React components stored as LabsRecords, rendered dynamically in workflow runner
 - **Cross-app:** Can create audit sessions and tasks from workflow actions
+- **Multi-opportunity:** Templates can set `multi_opp: True` to opt into cross-opp support. Multi-opp workflows store `opportunity_ids` on the definition, tag each worker/pipeline row with its source `opportunity_id`, and expose per-opp metadata (`per_opp` dict, **string keys** after JSON). Edit endpoint: `POST /labs/workflow/api/<def_id>/opportunity-ids/`. Full contract in [`workflow/WORKFLOW_REFERENCE.md` §8](../commcare_connect/workflow/WORKFLOW_REFERENCE.md#8-multi-opportunity-workflows).
 
 #### Workflow Template Anatomy
 
@@ -193,6 +194,8 @@ TEMPLATE = {
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": None,  # or dict for single pipeline; use "pipeline_schemas" list for multi
+    # Optional: set True to opt into multi-opportunity workflows (see §8 of WORKFLOW_REFERENCE.md)
+    "multi_opp": False,
 }
 ```
 
