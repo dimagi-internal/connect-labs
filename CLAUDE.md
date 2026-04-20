@@ -187,11 +187,12 @@ in a later phase.
 
 ### MCP-powered skills
 
-Three skills help Claude iterate on labs workflows and pipelines:
+Four skills help Claude iterate on labs workflows and pipelines, and set up the MCP connection itself:
 
 - **`workflow-author`** (`.claude/skills/workflow-author/SKILL.md`) — edit a live workflow instance via the `connect_labs` MCP (pull → edit JSX → push). **Use this for the common case.**
 - **`pipeline-author`** (`.claude/skills/pipeline-author/SKILL.md`) — edit a pipeline schema via the `connect_labs` MCP with preview-then-save.
 - **`workflow-templates`** (`.claude/skills/workflow-templates/SKILL.md`) — author new SEED templates in the repo. Only for the rare "ship a new starter in labs" case, not for editing existing workflows.
+- **`labs-token-setup`** (`.claude/skills/labs-token-setup/SKILL.md`) — generate an MCP PAT and wire it into `~/.claude/mcp.json` seamlessly. Opens labs in the browser, user approves, Claude Code picks up the token automatically.
 
 The `connect_labs` remote MCP ships a full iteration surface: workflows (list, get, update_render_code, update_definition, clone, create_from_template, set_template_flag), pipelines (list, get, update_schema, preview, sql), plus migrated solicitation (list, get, create, update, list_responses, get_response, award_response), review (list, get, create, update), fund (list, get, create, update, add_allocation, remove_allocation), and get_sample_ids tools.
 
