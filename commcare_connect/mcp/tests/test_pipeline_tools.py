@@ -623,3 +623,72 @@ def test_pipeline_delete_not_found(mock_pda_cls, client, auth_user):
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] == "NOT_FOUND"
     mock_pda_cls.return_value.delete_definition.assert_not_called()
+
+
+# --- pipeline_preview fields_all_null diagnostic ---------------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_flags_fields_that_extracted_null_in_every_row(mock_pda_cls, client, auth_user):
+    """fields_all_null is the canonical signal that a field.path is wrong —
+    SQL succeeded, but every row came back null for that field. The response
+    names the offending fields and hints at get_form_json_paths for fixing
+    them. The hint is ONLY present when there are actual offenders — we don't
+    spam the response when everything is healthy."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={
+            "schema": {
+                "fields": [
+                    {"name": "visit_count", "aggregation": "count"},
+                    {"name": "bad_path_field", "aggregation": "last"},
+                ],
+            },
+        },
+    )
+    # visit_count looks fine; bad_path_field is null across all rows — classic
+    # symptom of a wrong field.path.
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [
+            {"username": "a", "visit_count": 5, "bad_path_field": None},
+            {"username": "b", "visit_count": 3, "bad_path_field": None},
+        ],
+        "metadata": {"row_count": 2},
+    }
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 1, "opportunity_id": 100},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["fields_all_null"] == ["bad_path_field"]
+    assert content["fields_all_null_hint"] is not None
+    assert "get_form_json_paths" in content["fields_all_null_hint"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_clean_response_has_no_null_hint(mock_pda_cls, client, auth_user):
+    """When every custom field has at least one non-null value, the hint
+    field is null — the response stays lean for healthy pipelines."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": [{"name": "visit_count", "aggregation": "count"}]}},
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [{"username": "a", "visit_count": 5}],
+        "metadata": {"row_count": 1},
+    }
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 1, "opportunity_id": 100},
+    )
+    content = data["result"]["structuredContent"]
+    assert content["fields_all_null"] == []
+    assert content["fields_all_null_hint"] is None

@@ -49,8 +49,48 @@ def _hint_for_sql_error(err: str, schema: dict | None) -> str | None:
     # "path does not exist" style errors sometimes name the expression.
     m = re.search(r"column \"([^\"]+)\" does not exist", err)
     if m:
-        return f"Column '{m.group(1)}' isn't a known extract target — double-check field.path."
+        return (
+            f"Column '{m.group(1)}' isn't a known extract target — double-check field.path. "
+            "To discover real JSON paths for a form, use `get_form_json_paths` from the "
+            "local `commcare_hq_mcp` server (this MCP has no HQ API key and cannot resolve "
+            "paths itself)."
+        )
     return None
+
+
+def _fields_all_null(rows: list[dict], schema: dict | None) -> list[str]:
+    """Return the names of custom fields (from the schema) that came back
+    null / empty for every row in the sample. These are the loudest possible
+    diagnostic signal that a field.path is wrong: SQL succeeded, but nothing
+    extracted. The fix is almost always to look up the real path via
+    `get_form_json_paths` on the `commcare_hq_mcp` server.
+    """
+    if not rows or not schema or not isinstance(schema, dict):
+        return []
+    field_names = [f.get("name") for f in (schema.get("fields") or []) if isinstance(f, dict) and f.get("name")]
+    if not field_names:
+        return []
+    # Built-in FLW columns (total_visits etc.) aren't custom — skip them so we
+    # don't flag legitimately-empty counts.
+    builtin = {
+        "id",
+        "username",
+        "visit_date",
+        "total_visits",
+        "approved_visits",
+        "pending_visits",
+        "rejected_visits",
+        "flagged_visits",
+        "first_visit_date",
+        "last_visit_date",
+        "opportunity_id",
+    }
+    candidates = [n for n in field_names if n not in builtin]
+    out = []
+    for name in candidates:
+        if all((r.get(name) in (None, "", [], {})) for r in rows):
+            out.append(name)
+    return out
 
 
 @register(
@@ -185,7 +225,14 @@ def _validate_pipeline_schema(schema: dict) -> None:
     description=(
         "Replace a pipeline's schema. Validates aggregations against an allow-list. "
         "Uses expected_version for optimistic concurrency — re-fetch via pipeline_get "
-        "on VERSION_CONFLICT. Optionally updates name/description at the same time."
+        "on VERSION_CONFLICT. Optionally updates name/description at the same time.\n\n"
+        "IMPORTANT: when adding or changing field paths, use "
+        "`get_form_json_paths` from the local `commcare_hq_mcp` server "
+        "to discover the exact JSON path for each form question. This "
+        "MCP (connect_labs) intentionally has no CommCare HQ API key, so "
+        "it cannot resolve paths itself. Wrong paths silently extract "
+        "null; callers then see all-null columns in pipeline_preview, "
+        "which also reports them in `fields_all_null`."
     ),
     input_schema={
         "type": "object",
@@ -256,7 +303,12 @@ def pipeline_update_schema(
         "merges the rows with an opportunity_id tag on each — mirrors what "
         "a multi-opp workflow sees at runtime. Errors from the SQL engine "
         "are wrapped with a 'hint' pointing at the likely offending field "
-        "when one can be inferred. This is the iteration hot path: "
+        "when one can be inferred. The response also includes "
+        "`fields_all_null`: custom field names that extracted null for every "
+        "row — the loudest signal that field.path is wrong. When you see a "
+        "field flagged there, resolve the correct path with "
+        "`get_form_json_paths` on the local `commcare_hq_mcp` server before "
+        "re-previewing. This is the iteration hot path: "
         "read → tweak → preview → save."
     ),
     input_schema={
@@ -411,6 +463,12 @@ def pipeline_preview(
             top_meta["pipeline_name"] = pname
         top_meta["opps_with_errors"] = [oid for oid, m in per_opp_metadata.items() if m.get("error")]
 
+        # Flag custom fields that extracted null for every row — almost always
+        # a wrong field.path. Use the executed schema (override when set, the
+        # saved schema otherwise) so the names match what the caller sent.
+        exec_schema = schema_override if schema_override is not None else (definition.data or {}).get("schema")
+        fields_all_null = _fields_all_null(merged_rows, exec_schema)
+
         return {
             "pipeline_id": pipeline_id,
             "opportunity_id": opportunity_id,
@@ -419,6 +477,15 @@ def pipeline_preview(
             "row_count_before_sample": len(merged_rows),
             "used_schema_override": schema_override is not None,
             "per_opp_metadata": per_opp_metadata,
+            "fields_all_null": fields_all_null,
+            "fields_all_null_hint": (
+                "These custom fields extracted null for every row. Usually means "
+                "field.path is wrong — use `get_form_json_paths` on the local "
+                "`commcare_hq_mcp` server to look up the real JSON path, then "
+                "re-preview with schema_override."
+            )
+            if fields_all_null
+            else None,
             "metadata": top_meta,
         }
     finally:
