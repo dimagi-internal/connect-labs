@@ -13,7 +13,21 @@ Use the `connect_labs` MCP tools to iterate on a pipeline schema with a fast pre
 
 1. **Pull the pipeline.** Call `pipeline_get(pipeline_id, opportunity_id)`. You get the full schema (fields, aggregations, transforms, groupings) and the current version number.
 
-2. **If adding new fields from a form, discover the JSON paths first.** Use the local `commcare_hq_mcp` tools (this is the one place the two MCPs cross): `get_opportunity_apps(opportunity_id)` → `get_app_structure(domain, app_id)` → `get_form_json_paths(xmlns, domain, app_id)`. You get the exact paths like `form.anthropometric.child_weight_visit` to use in new `src` values on fields.
+2. **If adding or changing any field path, discover the real JSON path FIRST via the local `commcare_hq_mcp` server.** This is non-negotiable — `connect_labs` intentionally has no CommCare HQ API key (the two MCPs are separated by design so Connect never gets HQ credentials), so it can't resolve form paths on its own. If you guess a path, the SQL will succeed and the preview will return rows with null columns — no error, just silently-wrong data.
+
+   The canonical lookup sequence on `commcare_hq_mcp`:
+
+   ```
+   get_opportunity_apps(opportunity_id)        # → {cc_domain, learn_app_id, deliver_app_id}
+   get_app_structure(domain, app_id)           # → modules + forms + xmlns
+   get_form_json_paths(xmlns, domain, app_id)  # → [{json_path, type, label}, ...]
+   ```
+
+   Copy the `json_path` values straight into field `path` entries (`form.anthropometric.child_weight_visit`, `form.case.@case_id`, etc.).
+
+   **If `commcare_hq_mcp` is not connected** (no `mcp__commcare_hq_mcp__*` tools in the catalog): stop and ask the user to install it — see `tools/commcare_hq_mcp/README.md`. Do NOT guess paths or copy them from memory; silent-null data is worse than a 5-minute setup.
+
+   **After preview, always check `fields_all_null` in the response.** `pipeline_preview` returns a list of custom fields that extracted null in every row. Any name in that list means the path is wrong — loop back to `get_form_json_paths` and fix it before saving.
 
 3. **Propose a schema diff in chat.** Show the user what you're changing before you preview. Short list: "Adding field `visits_per_flw` (count of `form.visit_id`, agg `count_distinct`), changing `children_seen` from `sum` to `count_distinct`." Wait for user confirmation or iteration — it's cheap to talk before running SQL.
 
@@ -29,7 +43,7 @@ Use the `connect_labs` MCP tools to iterate on a pipeline schema with a fast pre
 
 - **VERSION_CONFLICT:** pipeline changed on the server between your read and your write. Call `pipeline_get` again, reapply changes on top, retry.
 - **INVALID_SCHEMA:** your schema has an unknown aggregation. Valid ones: `sum`, `count`, `count_distinct`, `avg`, `min`, `max`, `first`, `last`. The error message will tell you which field + which bad aggregation.
-- **UPSTREAM_ERROR from pipeline_preview:** the pipeline ran but the backend returned a SQL error. Read the `metadata.error` in the error details — it typically names a missing table or field. Often fixable by correcting a field `src` path.
+- **UPSTREAM_ERROR from pipeline_preview:** the pipeline ran but the backend returned a SQL error. Read `details.hint` first — the server maps common patterns (ungrouped correlated subquery = bad `first`/`last` usage; `column "X" does not exist` = bad path) to a pointer at the likely-offending field. Then check `details.per_opp` for per-opp errors. Often the fix is to look up a real path via `get_form_json_paths`.
 - **PERMISSION_DENIED:** user's `UserConnectToken` is missing or expired. Tell them to log into labs in a browser and retry.
 
 ## Debugging with SQL
