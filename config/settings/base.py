@@ -137,6 +137,7 @@ LOCAL_APPS = [
     "commcare_connect.coverage",
     "commcare_connect.commcarehq",  # stub: HQServer model for FK references
     "commcare_connect.labs.admin_boundaries",
+    "commcare_connect.labs.synthetic",
     "commcare_connect.mcp",
     "commcare_connect.multidb",
     "commcare_connect.opportunity",
