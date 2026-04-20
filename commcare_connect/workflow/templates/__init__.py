@@ -152,11 +152,20 @@ def create_workflow_from_template(
     pipeline_record = None
     pipeline_sources = []
 
+    # PipelineDataAccess can be constructed from either an HttpRequest (web
+    # view path) or a direct access_token (MCP/CLI path). We reuse whatever
+    # token ``data_access`` already has so the MCP can create pipelines too.
+    pipeline_access_token = getattr(data_access, "access_token", None)
+    can_create_pipelines = bool(request) or bool(pipeline_access_token)
+
     # Create pipeline if template has one (singular schema)
-    if pipeline_schema and request:
+    if pipeline_schema and can_create_pipelines:
         from commcare_connect.workflow.data_access import PipelineDataAccess
 
-        pipeline_data_access = PipelineDataAccess(request=request)
+        pipeline_data_access = PipelineDataAccess(
+            request=request,
+            access_token=pipeline_access_token,
+        )
         pipeline_record = pipeline_data_access.create_definition(
             name=pipeline_schema["name"],
             description=pipeline_schema["description"],
@@ -180,10 +189,13 @@ def create_workflow_from_template(
 
     # Handle multiple pipeline schemas (e.g., MBW with 3 sources)
     pipeline_schemas = template.get("pipeline_schemas", [])
-    if pipeline_schemas and request:
+    if pipeline_schemas and can_create_pipelines:
         from commcare_connect.workflow.data_access import PipelineDataAccess
 
-        pipeline_data_access = PipelineDataAccess(request=request)
+        pipeline_data_access = PipelineDataAccess(
+            request=request,
+            access_token=pipeline_access_token,
+        )
         for ps in pipeline_schemas:
             record = pipeline_data_access.create_definition(
                 name=ps["name"],
