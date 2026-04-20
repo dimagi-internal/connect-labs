@@ -24,6 +24,10 @@ def _build_drive_client():
 
 
 def _get_fixture_store():
+    # Note: in multi-threaded gthread workers two threads can race the
+    # `_fixture_store is None` check and construct duplicate singletons.
+    # Worst case is two redundant service-account auth refreshes, never
+    # incorrect data. Same rationale as registry.get_synthetic_opp().
     global _drive_client, _fixture_store
     if _fixture_store is None:
         from commcare_connect.labs.synthetic.fixture_store import FixtureStore

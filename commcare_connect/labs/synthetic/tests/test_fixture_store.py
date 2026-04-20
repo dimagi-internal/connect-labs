@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from commcare_connect.labs.synthetic.fixture_store import ENDPOINT_FILES, FixtureStore
 
 
@@ -66,10 +64,10 @@ def test_reload_purges_cache():
     assert drive.download_calls == 2
 
 
-def test_missing_folder_lookup_raises():
+def test_missing_folder_lookup_returns_empty(caplog):
     store = FixtureStore(drive=FakeDrive({}), folder_lookup=lambda _: None)
-    with pytest.raises(ValueError):
-        store.load_endpoint(42, "user_visits")
+    assert store.load_endpoint(42, "user_visits") == []
+    assert "no gdrive folder" in caplog.text.lower()
 
 
 def test_endpoint_files_covers_all_supported_endpoints():
@@ -80,3 +78,33 @@ def test_endpoint_files_covers_all_supported_endpoints():
         "completed_works": "completed_works.json",
         "completed_module": "completed_module.json",
     }
+
+
+def test_drive_api_error_on_list_returns_empty(caplog):
+    class FailingDrive:
+        def list_folder(self, _):
+            from commcare_connect.labs.synthetic.gdrive import DriveAPIError
+
+            raise DriveAPIError("boom")
+
+        def download_file(self, _):
+            raise AssertionError("should not be called")
+
+    store = FixtureStore(drive=FailingDrive(), folder_lookup=lambda _: "folder-a")
+    assert store.load_endpoint(42, "user_visits") == []
+    assert "list_folder failed" in caplog.text.lower()
+
+
+def test_drive_api_error_on_download_returns_empty(caplog):
+    class FailingDrive:
+        def list_folder(self, _):
+            return {"user_visits.json": "file-xyz"}
+
+        def download_file(self, _):
+            from commcare_connect.labs.synthetic.gdrive import DriveAPIError
+
+            raise DriveAPIError("boom")
+
+    store = FixtureStore(drive=FailingDrive(), folder_lookup=lambda _: "folder-a")
+    assert store.load_endpoint(42, "user_visits") == []
+    assert "download_file failed" in caplog.text.lower()

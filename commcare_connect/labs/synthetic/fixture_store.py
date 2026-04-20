@@ -11,6 +11,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from commcare_connect.labs.synthetic.gdrive import DriveAPIError
+
 logger = logging.getLogger(__name__)
 
 ENDPOINT_FILES: dict[str, str] = {
@@ -49,11 +51,24 @@ class FixtureStore:
 
         folder_id = self._folder_lookup(opp_id)
         if not folder_id:
-            raise ValueError(f"No gdrive folder registered for synthetic opp {opp_id}")
+            logger.warning(
+                "synthetic: no gdrive folder registered for opp %s; returning empty",
+                opp_id,
+            )
+            return []
 
         listing = self._folder_listing_cache.get(opp_id)
         if listing is None:
-            listing = self._drive.list_folder(folder_id)
+            try:
+                listing = self._drive.list_folder(folder_id)
+            except DriveAPIError as e:
+                logger.warning(
+                    "synthetic: list_folder failed for opp %s folder %s: %s; returning empty",
+                    opp_id,
+                    folder_id,
+                    e,
+                )
+                return []
             self._folder_listing_cache[opp_id] = listing
 
         filename = ENDPOINT_FILES[endpoint_key]
@@ -68,7 +83,16 @@ class FixtureStore:
             self._cache[(opp_id, endpoint_key)] = []
             return []
 
-        raw = self._drive.download_file(file_id)
+        try:
+            raw = self._drive.download_file(file_id)
+        except DriveAPIError as e:
+            logger.warning(
+                "synthetic: download_file failed for opp %s file %s: %s; returning empty",
+                opp_id,
+                filename,
+                e,
+            )
+            return []
         parsed = json.loads(raw)
         self._cache[(opp_id, endpoint_key)] = parsed
         return parsed
