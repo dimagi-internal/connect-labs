@@ -139,3 +139,151 @@ def test_pipeline_tools_reject_user_without_connect_token(client, db):
     data = _call_tool(client, raw, "pipeline_list", {"opportunity_id": 1})
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
+
+
+VALID_SCHEMA = {
+    "fields": [
+        {"name": "visits", "aggregation": "count"},
+        {"name": "flw_id", "aggregation": "count_distinct"},
+    ],
+}
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_update_schema_happy_path(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    current = MagicMock()
+    current.version = 3
+    mock_pda_cls.return_value.get_definition.return_value = current
+    updated = MagicMock()
+    updated.version = 4
+    mock_pda_cls.return_value.update_definition.return_value = updated
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_update_schema",
+        {
+            "pipeline_id": 42,
+            "opportunity_id": 100,
+            "schema": VALID_SCHEMA,
+            "expected_version": 3,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["new_version"] == 4
+    assert "_version_before" not in content
+
+
+@pytest.mark.django_db
+def test_pipeline_update_schema_rejects_unknown_aggregation(client, auth_user):
+    _, raw = auth_user
+    bad = {"fields": [{"name": "x", "aggregation": "median_of_medians"}]}
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_update_schema",
+        {
+            "pipeline_id": 42,
+            "opportunity_id": 100,
+            "schema": bad,
+            "expected_version": 1,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+    assert "median_of_medians" in err["message"]
+
+
+@pytest.mark.django_db
+def test_pipeline_update_schema_rejects_malformed_schema(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_update_schema",
+        {
+            "pipeline_id": 42,
+            "opportunity_id": 100,
+            "schema": {"fields": "not a list"},
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_update_schema_version_conflict(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    current = MagicMock()
+    current.version = 5
+    mock_pda_cls.return_value.get_definition.return_value = current
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_update_schema",
+        {
+            "pipeline_id": 42,
+            "opportunity_id": 100,
+            "schema": VALID_SCHEMA,
+            "expected_version": 3,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "VERSION_CONFLICT"
+    assert err["details"]["server_version"] == 5
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_update_schema_not_found(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_update_schema",
+        {
+            "pipeline_id": 999,
+            "opportunity_id": 100,
+            "schema": VALID_SCHEMA,
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_update_schema_audits_version_transition(mock_pda_cls, client, auth_user):
+    """Transport audit captures _version_before / _version_after."""
+    from commcare_connect.mcp.models import MCPAuditLog
+
+    user, raw = auth_user
+    current = MagicMock()
+    current.version = 7
+    mock_pda_cls.return_value.get_definition.return_value = current
+    updated = MagicMock()
+    updated.version = 8
+    mock_pda_cls.return_value.update_definition.return_value = updated
+
+    _call_tool(
+        client,
+        raw,
+        "pipeline_update_schema",
+        {
+            "pipeline_id": 42,
+            "opportunity_id": 100,
+            "schema": VALID_SCHEMA,
+            "expected_version": 7,
+        },
+    )
+    log = MCPAuditLog.objects.get(user=user, tool_name="pipeline_update_schema")
+    assert log.success is True
+    assert log.is_write is True
+    assert log.version_before == 7
+    assert log.version_after == 8
