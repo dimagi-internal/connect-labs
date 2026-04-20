@@ -3,7 +3,13 @@
 
 Starts a localhost listener on a random port, opens the labs MCP token
 creation page in the user's browser with callback + state params, waits for
-the redirect, and writes the resulting token to ~/.claude/mcp.json.
+the redirect, and registers the resulting token with Claude Code by shelling
+out to `claude mcp add --scope user`.
+
+Why shell out instead of editing JSON directly? Claude Code stores user-scope
+MCP servers in ~/.claude.json (a large file with lots of unrelated state), not
+~/.claude/mcp.json. Using the CLI keeps us forward-compatible with any future
+config layout changes.
 
 Usage:
     python setup_labs_token.py <labs_base_url>
@@ -13,18 +19,18 @@ Example:
 """
 from __future__ import annotations
 
-import json
 import secrets
+import shutil
 import socket
+import subprocess
 import sys
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 TIMEOUT_SECONDS = 120
-MCP_CONFIG_PATH = Path.home() / ".claude" / "mcp.json"
+SERVER_NAME = "connect_labs"
 
 
 def _find_free_port() -> int:
@@ -107,25 +113,54 @@ def _wait_for_callback(server: HTTPServer, result: _Result) -> None:
         server.handle_request()
 
 
-def _update_mcp_config(raw_token: str, labs_base_url: str) -> None:
-    MCP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+def _register_mcp_server(raw_token: str, labs_base_url: str) -> None:
+    """Register the connect_labs server with Claude Code via `claude mcp add`.
 
-    if MCP_CONFIG_PATH.exists():
-        try:
-            config = json.loads(MCP_CONFIG_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            raise SystemExit("~/.claude/mcp.json exists but is not valid JSON. " "Fix or remove it before retrying.")
-    else:
-        config = {}
+    Removes any existing user-scope entry first so we always overwrite cleanly —
+    the CLI errors out on duplicate names otherwise.
+    """
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        raise SystemExit(
+            "error: `claude` CLI not found on PATH. This script registers the MCP\n"
+            "server via `claude mcp add`. Install Claude Code or add it to PATH,\n"
+            "then rerun."
+        )
 
-    servers = config.setdefault("mcpServers", {})
-    servers["connect_labs"] = {
-        "type": "http",
-        "url": labs_base_url.rstrip("/") + "/mcp/",
-        "headers": {"Authorization": f"Bearer {raw_token}"},
-    }
+    mcp_url = labs_base_url.rstrip("/") + "/mcp/"
+    auth_header = f"Authorization: Bearer {raw_token}"
 
-    MCP_CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    # Remove any existing user-scope entry so `claude mcp add` doesn't fail on
+    # duplicate name. Ignore errors — it's fine if nothing was there.
+    subprocess.run(
+        [claude_bin, "mcp", "remove", "--scope", "user", SERVER_NAME],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    proc = subprocess.run(
+        [
+            claude_bin,
+            "mcp",
+            "add",
+            "--transport",
+            "http",
+            "--scope",
+            "user",
+            SERVER_NAME,
+            mcp_url,
+            "--header",
+            auth_header,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise SystemExit(
+            "error: `claude mcp add` failed.\n" f"stdout: {proc.stdout.strip()}\n" f"stderr: {proc.stderr.strip()}"
+        )
 
 
 def main(labs_base_url: str) -> int:
@@ -168,9 +203,9 @@ def main(labs_base_url: str) -> int:
         return 1
 
     assert result.token  # if we got here, success
-    _update_mcp_config(result.token, labs_base_url)
+    _register_mcp_server(result.token, labs_base_url)
     print()
-    print(f"Token '{result.name}' created and written to {MCP_CONFIG_PATH}")
+    print(f"Token '{result.name}' created and registered as MCP server '{SERVER_NAME}' (user scope).")
     print("Restart Claude Code for the new server to become active.")
     return 0
 
