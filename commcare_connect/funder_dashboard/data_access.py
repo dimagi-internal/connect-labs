@@ -124,19 +124,18 @@ class FunderDashboardDataAccess:
         data["allocations"] = allocations
         return self.update_fund(fund_id, data)
 
-    def _fetch_paginated(self, endpoint: str) -> list[dict]:
+    def _fetch_paginated(self, opportunity_id: int, endpoint: str) -> list[dict]:
         """Fetch a paginated v2 export endpoint and return all rows.
 
         Note: this materializes all pages into memory. For very large opportunities,
         consider iterating pages directly to avoid peak memory spikes.
         """
-        from django.conf import settings
-
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
         try:
-            with ExportAPIClient(
-                base_url=settings.CONNECT_PRODUCTION_URL,
+            with get_export_client(
+                opportunity_id=opportunity_id,
                 access_token=self.access_token,
                 timeout=120.0,
             ) as client:
@@ -147,8 +146,8 @@ class FunderDashboardDataAccess:
 
     def fetch_completed_works(self, opportunity_id: int) -> list[dict]:
         """Fetch completed_works from Connect API."""
-        return self._fetch_paginated(f"/export/opportunity/{opportunity_id}/completed_works/")
+        return self._fetch_paginated(opportunity_id, f"/export/opportunity/{opportunity_id}/completed_works/")
 
     def fetch_user_visits(self, opportunity_id: int) -> list[dict]:
         """Fetch user_visits from Connect API."""
-        return self._fetch_paginated(f"/export/opportunity/{opportunity_id}/user_visits/")
+        return self._fetch_paginated(opportunity_id, f"/export/opportunity/{opportunity_id}/user_visits/")

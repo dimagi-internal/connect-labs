@@ -98,10 +98,11 @@ def fetch_flws(request: HttpRequest, opp_id: int) -> JsonResponse:
 
     # Call production API
     try:
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
-        with ExportAPIClient(
-            base_url=settings.CONNECT_PRODUCTION_URL,
+        with get_export_client(
+            opportunity_id=opp_id,
             access_token=access_token,
             timeout=30.0,
         ) as client:

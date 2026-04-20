@@ -6,7 +6,6 @@ Provides utility functions for fetching data from Connect API.
 
 import logging
 
-from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpRequest
 
@@ -63,14 +62,15 @@ def fetch_flw_names(
             logger.warning(f"Cache get failed for {cache_key}: {e}")
 
     # Fetch from API (v2 paginated JSON)
-    from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+    from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+    from commcare_connect.labs.integrations.connect.factory import get_export_client
 
     endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
     logger.info(f"Fetching FLW names from {endpoint}")
 
     try:
-        with ExportAPIClient(
-            base_url=settings.CONNECT_PRODUCTION_URL,
+        with get_export_client(
+            opportunity_id=opportunity_id,
             access_token=access_token,
             timeout=30.0,
         ) as client:

@@ -1793,7 +1793,8 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
         if not access_token:
             return JsonResponse({"error": "No OAuth token"}, status=401)
 
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opp_id}/user_visits/"
         params = {"images": "true"}
@@ -1804,8 +1805,8 @@ class OpportunityImageTypesAPIView(LoginRequiredMixin, View):
         stop_early = False
 
         try:
-            with ExportAPIClient(
-                base_url=settings.CONNECT_PRODUCTION_URL,
+            with get_export_client(
+                opportunity_id=opp_id,
                 access_token=access_token,
                 timeout=60.0,
             ) as client:

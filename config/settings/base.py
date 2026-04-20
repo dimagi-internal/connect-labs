@@ -137,6 +137,7 @@ LOCAL_APPS = [
     "commcare_connect.coverage",
     "commcare_connect.commcarehq",  # stub: HQServer model for FK references
     "commcare_connect.labs.admin_boundaries",
+    "commcare_connect.labs.synthetic",
     "commcare_connect.mcp",
     "commcare_connect.multidb",
     "commcare_connect.opportunity",
@@ -422,6 +423,10 @@ OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
 CONNECT_PRODUCTION_URL = env("CONNECT_PRODUCTION_URL", default="https://connect.dimagi.com")
 CONNECT_OAUTH_CLIENT_ID = env("CONNECT_OAUTH_CLIENT_ID", default="")
 CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
+
+# Labs synthetic sample data
+# Set LABS_SYNTHETIC_GDRIVE_SA_KEY (env var, JSON blob or filesystem path) to
+# enable the synthetic-opportunity feature. See docs/SYNTHETIC_OPPS.md.
 
 # Labs admin allowlist — LOCAL DEV ONLY fallback for Connect test accounts that
 # have no email address configured (e.g. username='matt', email='').
