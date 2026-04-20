@@ -322,6 +322,88 @@ def workflow_create_from_template(
             wda.close()
 
 
+_TEMPLATE_SCOPE_PATTERN = re.compile(r"^(global|org:\d+|program:\d+)$")
+
+
+def _validate_template_scope(scope: str, user) -> None:
+    """Validate the template_scope string and check caller permissions.
+
+    Scope can be 'global', 'org:<id>', or 'program:<id>'. 'global' requires
+    labs admin role (user.is_staff as a stand-in until we have a real role).
+    """
+    if not _TEMPLATE_SCOPE_PATTERN.match(scope):
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"template_scope must match 'global' or 'org:<id>' or 'program:<id>'. Got {scope!r}.",
+        )
+    if scope == "global" and not getattr(user, "is_staff", False):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "Only labs admins can set template_scope='global'.",
+        )
+
+
+@register(
+    name="workflow_set_template_flag",
+    description=(
+        "Mark a workflow as a template (or unmark it). Templates can be cloned "
+        "via workflow_clone. Scope controls who sees the template in the clone "
+        "picker: 'global' (all labs users, admin-only to set), 'org:<id>' "
+        "(org members), or 'program:<id>' (program members)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "is_template": {"type": "boolean"},
+            "template_scope": {"type": "string"},
+        },
+        "required": ["workflow_id", "opportunity_id", "is_template"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_set_template_flag(
+    user,
+    workflow_id: int,
+    opportunity_id: int,
+    is_template: bool,
+    template_scope: str = None,
+):
+    if is_template:
+        if not template_scope:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                "template_scope is required when is_template=true.",
+            )
+        _validate_template_scope(template_scope, user)
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        current = wda.get_definition(workflow_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+
+        new_data = dict(current.data)
+        if is_template:
+            new_data["is_template"] = True
+            new_data["template_scope"] = template_scope
+        else:
+            new_data.pop("is_template", None)
+            new_data.pop("template_scope", None)
+
+        wda.update_definition(definition_id=workflow_id, data=new_data)
+        return {
+            "workflow_id": workflow_id,
+            "is_template": is_template,
+            "template_scope": template_scope if is_template else None,
+        }
+    finally:
+        wda.close()
+
+
 @register(
     name="workflow_clone",
     description=(
