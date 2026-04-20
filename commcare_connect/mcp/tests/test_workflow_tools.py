@@ -726,3 +726,199 @@ def test_set_template_flag_unmark(mock_wda_cls, client, auth_user):
     call_kwargs = mock_wda_cls.return_value.update_definition.call_args.kwargs
     assert "is_template" not in call_kwargs["data"]
     assert "template_scope" not in call_kwargs["data"]
+
+
+# --- workflow_update_opportunity_ids ------------------------------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_happy_path(mock_wda_cls, mock_fetch, client, auth_user):
+    """Happy path: all opps are in caller's access, update succeeds, version bumps."""
+    _, raw = auth_user
+    mock_fetch.return_value = {
+        "opportunities": [{"id": 100}, {"id": 200}, {"id": 300}],
+    }
+    current = MagicMock(data={"version": 3, "name": "Perf", "statuses": [{"id": "x"}]})
+    updated = MagicMock(
+        data={"version": 4, "name": "Perf", "statuses": [{"id": "x"}], "opportunity_ids": [100, 200, 300]}
+    )
+    mock_wda_cls.return_value.get_definition.return_value = current
+    mock_wda_cls.return_value.update_definition.return_value = updated
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 200, 300],
+            "expected_version": 3,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["workflow_id"] == 42
+    assert content["opportunity_ids"] == [100, 200, 300]
+    assert content["new_version"] == 4
+
+    # update_definition received the merged data — other fields preserved, version bumped.
+    call_kwargs = mock_wda_cls.return_value.update_definition.call_args.kwargs
+    assert call_kwargs["data"]["opportunity_ids"] == [100, 200, 300]
+    assert call_kwargs["data"]["name"] == "Perf"  # preserved
+    assert call_kwargs["data"]["version"] == 4
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_rejects_ids_outside_user_access(mock_wda_cls, mock_fetch, client, auth_user):
+    """If any id isn't in the caller's access, reject with PERMISSION_DENIED."""
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}, {"id": 200}]}
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 999],  # 999 not in user's access
+            "expected_version": 3,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "PERMISSION_DENIED"
+    assert err["details"]["invalid_opportunity_ids"] == [999]
+    # Did not touch the DB.
+    mock_wda_cls.return_value.update_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_empty_list_skips_validation(mock_wda_cls, mock_fetch, client, auth_user):
+    """An empty list is allowed (revert to single-opp) and doesn't need access validation."""
+    _, raw = auth_user
+    current = MagicMock(data={"version": 1, "name": "Perf"})
+    updated = MagicMock(data={"version": 2, "name": "Perf", "opportunity_ids": []})
+    mock_wda_cls.return_value.get_definition.return_value = current
+    mock_wda_cls.return_value.update_definition.return_value = updated
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "opportunity_ids": [],
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    assert data["result"]["structuredContent"]["opportunity_ids"] == []
+    mock_fetch.assert_not_called()  # no validation call for empty list
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_dedupes(mock_wda_cls, mock_fetch, client, auth_user):
+    """Duplicate ids are collapsed while preserving first-seen order."""
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}, {"id": 200}]}
+    current = MagicMock(data={"version": 1, "name": "Perf"})
+    updated = MagicMock(data={"version": 2, "name": "Perf", "opportunity_ids": [100, 200]})
+    mock_wda_cls.return_value.get_definition.return_value = current
+    mock_wda_cls.return_value.update_definition.return_value = updated
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 200, 100, 200],
+            "expected_version": 1,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    call_kwargs = mock_wda_cls.return_value.update_definition.call_args.kwargs
+    assert call_kwargs["data"]["opportunity_ids"] == [100, 200]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_version_conflict(mock_wda_cls, mock_fetch, client, auth_user):
+    """expected_version mismatch produces VERSION_CONFLICT."""
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}]}
+    current = MagicMock(data={"version": 5, "name": "Perf"})
+    mock_wda_cls.return_value.get_definition.return_value = current
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "opportunity_ids": [100],
+            "expected_version": 3,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "VERSION_CONFLICT"
+    mock_wda_cls.return_value.update_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_opportunity_ids_not_found(mock_wda_cls, mock_fetch, client, auth_user):
+    """Missing workflow → NOT_FOUND."""
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}]}
+    mock_wda_cls.return_value.get_definition.return_value = None
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 999,
+            "opportunity_id": 100,
+            "opportunity_ids": [100],
+            "expected_version": 1,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+def test_update_opportunity_ids_upstream_failure_blocks_write(mock_fetch, client, auth_user):
+    """If we can't fetch the user's opportunities, we must refuse to validate rather than persist blindly."""
+    _, raw = auth_user
+    mock_fetch.return_value = None
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_opportunity_ids",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 200],
+            "expected_version": 1,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "UPSTREAM_ERROR"
