@@ -5,4 +5,5 @@ Importing this package triggers all registration.
 """
 
 from . import pipelines  # noqa: F401
+from . import sample_ids  # noqa: F401
 from . import workflows  # noqa: F401
