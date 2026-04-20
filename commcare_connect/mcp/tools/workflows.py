@@ -167,6 +167,243 @@ def _validate_render_code(jsx: str) -> None:
         )
 
 
+from commcare_connect.workflow.templates import (  # noqa: E402
+    create_workflow_from_template as _create_workflow_from_template,
+)
+
+_DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config"}
+
+
+@register(
+    name="workflow_update_definition",
+    description=(
+        "Update fields on a workflow definition. Accepts a patch dict. "
+        "Allowed keys: name, description, statuses, config. `statuses` replaces "
+        "wholesale; `config` shallow-merges. Unknown keys rejected with INVALID_SCHEMA. "
+        "Uses expected_version for optimistic concurrency."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "patch": {"type": "object"},
+            "expected_version": {"type": "integer"},
+        },
+        "required": ["workflow_id", "opportunity_id", "patch", "expected_version"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_update_definition(
+    user,
+    workflow_id: int,
+    opportunity_id: int,
+    patch: dict,
+    expected_version: int,
+):
+    unknown_keys = set(patch) - _DEFINITION_PATCH_ALLOWED
+    if unknown_keys:
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"Unknown patch keys: {sorted(unknown_keys)}. " f"Allowed: {sorted(_DEFINITION_PATCH_ALLOWED)}",
+        )
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        current = wda.get_definition(workflow_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+        current_version = current.data.get("version", 1)
+        if current_version != expected_version:
+            raise MCPToolError(
+                "VERSION_CONFLICT",
+                f"workflow definition is at version {current_version}, not {expected_version}. "
+                "Call workflow_get to re-read and retry.",
+                details={"server_version": current_version, "expected": expected_version},
+            )
+
+        # Build the updated payload. Keep existing data, then apply patch per rules.
+        # Real update_definition(definition_id, data) takes only id + full data dict.
+        new_data = dict(current.data)  # shallow copy
+        if "name" in patch:
+            new_data["name"] = patch["name"]
+        if "description" in patch:
+            new_data["description"] = patch["description"]
+        if "statuses" in patch:
+            new_data["statuses"] = patch["statuses"]  # replace wholesale
+        if "config" in patch:
+            merged_config = dict(new_data.get("config", {}))
+            merged_config.update(patch["config"])
+            new_data["config"] = merged_config
+        new_data["version"] = expected_version + 1
+
+        updated = wda.update_definition(
+            definition_id=workflow_id,
+            data=new_data,
+        )
+        new_version = updated.data.get("version", expected_version + 1)
+        return {
+            "workflow_id": workflow_id,
+            "new_version": new_version,
+            "_version_before": expected_version,
+            "_version_after": new_version,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
+    name="workflow_revert_render_code",
+    description=(
+        "Restore a prior render_code version as a new save. Useful for `undo that`. "
+        "Does NOT rewrite history — it creates a new version containing the prior "
+        "code. Re-reading returns the new version number. "
+        "NOTE: Because only the latest render_code is stored (versions are counters, "
+        "not snapshots), this tool can only revert if the caller supplies the prior "
+        "code directly. Use to_version to confirm the expected current version before "
+        "the revert, and component_code to supply the prior code to restore."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "to_version": {
+                "type": "integer",
+                "description": (
+                    "The version number the caller wants to restore TO. "
+                    "Must be less than current version. Used as new version label."
+                ),
+            },
+            "component_code": {
+                "type": "string",
+                "description": "The JSX code to restore (the prior code you want to reapply).",
+            },
+        },
+        "required": ["workflow_id", "opportunity_id", "to_version", "component_code"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_revert_render_code(
+    user,
+    workflow_id: int,
+    opportunity_id: int,
+    to_version: int,
+    component_code: str,
+):
+    """Restore a prior render_code version as a new save.
+
+    Implementation note: The data access layer stores only the latest render_code
+    (version is a counter, not a snapshot history). Old code is not retrievable via
+    get_render_code. The caller must therefore supply the code to restore via
+    component_code. This tool validates the JSX, bumps the version counter, and saves.
+    """
+    _validate_render_code(component_code)
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        current = wda.get_render_code(workflow_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"Workflow {workflow_id} has no render_code")
+
+        if to_version >= current.version:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"to_version ({to_version}) must be less than current version ({current.version}). "
+                "You can only revert to an older version.",
+                details={"current_version": current.version, "to_version": to_version},
+            )
+
+        new_version = current.version + 1
+        new_record = wda.save_render_code(
+            definition_id=workflow_id,
+            component_code=component_code,
+            version=new_version,
+        )
+        return {
+            "workflow_id": workflow_id,
+            "new_version": new_record.version,
+            "reverted_to_source_version": to_version,
+            "_version_before": current.version,
+            "_version_after": new_record.version,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
+    name="workflow_create_from_template",
+    description=(
+        "Create a new workflow from a built-in Python seed template. "
+        "template_key is one of the registered templates in "
+        "commcare_connect/workflow/templates/*.py (e.g. 'performance_review'). "
+        "Returns the new workflow_id. Pipelines linked in the template are NOT "
+        "created automatically (they require a Django request context); use "
+        "workflow_get to see pipeline_sources after creation."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "template_key": {"type": "string"},
+            "opportunity_id": {"type": "integer"},
+            "name": {
+                "type": "string",
+                "description": "Optional override for the workflow name.",
+            },
+        },
+        "required": ["template_key", "opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_create_from_template(
+    user,
+    template_key: str,
+    opportunity_id: int,
+    name: str = None,
+):
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        try:
+            # request=None means pipelines won't be created (requires Django request).
+            # The workflow definition and render_code are still created successfully.
+            definition, render_code, pipeline = _create_workflow_from_template(
+                data_access=wda,
+                template_key=template_key,
+                request=None,
+            )
+        except ValueError as e:
+            # create_workflow_from_template raises ValueError on unknown template.
+            raise MCPToolError("NOT_FOUND", str(e))
+
+        # If an override name was passed, apply it via a second update.
+        if name and name != definition.name:
+            new_data = dict(definition.data)
+            new_data["name"] = name
+            wda.update_definition(
+                definition_id=definition.id,
+                data=new_data,
+            )
+
+        return {
+            "workflow_id": definition.id,
+            "render_code_version": render_code.version if render_code else None,
+            "pipeline_id": pipeline.id if pipeline else None,
+            "_version_before": None,
+            "_version_after": 1,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
 @register(
     name="workflow_update_render_code",
     description=(

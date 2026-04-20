@@ -322,3 +322,255 @@ def test_update_render_code_audits_version_transition(mock_wda_cls, client, auth
     assert log.is_write is True
     assert log.version_before == 7
     assert log.version_after == 8
+
+
+# =============================================================================
+# workflow_update_definition tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_happy_path(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    current = MagicMock(
+        id=42,
+        description="old desc",
+        data={"version": 3, "config": {"a": 1}, "statuses": [{"key": "old"}], "name": "Old Name"},
+    )
+    current.name = "Old Name"
+    mock_wda_cls.return_value.get_definition.return_value = current
+    updated = MagicMock(
+        data={"version": 4, "config": {"a": 1, "b": 2}, "statuses": [{"key": "new"}]},
+    )
+    mock_wda_cls.return_value.update_definition.return_value = updated
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "patch": {"name": "New Name", "config": {"b": 2}, "statuses": [{"key": "new"}]},
+            "expected_version": 3,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["new_version"] == 4
+    # Private _version_* keys must NOT leak to the client
+    assert "_version_before" not in content
+    assert "_version_after" not in content
+
+
+@pytest.mark.django_db
+def test_update_definition_rejects_unknown_patch_keys(client, auth_user):
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {"workflow_id": 42, "opportunity_id": 100, "patch": {"secret_field": "x"}, "expected_version": 1},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_version_conflict(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"version": 7},
+    )
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {"workflow_id": 42, "opportunity_id": 100, "patch": {"name": "X"}, "expected_version": 3},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "VERSION_CONFLICT"
+    assert err["details"]["server_version"] == 7
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_definition_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_definition",
+        {"workflow_id": 999, "opportunity_id": 100, "patch": {"name": "X"}, "expected_version": 1},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+# =============================================================================
+# workflow_revert_render_code tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_revert_render_code_happy_path(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+
+    current = MagicMock(component_code="current code", version=5)
+    mock_wda_cls.return_value.get_render_code.return_value = current
+    mock_wda_cls.return_value.save_render_code.return_value = MagicMock(
+        component_code="old code",
+        version=6,
+    )
+
+    old_code = "function WorkflowUI(props) { var x = 'old'; return null; }"
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_revert_render_code",
+        {"workflow_id": 42, "opportunity_id": 100, "to_version": 2, "component_code": old_code},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["new_version"] == 6
+    assert content["reverted_to_source_version"] == 2
+    # save was called with the provided old code and a new version
+    args, kwargs = mock_wda_cls.return_value.save_render_code.call_args
+    assert kwargs["component_code"] == old_code
+    assert kwargs["version"] == 6
+    # Private _version_* keys must NOT leak to the client
+    assert "_version_before" not in content
+    assert "_version_after" not in content
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_revert_render_code_version_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_render_code.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_revert_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "to_version": 99,
+            "component_code": VALID_JSX,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_revert_render_code_rejects_invalid_jsx(mock_wda_cls, client, auth_user):
+    """Revert validates JSX before saving."""
+    _, raw = auth_user
+    current = MagicMock(component_code="current code", version=5)
+    mock_wda_cls.return_value.get_render_code.return_value = current
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_revert_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "to_version": 2,
+            "component_code": "function NotWorkflowUI() { var x = 1; }",
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_JSX"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_revert_render_code_rejects_future_version(mock_wda_cls, client, auth_user):
+    """Cannot revert to a version >= current version."""
+    _, raw = auth_user
+    current = MagicMock(component_code="current code", version=3)
+    mock_wda_cls.return_value.get_render_code.return_value = current
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_revert_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "to_version": 5,
+            "component_code": VALID_JSX,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+    assert "current_version" in err["details"]
+
+
+# =============================================================================
+# workflow_create_from_template tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows._create_workflow_from_template")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_create_from_template_happy_path(mock_wda_cls, mock_create, client, auth_user):
+    _, raw = auth_user
+    mock_def = MagicMock(id=101, description="", data={"name": "Perf Review", "version": 1})
+    mock_def.name = "Perf Review"
+    mock_render = MagicMock(version=1)
+    mock_create.return_value = (mock_def, mock_render, None)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "performance_review", "opportunity_id": 100},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["workflow_id"] == 101
+    assert content["render_code_version"] == 1
+    assert content["pipeline_id"] is None
+    assert "_version_before" not in content
+    assert "_version_after" not in content
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows._create_workflow_from_template")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_create_from_template_with_name_override(mock_wda_cls, mock_create, client, auth_user):
+    _, raw = auth_user
+    mock_def = MagicMock(id=101, description="", data={"name": "Original Name", "version": 1})
+    mock_def.name = "Original Name"
+    mock_render = MagicMock(version=1)
+    mock_create.return_value = (mock_def, mock_render, None)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "performance_review", "opportunity_id": 100, "name": "My Custom Name"},
+    )
+    assert data["result"]["isError"] is False, data
+    # update_definition should have been called to apply the name override
+    mock_wda_cls.return_value.update_definition.assert_called_once()
+    call_kwargs = mock_wda_cls.return_value.update_definition.call_args[1]
+    assert call_kwargs["data"]["name"] == "My Custom Name"
+
+
+@pytest.mark.django_db
+def test_create_from_template_unknown_template(client, auth_user):
+    """With no mocks, the real create_workflow_from_template raises ValueError for
+    an unknown template key which we map to NOT_FOUND."""
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {"template_key": "nonexistent-template-xyz", "opportunity_id": 100},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] in ("NOT_FOUND", "UPSTREAM_ERROR")
