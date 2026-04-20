@@ -482,3 +482,144 @@ def test_pipeline_sql_happy_path(mock_pda_cls, mock_sql, client, auth_user):
     content = data["result"]["structuredContent"]
     assert content["sql"] == expected_sql_info
     assert content["used_schema_override"] is False
+
+
+# --- pipeline_preview multi-opp fan-out -------------------------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_fans_out_across_opportunity_ids(mock_pda_cls, client, auth_user):
+    """opportunity_ids triggers per-opp execution; rows get tagged with
+    opportunity_id and the totals reflect all merged rows."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": [{"name": "f", "aggregation": "count"}]}},
+    )
+
+    def _exec(pipeline_id, oid):
+        return {"rows": [{"username": f"u{oid}"}], "metadata": {"row_count": 1}}
+
+    mock_pda_cls.return_value.execute_pipeline.side_effect = _exec
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {
+            "pipeline_id": 1,
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 200, 300],
+            "sample_size": 10,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    # 3 opps × 1 row each
+    assert content["row_count_before_sample"] == 3
+    assert {r["opportunity_id"] for r in content["rows"]} == {100, 200, 300}
+    assert content["opportunity_ids"] == [100, 200, 300]
+    assert set(content["per_opp_metadata"].keys()) == {"100", "200", "300"}
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_partial_failure_returns_successful_rows(mock_pda_cls, client, auth_user):
+    """If one opp errors but others succeed, we return the successful rows
+    and tag the erroring opp in opps_with_errors."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": []}},
+    )
+
+    def _exec(pipeline_id, oid):
+        if oid == 200:
+            return {"rows": [], "metadata": {"error": "boom"}}
+        return {"rows": [{"username": f"u{oid}"}], "metadata": {"row_count": 1}}
+
+    mock_pda_cls.return_value.execute_pipeline.side_effect = _exec
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {
+            "pipeline_id": 1,
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 200, 300],
+        },
+    )
+    assert data["result"]["isError"] is False
+    content = data["result"]["structuredContent"]
+    # 2 rows from 100 + 300, 200 errored
+    assert content["row_count_before_sample"] == 2
+    assert content["metadata"]["opps_with_errors"] == ["200"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_error_hint_for_ungrouped_column(mock_pda_cls, client, auth_user):
+    """When every opp errors with a known-pattern SQL message, we surface a
+    hint pointing at the likely-offending fields (first/last aggregations)."""
+    _, raw = auth_user
+    mock_def = MagicMock()
+    mock_def.data = {
+        "schema": {
+            "fields": [
+                {"name": "c", "path": "x", "aggregation": "count"},
+                {"name": "last_v", "path": "x", "aggregation": "last"},
+            ],
+        },
+    }
+    mock_pda_cls.return_value.get_definition.return_value = mock_def
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [],
+        "metadata": {
+            "error": 'subquery uses ungrouped column "labs_raw_visit_cache.opportunity_id" from outer query',
+        },
+    }
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 1, "opportunity_id": 100},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "UPSTREAM_ERROR"
+    assert err["details"]["hint"] is not None
+    assert "last_v" in err["details"]["hint"]
+
+
+# --- pipeline_delete ---------------------------------------------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_delete_happy_path(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(id=1)
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_delete",
+        {"pipeline_id": 1, "opportunity_id": 100},
+    )
+    assert data["result"]["isError"] is False, data
+    assert data["result"]["structuredContent"]["deleted"] is True
+    mock_pda_cls.return_value.delete_definition.assert_called_once_with(1)
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_delete_not_found(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_delete",
+        {"pipeline_id": 999, "opportunity_id": 100},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "NOT_FOUND"
+    mock_pda_cls.return_value.delete_definition.assert_not_called()

@@ -10,11 +10,47 @@ Write tools return _version_before / _version_after private keys so the
 transport captures the version transition in the audit log.
 """
 
+import logging
+import re
+
 from commcare_connect.labs.analysis.backends.sql.query_builder import generate_sql_preview
 from commcare_connect.workflow.data_access import PipelineDataAccess
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
+
+logger = logging.getLogger(__name__)
+
+
+def _hint_for_sql_error(err: str, schema: dict | None) -> str | None:
+    """Best-effort: map common Postgres / pipeline-engine error strings to a
+    pointer at the schema field most likely at fault. Returns None if no
+    useful hint can be extracted — callers should then just surface the raw
+    error.
+    """
+    if not err:
+        return None
+    # Unknown aggregation errors carry the offending name already.
+    m = re.search(r"Unknown aggregation '([^']+)' on field '([^']+)'", err)
+    if m:
+        return f"Field '{m.group(2)}' uses aggregation '{m.group(1)}', which the SQL builder does not support."
+    # Correlated-subquery / GROUP BY errors point at a first/last aggregation.
+    if "ungrouped column" in err and schema and isinstance(schema, dict):
+        offenders = [
+            f.get("name")
+            for f in (schema.get("fields") or [])
+            if isinstance(f, dict) and f.get("aggregation") in {"first", "last"}
+        ]
+        if offenders:
+            return (
+                "Postgres rejected a correlated subquery — typically emitted by `first`/`last` "
+                "aggregations. Fields using those: " + ", ".join(map(str, offenders)) + "."
+            )
+    # "path does not exist" style errors sometimes name the expression.
+    m = re.search(r"column \"([^\"]+)\" does not exist", err)
+    if m:
+        return f"Column '{m.group(1)}' isn't a known extract target — double-check field.path."
+    return None
 
 
 @register(
@@ -216,7 +252,12 @@ def pipeline_update_schema(
     description=(
         "Run the pipeline against real opportunity data and return sample rows. "
         "schema_override previews an unsaved schema without persisting. "
-        "This is the iteration hot path: read → tweak → preview → save."
+        "opportunity_ids (optional) runs the pipeline against each opp and "
+        "merges the rows with an opportunity_id tag on each — mirrors what "
+        "a multi-opp workflow sees at runtime. Errors from the SQL engine "
+        "are wrapped with a 'hint' pointing at the likely offending field "
+        "when one can be inferred. This is the iteration hot path: "
+        "read → tweak → preview → save."
     ),
     input_schema={
         "type": "object",
@@ -225,6 +266,15 @@ def pipeline_update_schema(
             "opportunity_id": {"type": "integer"},
             "sample_size": {"type": "integer", "default": 50},
             "schema_override": {"type": "object"},
+            "opportunity_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": (
+                    "Optional list of opps to fan the preview across (multi-opp "
+                    "workflows). Results from each opp are merged; rows gain an "
+                    "opportunity_id key."
+                ),
+            },
         },
         "required": ["pipeline_id", "opportunity_id"],
         "additionalProperties": False,
@@ -236,28 +286,41 @@ def pipeline_preview(
     opportunity_id: int,
     sample_size: int = 50,
     schema_override: dict = None,
+    opportunity_ids: list[int] = None,
 ):
     if schema_override is not None:
         _validate_pipeline_schema(schema_override)
 
     token = require_connect_token(user)
     pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
-    try:
-        definition = pda.get_definition(pipeline_id)
-        if definition is None:
-            raise MCPToolError("NOT_FOUND", f"No pipeline with id {pipeline_id}")
 
+    # Decide which opps to fan out across. Caller-supplied opportunity_ids
+    # always includes the primary opp implicitly.
+    target_opps: list[int] = []
+    seen: set[int] = set()
+    for oid in [opportunity_id] + list(opportunity_ids or []):
+        if oid in seen:
+            continue
+        seen.add(oid)
+        target_opps.append(oid)
+
+    def _single_opp_preview(opp_id: int) -> dict:
+        """Run the preview against one opp. Returns {"rows": [...], "metadata": {...}}.
+        Never raises on execution error — failures come back as metadata.error,
+        same contract as execute_pipeline."""
         if schema_override is not None:
             # Use the override schema directly via the lower-level API.
             # _schema_to_config converts a schema dict → AnalysisPipelineConfig.
             # We then call AnalysisPipeline directly, bypassing execute_pipeline
             # (which reads the schema from the definition record, not from our override).
-            # This guarantees the override is never persisted.
             from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
 
-            config = pda._schema_to_config(schema_override, pipeline_id)
-            pipeline = AnalysisPipeline(access_token=token)
-            raw_result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
+            try:
+                config = pda._schema_to_config(schema_override, pipeline_id)
+                pipeline = AnalysisPipeline(access_token=token)
+                raw_result = pipeline.stream_analysis_ignore_events(config, opp_id)
+            except Exception as e:
+                return {"rows": [], "metadata": {"error": str(e)}}
 
             rows = []
             if hasattr(raw_result, "rows"):
@@ -285,31 +348,112 @@ def pipeline_preview(
                         row_dict.update(custom)
                     rows.append(row_dict)
 
-            metadata = {
-                "row_count": len(rows),
-                "from_cache": getattr(raw_result, "from_cache", False),
-                "pipeline_name": definition.name,
+            return {
+                "rows": rows,
+                "metadata": {
+                    "row_count": len(rows),
+                    "from_cache": getattr(raw_result, "from_cache", False),
+                    "pipeline_name": definition.name,
+                },
             }
-            result = {"rows": rows, "metadata": metadata}
-        else:
-            result = pda.execute_pipeline(pipeline_id, opportunity_id)
+        return pda.execute_pipeline(pipeline_id, opp_id)
 
-        metadata = result.get("metadata") or {}
-        if metadata.get("error"):
+    try:
+        definition = pda.get_definition(pipeline_id)
+        if definition is None:
+            raise MCPToolError("NOT_FOUND", f"No pipeline with id {pipeline_id}")
+
+        # Execution schema used for error-hint generation (override wins when
+        # provided; otherwise the saved schema).
+        error_hint_schema = schema_override if schema_override is not None else (definition.data or {}).get("schema")
+
+        merged_rows: list[dict] = []
+        per_opp_metadata: dict[str, dict] = {}
+        first_error: str | None = None
+
+        for oid in target_opps:
+            res = _single_opp_preview(oid)
+            md = res.get("metadata") or {}
+            per_opp_metadata[str(oid)] = md
+            if md.get("error"):
+                # Record the first error but continue fanning out; callers often
+                # want to see partial results across the other opps. The first
+                # error becomes the top-level error if no opp succeeded.
+                if first_error is None:
+                    first_error = md["error"]
+                continue
+            for row in res.get("rows", []) or []:
+                # Tag each row so downstream UI (multi-opp workflows) can see
+                # which opp it came from. Preserve an existing opportunity_id
+                # if the row already has one (shouldn't, but harmless).
+                if "opportunity_id" not in row:
+                    row = {**row, "opportunity_id": oid}
+                merged_rows.append(row)
+
+        # If every opp errored, surface the first error with a hint.
+        if not merged_rows and first_error:
+            hint = _hint_for_sql_error(first_error, error_hint_schema)
             raise MCPToolError(
                 "UPSTREAM_ERROR",
-                f"Pipeline execution error: {metadata['error']}",
-                details={"metadata": metadata},
+                f"Pipeline execution error: {first_error}" + (f"  Hint: {hint}" if hint else ""),
+                details={
+                    "per_opp": per_opp_metadata,
+                    "hint": hint,
+                },
             )
-        rows = result.get("rows", []) or []
+
+        # Top-level metadata mirrors the old single-opp shape as closely as
+        # possible; pipeline_name is pulled safely (definition may be a Mock
+        # in tests). per_opp_metadata carries the detailed breakdown.
+        top_meta = {"row_count": len(merged_rows)}
+        pname = getattr(definition, "name", None)
+        if isinstance(pname, str):
+            top_meta["pipeline_name"] = pname
+        top_meta["opps_with_errors"] = [oid for oid, m in per_opp_metadata.items() if m.get("error")]
+
         return {
             "pipeline_id": pipeline_id,
             "opportunity_id": opportunity_id,
-            "rows": rows[:sample_size],
-            "row_count_before_sample": len(rows),
+            "opportunity_ids": target_opps if len(target_opps) > 1 else None,
+            "rows": merged_rows[:sample_size],
+            "row_count_before_sample": len(merged_rows),
             "used_schema_override": schema_override is not None,
-            "metadata": metadata,
+            "per_opp_metadata": per_opp_metadata,
+            "metadata": top_meta,
         }
+    finally:
+        if hasattr(pda, "close"):
+            pda.close()
+
+
+@register(
+    name="pipeline_delete",
+    description=(
+        "Delete a pipeline definition and its render code. Workflows "
+        "referencing the pipeline will be left with a dangling "
+        "pipeline_sources entry — clean those up separately or use "
+        "workflow_delete. IRREVERSIBLE."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "pipeline_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+        },
+        "required": ["pipeline_id", "opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def pipeline_delete(user, pipeline_id: int, opportunity_id: int):
+    token = require_connect_token(user)
+    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        existing = pda.get_definition(pipeline_id)
+        if existing is None:
+            raise MCPToolError("NOT_FOUND", f"No pipeline with id {pipeline_id}")
+        pda.delete_definition(pipeline_id)
+        return {"pipeline_id": pipeline_id, "deleted": True}
     finally:
         if hasattr(pda, "close"):
             pda.close()
