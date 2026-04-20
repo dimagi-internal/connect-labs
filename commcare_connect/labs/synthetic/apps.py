@@ -7,5 +7,4 @@ class SyntheticConfig(AppConfig):
     verbose_name = "Synthetic Opportunities"
 
     def ready(self):
-        # from commcare_connect.labs.synthetic import signals  # noqa: F401 — uncomment in Task 2
-        pass
+        from commcare_connect.labs.synthetic import signals  # noqa: F401
