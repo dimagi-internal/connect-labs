@@ -1,0 +1,260 @@
+"""Review tools — migrated from _pending_migration/review_tools.py.
+
+Reviews are LabsRecord entries with type="solicitation_review".
+Scoped by llo_entity_id (see CLAUDE.md record-type conventions).
+The labs_record FK on a review points to the response record, not the solicitation.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+
+from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+
+from ..connect_token import require_connect_token
+from ..tool_registry import MCPToolError, register  # noqa: F401
+
+logger = logging.getLogger(__name__)
+
+REVIEW_TYPE = "solicitation_review"
+
+
+def _serialize_record(record) -> dict:
+    """Flatten a LocalLabsRecord into a plain dict matching the original shape.
+
+    Merges the record's ``data`` dict into the outer envelope, giving callers
+    a single flat dict with id/experiment/type/labs_record_id plus all
+    application-level fields at the top level.
+    """
+    data = record.data or {}
+    return {
+        "id": record.id,
+        "experiment": record.experiment,
+        "type": record.type,
+        "labs_record_id": record.labs_record_id,
+        **data,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Read tools (is_write=False)
+# ---------------------------------------------------------------------------
+
+
+@register(
+    name="list_reviews",
+    description=(
+        "List all reviews for a given solicitation response. " "Reviews are linked to responses via labs_record_id."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "response_id": {
+                "type": "integer",
+                "description": "The Labs Record ID of the response to list reviews for.",
+            },
+        },
+        "required": ["response_id"],
+        "additionalProperties": False,
+    },
+)
+def list_reviews(user, response_id: int) -> dict:
+    """List all reviews for a response (child records linked by labs_record_id)."""
+    token = require_connect_token(user)
+    client = LabsRecordAPIClient(access_token=token)
+    try:
+        records = client.get_records(
+            type=REVIEW_TYPE,
+            labs_record_id=response_id,
+        )
+        return {"reviews": [_serialize_record(r) for r in records]}
+    finally:
+        client.close()
+
+
+@register(
+    name="get_review",
+    description="Get a single solicitation review by its Labs Record ID.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "review_id": {
+                "type": "integer",
+                "description": "The Labs Record ID of the review.",
+            },
+        },
+        "required": ["review_id"],
+        "additionalProperties": False,
+    },
+)
+def get_review(user, review_id: int) -> dict:
+    """Get a single review by ID. Returns the record or raises NOT_FOUND."""
+    token = require_connect_token(user)
+    client = LabsRecordAPIClient(access_token=token)
+    try:
+        record = client.get_record_by_id(review_id, type=REVIEW_TYPE)
+        if record is None:
+            raise MCPToolError("NOT_FOUND", f"Review {review_id} not found")
+        return _serialize_record(record)
+    finally:
+        client.close()
+
+
+# ---------------------------------------------------------------------------
+# Write tools (is_write=True)
+# ---------------------------------------------------------------------------
+
+
+@register(
+    name="create_review",
+    description=(
+        "Create a review for a solicitation response. "
+        "The review is linked to the response via labs_record_id and scoped by llo_entity_id."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "response_id": {
+                "type": "integer",
+                "description": "ID of the response being reviewed.",
+            },
+            "llo_entity_id": {
+                "type": "string",
+                "description": "LLO entity ID (used as experiment for API scoping).",
+            },
+            "score": {
+                "type": "integer",
+                "description": "Overall score 1-100.",
+            },
+            "recommendation": {
+                "type": "string",
+                "description": (
+                    "Review recommendation: 'under_review', 'approved', " "'rejected', or 'needs_revision'."
+                ),
+            },
+            "notes": {
+                "type": "string",
+                "description": "Reviewer notes.",
+            },
+            "criteria_scores": {
+                "type": "object",
+                "description": "Dict of criterion_id -> score (1-10).",
+                "additionalProperties": True,
+            },
+            "reviewer_username": {
+                "type": "string",
+                "description": "Username of the reviewer.",
+            },
+            "tags": {
+                "type": "string",
+                "description": "Comma-separated tags.",
+            },
+        },
+        "required": ["response_id", "llo_entity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def create_review(
+    user,
+    response_id: int,
+    llo_entity_id: str,
+    score: int | None = None,
+    recommendation: str = "under_review",
+    notes: str = "",
+    criteria_scores: dict | None = None,
+    reviewer_username: str = "",
+    tags: str = "",
+) -> dict:
+    """Create a review for a response.
+
+    Args:
+        response_id: ID of the response being reviewed
+        llo_entity_id: LLO entity ID (used as experiment for API scoping)
+        score: Overall score 1-100
+        recommendation: "under_review", "approved", "rejected", "needs_revision"
+        notes: Reviewer notes
+        criteria_scores: Dict of criterion_id -> score (1-10)
+        reviewer_username: Username of the reviewer
+        tags: Comma-separated tags
+    """
+    data: dict = {
+        "response_id": response_id,
+        "llo_entity_id": llo_entity_id,
+        "recommendation": recommendation,
+        "review_date": datetime.now(timezone.utc).isoformat(),
+    }
+    if score is not None:
+        data["score"] = score
+    if notes:
+        data["notes"] = notes
+    if criteria_scores:
+        data["criteria_scores"] = criteria_scores
+    if reviewer_username:
+        data["reviewer_username"] = reviewer_username
+    if tags:
+        data["tags"] = tags
+
+    token = require_connect_token(user)
+    client = LabsRecordAPIClient(access_token=token)
+    try:
+        record = client.create_record(
+            experiment=llo_entity_id,
+            type=REVIEW_TYPE,
+            data=data,
+            labs_record_id=response_id,
+            public=True,
+        )
+        return _serialize_record(record)
+    finally:
+        client.close()
+
+
+@register(
+    name="update_review",
+    description=(
+        "Update an existing review. Merges update_data into the existing data dict; "
+        "keys present in update_data overwrite existing values, all other keys are preserved."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "review_id": {
+                "type": "integer",
+                "description": "The Labs Record ID of the review to update.",
+            },
+            "update_data": {
+                "type": "object",
+                "description": "Fields to update. Merged (shallow) into the existing data dict.",
+                "additionalProperties": True,
+            },
+        },
+        "required": ["review_id", "update_data"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def update_review(user, review_id: int, update_data: dict) -> dict:
+    """Update an existing review by merging update_data into its data dict."""
+    token = require_connect_token(user)
+    client = LabsRecordAPIClient(access_token=token)
+    try:
+        current = client.get_record_by_id(review_id, type=REVIEW_TYPE)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"Review {review_id} not found")
+
+        merged_data = dict(current.data or {})
+        merged_data.update(update_data)
+
+        record = client.update_record(
+            record_id=review_id,
+            experiment=current.experiment,
+            type=current.type,
+            data=merged_data,
+            current_record=current,
+            labs_record_id=current.labs_record_id,
+        )
+        return _serialize_record(record)
+    finally:
+        client.close()
