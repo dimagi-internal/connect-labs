@@ -2,10 +2,6 @@
 
 Solicitations are LabsRecord entries with type="solicitation".
 Responses are LabsRecord entries with type="solicitation_response".
-
-award_response includes inline fund-allocation logic (from _pending_migration/fund_tools.py
-add_fund_allocation) because fund tools have not yet been migrated (B.4). When B.4 lands,
-this can be refactored to call a shared helper from the funds module.
 """
 
 from __future__ import annotations
@@ -16,6 +12,7 @@ from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIC
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register  # noqa: F401
+from .funds import _add_allocation_to_fund
 
 logger = logging.getLogger(__name__)
 
@@ -376,9 +373,6 @@ def award_response(
         updated_response = _serialize_record(updated_response_record)
 
         # 3. Auto-allocate from fund if fund_id provided
-        # NOTE: add_fund_allocation logic is inlined here because fund tools have
-        # not yet been migrated (B.4). When B.4 lands, this block can delegate to
-        # a shared helper from commcare_connect.mcp.tools.funds.
         if fund_id:
             solicitation_id = updated_data.get("solicitation_id")
             solicitation_title = ""
@@ -406,23 +400,7 @@ def award_response(
                 "notes": f"Award from {solicitation_title}" if solicitation_title else "Award",
             }
 
-            # Fetch the fund record and append the allocation
-            fund_record = client.get_record_by_id(fund_id, type="fund")
-            if fund_record is None:
-                raise MCPToolError("NOT_FOUND", f"Fund {fund_id} not found")
-
-            fund_data = dict(fund_record.data or {})
-            allocations = list(fund_data.get("allocations", []))
-            allocations.append(allocation)
-            fund_data["allocations"] = allocations
-
-            client.update_record(
-                record_id=fund_id,
-                experiment=fund_record.experiment,
-                type=fund_record.type,
-                data=fund_data,
-                current_record=fund_record,
-            )
+            _add_allocation_to_fund(client, fund_id, allocation)
 
         return updated_response
     finally:
