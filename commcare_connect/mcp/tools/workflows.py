@@ -1,6 +1,6 @@
 """Workflow tools — live-instance iteration from Claude Code."""
 
-from commcare_connect.workflow.data_access import WorkflowDataAccess
+from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
@@ -73,4 +73,70 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
             }
             for d in definitions
         ]
+    }
+
+
+@register(
+    name="workflow_get",
+    description=(
+        "Fetch everything needed to iterate on a workflow in one call: "
+        "definition (name, description, statuses, config), latest render_code "
+        "with its version number, and linked pipeline metadata."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+        },
+        "required": ["workflow_id", "opportunity_id"],
+        "additionalProperties": False,
+    },
+)
+def workflow_get(user, workflow_id: int, opportunity_id: int):
+    """Fetch one workflow with all the context needed to edit it."""
+    token = require_connect_token(user)
+
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        definition = wda.get_definition(workflow_id)
+        if definition is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+
+        # get_render_code is the actual method name (not get_latest_render_code)
+        render_code = wda.get_render_code(workflow_id)
+        pipeline_sources = definition.data.get("pipeline_sources", [])
+
+        # Fetch each linked pipeline's summary.
+        pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+        try:
+            enriched_sources = []
+            for src in pipeline_sources:
+                pid = src.get("pipeline_id")
+                pdef = pda.get_definition(pid) if pid else None
+                enriched_sources.append(
+                    {
+                        "pipeline_id": pid,
+                        "alias": src.get("alias"),
+                        "name": pdef.name if pdef else None,
+                        "schema_summary": {
+                            "field_count": len(pdef.data.get("schema", {}).get("fields", [])) if pdef else 0,
+                        },
+                    }
+                )
+        finally:
+            pda.close()
+    finally:
+        wda.close()
+
+    return {
+        "id": definition.id,
+        "name": definition.name,
+        "description": definition.description,
+        "statuses": definition.data.get("statuses", []),
+        "config": definition.data.get("config", {}),
+        "template_type": definition.template_type,
+        "render_code": render_code.component_code if render_code else None,
+        "render_code_version": render_code.version if render_code else None,
+        "pipeline_sources": enriched_sources,
     }
