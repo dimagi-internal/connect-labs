@@ -155,7 +155,17 @@ def create_workflow_from_template(
     # PipelineDataAccess can be constructed from either an HttpRequest (web
     # view path) or a direct access_token (MCP/CLI path). We reuse whatever
     # token ``data_access`` already has so the MCP can create pipelines too.
+    # We also forward the scope IDs so the new pipeline record is scoped to
+    # the same opp/program/org as the workflow — otherwise the record is
+    # created unscoped and subsequent scoped reads (`pipeline_get`, list views)
+    # can't see it. The web path gets this for free via
+    # ``request.labs_context``; the MCP path has to pass them explicitly.
     pipeline_access_token = getattr(data_access, "access_token", None)
+    pipeline_scope_kwargs = {
+        "opportunity_id": getattr(data_access, "opportunity_id", None),
+        "program_id": getattr(data_access, "program_id", None),
+        "organization_id": getattr(data_access, "organization_id", None),
+    }
     can_create_pipelines = bool(request) or bool(pipeline_access_token)
 
     # Create pipeline if template has one (singular schema)
@@ -165,6 +175,7 @@ def create_workflow_from_template(
         pipeline_data_access = PipelineDataAccess(
             request=request,
             access_token=pipeline_access_token,
+            **pipeline_scope_kwargs,
         )
         pipeline_record = pipeline_data_access.create_definition(
             name=pipeline_schema["name"],
@@ -195,6 +206,7 @@ def create_workflow_from_template(
         pipeline_data_access = PipelineDataAccess(
             request=request,
             access_token=pipeline_access_token,
+            **pipeline_scope_kwargs,
         )
         for ps in pipeline_schemas:
             record = pipeline_data_access.create_definition(
