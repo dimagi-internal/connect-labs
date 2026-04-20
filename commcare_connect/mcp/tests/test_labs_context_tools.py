@@ -172,3 +172,117 @@ def test_labs_context_requires_connect_token(client, db):
     data = _call_tool(client, raw, "labs_context", {})
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.labs_context.fetch_user_organization_data")
+def test_labs_context_search_prunes_tree_to_matching_subtrees(mock_fetch, client, auth_user):
+    """search is a case-insensitive substring match on org name/slug, program
+    name, and opportunity name. Orgs / programs without a matching descendant
+    are dropped entirely. The `totals` object reflects the filtered view, not
+    the full tree.
+    """
+    _, raw = auth_user
+    mock_fetch.return_value = {
+        "user": {},
+        "organizations": [
+            {"id": 1, "slug": "acme", "name": "Acme Health"},
+            {"id": 2, "slug": "beta", "name": "Beta Org"},
+        ],
+        "programs": [
+            {"id": 10, "name": "ECD v6", "organization": "acme", "delivery_type": "chc", "currency": "USD"},
+            {"id": 11, "name": "KMC Wave", "organization": "acme", "delivery_type": "chc", "currency": "USD"},
+        ],
+        "opportunities": [
+            {
+                "id": 100,
+                "name": "Demo Opp",
+                "organization": "partnerlab",
+                "program": 10,
+                "is_active": True,
+                "end_date": None,
+                "visit_count": 0,
+            },
+            {
+                "id": 200,
+                "name": "KMC Longitudinal",
+                "organization": "acme",
+                "program": None,
+                "is_active": True,
+                "end_date": None,
+                "visit_count": 0,
+            },
+            {
+                "id": 300,
+                "name": "Beta Opp",
+                "organization": "beta",
+                "program": None,
+                "is_active": True,
+                "end_date": None,
+                "visit_count": 0,
+            },
+        ],
+    }
+
+    # Match on program name "ECD v6" — should include acme with just that program.
+    data = _call_tool(client, raw, "labs_context", {"search": "ecd v6"})
+    content = data["result"]["structuredContent"]
+    assert content["search"] == "ecd v6"
+    assert [o["slug"] for o in content["organizations"]] == ["acme"]
+    acme = content["organizations"][0]
+    assert [p["name"] for p in acme["programs"]] == ["ECD v6"]
+    assert acme["opportunities"] == []  # KMC Longitudinal doesn't match
+    assert content["totals"] == {"organizations": 1, "programs": 1, "opportunities": 1}
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.labs_context.fetch_user_organization_data")
+def test_labs_context_search_matches_org_slug(mock_fetch, client, auth_user):
+    """Org slug matches include everything beneath it verbatim — a common
+    `labs_context({search: "acme"})` "show me this org" flow."""
+    _, raw = auth_user
+    mock_fetch.return_value = {
+        "user": {},
+        "organizations": [{"id": 1, "slug": "acme", "name": "Acme"}],
+        "programs": [],
+        "opportunities": [
+            {
+                "id": 100,
+                "name": "Alpha",
+                "organization": "acme",
+                "program": None,
+                "is_active": True,
+                "end_date": None,
+                "visit_count": 0,
+            },
+            {
+                "id": 101,
+                "name": "Gamma",
+                "organization": "acme",
+                "program": None,
+                "is_active": True,
+                "end_date": None,
+                "visit_count": 0,
+            },
+        ],
+    }
+    data = _call_tool(client, raw, "labs_context", {"search": "acme"})
+    content = data["result"]["structuredContent"]
+    assert len(content["organizations"]) == 1
+    assert len(content["organizations"][0]["opportunities"]) == 2
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.labs_context.fetch_user_organization_data")
+def test_labs_context_search_with_no_matches_returns_empty(mock_fetch, client, auth_user):
+    _, raw = auth_user
+    mock_fetch.return_value = {
+        "user": {},
+        "organizations": [{"id": 1, "slug": "acme", "name": "Acme"}],
+        "programs": [],
+        "opportunities": [],
+    }
+    data = _call_tool(client, raw, "labs_context", {"search": "nonsense"})
+    content = data["result"]["structuredContent"]
+    assert content["organizations"] == []
+    assert content["totals"] == {"organizations": 0, "programs": 0, "opportunities": 0}

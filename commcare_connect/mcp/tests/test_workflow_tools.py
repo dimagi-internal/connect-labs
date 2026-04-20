@@ -960,3 +960,240 @@ def test_update_opportunity_ids_upstream_failure_blocks_write(mock_fetch, client
     )
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] == "UPSTREAM_ERROR"
+
+
+# --- workflow_get include_render_code ---------------------------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.PipelineDataAccess")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_get_omits_render_code_when_requested(mock_wda_cls, mock_pda_cls, client, auth_user):
+    """include_render_code=false keeps render_code_version but drops the
+    component_code string. Saves ~20 KB per call when the caller only wants
+    metadata."""
+    _, raw = auth_user
+    mock_def = MagicMock(data={"pipeline_sources": []})
+    mock_def.id = 1
+    mock_def.name = "WF"
+    mock_def.description = "d"
+    mock_def.template_type = "performance_review"
+    mock_wda_cls.return_value.get_definition.return_value = mock_def
+
+    mock_rc = MagicMock()
+    mock_rc.component_code = "function WorkflowUI(){}"
+    mock_rc.version = 5
+    mock_wda_cls.return_value.get_render_code.return_value = mock_rc
+    mock_pda_cls.return_value.get_definition.return_value = None
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_get",
+        {"workflow_id": 1, "opportunity_id": 100, "include_render_code": False},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert "render_code" not in content
+    assert content["render_code_version"] == 5
+
+
+# --- workflow_create_from_template with opportunity_ids ---------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows._create_workflow_from_template")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_create_from_template_forwards_opportunity_ids(mock_wda_cls, mock_create, mock_fetch, client, auth_user):
+    """opportunity_ids validation mirrors workflow_update_opportunity_ids —
+    each id must be in the caller's access."""
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}, {"id": 200}, {"id": 300}]}
+    mock_def = MagicMock(id=42, name="N", data={"name": "N"})
+    mock_render = MagicMock(version=1)
+    mock_create.return_value = (mock_def, mock_render, None)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {
+            "template_key": "performance_review",
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 200, 300],
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    # cleaned list was forwarded to create_workflow_from_template
+    kwargs = mock_create.call_args.kwargs
+    assert kwargs["opportunity_ids"] == [100, 200, 300]
+    assert data["result"]["structuredContent"]["opportunity_ids"] == [100, 200, 300]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+def test_create_from_template_rejects_unauthorized_opportunity_ids(mock_fetch, client, auth_user):
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}]}
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create_from_template",
+        {
+            "template_key": "performance_review",
+            "opportunity_id": 100,
+            "opportunity_ids": [100, 999],
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "PERMISSION_DENIED"
+    assert err["details"]["invalid_opportunity_ids"] == [999]
+
+
+# --- workflow_patch_render_code ---------------------------------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_patch_render_code_applies_unique_match(mock_wda_cls, client, auth_user):
+    """Unique search → the patch is applied and version bumps."""
+    _, raw = auth_user
+    mock_rc = MagicMock()
+    mock_rc.component_code = "function WorkflowUI(){ var x = 1; return x; }"
+    mock_rc.version = 3
+    mock_wda_cls.return_value.get_render_code.return_value = mock_rc
+    mock_wda_cls.return_value.save_render_code.return_value = MagicMock(version=4)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_patch_render_code",
+        {
+            "workflow_id": 1,
+            "opportunity_id": 100,
+            "search": "var x = 1;",
+            "replace": "var x = 42;",
+            "expected_version": 3,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    call_kwargs = mock_wda_cls.return_value.save_render_code.call_args.kwargs
+    assert "var x = 42;" in call_kwargs["component_code"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_patch_render_code_refuses_ambiguous_match(mock_wda_cls, client, auth_user):
+    """Search string matching >1 times must be refused — we don't guess
+    which occurrence the caller meant."""
+    _, raw = auth_user
+    mock_rc = MagicMock()
+    mock_rc.component_code = "var x; var x;"
+    mock_rc.version = 1
+    mock_wda_cls.return_value.get_render_code.return_value = mock_rc
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_patch_render_code",
+        {
+            "workflow_id": 1,
+            "opportunity_id": 100,
+            "search": "var x;",
+            "replace": "var y;",
+            "expected_version": 1,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_JSX"
+    assert err["details"]["occurrences"] == 2
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_patch_render_code_zero_matches_is_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_rc = MagicMock()
+    mock_rc.component_code = "function WorkflowUI(){}"
+    mock_rc.version = 1
+    mock_wda_cls.return_value.get_render_code.return_value = mock_rc
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_patch_render_code",
+        {
+            "workflow_id": 1,
+            "opportunity_id": 100,
+            "search": "nonexistent",
+            "replace": "anything",
+            "expected_version": 1,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "NOT_FOUND"
+
+
+# --- workflow_delete --------------------------------------------------------
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_delete_returns_counts(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = MagicMock(id=42)
+    mock_wda_cls.return_value.delete_definition.return_value = {
+        "definition": 1,
+        "render_code": 1,
+        "runs": 0,
+        "audit_sessions": 0,
+        "chat_history": 0,
+    }
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_delete",
+        {"workflow_id": 42, "opportunity_id": 100},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["deleted"]["definition"] == 1
+    mock_wda_cls.return_value.delete_definition.assert_called_once_with(42, delete_linked=False)
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_delete_cascade_with_delete_linked(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = MagicMock(id=42)
+    mock_wda_cls.return_value.delete_definition.return_value = {
+        "definition": 1,
+        "render_code": 1,
+        "runs": 3,
+        "audit_sessions": 2,
+        "chat_history": 1,
+    }
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_delete",
+        {"workflow_id": 42, "opportunity_id": 100, "delete_linked": True},
+    )
+    assert data["result"]["isError"] is False
+    mock_wda_cls.return_value.delete_definition.assert_called_once_with(42, delete_linked=True)
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_delete_not_found(mock_wda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_wda_cls.return_value.get_definition.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_delete",
+        {"workflow_id": 999, "opportunity_id": 100},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "NOT_FOUND"
