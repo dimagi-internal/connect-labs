@@ -64,26 +64,38 @@ class AnalysisPipeline:
     Use this instead of importing from api_cache.py or backends directly.
     """
 
-    def __init__(self, request: HttpRequest):
+    def __init__(self, request: HttpRequest | None = None, *, access_token: str | None = None):
         """
-        Initialize pipeline with request context.
+        Initialize pipeline with request context or explicit access_token.
 
         Args:
-            request: HttpRequest with labs_oauth and labs_context
+            request: HttpRequest with labs_oauth and labs_context (web path)
+            access_token: OAuth token for Connect APIs (MCP/non-request path).
+                          Mutually exclusive with deriving the token from request.
+
+        Either ``request`` (with a valid labs_oauth session) or ``access_token``
+        must be provided.  When both are given, ``access_token`` takes precedence.
         """
         self.request = request
         self.backend = get_backend()
         self.backend_name = "sql"
 
-        # Extract context
-        self.access_token = request.session.get("labs_oauth", {}).get("access_token")
+        # Resolve access token: explicit kwarg wins, otherwise extract from session
+        if access_token is None and request is not None:
+            access_token = request.session.get("labs_oauth", {}).get("access_token")
 
-        # CCHQ OAuth token (for cchq_forms data sources)
-        self.cchq_access_token = request.session.get("commcare_oauth", {}).get("access_token")
-        self.labs_context = getattr(request, "labs_context", {})
+        if not access_token:
+            raise ValueError(
+                "AnalysisPipeline requires either a request with labs_oauth session or access_token kwarg"
+            )
 
-        if not self.access_token:
-            raise ValueError("No labs OAuth token found in session")
+        self.access_token = access_token
+
+        # CCHQ OAuth token (for cchq_forms data sources — only available via request)
+        self.cchq_access_token = (
+            request.session.get("commcare_oauth", {}).get("access_token") if request is not None else None
+        )
+        self.labs_context = getattr(request, "labs_context", {}) if request is not None else {}
 
     @property
     def opportunity_id(self) -> int | None:
@@ -103,7 +115,7 @@ class AnalysisPipeline:
         Reads from ?tolerance= query param first, then PIPELINE_CACHE_TOLERANCE_PCT
         setting (default 100 for production).
         """
-        if self.request and hasattr(self.request, "GET"):
+        if self.request is not None and hasattr(self.request, "GET"):
             param = self.request.GET.get("tolerance")
             if param is not None:
                 try:
@@ -153,7 +165,7 @@ class AnalysisPipeline:
             raise ValueError("No opportunity_id provided and none in labs_context")
 
         # Check URL param for force refresh
-        if self.request.GET.get("refresh") == "1":
+        if self.request is not None and self.request.GET.get("refresh") == "1":
             force_refresh = True
 
         return self.backend.fetch_raw_visits(
@@ -352,7 +364,7 @@ class AnalysisPipeline:
             yield (EVENT_ERROR, {"message": "No opportunity_id provided"})
             return
 
-        force_refresh = self.request.GET.get("refresh") == "1"
+        force_refresh = self.request is not None and self.request.GET.get("refresh") == "1"
         terminal_stage = config.terminal_stage
 
         try:
