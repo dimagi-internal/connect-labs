@@ -383,14 +383,15 @@ class TaskDataAccess(BaseDataAccess):
         """
         import logging
 
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
         logger = logging.getLogger(__name__)
 
         endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
         try:
-            with ExportAPIClient(
-                base_url=self.production_url,
+            with get_export_client(
+                opportunity_id=opportunity_id,
                 access_token=self.access_token,
                 timeout=120.0,
             ) as client:
@@ -462,7 +463,8 @@ class TaskDataAccess(BaseDataAccess):
         """
         import logging
 
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
         logger = logging.getLogger(__name__)
 
@@ -471,8 +473,8 @@ class TaskDataAccess(BaseDataAccess):
         params = {"username": username} if username else None
 
         try:
-            with ExportAPIClient(
-                base_url=self.production_url,
+            with get_export_client(
+                opportunity_id=opportunity_id,
                 access_token=self.access_token,
                 timeout=60.0,
             ) as client:
