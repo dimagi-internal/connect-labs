@@ -1,52 +1,52 @@
 ---
 name: workflow-templates
-description: Create and modify workflow templates for CommCare Connect. Use when the user wants to create a new workflow template, add a workflow type, modify existing workflow UI code, or asks about workflow render code patterns.
+description: Use this skill ONLY when authoring a new SEED template — a Python file in commcare_connect/workflow/templates/ that ships with labs and scaffolds new workflows via workflow_create_from_template. For editing a live workflow instance in labs (the common case), use workflow-author instead. For editing a live pipeline schema, use pipeline-author.
 ---
 
-# Building Workflow Templates
+# Authoring Seed Workflow Templates
 
-Workflow templates define reusable workflow types with data pipelines and custom React UIs.
+A seed workflow template is a Python file in `commcare_connect/workflow/templates/` that ships with labs. Users instantiate one as a new workflow via the MCP tool `workflow_create_from_template(template_key=...)`. Editing a seed template is a deploy-gated change to the codebase — not a change to any live workflow.
 
-**Reference:** Read `commcare_connect/workflow/WORKFLOW_REFERENCE.md` for the complete authoring guide — template structure, pipeline schemas, render code contract, actions API, and common patterns.
+**For editing a LIVE workflow or pipeline in labs, use `workflow-author` or `pipeline-author`, NOT this skill.** The MCP tools are strictly better for that case (no redeploy, no git round-trip, server-side validation).
 
-## Phase 1: Understand the Data (when building from external specs)
+## When to use this skill
 
-Skip this phase if you already know the CommCare form paths and indicators.
+- Shipping a new starter template that every labs user should be able to clone.
+- Updating an existing seed template's JSX or pipeline schema for use in future opportunities.
+- Fixing a bug in a seed template that affects the initial scaffold.
 
-1. **Analyze the source document** — identify indicators, data points, groupings, and visualization needs
-2. **Discover field paths** using MCP tools:
-   - `get_opportunity_apps(opportunity_id)` → domain + app IDs
-   - `get_app_structure(domain, app_id)` → modules, forms, xmlns
-   - `get_form_json_paths(xmlns, domain, app_id)` → exact JSON paths for each question
-3. **Map each indicator** to a pipeline field with the right aggregation and transform
-4. **Decide terminal_stage**: `visit_level` for per-visit detail, `aggregated` for per-worker summaries
+## When NOT to use this skill
 
-## Phase 2: Build the Template
+- Editing a workflow that's already live on an opportunity. Use `workflow-author`.
+- Fixing a rendering bug in one user's deployed workflow. Use `workflow-author`.
+- Adding a new field to a pipeline already in use. Use `pipeline-author`.
 
-1. **Create the file** in `commcare_connect/workflow/templates/` (e.g., `my_template.py`)
-2. **Write PIPELINE_SCHEMAS** with fields mapped from Phase 1 (see WORKFLOW_REFERENCE.md > Pipeline Schema Deep-Dive)
-3. **Write DEFINITION** with statuses and config (see WORKFLOW_REFERENCE.md > Template Anatomy)
-4. **Write RENDER_CODE** as JSX string (see WORKFLOW_REFERENCE.md > Render Code Contract)
-   - Must define `function WorkflowUI({...})` — not const/let
-   - Use `var` for all declarations
-   - Only `React` global available (plus Chart.js and Leaflet from CDN)
-5. **Export TEMPLATE dict** with key, name, description, icon, color, definition, render_code, pipeline_schema(s)
-6. **Test** with `?edit=true` URL parameter — verify pipeline data is non-empty, check browser console for Babel errors
+## File structure
 
-## Key Files
+Each seed template is a single Python file exporting these module-level names:
 
-- **Templates directory**: `commcare_connect/workflow/templates/` — add new `.py` files here
-- **Registry**: `commcare_connect/workflow/templates/__init__.py` — auto-discovers templates
-- **Reference**: `commcare_connect/workflow/WORKFLOW_REFERENCE.md` — full authoring guide
-- **Types**: `components/workflow/types.ts` — TypeScript interface definitions
-- **Examples**: `performance_review.py` (simple), `kmc_longitudinal.py` (complex multi-pipeline)
+- `DEFINITION` — dict with `name`, `description`, `statuses` (list), `config` (dict). Shape is validated by the MCP tool when cloning.
+- `RENDER_CODE` — a string containing the JSX. Same rules as live workflows: must declare `function WorkflowUI(...)`, must use `var` (not `const`/`let`), only `React` + Chart.js + Leaflet globals are available.
+- `PIPELINE_SCHEMAS` (optional) — a list of dicts, one per pipeline this template creates alongside the workflow. Each schema has `fields`, `aggregations`, `transforms`, `groupings`.
 
-## Checklist
+## Discovering form JSON paths
 
-Before considering a template complete:
+When building `PIPELINE_SCHEMAS` fields, you need exact JSON paths like `form.anthropometric.child_weight_visit`. Use the `commcare_hq_mcp` local tools:
 
-- [ ] Template key is unique
-- [ ] All field paths verified via MCP or CommCare HQ inspection
-- [ ] RENDER_CODE uses `var` (not `const`/`let`) and function is named `WorkflowUI`
-- [ ] Tested with `?edit=true` — data loads, no console errors
-- [ ] TEMPLATE dict has all required fields (key, name, description, icon, color, definition, render_code)
+1. `get_opportunity_apps(opportunity_id)` → returns apps for an opportunity
+2. `get_app_structure(domain, app_id)` → lists forms
+3. `get_form_json_paths(xmlns, domain, app_id)` → maps questions to JSON paths
+
+Pick an opportunity that uses the real app you're targeting and work from there.
+
+## Deploy
+
+Seed templates are picked up automatically on deploy — no registration step. Place the file in `commcare_connect/workflow/templates/` with a good module name (it becomes the `template_key` users pass to `workflow_create_from_template`).
+
+## After the change lands
+
+Test by cloning into a throwaway opportunity:
+
+> "Create a new workflow from the my_new_template template in opp 999"
+
+Claude will call `workflow_create_from_template` and you can verify the result lives in labs. If the template needs changes, edit the Python file and redeploy — seed templates are a deploy-gated surface.
