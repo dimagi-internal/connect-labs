@@ -4,6 +4,10 @@ from django.test import override_settings
 
 from commcare_connect.labs.analysis.backends.sql.backend import SQLBackend
 
+# get_export_client queries SyntheticOpportunity to route real vs fixture reads,
+# so these tests need DB access even though they mock HTTP.
+pytestmark = pytest.mark.django_db
+
 
 @override_settings(CONNECT_PRODUCTION_URL="https://connect.example.com")
 def test_fetch_from_api_paginates_and_converts_records(httpx_mock):

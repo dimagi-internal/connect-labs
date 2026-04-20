@@ -4,6 +4,10 @@ from django.core.cache import cache
 
 from commcare_connect.labs.analysis.data_access import fetch_flw_names
 
+# get_export_client queries SyntheticOpportunity to route real vs fixture reads,
+# so these tests need DB access even though they mock HTTP.
+pytestmark = pytest.mark.django_db
+
 
 @pytest.fixture(autouse=True)
 def clear_cache():

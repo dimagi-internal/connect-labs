@@ -13,7 +13,6 @@ from decimal import Decimal
 from typing import Any
 
 import sentry_sdk
-from django.conf import settings
 from django.http import HttpRequest
 from django.utils.dateparse import parse_date
 
@@ -177,7 +176,8 @@ class SQLBackend:
         so we never need a temp file like the v1 streaming CSV path did.
         """
         from commcare_connect.labs.analysis.backends.visit_record import record_to_visit_dict
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
         cache_manager = SQLCacheManager(opportunity_id, config=None)
 
@@ -202,8 +202,8 @@ class SQLBackend:
         rows_so_far = 0
 
         try:
-            with ExportAPIClient(
-                base_url=settings.CONNECT_PRODUCTION_URL,
+            with get_export_client(
+                opportunity_id=opportunity_id,
                 access_token=access_token,
                 timeout=180.0,
             ) as client:
@@ -278,14 +278,15 @@ class SQLBackend:
         but without the additional pandas DataFrame copy.
         """
         from commcare_connect.labs.analysis.backends.visit_record import record_to_visit_dict
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opportunity_id}/user_visits/"
         params = {"images": "true"} if include_images else None
 
         try:
-            with ExportAPIClient(
-                base_url=settings.CONNECT_PRODUCTION_URL,
+            with get_export_client(
+                opportunity_id=opportunity_id,
                 access_token=access_token,
                 timeout=180.0,
             ) as client:

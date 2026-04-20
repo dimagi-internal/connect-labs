@@ -1196,12 +1196,13 @@ class WorkflowDataAccess(BaseDataAccess):
             Note: visit_count is not in the v2 serializer; it will default to 0
             unless the serializer is extended on the production side.
         """
-        from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient, ExportAPIError
+        from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+        from commcare_connect.labs.integrations.connect.factory import get_export_client
 
         endpoint = f"/export/opportunity/{opportunity_id}/user_data/"
         try:
-            with ExportAPIClient(
-                base_url=self.production_url,
+            with get_export_client(
+                opportunity_id=opportunity_id,
                 access_token=self.access_token,
                 timeout=60.0,
             ) as client:
