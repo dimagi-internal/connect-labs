@@ -26,6 +26,8 @@ urlpatterns = [
     path("status/", views.StatusView.as_view(), name="status"),
     # Scout data agent
     path("scout/", views.ScoutEmbedView.as_view(), name="scout_embed"),
+    # Scout prod (scout.dimagi.com) — parallel embed for testing the standalone deployment
+    path("scout-prod/", views.ScoutProdEmbedView.as_view(), name="scout_prod_embed"),
     # CommCare OAuth (for API access)
     path("commcare/initiate/", commcare_oauth_views.labs_commcare_initiate, name="commcare_initiate"),
     path("commcare/callback/", commcare_oauth_views.labs_commcare_callback, name="commcare_callback"),
