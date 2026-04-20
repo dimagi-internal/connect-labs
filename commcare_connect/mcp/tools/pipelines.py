@@ -102,12 +102,31 @@ def pipeline_get(user, pipeline_id: int, opportunity_id: int):
         pda.close()
 
 
-_VALID_AGGREGATIONS = {"sum", "count", "count_distinct", "avg", "min", "max", "first", "last"}
+# Kept in lockstep with the SQL query_builder's `_aggregation_to_sql`. Add
+# here AND in the SQL builder when extending; the builder raises on unknown
+# aggregations so a stale MCP allow-list would surface as a server error
+# rather than a silent default.
+_VALID_AGGREGATIONS = {
+    "sum",
+    "count",
+    "count_distinct",
+    "count_unique",
+    "avg",
+    "min",
+    "max",
+    "first",
+    "last",
+    "list",
+}
 
 
 def _validate_pipeline_schema(schema: dict) -> None:
-    """Heuristic schema validation. Rejects unknown aggregations to avoid
-    runtime SQL errors during preview."""
+    """Minimal schema validation. Only rejects things the SQL builder will
+    definitely reject (unknown aggregations, non-dict payloads) so that the
+    error surfaces at MCP call time with a pointed message instead of as a
+    generic SQL error during preview. Everything else — field paths,
+    transforms, bucket definitions — is left to the pipeline engine.
+    """
     if not isinstance(schema, dict):
         raise MCPToolError("INVALID_SCHEMA", "schema must be a dict")
     fields = schema.get("fields")

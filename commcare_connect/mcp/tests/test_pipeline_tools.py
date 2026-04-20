@@ -198,6 +198,35 @@ def test_pipeline_update_schema_rejects_unknown_aggregation(client, auth_user):
 
 
 @pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_update_schema_accepts_documented_aggregations(mock_pda_cls, client, auth_user):
+    """count_unique and list are both documented in WORKFLOW_REFERENCE.md and
+    supported by the SQL builder — the allow-list used to miss them, forcing
+    callers to work around a false-positive rejection."""
+    _, raw = auth_user
+    mock_pda = mock_pda_cls.return_value
+    existing = MagicMock()
+    existing.version = 1
+    mock_pda.get_definition.return_value = existing
+    mock_pda.update_definition.return_value = MagicMock(version=2)
+
+    for agg in ["count_unique", "list"]:
+        schema = {"fields": [{"name": "x", "path": "form.x", "aggregation": agg}]}
+        data = _call_tool(
+            client,
+            raw,
+            "pipeline_update_schema",
+            {
+                "pipeline_id": 42,
+                "opportunity_id": 100,
+                "schema": schema,
+                "expected_version": 1,
+            },
+        )
+        assert data["result"]["isError"] is False, (agg, data)
+
+
+@pytest.mark.django_db
 def test_pipeline_update_schema_rejects_malformed_schema(client, auth_user):
     _, raw = auth_user
     data = _call_tool(
