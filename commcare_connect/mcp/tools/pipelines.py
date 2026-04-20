@@ -99,3 +99,93 @@ def pipeline_get(user, pipeline_id: int, opportunity_id: int):
         }
     finally:
         pda.close()
+
+
+_VALID_AGGREGATIONS = {"sum", "count", "count_distinct", "avg", "min", "max", "first", "last"}
+
+
+def _validate_pipeline_schema(schema: dict) -> None:
+    """Heuristic schema validation. Rejects unknown aggregations to avoid
+    runtime SQL errors during preview."""
+    if not isinstance(schema, dict):
+        raise MCPToolError("INVALID_SCHEMA", "schema must be a dict")
+    fields = schema.get("fields")
+    if fields is None or not isinstance(fields, list):
+        raise MCPToolError("INVALID_SCHEMA", "schema.fields must be a list")
+    for i, f in enumerate(fields):
+        if not isinstance(f, dict):
+            raise MCPToolError("INVALID_SCHEMA", f"schema.fields[{i}] must be a dict")
+        agg = f.get("aggregation")
+        if agg and agg not in _VALID_AGGREGATIONS:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"Unknown aggregation {agg!r} on field {f.get('name', '<unnamed>')!r}. "
+                f"Valid: {sorted(_VALID_AGGREGATIONS)}",
+            )
+
+
+@register(
+    name="pipeline_update_schema",
+    description=(
+        "Replace a pipeline's schema. Validates aggregations against an allow-list. "
+        "Uses expected_version for optimistic concurrency — re-fetch via pipeline_get "
+        "on VERSION_CONFLICT. Optionally updates name/description at the same time."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "pipeline_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "schema": {"type": "object"},
+            "expected_version": {"type": "integer"},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+        },
+        "required": ["pipeline_id", "opportunity_id", "schema", "expected_version"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def pipeline_update_schema(
+    user,
+    pipeline_id: int,
+    opportunity_id: int,
+    schema: dict,
+    expected_version: int,
+    name: str = None,
+    description: str = None,
+):
+    _validate_pipeline_schema(schema)
+
+    token = require_connect_token(user)
+    pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        current = pda.get_definition(pipeline_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"No pipeline with id {pipeline_id}")
+
+        current_version = current.version
+        if current_version != expected_version:
+            raise MCPToolError(
+                "VERSION_CONFLICT",
+                f"pipeline is at version {current_version}, not {expected_version}. "
+                "Call pipeline_get to re-read and retry.",
+                details={"server_version": current_version, "expected": expected_version},
+            )
+
+        updated = pda.update_definition(
+            definition_id=pipeline_id,
+            name=name,
+            description=description,
+            schema=schema,
+        )
+        new_version = updated.version
+        return {
+            "pipeline_id": pipeline_id,
+            "new_version": new_version,
+            "_version_before": expected_version,
+            "_version_after": new_version,
+        }
+    finally:
+        if hasattr(pda, "close"):
+            pda.close()
