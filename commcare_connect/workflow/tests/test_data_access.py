@@ -281,10 +281,13 @@ class TestCreateWorkflowFromTemplatePipelineCreation:
                 # Pipeline was created despite request=None.
                 assert pipeline_record is mock_pipeline
                 MockPipelineAccess.assert_called_once()
-                # Token was forwarded to the PipelineDataAccess constructor.
+                # Token AND scope are both forwarded so the new pipeline record
+                # is scoped to the same opp as the workflow — otherwise scoped
+                # reads (pipeline_get, list views) can't see it afterwards.
                 call_kwargs = MockPipelineAccess.call_args.kwargs
                 assert call_kwargs["request"] is None
                 assert call_kwargs["access_token"] == wda.access_token
+                assert call_kwargs["opportunity_id"] == wda.opportunity_id  # 700 from the fixture
 
                 # The new pipeline was linked as a source on the workflow definition.
                 create_def_kwargs = wda.create_definition.call_args.kwargs
