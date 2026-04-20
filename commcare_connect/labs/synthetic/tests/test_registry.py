@@ -76,3 +76,14 @@ def test_signal_invalidates_cache_on_save(django_assert_num_queries):
 
     with django_assert_num_queries(1):
         registry.get_synthetic_opp(42)
+
+
+@pytest.mark.django_db
+def test_signal_invalidates_cache_on_delete(django_assert_num_queries):
+    opp = SyntheticOpportunity.objects.create(opportunity_id=42, gdrive_folder_id="f", enabled=True)
+    registry.get_synthetic_opp(42)  # populate cache
+
+    opp.delete()  # fires post_delete
+
+    with django_assert_num_queries(1):
+        registry.get_synthetic_opp(42)
