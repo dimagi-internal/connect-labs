@@ -217,8 +217,17 @@ def _aggregation_to_sql(
         # Aggregate as array, will be converted to Python list
         # Note: list already has its own FILTER clause, skip per-field filter
         return f"ARRAY_AGG({value_expr}) FILTER (WHERE {value_expr} IS NOT NULL)"
-    else:
+    elif agg == "min":
         base = f"MIN({value_expr})"
+    elif agg == "max":
+        base = f"MAX({value_expr})"
+    else:
+        # Fail loudly on unknown aggregations rather than silently substituting
+        # MIN(). Prior behaviour made typos produce wrong data without warning.
+        raise ValueError(
+            f"Unknown aggregation {agg!r} on field {field_name!r}. "
+            "Valid: count, sum, avg, min, max, first, last, count_distinct, count_unique, list."
+        )
 
     # Apply per-field FILTER clause if both filter_path and filter_value are provided
     if filter_path and filter_value:
@@ -332,12 +341,19 @@ def build_flw_aggregation_query(
 
     select_clause = ",\n    ".join(select_parts)
 
+    # Note: opportunity_id must appear in GROUP BY even though the WHERE clause
+    # restricts it to a single value. The `first`/`last` aggregations use a
+    # correlated subquery that references labs_raw_visit_cache.opportunity_id
+    # from the outer query, and Postgres requires every correlated column to
+    # be either grouped or aggregated — it doesn't infer constancy from the
+    # WHERE filter. Grouping by opportunity_id is free here (it's constant
+    # within the filter) but makes the subquery legal.
     query = f"""
         SELECT
             {select_clause}
         FROM labs_raw_visit_cache
         WHERE opportunity_id = {opportunity_id}
-        GROUP BY username
+        GROUP BY username, opportunity_id
         ORDER BY username
     """
 

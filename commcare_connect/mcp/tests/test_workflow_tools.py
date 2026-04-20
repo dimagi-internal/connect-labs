@@ -201,8 +201,19 @@ def test_update_render_code_happy_path(mock_wda_cls, client, auth_user):
 
 
 @pytest.mark.django_db
-def test_update_render_code_rejects_missing_workflowui(client, auth_user):
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_render_code_accepts_const_let(mock_wda_cls, client, auth_user):
+    """Modern JS declarations are fine — the browser's Babel step handles them.
+    We used to reject them server-side; that was policy, not a real syntax
+    check, and it blocked legitimate modern code."""
     _, raw = auth_user
+    mock_render = MagicMock()
+    mock_render.version = 1
+    mock_wda_cls.return_value.get_render_code.return_value = mock_render
+    new_record = MagicMock(version=2)
+    mock_wda_cls.return_value.save_render_code.return_value = new_record
+
     data = _call_tool(
         client,
         raw,
@@ -210,17 +221,25 @@ def test_update_render_code_rejects_missing_workflowui(client, auth_user):
         {
             "workflow_id": 42,
             "opportunity_id": 100,
-            "component_code": "function NotWorkflowUI() { var x = 1; }",
+            "component_code": "function WorkflowUI() { const x = 1; let y = 2; return null; }",
             "expected_version": 1,
         },
     )
-    assert data["result"]["isError"] is True
-    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_JSX"
+    assert data["result"]["isError"] is False, data
 
 
 @pytest.mark.django_db
-def test_update_render_code_rejects_const_let(client, auth_user):
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_update_render_code_accepts_arrow_component(mock_wda_cls, client, auth_user):
+    """Arrow-function components are also OK now. If the caller gets the
+    contract wrong (e.g. function name mismatch), Babel will tell them at
+    render time with a clearer error than a server-side regex."""
     _, raw = auth_user
+    mock_render = MagicMock()
+    mock_render.version = 1
+    mock_wda_cls.return_value.get_render_code.return_value = mock_render
+    mock_wda_cls.return_value.save_render_code.return_value = MagicMock(version=2)
+
     data = _call_tool(
         client,
         raw,
@@ -228,14 +247,33 @@ def test_update_render_code_rejects_const_let(client, auth_user):
         {
             "workflow_id": 42,
             "opportunity_id": 100,
-            "component_code": "function WorkflowUI() { const x = 1; }",
+            "component_code": "var WorkflowUI = (props) => null;",
             "expected_version": 1,
         },
     )
-    assert data["result"]["isError"] is True
+    assert data["result"]["isError"] is False, data
+
+
+@pytest.mark.django_db
+def test_update_render_code_rejects_oversized(client, auth_user):
+    """Size cap still enforced so no one accidentally uploads a minified
+    bundle the size of the internet."""
+    _, raw = auth_user
+    huge = "function WorkflowUI(){return null;} /* " + ("x" * (512 * 1024 + 1)) + " */"
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_update_render_code",
+        {
+            "workflow_id": 42,
+            "opportunity_id": 100,
+            "component_code": huge,
+            "expected_version": 1,
+        },
+    )
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] == "INVALID_JSX"
-    assert "const" in err["message"]
+    assert "512" in err["message"]
 
 
 @pytest.mark.django_db
