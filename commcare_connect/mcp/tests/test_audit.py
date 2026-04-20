@@ -70,6 +70,7 @@ def sample_tool():
         name="workflow_update_sample",
         description="Test tool",
         input_schema={"type": "object", "properties": {"x": {"type": "integer"}}},
+        is_write=True,
     )
     def _handler(user, x: int = 0):
         return {"x_doubled": x * 2, "_version_before": 1, "_version_after": 2}

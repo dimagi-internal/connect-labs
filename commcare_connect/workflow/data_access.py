@@ -1714,16 +1714,17 @@ class PipelineDataAccess(BaseDataAccess):
         if not schema:
             return {"rows": [], "metadata": {"error": "Pipeline has no schema"}}
 
-        # Require request object for analysis pipeline
-        if not self.request:
-            return {"rows": [], "metadata": {"error": "Request object required for pipeline execution"}}
-
         try:
             # Convert schema to pipeline config
             config = self._schema_to_config(schema, definition_id)
 
-            # Execute pipeline using the AnalysisPipeline
-            pipeline = AnalysisPipeline(self.request)
+            # Execute pipeline using the AnalysisPipeline.
+            # Works with either a Django request (web UI path) or a bare access_token
+            # (MCP server path, which has no browser session).
+            if self.request is not None:
+                pipeline = AnalysisPipeline(self.request)
+            else:
+                pipeline = AnalysisPipeline(access_token=self.access_token)
             result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
 
             # Convert result to dict format

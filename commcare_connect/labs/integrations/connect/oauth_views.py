@@ -23,6 +23,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
+from commcare_connect.labs.models import UserConnectToken
 from commcare_connect.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -247,6 +248,17 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
         defaults={
             "email": profile_data.get("email") or None,
             "name": name,
+        },
+    )
+
+    # Persist to DB so the MCP server (no session) can look up this token.
+    # expires_at is already a timezone-aware datetime (timezone.now() + timedelta).
+    UserConnectToken.objects.update_or_create(
+        user=user,
+        defaults={
+            "access_token": access_token,
+            "refresh_token": token_json.get("refresh_token", ""),
+            "expires_at": expires_at,
         },
     )
 
