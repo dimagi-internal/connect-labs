@@ -23,6 +23,12 @@ Each template is a single `.py` file in `commcare_connect/workflow/templates/`. 
 | `PIPELINE_SCHEMA`  | `dict`       | Single pipeline schema (simple templates)                       |
 | `PIPELINE_SCHEMAS` | `list[dict]` | Multiple pipeline schemas with aliases (multi-source templates) |
 
+The `TEMPLATE` dict itself also accepts one optional key:
+
+| Key         | Type   | Default | Description                                                                                                |
+| ----------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `multi_opp` | `bool` | `False` | Opt in to multi-opportunity support. See [§8 Multi-opportunity workflows](#8-multi-opportunity-workflows). |
+
 ### Minimal Example (Single Pipeline)
 
 ```python
@@ -968,3 +974,59 @@ Before deploying a new template:
 - [ ] Pipeline schema linked via `pipeline_schema` (single) or `pipeline_schemas` (plural, with aliases)
 - [ ] Test with `?edit=true` -- pipeline data is non-empty
 - [ ] Check browser console for Babel transpilation errors
+
+---
+
+## 8. Multi-opportunity workflows
+
+By default, every workflow run is scoped to a single opportunity. Templates can opt in to **multi-opportunity** execution, where one workflow merges data from several opportunities and presents opportunity-tagged rows to its render code.
+
+### When to use
+
+Use multi-opp for workflows that need a cross-opportunity view — e.g. a program-wide performance review, a shared worker roster, a network-manager dashboard across 2-5 opps. Single-opp remains the default for anything where the render code assumes data comes from one opportunity.
+
+### Enabling a template
+
+Set `multi_opp: True` on the `TEMPLATE` dict:
+
+```python
+TEMPLATE = {
+    "key": "my_template",
+    "name": "My Template",
+    "multi_opp": True,        # <-- opt in
+    "definition": DEFINITION,
+    "render_code": RENDER_CODE,
+    "pipeline_schema": PIPELINE_SCHEMA,
+}
+```
+
+The registry surfaces this flag via `list_templates()`; the flag is also persisted into `definition.data.config.multi_opp` when a workflow is created, so the runtime can gate UI and API behaviour on it.
+
+### What changes at create time
+
+For a `multi_opp` template, the workflow list page shows a **Multi-opp** badge on the template card, and clicking it opens an opportunity multi-select. The submitted `opportunity_ids` are validated server-side against the user's `user_opportunities` and stored on the definition as `data.opportunity_ids`. The workflow's "primary opp" (the opp whose context was active when the user hit Create) remains the record owner for permission/scoping purposes — it is independent of `opportunity_ids` and may or may not be a member.
+
+### What changes at runtime
+
+Both the non-SSE path (`WorkflowDataAccess.get_pipeline_data`) and the SSE streamer (`PipelineDataStreamView`) iterate `definition.opportunity_ids or [primary_opp_id]`. For each pipeline source, they execute the pipeline once per opp, tag each returned row with `opportunity_id`, and concatenate. `get_workers` is called per-opp and the returned dicts are likewise tagged. Per-opp failures are isolated and recorded in metadata rather than aborting the whole stream.
+
+### Render-code contract
+
+Render code for a multi-opp template receives the same props as a single-opp template, with these additions:
+
+- `instance.opportunity_ids: number[]` — full opp set for this run.
+- `instance.opportunity_id: number` — primary opp (unchanged semantics).
+- `workers[i].opportunity_id: number` — each worker is tagged with its source opp.
+- `pipelines[alias].rows[i].opportunity_id: number` — each row is tagged.
+- `pipelines[alias].metadata.opportunity_ids: number[]` — list of opps that contributed.
+- `pipelines[alias].metadata.per_opp: { [opp_id_as_string: string]: { row_count, from_cache, error? } }` — per-opp metadata. **Keys are strings.** Python's `json.dumps` coerces integer dict keys to strings, so the shape the browser sees uses strings. Access via `metadata.per_opp[String(oppId)]`.
+
+The engine does not deduplicate rows across opps. Single-opp templates receive `opportunity_ids = [primary]` and every row tagged with the same opp, so no code changes are required — legacy behaviour is preserved.
+
+### Editing the opp set
+
+Multi-opp workflow run pages show an "Opportunities: N selected [Edit]" control. Editing posts to `POST /labs/workflow/api/<definition_id>/opportunity-ids/` (view: `UpdateOpportunityIdsView`). The endpoint validates each submitted ID against `user_opportunities`, rejects empty lists, rejects updates against non-multi-opp workflows, and updates `definition.data.opportunity_ids`. The page reloads after save so pipeline data re-streams against the new opp set. The primary opp cannot be changed through this endpoint.
+
+### Reference implementation
+
+`commcare_connect/workflow/templates/performance_review.py` is the canonical multi-opp template. Its table includes an **Opp** column rendering `worker.opportunity_id`. See also `docs/superpowers/specs/2026-04-17-multi-opp-workflows-design.md` for the design notes that led to the current contract.
