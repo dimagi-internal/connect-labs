@@ -99,19 +99,28 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
     description=(
         "Fetch everything needed to iterate on a workflow in one call: "
         "definition (name, description, statuses, config), latest render_code "
-        "with its version number, and linked pipeline metadata."
+        "with its version number, and linked pipeline metadata. "
+        "Set include_render_code=false for a lighter response when you only "
+        "need metadata (render_code can be 20+ KB)."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "workflow_id": {"type": "integer"},
             "opportunity_id": {"type": "integer"},
+            "include_render_code": {
+                "type": "boolean",
+                "description": (
+                    "When false, render_code is omitted and render_code_version "
+                    "is still returned. Defaults to true."
+                ),
+            },
         },
         "required": ["workflow_id", "opportunity_id"],
         "additionalProperties": False,
     },
 )
-def workflow_get(user, workflow_id: int, opportunity_id: int):
+def workflow_get(user, workflow_id: int, opportunity_id: int, include_render_code: bool = True):
     """Fetch one workflow with all the context needed to edit it."""
     token = require_connect_token(user)
 
@@ -147,17 +156,19 @@ def workflow_get(user, workflow_id: int, opportunity_id: int):
     finally:
         wda.close()
 
-    return {
+    out = {
         "id": definition.id,
         "name": definition.name,
         "description": definition.description,
         "statuses": definition.data.get("statuses", []),
         "config": definition.data.get("config", {}),
         "template_type": definition.template_type,
-        "render_code": render_code.component_code if render_code else None,
         "render_code_version": render_code.version if render_code else None,
         "pipeline_sources": enriched_sources,
     }
+    if include_render_code:
+        out["render_code"] = render_code.component_code if render_code else None
+    return out
 
 
 _MAX_RENDER_CODE_BYTES = 512 * 1024  # 512 KB
@@ -390,20 +401,33 @@ def workflow_update_opportunity_ids(
     description=(
         "Create a new workflow from a built-in Python seed template. "
         "template_key is one of the registered templates in "
-        "commcare_connect/workflow/templates/*.py (e.g. 'performance_review'). "
-        "Returns the new workflow_id. If the template declares a pipeline_schema "
-        "(or pipeline_schemas), the pipeline(s) are created and linked "
-        "automatically — check the returned pipeline_id or call workflow_get to "
-        "see pipeline_sources."
+        "commcare_connect/workflow/templates/*.py (e.g. 'performance_review'); "
+        "call list_templates to enumerate. Returns the new workflow_id. "
+        "If the template declares a pipeline_schema (or pipeline_schemas), "
+        "the pipeline(s) are created and linked automatically. For multi-opp "
+        "templates, pass opportunity_ids to attach multiple opportunities in "
+        "one call — each must be accessible to the caller."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "template_key": {"type": "string"},
-            "opportunity_id": {"type": "integer"},
+            "opportunity_id": {
+                "type": "integer",
+                "description": "The primary/owning opportunity for the new workflow record.",
+            },
             "name": {
                 "type": "string",
                 "description": "Optional override for the workflow name.",
+            },
+            "opportunity_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": (
+                    "Optional list of opportunities the workflow should merge data from "
+                    "(multi-opp templates only). Each id is validated against the caller's "
+                    "access; single-opp templates silently ignore this."
+                ),
             },
         },
         "required": ["template_key", "opportunity_id"],
@@ -416,17 +440,49 @@ def workflow_create_from_template(
     template_key: str,
     opportunity_id: int,
     name: str = None,
+    opportunity_ids: list[int] = None,
 ):
     token = require_connect_token(user)
+
+    # Validate opportunity_ids up-front so we don't leave a half-created workflow
+    # around if the caller tries to attach an opp they can't access. Mirrors the
+    # check in workflow_update_opportunity_ids for consistency.
+    cleaned_opp_ids: list[int] = []
+    if opportunity_ids:
+        seen: set[int] = set()
+        for oid in opportunity_ids:
+            if not isinstance(oid, int) or isinstance(oid, bool):
+                raise MCPToolError(
+                    "INVALID_SCHEMA",
+                    f"opportunity_ids must be a list of ints. Got {oid!r}.",
+                )
+            if oid not in seen:
+                seen.add(oid)
+                cleaned_opp_ids.append(oid)
+        user_opp_ids = _collect_user_opportunity_ids(token)
+        if not user_opp_ids:
+            raise MCPToolError(
+                "UPSTREAM_ERROR",
+                "Could not fetch caller's opportunities from production Connect to validate opportunity_ids.",
+            )
+        invalid = [oid for oid in cleaned_opp_ids if oid not in user_opp_ids]
+        if invalid:
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"Caller has no access to opportunity_ids {sorted(invalid)}.",
+                details={"invalid_opportunity_ids": sorted(invalid)},
+            )
+
     wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
     try:
         try:
-            # request=None means pipelines won't be created (requires Django request).
-            # The workflow definition and render_code are still created successfully.
+            # request=None means we go through the access_token path.
+            # Pipelines are created via data_access.access_token forwarding.
             definition, render_code, pipeline = _create_workflow_from_template(
                 data_access=wda,
                 template_key=template_key,
                 request=None,
+                opportunity_ids=cleaned_opp_ids or None,
             )
         except ValueError as e:
             # create_workflow_from_template raises ValueError on unknown template.
@@ -445,6 +501,7 @@ def workflow_create_from_template(
             "workflow_id": definition.id,
             "render_code_version": render_code.version if render_code else None,
             "pipeline_id": pipeline.id if pipeline else None,
+            "opportunity_ids": list(cleaned_opp_ids),
             "_version_before": None,
             "_version_after": 1,
         }
@@ -685,6 +742,137 @@ def workflow_update_render_code(
             "_version_before": expected_version,
             "_version_after": new_record.version,
         }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
+    name="workflow_patch_render_code",
+    description=(
+        "Apply a search/replace patch to a workflow's render_code without "
+        "re-sending the whole file. `search` must match exactly once; "
+        "otherwise we refuse the patch (no silent ambiguity). Dramatically "
+        "cheaper than workflow_update_render_code for small tweaks. Uses "
+        "expected_version for optimistic concurrency — re-fetch via "
+        "workflow_get on VERSION_CONFLICT. Same 512 KB size cap applies to "
+        "the resulting code."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "search": {
+                "type": "string",
+                "description": "Exact substring to find. Must match once.",
+            },
+            "replace": {
+                "type": "string",
+                "description": "Replacement string (can be empty to delete).",
+            },
+            "expected_version": {"type": "integer"},
+        },
+        "required": ["workflow_id", "opportunity_id", "search", "replace", "expected_version"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_patch_render_code(
+    user,
+    workflow_id: int,
+    opportunity_id: int,
+    search: str,
+    replace: str,
+    expected_version: int,
+):
+    if not search:
+        raise MCPToolError("INVALID_JSX", "search must not be empty")
+
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        current = wda.get_render_code(workflow_id)
+        if current is None:
+            raise MCPToolError("NOT_FOUND", f"No render_code for workflow {workflow_id}.")
+        if current.version != expected_version:
+            raise MCPToolError(
+                "VERSION_CONFLICT",
+                f"render_code is at version {current.version}, not {expected_version}. "
+                "Call workflow_get to re-read and retry.",
+                details={"server_version": current.version, "expected": expected_version},
+            )
+
+        existing = current.component_code or ""
+        occurrences = existing.count(search)
+        if occurrences == 0:
+            raise MCPToolError(
+                "NOT_FOUND",
+                "search string did not match any substring of the current render_code.",
+                details={"occurrences": 0},
+            )
+        if occurrences > 1:
+            raise MCPToolError(
+                "INVALID_JSX",
+                f"search string matched {occurrences} times — refusing to patch ambiguously. "
+                "Provide a longer search that is unique in the file.",
+                details={"occurrences": occurrences},
+            )
+
+        patched = existing.replace(search, replace, 1)
+        _validate_render_code(patched)
+
+        new_record = wda.save_render_code(
+            definition_id=workflow_id,
+            component_code=patched,
+            version=expected_version + 1,
+        )
+        return {
+            "workflow_id": workflow_id,
+            "new_version": new_record.version,
+            "chars_before": len(existing),
+            "chars_after": len(patched),
+            "_version_before": expected_version,
+            "_version_after": new_record.version,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
+@register(
+    name="workflow_delete",
+    description=(
+        "Delete a workflow definition and its associated render_code + chat "
+        "history. By default, runs and their audit sessions are preserved "
+        "(they are historical records); set delete_linked=true to cascade "
+        "into runs and audit sessions too. Returns counts of deleted records. "
+        "IRREVERSIBLE — use with care."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "workflow_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
+            "delete_linked": {
+                "type": "boolean",
+                "description": "If true, also delete runs and linked audit sessions. Defaults to false.",
+            },
+        },
+        "required": ["workflow_id", "opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_delete(user, workflow_id: int, opportunity_id: int, delete_linked: bool = False):
+    token = require_connect_token(user)
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        existing = wda.get_definition(workflow_id)
+        if existing is None:
+            raise MCPToolError("NOT_FOUND", f"No workflow with id {workflow_id}")
+        counts = wda.delete_definition(workflow_id, delete_linked=delete_linked)
+        return {"workflow_id": workflow_id, "deleted": counts}
     finally:
         if hasattr(wda, "close"):
             wda.close()

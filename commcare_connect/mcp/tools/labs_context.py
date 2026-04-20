@@ -59,11 +59,26 @@ def _program_summary(prog: dict, opportunities: list[dict]) -> dict:
         "/export/opp_org_program_list/ on production Connect. Use this to "
         "discover valid opportunity_id / program_id / organization_id values "
         "for the scoped tools (workflow_list, list_solicitations, etc.) when "
-        "the caller doesn't already know them."
+        "the caller doesn't already know them. Pass `search` to filter the "
+        "tree by case-insensitive substring match on org name/slug, program "
+        "name, and opportunity name — empty orgs are dropped from the result."
     ),
-    input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+    input_schema={
+        "type": "object",
+        "properties": {
+            "search": {
+                "type": "string",
+                "description": (
+                    "Case-insensitive substring filter applied to org name, org slug, "
+                    "program name, and opportunity name. Orgs with no matching descendants "
+                    "are pruned from the result."
+                ),
+            },
+        },
+        "additionalProperties": False,
+    },
 )
-def labs_context(user) -> dict[str, Any]:
+def labs_context(user, search: str = None) -> dict[str, Any]:
     token = require_connect_token(user)
     data = fetch_user_organization_data(token)
     if data is None:
@@ -111,12 +126,67 @@ def labs_context(user) -> dict[str, Any]:
             }
         )
 
-    return {
-        "user": data.get("user") or {},
-        "organizations": tree,
-        "totals": {
+    filtered_tree = _apply_search(tree, search)
+    filtered_totals = (
+        _count_tree(filtered_tree)
+        if search
+        else {
             "organizations": len(organizations),
             "programs": len(programs),
             "opportunities": len(opportunities),
-        },
+        }
+    )
+
+    return {
+        "user": data.get("user") or {},
+        "organizations": filtered_tree,
+        "totals": filtered_totals,
+        "search": search or None,
     }
+
+
+def _apply_search(tree: list[dict], search: str | None) -> list[dict]:
+    """Prune the tree to orgs / programs / opps whose names contain `search`.
+
+    If any node in a subtree matches, all of its ancestors are kept so the
+    result remains a valid tree. Leaves that don't match are dropped; parents
+    with no matching descendants (and no self-match) are dropped.
+    """
+    if not search:
+        return tree
+    needle = search.lower()
+
+    def _opp_matches(o: dict) -> bool:
+        return needle in (o.get("name") or "").lower()
+
+    def _program_matches_or_keeps(p: dict) -> dict | None:
+        kept_opps = [o for o in p.get("opportunities", []) if _opp_matches(o)]
+        if needle in (p.get("name") or "").lower():
+            # Program name match → keep all its opportunities verbatim.
+            return {**p, "opportunities": p.get("opportunities", [])}
+        if kept_opps:
+            return {**p, "opportunities": kept_opps}
+        return None
+
+    out = []
+    for org in tree:
+        org_self_match = needle in (org.get("name") or "").lower() or needle in (org.get("slug") or "").lower()
+        kept_programs = [p for p in (_program_matches_or_keeps(p) for p in org.get("programs", [])) if p]
+        kept_opps = [o for o in org.get("opportunities", []) if _opp_matches(o)]
+        if org_self_match:
+            # Org matches: keep everything underneath it verbatim.
+            out.append(org)
+            continue
+        if kept_programs or kept_opps:
+            out.append({**org, "programs": kept_programs, "opportunities": kept_opps})
+    return out
+
+
+def _count_tree(tree: list[dict]) -> dict[str, int]:
+    orgs = len(tree)
+    programs = sum(len(org.get("programs", [])) for org in tree)
+    opportunities = sum(
+        len(org.get("opportunities", [])) + sum(len(p.get("opportunities", [])) for p in org.get("programs", []))
+        for org in tree
+    )
+    return {"organizations": orgs, "programs": programs, "opportunities": opportunities}
