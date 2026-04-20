@@ -30,9 +30,15 @@ class TestAggregationToSQL:
         assert "ORDER BY visit_date ASC" in result
         assert "LIMIT 1" in result
 
-    def test_unknown_falls_to_min(self):
-        result = _aggregation_to_sql("bogus", "val", "field")
-        assert result == "MIN(val)"
+    def test_unknown_raises(self):
+        """Previously fell through to MIN() silently. A typo like `counts`
+        or `averge` would produce wrong numbers with no warning. Now it
+        raises so the caller sees the error at pipeline-save or preview
+        time with the list of valid aggregations."""
+        import pytest
+
+        with pytest.raises(ValueError, match="Unknown aggregation"):
+            _aggregation_to_sql("bogus", "val", "field")
 
 
 class TestFilteredAggregation:

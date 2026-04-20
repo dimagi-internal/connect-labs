@@ -160,26 +160,25 @@ def workflow_get(user, workflow_id: int, opportunity_id: int):
     }
 
 
-_WORKFLOW_UI_RE = re.compile(r"\bfunction\s+WorkflowUI\s*\(")
-_LET_CONST_RE = re.compile(r"\b(const|let)\s+\w+")
+_MAX_RENDER_CODE_BYTES = 512 * 1024  # 512 KB
 
 
 def _validate_render_code(jsx: str) -> None:
-    """Light heuristic validation. Rejects obvious foot-guns; leaves full
-    Babel parsing to the frontend transpile step."""
+    """Minimal validation for render_code. The browser runs the real syntax
+    check via Babel standalone at render time, so the server's job is just
+    to reject obvious non-submissions (empty / oversized) and let everything
+    else through. Policy constraints like `var`-only or naming conventions
+    used to live here but were removed — they block valid modern JS (``let``,
+    ``const``, arrow-function components) and give no benefit the client
+    can't provide at render time with a clearer error.
+    """
     if not jsx or not jsx.strip():
         raise MCPToolError("INVALID_JSX", "render_code is empty")
-    if not _WORKFLOW_UI_RE.search(jsx):
+    if len(jsx.encode("utf-8")) > _MAX_RENDER_CODE_BYTES:
         raise MCPToolError(
             "INVALID_JSX",
-            "render_code must declare `function WorkflowUI(...)`. "
-            "Use a function declaration, not an arrow or const.",
-        )
-    bad_decls = _LET_CONST_RE.findall(jsx)
-    if bad_decls:
-        raise MCPToolError(
-            "INVALID_JSX",
-            "render_code must use `var` (not `const`/`let`). " f"Found: {', '.join(sorted(set(bad_decls)))}",
+            f"render_code exceeds {_MAX_RENDER_CODE_BYTES // 1024} KB. Split it into helper "
+            "workflows or move data to pipelines.",
         )
 
 
@@ -629,10 +628,12 @@ def workflow_clone(
 @register(
     name="workflow_update_render_code",
     description=(
-        "Replace a workflow's render_code (the JSX UI). Validates on the server: "
-        "must define function WorkflowUI and use `var` declarations only. "
-        "Rejects with INVALID_JSX on validation failure. Uses expected_version "
-        "for optimistic concurrency — re-fetch via workflow_get on VERSION_CONFLICT."
+        "Replace a workflow's render_code (the JSX UI). Server-side validation "
+        "is intentionally minimal: rejects empty payloads and oversized ones "
+        "(> 512 KB). Real syntax checking happens in the browser via Babel "
+        "standalone at render time, where errors are surfaced with full stack "
+        "traces. Uses expected_version for optimistic concurrency — re-fetch "
+        "via workflow_get on VERSION_CONFLICT."
     ),
     input_schema={
         "type": "object",
