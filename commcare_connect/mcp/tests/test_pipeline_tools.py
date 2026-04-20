@@ -287,3 +287,169 @@ def test_pipeline_update_schema_audits_version_transition(mock_pda_cls, client, 
     assert log.is_write is True
     assert log.version_before == 7
     assert log.version_after == 8
+
+
+# =============================================================================
+# pipeline_preview tests
+# =============================================================================
+
+SAMPLE_ROWS = [
+    {"flw_id": "a", "visits": 12},
+    {"flw_id": "b", "visits": 7},
+    {"flw_id": "c", "visits": 3},
+]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_happy_path(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": [{"name": "flw_id"}]}},
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": SAMPLE_ROWS,
+        "metadata": {"row_count": 3, "from_cache": False},
+    }
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 42, "opportunity_id": 100, "sample_size": 2},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert len(content["rows"]) == 2  # sample_size cap applied
+    assert content["row_count_before_sample"] == 3
+    assert content["used_schema_override"] is False
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.labs.analysis.pipeline.AnalysisPipeline")
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_schema_override_does_not_persist(mock_pda_cls, mock_pipeline_cls, client, auth_user):
+    """schema_override is previewed but update_definition is never called.
+
+    With schema_override, the tool bypasses execute_pipeline entirely and calls
+    AnalysisPipeline directly (lower-level path), so the definition record is
+    never mutated.
+    """
+    _, raw = auth_user
+    mock_defn = MagicMock(data={"schema": {"fields": [{"name": "original"}]}})
+    mock_defn.name = "TestPipeline"
+    mock_pda_cls.return_value.get_definition.return_value = mock_defn
+    # _schema_to_config is called on the pda instance (a MagicMock), so it
+    # returns a MagicMock config automatically.
+    mock_raw_result = MagicMock()
+    mock_raw_result.rows = []
+    mock_raw_result.from_cache = False
+    mock_pipeline_cls.return_value.stream_analysis_ignore_events.return_value = mock_raw_result
+
+    override = {"fields": [{"name": "new_field", "aggregation": "sum"}]}
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {
+            "pipeline_id": 42,
+            "opportunity_id": 100,
+            "schema_override": override,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    assert data["result"]["structuredContent"]["used_schema_override"] is True
+
+    # CRITICAL: update_definition must NOT have been called — override is preview-only
+    mock_pda_cls.return_value.update_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_pipeline_preview_rejects_invalid_override(client, auth_user):
+    _, raw = auth_user
+    bad = {"fields": [{"name": "x", "aggregation": "not_a_real_agg"}]}
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {
+            "pipeline_id": 42,
+            "opportunity_id": 100,
+            "schema_override": bad,
+        },
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_surfaces_executor_error(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"fields": []}},
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [],
+        "metadata": {"error": "Table 'oh_no' does not exist"},
+    }
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 42, "opportunity_id": 100},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "UPSTREAM_ERROR"
+    assert "oh_no" in err["message"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_not_found(mock_pda_cls, client, auth_user):
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = None
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 999, "opportunity_id": 100},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+# =============================================================================
+# pipeline_sql tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.generate_sql_preview")
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_sql_happy_path(mock_pda_cls, mock_sql, client, auth_user):
+    """generate_sql_preview is imported at module-top, so patch here."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        schema={"fields": []},
+        data={"schema": {"fields": []}},
+    )
+    expected_sql_info = {
+        "visit_extraction_sql": "SELECT 1",
+        "flw_aggregation_sql": None,
+        "terminal_stage": "visit_level",
+        "field_expressions": {},
+        "histogram_expressions": {},
+        "computed_fields": [],
+    }
+    mock_sql.return_value = expected_sql_info
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_sql",
+        {"pipeline_id": 42, "opportunity_id": 100},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["sql"] == expected_sql_info
+    assert content["used_schema_override"] is False
