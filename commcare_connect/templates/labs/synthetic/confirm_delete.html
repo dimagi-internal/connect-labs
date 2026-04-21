@@ -1,14 +1,30 @@
-{% extends 'base.html' %}
-{% block content %}
-<div class="container py-4" style="max-width: 640px;">
-  <h1 class="h3">Delete synthetic opportunity?</h1>
-  <p>Opportunity ID <strong>{{ object.opportunity_id }}</strong>{% if object.label %} — {{ object.label }}{% endif %}.</p>
-  <p class="text-muted small">This only removes the registry entry. Drive contents are untouched.</p>
+{% extends "base.html" %}
+{% load static %}
 
-  <form method="post">
-    {% csrf_token %}
-    <button type="submit" class="btn btn-danger">Delete</button>
-    <a href="{% url 'labs:synthetic:list' %}" class="btn btn-link">Cancel</a>
-  </form>
+{% block title %}Delete synthetic opportunity{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-16 max-w-md">
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+    <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+      <i class="fa-solid fa-triangle-exclamation text-2xl text-red-600"></i>
+    </div>
+    <h1 class="text-xl font-bold text-gray-900 mb-2">Delete synthetic opportunity?</h1>
+    <p class="text-gray-600 mb-1">
+      Opportunity <span class="font-mono text-gray-900">{{ object.opportunity_id }}</span>{% if object.label %} — <span class="font-medium">{{ object.label }}</span>{% endif %}
+    </p>
+    <p class="text-sm text-gray-500 mb-6">
+      Only the registry entry is removed. The Drive folder and its contents are untouched.
+    </p>
+
+    <form method="post" class="flex items-center justify-center gap-2">
+      {% csrf_token %}
+      <a href="{% url 'labs:synthetic:list' %}" class="button button-sm outline-style">Cancel</a>
+      <button type="submit" class="button button-sm outline-style text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400">
+        <i class="fa-solid fa-trash mr-1.5"></i>
+        Delete
+      </button>
+    </form>
+  </div>
 </div>
 {% endblock %}

@@ -33,7 +33,28 @@ class SyntheticListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         opp_ids = registry.accessible_opp_ids(self.request)
-        return super().get_queryset().filter(opportunity_id__in=opp_ids)
+        qs = super().get_queryset().filter(opportunity_id__in=opp_ids)
+        # Annotate each row with the Connect opp name so the template can
+        # show "Demo Opp (1237)" rather than a bare integer.
+        from commcare_connect.labs.context import get_org_data
+
+        names = {
+            int(o["id"]): o.get("name", "")
+            for o in get_org_data(self.request).get("opportunities", [])
+            if o.get("id") is not None
+        }
+        rows = list(qs)
+        for r in rows:
+            r.connect_name = names.get(r.opportunity_id, "")
+        return rows
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        opps = ctx["opps"]
+        ctx["active_count"] = sum(1 for o in opps if o.enabled)
+        ctx["disabled_count"] = sum(1 for o in opps if not o.enabled)
+        ctx["accessible_count"] = len(registry.accessible_opp_ids(self.request))
+        return ctx
 
 
 class SyntheticCreateView(LoginRequiredMixin, CreateView):
@@ -70,17 +91,19 @@ class SyntheticCreateView(LoginRequiredMixin, CreateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        name, org = self._lookup_opp(self._context_opp_id)
         ctx["context_opp_id"] = self._context_opp_id
-        ctx["context_opp_name"] = self._lookup_opp_name(self._context_opp_id)
+        ctx["context_opp_name"] = name
+        ctx["context_opp_org"] = org
         return ctx
 
-    def _lookup_opp_name(self, opp_id: int) -> str:
+    def _lookup_opp(self, opp_id: int) -> tuple[str, str]:
         from commcare_connect.labs.context import get_org_data
 
         for opp in get_org_data(self.request).get("opportunities", []):
             if int(opp.get("id", 0)) == int(opp_id):
-                return opp.get("name", "")
-        return ""
+                return opp.get("name", ""), opp.get("organization", "")
+        return "", ""
 
     def form_valid(self, form):
         form.instance.created_by = self.request.user
