@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "connect_labs": {
+      "type": "http",
+      "url": "https://labs.connect.dimagi.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${LABS_MCP_TOKEN}"
+      }
+    },
+    "commcare_hq_mcp": {
+      "command": "python",
+      "args": ["tools/commcare_hq_mcp/server.py"]
+    }
+  }
+}
