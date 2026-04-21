@@ -378,20 +378,45 @@ def _configure_vertex_auth(c: Context, env_values: dict) -> tuple[dict, Path | N
     return overrides, (creds_path if creds_ephemeral else None), desc
 
 
-@task
-def safe_claude(c: Context):
+def _resolve_auth_mode(auth: str | None) -> str:
+    """Validate --auth and return the canonical mode string. No default —
+    the operator MUST pick explicitly per run so there's no ambient 'which
+    endpoint am I routing PII through right now?' ambiguity."""
+    if auth is None:
+        raise Exit(
+            "--auth is required. Pick one explicitly each run:\n"
+            "  inv safe-claude --auth=api-key   (Anthropic ZDR key, from 1Password)\n"
+            "  inv safe-claude --auth=vertex    (Google Vertex AI, GCP-governed)\n"
+            "\nSee docs/SAFE_MODE.md for how each mode routes traffic.",
+            -1,
+        )
+    mode = auth.replace("-", "_").lower()
+    if mode not in (AUTH_MODE_API_KEY, AUTH_MODE_VERTEX):
+        raise Exit(
+            f"Unknown --auth={auth!r}. Use 'api-key' or 'vertex'.",
+            -1,
+        )
+    return mode
+
+
+@task(
+    help={
+        "auth": "REQUIRED. Auth mode — 'vertex' or 'api-key'. No default: "
+        "you must pick explicitly every run so it's always obvious which "
+        "governed endpoint your PII is routing through.",
+    }
+)
+def safe_claude(c: Context, auth=None):
     """Launch Claude Code in PII-safe mode against the labs MCP servers.
 
-    Auth is selected by SAFE_CLAUDE_AUTH in .env (default: `vertex`):
+    Usage:
+        inv safe-claude --auth=api-key   # Anthropic ZDR key (from 1Password)
+        inv safe-claude --auth=vertex    # Google Vertex AI
 
-    - `vertex` — Google Vertex AI. Service-account JSON fetched from 1Password
-      (AI-Agents vault) into a 0600 tempfile and deleted on exit. Preferred
-      path — usage billed to GCP, governed by our Cloud contract.
-    - `api_key` — Anthropic ZDR API key. Key is fetched fresh from 1Password
-      on every launch (1Password is the only source of truth — never from
-      .env or the parent shell). Any ANTHROPIC_API_KEY in the parent shell
-      is stripped before we set our own, so there's no fallback to a
-      non-ZDR endpoint.
+    Both modes fetch their secret from 1Password at launch — nothing
+    persists on disk. ANTHROPIC_API_KEY from the parent shell is stripped
+    before we set our own, so there's no fallback to a non-governed
+    endpoint either way.
 
     LABS_MCP_TOKEN is read from ~/.claude.json (via the `/labs-token-setup`
     skill) and injected via env-var expansion in `safe-claude/mcp.json`, so
@@ -401,6 +426,8 @@ def safe_claude(c: Context):
     Write/Edit/Bash/WebFetch/WebSearch/Agent/Cron*/ScheduleWakeup denied.
     See docs/SAFE_MODE.md.
     """
+    auth_mode = _resolve_auth_mode(auth)
+
     claude_bin = shutil.which("claude")
     if not claude_bin:
         raise Exit("`claude` CLI not found on PATH. Install Claude Code first.", -1)
@@ -417,22 +444,18 @@ def safe_claude(c: Context):
     settings_path = PROJECT_DIR / "safe-claude" / "settings.json"
     mcp_config_path = PROJECT_DIR / "safe-claude" / "mcp.json"
     if not settings_path.exists() or not mcp_config_path.exists():
-        raise Exit("Safe-mode config files missing from .claude/.", -1)
+        raise Exit("Safe-mode config files missing from safe-claude/.", -1)
 
+    # .env is consulted only for optional Vertex overrides (cached creds
+    # path, alt project/region for testing). Not required for either mode.
     env_values = _load_env_file(PROJECT_DIR / ".env")
-    auth_mode = (env_values.get("SAFE_CLAUDE_AUTH") or os.environ.get("SAFE_CLAUDE_AUTH") or AUTH_MODE_VERTEX).lower()
 
     ephemeral_path: Path | None = None
     try:
         if auth_mode == AUTH_MODE_API_KEY:
             auth_overrides, auth_desc = _configure_api_key_auth(c)
-        elif auth_mode == AUTH_MODE_VERTEX:
+        else:  # AUTH_MODE_VERTEX
             auth_overrides, ephemeral_path, auth_desc = _configure_vertex_auth(c, env_values)
-        else:
-            raise Exit(
-                f"Unknown SAFE_CLAUDE_AUTH={auth_mode!r}. Use " f"'{AUTH_MODE_VERTEX}' or '{AUTH_MODE_API_KEY}'.",
-                -1,
-            )
 
         # Build child env: strip ALL auth-related vars first, then apply only
         # what the chosen mode needs. This prevents stale CLAUDE_CODE_USE_VERTEX
@@ -486,20 +509,30 @@ def safe_claude(c: Context):
         "workflow_id": "Workflow ID to round-trip (required)",
         "opportunity_id": "Opportunity that owns the workflow and pipeline (required)",
         "pipeline_id": "Optional pipeline ID to exercise pipeline_sql + pipeline_preview",
+        "auth": "REQUIRED. Auth mode — 'vertex' or 'api-key'. Same semantics as `inv safe-claude`.",
     }
 )
-def safe_claude_e2e(c: Context, workflow_id, opportunity_id, pipeline_id=None):
+def safe_claude_e2e(c: Context, workflow_id, opportunity_id, auth=None, pipeline_id=None):
     """End-to-end smoke test for safe-claude.
 
     Drives `claude -p` through the same safe-mode config as `inv safe-claude`
     and verifies a full workflow render-code round-trip (read → append marker
     → push → verify → revert) plus optional pipeline SQL/preview reads
     against a live labs workflow. Pick a DISPOSABLE workflow you control.
-    Usage is billed to the GCP Vertex project (not Anthropic credits).
     See docs/SAFE_MODE.md.
+
+    Usage:
+        inv safe-claude-e2e --auth=api-key --workflow-id=2578 --opportunity-id=1237
+        inv safe-claude-e2e --auth=vertex  --workflow-id=2578 --opportunity-id=1237 --pipeline-id=2577
     """
+    auth_mode = _resolve_auth_mode(auth)
     script = PROJECT_DIR / "safe-claude" / "e2e.py"
-    cmd = f'python "{script}" ' f"--workflow-id {int(workflow_id)} " f"--opportunity-id {int(opportunity_id)}"
+    cmd = (
+        f'python "{script}" '
+        f"--auth {auth_mode.replace('_', '-')} "
+        f"--workflow-id {int(workflow_id)} "
+        f"--opportunity-id {int(opportunity_id)}"
+    )
     if pipeline_id is not None:
         cmd += f" --pipeline-id {int(pipeline_id)}"
     result = c.run(cmd, warn=True)

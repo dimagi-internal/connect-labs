@@ -18,15 +18,15 @@ repo + `.env` rendered from 1Password), so any team member can clone and run
 `inv safe-claude` launches the Claude Code CLI with a rendered MCP config and
 a pinned settings file that together:
 
-- Route model calls through a **governed, ZDR-equivalent endpoint**. Two modes
-  selected by `SAFE_CLAUDE_AUTH` in `.env`:
-  - `vertex` (preferred): Google Vertex AI, project `connect-labs`. The
+- Route model calls through a **governed, ZDR-equivalent endpoint**. Auth
+  is chosen by a **required** `--auth` flag each run (no default — the
+  operator always picks explicitly):
+  - `--auth=vertex`: Google Vertex AI, project `connect-labs`. The
     service-account JSON is fetched from 1Password (AI-Agents vault) into a
     0600 tempfile at launch and deleted on exit.
-  - `api_key` (current default until Vertex quota lands): Anthropic ZDR API
-    key, fetched fresh from 1Password on every launch. **1Password is the
-    only source of truth** — the key is never read from `.env` or the
-    parent shell.
+  - `--auth=api-key`: Anthropic ZDR API key, fetched fresh from 1Password
+    on every launch. **1Password is the only source of truth** — the key
+    is never read from `.env` or the parent shell.
   Either way, the task strips `ANTHROPIC_API_KEY` from the inherited child
   environment so Claude Code cannot fall back to a non-governed endpoint.
 - Speak only to `connect_labs` and `commcare_hq_mcp` (no other MCP servers,

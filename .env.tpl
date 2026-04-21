@@ -25,19 +25,8 @@ OCS_API_KEY={{ op://Employee/Connect Labs .env/OCS_API_KEY }}
 OPENAI_API_KEY={{ op://Employee/Connect Labs .env/OPENAI_API_KEY }}
 ANTHROPIC_API_KEY={{ op://Employee/Connect Labs .env/ANTHROPIC_API_KEY }}
 
-# ─── Safe-mode Claude Code auth mode ─────────────────────────────────────
-# `vertex`  — route through Google Vertex AI (GCP-governed). Preferred
-#             once Vertex quota is available on `connect-labs`.
-# `api_key` — route through an Anthropic ZDR API key. The key is fetched
-#             fresh from 1Password on every `inv safe-claude` launch
-#             (item "Connect Labs Safe-Claude ZDR Anthropic API Key",
-#             vault AI-Agents) — NEVER read from .env or a local file.
-#
-# Default in code is `vertex`. While Vertex quota on `connect-labs` is
-# still zero, we route through api_key; flip this line (or delete it to
-# return to the default) once Vertex is serving traffic.
-SAFE_CLAUDE_AUTH=api_key
-# ────────────────────────────────────────────────────────────────────────
+# Safe-mode Claude Code needs NOTHING in .env — auth mode is a required
+# CLI flag on `inv safe-claude --auth=...`. See docs/SAFE_MODE.md.
 
 # PAT for `inv safe-claude` (locked-down Claude Code against labs MCP).
 # Generate via the `/labs-token-setup` skill in Claude Code (recommended) —

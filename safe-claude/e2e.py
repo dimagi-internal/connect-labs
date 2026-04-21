@@ -237,13 +237,22 @@ def _configure_api_key_auth() -> tuple[dict, str]:
 def run(
     workflow_id: int,
     opportunity_id: int,
+    auth: str,
     pipeline_id: int | None = None,
 ) -> int:
+    auth_mode = auth.replace("-", "_").lower()
+    if auth_mode not in (AUTH_MODE_API_KEY, AUTH_MODE_VERTEX):
+        print(
+            f"ERROR: Unknown --auth={auth!r}. Use 'api-key' or 'vertex'.",
+            file=sys.stderr,
+        )
+        return 2
+
     env_values = _load_env(REPO_ROOT / ".env")
     pat = os.environ.get("LABS_MCP_TOKEN") or _read_user_mcp_pat()
     if not pat:
         print(
-            "ERROR: connect_labs PAT missing. Run the `/labs-token-setup` " "skill in Claude Code.",
+            "ERROR: connect_labs PAT missing. Run the `/labs-token-setup` skill in Claude Code.",
             file=sys.stderr,
         )
         return 2
@@ -251,10 +260,8 @@ def run(
         print("ERROR: `claude` CLI not on PATH.", file=sys.stderr)
         return 2
     if not SETTINGS_PATH.exists() or not MCP_TEMPLATE_PATH.exists():
-        print("ERROR: Safe-mode config files missing from .claude/.", file=sys.stderr)
+        print("ERROR: Safe-mode config files missing from safe-claude/.", file=sys.stderr)
         return 2
-
-    auth_mode = (env_values.get("SAFE_CLAUDE_AUTH") or os.environ.get("SAFE_CLAUDE_AUTH") or AUTH_MODE_VERTEX).lower()
 
     creds_path: Path | None = None
     creds_ephemeral = False
@@ -447,11 +454,17 @@ def run(
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--auth",
+        required=True,
+        choices=["vertex", "api-key", "api_key"],
+        help="Auth mode — REQUIRED, no default. 'vertex' or 'api-key'.",
+    )
     ap.add_argument("--workflow-id", type=int, required=True)
     ap.add_argument("--opportunity-id", type=int, required=True)
     ap.add_argument("--pipeline-id", type=int, default=None)
     args = ap.parse_args()
-    sys.exit(run(args.workflow_id, args.opportunity_id, args.pipeline_id))
+    sys.exit(run(args.workflow_id, args.opportunity_id, args.auth, args.pipeline_id))
 
 
 if __name__ == "__main__":
