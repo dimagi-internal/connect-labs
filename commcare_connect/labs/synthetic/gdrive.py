@@ -152,4 +152,28 @@ class DriveClient:
             resp.raise_for_status()
         except httpx.HTTPError as e:
             raise DriveAPIError(f"upload_file({filename}) failed: {e}") from e
-        return resp.json()["id"]
+        file_id = resp.json()["id"]
+
+        # Verify the stored size matches what we sent. Drive occasionally
+        # returns 200 with a valid file_id but stores 0 bytes (seen in
+        # practice during the opp-1237 demo dump on 2026-04-21). A silent
+        # 0-byte file shows up later as empty fixture data and fails
+        # obscurely; fail loudly here instead.
+        try:
+            meta = httpx.get(
+                f"{DRIVE_API}/files/{file_id}",
+                headers=self._headers(),
+                params={"fields": "size", **_SHARED_DRIVES},
+                timeout=self._timeout,
+            )
+            meta.raise_for_status()
+        except httpx.HTTPError as e:
+            raise DriveAPIError(f"upload_file({filename}) size verify failed: {e}") from e
+        stored = int(meta.json().get("size", 0))
+        expected = len(content)
+        if stored != expected:
+            raise DriveAPIError(
+                f"upload_file({filename}) stored size mismatch: "
+                f"expected {expected} bytes, Drive stored {stored}. file_id={file_id}"
+            )
+        return file_id

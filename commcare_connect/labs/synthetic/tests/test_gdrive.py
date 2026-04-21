@@ -97,26 +97,55 @@ def test_create_folder_posts_mimetype_folder(httpx_mock, fake_creds):
 
 
 def test_upload_file_multipart_body(httpx_mock, fake_creds):
+    content = b'[{"id": 1}]'
     httpx_mock.add_response(
         method="POST",
         url="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
         json={"id": "file-new"},
     )
+    # upload_file verifies stored size after upload.
+    httpx_mock.add_response(
+        method="GET",
+        url="https://www.googleapis.com/drive/v3/files/file-new?fields=size&supportsAllDrives=true",
+        json={"size": str(len(content))},
+    )
 
     client = gdrive.DriveClient()
-    content = b'[{"id": 1}]'
     file_id = client.upload_file("folder-abc", "user_visits.json", content)
 
     assert file_id == "file-new"
-    request = httpx_mock.get_request()
-    ct = request.headers["Content-Type"]
+    requests = httpx_mock.get_requests()
+    # POST = upload, GET = size verify
+    post = [r for r in requests if r.method == "POST"][0]
+    ct = post.headers["Content-Type"]
     assert ct.startswith("multipart/related; boundary=")
-    raw = request.content
+    raw = post.content
     # Metadata part references folder and filename.
     assert b'"name": "user_visits.json"' in raw
     assert b'"parents": ["folder-abc"]' in raw
     # File bytes are embedded verbatim.
     assert content in raw
+
+
+def test_upload_file_raises_on_stored_size_mismatch(httpx_mock, fake_creds):
+    """Drive occasionally returns 200 for a multipart upload but stores 0 bytes.
+    Verify we detect that and raise rather than silently returning an empty file.
+    """
+    content = b'[{"id": 1, "name": "real data"}]'
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+        json={"id": "file-truncated"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://www.googleapis.com/drive/v3/files/file-truncated?fields=size&supportsAllDrives=true",
+        json={"size": "0"},
+    )
+
+    client = gdrive.DriveClient()
+    with pytest.raises(gdrive.DriveAPIError, match="stored size mismatch"):
+        client.upload_file("folder-abc", "user_visits.json", content)
 
 
 def test_all_requests_include_shared_drive_params(httpx_mock, fake_creds):
@@ -145,6 +174,12 @@ def test_all_requests_include_shared_drive_params(httpx_mock, fake_creds):
         method="POST",
         url="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
         json={"id": "new-file"},
+    )
+    # upload_file post-verification
+    httpx_mock.add_response(
+        method="GET",
+        url="https://www.googleapis.com/drive/v3/files/new-file?fields=size&supportsAllDrives=true",
+        json={"size": "2"},  # matches len(b"[]")
     )
 
     client = gdrive.DriveClient()
