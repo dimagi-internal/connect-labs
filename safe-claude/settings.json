@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "disableAutoMode": "disable",
+    "disableBypassPermissionsMode": "disable",
+    "allow": [
+      "mcp__connect_labs__*",
+      "mcp__commcare_hq_mcp__*",
+      "Read",
+      "Grep",
+      "Glob",
+      "TodoWrite",
+      "Skill",
+      "ToolSearch"
+    ],
+    "deny": [
+      "Write",
+      "Edit",
+      "NotebookEdit",
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "ScheduleWakeup"
+    ]
+  },
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+  }
+}

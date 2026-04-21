@@ -81,6 +81,9 @@ ENV/
 .envrc
 .env
 
+# Safe-mode Claude Code: Vertex service-account credentials (from 1Password)
+.gcp/
+
 # Rope project settings
 .ropeproject
 
