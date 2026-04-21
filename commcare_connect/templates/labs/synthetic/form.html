@@ -41,9 +41,11 @@
   <form method="post" novalidate class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6">
     {% csrf_token %}
 
-    {# Hidden opportunity_id — value comes from labs_context on Create,
-       from the instance on Edit. Server-side reassigned either way to
-       block POST tampering. #}
+    {% comment %}
+      Hidden opportunity_id — value comes from labs_context on Create, from
+      the instance on Edit. Server-side reassigned either way to block POST
+      tampering.
+    {% endcomment %}
     {{ form.opportunity_id }}
 
     <!-- Label -->
