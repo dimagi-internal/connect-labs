@@ -55,24 +55,13 @@ class FakeDrive:
         return f"file-{filename}"
 
 
-class FakeExportClient:
-    def __init__(self, by_endpoint):
-        self._data = by_endpoint
+def _fake_fetch(data_by_key):
+    """Build a replacement for `dump._fetch_endpoint` that looks up by endpoint key."""
 
-    def fetch_all(self, path):
-        # path like /export/opportunity/42/user_visits/ → key = "user_visits"
-        parts = [p for p in path.strip("/").split("/") if p]
-        key = parts[-1] if not parts[-1].isdigit() else ""
-        return self._data[key]
+    def inner(base_url, opp_id, key, access_token):
+        return data_by_key[key]
 
-    def close(self):
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        pass
+    return inner
 
 
 def _collect_events(resp):
@@ -92,17 +81,20 @@ def test_dump_stream_end_to_end(authed_client_dump, monkeypatch):
     from commcare_connect.labs.synthetic import dump
 
     fake_drive = FakeDrive()
-    fake_export = FakeExportClient(
-        {
-            "": {"id": 42, "name": "Demo A"},
-            "user_visits": [{"id": 1}, {"id": 2}],
-            "user_data": [{"username": "alice"}],
-            "completed_works": [],
-            "completed_module": [],
-        }
-    )
     monkeypatch.setattr(dump, "DriveClient", lambda: fake_drive)
-    monkeypatch.setattr(dump, "get_export_client", lambda **kw: fake_export)
+    monkeypatch.setattr(
+        dump,
+        "_fetch_endpoint",
+        _fake_fetch(
+            {
+                "": {"id": 42, "name": "Demo A"},
+                "user_visits": [{"id": 1}, {"id": 2}],
+                "user_data": [{"username": "alice"}],
+                "completed_works": [],
+                "completed_module": [],
+            }
+        ),
+    )
 
     resp = authed_client_dump.get(reverse("labs:synthetic:dump_stream"))
     assert resp.status_code == 200
@@ -176,10 +168,8 @@ def test_dump_stream_surfaces_drive_error(authed_client_dump, monkeypatch):
     monkeypatch.setattr(dump, "DriveClient", lambda: FailingDrive())
     monkeypatch.setattr(
         dump,
-        "get_export_client",
-        lambda **kw: FakeExportClient(
-            {"": {}, "user_visits": [], "user_data": [], "completed_works": [], "completed_module": []}
-        ),
+        "_fetch_endpoint",
+        _fake_fetch({"": {}, "user_visits": [], "user_data": [], "completed_works": [], "completed_module": []}),
     )
 
     resp = authed_client_dump.get(reverse("labs:synthetic:dump_stream"))
@@ -205,27 +195,54 @@ def test_dump_stream_missing_parent_folder_env(authed_client_dump, monkeypatch, 
 @override_settings(**LABS_SETTINGS)
 @pytest.mark.django_db
 def test_dump_stream_surfaces_export_error(authed_client_dump, monkeypatch):
-    from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+    """If prod Connect raises during a fetch, the dump stream emits the error."""
+    import httpx
+
     from commcare_connect.labs.synthetic import dump
 
-    class FailingExport:
-        def fetch_all(self, path):
-            raise ExportAPIError("upstream 500 from Connect")
-
-        def close(self):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            pass
+    def failing_fetch(*a, **kw):
+        raise httpx.HTTPStatusError("upstream 500 from Connect", request=None, response=None)
 
     monkeypatch.setattr(dump, "DriveClient", lambda: FakeDrive())
-    monkeypatch.setattr(dump, "get_export_client", lambda **kw: FailingExport())
+    monkeypatch.setattr(dump, "_fetch_endpoint", failing_fetch)
 
     resp = authed_client_dump.get(reverse("labs:synthetic:dump_stream"))
     events = _collect_events(resp)
 
-    assert any("ExportAPIError" in (e.get("error") or "") for e in events), events
+    assert any("HTTPStatusError" in (e.get("error") or "") for e in events), events
     assert any("upstream 500 from Connect" in (e.get("error") or "") for e in events), events
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_dump_stream_uploads_detail_endpoint_as_bare_dict(authed_client_dump, monkeypatch):
+    """The `/export/opportunity/<id>/` endpoint returns a bare dict (no `results`
+    wrapper). The dump must pass that dict through to upload without trying to
+    paginate it as a list."""
+    from commcare_connect.labs.synthetic import dump
+
+    fake_drive = FakeDrive()
+    monkeypatch.setattr(dump, "DriveClient", lambda: fake_drive)
+    monkeypatch.setattr(
+        dump,
+        "_fetch_endpoint",
+        _fake_fetch(
+            {
+                "": {"id": 42, "name": "Demo A", "organization": "march-demo"},
+                "user_visits": [],
+                "user_data": [],
+                "completed_works": [],
+                "completed_module": [],
+            }
+        ),
+    )
+
+    resp = authed_client_dump.get(reverse("labs:synthetic:dump_stream"))
+    assert resp.status_code == 200
+    # Force generator consumption
+    list(_collect_events(resp))
+
+    opp_upload = next(u for u in fake_drive.uploads if u[1] == "opportunity.json")
+    uploaded_json = json.loads(opp_upload[2])
+    assert isinstance(uploaded_json, dict)
+    assert uploaded_json == {"id": 42, "name": "Demo A", "organization": "march-demo"}

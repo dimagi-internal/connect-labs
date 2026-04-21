@@ -93,7 +93,22 @@ class FixtureStore:
                 e,
             )
             return []
-        parsed = json.loads(raw)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as e:
+            # Manual edits in Drive can leave a file with a trailing comma,
+            # truncated mid-object, or entirely empty. Don't 500 every caller —
+            # degrade to empty with a loud warning so the operator sees it in
+            # the labs logs.
+            logger.warning(
+                "synthetic: malformed JSON in fixture %s for opp %s (%d bytes): %s; returning empty",
+                filename,
+                opp_id,
+                len(raw),
+                e,
+            )
+            self._cache[(opp_id, endpoint_key)] = []
+            return []
         self._cache[(opp_id, endpoint_key)] = parsed
         return parsed
 
