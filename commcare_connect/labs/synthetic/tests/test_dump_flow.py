@@ -200,3 +200,32 @@ def test_dump_stream_missing_parent_folder_env(authed_client_dump, monkeypatch, 
     events = _collect_events(resp)
 
     assert any("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID" in (e.get("error") or "") for e in events), events
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_dump_stream_surfaces_export_error(authed_client_dump, monkeypatch):
+    from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
+    from commcare_connect.labs.synthetic import dump
+
+    class FailingExport:
+        def fetch_all(self, path):
+            raise ExportAPIError("upstream 500 from Connect")
+
+        def close(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    monkeypatch.setattr(dump, "DriveClient", lambda: FakeDrive())
+    monkeypatch.setattr(dump, "get_export_client", lambda **kw: FailingExport())
+
+    resp = authed_client_dump.get(reverse("labs:synthetic:dump_stream"))
+    events = _collect_events(resp)
+
+    assert any("ExportAPIError" in (e.get("error") or "") for e in events), events
+    assert any("upstream 500 from Connect" in (e.get("error") or "") for e in events), events

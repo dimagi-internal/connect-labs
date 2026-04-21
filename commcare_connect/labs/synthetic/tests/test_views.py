@@ -192,3 +192,23 @@ def test_reload_404_when_opp_inaccessible(authed_client_with_context):
     row = SyntheticOpportunity.objects.create(opportunity_id=999, gdrive_folder_id="f", enabled=True)
     resp = authed_client_with_context.post(reverse("labs:synthetic:reload", args=[row.pk]))
     assert resp.status_code == 404
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_edit_cannot_change_opportunity_id(authed_client_with_context):
+    row = SyntheticOpportunity.objects.create(opportunity_id=42, gdrive_folder_id="f", enabled=True)
+    resp = authed_client_with_context.post(
+        reverse("labs:synthetic:edit", args=[row.pk]),
+        {
+            "opportunity_id": 999,  # attempt to change identity
+            "label": "Tampered",
+            "gdrive_folder_id": "f",
+            "enabled": "on",
+            "notes": "",
+        },
+    )
+    assert resp.status_code == 302
+    row.refresh_from_db()
+    assert row.opportunity_id == 42  # unchanged
+    assert row.label == "Tampered"  # other fields still editable

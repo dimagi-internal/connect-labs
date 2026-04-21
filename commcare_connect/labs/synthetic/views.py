@@ -103,6 +103,11 @@ class SyntheticUpdateView(LoginRequiredMixin, _AccessScopedMixin, UpdateView):
     template_name = "labs/synthetic/form.html"
     success_url = reverse_lazy("labs:synthetic:list")
 
+    def form_valid(self, form):
+        # opportunity_id is identity; never allow it to change after creation.
+        form.instance.opportunity_id = self.get_object().opportunity_id
+        return super().form_valid(form)
+
 
 class SyntheticDeleteView(LoginRequiredMixin, _AccessScopedMixin, DeleteView):
     model = SyntheticOpportunity
