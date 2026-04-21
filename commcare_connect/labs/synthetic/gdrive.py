@@ -61,9 +61,14 @@ class DriveClient:
         self._timeout = timeout
 
     def _bearer(self) -> str:
-        from google.auth.transport.requests import Request
+        # Google-issued SA tokens live for ~1 hour. google-auth's `valid`
+        # property is False when the token is missing or within the
+        # expiry skew; refresh lazily so a typical multi-op dump doesn't
+        # hit the OAuth endpoint on every Drive call.
+        if not self.credentials.valid:
+            from google.auth.transport.requests import Request
 
-        self.credentials.refresh(Request())
+            self.credentials.refresh(Request())
         return self.credentials.token
 
     def _headers(self) -> dict:
