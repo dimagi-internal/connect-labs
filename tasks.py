@@ -169,6 +169,9 @@ def _read_labs_pat_from_user_mcp() -> str | None:
 
 VERTEX_DOC_TITLE = "Connect Labs Vertex Service Account"
 VERTEX_VAULT = "AI-Agents"
+# 1Password account name — overridable for teams that rename the account or
+# run against a different vault (CI, alternate workspaces).
+OP_ACCOUNT = os.environ.get("CONNECT_OP_ACCOUNT") or "dimagi"
 # Static Vertex config — hard-coded so safe mode never depends on a
 # human-editable .env for the auth endpoint. Overridable via env values
 # (from .env or parent shell) for testing; GCP project/region are stable
@@ -180,10 +183,18 @@ VERTEX_PROJECT_DEFAULT = "connect-labs"
 # still work for older tiers like sonnet-4-5 but return "not servable" for
 # the latest models on this project.
 VERTEX_REGION_DEFAULT = "global"
-# claude-opus-4-7 — current flagship Opus tier, enabled on the
-# connect-labs project in Vertex AI Model Garden. Override via the
-# SAFE_CLAUDE_MODEL env var to use a different tier (e.g. sonnet-4-6
-# for cheaper/faster routine work).
+# Models we've enabled in Vertex AI Model Garden on `connect-labs` and
+# confirmed serve from the `global` endpoint. Any override via
+# SAFE_CLAUDE_MODEL must appear here; unknown IDs are rejected up front
+# instead of after the first prompt (which would have sent PII to Vertex
+# before Google's 404 came back).
+VERTEX_ALLOWED_MODELS = {
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+}
 VERTEX_MODEL_DEFAULT = "claude-opus-4-7"
 
 
@@ -219,7 +230,7 @@ def _fetch_vertex_creds_fresh(c: Context) -> Path:
     tmp_path = Path(tmp_str)
     os.chmod(tmp_path, 0o600)
     cmd = (
-        f'op --account dimagi document get "{VERTEX_DOC_TITLE}" '
+        f'op --account {OP_ACCOUNT} document get "{VERTEX_DOC_TITLE}" '
         f'--vault "{VERTEX_VAULT}" --out-file "{tmp_path}" --force'
     )
     result = c.run(cmd, warn=True, hide=True)
@@ -285,7 +296,10 @@ def vertex_setup(c: Context):
 
     # op writes the document directly to disk — the secret never transits
     # through shell stdout (no scrollback / process listing leakage).
-    cmd = f'op --account dimagi document get "{VERTEX_DOC_TITLE}" ' f'--vault AI-Agents --out-file "{target}" --force'
+    cmd = (
+        f'op --account {OP_ACCOUNT} document get "{VERTEX_DOC_TITLE}" '
+        f'--vault AI-Agents --out-file "{target}" --force'
+    )
     result = c.run(cmd, warn=True)
     if result.exited != 0:
         raise Exit(
@@ -330,7 +344,7 @@ def _fetch_anthropic_key_fresh(c: Context) -> str:
             -1,
         )
     result = c.run(
-        f'op --account dimagi read "{ANTHROPIC_KEY_OP_REF}"',
+        f'op --account {OP_ACCOUNT} read "{ANTHROPIC_KEY_OP_REF}"',
         warn=True,
         hide=True,
     )
@@ -342,9 +356,11 @@ def _fetch_anthropic_key_fresh(c: Context) -> str:
         )
     key = result.stdout.strip()
     if not key.startswith("sk-ant-"):
+        # Deliberately do NOT echo any part of `key` — if 1Password is
+        # misconfigured and returned some other secret, logging even a
+        # prefix leaks credential material into stderr/scrollback.
         raise Exit(
-            f"Fetched value does not look like an Anthropic API key "
-            f"(prefix: {key[:10]!r}...). Check the 1Password item.",
+            "Fetched value does not look like an Anthropic API key " "(wrong prefix). Check the 1Password item.",
             -1,
         )
     return key
@@ -491,8 +507,22 @@ def safe_claude(c: Context, auth=None):
         model_override = os.environ.get("SAFE_CLAUDE_MODEL")
         if auth_mode == AUTH_MODE_VERTEX:
             model = model_override or VERTEX_MODEL_DEFAULT
+            # Reject unknown Vertex model IDs up front so the first prompt
+            # (which may contain PII) never goes out against a model that
+            # will 404 and waste the round-trip.
+            if model not in VERTEX_ALLOWED_MODELS:
+                raise Exit(
+                    f"Model {model!r} is not in the Vertex allowlist for this project. "
+                    f"Allowed: {sorted(VERTEX_ALLOWED_MODELS)}. "
+                    "Enable the model in Vertex AI Model Garden and add it to "
+                    "VERTEX_ALLOWED_MODELS in tasks.py before using it.",
+                    -1,
+                )
             cmd_argv += ["--model", model]
         elif model_override:
+            # api_key mode passes any SAFE_CLAUDE_MODEL override through to
+            # Claude Code unvalidated — the Anthropic API has a different
+            # set of accepted IDs and we don't police it from here.
             cmd_argv += ["--model", model_override]
 
         print(f"Launching Claude Code in safe mode — auth: {auth_desc}")
