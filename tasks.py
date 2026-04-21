@@ -4,7 +4,7 @@ This uses the `Invoke` library."""
 import json
 import os
 import shutil
-import sys
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -474,12 +474,15 @@ def safe_claude(c: Context, auth=None):
         # safe-claude/mcp.json — the token never lands on disk.
         env["LABS_MCP_TOKEN"] = mcp_token
 
-        cmd_parts = [
-            f'"{claude_bin}"',
-            f'--settings "{settings_path}"',
-            f'--mcp-config "{mcp_config_path}"',
+        cmd_argv = [
+            claude_bin,
+            "--settings",
+            str(settings_path),
+            "--mcp-config",
+            str(mcp_config_path),
             "--strict-mcp-config",
-            "--permission-mode dontAsk",
+            "--permission-mode",
+            "dontAsk",
         ]
         # Force a specific model only in Vertex mode — Vertex needs an ID
         # we've enabled in Model Garden (regional availability varies). In
@@ -488,14 +491,19 @@ def safe_claude(c: Context, auth=None):
         model_override = os.environ.get("SAFE_CLAUDE_MODEL")
         if auth_mode == AUTH_MODE_VERTEX:
             model = model_override or VERTEX_MODEL_DEFAULT
-            cmd_parts.append(f'--model "{model}"')
+            cmd_argv += ["--model", model]
         elif model_override:
-            cmd_parts.append(f'--model "{model_override}"')
-        cmd = " ".join(cmd_parts)
+            cmd_argv += ["--model", model_override]
 
         print(f"Launching Claude Code in safe mode — auth: {auth_desc}")
         print("Ctrl-D or /exit to quit.")
-        c.run(cmd, env=env, pty=sys.stdout.isatty(), replace_env=True)
+        # subprocess.run (not invoke's c.run) so Claude Code's TUI inherits
+        # the parent shell's real TTY directly — no PTY allocation, no
+        # terminal-state corruption on exit, and keys like Enter reach the
+        # child's input handler normally.
+        result = subprocess.run(cmd_argv, env=env)
+        if result.returncode != 0:
+            raise Exit(f"Claude Code exited with code {result.returncode}", result.returncode)
     finally:
         if ephemeral_path is not None:
             try:
