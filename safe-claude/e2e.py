@@ -12,7 +12,7 @@ Each step is a separate `claude -p` call using the same settings.safe.json +
 rendered mcp.safe.json as `inv safe-claude`, so a pass proves the full stack
 works end-to-end, not just the MCP server in isolation.
 
-Auth: Vertex AI (project `connect-labs`, region `us-east5`). The
+Auth: Vertex AI (project `connect-labs`, region `global`). The
 service-account JSON is fetched fresh from 1Password (AI-Agents vault)
 into a 0600 tempfile at launch and deleted on exit — nothing persists in
 the repo or on disk across runs. If `.gcp/vertex.json` exists (from
@@ -83,15 +83,24 @@ def _read_user_mcp_pat() -> str | None:
 
 VERTEX_DOC_TITLE = "Connect Labs Vertex Service Account"
 VERTEX_VAULT = "AI-Agents"
+OP_ACCOUNT = os.environ.get("CONNECT_OP_ACCOUNT") or "dimagi"
 VERTEX_PROJECT_DEFAULT = "connect-labs"
 VERTEX_REGION_DEFAULT = "global"
 VERTEX_MODEL_DEFAULT = "claude-opus-4-7"
+# Mirror of tasks.VERTEX_ALLOWED_MODELS — unknown IDs are rejected up front.
+VERTEX_ALLOWED_MODELS = {
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+}
 
 
 def _fetch_vertex_creds_fresh() -> Path:
     """Mirror of tasks._fetch_vertex_creds_fresh, subprocess-based."""
     if not shutil.which("op"):
-        raise RuntimeError("1Password CLI `op` not on PATH. Install + `op signin --account dimagi`.")
+        raise RuntimeError(f"1Password CLI `op` not on PATH. Install + `op signin --account {OP_ACCOUNT}`.")
     fd, tmp_str = tempfile.mkstemp(prefix="vertex.e2e.", suffix=".json")
     os.close(fd)
     tmp_path = Path(tmp_str)
@@ -99,7 +108,7 @@ def _fetch_vertex_creds_fresh() -> Path:
     cmd = [
         "op",
         "--account",
-        "dimagi",
+        OP_ACCOUNT,
         "document",
         "get",
         VERTEX_DOC_TITLE,
@@ -115,7 +124,9 @@ def _fetch_vertex_creds_fresh() -> Path:
             os.unlink(tmp_path)
         except OSError:
             pass
-        raise RuntimeError(f"1Password fetch failed: {r.stderr.strip()[:300]}" " — try `op signin --account dimagi`.")
+        raise RuntimeError(
+            f"1Password fetch failed: {r.stderr.strip()[:300]} — try `op signin --account {OP_ACCOUNT}`."
+        )
     try:
         data = json.loads(tmp_path.read_text())
     except (json.JSONDecodeError, OSError) as e:
@@ -214,18 +225,22 @@ def _fetch_anthropic_key_fresh() -> str:
     """Mirror of tasks._fetch_anthropic_key_fresh. 1Password is the only
     source of truth — key is never read from .env or the parent shell."""
     if not shutil.which("op"):
-        raise RuntimeError("1Password CLI `op` not on PATH. Install + `op signin --account dimagi`.")
+        raise RuntimeError(f"1Password CLI `op` not on PATH. Install + `op signin --account {OP_ACCOUNT}`.")
     r = subprocess.run(
-        ["op", "--account", "dimagi", "read", ANTHROPIC_KEY_OP_REF],
+        ["op", "--account", OP_ACCOUNT, "read", ANTHROPIC_KEY_OP_REF],
         capture_output=True,
         text=True,
         timeout=30,
     )
     if r.returncode != 0:
-        raise RuntimeError(f"1Password fetch failed: {r.stderr.strip()[:200]} " "— try `op signin --account dimagi`.")
+        raise RuntimeError(
+            f"1Password fetch failed: {r.stderr.strip()[:200]} — try `op signin --account {OP_ACCOUNT}`."
+        )
     key = r.stdout.strip()
     if not key.startswith("sk-ant-"):
-        raise RuntimeError(f"Fetched value does not look like an Anthropic API key " f"(prefix: {key[:10]!r}...)")
+        # Don't echo any part of `key` — leaks credential material if the
+        # 1Password item is misconfigured and returned some other secret.
+        raise RuntimeError("Fetched value does not look like an Anthropic API key (wrong prefix)")
     return key
 
 
@@ -310,10 +325,19 @@ def run(
     model_override = os.environ.get("SAFE_CLAUDE_MODEL")
     if auth_mode == AUTH_MODE_VERTEX:
         model = model_override or VERTEX_MODEL_DEFAULT
+        if model not in VERTEX_ALLOWED_MODELS:
+            print(
+                f"ERROR: Model {model!r} is not in the Vertex allowlist. "
+                f"Allowed: {sorted(VERTEX_ALLOWED_MODELS)}.",
+                file=sys.stderr,
+            )
+            return 2
     else:
         model = model_override  # None → Claude Code default
 
-    marker = f"e2e-test-{int(time.time())}"
+    # Include PID alongside the timestamp so two concurrent e2e runs
+    # against the same workflow can't stomp each other's markers.
+    marker = f"e2e-test-{int(time.time())}-{os.getpid()}"
 
     print("=== safe-claude end-to-end smoke test ===")
     print(f"auth: {auth_desc}")
