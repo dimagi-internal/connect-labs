@@ -11,6 +11,10 @@ from . import views
 
 urlpatterns = [
     path("", RedirectView.as_view(url="/labs/overview/", permanent=False), name="home"),
+    # The ACE Web SPA is served by a separate nginx container; the ALB only
+    # routes `/ace/*` to it. A bare `/ace` would fall through here and 404 —
+    # catch it and redirect to the slash variant so typed URLs work.
+    path("ace", RedirectView.as_view(url="/ace/", permanent=True), name="ace_slash_redirect"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     path("health/", views.health_check, name="health_check"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
