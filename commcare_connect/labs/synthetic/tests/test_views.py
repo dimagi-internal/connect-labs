@@ -212,3 +212,41 @@ def test_edit_cannot_change_opportunity_id(authed_client_with_context):
     row.refresh_from_db()
     assert row.opportunity_id == 42  # unchanged
     assert row.label == "Tampered"  # other fields still editable
+
+
+# ── UI polish regressions ────────────────────────────────────────────
+@pytest.mark.django_db
+def test_list_shows_opportunity_name(authed_client):
+    """The list renders the Connect opp name alongside the integer id so users
+    can identify rows at a glance."""
+    SyntheticOpportunity.objects.create(
+        opportunity_id=42, label="Baobab demo", gdrive_folder_id="folder-a", enabled=True
+    )
+    resp = authed_client.get(reverse("labs:synthetic:list"))
+    assert resp.status_code == 200
+    content = resp.content.decode()
+    assert "Demo A" in content  # opp name from fixture seed
+    assert "id 42" in content  # id shown as subtitle
+
+
+@pytest.mark.django_db
+def test_list_empty_state_renders_cta(authed_client):
+    """With no rows, the list shows the empty-state block and primary CTA."""
+    resp = authed_client.get(reverse("labs:synthetic:list"))
+    assert resp.status_code == 200
+    content = resp.content.decode()
+    assert "No synthetic opportunities yet" in content
+    assert reverse("labs:synthetic:new") in content
+
+
+@override_settings(**LABS_SETTINGS)
+@pytest.mark.django_db
+def test_create_context_panel_shows_opp_name_and_org(authed_client_with_context):
+    """The create form's context panel surfaces the opp name and org from
+    labs_oauth so the user confirms they're registering the right opp."""
+    resp = authed_client_with_context.get(reverse("labs:synthetic:new"))
+    assert resp.status_code == 200
+    content = resp.content.decode()
+    assert "Registering synthetic version of" in content
+    assert "Demo A" in content
+    assert "id" in content and "42" in content
