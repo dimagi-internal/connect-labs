@@ -7,6 +7,12 @@
     {% if form.instance.pk %}Edit synthetic opportunity{% else %}New synthetic opportunity{% endif %}
   </h1>
 
+  {% if context_opp_id %}
+  <div class="alert alert-info py-2 mb-3">
+    Registering synthetic version of opp <strong>{{ context_opp_name|default:"(unnamed)" }}</strong> (id: <strong>{{ context_opp_id }}</strong>)
+  </div>
+  {% endif %}
+
   <form method="post" novalidate>
     {% csrf_token %}
 

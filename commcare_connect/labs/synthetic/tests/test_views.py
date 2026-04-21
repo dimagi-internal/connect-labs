@@ -1,9 +1,11 @@
 import pytest
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from django.urls import reverse
 
 from commcare_connect.labs.synthetic import registry
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+from commcare_connect.labs.tests.test_settings import LABS_SETTINGS
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +28,37 @@ def authed_client(client, user):
         "access_token": "tok",
         "organization_data": {"opportunities": [{"id": 42, "name": "Demo A"}]},
     }
+    session.save()
+    return client
+
+
+@pytest.fixture
+def authed_client_no_context(client, user):
+    """Authenticated client with multiple opportunities (disables auto-select) and no context selection."""
+    client.force_login(user)
+    session = client.session
+    session["labs_oauth"] = {
+        "access_token": "tok",
+        "organization_data": {
+            "opportunities": [
+                {"id": 42, "name": "Demo A"},
+                {"id": 43, "name": "Demo B"},
+            ]
+        },
+    }
+    session.save()
+    return client
+
+
+@pytest.fixture
+def authed_client_with_context(client, user):
+    client.force_login(user)
+    session = client.session
+    session["labs_oauth"] = {
+        "access_token": "tok",
+        "organization_data": {"opportunities": [{"id": 42, "name": "Demo A"}]},
+    }
+    session["labs_context"] = {"opportunity_id": 42}
     session.save()
     return client
 
@@ -55,11 +88,38 @@ def test_list_hides_inaccessible_row(authed_client):
 
 
 @pytest.mark.django_db
-def test_create_round_trip(authed_client):
-    resp = authed_client.post(
+@override_settings(**LABS_SETTINGS)
+def test_create_redirects_without_context_opp(authed_client_no_context):
+    # authed_client_no_context has multiple opportunities (no auto-select) and NO labs_context selection
+    resp = authed_client_no_context.get(reverse("labs:synthetic:new"))
+    assert resp.status_code == 302
+    assert resp["Location"].endswith(reverse("labs:synthetic:list"))
+
+
+@pytest.mark.django_db
+@override_settings(**LABS_SETTINGS)
+def test_create_redirects_when_context_opp_not_accessible(client, user):
+    client.force_login(user)
+    session = client.session
+    session["labs_oauth"] = {
+        "access_token": "tok",
+        "organization_data": {"opportunities": [{"id": 42, "name": "Demo A"}]},
+    }
+    session["labs_context"] = {"opportunity_id": 99}
+    session.save()
+
+    resp = client.get(reverse("labs:synthetic:new"))
+    assert resp.status_code == 302
+    assert resp["Location"].endswith(reverse("labs:synthetic:list"))
+
+
+@pytest.mark.django_db
+@override_settings(**LABS_SETTINGS)
+def test_create_round_trip_uses_context_opp(authed_client_with_context):
+    # opportunity_id is NOT submitted by the client; view derives from labs_context
+    resp = authed_client_with_context.post(
         reverse("labs:synthetic:new"),
         {
-            "opportunity_id": 42,
             "label": "New Demo",
             "gdrive_folder_id": "folder-x",
             "enabled": "on",
@@ -67,7 +127,9 @@ def test_create_round_trip(authed_client):
         },
     )
     assert resp.status_code == 302
-    assert SyntheticOpportunity.objects.filter(opportunity_id=42).exists()
+    row = SyntheticOpportunity.objects.get(opportunity_id=42)
+    assert row.label == "New Demo"
+    assert row.gdrive_folder_id == "folder-x"
 
 
 @pytest.mark.django_db

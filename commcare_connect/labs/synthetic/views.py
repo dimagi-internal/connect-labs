@@ -38,8 +38,50 @@ class SyntheticCreateView(LoginRequiredMixin, CreateView):
     template_name = "labs/synthetic/form.html"
     success_url = reverse_lazy("labs:synthetic:list")
 
+    def dispatch(self, request, *args, **kwargs):
+        labs_context = getattr(request, "labs_context", None) or {}
+        opp_id = labs_context.get("opportunity_id")
+        accessible = registry.accessible_opp_ids(request)
+        if not opp_id or opp_id not in accessible:
+            messages.warning(
+                request,
+                "Select an opportunity from the context selector before creating a synthetic entry.",
+            )
+            return HttpResponseRedirect(reverse("labs:synthetic:list"))
+        self._context_opp_id = opp_id
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        return {"opportunity_id": self._context_opp_id}
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        if self.request.method in ("POST", "PUT") and "data" in kwargs:
+            # Inject the context opp_id so form validation passes even though
+            # the hidden input was not submitted in the POST body.
+            data = kwargs["data"].copy()
+            data["opportunity_id"] = self._context_opp_id
+            kwargs["data"] = data
+        return kwargs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["context_opp_id"] = self._context_opp_id
+        ctx["context_opp_name"] = self._lookup_opp_name(self._context_opp_id)
+        return ctx
+
+    def _lookup_opp_name(self, opp_id: int) -> str:
+        from commcare_connect.labs.context import get_org_data
+
+        for opp in get_org_data(self.request).get("opportunities", []):
+            if int(opp.get("id", 0)) == int(opp_id):
+                return opp.get("name", "")
+        return ""
+
     def form_valid(self, form):
         form.instance.created_by = self.request.user
+        # Reassert from context to prevent POST tampering of the hidden input.
+        form.instance.opportunity_id = self._context_opp_id
         return super().form_valid(form)
 
 

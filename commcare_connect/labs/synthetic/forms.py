@@ -8,5 +8,6 @@ class SyntheticOpportunityForm(forms.ModelForm):
         model = SyntheticOpportunity
         fields = ["opportunity_id", "label", "gdrive_folder_id", "enabled", "notes"]
         widgets = {
+            "opportunity_id": forms.HiddenInput(),
             "notes": forms.Textarea(attrs={"rows": 3}),
         }
