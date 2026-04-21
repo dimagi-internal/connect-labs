@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 DRIVE_API = "https://www.googleapis.com/drive/v3"
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+# All requests include supportsAllDrives so the SA can operate on parents
+# inside Shared Drives (the common Dimagi case). Safe on My Drive too.
+_SHARED_DRIVES = {"supportsAllDrives": "true"}
 
 
 class DriveAuthError(RuntimeError):
@@ -69,6 +72,9 @@ class DriveClient:
             "q": f"'{folder_id}' in parents and trashed = false",
             "fields": "files(id,name)",
             "pageSize": 1000,
+            "includeItemsFromAllDrives": "true",
+            "corpora": "allDrives",
+            **_SHARED_DRIVES,
         }
         try:
             resp = httpx.get(
@@ -90,7 +96,7 @@ class DriveClient:
             resp = httpx.get(
                 f"{DRIVE_API}/files/{file_id}",
                 headers=self._headers(),
-                params={"alt": "media"},
+                params={"alt": "media", **_SHARED_DRIVES},
                 timeout=self._timeout,
             )
             resp.raise_for_status()
@@ -110,6 +116,7 @@ class DriveClient:
             resp = httpx.post(
                 f"{DRIVE_API}/files",
                 headers={**self._headers(), "Content-Type": "application/json"},
+                params=_SHARED_DRIVES,
                 json=payload,
                 timeout=self._timeout,
             )
@@ -136,8 +143,9 @@ class DriveClient:
 
         try:
             resp = httpx.post(
-                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                "https://www.googleapis.com/upload/drive/v3/files",
                 headers={**self._headers(), "Content-Type": f"multipart/related; boundary={boundary}"},
+                params={"uploadType": "multipart", **_SHARED_DRIVES},
                 content=body,
                 timeout=self._timeout,
             )
