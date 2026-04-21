@@ -74,3 +74,44 @@ def test_missing_credentials_raises(monkeypatch):
 
     with pytest.raises(gdrive.DriveAuthError):
         gdrive.DriveClient()
+
+
+def test_create_folder_posts_mimetype_folder(httpx_mock, fake_creds):
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.googleapis.com/drive/v3/files",
+        json={"id": "folder-new"},
+    )
+
+    client = gdrive.DriveClient()
+    folder_id = client.create_folder("opp-42-demo", parent_id="parent-abc")
+
+    assert folder_id == "folder-new"
+    request = httpx_mock.get_request()
+    body = json.loads(request.content)
+    assert body["name"] == "opp-42-demo"
+    assert body["mimeType"] == "application/vnd.google-apps.folder"
+    assert body["parents"] == ["parent-abc"]
+
+
+def test_upload_file_multipart_body(httpx_mock, fake_creds):
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        json={"id": "file-new"},
+    )
+
+    client = gdrive.DriveClient()
+    content = b'[{"id": 1}]'
+    file_id = client.upload_file("folder-abc", "user_visits.json", content)
+
+    assert file_id == "file-new"
+    request = httpx_mock.get_request()
+    ct = request.headers["Content-Type"]
+    assert ct.startswith("multipart/related; boundary=")
+    raw = request.content
+    # Metadata part references folder and filename.
+    assert b'"name": "user_visits.json"' in raw
+    assert b'"parents": ["folder-abc"]' in raw
+    # File bytes are embedded verbatim.
+    assert content in raw
