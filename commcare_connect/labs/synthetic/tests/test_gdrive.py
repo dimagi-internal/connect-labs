@@ -6,11 +6,14 @@ from commcare_connect.labs.synthetic import gdrive
 
 
 class FakeCredentials:
-    def __init__(self):
+    def __init__(self, valid=True):
         self.token = "fake-access-token"
+        self.valid = valid
+        self.refresh_count = 0
 
     def refresh(self, _request):
-        pass
+        self.refresh_count += 1
+        self.valid = True
 
 
 @pytest.fixture
@@ -76,6 +79,42 @@ def test_missing_credentials_raises(monkeypatch):
 
     with pytest.raises(gdrive.DriveAuthError):
         gdrive.DriveClient()
+
+
+def test_credentials_refresh_only_when_expired(httpx_mock, monkeypatch):
+    """Token refresh hits Google's OAuth endpoint; refresh lazily so a
+    multi-op dump doesn't pay that cost per Drive call."""
+    creds = FakeCredentials(valid=True)
+    monkeypatch.setattr(gdrive, "_load_credentials", lambda: creds)
+
+    # Seed two list_folder responses.
+    for _ in range(2):
+        httpx_mock.add_response(
+            method="GET",
+            url="https://www.googleapis.com/drive/v3/files"
+            "?q=%27f%27+in+parents+and+trashed+%3D+false"
+            "&fields=files%28id%2Cname%29&pageSize=1000"
+            "&includeItemsFromAllDrives=true&corpora=allDrives&supportsAllDrives=true",
+            json={"files": []},
+        )
+
+    client = gdrive.DriveClient()
+    client.list_folder("f")
+    client.list_folder("f")
+    assert creds.refresh_count == 0, "should not refresh while token is valid"
+
+    # Simulate expiry; next call should refresh exactly once.
+    creds.valid = False
+    httpx_mock.add_response(
+        method="GET",
+        url="https://www.googleapis.com/drive/v3/files"
+        "?q=%27f%27+in+parents+and+trashed+%3D+false"
+        "&fields=files%28id%2Cname%29&pageSize=1000"
+        "&includeItemsFromAllDrives=true&corpora=allDrives&supportsAllDrives=true",
+        json={"files": []},
+    )
+    client.list_folder("f")
+    assert creds.refresh_count == 1
 
 
 def test_create_folder_posts_mimetype_folder(httpx_mock, fake_creds):
