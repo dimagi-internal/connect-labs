@@ -108,3 +108,17 @@ def test_drive_api_error_on_download_returns_empty(caplog):
     store = FixtureStore(drive=FailingDrive(), folder_lookup=lambda _: "folder-a")
     assert store.load_endpoint(42, "user_visits") == []
     assert "download_file failed" in caplog.text.lower()
+
+
+def test_malformed_json_returns_empty(caplog):
+    """Operator edits in Drive can leave a file with broken JSON. Don't 500
+    the caller — degrade to empty with a warning and cache the result so we
+    don't re-download on every read."""
+    store, drive = _store_with(42, "folder-a", {"user_visits.json": b"{not valid json"})
+
+    assert store.load_endpoint(42, "user_visits") == []
+    assert "malformed json" in caplog.text.lower()
+
+    # Second call hits the cached [] without re-downloading.
+    assert store.load_endpoint(42, "user_visits") == []
+    assert drive.download_calls == 1
