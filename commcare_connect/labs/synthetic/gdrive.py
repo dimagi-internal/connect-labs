@@ -2,11 +2,14 @@
 
 Uses a service account (env var `LABS_SYNTHETIC_GDRIVE_SA_KEY` — either a
 filesystem path to a JSON key file, or the JSON blob itself). The service
-account must be shared on the dedicated labs-synthetic parent folder.
+account must be shared as **Editor** on the dedicated labs-synthetic parent
+folder (which may live inside a Shared Drive).
 
-Only two operations are needed:
+Operations:
     - list immediate children of a folder (filename -> file ID)
     - download a file's bytes by ID
+    - create a folder under a parent
+    - upload a file into a folder (multipart)
 """
 
 from __future__ import annotations
