@@ -23,6 +23,7 @@ def test_list_folder_returns_name_to_id_map(httpx_mock, fake_creds):
         "https://www.googleapis.com/drive/v3/files"
         "?q=%27folder-abc%27+in+parents+and+trashed+%3D+false"
         "&fields=files%28id%2Cname%29&pageSize=1000"
+        "&includeItemsFromAllDrives=true&corpora=allDrives&supportsAllDrives=true"
     )
     httpx_mock.add_response(
         url=url,
@@ -43,7 +44,7 @@ def test_list_folder_returns_name_to_id_map(httpx_mock, fake_creds):
 def test_download_file_returns_bytes(httpx_mock, fake_creds):
     payload = json.dumps([{"id": 1}]).encode()
     httpx_mock.add_response(
-        url="https://www.googleapis.com/drive/v3/files/f1?alt=media",
+        url="https://www.googleapis.com/drive/v3/files/f1?alt=media&supportsAllDrives=true",
         content=payload,
     )
 
@@ -56,6 +57,7 @@ def test_list_folder_sends_bearer_token(httpx_mock, fake_creds):
         "https://www.googleapis.com/drive/v3/files"
         "?q=%27f%27+in+parents+and+trashed+%3D+false"
         "&fields=files%28id%2Cname%29&pageSize=1000"
+        "&includeItemsFromAllDrives=true&corpora=allDrives&supportsAllDrives=true"
     )
     httpx_mock.add_response(
         url=url,
@@ -79,7 +81,7 @@ def test_missing_credentials_raises(monkeypatch):
 def test_create_folder_posts_mimetype_folder(httpx_mock, fake_creds):
     httpx_mock.add_response(
         method="POST",
-        url="https://www.googleapis.com/drive/v3/files",
+        url="https://www.googleapis.com/drive/v3/files?supportsAllDrives=true",
         json={"id": "folder-new"},
     )
 
@@ -97,7 +99,7 @@ def test_create_folder_posts_mimetype_folder(httpx_mock, fake_creds):
 def test_upload_file_multipart_body(httpx_mock, fake_creds):
     httpx_mock.add_response(
         method="POST",
-        url="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        url="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
         json={"id": "file-new"},
     )
 
@@ -115,3 +117,41 @@ def test_upload_file_multipart_body(httpx_mock, fake_creds):
     assert b'"parents": ["folder-abc"]' in raw
     # File bytes are embedded verbatim.
     assert content in raw
+
+
+def test_all_requests_include_shared_drive_params(httpx_mock, fake_creds):
+    """All four Drive operations must include supportsAllDrives=true so the SA
+    can operate on folders inside Shared Drives — the common Dimagi setup."""
+    # Seed responses for each operation.
+    httpx_mock.add_response(
+        method="GET",
+        url="https://www.googleapis.com/drive/v3/files"
+        "?q=%27f%27+in+parents+and+trashed+%3D+false"
+        "&fields=files%28id%2Cname%29&pageSize=1000"
+        "&includeItemsFromAllDrives=true&corpora=allDrives&supportsAllDrives=true",
+        json={"files": []},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://www.googleapis.com/drive/v3/files/abc?alt=media&supportsAllDrives=true",
+        content=b"{}",
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.googleapis.com/drive/v3/files?supportsAllDrives=true",
+        json={"id": "new-folder"},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+        json={"id": "new-file"},
+    )
+
+    client = gdrive.DriveClient()
+    client.list_folder("f")
+    client.download_file("abc")
+    client.create_folder("new", parent_id="p")
+    client.upload_file("p", "x.json", b"[]")
+
+    for req in httpx_mock.get_requests():
+        assert "supportsAllDrives=true" in str(req.url), f"missing supportsAllDrives on {req.url}"
