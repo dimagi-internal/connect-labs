@@ -7,6 +7,12 @@
     {% if form.instance.pk %}Edit synthetic opportunity{% else %}New synthetic opportunity{% endif %}
   </h1>
 
+  {% if context_opp_id %}
+  <div class="alert alert-info py-2 mb-3">
+    Registering synthetic version of opp <strong>{{ context_opp_name|default:"(unnamed)" }}</strong> (id: <strong>{{ context_opp_id }}</strong>)
+  </div>
+  {% endif %}
+
   <form method="post" novalidate>
     {% csrf_token %}
 
@@ -22,13 +28,33 @@
     </div>
 
     <div class="mb-3">
-      <label class="form-label" for="id_gdrive_folder_id">Google Drive folder ID</label>
-      <div class="input-group">
-        {{ form.gdrive_folder_id }}
-        <button class="btn btn-outline-secondary" type="button" id="test-access-btn">Test access</button>
+      <label class="form-label">Google Drive folder</label>
+
+      {% if context_opp_id %}
+      <div class="form-check">
+        <input type="radio" class="form-check-input" name="source_mode" value="dump" id="mode-dump">
+        <label class="form-check-label" for="mode-dump">
+          Dump fresh data from prod → new GDrive folder
+        </label>
       </div>
-      <div id="test-access-result" class="small mt-2"></div>
-      {% if form.gdrive_folder_id.errors %}<div class="text-danger small">{{ form.gdrive_folder_id.errors }}</div>{% endif %}
+      <div id="dump-pane" class="ms-4 mb-3" hidden>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="dump-btn">Start dump</button>
+        <div id="dump-log" class="small mt-2 font-monospace" style="max-height:220px; overflow-y:auto; white-space:pre-wrap;"></div>
+      </div>
+      {% endif %}
+
+      <div class="form-check">
+        <input type="radio" class="form-check-input" name="source_mode" value="existing" id="mode-existing" checked>
+        <label class="form-check-label" for="mode-existing">Use existing folder ID</label>
+      </div>
+      <div id="existing-pane" class="ms-4 mb-3">
+        <div class="input-group">
+          {{ form.gdrive_folder_id }}
+          <button class="btn btn-outline-secondary" type="button" id="test-access-btn">Test access</button>
+        </div>
+        <div id="test-access-result" class="small mt-2"></div>
+        {% if form.gdrive_folder_id.errors %}<div class="text-danger small">{{ form.gdrive_folder_id.errors }}</div>{% endif %}
+      </div>
     </div>
 
     <div class="mb-3 form-check">
@@ -65,5 +91,58 @@ document.getElementById('test-access-btn').addEventListener('click', async () =>
     result.innerHTML = `<span class="text-danger">Request failed: ${e}</span>`;
   }
 });
+
+// ── Radio mode toggle ──────────────────────────────────────────────
+document.querySelectorAll('input[name="source_mode"]').forEach(r => {
+  r.addEventListener('change', () => {
+    const existingPane = document.getElementById('existing-pane');
+    const dumpPane = document.getElementById('dump-pane');
+    if (existingPane) existingPane.hidden = r.value !== 'existing';
+    if (dumpPane) dumpPane.hidden = r.value !== 'dump';
+  });
+});
+
+// ── Dump button (SSE) ─────────────────────────────────────────────
+const dumpBtn = document.getElementById('dump-btn');
+if (dumpBtn) {
+  dumpBtn.addEventListener('click', () => {
+    const log = document.getElementById('dump-log');
+    const folderField = document.getElementById('id_gdrive_folder_id');
+    log.textContent = '';
+    dumpBtn.disabled = true;
+
+    const append = (html, cls) => {
+      const div = document.createElement('div');
+      if (cls) div.className = cls;
+      div.innerHTML = html;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    };
+
+    const es = new EventSource("{% url 'labs:synthetic:dump_stream' %}");
+    es.onmessage = (msg) => {
+      const payload = JSON.parse(msg.data);
+      if (payload.error) {
+        append(`Error: ${payload.error}`, 'text-danger');
+        es.close();
+        dumpBtn.disabled = false;
+        return;
+      }
+      append(payload.message || '');
+      const data = payload.data || {};
+      if (data.event === 'done') {
+        folderField.value = data.folder_id;
+        append('<strong>Folder ID populated — save to register.</strong>', 'text-success');
+        es.close();
+        dumpBtn.disabled = false;
+      }
+    };
+    es.onerror = () => {
+      append('Connection lost.', 'text-danger');
+      es.close();
+      dumpBtn.disabled = false;
+    };
+  });
+}
 </script>
 {% endblock %}

@@ -15,15 +15,30 @@ prod. Clean up by deleting the demo opp's `LabsRecord`s manually.
 
 ## One-time setup
 
-1. Obtain the `LABS_SYNTHETIC_GDRIVE_SA_KEY` env var value from the team
-   (service account JSON). Confirm it is set in the target environment.
-2. Confirm the labs-synthetic parent folder has been shared with the
-   service account email (Viewer is enough).
+1. Obtain the `LABS_SYNTHETIC_GDRIVE_SA_KEY` env var value (service account JSON
+   from 1Password item `connect-labs GCP service account key (connect-labs-sa)`).
+   Confirm it is set in the target environment.
+2. Obtain a Drive folder to host synthetic opps ("labs-synthetic parent") and
+   share it with the service account email as **Editor**.
+3. Set `LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID` env var to that folder's ID.
 
 ## Creating a synthetic opp
 
-**Step 1 — dump real data from a similar opp on prod.** Using a dev OAuth
-token with `export` scope:
+**Recommended flow: dump from prod via the UI.**
+
+1. Pick an existing opportunity in the labs context selector (top nav).
+2. Go to `/labs/synthetic/` and click "+ New synthetic opp".
+3. Select "Dump fresh data from prod → new GDrive folder" and click **Start dump**.
+4. Watch the stream: the service account creates a timestamped folder under the
+   labs-synthetic parent, pulls the five export endpoints one at a time, and
+   uploads them as JSON. On completion the Drive folder ID is auto-populated.
+5. Fill in a label (e.g. "Baobab demo starter"), hit **Save**.
+6. Edit the JSON files in Drive to anonymize names, flip statuses, etc.
+7. Back in `/labs/synthetic/`, click **Reload fixtures** on the row so the in-process
+   fixture cache picks up your edits.
+
+**Fallback: manual dump via `curl`.** Use when the UI dump isn't available (no
+SA configured, no labs access for the opp, etc.):
 
 ```bash
 TOKEN=<your prod token>
@@ -39,24 +54,8 @@ for EP in "" user_visits user_data completed_works completed_module; do
 done
 ```
 
-Each file should end up being either a JSON list (`user_visits.json` etc.)
-or a single JSON object (`opportunity.json`).
-
-**Step 2 — edit to match the demo storyline.** Anonymize names, flip visit
-statuses, change dates to create the demo you want.
-
-**Step 3 — upload to Drive.** Create a folder under the labs-synthetic
-parent (e.g. `opp-999-baobab-demo/`), upload all five files, and copy the
-folder ID from the URL.
-
-**Step 4 — register in Labs.** Go to `/labs/synthetic/`, click
-"+ New synthetic opp", enter the Connect opp ID, paste the folder ID, and
-click "Test access" to verify the service account can see your files. Save.
-
-**Step 5 — use it.** Any labs visualization that loads export data for that
-opp ID now sees your fixture data. The registry cache takes up to 60s to pick
-up new registrations across workers; click "Refresh registry cache" if you
-can't wait.
+Upload the resulting files to a folder under the labs-synthetic parent, copy
+the folder ID, select "Use existing folder ID" in the create form, and paste it in.
 
 ## Updating fixtures
 
