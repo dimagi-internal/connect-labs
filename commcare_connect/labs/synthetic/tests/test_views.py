@@ -21,6 +21,12 @@ def user(db):
 @pytest.fixture
 def authed_client(client, user):
     client.force_login(user)
+    session = client.session
+    session["labs_oauth"] = {
+        "access_token": "tok",
+        "organization_data": {"opportunities": [{"id": 42, "name": "Demo A"}]},
+    }
+    session.save()
     return client
 
 
@@ -31,12 +37,21 @@ def test_list_requires_login(client):
 
 
 @pytest.mark.django_db
-def test_list_shows_rows(authed_client):
+def test_list_shows_accessible_row(authed_client):
     SyntheticOpportunity.objects.create(opportunity_id=42, label="Demo A", gdrive_folder_id="folder-a", enabled=True)
     resp = authed_client.get(reverse("labs:synthetic:list"))
     assert resp.status_code == 200
     assert b"Demo A" in resp.content
-    assert b"42" in resp.content
+
+
+@pytest.mark.django_db
+def test_list_hides_inaccessible_row(authed_client):
+    SyntheticOpportunity.objects.create(
+        opportunity_id=999, label="Out of reach", gdrive_folder_id="folder-z", enabled=True
+    )
+    resp = authed_client.get(reverse("labs:synthetic:list"))
+    assert resp.status_code == 200
+    assert b"Out of reach" not in resp.content
 
 
 @pytest.mark.django_db

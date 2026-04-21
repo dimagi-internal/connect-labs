@@ -27,6 +27,10 @@ class SyntheticListView(LoginRequiredMixin, ListView):
     template_name = "labs/synthetic/list.html"
     context_object_name = "opps"
 
+    def get_queryset(self):
+        opp_ids = registry.accessible_opp_ids(self.request)
+        return super().get_queryset().filter(opportunity_id__in=opp_ids)
+
 
 class SyntheticCreateView(LoginRequiredMixin, CreateView):
     model = SyntheticOpportunity

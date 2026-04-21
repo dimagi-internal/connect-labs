@@ -32,3 +32,11 @@ def invalidate_cache() -> None:
     """Force the next `get_synthetic_opp` call to re-query the database."""
     _CACHE["loaded_at"] = 0.0
     _CACHE["opps_by_id"] = {}
+
+
+def accessible_opp_ids(request) -> set[int]:
+    """Opp IDs the current user has Connect access to, per labs org data."""
+    from commcare_connect.labs.context import get_org_data
+
+    org_data = get_org_data(request)
+    return {int(o["id"]) for o in org_data.get("opportunities", []) if o.get("id") is not None}
