@@ -26,8 +26,12 @@ folder** and running `/labs-token-setup` — browser approves, token saves,
 
 ```bash
 cd connect-labs
-inv safe-claude
+inv safe-claude --auth=api-key
 ```
+
+`--auth` is required every run — pick `api-key` (Anthropic ZDR key) or
+`vertex` (Google Vertex AI). There's no default on purpose: you should
+always know which governed endpoint your PII is about to route through.
 
 ## Troubleshooting
 
