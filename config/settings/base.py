@@ -427,6 +427,8 @@ CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
 # Labs synthetic sample data
 # Set LABS_SYNTHETIC_GDRIVE_SA_KEY (env var, JSON blob or filesystem path) to
 # enable the synthetic-opportunity feature. See docs/SYNTHETIC_OPPS.md.
+# LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID is the Drive folder ID where dump output lands.
+LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = env("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", default="")
 
 # Labs admin allowlist — LOCAL DEV ONLY fallback for Connect test accounts that
 # have no email address configured (e.g. username='matt', email='').

@@ -14,13 +14,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 DRIVE_API = "https://www.googleapis.com/drive/v3"
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 class DriveAuthError(RuntimeError):
@@ -97,3 +98,50 @@ class DriveClient:
             raise DriveAPIError(f"download_file({file_id}) failed: {e}") from e
 
         return resp.content
+
+    def create_folder(self, name: str, parent_id: str) -> str:
+        """Create a folder inside `parent_id`; return the new folder ID."""
+        payload = {
+            "name": name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id],
+        }
+        try:
+            resp = httpx.post(
+                f"{DRIVE_API}/files",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json=payload,
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise DriveAPIError(f"create_folder({name}, parent={parent_id}) failed: {e}") from e
+        return resp.json()["id"]
+
+    def upload_file(self, folder_id: str, filename: str, content: bytes) -> str:
+        """Upload `content` as `filename` into `folder_id`; return the new file ID."""
+        metadata = {"name": filename, "parents": [folder_id]}
+        boundary = "----labs-synthetic-" + secrets.token_hex(8)
+        body = (
+            (
+                f"--{boundary}\r\n"
+                f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                f"{json.dumps(metadata)}\r\n"
+                f"--{boundary}\r\n"
+                f"Content-Type: application/json\r\n\r\n"
+            ).encode()
+            + content
+            + f"\r\n--{boundary}--".encode()
+        )
+
+        try:
+            resp = httpx.post(
+                "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+                headers={**self._headers(), "Content-Type": f"multipart/related; boundary={boundary}"},
+                content=body,
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise DriveAPIError(f"upload_file({filename}) failed: {e}") from e
+        return resp.json()["id"]
