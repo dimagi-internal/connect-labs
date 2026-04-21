@@ -75,6 +75,16 @@
 </div>
 
 <script>
+// Helper: build a DOM node with a className and plain-text content.
+// Server-emitted strings (Drive filenames, exception messages) are never
+// injected as HTML — they flow only through textContent to avoid XSS.
+function _el(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text != null) el.textContent = text;
+  return el;
+}
+
 document.getElementById('test-access-btn').addEventListener('click', async () => {
   const folderId = document.getElementById('id_gdrive_folder_id').value.trim();
   const result = document.getElementById('test-access-result');
@@ -82,13 +92,15 @@ document.getElementById('test-access-btn').addEventListener('click', async () =>
   try {
     const resp = await fetch(`{% url 'labs:synthetic:test_access' %}?folder_id=${encodeURIComponent(folderId)}`);
     const data = await resp.json();
+    result.replaceChildren();
     if (data.ok) {
-      result.innerHTML = `<span class="text-success">Found ${data.files.length} file(s):</span> <code>${data.files.join(', ') || '(empty)'}</code>`;
+      result.appendChild(_el('span', 'text-success', `Found ${data.files.length} file(s): `));
+      result.appendChild(_el('code', null, data.files.join(', ') || '(empty)'));
     } else {
-      result.innerHTML = `<span class="text-danger">${data.error}</span>`;
+      result.appendChild(_el('span', 'text-danger', data.error));
     }
   } catch (e) {
-    result.innerHTML = `<span class="text-danger">Request failed: ${e}</span>`;
+    result.replaceChildren(_el('span', 'text-danger', `Request failed: ${e}`));
   }
 });
 
@@ -111,10 +123,16 @@ if (dumpBtn) {
     log.textContent = '';
     dumpBtn.disabled = true;
 
-    const append = (html, cls) => {
+    // Append a progress line. `text` is always rendered as text, never HTML.
+    // `bold` wraps text in <strong> (still text content, no injection risk).
+    const append = (text, {cls, bold} = {}) => {
       const div = document.createElement('div');
       if (cls) div.className = cls;
-      div.innerHTML = html;
+      if (bold) {
+        div.appendChild(_el('strong', null, text));
+      } else {
+        div.textContent = text;
+      }
       log.appendChild(div);
       log.scrollTop = log.scrollHeight;
     };
@@ -123,7 +141,7 @@ if (dumpBtn) {
     es.onmessage = (msg) => {
       const payload = JSON.parse(msg.data);
       if (payload.error) {
-        append(`Error: ${payload.error}`, 'text-danger');
+        append(`Error: ${payload.error}`, {cls: 'text-danger'});
         es.close();
         dumpBtn.disabled = false;
         return;
@@ -132,13 +150,13 @@ if (dumpBtn) {
       const data = payload.data || {};
       if (data.event === 'done') {
         folderField.value = data.folder_id;
-        append('<strong>Folder ID populated — save to register.</strong>', 'text-success');
+        append('Folder ID populated — save to register.', {cls: 'text-success', bold: true});
         es.close();
         dumpBtn.disabled = false;
       }
     };
     es.onerror = () => {
-      append('Connection lost.', 'text-danger');
+      append('Connection lost.', {cls: 'text-danger'});
       es.close();
       dumpBtn.disabled = false;
     };
