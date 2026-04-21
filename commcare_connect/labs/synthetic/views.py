@@ -85,14 +85,22 @@ class SyntheticCreateView(LoginRequiredMixin, CreateView):
         return super().form_valid(form)
 
 
-class SyntheticUpdateView(LoginRequiredMixin, UpdateView):
+class _AccessScopedMixin:
+    """Restrict the queryset to opportunities the current user has Connect access to."""
+
+    def get_queryset(self):
+        opp_ids = registry.accessible_opp_ids(self.request)
+        return super().get_queryset().filter(opportunity_id__in=opp_ids)
+
+
+class SyntheticUpdateView(LoginRequiredMixin, _AccessScopedMixin, UpdateView):
     model = SyntheticOpportunity
     form_class = SyntheticOpportunityForm
     template_name = "labs/synthetic/form.html"
     success_url = reverse_lazy("labs:synthetic:list")
 
 
-class SyntheticDeleteView(LoginRequiredMixin, DeleteView):
+class SyntheticDeleteView(LoginRequiredMixin, _AccessScopedMixin, DeleteView):
     model = SyntheticOpportunity
     template_name = "labs/synthetic/confirm_delete.html"
     success_url = reverse_lazy("labs:synthetic:list")
@@ -111,7 +119,8 @@ def refresh_cache_view(request):
 @require_POST
 def reload_fixtures_view(request, pk: int):
     """Drop the in-process fixture cache for one opp so the next call re-pulls from GDrive."""
-    opp = get_object_or_404(SyntheticOpportunity, pk=pk)
+    opp_ids = registry.accessible_opp_ids(request)
+    opp = get_object_or_404(SyntheticOpportunity, pk=pk, opportunity_id__in=opp_ids)
     store = factory._get_fixture_store()
     store.reload(opp.opportunity_id)
     messages.success(request, f"Fixture cache reloaded for opp {opp.opportunity_id}.")

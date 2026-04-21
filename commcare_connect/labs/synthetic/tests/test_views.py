@@ -168,3 +168,27 @@ def test_refresh_cache_button(authed_client):
     assert resp.status_code == 302
     # After refresh, cache is empty (loaded_at reset)
     assert registry._CACHE["loaded_at"] == 0.0
+
+
+@pytest.mark.django_db
+@override_settings(**LABS_SETTINGS)
+def test_edit_404_when_opp_inaccessible(authed_client_with_context):
+    row = SyntheticOpportunity.objects.create(opportunity_id=999, gdrive_folder_id="f", enabled=True)
+    resp = authed_client_with_context.get(reverse("labs:synthetic:edit", args=[row.pk]))
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+@override_settings(**LABS_SETTINGS)
+def test_delete_404_when_opp_inaccessible(authed_client_with_context):
+    row = SyntheticOpportunity.objects.create(opportunity_id=999, gdrive_folder_id="f", enabled=True)
+    resp = authed_client_with_context.post(reverse("labs:synthetic:delete", args=[row.pk]))
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+@override_settings(**LABS_SETTINGS)
+def test_reload_404_when_opp_inaccessible(authed_client_with_context):
+    row = SyntheticOpportunity.objects.create(opportunity_id=999, gdrive_folder_id="f", enabled=True)
+    resp = authed_client_with_context.post(reverse("labs:synthetic:reload", args=[row.pk]))
+    assert resp.status_code == 404
