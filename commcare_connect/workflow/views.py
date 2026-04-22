@@ -408,8 +408,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "workers": workers,
                 "pipeline_data": pipeline_data,
                 "links": {
-                    "auditUrlBase": "/labs/audit/create/",
-                    "taskUrlBase": "/labs/tasks/new/",
+                    "auditUrlBase": "/audit/create/",
+                    "taskUrlBase": "/tasks/new/",
                 },
                 "apiEndpoints": {
                     # In edit mode, state updates are local only
