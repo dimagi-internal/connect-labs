@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -499,6 +500,12 @@ def safe_claude(c: Context, auth=None):
             # environment carries instead of the chosen governed endpoint.
             "ANTHROPIC_AUTH_TOKEN",
             "CLAUDE_CODE_OAUTH_TOKEN",
+            # Redirects the Anthropic API endpoint. A leaked value from the
+            # parent shell (e.g. pointing at a local proxy or LiteLLM gateway)
+            # would route ZDR-intended traffic through an unaudited host,
+            # defeating the "I know which governed endpoint my PII is going
+            # to" guarantee safe-mode is built around.
+            "ANTHROPIC_BASE_URL",
             "CLAUDE_CODE_USE_VERTEX",
             "ANTHROPIC_VERTEX_PROJECT_ID",
             "CLOUD_ML_REGION",
@@ -563,7 +570,18 @@ def safe_claude(c: Context, auth=None):
             except OSError:
                 pass
         if isolated_config_dir is not None:
-            shutil.rmtree(isolated_config_dir, ignore_errors=True)
+            try:
+                shutil.rmtree(isolated_config_dir)
+            except OSError as e:
+                # Don't raise — this runs in finally, and masking the real
+                # exit code over a cleanup glitch hides the actual failure.
+                # Do surface it: the subprocess may have written cached
+                # state into this dir (prompts, tool transcripts) that
+                # shouldn't linger.
+                print(
+                    f"warning: failed to clean up {isolated_config_dir}: {e}",
+                    file=sys.stderr,
+                )
 
 
 @task(

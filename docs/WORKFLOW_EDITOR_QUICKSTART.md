@@ -66,10 +66,11 @@ credentials. Open a normal Claude Code session (from any folder) and:
 1. Run `/labs-token-setup`.
 2. When Claude prompts, answer **Production labs environment**.
 3. Claude Code prints a URL to the terminal. Open it in your browser and
-   approve the token. On WSL, copy-paste the printed URL into your Windows
-   browser — the Linux-side auto-open can't reach it, but WSL2's localhost
-   forwarding still delivers the callback. The token is written to
-   `~/.claude.json`.
+   approve the token. On WSL2, copy-paste the printed URL into your Windows
+   browser — the Linux-side auto-open can't reach it, but WSL2's automatic
+   localhost forwarding still delivers the callback back to the script.
+   (WSL1 doesn't forward localhost automatically; upgrade to WSL2 or set up
+   port forwarding manually.) The token is written to `~/.claude.json`.
 4. `/exit`, close the terminal, open a new one, restart Claude Code, and run
    `/mcp`. You should see `connect_labs` with `✓ Connected`.
 
