@@ -467,9 +467,22 @@ def safe_claude(c: Context, auth=None):
     env_values = _load_env_file(PROJECT_DIR / ".env")
 
     ephemeral_path: Path | None = None
+    isolated_config_dir: Path | None = None
     try:
         if auth_mode == AUTH_MODE_API_KEY:
             auth_overrides, auth_desc = _configure_api_key_auth(c)
+            # Point the subprocess at an empty config dir so it can't see a
+            # persisted claude.ai OAuth session (~/.claude/.credentials.json
+            # or macOS Keychain). Without this, users already logged into
+            # claude.ai see "Auth conflict: Both a token (claude.ai) and an
+            # API key (ANTHROPIC_API_KEY) are set" at launch. The API key
+            # wins by precedence so traffic still routes through the ZDR
+            # endpoint, but the warning is confusing and leaves uncertainty
+            # about which credential is actually in use. Scoped to this
+            # subprocess only — the user's real ~/.claude session is
+            # untouched. Vertex mode doesn't set ANTHROPIC_API_KEY, so the
+            # warning doesn't fire there and the redirect isn't needed.
+            isolated_config_dir = Path(tempfile.mkdtemp(prefix="safe-claude-cfg-"))
         else:  # AUTH_MODE_VERTEX
             auth_overrides, ephemeral_path, auth_desc = _configure_vertex_auth(c, env_values)
 
@@ -479,6 +492,13 @@ def safe_claude(c: Context, auth=None):
         env = os.environ.copy()
         for k in (
             "ANTHROPIC_API_KEY",
+            # Higher precedence than ANTHROPIC_API_KEY in Claude Code's auth
+            # resolution — if either leaks in from the parent shell it
+            # overrides the 1Password-sourced key we set below, silently
+            # routing PII through whatever token the user's broader
+            # environment carries instead of the chosen governed endpoint.
+            "ANTHROPIC_AUTH_TOKEN",
+            "CLAUDE_CODE_OAUTH_TOKEN",
             "CLAUDE_CODE_USE_VERTEX",
             "ANTHROPIC_VERTEX_PROJECT_ID",
             "CLOUD_ML_REGION",
@@ -489,6 +509,8 @@ def safe_claude(c: Context, auth=None):
         # Consumed by Claude Code's ${LABS_MCP_TOKEN} expansion in
         # safe-claude/mcp.json — the token never lands on disk.
         env["LABS_MCP_TOKEN"] = mcp_token
+        if isolated_config_dir is not None:
+            env["CLAUDE_CONFIG_DIR"] = str(isolated_config_dir)
 
         cmd_argv = [
             claude_bin,
@@ -540,6 +562,8 @@ def safe_claude(c: Context, auth=None):
                 os.unlink(ephemeral_path)
             except OSError:
                 pass
+        if isolated_config_dir is not None:
+            shutil.rmtree(isolated_config_dir, ignore_errors=True)
 
 
 @task(
