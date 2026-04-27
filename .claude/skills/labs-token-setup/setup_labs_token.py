@@ -39,6 +39,14 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def _is_wsl() -> bool:
+    try:
+        with open("/proc/version", encoding="utf-8") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
 class _Result:
     token: str | None = None
     name: str | None = None
@@ -192,9 +200,21 @@ def main(labs_base_url: str) -> int:
         )
     )
 
-    print(f"Opening browser to {labs_base_url}/mcp/admin/create-token/ ...")
-    print(f"Listening on http://127.0.0.1:{port} for callback (timeout: {TIMEOUT_SECONDS}s)")
-    webbrowser.open(consent_url)
+    print()
+    print("Open this URL in your browser to approve the token:")
+    print()
+    print(f"    {consent_url}")
+    print()
+    if _is_wsl():
+        print("Detected WSL — copy the URL above into your Windows browser.")
+        print("(Auto-open from WSL usually can't reach a Windows browser, so this")
+        print(" script won't try. The localhost callback will still work via WSL2's")
+        print(" automatic localhost forwarding.)")
+    else:
+        webbrowser.open(consent_url)
+        print("(Also attempting to open it in your default browser.)")
+    print()
+    print(f"Listening on http://127.0.0.1:{port} for callback (timeout: {TIMEOUT_SECONDS}s) ...")
 
     t.join()
 
