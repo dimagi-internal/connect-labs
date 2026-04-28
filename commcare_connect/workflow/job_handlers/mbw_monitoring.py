@@ -194,6 +194,12 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
       - flw_names: dict mapping username -> display name (optional)
       - flw_statuses: dict mapping username -> status key (optional)
       - opportunity_id: int
+      - app_version_op: optional one of "gt"/"gte"/"eq"/"lte"/"lt" — applied
+        to GPS visits via app_build_version (mirrors V1 views.py)
+      - app_version_val: optional integer threshold paired with app_version_op
+      - status_filter: optional list of visit approval statuses
+        ("approved"/"pending"/"rejected"/"over_limit"); applied to all visit
+        rows before any analysis (mirrors V1 pipeline-level WHERE filter)
 
     Each pipeline_data entry has {"rows": [...], "metadata": {...}}.
 
@@ -201,6 +207,11 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         Results dict with dashboard data sections (gps_data, followup_data,
         overview_data, etc.) plus successful/failed counts.
     """
+    from commcare_connect.workflow.templates.mbw_monitoring.data_transforms import (
+        VALID_APP_VERSION_OPS,
+        VALID_VISIT_STATUS_VALUES,
+        check_app_version,
+    )
     from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
         aggregate_flw_followup,
         aggregate_mother_metrics,
@@ -224,10 +235,42 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
     flw_names = job_config.get("flw_names", {})
     flw_statuses = job_config.get("flw_statuses", {})
 
+    # App version filter (validated; silently ignored if op invalid or val missing)
+    app_version_op = job_config.get("app_version_op") or ""
+    if app_version_op not in VALID_APP_VERSION_OPS:
+        app_version_op = ""
+    raw_app_version_val = job_config.get("app_version_val")
+    try:
+        app_version_val = int(raw_app_version_val) if raw_app_version_val not in (None, "") else None
+    except (ValueError, TypeError):
+        app_version_val = None
+
+    # Visit approval status filter (validated; empty/None means no filter)
+    raw_status_filter = job_config.get("status_filter") or []
+    if isinstance(raw_status_filter, str):
+        raw_status_filter = [s.strip() for s in raw_status_filter.split(",") if s.strip()]
+    visit_status_filter = [s.lower() for s in raw_status_filter if isinstance(s, str)]
+    visit_status_filter = [s for s in visit_status_filter if s in VALID_VISIT_STATUS_VALUES]
+
     # Extract pipeline datasets
     visit_rows = pipeline_data.get("visits", {}).get("rows", [])
     registration_rows = pipeline_data.get("registrations", {}).get("rows", [])
     gs_form_rows = pipeline_data.get("gs_forms", {}).get("rows", [])
+
+    # Apply visit approval status filter to all visit rows.
+    # V1 applies this at the SQL layer (query_builder.py:481) so non-matching
+    # rows never reach analysis. V2 filters post-fetch since the pipeline data
+    # is already loaded; the user-visible result is the same.
+    if visit_status_filter:
+        pre_filter_count = len(visit_rows)
+        status_set = set(visit_status_filter)
+        visit_rows = [r for r in visit_rows if (r.get("status") or "").lower() in status_set]
+        logger.info(
+            "[MBW Job] Visit status filter %s: %d -> %d visits",
+            visit_status_filter,
+            pre_filter_count,
+            len(visit_rows),
+        )
 
     total_records = len(visit_rows) + len(registration_rows) + len(gs_form_rows)
     logger.info(
@@ -259,6 +302,22 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         progress_callback("Running GPS analysis...", processed=0, total=5)
 
         gps_visit_dicts = _build_gps_visit_dicts(visit_rows)
+
+        if app_version_op and app_version_val is not None:
+            pre_filter_count = len(gps_visit_dicts)
+            gps_visit_dicts = [
+                v
+                for v in gps_visit_dicts
+                if check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
+            ]
+            logger.info(
+                "[MBW Job] App version filter (%s %d): %d -> %d GPS visits",
+                app_version_op,
+                app_version_val,
+                pre_filter_count,
+                len(gps_visit_dicts),
+            )
+
         gps_result = analyze_gps_metrics(gps_visit_dicts, flw_names)
 
         # Compute median distance/time per FLW

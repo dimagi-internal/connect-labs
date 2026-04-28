@@ -553,3 +553,124 @@ class TestEndToEndJobHandlerParity:
         )
 
         assert v1_quality == v2_quality
+
+
+class TestJobHandlerFilterPlumbing:
+    """The v2 job handler must honor filter params passed via job_config so the
+    UI's filter pills (visit approval status, app version) actually affect the
+    dashboard. Regression test for parity gaps where these were dropped silently.
+    """
+
+    def _job_config(self, rows, **overrides):
+        config = {
+            "pipeline_data": {
+                "visits": {"rows": rows, "metadata": {}},
+                "registrations": {"rows": [], "metadata": {}},
+                "gs_forms": {"rows": [], "metadata": {}},
+            },
+            "active_usernames": ["flw_alpha"],
+            "flw_names": {"flw_alpha": "FLW Alpha"},
+            "flw_statuses": {},
+        }
+        config.update(overrides)
+        return config
+
+    def _run(self, config):
+        from commcare_connect.workflow.job_handlers.mbw_monitoring import handle_mbw_monitoring_job
+
+        return handle_mbw_monitoring_job(config, _access_token=None, progress_callback=lambda *a, **kw: None)
+
+    def _make_rows_with_status_and_version(self):
+        """Build serialized visit rows with varied status + app_build_version."""
+        rows = []
+        for i, (status, version) in enumerate(
+            [
+                ("approved", 100),
+                ("approved", 50),
+                ("pending", 100),
+                ("rejected", 100),
+                ("over_limit", 100),
+            ]
+        ):
+            rows.append(
+                {
+                    "id": i + 1,
+                    "username": "flw_alpha",
+                    "visit_date": "2024-01-15",
+                    "latitude": -1.2,
+                    "longitude": 35.6,
+                    "entity_name": f"Mother {i}",
+                    "status": status,
+                    "computed": {
+                        "gps_location": "-1.2 35.6 1000 10",
+                        "case_id": f"case_{i}",
+                        "mother_case_id": f"mother_{i}",
+                        "form_name": "ANC Visit",
+                        "visit_datetime": "2024-01-15T09:30:00Z",
+                        "entity_name": f"Mother {i}",
+                        "app_build_version": version,
+                    },
+                    "metadata": {"location": "-1.2 35.6"},
+                }
+            )
+        return rows
+
+    def test_no_filters_processes_all_rows(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows))
+        assert results["gps_data"]["total_visits"] == 5
+
+    def test_status_filter_drops_non_matching(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, status_filter=["approved"]))
+        assert results["gps_data"]["total_visits"] == 2
+
+    def test_status_filter_accepts_multiple(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, status_filter=["approved", "pending"]))
+        assert results["gps_data"]["total_visits"] == 3
+
+    def test_status_filter_invalid_token_silently_dropped(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, status_filter=["nonsense"]))
+        # Invalid token leaves the filter empty → no filtering applied
+        assert results["gps_data"]["total_visits"] == 5
+
+    def test_status_filter_accepts_csv_string(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, status_filter="approved,pending"))
+        assert results["gps_data"]["total_visits"] == 3
+
+    def test_app_version_filter_gte(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, app_version_op="gte", app_version_val=100))
+        # 4 rows have version 100 (one rejected, one approved, etc.); one has 50.
+        assert results["gps_data"]["total_visits"] == 4
+
+    def test_app_version_filter_lt(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, app_version_op="lt", app_version_val=100))
+        assert results["gps_data"]["total_visits"] == 1
+
+    def test_app_version_invalid_op_ignored(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, app_version_op="bogus", app_version_val=100))
+        assert results["gps_data"]["total_visits"] == 5
+
+    def test_app_version_missing_val_ignored(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, app_version_op="gte", app_version_val=None))
+        assert results["gps_data"]["total_visits"] == 5
+
+    def test_app_version_string_val_parsed(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(self._job_config(rows, app_version_op="gte", app_version_val="100"))
+        assert results["gps_data"]["total_visits"] == 4
+
+    def test_status_and_app_version_combined(self):
+        rows = self._make_rows_with_status_and_version()
+        results = self._run(
+            self._job_config(rows, status_filter=["approved"], app_version_op="gte", app_version_val=100)
+        )
+        # Only approved + version >= 100 → 1 row
+        assert results["gps_data"]["total_visits"] == 1

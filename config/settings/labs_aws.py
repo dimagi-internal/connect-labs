@@ -105,5 +105,10 @@ OCS_URL = env("OCS_URL", default="https://www.openchatstudio.com")
 OCS_OAUTH_CLIENT_ID = env("OCS_OAUTH_CLIENT_ID", default="")
 OCS_OAUTH_CLIENT_SECRET = env("OCS_OAUTH_CLIENT_SECRET", default="")
 
-# Allow large POST bodies for snapshot save
-DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 MB
+# Allow large POST bodies. Two motivations: (1) snapshot save POSTs the full
+# dashData blob; (2) the V2 workflow job-start POST currently round-trips
+# pipeline rows back to the server (~65 MB for opp 765's 85k visits).
+# The architectural fix is to have the BE re-read pipelines directly so the
+# FE → BE body shrinks, but until that fully lands keep this generous to
+# avoid silent 500s on opps with >~60k visits.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 200 * 1024 * 1024  # 200 MB

@@ -1,16 +1,45 @@
 """
-Shared v1 data transformation functions for MBW monitoring.
+Shared v1/v2 data transformation functions for MBW monitoring.
 
 These pure functions convert VisitRow objects (the native pipeline output)
 into the shapes that the shared computation functions (GPS analysis,
 follow-up rates, quality metrics) expect.
 
 Extracted from the inline code in MBWMonitoringStreamView (views.py) so that
-both the SSE view (v1) and the parity test can share the same transformations
-without duplication.
+both the SSE view (v1) and the v2 job handler / parity test can share the
+same transformations without duplication.
 """
 
 from __future__ import annotations
+
+VALID_APP_VERSION_OPS = ("gt", "gte", "eq", "lte", "lt")
+VALID_VISIT_STATUS_VALUES = frozenset({"approved", "pending", "rejected", "over_limit"})
+
+
+def check_app_version(version, op: str, val: int) -> bool:
+    """Return True if a visit's app_build_version satisfies the operator comparison.
+
+    Mirrors the V1 helper at mbw_monitoring/views.py so the v2 job handler can
+    apply the same filter post-fetch. ``op`` must be one of VALID_APP_VERSION_OPS;
+    any other value (or a non-integer ``version``) returns False.
+    """
+    if version is None:
+        return False
+    try:
+        version = int(version)
+    except (ValueError, TypeError):
+        return False
+    if op == "gt":
+        return version > val
+    if op == "gte":
+        return version >= val
+    if op == "eq":
+        return version == val
+    if op == "lte":
+        return version <= val
+    if op == "lt":
+        return version < val
+    return False
 
 
 def build_gps_visit_dicts(

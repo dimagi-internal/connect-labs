@@ -13,6 +13,14 @@ mbw_monitoring_v2_render.js alongside this file.
 
 from pathlib import Path
 
+# Default Gold Standard supervisor app on the MBW Solina production domain.
+# V1 also defaults to this literal in mbw_monitoring/template.py when no
+# monitoring_session.gs_app_id is set — so for the common case both paths use
+# the same value. State-driven per-run overrides (via instance.state.gs_app_id)
+# are a known gap; full plumbing requires threading state through
+# WorkflowDataAccess.get_pipeline_data → execute_pipeline → _schema_to_config.
+DEFAULT_GS_APP_ID = "2ca67a89dd8a2209d75ed5599b45a5d1"
+
 DEFINITION = {
     "name": "MBW Monitoring V2",
     "description": "Pipeline-based MBW monitoring with GPS analysis, follow-up rates, and FLW assessment",
@@ -126,7 +134,7 @@ PIPELINE_SCHEMAS = [
                 "type": "cchq_forms",
                 "form_name": "Gold Standard Visit Checklist",
                 "app_id_source": "opportunity",
-                "gs_app_id": "2ca67a89dd8a2209d75ed5599b45a5d1",
+                "gs_app_id": DEFAULT_GS_APP_ID,
             },
             "grouping_key": "case_id",
             "terminal_stage": "visit_level",
