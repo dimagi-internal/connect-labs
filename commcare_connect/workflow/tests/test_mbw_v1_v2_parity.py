@@ -481,8 +481,20 @@ class TestEndToEndJobHandlerParity:
         for v1_flw, v2_flw in zip(v1_gps_data["flw_summaries"], v2_gps_data["flw_summaries"]):
             for key in v1_flw:
                 if key == "trailing_7_days":
-                    # Compare length and structure
-                    assert len(v1_flw[key]) == len(v2_flw[key])
+                    # trailing_7_days is a list of per-day buckets the dashboard
+                    # renders as a sparkline. The previous assertion only
+                    # compared length, which would silently allow per-day drift
+                    # to slip through. Compare element-by-element.
+                    v1_days = v1_flw[key]
+                    v2_days = v2_flw[key]
+                    assert len(v1_days) == len(v2_days), (
+                        f"trailing_7_days length mismatch for {v1_flw.get('username')}: "
+                        f"v1={len(v1_days)} vs v2={len(v2_days)}"
+                    )
+                    for i, (d1, d2) in enumerate(zip(v1_days, v2_days)):
+                        assert d1 == d2, (
+                            f"trailing_7_days day {i} mismatch for " f"{v1_flw.get('username')}: v1={d1} vs v2={d2}"
+                        )
                 else:
                     assert (
                         v1_flw[key] == v2_flw[key]

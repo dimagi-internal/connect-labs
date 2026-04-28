@@ -272,6 +272,27 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
             len(visit_rows),
         )
 
+    # Backfill flw_statuses server-side if the FE didn't supply it.
+    # V1 always populates this from audit sessions + workflow runs before
+    # showing the dashboard; the V2 FE used to leave it empty, which made
+    # Performance-by-Status start blank on every fresh run. Mirrors the V1
+    # behavior so the two paths produce identical Performance breakdowns.
+    if not flw_statuses and active_usernames:
+        try:
+            from commcare_connect.workflow.tasks import _create_mock_request
+            from commcare_connect.workflow.templates.mbw_monitoring.flw_status import get_latest_flw_statuses
+
+            opportunity_id = job_config.get("opportunity_id")
+            if opportunity_id:
+                mock_request = _create_mock_request(_access_token, opportunity_id)
+                flw_statuses = get_latest_flw_statuses(mock_request, active_usernames)
+                logger.info(
+                    "[MBW Job] Backfilled flw_statuses for %d FLWs from audit + workflow runs",
+                    sum(1 for s in flw_statuses.values() if s != "none"),
+                )
+        except Exception as e:
+            logger.warning("[MBW Job] flw_statuses backfill failed (non-fatal): %s", e)
+
     total_records = len(visit_rows) + len(registration_rows) + len(gs_form_rows)
     logger.info(
         "[MBW Job] Starting: %d visits, %d registrations, %d gs_forms, %d active FLWs",

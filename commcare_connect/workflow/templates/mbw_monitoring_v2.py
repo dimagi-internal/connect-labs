@@ -139,9 +139,28 @@ PIPELINE_SCHEMAS = [
             "grouping_key": "case_id",
             "terminal_stage": "visit_level",
             "fields": [
-                {"name": "gs_score", "path": "form.gs_score", "aggregation": "first"},
+                # gs_score: the team's own parity command reads
+                # `computed.gs_score or form.checklist_percentage` because real
+                # GS forms in prod use one field or the other depending on
+                # form version. We list both paths so V2 picks up whichever
+                # is present rather than silently extracting None.
+                {
+                    "name": "gs_score",
+                    "paths": ["form.gs_score", "form.checklist_percentage"],
+                    "aggregation": "first",
+                },
                 {"name": "assessor_name", "path": "form.assessor_name", "aggregation": "first"},
                 {"name": "assessment_date", "path": "form.meta.timeEnd", "aggregation": "first"},
+                # user_connect_id is the FLW-link key the JS-side enrichment
+                # joins on to attribute scores to the right FLW. V1 reads it
+                # off the raw form as `load_flw_connect_id`; modern forms
+                # use `user_connect_id`. We try both for robustness — the
+                # extractor uses whichever path matches first.
+                {
+                    "name": "user_connect_id",
+                    "paths": ["form.user_connect_id", "form.load_flw_connect_id"],
+                    "aggregation": "first",
+                },
             ],
         },
     },
