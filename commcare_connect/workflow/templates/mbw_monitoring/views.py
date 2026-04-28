@@ -43,6 +43,7 @@ from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import (
 )
 from commcare_connect.workflow.templates.mbw_monitoring.data_transforms import (
     build_gps_visit_dicts,
+    check_app_version,
     compute_ebf_by_flw,
     extract_per_mother_fields,
 )
@@ -110,27 +111,6 @@ def _log_rss(label: str) -> None:
     # macOS returns bytes, Linux returns kilobytes
     rss_mb = rss_kb / (1024 * 1024) if platform.system() == "Darwin" else rss_kb / 1024
     logger.info("[MBW Dashboard] RSS at %s: %.1f MB", label, rss_mb)
-
-
-def _check_app_version(version, op: str, val: int) -> bool:
-    """Check if a visit's app_build_version satisfies the operator comparison."""
-    if version is None:
-        return False
-    try:
-        version = int(version)
-    except (ValueError, TypeError):
-        return False
-    if op == "gt":
-        return version > val
-    if op == "gte":
-        return version >= val
-    if op == "eq":
-        return version == val
-    if op == "lte":
-        return version <= val
-    if op == "lt":
-        return version < val
-    return False
 
 
 def _parse_int_param(value: str | None) -> int | None:
@@ -598,7 +578,7 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                 visits_for_gps = [
                     v
                     for v in visits_for_gps
-                    if _check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
+                    if check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
                 ]
                 logger.info(
                     "[MBW Dashboard] App version filter (%s %d): %d -> %d GPS visits",
@@ -1038,7 +1018,7 @@ class MBWGPSDetailView(LoginRequiredMixin, View):
                 visits_for_analysis = [
                     v
                     for v in visits_for_analysis
-                    if _check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
+                    if check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
                 ]
 
             gps_result = analyze_gps_metrics(visits_for_analysis, {})
