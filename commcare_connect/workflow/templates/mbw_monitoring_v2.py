@@ -13,6 +13,14 @@ mbw_monitoring_v2_render.js alongside this file.
 
 from pathlib import Path
 
+# Default Gold Standard supervisor app on the MBW Solina production domain.
+# V1 also defaults to this literal in mbw_monitoring/template.py when no
+# monitoring_session.gs_app_id is set — so for the common case both paths use
+# the same value. State-driven per-run overrides (via instance.state.gs_app_id)
+# are a known gap; full plumbing requires threading state through
+# WorkflowDataAccess.get_pipeline_data → execute_pipeline → _schema_to_config.
+DEFAULT_GS_APP_ID = "2ca67a89dd8a2209d75ed5599b45a5d1"
+
 DEFINITION = {
     "name": "MBW Monitoring V2",
     "description": "Pipeline-based MBW monitoring with GPS analysis, follow-up rates, and FLW assessment",
@@ -126,14 +134,33 @@ PIPELINE_SCHEMAS = [
                 "type": "cchq_forms",
                 "form_name": "Gold Standard Visit Checklist",
                 "app_id_source": "opportunity",
-                "gs_app_id": "2ca67a89dd8a2209d75ed5599b45a5d1",
+                "gs_app_id": DEFAULT_GS_APP_ID,
             },
             "grouping_key": "case_id",
             "terminal_stage": "visit_level",
             "fields": [
-                {"name": "gs_score", "path": "form.gs_score", "aggregation": "first"},
+                # gs_score: the team's own parity command reads
+                # `computed.gs_score or form.checklist_percentage` because real
+                # GS forms in prod use one field or the other depending on
+                # form version. We list both paths so V2 picks up whichever
+                # is present rather than silently extracting None.
+                {
+                    "name": "gs_score",
+                    "paths": ["form.gs_score", "form.checklist_percentage"],
+                    "aggregation": "first",
+                },
                 {"name": "assessor_name", "path": "form.assessor_name", "aggregation": "first"},
                 {"name": "assessment_date", "path": "form.meta.timeEnd", "aggregation": "first"},
+                # user_connect_id is the FLW-link key the JS-side enrichment
+                # joins on to attribute scores to the right FLW. V1 reads it
+                # off the raw form as `load_flw_connect_id`; modern forms
+                # use `user_connect_id`. We try both for robustness — the
+                # extractor uses whichever path matches first.
+                {
+                    "name": "user_connect_id",
+                    "paths": ["form.user_connect_id", "form.load_flw_connect_id"],
+                    "aggregation": "first",
+                },
             ],
         },
     },
