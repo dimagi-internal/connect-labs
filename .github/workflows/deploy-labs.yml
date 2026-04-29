@@ -67,6 +67,38 @@ jobs:
             echo "Base image build completed."
           fi
 
+      - name: Wait for node image build if running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Mirror the base-image wait above. Without this, a deploy that
+          # runs concurrently with (or shortly after) a frontend-changing
+          # merge to main races against the Build Node Image workflow:
+          # the Node tag node-latest still points at the OLD image when
+          # this deploy queries ECR, so the deploy ships stale JS.
+          # See incident: PR #97 (workflow-framework auth gate) merged but
+          # the framework code never made it into the deployed bundle.
+          RUNNING=$(gh run list \
+            --workflow="Build Node Image" \
+            --status=in_progress \
+            --json databaseId \
+            --jq '.[0].databaseId' 2>/dev/null || true)
+          if [ -n "$RUNNING" ]; then
+            echo "Node image build in progress (run $RUNNING), waiting for it to complete..."
+            gh run watch "$RUNNING" --exit-status
+            echo "Node image build completed."
+          fi
+          QUEUED=$(gh run list \
+            --workflow="Build Node Image" \
+            --status=queued \
+            --json databaseId \
+            --jq '.[0].databaseId' 2>/dev/null || true)
+          if [ -n "$QUEUED" ]; then
+            echo "Node image build queued (run $QUEUED), waiting for it to complete..."
+            gh run watch "$QUEUED" --exit-status
+            echo "Node image build completed."
+          fi
+
       - name: Check base image exists
         id: base-check
         run: |
