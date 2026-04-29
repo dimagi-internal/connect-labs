@@ -521,9 +521,11 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                         if isinstance(e, CCHQAuthError):
                             yield send_sse_event(
                                 "CommCare HQ access expired",
-                                cchq_auth_required=True,
-                                authorize_url="/labs/commcare/initiate/",
-                                domain=getattr(e, "domain", None),
+                                data={
+                                    "cchq_auth_required": True,
+                                    "authorize_url": "/labs/commcare/initiate/",
+                                    "domain": getattr(e, "domain", None),
+                                },
                             )
             else:
                 logger.info("[MBW Dashboard] Skipping GS fetch — CCHQ OAuth not available after re-auth attempt")
@@ -613,9 +615,11 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                         if isinstance(e, CCHQAuthError):
                             yield send_sse_event(
                                 "CommCare HQ access expired",
-                                cchq_auth_required=True,
-                                authorize_url="/labs/commcare/initiate/",
-                                domain=getattr(e, "domain", None),
+                                data={
+                                    "cchq_auth_required": True,
+                                    "authorize_url": "/labs/commcare/initiate/",
+                                    "domain": getattr(e, "domain", None),
+                                },
                             )
                 logger.info(f"[MBW Dashboard] Fetched {len(registration_forms)} registration forms")
 
