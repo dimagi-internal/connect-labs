@@ -247,7 +247,7 @@ class AnalysisPipelineSSEMixin:
 
             elif event_type == EVENT_DOWNLOAD:
                 # Fetch progress event - yield immediately for real-time UI updates
-                # Each page (up to 1000 rows) from the paginated API triggers one event.
+                # Each page from the paginated API triggers one event (page size set in ExportAPIClient).
                 rows_so_far = event_data.get("rows", 0)
                 expected_count = event_data.get("total", 0)
                 if expected_count > 0:
