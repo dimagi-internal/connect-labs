@@ -17,9 +17,20 @@ from django.http import HttpRequest
 from django.utils.dateparse import parse_date
 
 from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
-from commcare_connect.labs.analysis.backends.sql.query_builder import execute_flw_aggregation, execute_visit_extraction
+from commcare_connect.labs.analysis.backends.sql.query_builder import (
+    execute_entity_aggregation,
+    execute_flw_aggregation,
+    execute_visit_extraction,
+)
 from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, CacheStage
-from commcare_connect.labs.analysis.models import FLWAnalysisResult, FLWRow, VisitAnalysisResult, VisitRow
+from commcare_connect.labs.analysis.models import (
+    EntityAnalysisResult,
+    EntityRow,
+    FLWAnalysisResult,
+    FLWRow,
+    VisitAnalysisResult,
+    VisitRow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -426,6 +437,41 @@ class SQLBackend:
             field_metadata=field_metadata,
         )
 
+    def get_cached_entity_result(
+        self,
+        opportunity_id: int,
+        config: AnalysisPipelineConfig,
+        visit_count: int,
+        tolerance_pct: int = 100,
+    ) -> EntityAnalysisResult | None:
+        """Get cached entity-stage result if valid."""
+        cache_manager = SQLCacheManager(opportunity_id, config)
+
+        if not cache_manager.has_valid_entity_cache(visit_count, tolerance_pct=tolerance_pct):
+            return None
+
+        logger.info(f"[SQL] Entity cache HIT for opp {opportunity_id}")
+
+        entity_qs = cache_manager.get_entity_results_queryset()
+        entity_rows = []
+        for row in entity_qs:
+            entity_row = EntityRow(
+                entity_id=row.entity_id,
+                entity_name=row.entity_name,
+                username=row.username,
+                total_visits=row.total_visits,
+                first_visit_date=row.first_visit_date,
+                last_visit_date=row.last_visit_date,
+            )
+            entity_row.custom_fields = row.aggregated_fields
+            entity_rows.append(entity_row)
+
+        return EntityAnalysisResult(
+            opportunity_id=opportunity_id,
+            rows=entity_rows,
+            metadata={"total_visits": visit_count, "from_sql_cache": True},
+        )
+
     def process_and_cache(
         self,
         request: HttpRequest,
@@ -433,7 +479,7 @@ class SQLBackend:
         opportunity_id: int,
         visit_dicts: list[dict],
         skip_raw_store: bool = False,
-    ) -> FLWAnalysisResult | VisitAnalysisResult:
+    ) -> FLWAnalysisResult | VisitAnalysisResult | EntityAnalysisResult:
         """
         Process visits using SQL and cache results.
 
@@ -446,6 +492,11 @@ class SQLBackend:
         1. Store raw visits in SQL (unless skip_raw_store=True)
         2. Execute FLW aggregation query
         3. Cache and return FLWAnalysisResult
+
+        For ENTITY:
+        1. Store raw visits in SQL (unless skip_raw_store=True)
+        2. Execute entity aggregation query (GROUP BY config.linking_field)
+        3. Cache and return EntityAnalysisResult
 
         Args:
             skip_raw_store: If True, skip storing raw visits (already stored
@@ -465,6 +516,8 @@ class SQLBackend:
         # Branch based on terminal stage
         if config.terminal_stage == CacheStage.VISIT_LEVEL:
             return self._process_visit_level(config, opportunity_id, visit_count, cache_manager)
+        elif config.terminal_stage == CacheStage.ENTITY:
+            return self._process_entity_level(config, opportunity_id, visit_count, cache_manager)
         else:
             return self._process_flw_level(config, opportunity_id, visit_count, cache_manager)
 
@@ -710,6 +763,123 @@ class SQLBackend:
 
         logger.info(f"[SQL] Processed {len(flw_rows)} FLWs, {total_visits} visits (via SQL)")
         return flw_result
+
+    def _process_entity_level(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int,
+        visit_count: int,
+        cache_manager: SQLCacheManager,
+    ) -> EntityAnalysisResult:
+        """
+        Process and cache entity-level aggregation.
+
+        Like FLW-level, we extract and cache visit-level data first so the
+        visit cache can be reused. Then run the entity-stage GROUP BY query
+        on top of raw visits and cache the per-entity rows.
+        """
+        # Step 1: Extract and cache visit-level data first (for cache sharing)
+        logger.info("[SQL] Step 1 (entity): Extracting visit-level data for cache")
+        visit_data, computed_field_names = execute_visit_extraction(config, opportunity_id)
+
+        computed_cache_data = [
+            {
+                "visit_id": v.get("visit_id", 0),
+                "username": v.get("username", ""),
+                "computed_fields": {name: v.get(name) for name in computed_field_names},
+            }
+            for v in visit_data
+        ]
+        cache_manager.store_computed_visits(computed_cache_data, visit_count)
+        logger.info(f"[SQL] Cached {len(computed_cache_data)} visit-level rows")
+
+        # Step 2: Execute entity aggregation query
+        logger.info("[SQL] Step 2 (entity): Executing entity aggregation query")
+        entity_data = execute_entity_aggregation(config, opportunity_id)
+
+        # Convert to EntityRow objects
+        entity_rows = []
+        total_visits = 0
+
+        for row in entity_data:
+            entity_row = EntityRow(
+                entity_id=str(row.get("entity_id") or ""),
+                entity_name=row.get("entity_name") or "",
+                username=row.get("username") or "",
+                total_visits=row.get("total_visits", 0),
+                first_visit_date=row.get("_base_first_visit_date"),
+                last_visit_date=row.get("_base_last_visit_date"),
+            )
+
+            # Custom fields (from config fields + histograms). Note: entity stage
+            # may also surface a column named entity_id/entity_name/username from
+            # the SELECT — those are already on the EntityRow's standard slots, so
+            # we don't replicate them into custom_fields.
+            standard_keys = {
+                "entity_id",
+                "entity_name",
+                "username",
+                "total_visits",
+                "_base_first_visit_date",
+                "_base_last_visit_date",
+            }
+            custom = {}
+            for field in config.fields:
+                if field.name in row and field.name not in standard_keys:
+                    custom[field.name] = row[field.name]
+
+            # Add histogram fields
+            for hist in config.histograms:
+                bin_width = (hist.upper_bound - hist.lower_bound) / hist.num_bins
+                for i in range(hist.num_bins):
+                    bin_lower = hist.lower_bound + (i * bin_width)
+                    bin_upper = bin_lower + bin_width
+                    lower_str = str(bin_lower).replace(".", "_")
+                    upper_str = str(bin_upper).replace(".", "_")
+                    bin_name = f"{hist.bin_name_prefix}_{lower_str}_{upper_str}_visits"
+                    if bin_name in row:
+                        custom[bin_name] = row[bin_name] or 0
+
+                if f"{hist.name}_mean" in row:
+                    mean_val = row[f"{hist.name}_mean"]
+                    if isinstance(mean_val, Decimal):
+                        mean_val = float(mean_val)
+                    custom[f"{hist.name}_mean"] = mean_val
+                if f"{hist.name}_count" in row:
+                    custom[f"{hist.name}_count"] = row[f"{hist.name}_count"]
+
+            entity_row.custom_fields = custom
+
+            entity_rows.append(entity_row)
+            total_visits += entity_row.total_visits
+
+        entity_result = EntityAnalysisResult(
+            opportunity_id=opportunity_id,
+            rows=entity_rows,
+            metadata={
+                "total_visits": total_visits,
+                "total_entities": len(entity_rows),
+                "computed_via": "sql",
+            },
+        )
+
+        # Cache entity results
+        entity_cache_data = [
+            {
+                "entity_id": row.entity_id,
+                "entity_name": row.entity_name,
+                "username": row.username,
+                "aggregated_fields": row.custom_fields,
+                "total_visits": row.total_visits,
+                "first_visit_date": row.first_visit_date,
+                "last_visit_date": row.last_visit_date,
+            }
+            for row in entity_rows
+        ]
+        cache_manager.store_entity_results(entity_cache_data, total_visits)
+
+        logger.info(f"[SQL] Processed {len(entity_rows)} entities, {total_visits} visits (via SQL)")
+        return entity_result
 
     # -------------------------------------------------------------------------
     # Visit Filtering (for Audit) - SQL-optimized
