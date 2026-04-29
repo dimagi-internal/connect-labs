@@ -719,6 +719,61 @@ function WorkflowRunner({
   const [isCodeEditorOpen, setIsCodeEditorOpen] = useState(false);
   const [editingCode, setEditingCode] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Workflow framework: auth-requires gate. Templates declare their OAuth
+  // dependencies in definition.config.auth_requires (e.g. ["connect",
+  // "commcare_hq"]). The runner gates the template render on every required
+  // service being active. We block here BEFORE any template-specific work
+  // fires — no FLW history fetch, no pipeline streaming, nothing — so users
+  // see "Authorize CommCare HQ" within ~1s of landing instead of after the
+  // FLW table has rendered and they've clicked Launch.
+  const authRequires: string[] = (initialData.definition?.config
+    ?.auth_requires as string[]) || ['connect'];
+  const [authStatus, setAuthStatus] = useState<Record<
+    string,
+    { active: boolean; authorize_url: string; label: string }
+  > | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  const refreshAuthStatus = useCallback(() => {
+    if (!initialData.apiEndpoints?.authStatus) {
+      // Older runner deployments may not have the endpoint wired yet —
+      // don't block in that case (defaults to current behavior).
+      setAuthChecking(false);
+      return;
+    }
+    setAuthChecking(true);
+    const url = new URL(
+      initialData.apiEndpoints.authStatus,
+      window.location.origin,
+    );
+    url.searchParams.set(
+      'next',
+      window.location.pathname + window.location.search,
+    );
+    fetch(url.toString())
+      .then((r) => r.json())
+      .then((data) => {
+        setAuthStatus(data);
+        setAuthChecking(false);
+      })
+      .catch(() => {
+        // Network error — let the template try; pipeline-stream errors
+        // will surface anything the runner-level gate would have caught.
+        setAuthStatus(null);
+        setAuthChecking(false);
+      });
+  }, [initialData.apiEndpoints?.authStatus]);
+
+  useEffect(() => {
+    refreshAuthStatus();
+  }, [refreshAuthStatus]);
+
+  const missingAuth = authStatus
+    ? authRequires
+        .map((key) => ({ key, ...(authStatus[key] || {}) }))
+        .filter((s) => s.active === false)
+    : [];
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Tab state for switching between workflow and pipeline editing
@@ -859,9 +914,12 @@ function WorkflowRunner({
     definition.pipeline_sources,
   ]);
 
-  // Load pipeline data on mount via SSE streaming
+  // Load pipeline data on mount via SSE streaming.
+  // Gated on the framework auth check passing — no point hammering CCHQ
+  // pipelines if the user's CCHQ token is rejected; surfacing the
+  // "Authorize" gate at the top is faster and clearer.
   useEffect(() => {
-    // Only stream if we have pipeline sources and no data yet
+    if (authChecking || missingAuth.length > 0) return;
     if (
       definition.pipeline_sources?.length &&
       !Object.keys(pipelineData).length
@@ -869,7 +927,13 @@ function WorkflowRunner({
       const cleanup = streamPipelineData();
       return cleanup;
     }
-  }, [definition.pipeline_sources, pipelineData, streamPipelineData]);
+  }, [
+    definition.pipeline_sources,
+    pipelineData,
+    streamPipelineData,
+    authChecking,
+    missingAuth.length,
+  ]);
 
   // Auto-reconnect to running jobs on page load
   // This allows users to close the browser and return later while the Celery task continues
@@ -1355,9 +1419,88 @@ function WorkflowRunner({
               </div>
             )}
 
-            {/* Render the workflow - only when pipeline data is loaded */}
+            {/* Workflow framework gate: auth-requires must be satisfied
+                before any template-specific render fires. This way every
+                template gets uniform "Authorize X" UX without each
+                template having to implement its own check. */}
             <div className="px-4">
-              {pipelineLoadingStatus ? (
+              {authChecking ? (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                  <i className="fa-solid fa-spinner fa-spin text-2xl mb-3" />
+                  <p className="text-sm">Checking authorization…</p>
+                </div>
+              ) : missingAuth.length > 0 ? (
+                <div className="space-y-4 max-w-2xl mx-auto">
+                  <div className="bg-white rounded-lg shadow-sm p-6">
+                    <h2 className="text-xl font-bold text-gray-900">
+                      {definition.name || 'Workflow'}
+                    </h2>
+                    <p className="text-gray-500 mt-1">
+                      Authorization required before this workflow can run.
+                    </p>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <i className="fa-solid fa-key text-amber-600"></i>
+                      <span className="font-semibold text-amber-800">
+                        This workflow requires{' '}
+                        {missingAuth.length === 1 ? 'one' : missingAuth.length}{' '}
+                        additional authorization
+                        {missingAuth.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-amber-800 mb-4">
+                      Click each <strong>Authorize</strong> button below to
+                      grant access. After authorizing, you'll be returned here
+                      automatically.
+                    </p>
+                    <div className="space-y-2 mb-4">
+                      {missingAuth.map((svc) => (
+                        <div key={svc.key} className="flex items-center gap-3">
+                          <i className="fa-solid fa-circle-xmark text-amber-600"></i>
+                          <span className="text-sm font-medium text-gray-800 w-40">
+                            {svc.label || svc.key}
+                          </span>
+                          {svc.authorize_url ? (
+                            <a
+                              href={svc.authorize_url}
+                              className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded hover:bg-amber-700 no-underline"
+                            >
+                              Authorize {svc.label || svc.key}
+                            </a>
+                          ) : (
+                            <span className="text-sm text-gray-500">
+                              No authorize URL available — contact support.
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                      {/* Show services that ARE active so users see overall progress */}
+                      {authStatus &&
+                        authRequires
+                          .filter((k) => authStatus[k]?.active)
+                          .map((k) => (
+                            <div key={k} className="flex items-center gap-3">
+                              <i className="fa-solid fa-circle-check text-green-600"></i>
+                              <span className="text-sm font-medium text-gray-800 w-40">
+                                {authStatus[k]?.label || k}
+                              </span>
+                              <span className="text-sm text-green-700">
+                                Active
+                              </span>
+                            </div>
+                          ))}
+                    </div>
+                    <button
+                      onClick={refreshAuthStatus}
+                      className="px-4 py-2 bg-white border border-amber-400 text-amber-800 text-sm rounded hover:bg-amber-100"
+                    >
+                      <i className="fa-solid fa-rotate mr-1"></i> Re-check after
+                      authorizing
+                    </button>
+                  </div>
+                </div>
+              ) : pipelineLoadingStatus ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500">
                   <i className="fa-solid fa-spinner fa-spin text-2xl mb-3" />
                   <p className="text-sm">{pipelineLoadingStatus}</p>
