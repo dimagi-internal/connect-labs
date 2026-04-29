@@ -145,6 +145,18 @@ pre-commit run --all-files          # Run linters/formatters
 make commit                         # Git commit with correct venv PATH (works in worktrees)
 ```
 
+## Browser Verification — use `gstack browse` proactively
+
+**You CAN drive a real browser against labs prod via `gstack browse`.** When you ship a UI or BE change to `labs.connect.dimagi.com`, do not stop at "I can't verify the logged-in path because I'm a bot." Use `gstack browse` to actually open the page, exercise the flow, and inspect the DOM/console. Reach for it whenever:
+
+- A change touches the workflow runner, auth gate, OAuth flow, or any session-authenticated view.
+- You just deployed and want to confirm the new bundle is loaded (find the bundle hash in the DOM, fetch it, grep for new strings).
+- A user reports a UI bug — reproduce it in the browser before guessing.
+
+What `gstack browse` gives you: the user is already logged into labs prod in the persistent browser session, so authenticated pages render fully. You can read DOM, see console errors, observe network activity, and verify the deployed code is what you think it is.
+
+**Default to testing yourself before declaring "verification needs the user."** "I can't OAuth into CCHQ as a bot" is a real limit, but "I can't load the runner page" is not — that's gstack browse territory.
+
 ## Critical Warnings
 
 - **DO NOT** query Django ORM models (`Opportunity`, `User`, `Organization`) expecting production data — those tables are empty. Use `LabsRecordAPIClient`.
