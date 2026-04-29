@@ -15,6 +15,25 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+class CCHQAuthError(Exception):
+    """
+    CommCare HQ rejected the request with an auth-related status (401/403)
+    that survived a token-refresh-and-retry attempt.
+
+    This is *distinct* from a generic HTTP error: callers should treat it
+    as a signal that the user needs to re-authorize CommCare access, not
+    swallow it as "no data available". Surfacing this in the UI is the
+    whole reason it exists — V1/V2 used to silently return 0 forms when
+    CCHQ rejected the call, leaving users to wonder why their dashboards
+    were empty.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None, domain: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.domain = domain
+
+
 class CommCareDataAccess:
     """
     Fetch cases from CommCare Case API v2 using session OAuth.
@@ -48,6 +67,11 @@ class CommCareDataAccess:
         If the token is expired, attempts automatic refresh using the stored
         refresh token before returning False.
 
+        IMPORTANT — this is a *local* check. It only verifies that the
+        access_token exists and `expires_at` is in the future. It does NOT
+        prove CommCare HQ will accept the token. For the loud version that
+        actually pings CCHQ, use verify_hq_access().
+
         Returns:
             True if token is valid (or was successfully refreshed), False otherwise
         """
@@ -64,6 +88,55 @@ class CommCareDataAccess:
             logger.warning(f"CommCare OAuth token expired at {expires_at} and refresh failed")
             return False
 
+        return True
+
+    def verify_hq_access(self) -> bool:
+        """Verify the CommCare HQ token actually works for this domain.
+
+        Pings a cheap CCHQ endpoint (Application API, limit=1) and confirms
+        it returns 200. Use this at dashboard load time to detect a stale
+        session BEFORE running long pipelines — the timestamp-based
+        check_token_valid() can return True while CCHQ still 403's the
+        request (e.g. when refresh succeeded but the new token was issued
+        with reduced scope, or the user lost domain membership).
+
+        Returns:
+            True if the token works for this domain right now;
+            False on 401/403/404 (auth/permission/missing) or any other
+            non-success response. Logs at WARNING level when it returns
+            False so callers can surface the cause to users.
+        """
+        if not self.access_token:
+            logger.warning("[CCHQ verify] no access_token in session")
+            return False
+        if not self.check_token_valid():
+            return False
+
+        url = f"{self.base_url}/a/{self.domain}/api/application/v1/?limit=1"
+        try:
+            response = httpx.get(
+                url,
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                timeout=15.0,
+            )
+        except httpx.RequestError as e:
+            logger.warning(f"[CCHQ verify] network error pinging {self.domain}: {e}")
+            return False
+
+        if response.status_code in (401, 403):
+            logger.warning(
+                f"[CCHQ verify] token rejected for domain {self.domain!r} "
+                f"({response.status_code}). User likely needs to re-authorize."
+            )
+            return False
+        if response.status_code == 404:
+            logger.warning(f"[CCHQ verify] domain {self.domain!r} not found (404)")
+            return False
+        if response.status_code >= 400:
+            logger.warning(
+                f"[CCHQ verify] unexpected {response.status_code} for {self.domain}: " f"{response.text[:200]}"
+            )
+            return False
         return True
 
     def _refresh_token(self) -> bool:
@@ -320,6 +393,7 @@ class CommCareDataAccess:
         all_forms = []
         next_url = endpoint
         page = 0
+        retried_after_refresh = False
         try:
             while next_url:
                 page += 1
@@ -331,6 +405,33 @@ class CommCareDataAccess:
                     headers=headers,
                     timeout=60.0,
                 )
+
+                # Auth-error retry-once-after-refresh path. Some CCHQ
+                # tokens come back from refresh with reduced scope or get
+                # de-authorized for a domain mid-session. Catch 401/403
+                # specifically, attempt a refresh once, retry. If the
+                # retry still fails, raise CCHQAuthError so the caller
+                # surfaces "Authorize CommCare HQ" instead of pretending
+                # the result was simply empty.
+                if response.status_code in (401, 403):
+                    if not retried_after_refresh:
+                        retried_after_refresh = True
+                        logger.warning(
+                            f"CCHQ form fetch got {response.status_code} on page {page}; "
+                            f"attempting token refresh + single retry"
+                        )
+                        if self._refresh_token():
+                            headers = {"Authorization": f"Bearer {self.access_token}"}
+                            page -= 1  # retry same page
+                            continue
+                    raise CCHQAuthError(
+                        f"CommCare HQ rejected form fetch with HTTP {response.status_code} "
+                        f"for domain {self.domain!r} after token refresh+retry. "
+                        f"User needs to re-authorize CommCare access.",
+                        status_code=response.status_code,
+                        domain=self.domain,
+                    )
+
                 response.raise_for_status()
                 data = response.json()
                 forms = data.get("objects", [])
@@ -348,6 +449,9 @@ class CommCareDataAccess:
                         next_url = f"{self.base_url}{next_url}"
                 if next_url and not self._validate_pagination_url(next_url):
                     break
+        except CCHQAuthError:
+            # Re-raise — auth errors must surface, not be swallowed.
+            raise
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP {e.response.status_code} fetching forms from CommCare (page {page}): {e}")
             return all_forms

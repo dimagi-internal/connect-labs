@@ -512,7 +512,19 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                             gs_forms.extend(forms)
                             yield send_sse_event(f"Fetching GS forms... ({len(gs_forms)} forms)")
                     except Exception as e:
+                        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
                         logger.warning(f"[MBW Dashboard] GS form fetch failed for opp {opp_id}: {e}")
+                        # Loud SSE event for auth-specific failures so the FE
+                        # can prompt the user to re-authorize. Other errors
+                        # stay as-is — we still continue with empty gs_forms.
+                        if isinstance(e, CCHQAuthError):
+                            yield send_sse_event(
+                                "CommCare HQ access expired",
+                                cchq_auth_required=True,
+                                authorize_url="/labs/commcare/initiate/",
+                                domain=getattr(e, "domain", None),
+                            )
             else:
                 logger.info("[MBW Dashboard] Skipping GS fetch — CCHQ OAuth not available after re-auth attempt")
             logger.info(f"[MBW Dashboard] Fetched {len(gs_forms)} GS forms from CCHQ")
@@ -595,7 +607,16 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                             registration_forms.extend(forms)
                             yield send_sse_event(f"Fetching registration data... ({len(registration_forms)} forms)")
                     except Exception as e:
+                        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
                         logger.warning(f"[MBW Dashboard] Registration form fetch failed for opp {opp_id}: {e}")
+                        if isinstance(e, CCHQAuthError):
+                            yield send_sse_event(
+                                "CommCare HQ access expired",
+                                cchq_auth_required=True,
+                                authorize_url="/labs/commcare/initiate/",
+                                domain=getattr(e, "domain", None),
+                            )
                 logger.info(f"[MBW Dashboard] Fetched {len(registration_forms)} registration forms")
 
                 # GS forms already fetched in step 2b (before GPS analysis)

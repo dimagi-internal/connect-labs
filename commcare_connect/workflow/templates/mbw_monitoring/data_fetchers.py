@@ -482,6 +482,19 @@ def fetch_gs_forms(
     client = CommCareDataAccess(request, cc_domain)
     if not client.check_token_valid():
         raise ValueError("CommCare OAuth not configured or expired.")
+    # Real CCHQ ping — catches the case where the local timestamp says
+    # "valid" but CCHQ rejects the request (token desync, lost domain
+    # access, etc.). Without this, fetch_forms used to swallow 401/403
+    # as "0 forms" and the dashboard rendered with a silently-empty
+    # GS-score column.
+    if not client.verify_hq_access():
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
+        raise CCHQAuthError(
+            f"CommCare HQ rejected access probe for domain {cc_domain!r}. "
+            f"Re-authorize at /labs/commcare/initiate/.",
+            domain=cc_domain,
+        )
 
     # Strategy 1: Use explicit GS app ID from workflow settings (preferred)
     xmlns = None
@@ -549,6 +562,15 @@ def fetch_registration_forms(
     client = CommCareDataAccess(request, cc_domain)
     if not client.check_token_valid():
         raise ValueError("CommCare OAuth not configured or expired.")
+    if not client.verify_hq_access():
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
+        raise CCHQAuthError(
+            f"CommCare HQ rejected access probe for domain {cc_domain!r} "
+            f"during registration form fetch. Re-authorize at "
+            f"/labs/commcare/initiate/.",
+            domain=cc_domain,
+        )
 
     # Dynamically discover the xmlns for "Register Mother"
     xmlns = None

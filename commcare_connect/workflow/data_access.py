@@ -1770,7 +1770,16 @@ class PipelineDataAccess(BaseDataAccess):
 
         except Exception as e:
             logger.exception("Pipeline execution failed")
-            return {"rows": [], "metadata": {"error": str(e)}}
+            # Tag CCHQ auth errors specifically so the FE can show
+            # "Authorize CommCare HQ" instead of a generic error message.
+            from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
+            error_meta = {"error": str(e)}
+            if isinstance(e, CCHQAuthError):
+                error_meta["auth_error"] = "commcare_hq"
+                error_meta["auth_error_domain"] = e.domain
+                error_meta["auth_authorize_url"] = "/labs/commcare/initiate/"
+            return {"rows": [], "metadata": error_meta}
 
     def _schema_to_config(self, schema: dict, definition_id: int):
         """Convert JSON schema to AnalysisPipelineConfig."""
