@@ -2373,31 +2373,55 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                         row_dict.update(custom)
                                     merged_rows.append(row_dict)
                         except Exception as e:
+                            from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
                             logger.exception(
                                 "[PipelineStream] Pipeline %s failed for opp %s",
                                 pipeline_id,
                                 opp_id,
                             )
-                            per_opp_meta[str(opp_id)] = {"error": str(e)}
+                            per_opp_entry = {"error": str(e)}
+                            if isinstance(e, CCHQAuthError):
+                                per_opp_entry["auth_error"] = "commcare_hq"
+                                per_opp_entry["auth_error_domain"] = e.domain
+                            per_opp_meta[str(opp_id)] = per_opp_entry
                             # Surface per-pipeline failure to the FE with the
                             # pipeline name so users see which one broke
                             # rather than a generic "connection lost".
                             yield send_sse_event(
                                 f"Pipeline '{pipeline_def.name}' failed for opp {opp_id}: {str(e)[:200]}",
-                                pipeline_alias=alias,
-                                pipeline_name=pipeline_def.name,
-                                pipeline_error=str(e)[:500],
+                                data={
+                                    "pipeline_alias": alias,
+                                    "pipeline_name": pipeline_def.name,
+                                    "pipeline_error": str(e)[:500],
+                                },
                             )
 
+                    # Aggregate per-opp errors up to the alias level so the FE
+                    # render can detect them with a single check
+                    # (pipelines[alias].metadata.auth_error). The V2 render's
+                    # auth-error gate looks here; the SSE path used to leave
+                    # the auth_error tag buried under per_opp[opp_id], where
+                    # the render didn't see it → the dashboard happily showed
+                    # "0 rows (none found)" instead of the auth panel.
+                    alias_metadata = {
+                        "pipeline_id": pipeline_id,
+                        "pipeline_name": pipeline_def.name,
+                        "row_count": len(merged_rows),
+                        "opportunity_ids": list(opp_ids),
+                        "per_opp": per_opp_meta,
+                    }
+                    auth_failed_opps = [oid for oid, m in per_opp_meta.items() if m.get("auth_error") == "commcare_hq"]
+                    if auth_failed_opps:
+                        alias_metadata["auth_error"] = "commcare_hq"
+                        alias_metadata["auth_error_domain"] = next(
+                            (per_opp_meta[oid].get("auth_error_domain") for oid in auth_failed_opps),
+                            None,
+                        )
+                        alias_metadata["auth_authorize_url"] = "/labs/commcare/initiate/"
                     pipeline_data[alias] = {
                         "rows": merged_rows,
-                        "metadata": {
-                            "pipeline_id": pipeline_id,
-                            "pipeline_name": pipeline_def.name,
-                            "row_count": len(merged_rows),
-                            "opportunity_ids": list(opp_ids),
-                            "per_opp": per_opp_meta,
-                        },
+                        "metadata": alias_metadata,
                     }
             finally:
                 pipeline_access.close()
@@ -2457,6 +2481,12 @@ class PipelineDataStreamView(BaseSSEStreamView):
                 return
             client = CommCareDataAccess(request, cc_domain)
             if not client.verify_hq_access():
+                # send_sse_event(message, data, error) — extra fields go in data,
+                # NOT as kwargs. (My first attempt passed cchq_auth_required as
+                # a kwarg and it crashed with "unexpected keyword argument", so
+                # the probe failed silently and the user saw "0 rows" instead
+                # of the auth panel — even though verify_hq_access correctly
+                # detected the 403.)
                 yield send_sse_event(
                     "Error",
                     error=(
@@ -2464,9 +2494,11 @@ class PipelineDataStreamView(BaseSSEStreamView):
                         "expired or you may have lost access to the project. "
                         "Re-authorize at /labs/commcare/initiate/?next=/labs/overview/."
                     ),
-                    cchq_auth_required=True,
-                    authorize_url="/labs/commcare/initiate/?next=/labs/overview/",
-                    domain=cc_domain,
+                    data={
+                        "cchq_auth_required": True,
+                        "authorize_url": "/labs/commcare/initiate/?next=/labs/overview/",
+                        "domain": cc_domain,
+                    },
                 )
                 return
         except Exception as e:
