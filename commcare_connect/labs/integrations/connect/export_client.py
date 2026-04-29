@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 VERSION_HEADER = "application/json; version=2.0"
 DEFAULT_TIMEOUT = 60.0
+# Server defaults to 1000, max 5000. 2500 trades ~2.5x fewer round-trips for
+# proportionally larger response payloads and longer per-page latency — still
+# well under the 180s timeout used by the streaming backend, and frequent
+# enough to keep SSE progress events flowing.
+DEFAULT_PAGE_SIZE = 2500
 
 
 class ExportAPIError(Exception):
@@ -88,7 +93,10 @@ class ExportAPIClient:
             ExportAPIError: On HTTP error, invalid JSON, or missing `results` key.
         """
         url: str | None = self._resolve_url(endpoint)
-        request_params: dict | None = params
+        # Inject default page_size only on the first request. The server preserves
+        # it in `next` URLs, so subsequent pages keep the same size automatically.
+        request_params = dict(params) if params else {}
+        request_params.setdefault("page_size", DEFAULT_PAGE_SIZE)
 
         while url is not None:
             try:
