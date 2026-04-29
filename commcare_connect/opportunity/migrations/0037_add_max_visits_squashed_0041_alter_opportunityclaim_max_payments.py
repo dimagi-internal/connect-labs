@@ -6,7 +6,6 @@ import django.db.models.deletion
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("opportunity", "0036_payment_confirmation_date_payment_confirmed"),
     ]

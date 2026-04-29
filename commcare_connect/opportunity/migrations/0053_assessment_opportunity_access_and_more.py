@@ -47,8 +47,6 @@ class Migration(migrations.Migration):
             ),
         ),
         migrations.RunPython(
-            populate_opportunity_access,
-            migrations.RunPython.noop,
-            hints={"run_on_secondary": False}
+            populate_opportunity_access, migrations.RunPython.noop, hints={"run_on_secondary": False}
         ),
     ]
