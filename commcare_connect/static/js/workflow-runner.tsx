@@ -731,7 +731,14 @@ function WorkflowRunner({
     ?.auth_requires as string[]) || ['connect'];
   const [authStatus, setAuthStatus] = useState<Record<
     string,
-    { active: boolean; authorize_url: string; label: string }
+    {
+      active: boolean;
+      authorize_url: string;
+      label: string;
+      reason?: string;
+      message?: string;
+      domain?: string;
+    }
   > | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
 
@@ -1492,26 +1499,49 @@ function WorkflowRunner({
                       automatically.
                     </p>
                     <div className="space-y-2 mb-4">
-                      {missingAuth.map((svc) => (
-                        <div key={svc.key} className="flex items-center gap-3">
-                          <i className="fa-solid fa-circle-xmark text-amber-600"></i>
-                          <span className="text-sm font-medium text-gray-800 w-40">
-                            {svc.label || svc.key}
-                          </span>
-                          {svc.authorize_url ? (
-                            <a
-                              href={svc.authorize_url}
-                              className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded hover:bg-amber-700 no-underline"
-                            >
-                              Authorize {svc.label || svc.key}
-                            </a>
-                          ) : (
-                            <span className="text-sm text-gray-500">
-                              No authorize URL available — contact support.
-                            </span>
-                          )}
-                        </div>
-                      ))}
+                      {missingAuth.map((svc) => {
+                        // Distinguish "token dead — re-auth fixes it" from
+                        // "user has no permission to this domain — re-auth
+                        // WON'T fix it; needs an HQ admin." Hiding the
+                        // Authorize button on no_domain_access stops the loop.
+                        const noDomainAccess =
+                          svc.reason === 'no_domain_access';
+                        return (
+                          <div key={svc.key} className="flex items-start gap-3">
+                            <i className="fa-solid fa-circle-xmark text-amber-600 mt-1"></i>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-medium text-gray-800 w-40">
+                                  {svc.label || svc.key}
+                                </span>
+                                {noDomainAccess ? (
+                                  <span className="px-3 py-1.5 bg-red-100 text-red-800 text-sm rounded border border-red-300">
+                                    Account lacks access to{' '}
+                                    {svc.domain || 'this domain'}
+                                  </span>
+                                ) : svc.authorize_url ? (
+                                  <a
+                                    href={svc.authorize_url}
+                                    className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded hover:bg-amber-700 no-underline"
+                                  >
+                                    Authorize {svc.label || svc.key}
+                                  </a>
+                                ) : (
+                                  <span className="text-sm text-gray-500">
+                                    No authorize URL available — contact
+                                    support.
+                                  </span>
+                                )}
+                              </div>
+                              {svc.message && (
+                                <p className="text-xs text-gray-700 mt-1 ml-0">
+                                  {svc.message}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                       {/* Show services that ARE active so users see overall progress */}
                       {authStatus &&
                         authRequires

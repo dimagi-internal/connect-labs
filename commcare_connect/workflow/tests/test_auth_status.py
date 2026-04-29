@@ -1,11 +1,18 @@
 """Tests for workflow_auth_status_api.
 
-Covers the silent-refresh and real-CCHQ-ping behavior introduced to fix
-the "click Authorize → returns to runner → still says HQ unauthorized"
-loop. The 15-min CCHQ access token TTL means the framework gate must
-attempt refresh before declaring a provider inactive, and must do a real
-CCHQ ping (not just a timestamp check) when an opportunity_id is in
-context, to catch scope-downgrade-on-refresh.
+Covers the silent-refresh, token-alive, and domain-access probes that
+together kill the CCHQ re-auth loop.
+
+Two probes feed the auth-status response:
+
+* verify_token_alive() pings /api/v0.5/identity/ — domain-less. Answers
+  "is the OAuth token accepted by HQ at all".
+* verify_hq_access() pings /a/{domain}/api/form/v1/ — same endpoint
+  pipelines use. Answers "can this token read forms in this domain".
+
+The combination produces a structured `reason` so the runner UI can
+distinguish "re-auth WILL fix it" (token_expired) from "re-auth WON'T
+fix it; user needs HQ admin help" (no_domain_access).
 """
 
 from unittest.mock import MagicMock, patch
@@ -41,7 +48,7 @@ class TestAuthStatusRefresh:
     """The framework gate should attempt a silent refresh before reporting inactive."""
 
     def test_connect_refresh_succeeds_returns_active(self, dimagi_user, rf):
-        """Expired Connect token + working refresh_token → active=true after silent refresh."""
+        """Expired Connect token + working refresh_token -> active=true after silent refresh."""
         session = {
             "labs_oauth": {
                 "access_token": "old",
@@ -72,7 +79,7 @@ class TestAuthStatusRefresh:
         assert body["connect"]["active"] is True
 
     def test_connect_refresh_fails_returns_inactive(self, dimagi_user, rf):
-        """Expired Connect token + failing refresh → active=false."""
+        """Expired Connect token + failing refresh -> active=false."""
         session = {
             "labs_oauth": {"access_token": "old", "refresh_token": "rt", "expires_at": 0},
             "commcare_oauth": {"access_token": "ok", "expires_at": 1e12},
@@ -91,7 +98,7 @@ class TestAuthStatusRefresh:
         assert body["connect"]["active"] is False
 
     def test_no_token_at_all_returns_inactive(self, dimagi_user, rf):
-        """No access_token + no refresh_token → never crashes, returns inactive."""
+        """No access_token + no refresh_token -> never crashes, returns inactive."""
         session = {
             "labs_oauth": {"access_token": "ok", "expires_at": 1e12},
             "commcare_oauth": {"access_token": "ok", "expires_at": 1e12},
@@ -109,78 +116,115 @@ class TestAuthStatusRefresh:
 
 
 class TestAuthStatusCCHQProbe:
-    """When ?opportunity_id= is supplied, CCHQ ping only runs when token was inactive.
+    """The gate distinguishes 'token dead' (re-auth fixes) from 'no domain access' (re-auth won't fix).
 
-    The real ping catches scope-downgrade-on-refresh: token expired → refresh
-    succeeded → but new token has reduced scope → verify_hq_access 403s → gate
-    correctly reports inactive.
-
-    When the token is already active (timestamp check passes), we skip the ping.
-    A user who just completed a fresh OAuth authorization should always pass the
-    gate, regardless of whether their account has CommCare domain membership.
-    Domain-access failures surface later as pipeline errors, not auth-gate loops.
+    Replaces the older PR #104 'skip the probe when timestamp valid'
+    workaround. PR #104 was solving the right problem (false-negative
+    loop for users without domain membership) but via a workaround. The
+    root cause is that the previous probe used /api/application/v1
+    which requires app-builder scope LLO accounts often lack. Switching
+    to /api/form/v1 (the SAME endpoint pipelines use) and adding
+    /api/v0.5/identity/ as a separate token-alive probe produces
+    accurate, actionable status — no need to skip the probe.
     """
 
-    def test_expired_token_triggers_real_ping_on_scope_downgrade(self, dimagi_user, rf):
-        """Expired CCHQ token + opportunity_id → ping runs; if scope-downgraded, reports inactive."""
+    def test_token_alive_and_domain_access_returns_active(self, dimagi_user, rf):
+        """Both probes pass -> active=true, no reason field."""
         session = {
             "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
-            "commcare_oauth": {"access_token": "ct", "expires_at": 0},  # expired
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
             "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
         }
         request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
 
-        # Token expired → ping fires; simulate refresh succeeding but returning
-        # a scope-downgraded token, so verify_hq_access still rejects.
         with patch(
             "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
         ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
             mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
+            mock_client.verify_hq_access.return_value = True
+            MockCDA.return_value = mock_client
+
+            from commcare_connect.workflow.views import workflow_auth_status_api
+
+            response = workflow_auth_status_api(request)
+
+        import json
+
+        body = json.loads(response.content)
+        assert body["commcare_hq"]["active"] is True
+        assert "reason" not in body["commcare_hq"]
+
+    def test_token_dead_returns_token_expired_reason(self, dimagi_user, rf):
+        """verify_token_alive=False -> reason=token_expired (re-auth WILL fix).
+
+        Should short-circuit and NOT call verify_hq_access — no point pinging
+        the domain endpoint when the token is already known dead.
+        """
+        session = {
+            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
+        }
+        request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
+
+        with patch(
+            "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
+            return_value={"cc_domain": "ccc-mbw-production"},
+        ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = False
+            MockCDA.return_value = mock_client
+
+            from commcare_connect.workflow.views import workflow_auth_status_api
+
+            response = workflow_auth_status_api(request)
+            mock_client.verify_hq_access.assert_not_called()
+
+        import json
+
+        body = json.loads(response.content)
+        assert body["commcare_hq"]["active"] is False
+        assert body["commcare_hq"]["reason"] == "token_expired"
+
+    def test_token_alive_but_no_domain_access(self, dimagi_user, rf):
+        """Token alive, verify_hq_access=False -> reason=no_domain_access (re-auth WON'T fix).
+
+        This is the loop-killing case. Previously the user kept getting an
+        Authorize button that did nothing because their account lacks domain
+        membership. Now the UI knows to surface "contact HQ admin" instead.
+        """
+        session = {
+            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
+        }
+        request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
+
+        with patch(
+            "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
+            return_value={"cc_domain": "ccc-mbw-production"},
+        ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
             mock_client.verify_hq_access.return_value = False
             MockCDA.return_value = mock_client
 
             from commcare_connect.workflow.views import workflow_auth_status_api
 
             response = workflow_auth_status_api(request)
-            mock_client.verify_hq_access.assert_called_once()
 
         import json
 
         body = json.loads(response.content)
-        assert (
-            body["commcare_hq"]["active"] is False
-        ), "verify_hq_access returned False (scope downgrade) → gate must report inactive"
+        assert body["commcare_hq"]["active"] is False
+        assert body["commcare_hq"]["reason"] == "no_domain_access"
+        assert body["commcare_hq"]["domain"] == "ccc-mbw-production"
+        assert "form-read access" in body["commcare_hq"]["message"]
 
-    def test_active_token_skips_ping_returns_active(self, dimagi_user, rf):
-        """Fresh/active CCHQ token + opportunity_id → ping is skipped, timestamp trusted.
-
-        Prevents a false-negative auth loop where a user with a valid OAuth token
-        but without CommCare domain membership could never pass the gate.
-        """
-        session = {
-            "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
-            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},  # active
-            "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
-        }
-        request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
-
-        with patch(
-            "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
-            return_value={"cc_domain": "ccc-mbw-production"},
-        ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
-            from commcare_connect.workflow.views import workflow_auth_status_api
-
-            response = workflow_auth_status_api(request)
-            MockCDA.assert_not_called()
-
-        import json
-
-        body = json.loads(response.content)
-        assert body["commcare_hq"]["active"] is True
-
-    def test_no_opportunity_id_falls_back_to_timestamp_with_refresh(self, dimagi_user, rf):
-        """Without opportunity_id, BE only does timestamp + refresh — no domain ping."""
+    def test_no_opportunity_id_only_does_token_alive(self, dimagi_user, rf):
+        """Without opportunity_id, only check token-alive — no domain ping (no domain to ping)."""
         session = {
             "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
             "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
@@ -189,13 +233,15 @@ class TestAuthStatusCCHQProbe:
         request = _make_request(rf, dimagi_user, "", session)
 
         with patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
+            mock_client = MagicMock()
+            mock_client.verify_token_alive.return_value = True
+            MockCDA.return_value = mock_client
+
             from commcare_connect.workflow.views import workflow_auth_status_api
 
             response = workflow_auth_status_api(request)
-            # Without opportunity_id and a non-expired token, we should NOT
-            # construct CCHQ client (timestamp fast-path). Verifies we don't
-            # spam CCHQ on every page load.
-            MockCDA.assert_not_called()
+            mock_client.verify_token_alive.assert_called_once()
+            mock_client.verify_hq_access.assert_not_called()
 
         import json
 
