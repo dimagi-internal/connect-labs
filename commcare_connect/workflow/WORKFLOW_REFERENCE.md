@@ -213,18 +213,73 @@ How visits are grouped before aggregation. Determines the primary key of output 
 
 Controls what the pipeline outputs and how custom fields are structured in the row.
 
-| Value           | Output                                                                                                                | Row shape                                                      |
-| --------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `"visit_level"` | One row per visit. Custom fields in row's `computed` dict (flattened to top-level in JSON).                           | `{ username, visit_date, entity_id, weight, height, ... }`     |
-| `"aggregated"`  | One row per group (per `grouping_key`). Custom fields in row's `custom_fields` dict (flattened to top-level in JSON). | `{ username, total_visits, approved_visits, avg_weight, ... }` |
+| Value           | Output                                                                                                                                                                                                                                    | Row shape                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `"visit_level"` | One row per visit. Custom fields in row's `computed` dict (flattened to top-level in JSON).                                                                                                                                               | `{ username, visit_date, entity_id, weight, height, ... }`            |
+| `"aggregated"`  | One row per FLW (`GROUP BY username`). Custom fields in row's `custom_fields` dict (flattened to top-level in JSON). Standard counters: total_visits, approved/pending/rejected/flagged, first/last_visit_date.                           | `{ username, total_visits, approved_visits, avg_weight, ... }`        |
+| `"entity"`      | One row per entity (`GROUP BY linking_field`). Custom fields in row's `custom_fields` dict (flattened to top-level in JSON). Standard counters: total_visits, first/last_visit_date, plus a representative `username` (first per entity). | `{ entity_id, entity_name, username, total_visits, child_name, ... }` |
 
-**Important:** In the JSON response sent to the frontend, both `computed` and `custom_fields` are **flattened** into the top-level row object. So in render code, you access fields directly as `row.weight`, `row.visit_count`, etc. -- not as `row.computed.weight` or `row.custom_fields.visit_count`.
+**Important:** In the JSON response sent to the frontend, `computed` (visit_level) and `custom_fields` (aggregated, entity) are **flattened** into the top-level row object. So in render code, you access fields directly as `row.weight`, `row.visit_count`, etc. — not as `row.computed.weight` or `row.custom_fields.visit_count`.
+
+**Entity stage** is for analyses whose unit of interest is a tracked thing — a beneficiary case, a child, a household — rather than the worker who served them. The pipeline groups raw visits by `linking_field` and applies the same aggregation vocabulary (`first/last/sum/avg/count/...`) used at FLW stage. The status/flagged counters are dropped because they're visit-level facts; templates that need approved-counts at entity level declare them as custom `FieldComputation`s with `filter_path/filter_value`.
 
 #### `linking_field`
 
-Optional. When set, the pipeline uses this field (which must be one of the defined `fields`) to link visits to a logical entity (e.g., a beneficiary or case). This is critical for visit-level pipelines where you need to group visits by something other than the default `entity_id`.
+Identifies the column used by the entity stage (and as a hint for visit-level dashboards). Resolution:
 
-Example: In KMC tracking, each visit has a `beneficiary_case_id` that identifies the child. Setting `"linking_field": "beneficiary_case_id"` allows client-side grouping of visits by child. Default is `"entity_id"`.
+1. If the value matches a base column on `labs_raw_visit_cache` (`entity_id`, `username`, `deliver_unit_id`, etc.) — that column is used directly.
+2. Otherwise the value must match the `name` of a `FieldComputation` declared in `fields`. The pipeline takes that field's `paths` and builds the GROUP BY expression from the JSONB extraction.
+
+Required when `terminal_stage = "entity"`. Default is `"entity_id"`.
+
+Example: In KMC tracking, each visit has a `beneficiary_case_id` that identifies the child. Setting `"linking_field": "beneficiary_case_id"` along with a corresponding `FieldComputation` named `beneficiary_case_id` allows the entity stage to emit one row per child:
+
+```python
+PIPELINE_SCHEMAS = [{
+    "alias": "children",
+    "name": "Children with KMC follow-up",
+    "schema": {
+        "data_source": {"type": "connect_csv"},
+        "grouping_key": "username",                       # bookkeeping; entity stage uses linking_field
+        "terminal_stage": "entity",
+        "linking_field": "beneficiary_case_id",
+        "fields": [
+            {
+                "name": "beneficiary_case_id",
+                "paths": ["form.case.@case_id", "form.kmc_beneficiary_case_id"],
+                "aggregation": "first",
+            },
+            # Demographics — picked from the earliest visit (first by visit_date, then visit_id)
+            {"name": "child_name",   "path": "form.grp_kmc_beneficiary.child_name",   "aggregation": "first"},
+            {"name": "mother_name",  "path": "form.grp_beneficiary_details.mother_name", "aggregation": "first"},
+            {"name": "child_dob",    "path": "form.grp_beneficiary_details.child_dob",   "aggregation": "first"},
+            # Most recent values — picked from the latest visit
+            {"name": "current_weight", "path": "form.weight", "aggregation": "last"},
+            {"name": "kmc_status",     "path": "form.kmc_status", "aggregation": "last"},
+        ],
+    },
+}]
+```
+
+Output rows shape:
+
+```json
+{
+  "entity_id": "case-uuid-123",
+  "entity_name": "...",
+  "username": "alice",
+  "total_visits": 4,
+  "first_visit_date": "2026-03-01",
+  "last_visit_date": "2026-04-10",
+  "child_name": "Asha",
+  "mother_name": "Priya",
+  "child_dob": "2026-02-15",
+  "current_weight": "3.2",
+  "kmc_status": "ongoing"
+}
+```
+
+**`first` / `last` semantics at entity stage.** For each entity group, pick the value from the visit with the earliest (`first`) or latest (`last`) `visit_date`. Ties on `visit_date` are broken by `visit_id` (ASC for `first`, DESC for `last`) — so demographics from the registration visit and current values from the most recent visit are deterministic.
 
 ### Field Definition Reference
 
