@@ -8,11 +8,13 @@ def gen_uuid(apps, schema_editor):
     connection = schema_editor.connection
 
     with connection.cursor() as cursor:
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE opportunity_opportunity
             SET opportunity_id = gen_random_uuid()
             WHERE opportunity_id IS NULL;
-        """)
+        """
+        )
 
 
 class Migration(migrations.Migration):

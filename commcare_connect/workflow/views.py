@@ -728,10 +728,16 @@ def workflow_auth_status_api(request):
         except Exception:
             logger.exception("Failed to look up cc_domain for auth-status probe")
 
-    if cchq_domain_for_probe:
-        # Real ping. Also handles refresh-on-expiry internally via
-        # check_token_valid -> _refresh_token, then verifies the new token
-        # actually works for this domain (catches scope-downgrade-on-refresh).
+    if cchq_domain_for_probe and not cchq_active:
+        # Real ping — only when the token was already inactive (expired/missing).
+        # Refreshes internally via check_token_valid -> _refresh_token, then
+        # verifies the new token actually works for this domain (catches
+        # scope-downgrade-on-refresh). We skip the ping when the token is
+        # already active to avoid a false-negative for users whose CommCare
+        # account lacks domain membership: their fresh OAuth token is valid,
+        # but the Application API would still 403, blocking them forever.
+        # Domain-access failures for active tokens surface later as pipeline
+        # errors (cchq_auth_required SSE signal), not as an auth-gate loop.
         try:
             client = CommCareDataAccess(request, cchq_domain_for_probe)
             cchq_active = client.verify_hq_access()

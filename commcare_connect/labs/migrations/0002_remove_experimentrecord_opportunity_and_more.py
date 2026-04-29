@@ -4,54 +4,53 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('labs', '0001_initial'),
+        ("labs", "0001_initial"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='experimentrecord',
-            name='opportunity',
+            model_name="experimentrecord",
+            name="opportunity",
         ),
         migrations.RemoveField(
-            model_name='experimentrecord',
-            name='organization',
+            model_name="experimentrecord",
+            name="organization",
         ),
         migrations.RemoveField(
-            model_name='experimentrecord',
-            name='program',
+            model_name="experimentrecord",
+            name="program",
         ),
         migrations.RemoveField(
-            model_name='experimentrecord',
-            name='user',
+            model_name="experimentrecord",
+            name="user",
         ),
         migrations.AddField(
-            model_name='experimentrecord',
-            name='opportunity_id',
-            field=models.IntegerField(blank=True, help_text='Production opportunity ID', null=True),
+            model_name="experimentrecord",
+            name="opportunity_id",
+            field=models.IntegerField(blank=True, help_text="Production opportunity ID", null=True),
         ),
         migrations.AddField(
-            model_name='experimentrecord',
-            name='organization_id',
-            field=models.IntegerField(blank=True, help_text='Production organization ID', null=True),
+            model_name="experimentrecord",
+            name="organization_id",
+            field=models.IntegerField(blank=True, help_text="Production organization ID", null=True),
         ),
         migrations.AddField(
-            model_name='experimentrecord',
-            name='program_id',
-            field=models.IntegerField(blank=True, help_text='Production program ID', null=True),
+            model_name="experimentrecord",
+            name="program_id",
+            field=models.IntegerField(blank=True, help_text="Production program ID", null=True),
         ),
         migrations.AddField(
-            model_name='experimentrecord',
-            name='user_id',
-            field=models.IntegerField(blank=True, help_text='Production user ID', null=True),
+            model_name="experimentrecord",
+            name="user_id",
+            field=models.IntegerField(blank=True, help_text="Production user ID", null=True),
         ),
         migrations.AddIndex(
-            model_name='experimentrecord',
-            index=models.Index(fields=['program_id'], name='labs_experi_program_559e93_idx'),
+            model_name="experimentrecord",
+            index=models.Index(fields=["program_id"], name="labs_experi_program_559e93_idx"),
         ),
         migrations.AddIndex(
-            model_name='experimentrecord',
-            index=models.Index(fields=['organization_id'], name='labs_experi_organiz_1f01ed_idx'),
+            model_name="experimentrecord",
+            index=models.Index(fields=["organization_id"], name="labs_experi_organiz_1f01ed_idx"),
         ),
     ]

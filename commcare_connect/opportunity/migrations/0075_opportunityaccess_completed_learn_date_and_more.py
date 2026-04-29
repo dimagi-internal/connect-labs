@@ -31,38 +31,31 @@ def _back_fill_completed_learn_date(Opportunity, OpportunityAccess, CompletedMod
                 logger.info(f"opportunity : {opp.id} does not have learn modules")
                 continue
 
-            completed_module_sq = CompletedModule.objects.filter(
-                opportunity_access_id=OuterRef("pk"),
-                opportunity=opp
-            ).order_by("-date").values("date")[:1]
+            completed_module_sq = (
+                CompletedModule.objects.filter(opportunity_access_id=OuterRef("pk"), opportunity=opp)
+                .order_by("-date")
+                .values("date")[:1]
+            )
 
-            user_visit_sq = UserVisit.objects.filter(
-                opportunity_access_id=OuterRef("pk"),
-                opportunity=opp
-            ).order_by("-visit_date").values("visit_date")[:1]
+            user_visit_sq = (
+                UserVisit.objects.filter(opportunity_access_id=OuterRef("pk"), opportunity=opp)
+                .order_by("-visit_date")
+                .values("visit_date")[:1]
+            )
 
-            access = OpportunityAccess.objects.filter(
-                opportunity=opp,
-                date_learn_started__isnull=False
-            ).annotate(
+            access = OpportunityAccess.objects.filter(opportunity=opp, date_learn_started__isnull=False).annotate(
                 completed_modules_count=Count("completedmodule__module", distinct=True),
                 last_completed_module_date=Subquery(completed_module_sq, output_field=DateTimeField()),
                 _last_visit_date=Subquery(user_visit_sq, output_field=DateTimeField()),
-                last_active_date=Greatest(
-                    "last_completed_module_date",
-                    "_last_visit_date",
-                    "date_learn_started"
-                )
+                last_active_date=Greatest("last_completed_module_date", "_last_visit_date", "date_learn_started"),
             )
-
 
             for user in access:
                 user.last_active = user.last_active_date
 
                 if user.completed_modules_count == learn_modules_count:
                     earliest_dates = (
-                        CompletedModule.objects
-                        .filter(opportunity_access=user)
+                        CompletedModule.objects.filter(opportunity_access=user)
                         .values("module")
                         .annotate(earliest_date=Min("date"))
                     )
@@ -89,6 +82,7 @@ class Migration(migrations.Migration):
             name="last_active",
             field=models.DateTimeField(null=True),
         ),
-        migrations.RunPython(back_fill_completed_learn_date, migrations.RunPython.noop,
-                             hints={"run_on_secondary": True})
+        migrations.RunPython(
+            back_fill_completed_learn_date, migrations.RunPython.noop, hints={"run_on_secondary": True}
+        ),
     ]

@@ -5,12 +5,12 @@ from django.db import migrations, models
 
 def migrate_trial(apps, schema_editor):
     UserVisit = apps.get_model("opportunity.UserVisit")
-    UserVisit.objects.filter(is_trial=True).update(status='trial')
+    UserVisit.objects.filter(is_trial=True).update(status="trial")
 
 
 def migrate_trial_rev(apps, schema_editor):
     UserVisit = apps.get_model("opportunity.UserVisit")
-    UserVisit.objects.filter(status='trial').update(is_trial=True)
+    UserVisit.objects.filter(status="trial").update(is_trial=True)
 
 
 class Migration(migrations.Migration):
@@ -35,11 +35,7 @@ class Migration(migrations.Migration):
                 max_length=50,
             ),
         ),
-        migrations.RunPython(
-            migrate_trial,
-            migrate_trial_rev,
-            hints={"run_on_secondary": False}
-        ),
+        migrations.RunPython(migrate_trial, migrate_trial_rev, hints={"run_on_secondary": False}),
         migrations.RemoveField(
             model_name="uservisit",
             name="is_trial",

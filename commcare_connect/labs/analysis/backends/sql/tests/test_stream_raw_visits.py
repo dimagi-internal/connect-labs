@@ -11,7 +11,7 @@ from commcare_connect.labs.analysis.backends.sql.models import RawVisitCache
 def test_stream_raw_visits_yields_progress_per_page_and_complete(httpx_mock):
     """Verifies the producer yields ('progress', rows, total) per page and ('complete', dicts) at the end."""
     httpx_mock.add_response(
-        url="https://connect.example.com/export/opportunity/42/user_visits/",
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
         json={
             "next": "https://connect.example.com/export/opportunity/42/user_visits/?last_id=1",
             "results": [
@@ -69,7 +69,7 @@ def test_stream_raw_visits_aborts_cache_on_export_api_error(httpx_mock):
     """Verifies that on mid-stream HTTP error, sentinel rows are cleaned up."""
     # Page 1 succeeds
     httpx_mock.add_response(
-        url="https://connect.example.com/export/opportunity/42/user_visits/",
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
         json={
             "next": "https://connect.example.com/export/opportunity/42/user_visits/?last_id=1",
             "results": [

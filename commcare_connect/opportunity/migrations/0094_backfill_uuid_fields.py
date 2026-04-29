@@ -12,11 +12,13 @@ def gen_uuid(apps, schema_editor):
         Uses PostgreSQL gen_random_uuid() function.
         """
         with connection.cursor() as cursor:
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 UPDATE {table_name}
                 SET {field_name} = gen_random_uuid()
                 WHERE {field_name} IS NULL;
-            """)
+            """
+            )
 
     backfill_uuid("opportunity_opportunity", "opportunity_id")
     backfill_uuid("opportunity_opportunityaccess", "opportunity_access_id")
