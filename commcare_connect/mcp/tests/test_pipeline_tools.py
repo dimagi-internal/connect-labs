@@ -692,3 +692,96 @@ def test_pipeline_preview_clean_response_has_no_null_hint(mock_pda_cls, client, 
     content = data["result"]["structuredContent"]
     assert content["fields_all_null"] == []
     assert content["fields_all_null_hint"] is None
+
+
+# =============================================================================
+# Regression: pipeline_preview must not crash on cchq_forms pipelines
+# =============================================================================
+#
+# Bug: when an MCP caller previewed a pipeline whose data_source.type is
+# "cchq_forms", the request reached AnalysisPipeline → fetch_cchq_forms →
+# CommCareDataAccess(request=None, ...) which did `request.session.get(...)`
+# and crashed with `'NoneType' object has no attribute 'session'`. The agent
+# saw an opaque error and abandoned the tool for the rest of the session.
+#
+# Fix: surface the structural limitation as a typed CCHQHeadlessError
+# upstream, and translate it into an MCPToolError with `headless_cchq_forms`
+# in details so callers can distinguish it from a transient SQL failure.
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_cchq_forms_in_mcp_context_returns_clean_error(
+    mock_pda_cls, client, auth_user
+):
+    """cchq_forms data sources cannot run via MCP (no web session OAuth).
+
+    The handler must surface a clean MCPToolError with details that explain
+    the structural limitation — NOT a NoneType traceback or a generic
+    upstream error that looks transient.
+    """
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"data_source": {"type": "cchq_forms"}}},
+    )
+    # Simulate the inner pipeline failing because we're in headless mode.
+    # In production this comes from CCHQHeadlessError → stream_analysis
+    # yields EVENT_ERROR → stream_analysis_ignore_events raises RuntimeError
+    # → execute_pipeline catches and stuffs into metadata.error.
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [],
+        "metadata": {
+            "error": (
+                "Pipeline data_source.type is 'cchq_forms', which requires a "
+                "CommCare HQ OAuth token from the user's web session. This call "
+                "is running in a headless context (no request) so no token is "
+                "available."
+            ),
+        },
+    }
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 42, "opportunity_id": 100},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "UPSTREAM_ERROR"
+    # The actionable parts must reach the caller
+    assert "headless" in err["message"].lower() or "cchq_forms" in err["message"].lower()
+    details = err.get("details") or {}
+    assert details.get("headless_cchq_forms") is True
+    assert "remediation" in details
+    # No NoneType traceback leaked through
+    assert "NoneType" not in err["message"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
+def test_pipeline_preview_connect_csv_pipeline_works_without_request(
+    mock_pda_cls, client, auth_user
+):
+    """connect_csv pipelines have no Django-session dependency and must work
+    cleanly when invoked via MCP (no request object). This is the canonical
+    "does my schema fix extract data" tool — it has to work for non-cchq
+    pipelines via the MCP entry point."""
+    _, raw = auth_user
+    mock_pda_cls.return_value.get_definition.return_value = MagicMock(
+        data={"schema": {"data_source": {"type": "connect_csv"}}},
+    )
+    mock_pda_cls.return_value.execute_pipeline.return_value = {
+        "rows": [{"flw_id": "a", "visits": 5}],
+        "metadata": {"row_count": 1, "from_cache": False},
+    }
+
+    data = _call_tool(
+        client,
+        raw,
+        "pipeline_preview",
+        {"pipeline_id": 42, "opportunity_id": 100, "sample_size": 10},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["row_count_before_sample"] == 1
+    assert content["rows"][0]["flw_id"] == "a"

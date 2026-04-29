@@ -64,7 +64,7 @@ def normalize_cchq_form_to_visit_dict(form: dict, index: int) -> dict:
 
 
 def fetch_cchq_forms_as_visit_dicts(
-    request: HttpRequest,
+    request: HttpRequest | None,
     data_source: DataSourceConfig,
     access_token: str,
     opportunity_id: int,
@@ -73,14 +73,36 @@ def fetch_cchq_forms_as_visit_dicts(
     Fetch CCHQ forms and return them as normalized visit dicts.
 
     Args:
-        request: HttpRequest with commcare_oauth in session
+        request: HttpRequest with commcare_oauth in session, or ``None`` for
+            headless callers (MCP, scripts). When ``None``, this function
+            raises :class:`CCHQHeadlessError` early with a clear message —
+            it does NOT attempt to silently fall back, because there is no
+            way to authenticate to CommCare HQ without a session OAuth token.
         data_source: DataSourceConfig with type="cchq_forms"
         access_token: Connect OAuth token (for opportunity metadata)
         opportunity_id: Opportunity ID (for metadata lookup)
 
     Returns:
         List of visit-shaped dicts ready for SQL backend processing
+
+    Raises:
+        CCHQHeadlessError: If ``request`` is ``None``. CCHQ data sources
+            require a Django session OAuth token; headless callers cannot
+            run cchq_forms pipelines. Surfaced before the (potentially slow)
+            metadata fetch so the failure is fast and the message is direct.
     """
+    if request is None:
+        # Import here to avoid a top-level cycle.
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQHeadlessError
+
+        raise CCHQHeadlessError(
+            "Pipeline data_source.type is 'cchq_forms', which requires a "
+            "CommCare HQ OAuth token from the user's web session. This call "
+            "is running in a headless context (no request) so no token is "
+            "available. Run the preview from the web UI, or convert the "
+            "pipeline to a connect_csv data source."
+        )
+
     metadata = fetch_opportunity_metadata(access_token, opportunity_id)
     cc_domain = metadata.get("cc_domain")
     if not cc_domain:

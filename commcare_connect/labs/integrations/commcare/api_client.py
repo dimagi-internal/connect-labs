@@ -34,30 +34,65 @@ class CCHQAuthError(Exception):
         self.domain = domain
 
 
+class CCHQHeadlessError(Exception):
+    """
+    Raised when CCHQ access is attempted from a headless / non-web context
+    (no Django ``request``).
+
+    CommCare HQ access in labs is gated by a per-user OAuth token kept in
+    ``request.session["commcare_oauth"]``. The MCP server, management
+    commands, and other request-less callers do not have a session to
+    read from, so any pipeline whose data source is ``cchq_forms`` cannot
+    run via those entry points today.
+
+    Surfacing this as a typed exception (instead of a NoneType crash) lets
+    callers — notably the ``pipeline_preview`` MCP tool — translate it into
+    a clean, actionable error: "this pipeline uses cchq_forms; preview it
+    from the web UI, or convert it to a connect_csv data source".
+    """
+
+
 class CommCareDataAccess:
     """
     Fetch cases from CommCare Case API v2 using session OAuth.
 
     Uses the CommCare OAuth token stored in request.session["commcare_oauth"].
+
+    Constructed with ``request=None`` only as a placeholder — every call
+    that touches CCHQ will then raise :class:`CCHQHeadlessError` because
+    there is no OAuth token to authenticate with. This shape lets headless
+    callers (MCP, management commands) instantiate the client and surface a
+    clean error rather than crashing with ``'NoneType' object has no
+    attribute 'session'``.
     """
 
-    def __init__(self, request: HttpRequest, domain: str):
+    def __init__(self, request: HttpRequest | None, domain: str):
         """
         Initialize CommCare data access.
 
         Args:
-            request: HttpRequest with commcare_oauth in session
+            request: HttpRequest with commcare_oauth in session, or ``None``
+                for headless callers. ``None`` is allowed only so callers can
+                handle the resulting :class:`CCHQHeadlessError` cleanly —
+                CCHQ-touching methods will not work.
             domain: CommCare domain to query
         """
         self.request = request
         self.domain = domain
 
-        # Get CommCare OAuth token from session
-        self.commcare_oauth = request.session.get("commcare_oauth", {})
+        # Get CommCare OAuth token from session. In headless mode (request=None)
+        # there is no session, so we record an empty config and let downstream
+        # methods raise CCHQHeadlessError. This is preferable to crashing here
+        # because some callers (e.g. fetchers that probe with verify_hq_access)
+        # want to instantiate the client and *then* check.
+        if request is not None:
+            self.commcare_oauth = request.session.get("commcare_oauth", {})
+        else:
+            self.commcare_oauth = {}
         self.access_token = self.commcare_oauth.get("access_token")
         self.base_url = getattr(settings, "COMMCARE_HQ_URL", "https://www.commcarehq.org")
 
-        if not self.access_token:
+        if not self.access_token and request is not None:
             logger.warning("No CommCare OAuth token found in session")
 
     def check_token_valid(self) -> bool:
@@ -74,7 +109,23 @@ class CommCareDataAccess:
 
         Returns:
             True if token is valid (or was successfully refreshed), False otherwise
+
+        Raises:
+            CCHQHeadlessError: If this client was constructed without a request
+                (headless / MCP context). CCHQ data sources require a web
+                session OAuth token — there is no fallback today, so failing
+                fast with a typed error beats returning False (which callers
+                tend to translate into a misleading "no data" empty result).
         """
+        if self.request is None:
+            raise CCHQHeadlessError(
+                "CommCare HQ access requires a web session OAuth token, "
+                "but this call is running in a headless context (no request). "
+                "Pipelines that use the cchq_forms data source can only be "
+                "executed from the web UI today. To exercise the pipeline "
+                "from MCP / scripts, switch the data source to connect_csv, "
+                "or run the preview from the web."
+            )
         if not self.access_token:
             return False
 
