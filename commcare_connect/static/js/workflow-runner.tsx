@@ -771,19 +771,37 @@ function WorkflowRunner({
 
     const eventSource = new EventSource(url.toString());
 
+    // Track last-received message + receipt timestamp so the onerror handler
+    // can surface useful diagnostics instead of the generic
+    // "Pipeline stream connection lost".
+    let lastMessage: string | null = null;
+    let lastMessageAt: number | null = null;
+    let receivedAny = false;
+    const startTs = Date.now();
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        receivedAny = true;
+        lastMessageAt = Date.now();
 
         if (data.error) {
           setPipelineLoadingStatus(null);
-          setError(data.error);
+          // Surface CCHQ auth-required prompts with a click-through link
+          if (data.cchq_auth_required && data.authorize_url) {
+            setError(
+              `${data.error} Click here to re-authorize: ${data.authorize_url}`,
+            );
+          } else {
+            setError(data.error);
+          }
           eventSource.close();
           return;
         }
 
         // Progress update - show status message
         if (data.message) {
+          lastMessage = data.message;
           setPipelineLoadingStatus(data.message);
         }
 
@@ -803,7 +821,34 @@ function WorkflowRunner({
 
     eventSource.onerror = () => {
       setPipelineLoadingStatus(null);
-      setError('Pipeline stream connection lost');
+      // Build a descriptive error so users know what was happening when
+      // the connection dropped. The generic "connection lost" message
+      // told them nothing — common cause is AWS ALB's 60-second idle
+      // timeout closing the SSE stream during silent operations
+      // (CCHQ form pagination, visit cold-load).
+      const elapsedSec = Math.round((Date.now() - startTs) / 1000);
+      let detail: string;
+      if (!receivedAny) {
+        detail =
+          `No events received after ${elapsedSec}s. The server may be ` +
+          `unreachable, or the SSE endpoint failed to start. Try reload.`;
+      } else if (lastMessage) {
+        const sinceLastSec = lastMessageAt
+          ? Math.round((Date.now() - lastMessageAt) / 1000)
+          : null;
+        const sinceLast =
+          sinceLastSec !== null ? ` (${sinceLastSec}s since last update)` : '';
+        detail =
+          `Connection dropped while: "${lastMessage}"${sinceLast}. ` +
+          `If this happened during a long load (CommCare HQ pagination, ` +
+          `large visit download), the AWS load balancer may have idle-` +
+          `timed-out the connection. Try reload — cached data should ` +
+          `make the second attempt much faster. If it persists, the ` +
+          `pipeline may be stalled on a backend dependency.`;
+      } else {
+        detail = `Connection dropped after ${elapsedSec}s. Try reload.`;
+      }
+      setError(detail);
       eventSource.close();
     };
 
