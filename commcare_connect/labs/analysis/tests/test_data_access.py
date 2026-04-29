@@ -20,7 +20,7 @@ def test_fetch_flw_names_paginates_and_builds_mapping(httpx_mock, settings):
     settings.CONNECT_PRODUCTION_URL = "https://connect.example.com"
 
     httpx_mock.add_response(
-        url="https://connect.example.com/export/opportunity/42/user_data/",
+        url="https://connect.example.com/export/opportunity/42/user_data/?page_size=2500",
         json={
             "next": "https://connect.example.com/export/opportunity/42/user_data/?last_id=2",
             "results": [
@@ -52,7 +52,7 @@ def test_fetch_flw_names_paginates_and_builds_mapping(httpx_mock, settings):
 def test_fetch_flw_names_raises_on_api_error(httpx_mock, settings):
     settings.CONNECT_PRODUCTION_URL = "https://connect.example.com"
     httpx_mock.add_response(
-        url="https://connect.example.com/export/opportunity/42/user_data/",
+        url="https://connect.example.com/export/opportunity/42/user_data/?page_size=2500",
         status_code=500,
     )
 
