@@ -141,29 +141,27 @@ class CommCareDataAccess:
 
         return True
 
-    def verify_hq_access(self) -> bool:
-        """Verify the CommCare HQ token actually works for this domain.
+    def verify_token_alive(self) -> bool:
+        """Is the CommCare OAuth token itself valid (independent of any domain)?
 
-        Pings a cheap CCHQ endpoint (Application API, limit=1) and confirms
-        it returns 200. Use this at dashboard load time to detect a stale
-        session BEFORE running long pipelines — the timestamp-based
-        check_token_valid() can return True while CCHQ still 403's the
-        request (e.g. when refresh succeeded but the new token was issued
-        with reduced scope, or the user lost domain membership).
+        Pings ``/api/v0.5/identity/`` — a domain-less endpoint that just
+        requires an authenticated user (any authenticated user). Returns
+        True iff CCHQ accepts the token at all.
+
+        This is the right check for "user needs to re-authorize CommCare HQ"
+        — distinct from "user is authorized but lacks access to a specific
+        domain", which is what verify_hq_access() answers.
 
         Returns:
-            True if the token works for this domain right now;
-            False on 401/403/404 (auth/permission/missing) or any other
-            non-success response. Logs at WARNING level when it returns
-            False so callers can surface the cause to users.
+            True if the token is alive; False on 401/403 (token dead) or
+            network/transport error.
         """
         if not self.access_token:
-            logger.warning("[CCHQ verify] no access_token in session")
             return False
         if not self.check_token_valid():
             return False
 
-        url = f"{self.base_url}/a/{self.domain}/api/application/v1/?limit=1"
+        url = f"{self.base_url}/api/v0.5/identity/"
         try:
             response = httpx.get(
                 url,
@@ -171,21 +169,70 @@ class CommCareDataAccess:
                 timeout=15.0,
             )
         except httpx.RequestError as e:
-            logger.warning(f"[CCHQ verify] network error pinging {self.domain}: {e}")
+            logger.warning(f"[CCHQ verify_token_alive] network error: {e}")
             return False
 
         if response.status_code in (401, 403):
             logger.warning(
-                f"[CCHQ verify] token rejected for domain {self.domain!r} "
-                f"({response.status_code}). User likely needs to re-authorize."
+                f"[CCHQ verify_token_alive] token rejected ({response.status_code}). "
+                f"User needs to re-authorize CommCare HQ."
+            )
+            return False
+        if response.status_code >= 400:
+            logger.warning(f"[CCHQ verify_token_alive] unexpected {response.status_code}: {response.text[:200]}")
+            return False
+        return True
+
+    def verify_hq_access(self) -> bool:
+        """Verify the token has access to forms in self.domain.
+
+        Pings ``/a/{domain}/api/form/v1/?limit=1`` — the SAME endpoint the
+        actual pipeline (fetch_forms) uses. Earlier we pinged
+        application/v1, but that requires app-builder permissions some LLO
+        accounts don't have, producing a false-negative loop where the gate
+        kept saying "no HQ access" even though pipelines would work fine.
+
+        This method answers a domain-specific question — "can this token
+        read forms in this domain". For a token-alive check independent of
+        domain, see verify_token_alive().
+
+        Returns:
+            True if the token can fetch forms for this domain right now;
+            False on 401/403/404 (auth/permission/missing/wrong-domain) or
+            any other non-success response. Logs at WARNING level when it
+            returns False so callers can surface the cause to users.
+        """
+        if not self.access_token:
+            logger.warning("[CCHQ verify_hq_access] no access_token in session")
+            return False
+        if not self.check_token_valid():
+            return False
+
+        url = f"{self.base_url}/a/{self.domain}/api/form/v1/?limit=1"
+        try:
+            response = httpx.get(
+                url,
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                timeout=15.0,
+            )
+        except httpx.RequestError as e:
+            logger.warning(f"[CCHQ verify_hq_access] network error pinging {self.domain}: {e}")
+            return False
+
+        if response.status_code in (401, 403):
+            logger.warning(
+                f"[CCHQ verify_hq_access] token rejected for domain {self.domain!r} "
+                f"({response.status_code}) at form/v1. Either token is dead "
+                f"(check verify_token_alive) or account lacks form-read permission."
             )
             return False
         if response.status_code == 404:
-            logger.warning(f"[CCHQ verify] domain {self.domain!r} not found (404)")
+            logger.warning(f"[CCHQ verify_hq_access] domain {self.domain!r} not found (404)")
             return False
         if response.status_code >= 400:
             logger.warning(
-                f"[CCHQ verify] unexpected {response.status_code} for {self.domain}: " f"{response.text[:200]}"
+                f"[CCHQ verify_hq_access] unexpected {response.status_code} for {self.domain}: "
+                f"{response.text[:200]}"
             )
             return False
         return True
