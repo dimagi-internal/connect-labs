@@ -2181,14 +2181,12 @@ class PipelineDataStreamView(BaseSSEStreamView):
     sees the generic "Pipeline stream connection lost" with no diagnostic.
     """
 
-    def get(self, request, definition_id):
-        return super().get(request, definition_id=definition_id)
-
-    def stream_data(self, request, **kwargs) -> Generator[str, None, None]:
+    def stream_data(self, request) -> Generator[str, None, None]:
         from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
         from commcare_connect.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, send_sse_event
 
-        definition_id = kwargs.get("definition_id")
+        # Django's View.dispatch() sets self.kwargs from URL path kwargs.
+        definition_id = self.kwargs.get("definition_id")
         labs_context = getattr(request, "labs_context", {})
         opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
 
