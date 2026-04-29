@@ -34,6 +34,13 @@ DEFINITION = {
         "showSummaryCards": False,
         "showFilters": False,
         "job_type": "mbw_monitoring",
+        # Workflow framework auth gate: workflow runner blocks the template
+        # render until each of these OAuth providers shows active. OCS is
+        # intentionally omitted — V2 doesn't require it for analysis (only
+        # for the optional chat widget on the right rail), and listing it
+        # here would force every user to grant OCS access just to view the
+        # dashboard. See workflow_auth_status_api in workflow/views.py.
+        "auth_requires": ["connect", "commcare_hq"],
     },
     "pipeline_sources": [],
 }
