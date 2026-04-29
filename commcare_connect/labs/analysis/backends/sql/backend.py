@@ -172,7 +172,7 @@ class SQLBackend:
           ("progress", rows_so_far, expected_visit_count) after each page,
           then ("complete", slim_dicts) at the end.
 
-        Memory note: each page is bounded at 1000 records (~15 MB peak),
+        Memory note: each page is bounded at DEFAULT_PAGE_SIZE records,
         so we never need a temp file like the v1 streaming CSV path did.
         """
         from commcare_connect.labs.analysis.backends.visit_record import record_to_visit_dict
@@ -273,7 +273,7 @@ class SQLBackend:
     ) -> list[dict]:
         """Fetch all user visits from Connect v2 export API as a list of visit dicts.
 
-        Memory note: each page is bounded at 1000 records (~15 MB with form_json).
+        Memory note: each page is bounded at DEFAULT_PAGE_SIZE records.
         Total memory peaks at the full visit count, same as the previous CSV path,
         but without the additional pandas DataFrame copy.
         """
