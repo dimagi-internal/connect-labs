@@ -96,6 +96,22 @@ def fetch_cchq_forms_as_visit_dicts(
             "CommCare OAuth not configured or expired. " "Please authorize CommCare access at /labs/commcare/initiate/"
         )
 
+    # Early access probe — fail loudly before doing the slow xmlns walks
+    # and the long form pagination. The local check_token_valid() above is
+    # a timestamp check; verify_hq_access() actually pings CCHQ. If our
+    # token has been silently de-authorized for this domain, we want the
+    # caller to see "Authorize CommCare HQ" instead of "0 forms found".
+    if not client.verify_hq_access():
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
+        raise CCHQAuthError(
+            f"CommCare HQ rejected the access probe for domain {cc_domain!r}. "
+            f"The OAuth token's local timestamp may say it's valid, but CCHQ "
+            f"is not honoring it for this domain. User needs to re-authorize "
+            f"CommCare access at /labs/commcare/initiate/.",
+            domain=cc_domain,
+        )
+
     form_name = data_source.form_name
     xmlns = None
 

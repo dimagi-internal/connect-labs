@@ -1797,33 +1797,64 @@ function WorkflowUI({
     : !isCompleted;
 
   // ---- OAuth expired state ----
+  // Surfaces if EITHER:
+  //   (a) the timestamp-based oauthStatus check says a token's expired
+  //   (b) any CCHQ pipeline came back with metadata.auth_error — meaning
+  //       CCHQ rejected our token even though it locally looked valid.
+  // (b) is the silent-failure case we used to swallow as "0 forms found".
+  var pipelineAuthError = null;
+  if (pipelines) {
+    Object.keys(pipelines).some(function (alias) {
+      var meta = pipelines[alias]?.metadata;
+      if (meta && meta.auth_error === 'commcare_hq') {
+        pipelineAuthError = {
+          alias: alias,
+          domain: meta.auth_error_domain,
+          authorize_url: meta.auth_authorize_url || '/labs/commcare/initiate/',
+        };
+        return true;
+      }
+      return false;
+    });
+  }
   if (
-    oauthStatus &&
-    (!oauthStatus.connect?.active || !oauthStatus.commcare?.active)
+    pipelineAuthError ||
+    (oauthStatus &&
+      (!oauthStatus.connect?.active || !oauthStatus.commcare?.active))
   ) {
+    // The pipeline-side auth error overrides oauthStatus's local timestamp
+    // check — if CCHQ actively rejected our token, we surface CommCare HQ
+    // as expired even though oauthStatus.commcare?.active is still true.
+    var commcareEffectiveActive =
+      !pipelineAuthError && oauthStatus?.commcare?.active;
+    var connectActive = oauthStatus?.connect?.active;
+    var ocsActive = oauthStatus?.ocs?.active;
     var expiredServices = [];
-    if (!oauthStatus.connect?.active)
+    if (!connectActive)
       expiredServices.push({
         name: 'Connect',
         key: 'connect',
-        url: oauthStatus.connect?.authorize_url,
+        url: oauthStatus?.connect?.authorize_url,
       });
-    if (!oauthStatus.commcare?.active)
+    if (!commcareEffectiveActive)
       expiredServices.push({
         name: 'CommCare HQ',
         key: 'commcare',
-        url: oauthStatus.commcare?.authorize_url,
+        url:
+          oauthStatus?.commcare?.authorize_url ||
+          pipelineAuthError?.authorize_url ||
+          '/labs/commcare/initiate/',
       });
-    if (!oauthStatus.ocs?.active)
+    if (oauthStatus && !ocsActive)
       expiredServices.push({
         name: 'OCS',
         key: 'ocs',
-        url: oauthStatus.ocs?.authorize_url,
+        url: oauthStatus?.ocs?.authorize_url,
       });
     var activeServices = [];
-    if (oauthStatus.connect?.active) activeServices.push('Connect');
-    if (oauthStatus.commcare?.active) activeServices.push('CommCare HQ');
-    if (oauthStatus.ocs?.active) activeServices.push('OCS');
+    if (connectActive) activeServices.push('Connect');
+    if (commcareEffectiveActive) activeServices.push('CommCare HQ');
+    if (ocsActive) activeServices.push('OCS');
 
     return (
       <div className="space-y-4">
