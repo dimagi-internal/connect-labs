@@ -71,21 +71,93 @@ class OCSDataAccess:
         """
         Check if OCS OAuth token is configured and not expired.
 
+        If the access token has expired and a refresh_token is available,
+        attempts a silent refresh before reporting invalid. Mirrors the
+        CCHQ client pattern.
+
         Returns:
-            True if token is valid, False otherwise
+            True if a usable token is in session (after refresh if needed),
+            False otherwise.
         """
         from django.utils import timezone
 
         if not self.access_token:
             return False
 
-        # Check expiration
         expires_at = self.ocs_oauth.get("expires_at", 0)
         if timezone.now().timestamp() >= expires_at:
-            logger.warning(f"OCS OAuth token expired at {expires_at}")
+            logger.info("OCS OAuth token expired, attempting refresh...")
+            if self._refresh_token():
+                logger.info("Successfully refreshed OCS OAuth token")
+                return True
+            logger.warning(f"OCS OAuth token expired at {expires_at} and refresh failed")
             return False
 
         return True
+
+    def _refresh_token(self) -> bool:
+        """
+        Attempt to refresh the OCS OAuth token using the stored refresh token.
+
+        Updates both the instance state and the session so the new token persists.
+
+        Returns:
+            True if refresh succeeded, False otherwise
+        """
+        refresh_token = self.ocs_oauth.get("refresh_token")
+        if not refresh_token:
+            logger.debug("No refresh token available for OCS OAuth")
+            return False
+
+        client_id = getattr(settings, "OCS_OAUTH_CLIENT_ID", "")
+        client_secret = getattr(settings, "OCS_OAUTH_CLIENT_SECRET", "")
+        if not client_id or not client_secret:
+            logger.warning("OCS OAuth client credentials not configured for token refresh")
+            return False
+
+        try:
+            from django.utils import timezone
+
+            response = httpx.post(
+                f"{self.base_url}/o/token/",
+                data={
+                    "grant_type": "refresh_token",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code != 200:
+                logger.warning(f"OCS token refresh failed: {response.status_code} - {response.text}")
+                return False
+
+            token_data = response.json()
+            new_oauth = {
+                "access_token": token_data["access_token"],
+                "refresh_token": token_data.get("refresh_token", refresh_token),
+                "expires_at": timezone.now().timestamp() + token_data.get("expires_in", 3600),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "scope": token_data.get("scope", self.ocs_oauth.get("scope", "")),
+            }
+
+            self.access_token = new_oauth["access_token"]
+            self.ocs_oauth = new_oauth
+
+            self.request.session["ocs_oauth"] = new_oauth
+            if hasattr(self.request.session, "modified"):
+                self.request.session.modified = True
+
+            # Invalidate cached HTTP client so next call uses the new token
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+
+            return True
+        except Exception as e:
+            logger.warning(f"OCS token refresh error: {e}")
+            return False
 
     def list_experiments(self) -> list[dict]:
         """
