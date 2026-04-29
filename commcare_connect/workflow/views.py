@@ -711,13 +711,20 @@ def workflow_auth_status_api(request):
     ocs_active = _is_active("ocs_oauth")
 
     # ---- CommCare HQ -------------------------------------------------------
-    # First do the standard refresh-on-expiry attempt.
+    # Two distinct questions:
+    #   1) Is the OAuth token alive at all? (verify_token_alive — domain-less)
+    #   2) Does this token have access to the *specific* domain pipelines need?
+    #      (verify_hq_access — pings form/v1 on the opp's domain)
+    #
+    # The two answers map to different user-facing actions:
+    #   token dead     → "Authorize CommCare HQ" (re-auth fixes it)
+    #   wrong domain   → "Your account doesn't have access to <domain>"
+    #                    (re-auth WON'T fix it — needs HQ admin)
     cchq_active = _is_active("commcare_oauth")
+    cchq_reason: str | None = None
     cchq_domain_for_probe: str | None = None
 
     if opportunity_id_param:
-        # We need a domain to ping. Look it up via the labs context (cheap;
-        # this is what the runner does already to know which opp to fetch).
         try:
             from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import fetch_opportunity_metadata
 
@@ -728,29 +735,48 @@ def workflow_auth_status_api(request):
         except Exception:
             logger.exception("Failed to look up cc_domain for auth-status probe")
 
-    if cchq_domain_for_probe and not cchq_active:
-        # Real ping — only when the token was already inactive (expired/missing).
-        # Refreshes internally via check_token_valid -> _refresh_token, then
-        # verifies the new token actually works for this domain (catches
-        # scope-downgrade-on-refresh). We skip the ping when the token is
-        # already active to avoid a false-negative for users whose CommCare
-        # account lacks domain membership: their fresh OAuth token is valid,
-        # but the Application API would still 403, blocking them forever.
-        # Domain-access failures for active tokens surface later as pipeline
-        # errors (cchq_auth_required SSE signal), not as an auth-gate loop.
+    if cchq_active:
+        # NOTE: this supersedes PR #104's "skip the probe when timestamp
+        # is active" approach. PR #104 was solving the right problem
+        # (false-negative loop for users without domain membership) but
+        # via a workaround. Here we fix the root cause: switch the probe
+        # from /api/application/v1 (needs app-builder scope LLO accounts
+        # often lack) to /api/form/v1 (the SAME endpoint pipelines use),
+        # AND split token-alive from domain-access so the UI can say
+        # "account lacks access to <domain>" instead of looping on
+        # Authorize. See verify_token_alive vs verify_hq_access.
         try:
-            client = CommCareDataAccess(request, cchq_domain_for_probe)
-            cchq_active = client.verify_hq_access()
+            client = CommCareDataAccess(request, cchq_domain_for_probe or "")
+            if not client.verify_token_alive():
+                cchq_active = False
+                cchq_reason = "token_expired"
+            elif cchq_domain_for_probe and not client.verify_hq_access():
+                # Token works, but the user can't read forms in this opp's
+                # domain. Re-auth would not fix this — surface the actual
+                # situation so the user can talk to a CCHQ admin.
+                cchq_active = False
+                cchq_reason = "no_domain_access"
         except Exception:
-            logger.exception("CCHQ verify_hq_access raised")
+            logger.exception("CCHQ probe raised")
             cchq_active = False
+            cchq_reason = "probe_error"
     elif not cchq_active:
-        # No opportunity context — fall back to refresh-on-expiry only.
-        try:
-            client = CommCareDataAccess(request, "")
-            cchq_active = client.check_token_valid()
-        except Exception:
-            logger.exception("CCHQ check_token_valid raised")
+        cchq_reason = "token_expired"
+
+    cchq_payload: dict = {
+        "active": cchq_active,
+        "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
+        "label": "CommCare HQ",
+    }
+    if cchq_reason:
+        cchq_payload["reason"] = cchq_reason
+    if cchq_reason == "no_domain_access" and cchq_domain_for_probe:
+        cchq_payload["domain"] = cchq_domain_for_probe
+        cchq_payload["message"] = (
+            f"Your CommCare HQ account does not have form-read access to "
+            f"{cchq_domain_for_probe!r}. Re-authorizing won't fix this — "
+            f"contact a CommCare HQ admin to add your account to that project."
+        )
 
     return JsonResponse(
         {
@@ -759,11 +785,7 @@ def workflow_auth_status_api(request):
                 "authorize_url": "/labs/login/?" + urlencode({"next": next_url}),
                 "label": "Connect",
             },
-            "commcare_hq": {
-                "active": cchq_active,
-                "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
-                "label": "CommCare HQ",
-            },
+            "commcare_hq": cchq_payload,
             "ocs": {
                 "active": ocs_active,
                 "authorize_url": reverse("labs:ocs_initiate") + "?" + urlencode({"next": next_url}),
