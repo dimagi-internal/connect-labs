@@ -736,6 +736,8 @@ def workflow_auth_status_api(request):
         # already active to avoid a false-negative for users whose CommCare
         # account lacks domain membership: their fresh OAuth token is valid,
         # but the Application API would still 403, blocking them forever.
+        # Domain-access failures for active tokens surface later as pipeline
+        # errors (cchq_auth_required SSE signal), not as an auth-gate loop.
         try:
             client = CommCareDataAccess(request, cchq_domain_for_probe)
             cchq_active = client.verify_hq_access()
