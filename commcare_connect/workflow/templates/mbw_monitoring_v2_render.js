@@ -47,6 +47,13 @@ function WorkflowUI({
   var [analysisComplete, setAnalysisComplete] = React.useState(false);
   var [oauthStatus, setOauthStatus] = React.useState(null);
   var jobCleanupRef = React.useRef(null);
+  // Snapshot state — mirrors V1's persistence flow. dataSource flips between
+  // 'live' (post-runAnalysis) and 'snapshot' (loaded from saved run state).
+  // snapshotChecked guards the auto-load on mount so we only try once.
+  var [dataSource, setDataSource] = React.useState(null);
+  var [snapshotChecked, setSnapshotChecked] = React.useState(false);
+  var [savingSnapshot, setSavingSnapshot] = React.useState(false);
+  var [snapshotTimestamp, setSnapshotTimestamp] = React.useState(null);
   var [activeTab, setActiveTab] = React.useState('overview');
   var [guideSection, setGuideSection] = React.useState({});
   var [overviewSearch, setOverviewSearch] = React.useState('');
@@ -253,6 +260,115 @@ function WorkflowUI({
     );
   }, []);
 
+  // Snapshot save/load — reuses V1's run-scoped endpoints under
+  // /custom_analysis/mbw_monitoring/api/. The snapshot blob lives on
+  // run.data.snapshot via WorkflowDataAccess.save_run_snapshot, so V1 and V2
+  // share the same persistence surface and a snapshot saved by either path
+  // can be loaded by either path.
+  var saveSnapshot = React.useCallback(
+    function () {
+      if (!instance.id || !dashData) return Promise.resolve(false);
+      setSavingSnapshot(true);
+      return fetch('/custom_analysis/mbw_monitoring/api/save-snapshot/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCSRF(),
+        },
+        body: JSON.stringify({
+          run_id: instance.id,
+          opportunity_id: instance.opportunity_id,
+          snapshot_data: dashData,
+        }),
+      })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (resp) {
+          setSavingSnapshot(false);
+          if (resp && resp.success) {
+            setSnapshotTimestamp(resp.timestamp || new Date().toISOString());
+            return true;
+          }
+          showToast('Snapshot save failed: ' + (resp?.error || 'Unknown'));
+          return false;
+        })
+        .catch(function (err) {
+          setSavingSnapshot(false);
+          console.error('Snapshot save failed:', err);
+          showToast('Snapshot save failed: ' + (err.message || err));
+          return false;
+        });
+    },
+    [instance.id, instance.opportunity_id, dashData, getCSRF],
+  );
+
+  // Load snapshot on mount — runs once per instance to skip live re-analysis
+  // when a saved snapshot exists on the run.
+  //
+  // Gated on selected_workers being non-empty: V1's MBWSnapshotView uses
+  // load_monitoring_run() which returns None (and the view returns 404
+  // {"error":"Run not found"}) for runs that don't yet have selected_flws
+  // or selected_workers in state. Fresh runs have none. We skip the fetch
+  // in that case to avoid the spurious 404 in the console.
+  React.useEffect(
+    function () {
+      if (snapshotChecked) return;
+      if (!instance.id) {
+        setSnapshotChecked(true);
+        return;
+      }
+      var hasSelected =
+        (instance.state?.selected_workers || []).length > 0 ||
+        (instance.state?.selected_flws || []).length > 0;
+      if (!hasSelected) {
+        // Run is too fresh — no snapshot can exist yet. Skip the load.
+        setSnapshotChecked(true);
+        return;
+      }
+      var cancelled = false;
+      fetch(
+        '/custom_analysis/mbw_monitoring/api/snapshot/?run_id=' +
+          encodeURIComponent(String(instance.id)),
+      )
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (cancelled) return;
+          if (data && data.has_snapshot && data.success) {
+            setDashData({
+              gps_data: data.gps_data || {},
+              followup_data: data.followup_data || {},
+              overview_data: data.overview_data || {},
+              performance_data: data.performance_data || [],
+              active_usernames: data.active_usernames || [],
+              flw_names: data.flw_names || {},
+              open_tasks: data.open_tasks || {},
+              open_task_usernames: data.open_task_usernames || [],
+              monitoring_session: data.monitoring_session || null,
+            });
+            setAnalysisComplete(true);
+            setDataSource('snapshot');
+            setSnapshotTimestamp(data.snapshot_timestamp || null);
+            if (data.monitoring_session?.flw_results) {
+              setWorkerResults(data.monitoring_session.flw_results);
+            }
+          }
+          setSnapshotChecked(true);
+        })
+        .catch(function (err) {
+          if (cancelled) return;
+          console.warn('Snapshot load failed (non-fatal):', err);
+          setSnapshotChecked(true);
+        });
+      return function () {
+        cancelled = true;
+      };
+    },
+    [instance.id, snapshotChecked],
+  );
+
   // =========================================================================
   // Fetch audit history on mount (for selection step)
   // =========================================================================
@@ -370,18 +486,22 @@ function WorkflowUI({
       setDashData(null);
       setAnalysisComplete(false);
 
+      // Don't round-trip the pipeline rows through the browser. The runner's
+      // SSE pipeline stream already populated them server-side; the BE will
+      // re-read them via WorkflowDataAccess.get_pipeline_data when it sees
+      // server_fetch_pipelines=true. This keeps the POST body tiny even on
+      // 85k-visit opportunities where the round-trip would otherwise be 65MB+.
       actions
         .startJob(instance.id, {
           job_type: 'mbw_monitoring',
-          pipeline_data: {
-            visits: { rows: pipelines.visits.rows },
-            registrations: { rows: pipelines.registrations.rows },
-            gs_forms: { rows: pipelines.gs_forms.rows },
-          },
+          server_fetch_pipelines: true,
           active_usernames: sessionFlwsList,
           flw_names: flwNameMap,
           flw_statuses: instance.state?.flw_statuses || {},
           opportunity_id: instance.opportunity_id,
+          app_version_op: appliedAppVersionOp,
+          app_version_val: appliedAppVersionVal,
+          status_filter: appliedStatusFilter,
         })
         .then(function (resp) {
           if (!resp || !resp.success) {
@@ -419,6 +539,7 @@ function WorkflowUI({
             function (results) {
               setJobRunning(false);
               setAnalysisComplete(true);
+              setDataSource('live');
 
               // Build dashData in the shape the tabs expect
               var gpsData = results.gps_data || {};
@@ -599,6 +720,9 @@ function WorkflowUI({
       pipelines,
       flwNameMap,
       actions,
+      appliedAppVersionOp,
+      appliedAppVersionVal,
+      appliedStatusFilter,
     ],
   );
 
@@ -1176,17 +1300,18 @@ function WorkflowUI({
       });
   };
 
-  // Save snapshot — reused by manual button and auto-save on Complete
-
-  // Complete session — auto-saves snapshot first (best-effort)
+  // Complete session — auto-saves snapshot first (best-effort).
+  // saveSnapshot is defined above near the load-on-mount effect.
   var handleComplete = function () {
     if (!actions || !actions.completeRun) {
       showToast('Complete not available — please hard-refresh (Cmd+Shift+R)');
       return;
     }
     setCompleting(true);
-    // Save snapshot first, then complete the run
-    Promise.resolve(true)
+    // Save snapshot first (so completed runs always have a frozen view), then
+    // complete the run. Snapshot save failure is non-fatal — completion proceeds.
+    var snapshotPromise = dashData ? saveSnapshot() : Promise.resolve(false);
+    snapshotPromise
       .catch(function () {
         return false;
       })
@@ -1672,33 +1797,64 @@ function WorkflowUI({
     : !isCompleted;
 
   // ---- OAuth expired state ----
+  // Surfaces if EITHER:
+  //   (a) the timestamp-based oauthStatus check says a token's expired
+  //   (b) any CCHQ pipeline came back with metadata.auth_error — meaning
+  //       CCHQ rejected our token even though it locally looked valid.
+  // (b) is the silent-failure case we used to swallow as "0 forms found".
+  var pipelineAuthError = null;
+  if (pipelines) {
+    Object.keys(pipelines).some(function (alias) {
+      var meta = pipelines[alias]?.metadata;
+      if (meta && meta.auth_error === 'commcare_hq') {
+        pipelineAuthError = {
+          alias: alias,
+          domain: meta.auth_error_domain,
+          authorize_url: meta.auth_authorize_url || '/labs/commcare/initiate/',
+        };
+        return true;
+      }
+      return false;
+    });
+  }
   if (
-    oauthStatus &&
-    (!oauthStatus.connect?.active || !oauthStatus.commcare?.active)
+    pipelineAuthError ||
+    (oauthStatus &&
+      (!oauthStatus.connect?.active || !oauthStatus.commcare?.active))
   ) {
+    // The pipeline-side auth error overrides oauthStatus's local timestamp
+    // check — if CCHQ actively rejected our token, we surface CommCare HQ
+    // as expired even though oauthStatus.commcare?.active is still true.
+    var commcareEffectiveActive =
+      !pipelineAuthError && oauthStatus?.commcare?.active;
+    var connectActive = oauthStatus?.connect?.active;
+    var ocsActive = oauthStatus?.ocs?.active;
     var expiredServices = [];
-    if (!oauthStatus.connect?.active)
+    if (!connectActive)
       expiredServices.push({
         name: 'Connect',
         key: 'connect',
-        url: oauthStatus.connect?.authorize_url,
+        url: oauthStatus?.connect?.authorize_url,
       });
-    if (!oauthStatus.commcare?.active)
+    if (!commcareEffectiveActive)
       expiredServices.push({
         name: 'CommCare HQ',
         key: 'commcare',
-        url: oauthStatus.commcare?.authorize_url,
+        url:
+          oauthStatus?.commcare?.authorize_url ||
+          pipelineAuthError?.authorize_url ||
+          '/labs/commcare/initiate/',
       });
-    if (!oauthStatus.ocs?.active)
+    if (oauthStatus && !ocsActive)
       expiredServices.push({
         name: 'OCS',
         key: 'ocs',
-        url: oauthStatus.ocs?.authorize_url,
+        url: oauthStatus?.ocs?.authorize_url,
       });
     var activeServices = [];
-    if (oauthStatus.connect?.active) activeServices.push('Connect');
-    if (oauthStatus.commcare?.active) activeServices.push('CommCare HQ');
-    if (oauthStatus.ocs?.active) activeServices.push('OCS');
+    if (connectActive) activeServices.push('Connect');
+    if (commcareEffectiveActive) activeServices.push('CommCare HQ');
+    if (ocsActive) activeServices.push('OCS');
 
     return (
       <div className="space-y-4">
@@ -1899,8 +2055,8 @@ function WorkflowUI({
           </div>
         )}
 
-        {/* Run Analysis Button */}
-        {!jobRunning && !jobError && pipelinesReady && (
+        {/* Run Analysis Button — hidden once dashData exists (live or snapshot) */}
+        {!jobRunning && !jobError && pipelinesReady && !analysisComplete && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -3145,10 +3301,56 @@ function WorkflowUI({
           })}
         </nav>
         <div className="flex items-center gap-3 ml-auto">
+          {dataSource && (
+            <span
+              className={
+                'inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ' +
+                (dataSource === 'snapshot'
+                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                  : 'bg-green-50 text-green-700 border border-green-200')
+              }
+              title={
+                dataSource === 'snapshot'
+                  ? 'Loaded from saved snapshot' +
+                    (snapshotTimestamp ? ' (' + snapshotTimestamp + ')' : '')
+                  : 'Live analysis result'
+              }
+            >
+              <i
+                className={
+                  'fa-solid ' +
+                  (dataSource === 'snapshot' ? 'fa-camera' : 'fa-bolt')
+                }
+              ></i>
+              {dataSource === 'snapshot' ? 'Snapshot' : 'Live'}
+            </span>
+          )}
+          <button
+            onClick={saveSnapshot}
+            disabled={
+              !analysisComplete || jobRunning || savingSnapshot || !dashData
+            }
+            className={
+              'inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ' +
+              (analysisComplete && !jobRunning && !savingSnapshot && dashData
+                ? 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+                : 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed')
+            }
+            title="Save the current dashboard view to this run for later viewing"
+          >
+            <i
+              className={
+                'fa-solid ' +
+                (savingSnapshot ? 'fa-spinner fa-spin' : 'fa-floppy-disk')
+              }
+            ></i>{' '}
+            {savingSnapshot ? 'Saving...' : 'Save Snapshot'}
+          </button>
           <button
             onClick={function () {
               setDashData(null);
               setAnalysisComplete(false);
+              setDataSource(null);
               setJobMessages([]);
               setJobError(null);
             }}
@@ -3160,7 +3362,8 @@ function WorkflowUI({
                 : 'text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed')
             }
           >
-            {'↻'} Re-run Analysis
+            {'↻'}{' '}
+            {dataSource === 'snapshot' ? 'Refresh Data' : 'Re-run Analysis'}
           </button>
         </div>
       </div>

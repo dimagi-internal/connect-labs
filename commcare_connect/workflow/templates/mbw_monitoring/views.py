@@ -43,8 +43,12 @@ from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import (
 )
 from commcare_connect.workflow.templates.mbw_monitoring.data_transforms import (
     build_gps_visit_dicts,
+    check_app_version,
     compute_ebf_by_flw,
     extract_per_mother_fields,
+)
+from commcare_connect.workflow.templates.mbw_monitoring.flw_status import (
+    get_latest_flw_statuses as _shared_get_latest_flw_statuses,
 )
 from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
     aggregate_flw_followup,
@@ -112,27 +116,6 @@ def _log_rss(label: str) -> None:
     logger.info("[MBW Dashboard] RSS at %s: %.1f MB", label, rss_mb)
 
 
-def _check_app_version(version, op: str, val: int) -> bool:
-    """Check if a visit's app_build_version satisfies the operator comparison."""
-    if version is None:
-        return False
-    try:
-        version = int(version)
-    except (ValueError, TypeError):
-        return False
-    if op == "gt":
-        return version > val
-    if op == "gte":
-        return version >= val
-    if op == "eq":
-        return version == val
-    if op == "lte":
-        return version <= val
-    if op == "lt":
-        return version < val
-    return False
-
-
 def _parse_int_param(value: str | None) -> int | None:
     """Safely parse a query parameter to int, returning None if invalid."""
     if value is None:
@@ -160,67 +143,15 @@ def parse_date_param(date_str: str | None, default: date) -> date:
         return default
 
 
-def _get_latest_flw_statuses(
-    request,
-    active_usernames: set[str],
-) -> dict[str, str]:
-    """Get the latest known assessment status for each FLW.
+def _get_latest_flw_statuses(request, active_usernames):
+    """Backwards-compatible wrapper around the shared FLW status helper.
 
-    Checks two sources (same logic as flw_api._build_flw_history):
-    1. Traditional audit sessions (AuditDataAccess)
-    2. All workflow monitoring runs (flw_results in run state)
-
-    Returns dict mapping username (lowercase) → status key.
-    FLWs in active_usernames with no assessment get "none".
+    The implementation moved to mbw_monitoring/flw_status.py so the V2 job
+    handler can call it server-side without pulling in views.py's full
+    Django/OAuth dependency chain. Kept as a private alias here so existing
+    call sites in this file don't need to change.
     """
-    # Track latest per FLW: {username: (date_str, result)}
-    latest: dict[str, tuple[str, str]] = {}
-
-    def _update(uname: str, date_str: str, result: str):
-        uname = uname.lower()
-        prev = latest.get(uname)
-        if prev is None or (date_str and date_str > prev[0]):
-            latest[uname] = (date_str or "", result)
-
-    # 1. Traditional audit sessions
-    try:
-        from commcare_connect.audit.data_access import AuditDataAccess
-
-        audit_access = AuditDataAccess(request=request)
-        try:
-            for session in audit_access.get_audit_sessions():
-                username = session.flw_username
-                result = session.overall_result
-                if not username or not result:
-                    continue
-                session_date = session.data.get("created_at") or session.data.get("start_date") or ""
-                _update(username, session_date, result.lower())
-        finally:
-            audit_access.close()
-    except Exception as e:
-        logger.warning("[MBW Dashboard] Failed to fetch audit sessions: %s", e)
-
-    # 2. All workflow monitoring runs (including in-progress)
-    try:
-        wf_access = WorkflowDataAccess(request=request)
-        try:
-            for run in wf_access.list_runs():
-                state = run.data.get("state", {})
-                flw_results = state.get("worker_results", state.get("flw_results", {}))
-                for username, result_data in flw_results.items():
-                    if not isinstance(result_data, dict):
-                        continue
-                    result = result_data.get("result")
-                    if not result:
-                        continue
-                    _update(username, result_data.get("assessed_at", ""), result)
-        finally:
-            wf_access.close()
-    except Exception as e:
-        logger.warning("[MBW Dashboard] Failed to fetch workflow runs: %s", e)
-
-    # Build final mapping: all active usernames get a status
-    return {username: latest[username][1] if username in latest else "none" for username in active_usernames}
+    return _shared_get_latest_flw_statuses(request, active_usernames)
 
 
 class MBWMonitoringDashboardView(LoginRequiredMixin, TemplateView):
@@ -581,7 +512,19 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                             gs_forms.extend(forms)
                             yield send_sse_event(f"Fetching GS forms... ({len(gs_forms)} forms)")
                     except Exception as e:
+                        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
                         logger.warning(f"[MBW Dashboard] GS form fetch failed for opp {opp_id}: {e}")
+                        # Loud SSE event for auth-specific failures so the FE
+                        # can prompt the user to re-authorize. Other errors
+                        # stay as-is — we still continue with empty gs_forms.
+                        if isinstance(e, CCHQAuthError):
+                            yield send_sse_event(
+                                "CommCare HQ access expired",
+                                cchq_auth_required=True,
+                                authorize_url="/labs/commcare/initiate/",
+                                domain=getattr(e, "domain", None),
+                            )
             else:
                 logger.info("[MBW Dashboard] Skipping GS fetch — CCHQ OAuth not available after re-auth attempt")
             logger.info(f"[MBW Dashboard] Fetched {len(gs_forms)} GS forms from CCHQ")
@@ -598,7 +541,7 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                 visits_for_gps = [
                     v
                     for v in visits_for_gps
-                    if _check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
+                    if check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
                 ]
                 logger.info(
                     "[MBW Dashboard] App version filter (%s %d): %d -> %d GPS visits",
@@ -664,7 +607,16 @@ class MBWMonitoringStreamView(AnalysisPipelineSSEMixin, BaseSSEStreamView):
                             registration_forms.extend(forms)
                             yield send_sse_event(f"Fetching registration data... ({len(registration_forms)} forms)")
                     except Exception as e:
+                        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
                         logger.warning(f"[MBW Dashboard] Registration form fetch failed for opp {opp_id}: {e}")
+                        if isinstance(e, CCHQAuthError):
+                            yield send_sse_event(
+                                "CommCare HQ access expired",
+                                cchq_auth_required=True,
+                                authorize_url="/labs/commcare/initiate/",
+                                domain=getattr(e, "domain", None),
+                            )
                 logger.info(f"[MBW Dashboard] Fetched {len(registration_forms)} registration forms")
 
                 # GS forms already fetched in step 2b (before GPS analysis)
@@ -1038,7 +990,7 @@ class MBWGPSDetailView(LoginRequiredMixin, View):
                 visits_for_analysis = [
                     v
                     for v in visits_for_analysis
-                    if _check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
+                    if check_app_version(v["computed"].get("app_build_version"), app_version_op, app_version_val)
                 ]
 
             gps_result = analyze_gps_metrics(visits_for_analysis, {})

@@ -185,6 +185,43 @@ def run_workflow_job(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    # Server-side multi-pipeline fetch path (preferred for templates whose
+    # pipelines produce large result sets — avoids the FE → BE round trip
+    # of all pipeline rows). When the FE sets server_fetch_pipelines=True
+    # we resolve the run's workflow definition_id, then fetch every
+    # pipeline alias defined on that workflow via WorkflowDataAccess. The
+    # job handler then sees the same job_config["pipeline_data"] shape
+    # whether it came from the FE or the server.
+    #
+    # Why this matters: MBW V2 on a 85k-visit opportunity produced a
+    # 65 MB POST body that exceeded labs prod's 50 MB upload limit. Even
+    # raised, the cost of round-tripping pipeline rows through the
+    # browser is wasteful when the BE just generated them moments ago
+    # for the same SSE pipeline stream.
+    if job_config.get("server_fetch_pipelines") and not job_config.get("pipeline_data"):
+        from commcare_connect.workflow.data_access import WorkflowDataAccess
+
+        mock_request = _create_mock_request(access_token, opportunity_id)
+        wf_access = WorkflowDataAccess(request=mock_request)
+        try:
+            run = wf_access.get_run(run_id)
+            if run and run.definition_id:
+                logger.info(
+                    f"[WorkflowJob] server_fetch_pipelines=True: loading pipelines for "
+                    f"definition {run.definition_id} (run {run_id}, opp {opportunity_id})"
+                )
+                job_config["pipeline_data"] = wf_access.get_pipeline_data(run.definition_id, opportunity_id)
+                aliases = list(job_config["pipeline_data"].keys())
+                row_counts = {a: len(job_config["pipeline_data"][a].get("rows", [])) for a in aliases}
+                logger.info(f"[WorkflowJob] Server-side pipeline fetch complete: {row_counts}")
+            else:
+                logger.warning(
+                    f"[WorkflowJob] server_fetch_pipelines=True but run {run_id} has no "
+                    f"definition_id; falling through to legacy paths"
+                )
+        finally:
+            wf_access.close()
+
     # Check if records are passed directly from UI (preferred - allows filtering)
     records = job_config.get("records", [])
     records_from_ui = len(records) > 0
