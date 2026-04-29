@@ -656,38 +656,110 @@ def workflow_auth_status_api(request):
     provider being `active`. Templates that don't list this field default to
     `["connect"]` (already enforced by labs login_required middleware).
 
+    Behavior beyond a timestamp check:
+      * For each provider, if the access token has expired, attempt a silent
+        refresh using the stored refresh_token. The framework gate then only
+        forces re-authorization when refresh actually fails.
+      * For `commcare_hq`, when ?opportunity_id= is supplied, we additionally
+        ping the CCHQ Application API for the opportunity's domain. This
+        catches the case where refresh "succeeded" but came back with a
+        downgraded scope, or the user lost domain membership — situations
+        where the timestamp would say active but pipelines still 403.
+
     Query params:
         next (optional): URL to redirect back to after re-authorization.
             Defaults to the request's referer or the workflow runner page.
+        opportunity_id (optional): If supplied, enable the real CCHQ ping for
+            that opportunity's domain. Without this we can only do timestamp +
+            refresh checks for CCHQ.
     """
     from django.urls import reverse
     from django.utils import timezone
     from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 
-    now_ts = timezone.now().timestamp()
+    from commcare_connect.labs.integrations.commcare.api_client import CommCareDataAccess
+    from commcare_connect.labs.integrations.connect.oauth import refresh_connect_token
+    from commcare_connect.labs.integrations.ocs.api_client import OCSDataAccess
+
     next_url = request.GET.get("next") or request.headers.get("Referer", "/labs/overview/")
     next_url = (next_url or "/labs/overview/").replace("\\", "/")
     if not url_has_allowed_host_and_scheme(next_url, allowed_hosts=None):
         next_url = "/labs/overview/"
 
-    labs = request.session.get("labs_oauth", {})
-    cchq = request.session.get("commcare_oauth", {})
-    ocs = request.session.get("ocs_oauth", {})
+    opportunity_id_param = request.GET.get("opportunity_id")
+
+    def _is_active(session_key: str) -> bool:
+        """Timestamp check against the *current* session state."""
+        oauth = request.session.get(session_key, {}) or {}
+        if not oauth.get("access_token"):
+            return False
+        return timezone.now().timestamp() < oauth.get("expires_at", 0)
+
+    # ---- Connect -----------------------------------------------------------
+    if not _is_active("labs_oauth"):
+        # Try a silent refresh before declaring inactive.
+        refresh_connect_token(request)
+    connect_active = _is_active("labs_oauth")
+
+    # ---- OCS ---------------------------------------------------------------
+    if not _is_active("ocs_oauth"):
+        try:
+            with OCSDataAccess(request) as ocs_client:
+                ocs_client._refresh_token()
+        except Exception:
+            logger.exception("OCS silent refresh attempt raised")
+    ocs_active = _is_active("ocs_oauth")
+
+    # ---- CommCare HQ -------------------------------------------------------
+    # First do the standard refresh-on-expiry attempt.
+    cchq_active = _is_active("commcare_oauth")
+    cchq_domain_for_probe: str | None = None
+
+    if opportunity_id_param:
+        # We need a domain to ping. Look it up via the labs context (cheap;
+        # this is what the runner does already to know which opp to fetch).
+        try:
+            from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import fetch_opportunity_metadata
+
+            access_token = (request.session.get("labs_oauth") or {}).get("access_token", "")
+            if access_token:
+                metadata = fetch_opportunity_metadata(access_token, int(opportunity_id_param))
+                cchq_domain_for_probe = metadata.get("cc_domain") or None
+        except Exception:
+            logger.exception("Failed to look up cc_domain for auth-status probe")
+
+    if cchq_domain_for_probe:
+        # Real ping. Also handles refresh-on-expiry internally via
+        # check_token_valid -> _refresh_token, then verifies the new token
+        # actually works for this domain (catches scope-downgrade-on-refresh).
+        try:
+            client = CommCareDataAccess(request, cchq_domain_for_probe)
+            cchq_active = client.verify_hq_access()
+        except Exception:
+            logger.exception("CCHQ verify_hq_access raised")
+            cchq_active = False
+    elif not cchq_active:
+        # No opportunity context — fall back to refresh-on-expiry only.
+        try:
+            client = CommCareDataAccess(request, "")
+            cchq_active = client.check_token_valid()
+        except Exception:
+            logger.exception("CCHQ check_token_valid raised")
 
     return JsonResponse(
         {
             "connect": {
-                "active": bool(labs.get("access_token") and now_ts < labs.get("expires_at", 0)),
+                "active": connect_active,
                 "authorize_url": "/labs/login/?" + urlencode({"next": next_url}),
                 "label": "Connect",
             },
             "commcare_hq": {
-                "active": bool(cchq.get("access_token") and now_ts < cchq.get("expires_at", 0)),
+                "active": cchq_active,
                 "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
                 "label": "CommCare HQ",
             },
             "ocs": {
-                "active": bool(ocs.get("access_token") and now_ts < ocs.get("expires_at", 0)),
+                "active": ocs_active,
                 "authorize_url": reverse("labs:ocs_initiate") + "?" + urlencode({"next": next_url}),
                 "label": "OCS",
             },

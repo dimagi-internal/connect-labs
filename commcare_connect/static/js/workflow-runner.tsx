@@ -751,6 +751,15 @@ function WorkflowRunner({
       'next',
       window.location.pathname + window.location.search,
     );
+    // Pass opportunity_id so the BE can do a real CCHQ ping (not just
+    // a timestamp check). Catches scope-downgrade-on-refresh — the cause
+    // of the "click Authorize → still says CommCare HQ unauthorized" loop.
+    if (initialData.opportunity_id) {
+      url.searchParams.set(
+        'opportunity_id',
+        String(initialData.opportunity_id),
+      );
+    }
     fetch(url.toString())
       .then((r) => r.json())
       .then((data) => {
@@ -763,7 +772,7 @@ function WorkflowRunner({
         setAuthStatus(null);
         setAuthChecking(false);
       });
-  }, [initialData.apiEndpoints?.authStatus]);
+  }, [initialData.apiEndpoints?.authStatus, initialData.opportunity_id]);
 
   useEffect(() => {
     refreshAuthStatus();
