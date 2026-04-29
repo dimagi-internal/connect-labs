@@ -420,6 +420,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "getPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/",
                     # SSE stream for async pipeline data loading
                     "streamPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/stream/",
+                    # Framework: auth-status for declared auth_requires
+                    "authStatus": "/labs/workflow/api/auth-status/",
                     # MBW monitoring actions
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
                     "completeRun": f"/labs/workflow/api/run/{run_data['id']}/complete/",
@@ -636,6 +638,61 @@ class OpportunitySummaryView(LoginRequiredMixin, TemplateView):
             summary["error"] = str(e)
 
         return summary
+
+
+@login_required
+@require_GET
+def workflow_auth_status_api(request):
+    """
+    Workflow framework auth-status endpoint.
+
+    Returns the live state of every OAuth provider the workflow runner can
+    require: Connect, CommCare HQ, OCS. Each entry has `active` (true if the
+    session has a non-expired access token), `authorize_url` (where to send
+    the user to refresh that service), and `label` (display name).
+
+    The runner reads `definition.config.auth_requires` (a list of provider
+    keys) and gates entry to the workflow's render_code on every required
+    provider being `active`. Templates that don't list this field default to
+    `["connect"]` (already enforced by labs login_required middleware).
+
+    Query params:
+        next (optional): URL to redirect back to after re-authorization.
+            Defaults to the request's referer or the workflow runner page.
+    """
+    from django.urls import reverse
+    from django.utils import timezone
+    from django.utils.http import url_has_allowed_host_and_scheme, urlencode
+
+    now_ts = timezone.now().timestamp()
+    next_url = request.GET.get("next") or request.headers.get("Referer", "/labs/overview/")
+    next_url = (next_url or "/labs/overview/").replace("\\", "/")
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts=None):
+        next_url = "/labs/overview/"
+
+    labs = request.session.get("labs_oauth", {})
+    cchq = request.session.get("commcare_oauth", {})
+    ocs = request.session.get("ocs_oauth", {})
+
+    return JsonResponse(
+        {
+            "connect": {
+                "active": bool(labs.get("access_token") and now_ts < labs.get("expires_at", 0)),
+                "authorize_url": "/labs/login/?" + urlencode({"next": next_url}),
+                "label": "Connect",
+            },
+            "commcare_hq": {
+                "active": bool(cchq.get("access_token") and now_ts < cchq.get("expires_at", 0)),
+                "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
+                "label": "CommCare HQ",
+            },
+            "ocs": {
+                "active": bool(ocs.get("access_token") and now_ts < ocs.get("expires_at", 0)),
+                "authorize_url": reverse("labs:ocs_initiate") + "?" + urlencode({"next": next_url}),
+                "label": "OCS",
+            },
+        }
+    )
 
 
 @login_required
