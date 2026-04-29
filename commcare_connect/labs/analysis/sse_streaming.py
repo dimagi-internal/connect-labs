@@ -80,6 +80,13 @@ class BaseSSEStreamView(LoginRequiredMixin, View):
         if not request.user.is_authenticated:
             return JsonResponse({"error": "Not authenticated"}, status=401)
 
+        # URL kwargs (e.g. definition_id, run_id) are already on self.kwargs
+        # courtesy of Django's View.dispatch(). Subclasses that need them
+        # in stream_data can read self.kwargs.get("definition_id"). We do
+        # NOT forward **kwargs to stream_data() here because doing so would
+        # break the many existing subclasses whose stream_data signature
+        # is just (self, request).
+
         generator = self.stream_data(request)
         if self.heartbeat_enabled:
             generator = self._with_heartbeat(generator)
