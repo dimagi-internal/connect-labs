@@ -60,3 +60,43 @@ class TestAggregationToSql:
         """min/max are now explicit branches, not the else fallback."""
         assert _aggregation_to_sql("min", "v", "f") == "MIN(v)"
         assert _aggregation_to_sql("max", "v", "f") == "MAX(v)"
+
+    def test_median_uses_percentile_cont(self):
+        """`median` is the standard interpolated 50th percentile in Postgres."""
+        sql = _aggregation_to_sql("median", "v", "f")
+        assert sql == "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v)"
+
+    def test_mode_uses_mode_within_group(self):
+        """`mode` returns the most frequent non-null value (ties broken by Postgres)."""
+        sql = _aggregation_to_sql("mode", "v", "f")
+        assert sql == "MODE() WITHIN GROUP (ORDER BY v)"
+
+    def test_mode_share_returns_share_of_modal_value(self):
+        """`mode_share` returns share (0..1) of rows whose value equals the mode.
+
+        Used for fraud-concentration metrics: 1.0 means every visit by an FLW
+        has the same parity; 0.1 means parity is well-distributed across visits.
+        """
+        sql = _aggregation_to_sql("mode_share", "v", "f")
+        # The exact SQL: COUNT FILTER (= MODE) / NULLIF(COUNT, 0)
+        assert "MODE() WITHIN GROUP (ORDER BY v)" in sql
+        assert "COUNT(*) FILTER (WHERE v = MODE()" in sql
+        assert "NULLIF(COUNT(v), 0)" in sql
+        assert "::float" in sql  # ensure float division, not integer
+
+
+class TestAggregationTypeLiteral:
+    """The `AggregationType` Literal in config.py must list every aggregation
+    `_aggregation_to_sql` accepts; otherwise template authors get a typing
+    error at edit time but a runtime ValueError at execution time.
+    """
+
+    def test_new_aggregations_in_literal(self):
+        from typing import get_args
+
+        from commcare_connect.labs.analysis.config import AggregationType
+
+        members = set(get_args(AggregationType))
+        assert "median" in members
+        assert "mode" in members
+        assert "mode_share" in members

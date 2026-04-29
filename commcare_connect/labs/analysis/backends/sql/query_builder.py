@@ -221,12 +221,25 @@ def _aggregation_to_sql(
         base = f"MIN({value_expr})"
     elif agg == "max":
         base = f"MAX({value_expr})"
+    elif agg == "median":
+        # Postgres interpolated median; ignores NULLs implicitly.
+        base = f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {value_expr})"
+    elif agg == "mode":
+        # MODE() returns the most frequent non-null value; ties resolved by Postgres.
+        base = f"MODE() WITHIN GROUP (ORDER BY {value_expr})"
+    elif agg == "mode_share":
+        # Share (0..1) of non-null rows whose value equals the mode.
+        # Used for fraud-concentration: 1.0 means every value is identical.
+        # NULLIF prevents divide-by-zero when all values are NULL.
+        mode_expr = f"MODE() WITHIN GROUP (ORDER BY {value_expr})"
+        base = f"(COUNT(*) FILTER (WHERE {value_expr} = {mode_expr}))::float " f"/ NULLIF(COUNT({value_expr}), 0)"
     else:
         # Fail loudly on unknown aggregations rather than silently substituting
         # MIN(). Prior behaviour made typos produce wrong data without warning.
         raise ValueError(
             f"Unknown aggregation {agg!r} on field {field_name!r}. "
-            "Valid: count, sum, avg, min, max, first, last, count_distinct, count_unique, list."
+            "Valid: count, sum, avg, min, max, first, last, count_distinct, "
+            "count_unique, list, median, mode, mode_share."
         )
 
     # Apply per-field FILTER clause if both filter_path and filter_value are provided
