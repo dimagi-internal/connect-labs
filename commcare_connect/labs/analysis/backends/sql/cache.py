@@ -12,7 +12,12 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
-from commcare_connect.labs.analysis.backends.sql.models import ComputedFLWCache, ComputedVisitCache, RawVisitCache
+from commcare_connect.labs.analysis.backends.sql.models import (
+    ComputedEntityCache,
+    ComputedFLWCache,
+    ComputedVisitCache,
+    RawVisitCache,
+)
 from commcare_connect.labs.analysis.config import AnalysisPipelineConfig
 from commcare_connect.labs.analysis.utils import get_config_hash
 
@@ -56,10 +61,11 @@ class SQLCacheManager:
     """
     Manages SQL-based caching for analysis results.
 
-    Three cache levels:
+    Four cache levels:
     - Raw visits: One row per visit, shared across configs
     - Computed visits: One row per visit per config
     - Computed FLWs: One row per FLW per config
+    - Computed entities: One row per linking_field value per config
     """
 
     def __init__(self, opportunity_id: int, config: AnalysisPipelineConfig | None = None):
@@ -417,6 +423,74 @@ class SQLCacheManager:
         )
 
     # -------------------------------------------------------------------------
+    # Computed Entity Cache
+    # -------------------------------------------------------------------------
+
+    def has_valid_entity_cache(self, expected_visit_count: int, tolerance_pct: int = 100) -> bool:
+        """Check if we have valid entity cache for this config."""
+        if not self.config_hash:
+            return False
+        min_count = int(expected_visit_count * tolerance_pct / 100) if tolerance_pct < 100 else expected_visit_count
+        return ComputedEntityCache.objects.filter(
+            opportunity_id=self.opportunity_id,
+            config_hash=self.config_hash,
+            visit_count__gte=min_count,
+            expires_at__gt=timezone.now(),
+        ).exists()
+
+    def store_entity_results(self, entity_data: list[dict], visit_count: int):
+        """
+        Store aggregated per-entity results.
+
+        Args:
+            entity_data: List of dicts with entity aggregated data. Each dict should
+                contain entity_id, optionally entity_name, username, total_visits,
+                first_visit_date, last_visit_date, and aggregated_fields (dict).
+            visit_count: Total visit count for invalidation.
+        """
+        if not self.config_hash:
+            return
+
+        expires_at = self._get_expires_at()
+
+        rows = [
+            ComputedEntityCache(
+                opportunity_id=self.opportunity_id,
+                config_hash=self.config_hash,
+                visit_count=visit_count,
+                expires_at=expires_at,
+                entity_id=e.get("entity_id") or "",
+                entity_name=e.get("entity_name") or "",
+                username=e.get("username") or "",
+                aggregated_fields=e.get("aggregated_fields", {}),
+                total_visits=e.get("total_visits", 0),
+                first_visit_date=_parse_date(e.get("first_visit_date")),
+                last_visit_date=_parse_date(e.get("last_visit_date")),
+            )
+            for e in entity_data
+        ]
+
+        # DELETE and INSERT in same transaction to prevent race condition
+        with transaction.atomic():
+            ComputedEntityCache.objects.filter(
+                opportunity_id=self.opportunity_id,
+                config_hash=self.config_hash,
+            ).delete()
+            ComputedEntityCache.objects.bulk_create(rows, batch_size=1000)
+
+        logger.info(f"[SQLCache] Stored {len(rows)} entity results for opp {self.opportunity_id}")
+
+    def get_entity_results_queryset(self):
+        """Get queryset of entity results for this config."""
+        if not self.config_hash:
+            return ComputedEntityCache.objects.none()
+        return ComputedEntityCache.objects.filter(
+            opportunity_id=self.opportunity_id,
+            config_hash=self.config_hash,
+            expires_at__gt=timezone.now(),
+        )
+
+    # -------------------------------------------------------------------------
     # Cache Invalidation
     # -------------------------------------------------------------------------
 
@@ -425,18 +499,19 @@ class SQLCacheManager:
         RawVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
         ComputedVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
         ComputedFLWCache.objects.filter(opportunity_id=self.opportunity_id).delete()
+        ComputedEntityCache.objects.filter(opportunity_id=self.opportunity_id).delete()
         logger.info(f"[SQLCache] Invalidated all cache for opp {self.opportunity_id}")
 
     def delete_config(self):
         """
         Delete all cache for this opportunity and config.
 
-        Deletes computed visit and FLW cache for current config_hash.
+        Deletes computed visit, FLW, and entity cache for current config_hash.
         Does not delete raw cache as it's shared across configs.
         """
         if not self.config_hash:
             logger.warning("[SQLCache] Cannot delete config cache without config_hash")
-            return {"computed_visit": 0, "computed_flw": 0}
+            return {"computed_visit": 0, "computed_flw": 0, "computed_entity": 0}
 
         visit_deleted, _ = ComputedVisitCache.objects.filter(
             opportunity_id=self.opportunity_id,
@@ -448,12 +523,22 @@ class SQLCacheManager:
             config_hash=self.config_hash,
         ).delete()
 
+        entity_deleted, _ = ComputedEntityCache.objects.filter(
+            opportunity_id=self.opportunity_id,
+            config_hash=self.config_hash,
+        ).delete()
+
         logger.info(
             f"[SQLCache] Deleted config cache for opp {self.opportunity_id}, "
-            f"config {self.config_hash}: {visit_deleted} visits, {flw_deleted} FLWs"
+            f"config {self.config_hash}: {visit_deleted} visits, {flw_deleted} FLWs, "
+            f"{entity_deleted} entities"
         )
 
-        return {"computed_visit": visit_deleted, "computed_flw": flw_deleted}
+        return {
+            "computed_visit": visit_deleted,
+            "computed_flw": flw_deleted,
+            "computed_entity": entity_deleted,
+        }
 
     # -------------------------------------------------------------------------
     # Cache Management (Class Methods)
@@ -476,15 +561,19 @@ class SQLCacheManager:
 
         flw_deleted, _ = ComputedFLWCache.objects.filter(opportunity_id=opportunity_id).delete()
 
+        entity_deleted, _ = ComputedEntityCache.objects.filter(opportunity_id=opportunity_id).delete()
+
         logger.info(
             f"[SQLCache] Deleted all cache for opp {opportunity_id}: "
-            f"{raw_deleted} raw, {visit_deleted} computed visits, {flw_deleted} FLWs"
+            f"{raw_deleted} raw, {visit_deleted} computed visits, {flw_deleted} FLWs, "
+            f"{entity_deleted} entities"
         )
 
         return {
             "raw": raw_deleted,
             "computed_visit": visit_deleted,
             "computed_flw": flw_deleted,
+            "computed_entity": entity_deleted,
         }
 
     @classmethod
@@ -503,14 +592,18 @@ class SQLCacheManager:
 
         flw_deleted = ComputedFLWCache.invalidate_opportunity_config(opportunity_id, config_hash)
 
+        entity_deleted = ComputedEntityCache.invalidate_opportunity_config(opportunity_id, config_hash)
+
         logger.info(
             f"[SQLCache] Deleted config cache for opp {opportunity_id}, "
-            f"config {config_hash}: {visit_deleted} visits, {flw_deleted} FLWs"
+            f"config {config_hash}: {visit_deleted} visits, {flw_deleted} FLWs, "
+            f"{entity_deleted} entities"
         )
 
         return {
             "computed_visit": visit_deleted,
             "computed_flw": flw_deleted,
+            "computed_entity": entity_deleted,
         }
 
     @classmethod
@@ -556,6 +649,18 @@ class SQLCacheManager:
             .distinct()
         )
 
+        # Computed Entity cache stats
+        computed_entity_stats = ComputedEntityCache.objects.filter(opportunity_id=opportunity_id).aggregate(
+            count=Count("id"),
+            total_rows=Count("entity_id"),
+        )
+
+        computed_entity_configs = list(
+            ComputedEntityCache.objects.filter(opportunity_id=opportunity_id)
+            .values_list("config_hash", flat=True)
+            .distinct()
+        )
+
         return {
             "raw": {
                 "count": raw_stats["count"] or 0,
@@ -572,6 +677,11 @@ class SQLCacheManager:
                 "total_rows": computed_flw_stats["total_rows"] or 0,
                 "configs": computed_flw_configs,
             },
+            "computed_entity": {
+                "count": computed_entity_stats["count"] or 0,
+                "total_rows": computed_entity_stats["total_rows"] or 0,
+                "configs": computed_entity_configs,
+            },
         }
 
     @classmethod
@@ -582,13 +692,14 @@ class SQLCacheManager:
         Returns:
             List of unique opportunity IDs
         """
-        # Get opportunity IDs from all three cache tables
+        # Get opportunity IDs from all four cache tables
         raw_opps = set(RawVisitCache.objects.values_list("opportunity_id", flat=True).distinct())
         visit_opps = set(ComputedVisitCache.objects.values_list("opportunity_id", flat=True).distinct())
         flw_opps = set(ComputedFLWCache.objects.values_list("opportunity_id", flat=True).distinct())
+        entity_opps = set(ComputedEntityCache.objects.values_list("opportunity_id", flat=True).distinct())
 
         # Combine and return sorted list
-        all_opps = sorted(raw_opps | visit_opps | flw_opps)
+        all_opps = sorted(raw_opps | visit_opps | flw_opps | entity_opps)
         return all_opps
 
     @classmethod
@@ -615,8 +726,14 @@ class SQLCacheManager:
             .distinct()
         )
 
+        entity_configs = set(
+            ComputedEntityCache.objects.filter(opportunity_id=opportunity_id)
+            .values_list("config_hash", flat=True)
+            .distinct()
+        )
+
         # Combine and return sorted list
-        all_configs = sorted(visit_configs | flw_configs)
+        all_configs = sorted(visit_configs | flw_configs | entity_configs)
         return all_configs
 
     @classmethod
@@ -686,6 +803,26 @@ class SQLCacheManager:
                 {
                     "opportunity_id": entry["opportunity_id"],
                     "cache_type": "computed_flw",
+                    "config_hash": entry["config_hash"],
+                    "row_count": entry["row_count"],
+                    "expires_at": entry["expires_at"],
+                    "created_at": entry["created_at_min"],
+                    "visit_count": entry["visit_count"],
+                }
+            )
+
+        # Computed Entity cache entries (group by opportunity + config)
+        entity_entries = (
+            ComputedEntityCache.objects.values("opportunity_id", "config_hash", "visit_count", "expires_at")
+            .annotate(row_count=Count("id"), created_at_min=Min("created_at"))
+            .order_by("opportunity_id", "config_hash")
+        )
+
+        for entry in entity_entries:
+            details.append(
+                {
+                    "opportunity_id": entry["opportunity_id"],
+                    "cache_type": "computed_entity",
                     "config_hash": entry["config_hash"],
                     "row_count": entry["row_count"],
                     "expires_at": entry["expires_at"],

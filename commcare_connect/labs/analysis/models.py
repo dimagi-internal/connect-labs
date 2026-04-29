@@ -445,6 +445,150 @@ class FLWAnalysisResult(AnalysisResult):
 
 
 @dataclass
+class EntityRow:
+    """
+    Analysis row for entity-level analysis (one row per linking_field value).
+
+    Used by analyses whose unit of interest is a tracked thing (a beneficiary case,
+    a child, a household) rather than the worker who served them. Mirrors FLWRow's
+    shape but keyed on `entity_id` instead of `username`.
+
+    Standard fields:
+    - Identification: entity_id, entity_name, username (representative FLW)
+    - Visit count: total_visits
+    - Date tracking: first_visit_date, last_visit_date
+    - Custom fields: any additional FieldComputations declared on the config
+    """
+
+    entity_id: str
+    entity_name: str = ""
+    username: str = ""
+
+    total_visits: int = 0
+
+    first_visit_date: date | None = None
+    last_visit_date: date | None = None
+
+    custom_fields: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def date_range_days(self) -> int | None:
+        """Number of days between first and last visit."""
+        if not self.first_visit_date or not self.last_visit_date:
+            return None
+        return (self.last_visit_date - self.first_visit_date).days
+
+    def __getattr__(self, name: str) -> Any:
+        """Allow accessing custom fields as attributes."""
+        if name == "custom_fields":
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        return self.custom_fields.get(name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Store unknown attributes in custom_fields."""
+        if name in self.__dataclass_fields__:
+            object.__setattr__(self, name, value)
+        else:
+            if not hasattr(self, "custom_fields"):
+                object.__setattr__(self, "custom_fields", {})
+            self.custom_fields[name] = value
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary, merging custom fields."""
+        result = {
+            "entity_id": self.entity_id,
+            "entity_name": self.entity_name,
+            "username": self.username,
+            "total_visits": self.total_visits,
+            "first_visit_date": self.first_visit_date.isoformat() if self.first_visit_date else None,
+            "last_visit_date": self.last_visit_date.isoformat() if self.last_visit_date else None,
+            "date_range_days": self.date_range_days,
+        }
+        result.update(self.custom_fields)
+        return result
+
+
+@dataclass
+class EntityAnalysisResult(AnalysisResult):
+    """
+    Specialized result container for entity-level analysis.
+
+    Rows are guaranteed to be EntityRow instances.
+    """
+
+    rows: list[EntityRow] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "EntityAnalysisResult":
+        """Create from dictionary, properly deserializing EntityRow objects."""
+        _STD_FIELDS = {
+            "entity_id",
+            "entity_name",
+            "username",
+            "total_visits",
+            "first_visit_date",
+            "last_visit_date",
+            "date_range_days",
+        }
+        rows = []
+        for row_data in data.get("rows", []):
+            if isinstance(row_data, EntityRow):
+                rows.append(row_data)
+            elif isinstance(row_data, dict):
+                rows.append(
+                    EntityRow(
+                        entity_id=row_data.get("entity_id", ""),
+                        entity_name=row_data.get("entity_name", "") or "",
+                        username=row_data.get("username", "") or "",
+                        total_visits=row_data.get("total_visits", 0),
+                        first_visit_date=date.fromisoformat(row_data["first_visit_date"])
+                        if row_data.get("first_visit_date")
+                        else None,
+                        last_visit_date=date.fromisoformat(row_data["last_visit_date"])
+                        if row_data.get("last_visit_date")
+                        else None,
+                        custom_fields={k: v for k, v in row_data.items() if k not in _STD_FIELDS},
+                    )
+                )
+
+        return cls(
+            opportunity_id=data.get("opportunity_id"),
+            opportunity_name=data.get("opportunity_name"),
+            rows=rows,
+            metadata=data.get("metadata", {}),
+            computed_at=datetime.fromisoformat(data["computed_at"]) if "computed_at" in data else datetime.now(),
+        )
+
+    def get_entity(self, entity_id: str) -> EntityRow | None:
+        """Get entity row by entity_id."""
+        for row in self.rows:
+            if row.entity_id == entity_id:
+                return row
+        return None
+
+    def filter_by_username(self, username: str) -> list[EntityRow]:
+        """Get all entities whose representative FLW matches username."""
+        return [row for row in self.rows if row.username == username]
+
+    def get_summary_stats(self) -> dict[str, Any]:
+        """Get summary statistics across all entities."""
+        if not self.rows:
+            return {}
+
+        total_entities = len(self.rows)
+        total_visits = sum(row.total_visits for row in self.rows)
+        avg_visits = total_visits / total_entities if total_entities > 0 else 0
+
+        return {
+            "total_entities": total_entities,
+            "total_visits": total_visits,
+            "avg_visits_per_entity": round(avg_visits, 2),
+            "max_visits": max((row.total_visits for row in self.rows), default=0),
+            "min_visits": min((row.total_visits for row in self.rows), default=0),
+        }
+
+
+@dataclass
 class VisitRow:
     """
     Analysis row for visit-level analysis (one row per visit).
