@@ -3,6 +3,7 @@
 from django.db import migrations, models
 import uuid
 
+
 def gen_uuid(apps, schema_editor):
     connection = schema_editor.connection
 
@@ -12,11 +13,13 @@ def gen_uuid(apps, schema_editor):
         Uses PostgreSQL gen_random_uuid() function.
         """
         with connection.cursor() as cursor:
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 UPDATE {table_name}
                 SET {field_name} = gen_random_uuid()
                 WHERE {field_name} IS NULL;
-            """)
+            """
+            )
 
     backfill_uuid("program_program", "program_id")
     backfill_uuid("program_programapplication", "program_application_id")

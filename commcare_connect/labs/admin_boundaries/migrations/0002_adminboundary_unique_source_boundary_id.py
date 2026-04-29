@@ -14,9 +14,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="adminboundary",
             name="boundary_id",
-            field=models.CharField(
-                help_text="Unique ID from source (shapeID or OSM ID)", max_length=100
-            ),
+            field=models.CharField(help_text="Unique ID from source (shapeID or OSM ID)", max_length=100),
         ),
         # Add composite unique constraint: (source, boundary_id)
         migrations.AddConstraint(

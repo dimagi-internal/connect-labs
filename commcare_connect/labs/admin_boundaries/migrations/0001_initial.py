@@ -31,7 +31,9 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "boundary_id",
-                    models.CharField(help_text="Unique ID from source (shapeID or OSM ID)", max_length=100, unique=True),
+                    models.CharField(
+                        help_text="Unique ID from source (shapeID or OSM ID)", max_length=100, unique=True
+                    ),
                 ),
                 (
                     "geometry",

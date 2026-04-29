@@ -34,8 +34,8 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunPython(
-            create_monthly_delivery_reminder_periodic_task, 
+            create_monthly_delivery_reminder_periodic_task,
             delete_monthly_delivery_reminder_periodic_task,
-            hints={"run_on_secondary": False}
+            hints={"run_on_secondary": False},
         )
     ]

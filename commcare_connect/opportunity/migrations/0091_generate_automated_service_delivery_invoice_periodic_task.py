@@ -33,9 +33,4 @@ class Migration(migrations.Migration):
         ("opportunity", "0090_backfill_invoice_status"),
     ]
 
-    operations = [
-        migrations.RunPython(
-            create_periodic_task, delete_periodic_task,
-            hints={"run_on_secondary": False}
-        )
-    ]
+    operations = [migrations.RunPython(create_periodic_task, delete_periodic_task, hints={"run_on_secondary": False})]
