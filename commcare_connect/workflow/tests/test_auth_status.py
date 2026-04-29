@@ -109,19 +109,29 @@ class TestAuthStatusRefresh:
 
 
 class TestAuthStatusCCHQProbe:
-    """When ?opportunity_id= is supplied, CCHQ must do a real ping (catches scope downgrade)."""
+    """When ?opportunity_id= is supplied, CCHQ ping only runs when token was inactive.
 
-    def test_opportunity_id_triggers_real_ping(self, dimagi_user, rf):
-        """With opportunity_id, BE looks up cc_domain and pings CCHQ for real."""
+    The real ping catches scope-downgrade-on-refresh: token expired → refresh
+    succeeded → but new token has reduced scope → verify_hq_access 403s → gate
+    correctly reports inactive.
+
+    When the token is already active (timestamp check passes), we skip the ping.
+    A user who just completed a fresh OAuth authorization should always pass the
+    gate, regardless of whether their account has CommCare domain membership.
+    Domain-access failures surface later as pipeline errors, not auth-gate loops.
+    """
+
+    def test_expired_token_triggers_real_ping_on_scope_downgrade(self, dimagi_user, rf):
+        """Expired CCHQ token + opportunity_id → ping runs; if scope-downgraded, reports inactive."""
         session = {
             "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
-            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 0},  # expired
             "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
         }
         request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
 
-        # Even though the timestamp says active, simulate verify_hq_access
-        # rejecting the token (e.g. scope was downgraded on refresh).
+        # Token expired → ping fires; simulate refresh succeeding but returning
+        # a scope-downgraded token, so verify_hq_access still rejects.
         with patch(
             "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
@@ -138,16 +148,19 @@ class TestAuthStatusCCHQProbe:
         import json
 
         body = json.loads(response.content)
-        assert body["commcare_hq"]["active"] is False, (
-            "verify_hq_access returned False → gate must report inactive even though "
-            "timestamp said valid (this is the loop-fix)"
-        )
+        assert (
+            body["commcare_hq"]["active"] is False
+        ), "verify_hq_access returned False (scope downgrade) → gate must report inactive"
 
-    def test_opportunity_id_real_ping_passes(self, dimagi_user, rf):
-        """With opportunity_id, working CCHQ token → active=true."""
+    def test_active_token_skips_ping_returns_active(self, dimagi_user, rf):
+        """Fresh/active CCHQ token + opportunity_id → ping is skipped, timestamp trusted.
+
+        Prevents a false-negative auth loop where a user with a valid OAuth token
+        but without CommCare domain membership could never pass the gate.
+        """
         session = {
             "labs_oauth": {"access_token": "lt", "expires_at": 1e12},
-            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},
+            "commcare_oauth": {"access_token": "ct", "expires_at": 1e12},  # active
             "ocs_oauth": {"access_token": "ot", "expires_at": 1e12},
         }
         request = _make_request(rf, dimagi_user, "?opportunity_id=765", session)
@@ -156,13 +169,10 @@ class TestAuthStatusCCHQProbe:
             "commcare_connect.workflow.templates.mbw_monitoring.data_fetchers.fetch_opportunity_metadata",
             return_value={"cc_domain": "ccc-mbw-production"},
         ), patch("commcare_connect.labs.integrations.commcare.api_client.CommCareDataAccess") as MockCDA:
-            mock_client = MagicMock()
-            mock_client.verify_hq_access.return_value = True
-            MockCDA.return_value = mock_client
-
             from commcare_connect.workflow.views import workflow_auth_status_api
 
             response = workflow_auth_status_api(request)
+            MockCDA.assert_not_called()
 
         import json
 
