@@ -15,11 +15,27 @@ Becomes:
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 AggregationType = Literal[
-    "sum", "avg", "count", "min", "max", "list", "first", "last", "count_unique", "count_distinct"
+    "sum",
+    "avg",
+    "count",
+    "min",
+    "max",
+    "list",
+    "first",
+    "last",
+    "count_unique",
+    "count_distinct",
+    "median",
+    "mode",
+    "mode_share",
 ]
+
+# Single source of truth for valid aggregation names — derived from the
+# Literal so adding a new aggregation in one place stays in sync.
+VALID_AGGREGATIONS = frozenset(get_args(AggregationType))
 
 
 class CacheStage(Enum):
@@ -126,18 +142,7 @@ class FieldComputation:
             raise ValueError("Field name is required")
         if not self.path and not self.paths and not self.extractor:
             raise ValueError("Field requires path, paths, or extractor")
-        if self.aggregation not in [
-            "sum",
-            "avg",
-            "count",
-            "min",
-            "max",
-            "list",
-            "first",
-            "last",
-            "count_unique",
-            "count_distinct",
-        ]:
+        if self.aggregation not in VALID_AGGREGATIONS:
             raise ValueError(f"Invalid aggregation type: {self.aggregation}")
 
     def get_paths(self) -> list[str]:
