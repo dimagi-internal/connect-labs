@@ -65,8 +65,8 @@ class TestResolveLinkingField:
             terminal_stage=CacheStage.ENTITY,
             linking_field="entity_id",
         )
-        expr = _resolve_linking_field_outer_expr(config)
-        assert expr == "labs_raw_visit_cache.entity_id"
+        # Bare column name — resolves to the implicit FROM table at SQL evaluation.
+        assert _resolve_linking_field_outer_expr(config) == "entity_id"
 
     def test_field_computation_resolves_to_jsonb_path(self):
         config = AnalysisPipelineConfig(
@@ -82,9 +82,9 @@ class TestResolveLinkingField:
             ],
         )
         expr = _resolve_linking_field_outer_expr(config)
-        assert "labs_raw_visit_cache.form_json" in expr
+        # JSONB extraction expression — bare form_json (resolves to outer FROM).
+        assert "form_json" in expr
         assert "case_id" in expr
-        # Must use COALESCE since multiple paths
         assert "COALESCE" in expr
 
     def test_unknown_linking_field_raises(self):
@@ -108,11 +108,9 @@ class TestBuildEntityAggregationQuery:
         )
 
     def test_groups_by_linking_field_and_opportunity_id(self):
-        """opportunity_id must appear in GROUP BY for the same reason as FLW —
-        correlated subqueries reference it from the outer table.
-        """
+        """opportunity_id must appear in GROUP BY (parity with FLW)."""
         query = build_entity_aggregation_query(self._config(), opportunity_id=42)
-        assert "GROUP BY (labs_raw_visit_cache.entity_id), opportunity_id" in query
+        assert "GROUP BY (entity_id), opportunity_id" in query
 
     def test_where_clause_restricts_to_opportunity(self):
         query = build_entity_aggregation_query(self._config(), opportunity_id=999)
@@ -139,42 +137,29 @@ class TestBuildEntityAggregationQuery:
         assert "as username" in query
 
 
-class TestAggregationToSqlGroupColumn:
-    """Verify that _aggregation_to_sql honors group_column_outer_expr.
+class TestFirstLastShape:
+    """Verify _aggregation_to_sql's first/last produce ARRAY_AGG with deterministic
+    visit_date+visit_id ordering. This shape works at every stage (FLW, entity)
+    because it's a pure aggregate over the GROUP — no correlated subquery, no
+    dependence on the GROUP BY column shape."""
 
-    The default keeps FLW behavior unchanged; non-default callers (entity stage)
-    should see the inner-qualified group column propagated into the correlated
-    subquery's WHERE clause.
-    """
-
-    def test_first_default_group_column_is_username(self):
+    def test_first_uses_array_agg_with_visit_date_visit_id_order(self):
         result = _aggregation_to_sql("first", "v", "f")
-        assert "labs_raw_visit_cache.username" in result
-        assert "sub.username" in result
+        assert "ARRAY_AGG" in result
+        assert "ORDER BY visit_date ASC NULLS LAST, visit_id ASC" in result
+        # No correlated subquery anymore.
+        assert "FROM labs_raw_visit_cache sub" not in result
 
-    def test_first_visit_id_tiebreaker_present(self):
-        """Tiebreaker: visit_id ASC for first, DESC for last, at both stages."""
-        first_sql = _aggregation_to_sql("first", "v", "f")
-        last_sql = _aggregation_to_sql("last", "v", "f")
-        assert "ORDER BY visit_date ASC, visit_id ASC" in first_sql
-        assert "ORDER BY visit_date DESC, visit_id DESC" in last_sql
+    def test_last_uses_array_agg_with_desc_order(self):
+        result = _aggregation_to_sql("last", "v", "f")
+        assert "ARRAY_AGG" in result
+        assert "ORDER BY visit_date DESC NULLS LAST, visit_id DESC" in result
+        assert "FROM labs_raw_visit_cache sub" not in result
 
-    def test_first_with_entity_group_column(self):
-        outer = "labs_raw_visit_cache.entity_id"
-        result = _aggregation_to_sql("first", "v", "f", group_column_outer_expr=outer)
-        # Outer side uses the passed-in expression; inner side substitutes prefix.
-        assert "(labs_raw_visit_cache.entity_id)" in result
-        assert "(sub.entity_id)" in result
-        # Old hardcoded username clause must be gone
-        assert "sub.username = labs_raw_visit_cache.username" not in result
-
-    def test_first_with_jsonb_group_expression(self):
-        """Passing a JSONB-path linking_field must produce sub-qualified inner side."""
-        outer = "COALESCE(NULLIF(labs_raw_visit_cache.form_json->'form'->>'case_id', ''))"
-        result = _aggregation_to_sql("first", "v", "f", group_column_outer_expr=outer)
-        # Inner version: every labs_raw_visit_cache.X becomes sub.X
-        assert "sub.form_json->'form'->>'case_id'" in result
-        assert "labs_raw_visit_cache.form_json->'form'->>'case_id'" in result
+    def test_first_filters_nulls(self):
+        """Don't return NULLs as 'first' — filter them out, take first non-null."""
+        result = _aggregation_to_sql("first", "v", "f")
+        assert "FILTER (WHERE v IS NOT NULL)" in result
 
 
 # ---------------------------------------------------------------------------
