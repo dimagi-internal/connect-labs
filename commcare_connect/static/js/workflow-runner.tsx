@@ -842,11 +842,39 @@ function WorkflowRunner({
 
         if (data.error) {
           setPipelineLoadingStatus(null);
-          // Surface CCHQ auth-required prompts with a click-through link
-          if (data.cchq_auth_required && data.authorize_url) {
-            setError(
-              `${data.error} Click here to re-authorize: ${data.authorize_url}`,
+          // CCHQ auth-required signal — emitted when the BE detects via
+          // verify_hq_access that CCHQ rejected the token even though our
+          // local timestamp said it was valid. Note: the typed payload
+          // (cchq_auth_required, authorize_url, domain) is nested under
+          // `data.data` per send_sse_event's wire format, NOT at the top
+          // level. Earlier the check was on `data.cchq_auth_required` and
+          // never fired even when the BE was emitting the right signal.
+          //
+          // Recovery: force-mark CommCare HQ as inactive in our local
+          // auth status and re-show the framework gate. The gate's
+          // "Authorize CommCare HQ" button is the right next click for
+          // the user.
+          const payload = data.data || {};
+          if (payload.cchq_auth_required) {
+            setAuthStatus((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    commcare_hq: {
+                      ...(prev.commcare_hq || {
+                        label: 'CommCare HQ',
+                      }),
+                      active: false,
+                      authorize_url:
+                        payload.authorize_url ||
+                        prev.commcare_hq?.authorize_url ||
+                        '/labs/commcare/initiate/',
+                    },
+                  }
+                : prev,
             );
+            // Don't set the small error banner — the framework gate panel
+            // we just reopened is the more useful UI.
           } else {
             setError(data.error);
           }
