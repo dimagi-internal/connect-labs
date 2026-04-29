@@ -230,9 +230,28 @@ def _aggregation_to_sql(
     elif agg == "mode_share":
         # Share (0..1) of non-null rows whose value equals the mode.
         # Used for fraud-concentration: 1.0 means every value is identical.
-        # NULLIF prevents divide-by-zero when all values are NULL.
-        mode_expr = f"MODE() WITHIN GROUP (ORDER BY {value_expr})"
-        base = f"(COUNT(*) FILTER (WHERE {value_expr} = {mode_expr}))::float " f"/ NULLIF(COUNT({value_expr}), 0)"
+        #
+        # Implementation: correlated subquery rather than
+        #   COUNT(*) FILTER (WHERE v = MODE() WITHIN GROUP (ORDER BY v))
+        # because Postgres rejects aggregate functions inside FILTER clauses
+        # ("aggregate functions are not allowed in FILTER"). Instead we group
+        # the same FLW's rows by value, then take the max group-count over
+        # the total non-null count.
+        #
+        # Mirrors the first/last subquery pattern; like those, the per-field
+        # FILTER (path/value) clause isn't supported on this aggregation —
+        # early return below.
+        return f"""(
+            SELECT MAX(c)::float / NULLIF(SUM(c), 0)
+            FROM (
+                SELECT COUNT(*) AS c
+                FROM labs_raw_visit_cache sub
+                WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
+                  AND sub.username = labs_raw_visit_cache.username
+                  AND {value_expr} IS NOT NULL
+                GROUP BY {value_expr}
+            ) freq
+        )"""
     else:
         # Fail loudly on unknown aggregations rather than silently substituting
         # MIN(). Prior behaviour made typos produce wrong data without warning.

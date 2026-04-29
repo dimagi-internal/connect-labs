@@ -71,18 +71,30 @@ class TestAggregationToSql:
         sql = _aggregation_to_sql("mode", "v", "f")
         assert sql == "MODE() WITHIN GROUP (ORDER BY v)"
 
-    def test_mode_share_returns_share_of_modal_value(self):
+    def test_mode_share_uses_correlated_subquery(self):
         """`mode_share` returns share (0..1) of rows whose value equals the mode.
+
+        Implementation note: Postgres rejects aggregate functions inside FILTER
+        (WHERE ...) clauses, so the obvious shape `COUNT FILTER (= MODE())` is
+        illegal. Instead this aggregation emits a correlated subquery that
+        groups by value and takes max-count / sum-count. Mirrors the first/last
+        subquery pattern.
 
         Used for fraud-concentration metrics: 1.0 means every visit by an FLW
         has the same parity; 0.1 means parity is well-distributed across visits.
         """
         sql = _aggregation_to_sql("mode_share", "v", "f")
-        # The exact SQL: COUNT FILTER (= MODE) / NULLIF(COUNT, 0)
-        assert "MODE() WITHIN GROUP (ORDER BY v)" in sql
-        assert "COUNT(*) FILTER (WHERE v = MODE()" in sql
-        assert "NULLIF(COUNT(v), 0)" in sql
-        assert "::float" in sql  # ensure float division, not integer
+        # Subquery shape over labs_raw_visit_cache aliased as sub
+        assert "SELECT MAX(c)::float / NULLIF(SUM(c), 0)" in sql
+        assert "FROM labs_raw_visit_cache sub" in sql
+        # Correlation against the outer row's username/opportunity
+        assert "sub.opportunity_id = labs_raw_visit_cache.opportunity_id" in sql
+        assert "sub.username = labs_raw_visit_cache.username" in sql
+        # Inner GROUP BY value, COUNT(*) — that's what produces per-value frequencies.
+        assert "GROUP BY v" in sql
+        assert "COUNT(*) AS c" in sql
+        # MUST NOT use the illegal FILTER (= MODE()) shape.
+        assert "= MODE()" not in sql
 
 
 class TestAggregationTypeLiteral:
