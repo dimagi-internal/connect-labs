@@ -35,9 +35,4 @@ class Migration(migrations.Migration):
         ("opportunity", "0084_labsrecord"),
     ]
 
-    operations = [
-        migrations.RunPython(
-            create_periodic_task, delete_periodic_task,
-            hints={"run_on_secondary": False}
-        )
-    ]
+    operations = [migrations.RunPython(create_periodic_task, delete_periodic_task, hints={"run_on_secondary": False})]

@@ -81,9 +81,5 @@ class Migration(migrations.Migration):
                 fields=("currency_code", "rate_date"), name="unique_currency_code_date"
             ),
         ),
-        migrations.RunPython(
-            update_exchange_rate,
-            migrations.RunPython.noop,
-            hints={"run_on_secondary": False}
-        ),
+        migrations.RunPython(update_exchange_rate, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]

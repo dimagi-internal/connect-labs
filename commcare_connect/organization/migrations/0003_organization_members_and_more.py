@@ -13,37 +13,39 @@ class Migration(migrations.Migration):
 
     operations = [
         # this models got out of sync when they were moved to the new app
-        migrations.SeparateDatabaseAndState(state_operations=[
-            migrations.AddField(
-                model_name="organization",
-                name="members",
-                field=models.ManyToManyField(
-                    related_name="organizations",
-                    through="organization.UserOrganizationMembership",
-                    to=settings.AUTH_USER_MODEL,
+        migrations.SeparateDatabaseAndState(
+            state_operations=[
+                migrations.AddField(
+                    model_name="organization",
+                    name="members",
+                    field=models.ManyToManyField(
+                        related_name="organizations",
+                        through="organization.UserOrganizationMembership",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
                 ),
-            ),
-            migrations.AddField(
-                model_name="userorganizationmembership",
-                name="organization",
-                field=models.ForeignKey(
-                    default=None,
-                    on_delete=django.db.models.deletion.CASCADE,
-                    related_name="memberships",
-                    to="organization.organization",
+                migrations.AddField(
+                    model_name="userorganizationmembership",
+                    name="organization",
+                    field=models.ForeignKey(
+                        default=None,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="memberships",
+                        to="organization.organization",
+                    ),
+                    preserve_default=False,
                 ),
-                preserve_default=False,
-            ),
-            migrations.AddField(
-                model_name="userorganizationmembership",
-                name="user",
-                field=models.ForeignKey(
-                    default=None,
-                    on_delete=django.db.models.deletion.DO_NOTHING,
-                    related_name="memberships",
-                    to=settings.AUTH_USER_MODEL,
+                migrations.AddField(
+                    model_name="userorganizationmembership",
+                    name="user",
+                    field=models.ForeignKey(
+                        default=None,
+                        on_delete=django.db.models.deletion.DO_NOTHING,
+                        related_name="memberships",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                    preserve_default=False,
                 ),
-                preserve_default=False,
-            ),
-        ])
+            ]
+        )
     ]

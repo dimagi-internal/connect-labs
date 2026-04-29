@@ -711,9 +711,7 @@ def test_pipeline_preview_clean_response_has_no_null_hint(mock_pda_cls, client, 
 
 @pytest.mark.django_db
 @patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
-def test_pipeline_preview_cchq_forms_in_mcp_context_returns_clean_error(
-    mock_pda_cls, client, auth_user
-):
+def test_pipeline_preview_cchq_forms_in_mcp_context_returns_clean_error(mock_pda_cls, client, auth_user):
     """cchq_forms data sources cannot run via MCP (no web session OAuth).
 
     The handler must surface a clean MCPToolError with details that explain
@@ -759,9 +757,7 @@ def test_pipeline_preview_cchq_forms_in_mcp_context_returns_clean_error(
 
 @pytest.mark.django_db
 @patch("commcare_connect.mcp.tools.pipelines.PipelineDataAccess")
-def test_pipeline_preview_connect_csv_pipeline_works_without_request(
-    mock_pda_cls, client, auth_user
-):
+def test_pipeline_preview_connect_csv_pipeline_works_without_request(mock_pda_cls, client, auth_user):
     """connect_csv pipelines have no Django-session dependency and must work
     cleanly when invoked via MCP (no request object). This is the canonical
     "does my schema fix extract data" tool — it has to work for non-cchq

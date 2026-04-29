@@ -12,4 +12,3 @@ class Migration(migrations.Migration):
             name="ExperimentRecord",
         ),
     ]
-

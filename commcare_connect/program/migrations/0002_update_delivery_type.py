@@ -4,14 +4,11 @@ from django.db import migrations
 
 
 def update_delivery_type(apps, schema_editor):
-    Program = apps.get_model('program', 'Program')
-    ManagedOpportunity = apps.get_model('program', 'ManagedOpportunity')
+    Program = apps.get_model("program", "Program")
+    ManagedOpportunity = apps.get_model("program", "ManagedOpportunity")
 
     for program in Program.objects.all():
-        ManagedOpportunity.objects.filter(
-            program=program
-        ).update(delivery_type=program.delivery_type)
-
+        ManagedOpportunity.objects.filter(program=program).update(delivery_type=program.delivery_type)
 
 
 class Migration(migrations.Migration):
@@ -20,6 +17,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(update_delivery_type,  migrations.RunPython.noop,
-            hints={"run_on_secondary": False}),  
+        migrations.RunPython(update_delivery_type, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]

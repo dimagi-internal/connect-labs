@@ -6,37 +6,89 @@ import django.db.models.deletion
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
-        ('organization', '0007_remove_userorganizationmembership_accepted'),
-        ('program', '0002_update_delivery_type'),
-        ('opportunity', '0083_credentialconfiguration'),
+        ("organization", "0007_remove_userorganizationmembership_accepted"),
+        ("program", "0002_update_delivery_type"),
+        ("opportunity", "0083_credentialconfiguration"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='ExperimentRecord',
+            name="ExperimentRecord",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('created_by', models.CharField(max_length=255)),
-                ('modified_by', models.CharField(max_length=255)),
-                ('date_created', models.DateTimeField(auto_now_add=True)),
-                ('date_modified', models.DateTimeField(auto_now=True)),
-                ('experiment', models.TextField(help_text="Experiment name (e.g., 'solicitations', 'audit')")),
-                ('type', models.CharField(help_text="Record type (e.g., 'Solicitation', 'SolicitationResponse')", max_length=50)),
-                ('data', models.JSONField(default=dict, help_text='JSON storage for record content')),
-                ('opportunity', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='experiment_records', to='opportunity.opportunity')),
-                ('organization', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='experiment_records', to='organization.organization')),
-                ('parent', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='children', to='labs.experimentrecord')),
-                ('program', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='experiment_records', to='program.program')),
-                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='experiment_records', to=settings.AUTH_USER_MODEL)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("created_by", models.CharField(max_length=255)),
+                ("modified_by", models.CharField(max_length=255)),
+                ("date_created", models.DateTimeField(auto_now_add=True)),
+                ("date_modified", models.DateTimeField(auto_now=True)),
+                ("experiment", models.TextField(help_text="Experiment name (e.g., 'solicitations', 'audit')")),
+                (
+                    "type",
+                    models.CharField(
+                        help_text="Record type (e.g., 'Solicitation', 'SolicitationResponse')", max_length=50
+                    ),
+                ),
+                ("data", models.JSONField(default=dict, help_text="JSON storage for record content")),
+                (
+                    "opportunity",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="experiment_records",
+                        to="opportunity.opportunity",
+                    ),
+                ),
+                (
+                    "organization",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="experiment_records",
+                        to="organization.organization",
+                    ),
+                ),
+                (
+                    "parent",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="children",
+                        to="labs.experimentrecord",
+                    ),
+                ),
+                (
+                    "program",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="experiment_records",
+                        to="program.program",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="experiment_records",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-date_created'],
-                'indexes': [models.Index(fields=['experiment', 'type'], name='labs_experi_experim_341cbb_idx'), models.Index(fields=['experiment', 'type', 'parent'], name='labs_experi_experim_be4623_idx')],
+                "ordering": ["-date_created"],
+                "indexes": [
+                    models.Index(fields=["experiment", "type"], name="labs_experi_experim_341cbb_idx"),
+                    models.Index(fields=["experiment", "type", "parent"], name="labs_experi_experim_be4623_idx"),
+                ],
             },
         ),
     ]
