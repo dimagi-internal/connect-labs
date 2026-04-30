@@ -413,6 +413,147 @@ function buildResultsFromV3Pipelines(
   };
 }
 
+function _v3AssembleDashData(pipelines, state, flwNameMap, currentDateStr) {
+  // Build the full dashData blob from raw inputs (pipelines + state +
+  // flwNameMap). Single entry point shared by:
+  //   - runAnalysis (live path: pipelines + instance.state)
+  //   - snapshot loader (frozen path: snap.pipelines + snap.state)
+  //
+  // Keeping this in one function means snapshot reload always re-derives
+  // the dashboard the same way live analysis does — no risk of the two
+  // paths drifting apart when columns or per-section logic changes.
+  var instanceLike = { state: state || {} };
+  var results = buildResultsFromV3Pipelines(
+    pipelines,
+    instanceLike,
+    flwNameMap,
+    currentDateStr,
+  );
+
+  var gpsData = results.gps_data || {};
+  var followupData = results.followup_data || {};
+  var qualityMetrics = results.quality_metrics || {};
+  var overviewSummary = results.overview_data || {};
+  var performanceData = results.performance_data || [];
+
+  var activeUsernamesList =
+    (state && (state.selected_workers || state.selected_flws)) || [];
+
+  var overviewFlwSummaries = activeUsernamesList.map(function (username) {
+    var uLower = username.toLowerCase();
+    var displayName = flwNameMap[uLower] || username;
+
+    var gpsFlw =
+      (gpsData.flw_summaries || []).find(function (g) {
+        return g.username === uLower;
+      }) || {};
+    var medianMeters = (gpsData.median_meters_by_flw || {})[uLower];
+    var medianMinutes = (gpsData.median_minutes_by_flw || {})[uLower];
+
+    var fuFlw =
+      (followupData.flw_summaries || []).find(function (f) {
+        return f.username === uLower;
+      }) || {};
+
+    var quality = qualityMetrics[uLower] || {};
+
+    var motherCount = (overviewSummary.mother_counts || {})[uLower] || 0;
+    var ebfPct = (overviewSummary.ebf_pct_by_flw || {})[uLower];
+
+    var drilldown = (followupData.flw_drilldown || {})[uLower] || [];
+    var eligibleMothers = drilldown.filter(function (m) {
+      return m.eligible;
+    });
+    var stillOnTrack = 0;
+    eligibleMothers.forEach(function (m) {
+      var completedCount = 0;
+      var missedCount = 0;
+      (m.visits || []).forEach(function (v) {
+        if (v.status && v.status.indexOf('Completed') === 0) completedCount++;
+        if (v.status === 'Missed') missedCount++;
+      });
+      if (completedCount >= 5 || missedCount <= 1) stillOnTrack++;
+    });
+    var totalEligible = eligibleMothers.length;
+
+    var lastActive = (overviewSummary.last_active_by_flw || {})[uLower];
+    return Object.assign(
+      {
+        username: uLower,
+        display_name: displayName,
+        cases_registered: motherCount,
+        eligible_mothers: totalEligible,
+        first_gs_score: null, // populated below from gs_forms pipeline
+        post_test_attempts: null,
+        last_active_date: lastActive ? lastActive.date : null,
+        last_active_days: lastActive ? lastActive.days : null,
+        followup_rate: fuFlw.completion_rate || 0,
+        ebf_pct: ebfPct != null ? ebfPct : null,
+        revisit_distance_km:
+          gpsFlw.avg_case_distance_km != null
+            ? Math.round(gpsFlw.avg_case_distance_km * 100) / 100
+            : null,
+        median_meters_per_visit: medianMeters != null ? medianMeters : null,
+        median_minutes_per_visit: medianMinutes != null ? medianMinutes : null,
+        cases_still_eligible: {
+          eligible: stillOnTrack,
+          total: totalEligible,
+          pct:
+            totalEligible > 0
+              ? Math.round((stillOnTrack / totalEligible) * 100)
+              : 0,
+        },
+      },
+      quality,
+    );
+  });
+
+  // Enrich with GS scores from gs_forms pipeline data.
+  var gsFormRows = (pipelines.gs_forms && pipelines.gs_forms.rows) || [];
+  var gsByFlw = {};
+  gsFormRows.forEach(function (row) {
+    var connectId = (row.computed || row).user_connect_id || row.username || '';
+    var uLower = connectId.toLowerCase();
+    var score = parseFloat((row.computed || row).gs_score);
+    if (!isNaN(score)) {
+      if (!gsByFlw[uLower]) gsByFlw[uLower] = [];
+      gsByFlw[uLower].push({
+        score: score,
+        date: (row.computed || row).assessment_date || '',
+      });
+    }
+  });
+  overviewFlwSummaries.forEach(function (flw) {
+    var gsEntries = gsByFlw[flw.username] || [];
+    if (gsEntries.length > 0) {
+      gsEntries.sort(function (a, b) {
+        return (a.date || '').localeCompare(b.date || '');
+      });
+      flw.first_gs_score = Math.round(gsEntries[0].score);
+    }
+  });
+
+  return {
+    success: true,
+    gps_data: gpsData,
+    followup_data: followupData,
+    overview_data: {
+      flw_summaries: overviewFlwSummaries,
+      visit_status_distribution: followupData.visit_status_distribution || {},
+    },
+    performance_data: performanceData,
+    active_usernames: activeUsernamesList
+      .map(function (u) {
+        return u.toLowerCase();
+      })
+      .sort(),
+    flw_names: flwNameMap,
+    open_tasks: (state && state.open_tasks) || {},
+    open_task_usernames: Object.keys((state && state.open_tasks) || {}),
+    monitoring_session: (state && state.monitoring_session) || null,
+  };
+}
+
 function WorkflowUI({
   definition,
   instance,
@@ -682,19 +823,19 @@ function WorkflowUI({
   // can be loaded by either path.
   var saveSnapshot = React.useCallback(
     function () {
-      if (!instance.id || !dashData) return Promise.resolve(false);
+      if (!instance.id || !links?.buildSnapshot) return Promise.resolve(false);
       setSavingSnapshot(true);
-      return fetch('/custom_analysis/mbw_monitoring/api/save-snapshot/', {
+      // Native snapshot framework: server fetches pipelines + workers +
+      // state itself via build_snapshot_api, runs the template's
+      // build_snapshot hook (or the default fallback), and atomically
+      // freezes the run. No body needed — we don't ship the dashData
+      // blob across the wire any more.
+      return fetch(links.buildSnapshot, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': getCSRF(),
         },
-        body: JSON.stringify({
-          run_id: instance.id,
-          opportunity_id: instance.opportunity_id,
-          snapshot_data: dashData,
-        }),
       })
         .then(function (r) {
           return r.json();
@@ -702,7 +843,7 @@ function WorkflowUI({
         .then(function (resp) {
           setSavingSnapshot(false);
           if (resp && resp.success) {
-            setSnapshotTimestamp(resp.timestamp || new Date().toISOString());
+            setSnapshotTimestamp(resp.frozen_at || new Date().toISOString());
             return true;
           }
           showToast('Snapshot save failed: ' + (resp?.error || 'Unknown'));
@@ -715,59 +856,69 @@ function WorkflowUI({
           return false;
         });
     },
-    [instance.id, instance.opportunity_id, dashData, getCSRF],
+    [instance.id, links, getCSRF],
   );
 
   // Load snapshot on mount — runs once per instance to skip live re-analysis
-  // when a saved snapshot exists on the run.
+  // when a frozen snapshot exists on the run.
   //
-  // Gated on selected_workers being non-empty: V1's MBWSnapshotView uses
-  // load_monitoring_run() which returns None (and the view returns 404
-  // {"error":"Run not found"}) for runs that don't yet have selected_flws
-  // or selected_workers in state. Fresh runs have none. We skip the fetch
-  // in that case to avoid the spurious 404 in the console.
+  // Native framework path: GET links.getSnapshot returns
+  // `{has_snapshot, snapshot, frozen_at}`. The snapshot envelope is the
+  // default-hook shape `{schema_version, pipelines, workers, state,
+  // opportunity_ids}` (mbw_monitoring_v3 opts in without a custom
+  // build_snapshot hook), so we re-run the same _v3AssembleDashData
+  // helper that runAnalysis uses on the live path. Live and frozen
+  // dashboards therefore go through identical derivation code.
   React.useEffect(
     function () {
       if (snapshotChecked) return;
-      if (!instance.id) {
-        setSnapshotChecked(true);
-        return;
-      }
-      var hasSelected =
-        (instance.state?.selected_workers || []).length > 0 ||
-        (instance.state?.selected_flws || []).length > 0;
-      if (!hasSelected) {
-        // Run is too fresh — no snapshot can exist yet. Skip the load.
+      if (!instance.id || !links?.getSnapshot) {
         setSnapshotChecked(true);
         return;
       }
       var cancelled = false;
-      fetch(
-        '/custom_analysis/mbw_monitoring/api/snapshot/?run_id=' +
-          encodeURIComponent(String(instance.id)),
-      )
+      fetch(links.getSnapshot)
         .then(function (r) {
           return r.json();
         })
         .then(function (data) {
           if (cancelled) return;
-          if (data && data.has_snapshot && data.success) {
-            setDashData({
-              gps_data: data.gps_data || {},
-              followup_data: data.followup_data || {},
-              overview_data: data.overview_data || {},
-              performance_data: data.performance_data || [],
-              active_usernames: data.active_usernames || [],
-              flw_names: data.flw_names || {},
-              open_tasks: data.open_tasks || {},
-              open_task_usernames: data.open_task_usernames || [],
-              monitoring_session: data.monitoring_session || null,
+          if (data && data.has_snapshot && data.snapshot) {
+            var snap = data.snapshot;
+            // Re-derive flwNameMap from the workers list captured at
+            // freeze time — render must show the same names the user
+            // saw when they froze, even if the live worker roster has
+            // since changed.
+            var snapFlwNameMap = {};
+            (snap.workers || []).forEach(function (w) {
+              if (w.username) {
+                snapFlwNameMap[w.username.toLowerCase()] = w.name || w.username;
+              }
             });
-            setAnalysisComplete(true);
-            setDataSource('snapshot');
-            setSnapshotTimestamp(data.snapshot_timestamp || null);
-            if (data.monitoring_session?.flw_results) {
-              setWorkerResults(data.monitoring_session.flw_results);
+            var frozenAt = data.frozen_at || snap.frozen_at;
+            // Date arithmetic ("days since last visit") must be relative
+            // to freeze time, not today, so a snapshot opened a month
+            // later still shows the same numbers it did the day it was
+            // saved.
+            var dateStr = frozenAt
+              ? String(frozenAt).slice(0, 10)
+              : new Date().toISOString().slice(0, 10);
+            try {
+              var builtDashData = _v3AssembleDashData(
+                snap.pipelines || {},
+                snap.state || {},
+                snapFlwNameMap,
+                dateStr,
+              );
+              setDashData(builtDashData);
+              setAnalysisComplete(true);
+              setDataSource('snapshot');
+              setSnapshotTimestamp(frozenAt || null);
+              if (builtDashData.monitoring_session?.flw_results) {
+                setWorkerResults(builtDashData.monitoring_session.flw_results);
+              }
+            } catch (err) {
+              console.error('Failed to assemble snapshot dashboard:', err);
             }
           }
           setSnapshotChecked(true);
@@ -781,7 +932,7 @@ function WorkflowUI({
         cancelled = true;
       };
     },
-    [instance.id, snapshotChecked],
+    [instance.id, snapshotChecked, links],
   );
 
   // =========================================================================
@@ -905,14 +1056,13 @@ function WorkflowUI({
       setAnalysisComplete(false);
 
       try {
-        // Single synchronous call into the adapter. Returns the v2-shape
-        // results dict so the rest of this render file consumes it
-        // unchanged. Uses today's date for follow-up date arithmetic;
-        // matches v1's `current_date` semantics in compute_overview_quality_metrics.
+        // Synchronous derivation: pipelines + state → dashData blob.
+        // Same helper drives the snapshot reload path (see snapshot loader
+        // below), so live and frozen views go through the same code.
         var todayStr = new Date().toISOString().slice(0, 10);
-        var results = buildResultsFromV3Pipelines(
+        var builtDashData = _v3AssembleDashData(
           pipelines,
-          instance,
+          instance.state,
           flwNameMap,
           todayStr,
         );
@@ -920,146 +1070,6 @@ function WorkflowUI({
         setJobRunning(false);
         setAnalysisComplete(true);
         setDataSource('live');
-
-        // The block below is copied verbatim from v2's onComplete handler;
-        // having results in the same shape keeps the per-FLW table + GS
-        // enrichment + dashData assembly identical between v2 and v3.
-        var gpsData = results.gps_data || {};
-        var followupData = results.followup_data || {};
-        var qualityMetrics = results.quality_metrics || {};
-        var overviewSummary = results.overview_data || {};
-        var performanceData = results.performance_data || [];
-
-        // Build overview flw_summaries by merging data from multiple result sections
-        var activeUsernamesList =
-          instance.state?.selected_workers ||
-          instance.state?.selected_flws ||
-          [];
-        var overviewFlwSummaries = activeUsernamesList.map(function (username) {
-          var uLower = username.toLowerCase();
-          var displayName = flwNameMap[uLower] || username;
-
-          // From GPS data
-          var gpsFlw =
-            (gpsData.flw_summaries || []).find(function (g) {
-              return g.username === uLower;
-            }) || {};
-          var medianMeters = (gpsData.median_meters_by_flw || {})[uLower];
-          var medianMinutes = (gpsData.median_minutes_by_flw || {})[uLower];
-
-          // From follow-up data
-          var fuFlw =
-            (followupData.flw_summaries || []).find(function (f) {
-              return f.username === uLower;
-            }) || {};
-
-          // From quality metrics
-          var quality = qualityMetrics[uLower] || {};
-
-          // From overview summary
-          var motherCount = (overviewSummary.mother_counts || {})[uLower] || 0;
-          var ebfPct = (overviewSummary.ebf_pct_by_flw || {})[uLower];
-
-          // Build cases_still_eligible from drilldown
-          var drilldown = (followupData.flw_drilldown || {})[uLower] || [];
-          var eligibleMothers = drilldown.filter(function (m) {
-            return m.eligible;
-          });
-          var stillOnTrack = 0;
-          eligibleMothers.forEach(function (m) {
-            var completedCount = 0;
-            var missedCount = 0;
-            (m.visits || []).forEach(function (v) {
-              if (v.status && v.status.indexOf('Completed') === 0)
-                completedCount++;
-              if (v.status === 'Missed') missedCount++;
-            });
-            if (completedCount >= 5 || missedCount <= 1) stillOnTrack++;
-          });
-          var totalEligible = eligibleMothers.length;
-
-          var lastActive = (overviewSummary.last_active_by_flw || {})[uLower];
-          return Object.assign(
-            {
-              username: uLower,
-              display_name: displayName,
-              cases_registered: motherCount,
-              eligible_mothers: totalEligible,
-              first_gs_score: null, // populated below from gs_forms pipeline
-              post_test_attempts: null,
-              last_active_date: lastActive ? lastActive.date : null,
-              last_active_days: lastActive ? lastActive.days : null,
-              followup_rate: fuFlw.completion_rate || 0,
-              ebf_pct: ebfPct != null ? ebfPct : null,
-              revisit_distance_km:
-                gpsFlw.avg_case_distance_km != null
-                  ? Math.round(gpsFlw.avg_case_distance_km * 100) / 100
-                  : null,
-              median_meters_per_visit:
-                medianMeters != null ? medianMeters : null,
-              median_minutes_per_visit:
-                medianMinutes != null ? medianMinutes : null,
-              cases_still_eligible: {
-                eligible: stillOnTrack,
-                total: totalEligible,
-                pct:
-                  totalEligible > 0
-                    ? Math.round((stillOnTrack / totalEligible) * 100)
-                    : 0,
-              },
-            },
-            quality,
-          );
-        });
-
-        // Enrich with GS scores from gs_forms pipeline data
-        var gsFormRows = (pipelines.gs_forms && pipelines.gs_forms.rows) || [];
-        var gsByFlw = {};
-        gsFormRows.forEach(function (row) {
-          var connectId =
-            (row.computed || row).user_connect_id || row.username || '';
-          var uLower = connectId.toLowerCase();
-          var score = parseFloat((row.computed || row).gs_score);
-          if (!isNaN(score)) {
-            if (!gsByFlw[uLower]) gsByFlw[uLower] = [];
-            gsByFlw[uLower].push({
-              score: score,
-              date: (row.computed || row).assessment_date || '',
-            });
-          }
-        });
-        overviewFlwSummaries.forEach(function (flw) {
-          var gsEntries = gsByFlw[flw.username] || [];
-          if (gsEntries.length > 0) {
-            // Use the oldest (first) GS score
-            gsEntries.sort(function (a, b) {
-              return (a.date || '').localeCompare(b.date || '');
-            });
-            flw.first_gs_score = Math.round(gsEntries[0].score);
-          }
-        });
-
-        var builtDashData = {
-          success: true,
-          gps_data: gpsData,
-          followup_data: followupData,
-          overview_data: {
-            flw_summaries: overviewFlwSummaries,
-            visit_status_distribution:
-              followupData.visit_status_distribution || {},
-          },
-          performance_data: performanceData,
-          active_usernames: activeUsernamesList
-            .map(function (u) {
-              return u.toLowerCase();
-            })
-            .sort(),
-          flw_names: flwNameMap,
-          open_tasks: instance.state?.open_tasks || {},
-          open_task_usernames: Object.keys(instance.state?.open_tasks || {}),
-          monitoring_session: instance.state?.monitoring_session || null,
-        };
-
         setDashData(builtDashData);
 
         // Restore worker results from monitoring session if available

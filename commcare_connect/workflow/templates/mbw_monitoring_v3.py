@@ -544,6 +544,12 @@ TEMPLATE = {
     "description": "Pipeline-native MBW monitoring (parity-tested; v1 stays canonical until v3 proven)",
     "icon": "fa-baby",
     "color": "pink",
+    # Native run snapshots: opt in without a `build_snapshot` hook so the
+    # framework's default freezes raw pipelines + workers + state. The
+    # render JS reconstructs every tab from those frozen pipelines on
+    # load, so snapshots stay true to "what I saw at the time" without
+    # duplicating the JS aggregation logic in Python.
+    "supports_snapshots": True,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schemas": PIPELINE_SCHEMAS,
