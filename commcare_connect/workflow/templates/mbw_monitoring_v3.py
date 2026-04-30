@@ -47,9 +47,9 @@ DEFINITION = {
         # the upfront auth screen replaces the template's manual mid-load
         # OAuth check, so users see "Authorize CommCare HQ" within ~1s of
         # landing instead of after the FLW table renders and they click
-        # Launch Dashboard. v3 doesn't depend on OCS so we drop it from
-        # v2's `["connect", "commcare_hq", "ocs"]` list.
-        "auth_requires": ["connect", "commcare_hq"],
+        # Launch Dashboard. Same triplet as v2 — OCS is required for the
+        # FLW assessment chatbot integration in the dashboard.
+        "auth_requires": ["connect", "commcare_hq", "ocs"],
     },
     "pipeline_sources": [],
 }
