@@ -116,6 +116,43 @@ class TestAggregationSqlExecution:
         assert results["fraud"] == pytest.approx(1.0)
         assert results["diverse"] == pytest.approx(1.0 / 3.0)
 
+    def test_contains_word_filter_executes(self, db):
+        """`contains_word` filter_op produces tokenized membership SQL that
+        Postgres accepts. V1 logic: `if "ebf" in bf_status.split()`.
+        """
+        future = timezone.now() + timezone.timedelta(days=1)
+        rows = [
+            ("flw_ebf", "ebf"),  # token match
+            ("flw_ebf", "ebf bottle"),  # token match
+            ("flw_ebf", "non-ebf"),  # substring, NOT a token → excluded
+            ("flw_ebf", ""),  # empty → excluded
+            ("flw_other", "exclusive_breastfeeding"),  # different token → excluded
+        ]
+        for i, (u, bf) in enumerate(rows):
+            RawVisitCache.objects.create(
+                opportunity_id=9995,
+                visit_count=len(rows),
+                expires_at=future,
+                visit_id=str(30000 + i),
+                username=u,
+                form_json={"form": {"feeding_history": {"pnc_current_bf_status": bf}}},
+                visit_date="2024-01-15",
+                status="approved",
+            )
+        value_expr = "form_json #>> '{form,feeding_history,pnc_current_bf_status}'"
+        # COUNT(value) FILTER (WHERE 'ebf' = ANY(string_to_array(value, ' ')))
+        agg_sql = _aggregation_to_sql(
+            "count",
+            value_expr,
+            "ebf_count",
+            filter_path="form.feeding_history.pnc_current_bf_status",
+            filter_value="ebf",
+            filter_op="contains_word",
+        )
+        results = dict(self._run_sql(agg_sql, 9995))
+        assert results["flw_ebf"] == 2  # "ebf" and "ebf bottle" only
+        assert results["flw_other"] == 0  # no token == "ebf"
+
     def test_sql_agrees_with_inmemory_mirror_on_mixed_fixture(self, db):
         """Bound the in-memory mirror's correctness: SQL and Python must agree
         on the same input for median, mode, and mode_share.
