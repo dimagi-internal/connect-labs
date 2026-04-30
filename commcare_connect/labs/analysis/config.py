@@ -502,6 +502,15 @@ class AnalysisPipelineConfig:
     # processing, identical to today's behaviour.
     window_fields: list["WindowFieldComputation"] = field(default_factory=list)
 
+    # Post-extraction filters: list of {"field": <name>, "op": "is_not_null"}.
+    # Applied AFTER extraction (so they can reference extracted columns) and
+    # BEFORE window functions (so the LAG/etc. only sees passing rows).
+    # Required for v1 fidelity on metrics like avg_case_distance_km, where v1
+    # filters visits to GPS-valid BEFORE pairing consecutive visits — without
+    # this filter, v3's LAG would land on non-GPS rows and produce NULL
+    # distances where v1 successfully pairs the next-valid visit.
+    extracted_filters: list[dict] = field(default_factory=list)
+
     def __post_init__(self):
         """Validate configuration."""
         if not self.grouping_key:

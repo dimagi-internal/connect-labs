@@ -1991,4 +1991,5 @@ class PipelineDataAccess(BaseDataAccess):
             linking_field=schema.get("linking_field", "entity_id"),
             data_source=data_source,
             window_fields=window_fields,
+            extracted_filters=schema.get("extracted_filters", []),
         )
