@@ -67,11 +67,18 @@ def _fixture_visit_to_form_json(v: dict) -> dict:
 
 def _seed_fixture(opp_id: int, fixture_visits: list[dict]) -> None:
     """Seed labs_raw_visit_cache with fixture visits, in the form_json shape
-    v3's pipelines expect."""
+    v3's pipelines expect.
+
+    Tags rows with `pipeline_id=opp_id` to match what `_schema_to_config(
+    ..., definition_id=opp_id)` produces in `_run_v3_visits`. RawVisitCache
+    became pipeline-discriminated in #116 — without matching pipeline_id
+    here, the extraction query filters out every fixture row.
+    """
     expires = timezone.now() + timezone.timedelta(days=1)
     for v in fixture_visits:
         RawVisitCache.objects.create(
             opportunity_id=opp_id,
+            pipeline_id=opp_id,
             visit_count=len(fixture_visits),
             expires_at=expires,
             visit_id=str(v["visit_id"]),
