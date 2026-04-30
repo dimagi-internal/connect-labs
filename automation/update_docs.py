@@ -232,16 +232,20 @@ def update_confluence_summary(
     )
 
 
-def post_screenshot_comment(pr_number: str, feature: str) -> None:
-    """Post a GitHub PR comment flagging that screenshots need updating."""
+def post_screenshot_comment(pr_number: str, features: list[str]) -> None:
+    """Post a single GitHub PR comment listing all features that need screenshot updates."""
     gh_token = os.environ.get("GH_TOKEN", "")
     repo = os.environ.get("GH_REPO", "")
-    if not gh_token or not repo or not pr_number:
+    if not gh_token or not repo or not pr_number or not features:
         return
     import urllib.request
-    data = json.dumps({
-        "body": f"📷 **Screenshot update needed**: The `{feature}` doc page may need updated screenshots to reflect this UI change. See `user_docs/assets/screenshots/`."
-    }).encode()
+    feature_list = "\n".join(f"- `{f}`" for f in sorted(features))
+    body = (
+        "📷 **Screenshot update needed**: The following doc pages may need updated "
+        "screenshots to reflect UI changes in this PR. See `user_docs/assets/screenshots/`.\n\n"
+        f"{feature_list}"
+    )
+    data = json.dumps({"body": body}).encode()
     req = urllib.request.Request(
         f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
         data=data,
@@ -303,6 +307,19 @@ def main() -> None:
     ai_client = anthropic.Anthropic()
     confluence = ConfluenceClient()
 
+    # Validate that all expected Confluence pages are accessible
+    missing_pages = []
+    for feature in features:
+        page_id = FEATURE_PAGE_IDS.get(feature)
+        if page_id:
+            try:
+                confluence.get_page(page_id)
+            except Exception:
+                missing_pages.append(f"{feature} (id={page_id})")
+    if missing_pages:
+        print(f"  [warn] Confluence pages not found: {', '.join(missing_pages)}")
+        print("  Skipping Confluence updates for missing pages.")
+
     # Single classification call — is this PR user-visible at all?
     if not has_user_visible_changes(ai_client, pr_title, product_description, diff_excerpt):
         print("Classified as non-user-visible — skipping doc update.")
@@ -310,6 +327,7 @@ def main() -> None:
 
     print("User-visible changes detected. Updating documentation...")
     ui_flag = has_ui_changes(product_description)
+    screenshot_features = []
 
     for feature in sorted(features):
         print(f"\n  Updating: {feature}")
@@ -319,12 +337,16 @@ def main() -> None:
         else:
             print(f"    — No markdown change needed")
 
-        update_confluence_summary(confluence, feature, product_description, ai_client)
-        print(f"    ✓ Confluence summary updated (page {FEATURE_PAGE_IDS[feature]})")
+        if feature not in [f.split(" (")[0] for f in missing_pages]:
+            update_confluence_summary(confluence, feature, product_description, ai_client)
+            print(f"    ✓ Confluence summary updated (page {FEATURE_PAGE_IDS[feature]})")
 
-        if ui_flag and pr_number:
-            post_screenshot_comment(pr_number, feature)
-            print(f"    ✓ Screenshot reminder posted on PR #{pr_number}")
+        if ui_flag:
+            screenshot_features.append(feature)
+
+    if screenshot_features and pr_number:
+        post_screenshot_comment(pr_number, screenshot_features)
+        print(f"\n  ✓ Screenshot reminder posted on PR #{pr_number} for: {', '.join(screenshot_features)}")
 
     print("\nDone.")
 

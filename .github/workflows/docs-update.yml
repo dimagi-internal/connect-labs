@@ -7,6 +7,10 @@ on:
       - 'user_docs/**'  # don't retrigger when we commit updated docs
       - 'mkdocs.yml'
 
+concurrency:
+  group: docs-automation
+  cancel-in-progress: false
+
 jobs:
   update-docs:
     runs-on: ubuntu-latest
