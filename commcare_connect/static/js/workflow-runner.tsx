@@ -931,10 +931,11 @@ function WorkflowRunner({
     eventSource.onerror = () => {
       setPipelineLoadingStatus(null);
       // Build a descriptive error so users know what was happening when
-      // the connection dropped. The generic "connection lost" message
-      // told them nothing — common cause is AWS ALB's 60-second idle
-      // timeout closing the SSE stream during silent operations
-      // (CCHQ form pagination, visit cold-load).
+      // the connection dropped. EventSource onerror fires for any
+      // connection close including: backend process crash (OOM, exception),
+      // ALB idle timeout (60s of silence), and network blips. We can't
+      // distinguish from the browser side — be honest about the
+      // possibilities and direct ops at the right place to look.
       const elapsedSec = Math.round((Date.now() - startTs) / 1000);
       let detail: string;
       if (!receivedAny) {
@@ -948,12 +949,13 @@ function WorkflowRunner({
         const sinceLast =
           sinceLastSec !== null ? ` (${sinceLastSec}s since last update)` : '';
         detail =
-          `Connection dropped while: "${lastMessage}"${sinceLast}. ` +
-          `If this happened during a long load (CommCare HQ pagination, ` +
-          `large visit download), the AWS load balancer may have idle-` +
-          `timed-out the connection. Try reload — cached data should ` +
-          `make the second attempt much faster. If it persists, the ` +
-          `pipeline may be stalled on a backend dependency.`;
+          `Connection ended while: "${lastMessage}"${sinceLast}. ` +
+          `Possible causes: (a) backend process crashed (out-of-memory ` +
+          `during a large fetch is the usual culprit — check ECS web ` +
+          `logs for "SIGKILL" or "Worker was killed"), (b) backend ` +
+          `raised an exception (check logs for traceback), (c) AWS ALB ` +
+          `idle-timed-out the SSE stream after 60s of silence. ` +
+          `Try reload — cached data should make the second attempt much faster.`;
       } else {
         detail = `Connection dropped after ${elapsedSec}s. Try reload.`;
       }

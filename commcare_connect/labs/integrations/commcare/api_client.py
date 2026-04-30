@@ -5,6 +5,7 @@ Provides access to CommCare Case API v2 for fetching case data.
 """
 
 import logging
+from collections.abc import Iterator
 from urllib.parse import urlparse
 
 import httpx
@@ -559,6 +560,116 @@ class CommCareDataAccess:
 
         logger.info(f"Fetched total of {len(all_forms)} forms from CommCare")
         return all_forms
+
+    def iter_forms(
+        self,
+        xmlns: str | None = None,
+        app_id: str | None = None,
+        limit: int = 1000,
+        received_on_start: str | None = None,
+        received_on_end: str | None = None,
+    ) -> Iterator[dict]:
+        """Yield forms one page at a time without holding the full result set.
+
+        Same pagination contract as `fetch_forms` but yields each form so
+        downstream consumers can chunk-process without loading every form
+        into memory. Critical for opps with many CCHQ forms — fetch_forms'
+        list-accumulation OOM'd Fargate workers at ~26k MBW registrations
+        (~7KB each → ~180MB JSON + ~3x Python overhead + ORM materialization
+        ≈ 1GB peak).
+
+        Auth-error retry semantics match fetch_forms: 401/403 triggers one
+        token-refresh-and-retry of the same page; persistent failure raises
+        CCHQAuthError. Network errors after the first page log and stop the
+        iteration silently — the caller sees fewer forms but no exception.
+        """
+        if not self.check_token_valid():
+            raise ValueError(
+                "CommCare OAuth not configured or expired. "
+                "Please authorize CommCare access at /labs/commcare/initiate/"
+            )
+
+        endpoint = f"{self.base_url}/a/{self.domain}/api/form/v1/"
+        params = {"limit": limit}
+        if xmlns:
+            params["xmlns"] = xmlns
+        if app_id:
+            params["app_id"] = app_id
+        if received_on_start:
+            params["received_on_start"] = received_on_start
+        if received_on_end:
+            params["received_on_end"] = received_on_end
+
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        next_url = endpoint
+        page = 0
+        retried_after_refresh = False
+        total_yielded = 0
+        try:
+            while next_url:
+                page += 1
+                logger.info(f"[iter_forms] Fetching page {page} from {next_url}")
+
+                response = httpx.get(
+                    next_url,
+                    params=params if next_url == endpoint else None,
+                    headers=headers,
+                    timeout=60.0,
+                )
+
+                if response.status_code in (401, 403):
+                    if not retried_after_refresh:
+                        retried_after_refresh = True
+                        logger.warning(
+                            f"[iter_forms] Got {response.status_code} on page {page}; "
+                            f"attempting token refresh + single retry"
+                        )
+                        if self._refresh_token():
+                            headers = {"Authorization": f"Bearer {self.access_token}"}
+                            page -= 1
+                            continue
+                    raise CCHQAuthError(
+                        f"CommCare HQ rejected form fetch with HTTP {response.status_code} "
+                        f"for domain {self.domain!r} after token refresh+retry. "
+                        f"User needs to re-authorize CommCare access.",
+                        status_code=response.status_code,
+                        domain=self.domain,
+                    )
+
+                response.raise_for_status()
+                data = response.json()
+                # Capture next_url before yielding so we can drop the parsed
+                # response. Without this the parsed JSON of the previous page
+                # stays alive across yields, defeating the streaming win.
+                meta = data.get("meta", {})
+                next_url = meta.get("next")
+                forms = data.get("objects", [])
+                data = None  # free the parsed dict
+
+                for form in forms:
+                    total_yielded += 1
+                    yield form
+
+                logger.info(f"[iter_forms] Yielded page {page} (total so far: {total_yielded})")
+
+                if next_url and not next_url.startswith("http"):
+                    if next_url.startswith("?"):
+                        next_url = f"{endpoint}{next_url}"
+                    else:
+                        next_url = f"{self.base_url}{next_url}"
+                if next_url and not self._validate_pagination_url(next_url):
+                    break
+        except CCHQAuthError:
+            raise
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[iter_forms] HTTP {e.response.status_code} on page {page}: {e}")
+            return
+        except httpx.RequestError as e:
+            logger.error(f"[iter_forms] Request error on page {page}: {e}")
+            return
+
+        logger.info(f"[iter_forms] Done — yielded {total_yielded} forms total from CommCare")
 
     def get_form_xmlns(self, app_id: str, form_name: str = "Register Mother") -> str | None:
         """Look up a form's xmlns from the Application Structure API.
