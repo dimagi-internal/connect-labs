@@ -157,7 +157,11 @@ VISIT_FIELDS = [
         transform="kg_to_g",
     ),
     _visit_field("height", ["form.anthropometric.child_height"], transform="float"),
-    _visit_field("visit_date", ["form.grp_kmc_visit.visit_date", "form.reg_date"], transform="date"),
+    # Form-reported visit date — namespaced to avoid shadowing the base `visit_date`
+    # column on labs_raw_visit_cache (which is what the entity-stage query, the cache,
+    # and the FE's `v.visit_date` already read). The form-reported value is exposed
+    # as `form_visit_date` so render code can choose explicitly.
+    _visit_field("form_visit_date", ["form.grp_kmc_visit.visit_date", "form.reg_date"], transform="date"),
     _visit_field("visit_number", ["form.grp_kmc_visit.visit_number"]),
     _visit_field("visit_type", ["form.grp_kmc_visit.visit_type"]),
     _visit_field("kmc_status", ["form.grp_kmc_beneficiary.kmc_status", "form.kmc_status"]),
