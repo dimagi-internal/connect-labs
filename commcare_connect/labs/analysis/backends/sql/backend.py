@@ -110,14 +110,19 @@ class SQLBackend:
         filter_visit_ids: set[int] | None = None,
         tolerance_pct: int = 100,
         include_images: bool = False,
+        pipeline_id: int | None = None,
     ) -> list[dict]:
         """
         Fetch raw visit data from SQL cache or API.
 
         SQL backend stores visits in RawVisitCache table. If cache is valid,
         reads directly from PostgreSQL. Otherwise, fetches from API and stores.
+
+        `pipeline_id` scopes the raw cache slot per #116 — must match the value
+        the downstream extraction query filters on, or extraction returns 0
+        rows because the raw rows are tagged with a different pipeline_id.
         """
-        cache_manager = SQLCacheManager(opportunity_id, config=None)
+        cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
 
         # Check if we have valid cached data in SQL.
         # When expected_visit_count is unknown (0/None from Celery MockRequest), accept any
@@ -172,6 +177,7 @@ class SQLBackend:
         expected_visit_count: int | None = None,
         force_refresh: bool = False,
         tolerance_pct: int = 100,
+        pipeline_id: int | None = None,
     ) -> Generator[tuple[str, Any], None, None]:
         """
         Stream raw visit data with progress events using v2 paginated JSON.
@@ -190,7 +196,7 @@ class SQLBackend:
         from commcare_connect.labs.integrations.connect.export_client import ExportAPIError
         from commcare_connect.labs.integrations.connect.factory import get_export_client
 
-        cache_manager = SQLCacheManager(opportunity_id, config=None)
+        cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
 
         # Check SQL cache first
         if not force_refresh:
@@ -248,9 +254,15 @@ class SQLBackend:
 
         yield ("complete", slim_dicts)
 
-    def has_valid_raw_cache(self, opportunity_id: int, expected_visit_count: int, tolerance_pct: int = 100) -> bool:
+    def has_valid_raw_cache(
+        self,
+        opportunity_id: int,
+        expected_visit_count: int,
+        tolerance_pct: int = 100,
+        pipeline_id: int | None = None,
+    ) -> bool:
         """Check if valid raw cache exists in SQL."""
-        cache_manager = SQLCacheManager(opportunity_id, config=None)
+        cache_manager = SQLCacheManager(opportunity_id, pipeline_id=pipeline_id)
         return cache_manager.has_valid_raw_cache(expected_visit_count, tolerance_pct=tolerance_pct)
 
     def _load_from_cache(

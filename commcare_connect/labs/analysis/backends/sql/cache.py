@@ -96,15 +96,26 @@ class SQLCacheManager:
     - Computed entities: One row per linking_field value per config
     """
 
-    def __init__(self, opportunity_id: int, config: AnalysisPipelineConfig | None = None):
+    def __init__(
+        self,
+        opportunity_id: int,
+        config: AnalysisPipelineConfig | None = None,
+        *,
+        pipeline_id: int | None = None,
+    ):
         self.opportunity_id = opportunity_id
         self.config = config
         self.config_hash = get_config_hash(config) if config else None
-        # Pipeline-id discriminator for the raw cache (#116). Read off the
-        # config so the manager scopes every read/write to this pipeline's
-        # rows. None means "legacy/ad-hoc caller without a pipeline id" —
-        # those callers share a single None-tagged slot per opportunity.
-        self.pipeline_id = config.pipeline_id if config else None
+        # Pipeline-id discriminator for the raw cache (#116). Prefer the
+        # explicit `pipeline_id` kwarg (used by the raw-fetch path which
+        # only knows the data source, not the full config) and fall back
+        # to the config's pipeline_id. None means "legacy/ad-hoc caller
+        # without a pipeline id" — those callers share a single None-tagged
+        # slot per opportunity.
+        if pipeline_id is not None:
+            self.pipeline_id = pipeline_id
+        else:
+            self.pipeline_id = config.pipeline_id if config else None
         from django.conf import settings
 
         ttl_hours = getattr(settings, "PIPELINE_CACHE_TTL_HOURS", DEFAULT_TTL_HOURS)
