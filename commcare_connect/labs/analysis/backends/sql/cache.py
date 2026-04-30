@@ -8,7 +8,7 @@ import logging
 import random
 from datetime import date, datetime, timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
@@ -22,6 +22,34 @@ from commcare_connect.labs.analysis.config import AnalysisPipelineConfig
 from commcare_connect.labs.analysis.utils import get_config_hash
 
 logger = logging.getLogger(__name__)
+
+
+class CacheConcurrencyError(Exception):
+    """
+    Raised when a cache write conflicts with another writer mid-flight.
+
+    Two pipeline runs targeting the same (opportunity, config) bucket can
+    race in the cache layer: each tries to write its full row set, and
+    without the unique constraint they used to silently both succeed —
+    producing 2x rows. We added unique indexes (see migration 0011);
+    concurrent writers now collide on insert, and the loser raises this
+    error instead of corrupting the cache.
+
+    Callers (the pipeline view) should treat this as terminal: emit a
+    clean SSE error explaining a parallel run is already in flight, and
+    stop. The user should retry — by then the winning writer has
+    finished and a cache hit is likely.
+
+    Attributes:
+        table: the cache table name where the conflict occurred (for logs)
+        opportunity_id: opp the conflict applied to
+    """
+
+    def __init__(self, message: str, *, table: str, opportunity_id: int | None = None):
+        super().__init__(message)
+        self.table = table
+        self.opportunity_id = opportunity_id
+
 
 # Default cache TTL. Read from settings to allow dev override.
 # Production: 1 hour. Local dev: configurable via PIPELINE_CACHE_TTL_HOURS.
@@ -149,11 +177,24 @@ class SQLCacheManager:
                 )
             )
 
-        # DELETE and INSERT in same transaction to prevent race condition
-        # where concurrent requests could both insert, causing duplicates
-        with transaction.atomic():
-            RawVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
-            RawVisitCache.objects.bulk_create(rows, batch_size=1000)
+        # DELETE then INSERT inside a transaction. Combined with the
+        # UNIQUE(opportunity_id, visit_id) constraint added in migration
+        # 0011, this serializes concurrent writers: one wins, the loser
+        # raises IntegrityError -> CacheConcurrencyError. Without the
+        # unique constraint, concurrent bulk_creates could both succeed
+        # and we'd end up with 2x rows.
+        try:
+            with transaction.atomic():
+                RawVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
+                RawVisitCache.objects.bulk_create(rows, batch_size=1000)
+        except IntegrityError as e:
+            raise CacheConcurrencyError(
+                f"Concurrent write to RawVisitCache for opp {self.opportunity_id} "
+                f"detected. Another pipeline run is in flight for the same "
+                f"opportunity. Retry in a moment — a cache hit is likely.",
+                table="labs_raw_visit_cache",
+                opportunity_id=self.opportunity_id,
+            ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} raw visits for opp {self.opportunity_id}")
 
@@ -218,7 +259,21 @@ class SQLCacheManager:
                     images=v.get("images") or [],
                 )
             )
-        RawVisitCache.objects.bulk_create(rows, batch_size=1000)
+        # The unique constraint is (opportunity_id, visit_count, visit_id);
+        # since this writer's rows all share the same negative sentinel
+        # visit_count, the constraint catches in-batch dups but lets a
+        # *concurrent* writer (different sentinel) coexist until finalize.
+        try:
+            RawVisitCache.objects.bulk_create(rows, batch_size=1000)
+        except IntegrityError as e:
+            raise CacheConcurrencyError(
+                f"Conflict inserting raw visits batch for opp {self.opportunity_id} "
+                f"(sentinel={self._pending_visit_count}). The export API likely "
+                f"returned the same visit_id twice in this run. Retry should "
+                f"succeed.",
+                table="labs_raw_visit_cache",
+                opportunity_id=self.opportunity_id,
+            ) from e
         return len(rows)
 
     def store_raw_visits_finalize(self, actual_count: int):
@@ -331,14 +386,29 @@ class SQLCacheManager:
             for v in visits_data
         ]
 
-        # DELETE and INSERT in same transaction to prevent race condition
-        # where concurrent requests could both insert, causing duplicates
-        with transaction.atomic():
-            ComputedVisitCache.objects.filter(
+        # DELETE then INSERT inside a transaction. The unique constraint
+        # UNIQUE(opportunity_id, config_hash, visit_id) added in migration
+        # 0011 makes concurrent writers collide on insert: one wins, the
+        # loser raises IntegrityError -> CacheConcurrencyError. Without
+        # the constraint, concurrent writers could both succeed (no row
+        # locks taken on an empty DELETE) and the cache ended up with 2x
+        # rows — see incident on opp 765 (172120 instead of 86060).
+        try:
+            with transaction.atomic():
+                ComputedVisitCache.objects.filter(
+                    opportunity_id=self.opportunity_id,
+                    config_hash=self.config_hash,
+                ).delete()
+                ComputedVisitCache.objects.bulk_create(rows, batch_size=1000)
+        except IntegrityError as e:
+            raise CacheConcurrencyError(
+                f"Concurrent write to ComputedVisitCache for opp "
+                f"{self.opportunity_id}, config_hash={self.config_hash[:8]}... "
+                f"detected. Another pipeline run is in flight for the same "
+                f"(opportunity, config). Retry — a cache hit is likely.",
+                table="labs_computed_visit_cache",
                 opportunity_id=self.opportunity_id,
-                config_hash=self.config_hash,
-            ).delete()
-            ComputedVisitCache.objects.bulk_create(rows, batch_size=1000)
+            ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} computed visits for opp {self.opportunity_id}")
 
@@ -401,14 +471,23 @@ class SQLCacheManager:
             for f in flw_data
         ]
 
-        # DELETE and INSERT in same transaction to prevent race condition
-        # where concurrent requests could both insert, causing duplicates
-        with transaction.atomic():
-            ComputedFLWCache.objects.filter(
+        # See ComputedVisitCache.store_computed_visits comment — same
+        # concurrency contract via UNIQUE(opportunity_id, config_hash, username).
+        try:
+            with transaction.atomic():
+                ComputedFLWCache.objects.filter(
+                    opportunity_id=self.opportunity_id,
+                    config_hash=self.config_hash,
+                ).delete()
+                ComputedFLWCache.objects.bulk_create(rows, batch_size=1000)
+        except IntegrityError as e:
+            raise CacheConcurrencyError(
+                f"Concurrent write to ComputedFLWCache for opp "
+                f"{self.opportunity_id}. Another pipeline run is in flight. "
+                f"Retry — a cache hit is likely.",
+                table="labs_computed_flw_cache",
                 opportunity_id=self.opportunity_id,
-                config_hash=self.config_hash,
-            ).delete()
-            ComputedFLWCache.objects.bulk_create(rows, batch_size=1000)
+            ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} FLW results for opp {self.opportunity_id}")
 
@@ -470,13 +549,23 @@ class SQLCacheManager:
             for e in entity_data
         ]
 
-        # DELETE and INSERT in same transaction to prevent race condition
-        with transaction.atomic():
-            ComputedEntityCache.objects.filter(
+        # See ComputedVisitCache.store_computed_visits comment — same
+        # concurrency contract via UNIQUE(opportunity_id, config_hash, entity_id).
+        try:
+            with transaction.atomic():
+                ComputedEntityCache.objects.filter(
+                    opportunity_id=self.opportunity_id,
+                    config_hash=self.config_hash,
+                ).delete()
+                ComputedEntityCache.objects.bulk_create(rows, batch_size=1000)
+        except IntegrityError as e:
+            raise CacheConcurrencyError(
+                f"Concurrent write to ComputedEntityCache for opp "
+                f"{self.opportunity_id}. Another pipeline run is in flight. "
+                f"Retry — a cache hit is likely.",
+                table="labs_computed_entity_cache",
                 opportunity_id=self.opportunity_id,
-                config_hash=self.config_hash,
-            ).delete()
-            ComputedEntityCache.objects.bulk_create(rows, batch_size=1000)
+            ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} entity results for opp {self.opportunity_id}")
 
