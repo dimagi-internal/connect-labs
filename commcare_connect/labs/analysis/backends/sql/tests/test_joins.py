@@ -302,3 +302,174 @@ class TestCrossPipelineJoins:
         # Per-mother phones: ["111", "111", "222", "333"]
         # Dup count = 2 (the two "111"s). Total = 4. Share = 0.5
         assert results["a"]["phone_dup_share"] == pytest.approx(0.5, abs=0.01)
+
+    def test_per_mother_cte_filtered_field_attributed(self, db):
+        """Attributed field with a per-row filter (e.g. parity ANC-only)
+        applies the filter inside the per-mother CTE and only counts
+        ANC-matching values per mother. Catches the regression where the
+        per-mother CTE refactor would silently apply the filter at the
+        wrong stage and cross-contaminate non-ANC visits' parity.
+        """
+        opp_id = 9705
+        # FLW 'a' has 2 mothers. M1: 1 ANC visit with parity G2P1, 1 non-ANC.
+        # M2: 1 ANC with parity G3P2, 1 non-ANC with garbage value.
+        future = timezone.now() + timezone.timedelta(days=1)
+        rows = [
+            ("a", "M1", "ANC Visit", "G2P1", 50001),
+            ("a", "M1", "1 Week Visit", "GARBAGE_NON_ANC", 50002),
+            ("a", "M2", "ANC Visit", "G3P2", 50003),
+            ("a", "M2", "1 Week Visit", "OTHER_GARBAGE", 50004),
+        ]
+        for username, mid, form_name, parity, vid in rows:
+            RawVisitCache.objects.create(
+                opportunity_id=opp_id,
+                visit_count=len(rows),
+                expires_at=future,
+                visit_id=str(vid),
+                username=username,
+                form_json={
+                    "form": {
+                        "@name": form_name,
+                        "parents": {"parent": {"case": {"@case_id": mid}}},
+                        "confirm_visit_information": {
+                            "parity__of_live_births_or_stillbirths_after_24_weeks": parity,
+                        },
+                    }
+                },
+                visit_date="2024-01-15",
+                status="approved",
+            )
+
+        config = AnalysisPipelineConfig(
+            grouping_key="username",
+            fields=[
+                FieldComputation(
+                    name="parity_dup_share",
+                    path="form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
+                    aggregation="dup_share",
+                    pre_aggregate_by="form.parents.parent.case.@case_id",
+                    pre_aggregation="last",
+                    pre_aggregate_attribute_to="last_username",
+                    filter_path="form.@name",
+                    filter_value="ANC Visit",
+                ),
+                FieldComputation(
+                    name="parity_mode_share",
+                    path="form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
+                    aggregation="mode_share",
+                    pre_aggregate_by="form.parents.parent.case.@case_id",
+                    pre_aggregation="last",
+                    pre_aggregate_attribute_to="last_username",
+                    filter_path="form.@name",
+                    filter_value="ANC Visit",
+                ),
+                FieldComputation(
+                    name="parity_mode_value",
+                    path="form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
+                    aggregation="mode",
+                    pre_aggregate_by="form.parents.parent.case.@case_id",
+                    pre_aggregation="last",
+                    pre_aggregate_attribute_to="last_username",
+                    filter_path="form.@name",
+                    filter_value="ANC Visit",
+                ),
+            ],
+        )
+
+        sql = build_flw_aggregation_query(config, opp_id)
+        results = {row["username"]: row for row in self._execute(sql)}
+
+        # Filter must isolate ANC values only:
+        # M1's per-mother parity = "G2P1" (ANC), NOT "GARBAGE_NON_ANC"
+        # M2's per-mother parity = "G3P2" (ANC), NOT "OTHER_GARBAGE"
+        # Per-FLW parity values: ["G2P1", "G3P2"] — both unique, no dups, no mode dominance.
+        # If the filter leaked: per-mother LAST would pick "GARBAGE_*" (visit_id higher)
+        # and parity_dup_share would change.
+        assert results["a"]["parity_dup_share"] == pytest.approx(0.0, abs=0.01), (
+            f"parity_dup_share={results['a']['parity_dup_share']} — filter likely leaked, "
+            f"non-ANC visits contributed parity values"
+        )
+        # mode_share: 1/2 = 0.5 (both values appear once, max group size = 1, total = 2)
+        assert results["a"]["parity_mode_share"] == pytest.approx(0.5, abs=0.01)
+        # mode_value: ties broken by Postgres (G2P1 or G3P2), but never garbage values
+        assert results["a"]["parity_mode_value"] in (
+            "G2P1",
+            "G3P2",
+        ), f"mode_value={results['a']['parity_mode_value']} — filter leaked"
+
+    def test_per_mother_cte_shares_across_multiple_attributed_fields(self, db):
+        """Multiple attributed fields with the SAME pre_aggregate_by share
+        one CTE — the actual optimization. Verifies the shared CTE emits
+        correct values for all fields simultaneously, not just the first
+        one declared.
+        """
+        opp_id = 9706
+        self._seed_visits(opp_id, [("a", "M1"), ("a", "M2"), ("a", "M3")])
+        reg_hash = "reghash06"
+        self._seed_registrations_cache(
+            opp_id,
+            reg_hash,
+            [
+                # All 3 mothers share phone "111" — dup_share = 1.0
+                # 2 of 3 mothers have age "30" — mode_share = 2/3 ≈ 0.67
+                ("M1", {"phone_number": "111", "age": "30"}),
+                ("M2", {"phone_number": "111", "age": "30"}),
+                ("M3", {"phone_number": "111", "age": "25"}),
+            ],
+        )
+        config = AnalysisPipelineConfig(
+            grouping_key="username",
+            fields=[
+                FieldComputation(
+                    name="phone_dup_share",
+                    path="joined.registrations.phone_number",
+                    aggregation="dup_share",
+                    pre_aggregate_by="form.parents.parent.case.@case_id",
+                    pre_aggregation="first",
+                    pre_aggregate_attribute_to="last_username",
+                ),
+                FieldComputation(
+                    name="age_mode_share",
+                    path="joined.registrations.age",
+                    aggregation="mode_share",
+                    pre_aggregate_by="form.parents.parent.case.@case_id",
+                    pre_aggregation="first",
+                    pre_aggregate_attribute_to="last_username",
+                ),
+                FieldComputation(
+                    name="age_mode_value",
+                    path="joined.registrations.age",
+                    aggregation="mode",
+                    pre_aggregate_by="form.parents.parent.case.@case_id",
+                    pre_aggregation="first",
+                    pre_aggregate_attribute_to="last_username",
+                ),
+            ],
+            joins=[
+                JoinConfig(
+                    from_alias="registrations",
+                    local_key="form.parents.parent.case.@case_id",
+                    remote_key_field="mother_case_id",
+                    fields=[
+                        {"name": "phone_number", "from": "phone_number"},
+                        {"name": "age", "from": "age"},
+                    ],
+                    resolved_config_hash=reg_hash,
+                )
+            ],
+        )
+        sql = build_flw_aggregation_query(config, opp_id)
+        # Each attributed field reads from the SAME CTE — exactly one
+        # _per_mother_form_parents_parent_case_case_id alias appears in
+        # the WITH clause (definition), referenced N times in SELECT.
+        cte_def_count = sql.count("_per_mother_form_parents_parent_case_case_id AS MATERIALIZED")
+        cte_ref_count = sql.count("FROM _per_mother_form_parents_parent_case_case_id")
+        assert cte_def_count == 1, f"Expected 1 CTE definition, got {cte_def_count}"
+        assert cte_ref_count == 3, f"Expected 3 references (one per attributed field), got {cte_ref_count}"
+
+        results = {row["username"]: row for row in self._execute(sql)}
+        # All 3 phones equal → all duplicate. dup_share = 1.0
+        assert results["a"]["phone_dup_share"] == pytest.approx(1.0, abs=0.01)
+        # Ages: ["30", "30", "25"] — mode "30" with count 2, total 3, share = 0.667
+        assert results["a"]["age_mode_share"] == pytest.approx(2 / 3, abs=0.01)
+        assert results["a"]["age_mode_value"] == "30"
