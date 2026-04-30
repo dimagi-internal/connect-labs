@@ -75,7 +75,11 @@ PIPELINE_SCHEMAS = [
                     "aggregation": "first",
                 },
                 {
-                    "name": "visit_date",
+                    # Form-reported visit date — namespaced to avoid shadowing the
+                    # base `visit_date` column on labs_raw_visit_cache (which is the
+                    # typed date the cache layer ships). The form-extracted value is
+                    # exposed under `form_visit_date` so the render reads it explicitly.
+                    "name": "form_visit_date",
                     "paths": ["form.grp_kmc_visit.visit_date"],
                     "aggregation": "first",
                     "transform": "date",
@@ -302,9 +306,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
 
         Object.keys(byChild).forEach(function(cid) {
             var visits = byChild[cid]
-                .filter(function(v) { return v.weight != null && v.visit_date; })
+                .filter(function(v) { return v.weight != null && v.form_visit_date; })
                 .sort(function(a, b) {
-                    return (a.visit_date || '').localeCompare(b.visit_date || '');
+                    return (a.form_visit_date || '').localeCompare(b.form_visit_date || '');
                 });
             for (var i = 1; i < visits.length; i++) {
                 var prev = visits[i - 1];
@@ -313,8 +317,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 var w2 = parseFloat(curr.weight);
                 if (isNaN(w1) || isNaN(w2)) continue;
                 if (w1 < 500 || w1 > 5000 || w2 < 500 || w2 > 5000) continue;
-                var d1 = new Date(prev.visit_date);
-                var d2 = new Date(curr.visit_date);
+                var d1 = new Date(prev.form_visit_date);
+                var d2 = new Date(curr.form_visit_date);
                 var daysBetween = (d2 - d1) / (1000 * 60 * 60 * 24);
                 if (daysBetween < 1 || daysBetween > 30) continue;
                 totalPairs++;
@@ -377,12 +381,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         myRows.forEach(function(r) {
             var cid = r.beneficiary_case_id;
             if (!cid) return;
-            if (!byCase[cid]) byCase[cid] = { kmc_status: null, visit_date: null };
+            if (!byCase[cid]) byCase[cid] = { kmc_status: null, form_visit_date: null };
             // Keep latest status by visit date
-            if (!byCase[cid].visit_date || (r.visit_date && r.visit_date > byCase[cid].visit_date)) {
+            if (!byCase[cid].form_visit_date
+                || (r.form_visit_date && r.form_visit_date > byCase[cid].form_visit_date)) {
                 if (r.kmc_status) {
                     byCase[cid].kmc_status = r.kmc_status;
-                    byCase[cid].visit_date = r.visit_date;
+                    byCase[cid].form_visit_date = r.form_visit_date;
                 }
             }
         });
