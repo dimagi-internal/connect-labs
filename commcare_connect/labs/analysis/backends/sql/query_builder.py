@@ -69,6 +69,14 @@ def _get_transform_pattern(field: FieldComputation | HistogramComputation) -> st
 
     name = field.name.lower()
 
+    # GPS-string parsing — packed "lat lon altitude accuracy" → individual float
+    # columns. Two distinct patterns matching the lambdas in the transform
+    # registry: split()[0] for latitude, split()[1] for longitude.
+    if "split()[0]" in source and "float(" in source:
+        return "gps_lat"
+    if "split()[1]" in source and "float(" in source:
+        return "gps_lon"
+
     if "yes" in source and "true" in source:
         return "yes_no_to_1"
 
@@ -163,6 +171,24 @@ def _transform_to_sql(field: FieldComputation | HistogramComputation, value_expr
 
     elif transform_src == "non_empty_to_1":
         return f"""CASE WHEN {value_expr} IS NOT NULL AND TRIM({value_expr}) != '' THEN 1 ELSE NULL END"""
+
+    elif transform_src == "gps_lat":
+        # Packed "lat lon alt acc" → first whitespace-separated float.
+        # split_part is 1-indexed; NULLIF avoids '' → 0.0 cast errors when
+        # split_part returns the empty string for a missing field.
+        return (
+            f"CASE WHEN {value_expr} IS NOT NULL AND TRIM({value_expr}) != '' "
+            f"AND split_part({value_expr}, ' ', 1) ~ '^-?[0-9]*\\.?[0-9]+$' "
+            f"THEN split_part({value_expr}, ' ', 1)::FLOAT ELSE NULL END"
+        )
+
+    elif transform_src == "gps_lon":
+        # Same as gps_lat but second token.
+        return (
+            f"CASE WHEN {value_expr} IS NOT NULL AND TRIM({value_expr}) != '' "
+            f"AND split_part({value_expr}, ' ', 2) ~ '^-?[0-9]*\\.?[0-9]+$' "
+            f"THEN split_part({value_expr}, ' ', 2)::FLOAT ELSE NULL END"
+        )
 
     else:
         logger.warning(f"Unknown transform for field {field.name}, using passthrough")

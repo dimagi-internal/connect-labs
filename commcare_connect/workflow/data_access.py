@@ -1804,6 +1804,11 @@ class PipelineDataAccess(BaseDataAccess):
             "int": lambda x: int(float(x)) if x else None,
             "date": None,
             "string": lambda x: str(x) if x else None,
+            # GPS-string parsing for "lat lon altitude accuracy" packed format.
+            # The MBW data model packs all four into one form field; v3's window
+            # fields need lat/lon as separate float columns.
+            "gps_lat": lambda x: float(x.split()[0]) if x and isinstance(x, str) and len(x.split()) >= 2 else None,
+            "gps_lon": lambda x: float(x.split()[1]) if x and isinstance(x, str) and len(x.split()) >= 2 else None,
         }
 
         def get_transform(name):
@@ -1824,6 +1829,9 @@ class PipelineDataAccess(BaseDataAccess):
                     default=field_def.get("default"),
                     filter_path=field_def.get("filter_path", ""),
                     filter_value=field_def.get("filter_value", ""),
+                    filter_op=field_def.get("filter_op", "eq"),
+                    pre_aggregate_by=field_def.get("pre_aggregate_by", ""),
+                    pre_aggregation=field_def.get("pre_aggregation", "first"),
                 )
             )
 
@@ -1860,6 +1868,25 @@ class PipelineDataAccess(BaseDataAccess):
             gs_app_id=data_source_dict.get("gs_app_id", ""),
         )
 
+        # Window fields (e.g., distance_from_prev_case_visit_m via lag_haversine).
+        # Each entry references already-extracted fields by name — config-level
+        # validation in AnalysisPipelineConfig.__post_init__ catches dangling refs.
+        from commcare_connect.labs.analysis.config import WindowFieldComputation
+
+        window_fields = []
+        for wf_def in schema.get("window_fields", []):
+            window_fields.append(
+                WindowFieldComputation(
+                    name=wf_def["name"],
+                    operation=wf_def.get("operation", "lag_haversine"),
+                    partition_by=wf_def.get("partition_by", ""),
+                    order_by=wf_def.get("order_by", ""),
+                    lat_field=wf_def.get("lat_field", ""),
+                    lon_field=wf_def.get("lon_field", ""),
+                    description=wf_def.get("description", ""),
+                )
+            )
+
         return AnalysisPipelineConfig(
             grouping_key=schema.get("grouping_key", "username"),
             fields=fields,
@@ -1870,4 +1897,5 @@ class PipelineDataAccess(BaseDataAccess):
             terminal_stage=terminal_stage,
             linking_field=schema.get("linking_field", "entity_id"),
             data_source=data_source,
+            window_fields=window_fields,
         )
