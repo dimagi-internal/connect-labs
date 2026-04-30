@@ -455,11 +455,37 @@ def _pre_aggregated_field_sql(field: FieldComputation) -> str:
     pre_path_sql = _jsonb_path_to_sql(field.pre_aggregate_by)
     inner_collapse = _inner_agg_expr(field.pre_aggregation, transformed_expr)
 
+    # Build the inner-subquery WHERE clause. Always restrict to the outer
+    # row's (opportunity_id, username) via correlated reference, plus
+    # pre_aggregate_by IS NOT NULL. If the field declares a filter, apply
+    # the SAME filter to the inner subquery — without this, pre_aggregation
+    # collapses ALL rows per pre-group, including ones the outer filter
+    # would have excluded. v1 fidelity requires the filter applied at row
+    # level (e.g., MBW's parity_concentration only looks at ANC visits;
+    # collapsing across non-ANC visits would pick the wrong "last parity
+    # per mother"). This adds the filter for both 'eq' and 'contains_word'.
+    inner_where_clauses = [
+        "sub.opportunity_id = labs_raw_visit_cache.opportunity_id",
+        "sub.username = labs_raw_visit_cache.username",
+        f"{pre_path_sql} IS NOT NULL",
+    ]
+    if (field.filter_path or field.filter_paths) and field.filter_value:
+        if field.filter_paths:
+            inner_filter_sql = _paths_to_coalesce_sql(field.filter_paths)
+        else:
+            inner_filter_sql = _jsonb_path_to_sql(field.filter_path)
+        if field.filter_op == "eq":
+            inner_where_clauses.append(f"TRIM({inner_filter_sql}) = '{field.filter_value}'")
+        elif field.filter_op == "contains_word":
+            inner_where_clauses.append(
+                f"'{field.filter_value}' = ANY(string_to_array(COALESCE({inner_filter_sql}, ''), ' '))"
+            )
+
+    inner_where = " AND ".join(inner_where_clauses)
+
     inner_subquery = f"""SELECT {pre_path_sql} AS pre_group, {inner_collapse} AS v
             FROM labs_raw_visit_cache sub
-            WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
-              AND sub.username = labs_raw_visit_cache.username
-              AND {pre_path_sql} IS NOT NULL
+            WHERE {inner_where}
             GROUP BY {pre_path_sql}"""
 
     if field.aggregation == "mode_share":
