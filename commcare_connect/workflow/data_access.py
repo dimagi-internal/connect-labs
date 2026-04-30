@@ -1828,6 +1828,7 @@ class PipelineDataAccess(BaseDataAccess):
                     description=field_def.get("description", ""),
                     default=field_def.get("default"),
                     filter_path=field_def.get("filter_path", ""),
+                    filter_paths=field_def.get("filter_paths"),
                     filter_value=field_def.get("filter_value", ""),
                     filter_op=field_def.get("filter_op", "eq"),
                     pre_aggregate_by=field_def.get("pre_aggregate_by", ""),
