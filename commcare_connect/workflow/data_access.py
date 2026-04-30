@@ -1004,8 +1004,20 @@ class WorkflowDataAccess(BaseDataAccess):
             program_id=self.program_id,
         )
 
+        # Pre-resolve cross-pipeline JOIN config_hashes and topologically sort
+        # so dependencies run before dependents. Mirrors what the SSE pipeline
+        # stream view does — keeps celery-driven and SSE-driven paths consistent.
+        # Without this, the visits pipeline (which JOINs registrations) errors
+        # out with "resolved_config_hash not set" before any SQL runs.
+        from commcare_connect.labs.analysis.utils import resolve_join_hashes
+        from commcare_connect.workflow.views import _resolve_pipeline_sources_for_run
+
+        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(pipeline_access, sources)
+        if configs_by_alias:
+            resolve_join_hashes(configs_by_alias)
+
         try:
-            for source in sources:
+            for source in ordered_sources:
                 pipeline_id = source.get("pipeline_id")
                 alias = source.get("alias")
                 if not pipeline_id or not alias:
@@ -1018,7 +1030,9 @@ class WorkflowDataAccess(BaseDataAccess):
                 per_opp_meta: dict[str, dict] = {}
                 for opp_id in opp_ids:
                     try:
-                        pipeline_result = pipeline_access.execute_pipeline(pipeline_id, opp_id)
+                        pipeline_result = pipeline_access.execute_pipeline(
+                            pipeline_id, opp_id, config=configs_by_alias.get(alias)
+                        )
                         merged_rows.extend(
                             {**row, "opportunity_id": opp_id} for row in pipeline_result.get("rows", [])
                         )
@@ -1785,7 +1799,7 @@ class PipelineDataAccess(BaseDataAccess):
     # Pipeline Execution
     # -------------------------------------------------------------------------
 
-    def execute_pipeline(self, definition_id: int, opportunity_id: int) -> dict:
+    def execute_pipeline(self, definition_id: int, opportunity_id: int, config=None) -> dict:
         """
         Execute a pipeline and return results.
 
@@ -1796,6 +1810,17 @@ class PipelineDataAccess(BaseDataAccess):
         inspect `result["metadata"].get("error")` to detect per-opp failures
         rather than wrapping the call in try/except.
 
+        Args:
+            definition_id: Pipeline definition labs-record id.
+            opportunity_id: Opportunity to scope this pipeline run to.
+            config: Optional pre-built `AnalysisPipelineConfig`. When the
+                caller is orchestrating multiple sibling pipelines and has
+                already resolved cross-pipeline JOIN config_hashes via
+                `resolve_join_hashes`, pass that config here. Without this,
+                a fresh `_schema_to_config` call rebuilds the config and
+                drops any resolved JOIN hashes — leading to "resolved_config_hash
+                not set" SQL build errors at execute time. Falls back to
+                fresh parsing when omitted (backwards-compatible).
         Returns:
             Dict with keys:
                 "rows": list of row dicts (empty on failure)
@@ -1814,8 +1839,10 @@ class PipelineDataAccess(BaseDataAccess):
             return {"rows": [], "metadata": {"error": "Pipeline has no schema"}}
 
         try:
-            # Convert schema to pipeline config
-            config = self._schema_to_config(schema, definition_id)
+            # Use the pre-resolved config if the caller passed one (multi-
+            # pipeline orchestration path); otherwise build a fresh one.
+            if config is None:
+                config = self._schema_to_config(schema, definition_id)
 
             # Execute pipeline using the AnalysisPipeline.
             # Works with either a Django request (web UI path) or a bare access_token

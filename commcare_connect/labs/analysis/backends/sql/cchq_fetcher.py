@@ -168,3 +168,78 @@ def fetch_cchq_forms_as_visit_dicts(
 
     visit_dicts = [normalize_cchq_form_to_visit_dict(form, i) for i, form in enumerate(forms)]
     return visit_dicts
+
+
+def iter_cchq_forms_as_visit_dicts(
+    request: HttpRequest | None,
+    data_source: DataSourceConfig,
+    access_token: str,
+    opportunity_id: int,
+):
+    """Streaming variant of `fetch_cchq_forms_as_visit_dicts` — yields one
+    visit_dict per form without loading the whole list into memory.
+
+    Same auth + xmlns-discovery contract as `fetch_cchq_forms_as_visit_dicts`;
+    the only difference is the body is a generator delegating to
+    `client.iter_forms`. Use this when downstream callers can chunk-process
+    so the cchq fetch + storage path stays bounded in memory regardless of
+    form count. The non-streaming variant OOM'd Fargate workers at ~26k MBW
+    registrations (~7KB each → ~180MB JSON, then ORM bulk_create on top).
+    """
+    if request is None:
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQHeadlessError
+
+        raise CCHQHeadlessError(
+            "Pipeline data_source.type is 'cchq_forms', which requires a "
+            "CommCare HQ OAuth token from the user's web session. This call "
+            "is running in a headless context (no request) so no token is "
+            "available. Run the preview from the web UI, or convert the "
+            "pipeline to a connect_csv data source."
+        )
+
+    metadata = fetch_opportunity_metadata(access_token, opportunity_id)
+    cc_domain = metadata.get("cc_domain")
+    if not cc_domain:
+        raise ValueError(f"No cc_domain found for opportunity {opportunity_id}")
+
+    app_id = data_source.app_id
+    if not app_id and data_source.app_id_source == "opportunity":
+        app_id = metadata.get("cc_app_id", "")
+
+    client = CommCareDataAccess(request, cc_domain)
+    if not client.check_token_valid():
+        raise ValueError(
+            "CommCare OAuth not configured or expired. Please authorize CommCare access at /labs/commcare/initiate/"
+        )
+
+    if not client.verify_hq_access():
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
+        raise CCHQAuthError(
+            f"CommCare HQ rejected the access probe for domain {cc_domain!r}. "
+            f"User needs to re-authorize CommCare access at /labs/commcare/initiate/.",
+            domain=cc_domain,
+        )
+
+    form_name = data_source.form_name
+    xmlns = None
+    fetch_app_id = None
+
+    if data_source.gs_app_id:
+        xmlns = client.get_form_xmlns(data_source.gs_app_id, form_name)
+        if xmlns:
+            fetch_app_id = data_source.gs_app_id
+    if not xmlns and app_id:
+        xmlns = client.get_form_xmlns(app_id, form_name)
+        if xmlns:
+            fetch_app_id = app_id
+    if not xmlns:
+        xmlns = client.discover_form_xmlns(form_name)
+
+    if not xmlns:
+        logger.warning(f"[CCHQ Fetcher] Could not discover xmlns for '{form_name}'")
+        return
+
+    logger.info(f"[CCHQ Fetcher] Streaming '{form_name}' forms from {cc_domain}")
+    for i, form in enumerate(client.iter_forms(xmlns=xmlns, app_id=fetch_app_id)):
+        yield normalize_cchq_form_to_visit_dict(form, i)
