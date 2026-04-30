@@ -1,6 +1,6 @@
 site_name: Connect Labs Help
 site_description: User documentation for Connect Labs at labs.connect.dimagi.com
-site_url: https://jjackson.github.io/connect-labs/
+site_url: https://jjackson.github.io/connect-labs/docs/
 
 docs_dir: user_docs
 
