@@ -303,7 +303,11 @@ class AnalysisPipeline:
         raise RuntimeError("Analysis pipeline completed without returning a result")
 
     def _consume_raw_visits_stream(
-        self, opp_id: int, force_refresh: bool = False, tolerance_pct: int = 100
+        self,
+        opp_id: int,
+        force_refresh: bool = False,
+        tolerance_pct: int = 100,
+        pipeline_id: int | None = None,
     ) -> Generator[tuple[str, Any], None, None]:
         """
         Consume stream_raw_visits events and yield SSE pipeline events.
@@ -326,6 +330,7 @@ class AnalysisPipeline:
             expected_visit_count=self.visit_count,
             force_refresh=force_refresh,
             tolerance_pct=tolerance_pct,
+            pipeline_id=pipeline_id,
         ):
             event_type = event[0]
             if event_type == "cached":
@@ -469,6 +474,7 @@ class AnalysisPipeline:
                                 opp_id,
                                 force_refresh=force_refresh,
                                 tolerance_pct=tolerance,
+                                pipeline_id=unfiltered_config.pipeline_id,
                             )
                             visit_dicts = self._visit_dicts
                             raw_data_already_stored = self._raw_data_already_stored
@@ -549,6 +555,7 @@ class AnalysisPipeline:
                         yield from self._consume_raw_visits_stream(
                             opp_id,
                             force_refresh=True,
+                            pipeline_id=unfiltered_config.pipeline_id,
                         )
                         visit_dicts = self._visit_dicts
                         raw_data_already_stored = self._raw_data_already_stored
@@ -620,6 +627,7 @@ class AnalysisPipeline:
                 opp_id,
                 force_refresh=force_refresh,
                 tolerance_pct=tolerance,
+                pipeline_id=config.pipeline_id,
             )
             visit_dicts = self._visit_dicts
             raw_data_already_stored = self._raw_data_already_stored
