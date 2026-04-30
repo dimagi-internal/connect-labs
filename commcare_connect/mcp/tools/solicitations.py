@@ -290,8 +290,11 @@ def update_solicitation(user, solicitation_id: int, update_data: dict) -> dict:
         if current is None:
             raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
 
-        # Merge: existing data wins on unspecified keys; update_data wins on overlapping keys
+        # Merge: existing data wins on unspecified keys; update_data wins on overlapping keys.
+        # Strip visibility keys — public flag lives on the LabsRecord envelope, not inside data.
         merged_data = dict(current.data or {})
+        update_data.pop("is_public", None)
+        update_data.pop("public", None)
         merged_data.update(update_data)
 
         record = client.update_record(

@@ -308,6 +308,14 @@ def run(
     env = os.environ.copy()
     for k in (
         "ANTHROPIC_API_KEY",
+        # Higher precedence than ANTHROPIC_API_KEY — must strip to prevent
+        # a parent-shell claude.ai token from overriding the ZDR key and
+        # silently routing e2e prompts through a non-governed endpoint.
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        # A proxy URL here would intercept all e2e traffic, defeating the
+        # "verify ZDR routing" purpose of the smoke test.
+        "ANTHROPIC_BASE_URL",
         "CLAUDE_CODE_USE_VERTEX",
         "ANTHROPIC_VERTEX_PROJECT_ID",
         "CLOUD_ML_REGION",

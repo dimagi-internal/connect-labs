@@ -49,6 +49,13 @@ def test_safe_mode_denies_filesystem_shell_network_and_subagents(safe_settings):
         # RemoteTrigger: same escape risk as CronCreate — a triggered background
         # agent runs with the user's default config, not safe-mode config.
         "RemoteTrigger",
+        # Browser automation tools — complete exfiltration channel (fetch + JS
+        # execution) even if defaultMode blocks them as unknown. Explicit deny
+        # provides defence-in-depth against future defaultMode changes.
+        "mcp__Claude_in_Chrome__*",
+        "mcp__Claude_Preview__*",
+        # Scheduling MCP — same escape concern as CronCreate.
+        "mcp__scheduled-tasks__*",
     }
     missing = required_denies - deny
     assert not missing, f"Safe mode must deny: {sorted(missing)}"
@@ -71,6 +78,13 @@ def test_safe_mode_denies_sensitive_file_reads(safe_settings):
         "Read(~/.commcare-connect/**)",
         "Glob(~/.commcare-connect/**)",
         "Grep(~/.commcare-connect/**)",
+        # Cloud and SSH credential files reachable via Glob+Read chain
+        "Read(~/.aws/**)",
+        "Read(~/.ssh/**)",
+        "Read(~/.config/**)",
+        "Glob(~/.aws/**)",
+        "Glob(~/.ssh/**)",
+        "Glob(~/.config/**)",
     }
     missing = required_path_denies - set(deny)
     assert not missing, f"Safe mode must include path-scoped denies: {sorted(missing)}"

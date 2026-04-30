@@ -20,11 +20,13 @@ that file writes are available in this session:
 >
 > To author seed templates, open a **regular Claude Code session** from
 > the connect-labs directory instead:
+>
 > ```
 > cd ~/your/connect-labs
 > source .venv/bin/activate
 > claude
 > ```
+>
 > Then re-invoke this skill.
 
 Do **not** proceed with any file reads, MCP calls, or partial work after this
