@@ -101,14 +101,29 @@ DASHBOARD_CONTRACT: list[Leaf] = [
     Leaf("followup_data.visit_status_distribution.rejected", int, EXACT),
     Leaf("followup_data.visit_status_distribution.over_limit", int, EXACT),
     # ---------- quality_metrics ----------
+    # V1 emits a per-FLW dict with: phone_dup_pct, anc_pnc_same_date_count,
+    # anc_pnc_denominator, parity_concentration: {mode_pct, mode_value,
+    # pct_duplicate}, age_concentration: {...}, age_equals_reg_pct.
+    #
+    # PR #3 covers parity_concentration {mode_pct, mode_value} via two-pass
+    # aggregation (per-mother first → per-FLW mode_share/mode). The other
+    # quality leaves require either cross-pipeline JOIN (phone, age — sourced
+    # from registrations) or per-mother extraction across multiple visit form
+    # types (anc_pnc_same_date_count) and land in a future PR. Each is added
+    # to this contract only when its v3 path actually computes it; until
+    # then leaves declared here are ones v3 must produce.
     Leaf(
-        "quality_metrics{}.parity_concentration_pct",
-        float,
-        PCT_EPS,
-        "Mode-share % of parity per FLW; high = same parity reported repeatedly",
+        "quality_metrics{}.parity_concentration.mode_pct",
+        int,
+        EXACT,
+        "Per-FLW mode-share % of parity (per-mother dedup). 100 = every mother reports identical parity.",
     ),
-    Leaf("quality_metrics{}.anc_anomaly_count", int, EXACT),
-    Leaf("quality_metrics{}.pnc_anomaly_count", int, EXACT),
+    Leaf(
+        "quality_metrics{}.parity_concentration.mode_value",
+        "str|null",
+        EXACT,
+        "Per-FLW most-common parity value across mothers.",
+    ),
     # ---------- performance_data ----------
     Leaf("performance_data[].status", str, EXACT),
     Leaf("performance_data[].flw_count", int, EXACT),
