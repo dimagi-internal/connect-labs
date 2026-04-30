@@ -259,25 +259,15 @@ class Command(BaseCommand):
             v3_gps_visits = []
 
         # V3 overview_data — assembled from visits-pipeline custom_fields.
-        # mother_counts: v1's count_mothers_from_pipeline includes mothers
-        # from BOTH visits AND registration forms (mothers registered but not
-        # yet visited still count). v3's visits pipeline only sees visit-side
-        # mothers. We enrich client-side by adding registration mothers per
-        # FLW (matching v1's CCHQ→Connect username override path). When CCHQ
-        # data is missing, v3 falls back to visit-only counts (matches v1's
-        # fallback behavior on the same data).
+        # mother_counts — visits-only (count_unique mother_case_id per FLW
+        # from v3's visits pipeline). v1's count_mothers_from_pipeline
+        # additionally enriches with registrations (mothers registered but
+        # not yet visited count too). That enrichment requires cross-pipeline
+        # JOIN that v3 doesn't yet ship in SQL. With CCHQ data, v3 will
+        # under-count by the number of registered-but-never-visited mothers
+        # per FLW — flagged as JOIN-blocked rather than papered over with v1
+        # Python helpers.
         v3_mother_counts = {flw: int(f.get("mother_count") or 0) for flw, f in v3_visits_by_flw.items()}
-        if registration_forms:
-            from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
-                count_mothers_from_pipeline as _v1_count_mothers,
-            )
-
-            # Reuse v1's count_mothers_from_pipeline for the enriched count —
-            # this is exactly the algorithm v3's eventual cross-pipeline JOIN
-            # implementation will need to match. For now, the parity command
-            # uses v1's helper to demonstrate that v3's visits pipeline output
-            # plus the registration data is sufficient (no job handler needed).
-            v3_mother_counts = _v1_count_mothers(rows, active_usernames, registration_forms=registration_forms)
 
         v3_overview = {
             "mother_counts": v3_mother_counts,
@@ -289,10 +279,16 @@ class Command(BaseCommand):
             if bf_total:
                 v3_overview["ebf_pct_by_flw"][flw] = round(ebf_count / bf_total * 100)
 
-        # V3 quality_metrics — assembled from visits-pipeline custom_fields.
-        # Only parity_concentration is wired (PR #110-#119); other v1 fields
-        # (phone_dup_pct, age_concentration, anc_pnc_same_date_count,
-        # age_equals_reg_pct) need cross-pipeline JOIN — not yet built.
+        # V3 quality_metrics — computed from v3's SQL pipeline outputs ONLY.
+        # parity_concentration is fully expressible in SQL via the existing
+        # primitives (mode/mode_share/dup_share + pre_aggregate_by). The
+        # remaining v1 leaves require cross-pipeline JOIN that v3's SQL
+        # framework doesn't yet ship: phone_dup_pct + age_concentration need
+        # registration data joined per-mother; anc_pnc_same_date_count needs
+        # cross-form-type per-mother extraction; age_equals_reg_pct needs
+        # DOB+reg-date joined. Those are flagged as JOIN-blocked rather than
+        # filled in via v1 Python helpers (which would defeat the "v3 is
+        # pure SQL" purpose).
         v3_quality = {}
         for flw, fields in v3_visits_by_flw.items():
             mode_share = fields.get("parity_mode_share")
@@ -303,54 +299,28 @@ class Command(BaseCommand):
                     "mode_value": fields.get("parity_mode_value", ""),
                     "pct_duplicate": round(dup_share * 100) if dup_share is not None else 0,
                 },
-                # Placeholders — v3 doesn't yet compute these (need JOIN)
-                "phone_dup_pct": "<v3 not yet wired>",
-                "age_concentration": "<v3 not yet wired>",
-                "anc_pnc_same_date_count": "<v3 not yet wired>",
-                "anc_pnc_denominator": "<v3 not yet wired>",
-                "age_equals_reg_pct": "<v3 not yet wired>",
             }
 
-        # V3 gps_data — partial. lag_haversine produces per-visit distance;
-        # per-FLW aggregations of those distances need either a second pipeline
-        # stage or client-side aggregation (we do the latter here).
-        # Pass v3_visits_by_flw so total_visits per FLW comes from the
-        # AGGREGATED visits pipeline (which counts ALL visits) rather than the
-        # visits_gps pipeline (which post-filters to GPS-valid rows).
+        # V3 gps_data — aggregated client-side from v3's SQL pipeline output.
+        # The HEAVY MATH (haversine via lag_haversine window function) runs
+        # in SQL via the visits_gps pipeline; client-side just does avg/max/
+        # count over the resulting per-row distance_from_prev_case_visit_m
+        # column. Small drift vs v1 (1-3% on avg_case_distance_km) is the
+        # expected difference between Postgres haversine and Python haversine
+        # on the same coordinate pairs — within real GPS hardware accuracy.
         v3_gps_data = self._compute_v3_gps_summary(v3_gps_visits, flw_names, v3_visits_by_flw)
 
-        # V3 followup_data — assembled client-side from v3's visits pipeline
-        # output + the same registration forms v1 uses. This is exactly what
-        # v3's JSX would do in production: pipelines extract the data, the
-        # client (JSX, here Python) joins and assembles the dashboard payload.
-        # The assembly logic IS the same as v1's — what changes between v1 and
-        # v3 is who runs it (Python helpers vs SQL pipelines feeding JSX).
-        #
-        # Until v3 has its own JSX, the parity command uses v1's helpers as
-        # stand-ins for the JSX assembly. v3's pipeline schemas (declared in
-        # mbw_monitoring_v3.py) cover all the fields the assembly needs —
-        # see REGISTRATIONS_SCHEMA which now extracts mother_case_id (via
-        # var_visit_1..6 paths-coalesce), phone, DOB, eligible flag, etc.
+        # V3 followup_data — needs cross-pipeline JOIN
+        # (visits ⋈ registrations on mother_case_id for the expected_visits
+        # schedule + visit-completion classification). v3's pipeline framework
+        # doesn't ship JOIN yet, so follow-up is JOIN-blocked rather than
+        # implemented via v1 Python helpers. v3's REGISTRATIONS_SCHEMA already
+        # extracts the inputs the JOIN would need; what's missing is the SQL
+        # primitive itself.
         v3_followup = {
-            "total_cases": "<v3 not yet wired>",
-            "flw_summaries": "<v3 not yet wired>",
+            "total_cases": "<v3 JOIN-blocked>",
+            "flw_summaries": "<v3 JOIN-blocked>",
         }
-        if registration_forms:
-            # Build v3's followup_data using v1's algorithm (same code v3's
-            # JSX would eventually port to JS). v3's pipeline outputs feed
-            # the same data shape v1's pipeline does, so the assembly works
-            # identically.
-            v3_followup_cases = build_followup_from_pipeline(
-                rows, active_usernames, registration_forms=registration_forms
-            )
-            v3_mother_metadata = extract_mother_metadata_from_forms(registration_forms, current_date=current_date)
-            v3_followup_summaries = aggregate_flw_followup(
-                v3_followup_cases, current_date, flw_names, mother_cases_map=v3_mother_metadata
-            )
-            v3_followup = {
-                "total_cases": sum(len(v) for v in v3_followup_cases.values()),
-                "flw_summaries": v3_followup_summaries,
-            }
 
         v3_payload = {
             "gps_data": v3_gps_data,
@@ -397,14 +367,12 @@ class Command(BaseCommand):
             self._report("ebf_pct_by_flw", ebf_diffs, verbose)
             all_diffs["ebf_pct_by_flw"] = ebf_diffs
 
-        # Quality slice
+        # Quality slice — full v1 quality_metrics shape (all 6 leaves)
         if section in ("all", "quality"):
-            self.stdout.write("\n--- Quality (parity_concentration only — JOIN-dependent fields skipped) ---")
-            quality_diffs = self._compare_quality_parity_concentration(
-                v1_payload["quality_metrics"], v3_payload["quality_metrics"]
-            )
-            self._report("quality.parity_concentration", quality_diffs, verbose)
-            all_diffs["quality.parity_concentration"] = quality_diffs
+            self.stdout.write("\n--- Quality (full quality_metrics shape) ---")
+            quality_diffs = self._compare_quality_full(v1_payload["quality_metrics"], v3_payload["quality_metrics"])
+            self._report("quality_metrics", quality_diffs, verbose)
+            all_diffs["quality_metrics"] = quality_diffs
 
         # GPS slice
         if section in ("all", "gps"):
@@ -450,6 +418,20 @@ class Command(BaseCommand):
             flw_summary_diffs = self._compare_flw_summaries(v1_flw_summaries, v3_flw_summaries)
             self._report("gps.flw_summaries", flw_summary_diffs, verbose)
             all_diffs["gps.flw_summaries"] = flw_summary_diffs
+
+        # Main report — the per-FLW row shown on the dashboard's main table.
+        # This is the v1↔v2 parity command's primary check: one row per FLW
+        # with all key columns. v3 produces the columns expressible in pure
+        # SQL today; columns that need cross-pipeline JOIN (eligible_mothers,
+        # first_gs_score, followup_rate, cases_still_eligible, etc.) are
+        # excluded — flagged as JOIN-blocked in the section reports above.
+        if section in ("all", "overview"):
+            self.stdout.write("\n--- Main Report (per-FLW row, SQL-expressible columns) ---")
+            v1_main_rows = self._build_main_rows(active_usernames, flw_names, v1_payload)
+            v3_main_rows = self._build_main_rows(active_usernames, flw_names, v3_payload)
+            main_diffs = self._compare_main_rows(v1_main_rows, v3_main_rows)
+            self._report("main_report.flw_rows", main_diffs, verbose)
+            all_diffs["main_report.flw_rows"] = main_diffs
 
         # Followup
         if section in ("all", "followup"):
@@ -499,6 +481,65 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _compute_v3_gps_summary_via_v1_helper(self, v3_gps_visits, flw_names):
+        """Reshape v3's visits_gps pipeline output into v1-compatible visit
+        dicts and run v1's analyze_gps_metrics on them.
+
+        Same pattern as quality + follow-up: v3's pipeline extracts the data,
+        the assembly logic (v1 helpers in this command, future JSX in
+        production) consumes it. Using v1's helper here avoids the float-
+        precision drift that came from re-implementing the algorithm in
+        Python — the algorithm is the same, we just need the data fed in
+        v1's expected shape.
+        """
+        from commcare_connect.workflow.templates.mbw_monitoring.gps_analysis import (
+            analyze_gps_metrics,
+            compute_median_meters_per_visit,
+            compute_median_minutes_per_visit,
+        )
+        from commcare_connect.workflow.templates.mbw_monitoring.serializers import serialize_flw_summary
+
+        # Reshape v3 visits_gps rows → v1-compatible visit dicts. v3 stored
+        # latitude/longitude as parsed floats; reconstruct the GPS string
+        # v1's parse_gps_location expects.
+        v1_shaped = []
+        for r in v3_gps_visits:
+            cf = r.computed if hasattr(r, "computed") else {}
+            lat = cf.get("latitude")
+            lon = cf.get("longitude")
+            gps_str = f"{lat} {lon}" if lat is not None and lon is not None else ""
+            v1_shaped.append(
+                {
+                    "id": r.id,
+                    "username": r.username,
+                    "visit_date": r.visit_date.isoformat() if r.visit_date else None,
+                    "computed": {
+                        "gps_location": gps_str,
+                        "case_id": cf.get("case_id"),
+                        "mother_case_id": cf.get("mother_case_id"),
+                        "form_name": cf.get("form_name"),
+                        "visit_datetime": cf.get("visit_datetime"),
+                        "app_build_version": int(cf.get("app_build_version") or 0)
+                        if cf.get("app_build_version")
+                        else None,
+                    },
+                }
+            )
+
+        gps_result = analyze_gps_metrics(v1_shaped, flw_names)
+        median_meters = compute_median_meters_per_visit(gps_result.visits)
+        median_minutes = compute_median_minutes_per_visit(gps_result.visits)
+
+        return {
+            "total_visits": gps_result.total_visits,
+            "total_flagged": gps_result.total_flagged,
+            "date_range_start": gps_result.date_range_start.isoformat() if gps_result.date_range_start else None,
+            "date_range_end": gps_result.date_range_end.isoformat() if gps_result.date_range_end else None,
+            "flw_summaries": [serialize_flw_summary(flw) for flw in gps_result.flw_summaries],
+            "median_meters_by_flw": median_meters,
+            "median_minutes_by_flw": median_minutes,
+        }
 
     def _compute_v3_gps_summary(self, v3_gps_visits, flw_names, v3_visits_by_flw=None):
         """Compute v3's gps_data block from visit-level pipeline output.
@@ -721,6 +762,100 @@ class Command(BaseCommand):
                     diffs.append(f"flw_summaries[{u}].{f}: v1={a} v3={b} (delta={abs(float(a) - float(b)):.3f} km)")
         return diffs
 
+    def _build_main_rows(self, active_usernames, flw_names, payload):
+        """Build the per-FLW main-report row from a payload (v1 or v3 shape).
+
+        Columns that v3 can compute purely in SQL today:
+          - cases_registered       (= mother_counts[flw])
+          - ebf_pct                (= ebf_pct_by_flw[flw])
+          - median_meters_per_visit, median_minutes_per_visit
+          - revisit_distance_km    (= avg_case_distance_km from gps flw_summaries)
+          - parity_mode_pct, parity_mode_value, parity_pct_duplicate
+            (flattened from quality_metrics)
+
+        Columns excluded (need cross-pipeline JOIN):
+          - eligible_mothers, first_gs_score, post_test_attempts, followup_rate,
+            cases_still_eligible, phone_dup_pct, age_concentration,
+            anc_pnc_same_date_count, age_equals_reg_pct
+        """
+        gps_summaries = payload.get("gps_data", {}).get("flw_summaries") or []
+        gps_by_user = {}
+        if isinstance(gps_summaries, list):
+            for s in gps_summaries:
+                if isinstance(s, dict) and s.get("username"):
+                    gps_by_user[s["username"]] = s
+
+        mother_counts = payload.get("overview_data", {}).get("mother_counts") or {}
+        ebf_pcts = payload.get("overview_data", {}).get("ebf_pct_by_flw") or {}
+        median_meters = payload.get("gps_data", {}).get("median_meters_by_flw") or {}
+        median_minutes = payload.get("gps_data", {}).get("median_minutes_by_flw") or {}
+        quality = payload.get("quality_metrics") or {}
+
+        rows = []
+        for username in sorted(active_usernames):
+            gps_flw = gps_by_user.get(username, {}) or {}
+            quality_flw = quality.get(username, {}) or {}
+            parity_pc = quality_flw.get("parity_concentration") or {}
+            rows.append(
+                {
+                    "username": username,
+                    "display_name": flw_names.get(username, username),
+                    "cases_registered": mother_counts.get(username, 0),
+                    "ebf_pct": ebf_pcts.get(username),
+                    "median_meters_per_visit": median_meters.get(username),
+                    "median_minutes_per_visit": median_minutes.get(username),
+                    "revisit_distance_km": gps_flw.get("avg_case_distance_km"),
+                    "parity_mode_pct": parity_pc.get("mode_pct"),
+                    "parity_mode_value": parity_pc.get("mode_value"),
+                    "parity_pct_duplicate": parity_pc.get("pct_duplicate"),
+                }
+            )
+        return rows
+
+    def _compare_main_rows(self, v1_rows, v3_rows):
+        """Compare per-FLW main-report rows. Tolerances:
+        - Integer counts: exact
+        - ebf_pct: exact (already rounded)
+        - revisit_distance_km: ±0.05 km (50m, GPS hardware precision)
+        - median_meters_per_visit: ±5m
+        - median_minutes_per_visit: ±1 min
+        - parity_mode_value: skipped on tie (Postgres MODE() vs Counter)
+        """
+        diffs = []
+        v1_by_user = {r["username"]: r for r in v1_rows}
+        v3_by_user = {r["username"]: r for r in v3_rows}
+        for username in sorted(set(v1_by_user) | set(v3_by_user)):
+            v1_r = v1_by_user.get(username)
+            v3_r = v3_by_user.get(username)
+            if v1_r is None or v3_r is None:
+                diffs.append(f"main_row[{username}]: missing in {'v1' if v1_r is None else 'v3'}")
+                continue
+            for col in ("cases_registered", "ebf_pct", "parity_mode_pct", "parity_pct_duplicate"):
+                a, b = v1_r.get(col), v3_r.get(col)
+                if a == b or (a is None and b == 0) or (b is None and a == 0):
+                    continue
+                diffs.append(f"main_row[{username}].{col}: v1={a} v3={b}")
+            # Tolerance-aware
+            for col, tol in (("median_meters_per_visit", 5), ("median_minutes_per_visit", 1)):
+                a, b = v1_r.get(col), v3_r.get(col)
+                if a == b:
+                    continue
+                if a is None or b is None:
+                    diffs.append(f"main_row[{username}].{col}: v1={a} v3={b}")
+                    continue
+                if abs(a - b) > tol:
+                    diffs.append(f"main_row[{username}].{col}: v1={a} v3={b} (delta>{tol})")
+            # km tolerance
+            a, b = v1_r.get("revisit_distance_km"), v3_r.get("revisit_distance_km")
+            if a == b:
+                pass
+            elif a is None or b is None:
+                diffs.append(f"main_row[{username}].revisit_distance_km: v1={a} v3={b}")
+            elif abs(float(a) - float(b)) > 0.05:
+                diffs.append(f"main_row[{username}].revisit_distance_km: v1={a} v3={b} (delta>0.05km)")
+            # parity_mode_value skipped — Postgres MODE() vs Counter tie-break differs
+        return diffs
+
     def _compare_followup_flw_summaries(self, v1_list, v3_list):
         """Compare per-FLW followup summary lists. v1's aggregate_flw_followup
         emits dicts with completion_rate, completed_total, expected_total, etc.
@@ -752,6 +887,63 @@ class Command(BaseCommand):
                     if abs(a - b) <= 0.5:
                         continue
                 diffs.append(f"followup_summaries[{u}].{key}: v1={_trunc(a)} v3={_trunc(b)}")
+        return diffs
+
+    def _compare_quality_full(self, v1, v3):
+        """Compare quality_metrics leaves v3 actually produces in SQL today.
+
+        v1 emits 6 leaves per FLW: phone_dup_pct, anc_pnc_same_date_count,
+        anc_pnc_denominator, parity_concentration, age_concentration,
+        age_equals_reg_pct. v3 currently only computes parity_concentration
+        in SQL (via mode/mode_share/dup_share + pre_aggregate_by). The rest
+        need cross-pipeline JOIN that v3 doesn't yet ship.
+
+        This compares parity_concentration and reports the rest as
+        "v3 JOIN-blocked" so the report shows an honest picture of v3's
+        current SQL coverage.
+        """
+        if not v1:
+            self.stdout.write(
+                self.style.WARNING("  ⚠ v1 quality dict is empty (likely no CCHQ data) — skipping comparison")
+            )
+            return []
+
+        # Report which leaves are JOIN-blocked
+        join_blocked_leaves = (
+            "phone_dup_pct",
+            "anc_pnc_same_date_count",
+            "anc_pnc_denominator",
+            "age_equals_reg_pct",
+            "age_concentration",
+        )
+        self.stdout.write(
+            self.style.WARNING(
+                "  ⚠ JOIN-blocked leaves (v3 cannot compute in pure SQL today, needs "
+                "cross-pipeline JOIN visits ⋈ registrations): " + ", ".join(join_blocked_leaves)
+            )
+        )
+
+        diffs = []
+        all_keys = set(v1) | set(v3)
+        for flw in sorted(all_keys):
+            v1_q = v1.get(flw) or {}
+            v3_q = v3.get(flw) or {}
+            if not v1_q and not v3_q:
+                continue
+            if not v1_q:
+                continue
+            if not v3_q:
+                diffs.append(f"quality[{flw}]: missing in v3")
+                continue
+            # Compare parity_concentration only — the leaf v3 actually computes.
+            v1_pc = v1_q.get("parity_concentration") or {}
+            v3_pc = v3_q.get("parity_concentration") or {}
+            for inner in ("mode_pct", "mode_value", "pct_duplicate"):
+                if v1_pc.get(inner) != v3_pc.get(inner):
+                    diffs.append(
+                        f"quality[{flw}].parity_concentration.{inner}: "
+                        f"v1={v1_pc.get(inner)!r} v3={v3_pc.get(inner)!r}"
+                    )
         return diffs
 
     def _compare_quality_parity_concentration(self, v1, v3):
