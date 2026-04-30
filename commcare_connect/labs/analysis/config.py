@@ -38,6 +38,16 @@ AggregationType = Literal[
 VALID_AGGREGATIONS = frozenset(get_args(AggregationType))
 
 
+# Comparison operations available on FieldComputation.filter_path/filter_value.
+# - `eq`: exact equality (default; preserves prior behaviour).
+# - `contains_word`: filter_path's value is treated as a whitespace-separated
+#   token list; matches if filter_value is one of the tokens. Mirrors V1
+#   logic like `if "ebf" in bf_status.split()` for multi-select form fields.
+FilterOp = Literal["eq", "contains_word"]
+
+VALID_FILTER_OPS = frozenset(get_args(FilterOp))
+
+
 class CacheStage(Enum):
     """
     Pipeline stages for analysis caching.
@@ -135,6 +145,11 @@ class FieldComputation:
     extractor: Callable[[dict], Any] | None = None  # Custom extractor receives full visit dict
     filter_path: str = ""  # Optional: path for FILTER (WHERE ...) clause
     filter_value: str = ""  # Optional: value to compare against in filter
+    # Filter comparison kind. "eq" is exact equality; "contains_word" treats the
+    # filter_path's value as a whitespace-separated token list and matches if
+    # filter_value is one of the tokens. Used for multi-select form fields like
+    # MBW's bf_status, where v1 logic is `if "ebf" in bf_status.split()`.
+    filter_op: str = "eq"
 
     def __post_init__(self):
         """Validate configuration."""
@@ -144,6 +159,8 @@ class FieldComputation:
             raise ValueError("Field requires path, paths, or extractor")
         if self.aggregation not in VALID_AGGREGATIONS:
             raise ValueError(f"Invalid aggregation type: {self.aggregation}")
+        if self.filter_op not in VALID_FILTER_OPS:
+            raise ValueError(f"Invalid filter_op: {self.filter_op}. Valid: {sorted(VALID_FILTER_OPS)}")
 
     def get_paths(self) -> list[str]:
         """Get list of paths to try (paths if set, otherwise [path])."""

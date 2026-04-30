@@ -165,7 +165,12 @@ def _transform_to_sql(field: FieldComputation | HistogramComputation, value_expr
 
 
 def _aggregation_to_sql(
-    agg: str, value_expr: str, field_name: str, filter_path: str = "", filter_value: str = ""
+    agg: str,
+    value_expr: str,
+    field_name: str,
+    filter_path: str = "",
+    filter_value: str = "",
+    filter_op: str = "eq",
 ) -> str:
     """Convert aggregation type to SQL aggregate function.
 
@@ -174,6 +179,9 @@ def _aggregation_to_sql(
         value_expr: SQL expression for the value being aggregated
         filter_path: Optional dot-notation path for a FILTER (WHERE ...) clause
         filter_value: Optional value to compare against in the filter clause
+        filter_op: How to compare filter_path against filter_value. "eq" for
+            exact equality (default), "contains_word" for whitespace-tokenized
+            membership (mirrors V1 logic like `"ebf" in bf_status.split()`).
     """
     if agg == "count":
         base = f"COUNT({value_expr})"
@@ -261,10 +269,21 @@ def _aggregation_to_sql(
             "count_unique, list, median, mode, mode_share."
         )
 
-    # Apply per-field FILTER clause if both filter_path and filter_value are provided
+    # Apply per-field FILTER clause if both filter_path and filter_value are provided.
+    # filter_op switches the comparison shape: "eq" (default) is the prior
+    # behaviour; "contains_word" treats the value as a whitespace-tokenized list
+    # and matches when filter_value is one of the tokens.
     if filter_path and filter_value:
         filter_sql = _jsonb_path_to_sql(filter_path)
-        base = f"{base} FILTER (WHERE {filter_sql} = '{filter_value}')"
+        if filter_op == "eq":
+            predicate = f"{filter_sql} = '{filter_value}'"
+        elif filter_op == "contains_word":
+            # Postgres: split on whitespace, test array membership.
+            # COALESCE keeps the predicate well-defined when the path is NULL.
+            predicate = f"'{filter_value}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' '))"
+        else:
+            raise ValueError(f"Unknown filter_op {filter_op!r} on field {field_name!r}. Valid: 'eq', 'contains_word'.")
+        base = f"{base} FILTER (WHERE {predicate})"
 
     return base
 
@@ -362,6 +381,7 @@ def build_flw_aggregation_query(
                 field.name,
                 filter_path=field.filter_path,
                 filter_value=field.filter_value,
+                filter_op=field.filter_op,
             )
             select_parts.append(f"{agg_expr} as {field.name}")
 
