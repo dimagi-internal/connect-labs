@@ -413,6 +413,10 @@ REGISTRATIONS_SCHEMA = {
         {"name": "user_connect_id", "path": "form.user_connect_id", "aggregation": "first"},
         # Registration date — top-level form metadata (the form-end timestamp)
         {"name": "registration_date", "path": "form.meta.timeEnd", "aggregation": "first"},
+        # Per-mother visit schedules. The JS follow-up adapter reads this
+        # array to compute eligibility, completion, and missed visits per
+        # mother — replacing v1's `_extract_schedules_from_registration_form`.
+        {"name": "schedules", "extractor": "mbw_visit_schedules", "aggregation": "first"},
     ],
 }
 
