@@ -132,18 +132,30 @@ def list_templates() -> list[dict]:
     ]
 
 
-def build_snapshot_for_template(template_key: str, pipelines: dict, state: dict, opportunity_id: int) -> dict | None:
+def build_snapshot_for_template(
+    template_key: str,
+    *,
+    pipelines: dict,
+    state: dict,
+    opportunity_id: int,
+    **context,
+) -> dict | None:
     """
-    Run a template's `build_snapshot(pipelines, state, opportunity_id)` hook.
+    Run a template's `build_snapshot(...)` hook.
 
     Returns the dashboard-shape dict the hook produced, or None if:
       - the template isn't registered
       - the template doesn't declare `supports_snapshots: True`
       - the template has no `build_snapshot` function
 
-    Hooks should be pure: take pipeline rows + run state and return the snapshot
-    blob the FE renders from. They run server-side (Celery / API endpoint) so
-    they have full Python access; no JS-shipped row aggregation needed.
+    Hook contract: templates declare a module-level
+    `build_snapshot(*, pipelines, state, opportunity_id, **context) -> dict`
+    function. The framework forwards a context dict whose keys may grow over
+    time (currently `workers`, `opportunity_ids`); hooks should accept
+    `**context` to stay forward-compatible.
+
+    Hooks run server-side (Celery / API endpoint) so they have full Python
+    access — no JS-shipped row aggregation needed.
     """
     template = TEMPLATES.get(template_key)
     if not template:
@@ -153,7 +165,7 @@ def build_snapshot_for_template(template_key: str, pipelines: dict, state: dict,
     builder = template.get("build_snapshot")
     if not callable(builder):
         return None
-    return builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id)
+    return builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id, **context)
 
 
 def create_workflow_from_template(
