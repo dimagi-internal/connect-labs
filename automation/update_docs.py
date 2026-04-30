@@ -215,6 +215,11 @@ def update_markdown_file(
     )
 
     new_content = resp.content[0].text.strip()
+    if not new_content:
+        print(f"  [warn] AI returned empty response for {feature} — skipping")
+        return False
+    if len(new_content) > 100_000:
+        raise ValueError(f"AI response for {feature} is unexpectedly large ({len(new_content):,} chars)")
     if new_content != current_content:
         resolved = doc_path.resolve()
         if not resolved.is_relative_to(Path("user_docs").resolve()):
