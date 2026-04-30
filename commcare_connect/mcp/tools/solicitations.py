@@ -230,11 +230,19 @@ def create_solicitation(
     experiment = program_id or organization_id
     if not experiment:
         raise MCPToolError("INVALID_SCHEMA", "Either program_id or organization_id is required")
+    if data.get("is_public"):
+        raise MCPToolError(
+            "POLICY_VIOLATION",
+            "Creating public LabsRecords is not permitted via the MCP. "
+            "Remove is_public from data (or set it to false) and retry. "
+            "Public records are readable without authentication and must not "
+            "contain PII or data derived from pipeline previews.",
+        )
 
     token = require_connect_token(user)
     client = LabsRecordAPIClient(access_token=token)
     try:
-        is_public = bool(data.get("is_public", False))
+        is_public = False
         prog_id = int(program_id) if program_id else None
         record = client.create_record(
             experiment=experiment,
@@ -402,6 +410,11 @@ def award_response(
 
             _add_allocation_to_fund(client, fund_id, allocation)
 
+        updated_response["_warning"] = (
+            "award_response sets the response record to public=True so the "
+            "awarded organisation can read their own award status. Do not embed "
+            "PII from pipeline previews or form data in the response record fields."
+        )
         return updated_response
     finally:
         client.close()

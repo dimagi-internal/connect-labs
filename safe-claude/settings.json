@@ -32,7 +32,10 @@
       "Read(~/.claude.json)",
       "Read(~/.claude/**)",
       "Grep(./.env)",
-      "Grep(./.env.*)"
+      "Grep(./.env.*)",
+      "Read(~/.commcare-connect/**)",
+      "Glob(~/.commcare-connect/**)",
+      "Grep(~/.commcare-connect/**)"
     ]
   },
   "env": {
