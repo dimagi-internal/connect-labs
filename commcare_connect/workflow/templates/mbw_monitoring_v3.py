@@ -138,12 +138,19 @@ VISITS_SCHEMA = {
         # parities. 1.0 = every mother reports identical parity (suspicious).
         # Filter on form_name="ANC Visit" mirrors v1's `if form_name == "ANC Visit"`
         # — only ANC visits report parity in the MBW data model.
+        #
+        # `pre_aggregate_attribute_to: last_username` attributes each mother
+        # to the FLW whose visit is the LAST one for her — matching v1's
+        # `mother_to_username` last-write-wins map that drives the entire
+        # quality_metrics block. Without this, mothers visited by multiple
+        # FLWs would be counted under each, while v1 counts them under one.
         {
             "name": "parity_mode_share",
             "path": "form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
             "aggregation": "mode_share",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "last",
+            "pre_aggregate_attribute_to": "last_username",
             "filter_path": "form.@name",
             "filter_value": "ANC Visit",
         },
@@ -155,6 +162,7 @@ VISITS_SCHEMA = {
             "aggregation": "mode",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "last",
+            "pre_aggregate_attribute_to": "last_username",
             "filter_path": "form.@name",
             "filter_value": "ANC Visit",
         },
@@ -168,8 +176,86 @@ VISITS_SCHEMA = {
             "aggregation": "dup_share",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "last",
+            "pre_aggregate_attribute_to": "last_username",
             "filter_path": "form.@name",
             "filter_value": "ANC Visit",
+        },
+        # ---------- JOIN-dependent quality leaves ----------
+        # Each of these reads from `joined.registrations.<field>` — populated
+        # at SQL build time by the `joins[]` entry below. Two-pass
+        # (pre_aggregate_by mother_case_id + per-mother first) mirrors v1's
+        # "build a per-mother lookup, then aggregate per FLW" pattern.
+        #
+        # `pre_aggregate_attribute_to: last_username` matches v1's
+        # winner-takes-all mother→FLW attribution: a mother visited by
+        # FLWs A and B is counted under whichever FLW visited her LAST,
+        # not under both. Critical for fraud-detection metrics — without
+        # it, a single duplicated phone on a shared mother would inflate
+        # both A's and B's dup_share above v1's signal.
+        #
+        # phone_dup_share: per-FLW share (0..1) of "owned" mothers whose
+        # phone duplicates with at least one other owned mother. v1's
+        # quality_metrics.phone_dup_pct.
+        {
+            "name": "phone_dup_share",
+            "path": "joined.registrations.phone_number",
+            "aggregation": "dup_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+        # age_concentration_mode_share: per-FLW share of owned mothers
+        # whose registered age equals the most-common registered age for
+        # that FLW. v1's quality_metrics.age_concentration.mode_pct.
+        {
+            "name": "age_concentration_mode_share",
+            "path": "joined.registrations.age_recorded",
+            "aggregation": "mode_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+        # age_concentration_mode_value: most-common registered age across
+        # owned mothers per FLW. Shipped alongside mode_share so the
+        # dashboard can display "X% of mothers report age N".
+        {
+            "name": "age_concentration_mode_value",
+            "path": "joined.registrations.age_recorded",
+            "aggregation": "mode",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+        # age_concentration_dup_share: per-FLW share (0..1) of owned
+        # mothers whose registered age duplicates with at least one
+        # other owned mother's age.
+        {
+            "name": "age_concentration_dup_share",
+            "path": "joined.registrations.age_recorded",
+            "aggregation": "dup_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+    ],
+    # JOIN spec: pull registration-level fields per visit so per-FLW
+    # aggregations (above) can use them. The pre_aggregate_by groups
+    # visits per mother so the inner pass collapses many visits to one
+    # row per mother carrying that mother's registration data — matching
+    # v1's "build a per-mother lookup, then aggregate per FLW" pattern.
+    "joins": [
+        {
+            "from_alias": "registrations",
+            "local_key": "form.parents.parent.case.@case_id",
+            "remote_key_field": "mother_case_id",
+            "fields": [
+                {"name": "phone_number", "from": "phone_number"},
+                {"name": "age_recorded", "from": "age_recorded"},
+                {"name": "mother_dob", "from": "mother_dob"},
+                {"name": "eligible_full_intervention_bonus", "from": "eligible_full_intervention_bonus"},
+                {"name": "expected_visits", "from": "expected_visits"},
+                {"name": "expected_delivery_date", "from": "expected_delivery_date"},
+            ],
         },
     ],
 }

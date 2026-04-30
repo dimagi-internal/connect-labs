@@ -85,15 +85,33 @@ def _seed_fixture(opp_id: int, fixture_visits: list[dict]) -> None:
         )
 
 
+def _build_visits_config(opp_id: int):
+    """Build the VISITS_SCHEMA config and resolve its registrations JOIN hash.
+
+    VISITS_SCHEMA now declares a JOIN onto registrations; the SQL builder
+    refuses to run until the joined pipeline's `config_hash` is patched onto
+    the JoinConfig. Tests that don't care about the JOIN (mother_count, ebf,
+    parity_*) still need the resolution because the SQL builder's fail-fast
+    guard runs unconditionally. Resolution is cheap and the joined cache is
+    just empty for these tests, so JOIN paths read NULL — harmless for
+    aggregations that don't reference `joined.*`.
+    """
+    from commcare_connect.labs.analysis.utils import resolve_join_hashes
+    from commcare_connect.workflow.templates.mbw_monitoring_v3 import REGISTRATIONS_SCHEMA, VISITS_SCHEMA
+
+    access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+    visits_config = access._schema_to_config(VISITS_SCHEMA, definition_id=opp_id)
+    reg_config = access._schema_to_config(REGISTRATIONS_SCHEMA, definition_id=opp_id)
+    resolve_join_hashes({"visits": visits_config, "registrations": reg_config})
+    return visits_config
+
+
 def _run_v3_visits(opp_id: int, fixture_visits: list[dict]) -> dict[str, dict]:
     """Run mbw_monitoring_v3's visits pipeline through real SQL and return
     {username: custom_fields_dict}. Shared setup for all e2e parity tests.
     """
-    from commcare_connect.workflow.templates.mbw_monitoring_v3 import VISITS_SCHEMA
-
     _seed_fixture(opp_id, fixture_visits)
-    access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
-    config = access._schema_to_config(VISITS_SCHEMA, definition_id=opp_id)
+    config = _build_visits_config(opp_id)
     backend = SQLBackend()
     result = backend.process_and_cache(
         request=None,
@@ -134,15 +152,14 @@ class TestV3VisitsPipelineE2E:
         If this passes on small_realistic, the same shape will work for
         every other v3 aggregation; new assertions get added here.
         """
-        from commcare_connect.workflow.templates.mbw_monitoring_v3 import VISITS_SCHEMA
-
         bundle = small_realistic()
         opp_id = 700001
         _seed_fixture(opp_id, bundle.visits)
 
-        # Build the AnalysisPipelineConfig the same way the live runner does.
-        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
-        config = access._schema_to_config(VISITS_SCHEMA, definition_id=opp_id)
+        # Build the AnalysisPipelineConfig the same way the live runner does;
+        # _build_visits_config also resolves the registrations JOIN hash so
+        # the SQL builder's fail-fast guard is satisfied.
+        config = _build_visits_config(opp_id)
 
         # Visit dicts only need to satisfy len(); we already stored the rows
         # via _seed_fixture, so use skip_raw_store=True to avoid a re-write.

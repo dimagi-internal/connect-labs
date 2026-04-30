@@ -1793,6 +1793,7 @@ class PipelineDataAccess(BaseDataAccess):
             DataSourceConfig,
             FieldComputation,
             HistogramComputation,
+            JoinConfig,
         )
 
         # Transform registry
@@ -1833,6 +1834,7 @@ class PipelineDataAccess(BaseDataAccess):
                     filter_op=field_def.get("filter_op", "eq"),
                     pre_aggregate_by=field_def.get("pre_aggregate_by", ""),
                     pre_aggregation=field_def.get("pre_aggregation", "first"),
+                    pre_aggregate_attribute_to=field_def.get("pre_aggregate_attribute_to", ""),
                 )
             )
 
@@ -1888,6 +1890,22 @@ class PipelineDataAccess(BaseDataAccess):
                 )
             )
 
+        # Cross-pipeline joins. Each entry pulls fields from a sibling
+        # pipeline's computed cache. `resolved_config_hash` stays empty here —
+        # the orchestrator must populate it via `resolve_join_hashes` (or an
+        # equivalent walk) once sibling configs are constructed, because
+        # resolution requires knowing the sibling's full config to hash it.
+        joins = []
+        for j_def in schema.get("joins", []):
+            joins.append(
+                JoinConfig(
+                    from_alias=j_def["from_alias"],
+                    local_key=j_def["local_key"],
+                    remote_key_field=j_def["remote_key_field"],
+                    fields=list(j_def.get("fields", [])),
+                )
+            )
+
         return AnalysisPipelineConfig(
             grouping_key=schema.get("grouping_key", "username"),
             fields=fields,
@@ -1900,4 +1918,5 @@ class PipelineDataAccess(BaseDataAccess):
             data_source=data_source,
             window_fields=window_fields,
             extracted_filters=schema.get("extracted_filters", []),
+            joins=joins,
         )
