@@ -22,10 +22,7 @@ class TestBuildSnapshotDispatch:
         # bulk_image_audit is a real registered template that doesn't declare snapshots.
         assert "bulk_image_audit" in TEMPLATES, "fixture assumption: template must be registered"
         assert not TEMPLATES["bulk_image_audit"].get("supports_snapshots")
-        assert (
-            build_snapshot_for_template("bulk_image_audit", pipelines={}, state={}, opportunity_id=1)
-            is None
-        )
+        assert build_snapshot_for_template("bulk_image_audit", pipelines={}, state={}, opportunity_id=1) is None
 
     def test_kmc_longitudinal_declares_supports_snapshots(self):
         """First adopter — confirm the flag flows through to list_templates output."""
@@ -41,9 +38,7 @@ class TestBuildSnapshotDispatch:
                 ],
             },
         }
-        snap = build_snapshot_for_template(
-            "kmc_longitudinal", pipelines=pipelines, state={}, opportunity_id=874
-        )
+        snap = build_snapshot_for_template("kmc_longitudinal", pipelines=pipelines, state={}, opportunity_id=874)
         assert snap is not None
         assert snap["schema_version"] == 1
         assert {c["entity_id"] for c in snap["children"]} == {"case-1", "case-2"}
