@@ -361,8 +361,9 @@ def main() -> None:
             except Exception:
                 missing_pages.append(f"{feature} (id={page_id})")
     if missing_pages:
-        print(f"  [warn] Confluence pages not found: {', '.join(missing_pages)}")
-        print("  Skipping Confluence updates for missing pages.")
+        print(f"  [error] Confluence pages not accessible: {', '.join(missing_pages)}")
+        print("  Cannot update documentation — fix page IDs in FEATURE_PAGE_IDS.")
+        sys.exit(1)
 
     # Single classification call — is this PR user-visible at all?
     if not has_user_visible_changes(ai_client, pr_title, product_description, diff_excerpt):

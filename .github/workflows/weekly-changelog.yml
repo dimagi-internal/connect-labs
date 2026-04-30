@@ -2,7 +2,7 @@ name: Weekly Changelog
 
 on:
   schedule:
-    - cron: "0 9 * * 1" # Mondays at 09:00 UTC
+    - cron: '0 9 * * 1' # Mondays at 09:00 UTC
   workflow_dispatch: # Manual trigger: Actions → Weekly Changelog → Run workflow
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install script dependencies
         run: pip install anthropic requests
@@ -26,9 +26,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Calculate the ISO timestamp for 7 days ago (works on both Linux and macOS)
-          SINCE=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
-                  date -u -v-7d +%Y-%m-%dT%H:%M:%SZ)
+          # GitHub Actions runs on Ubuntu — GNU date only
+          SINCE=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
 
           # Fetch closed PRs merged to main in the last 7 days
           gh api "repos/${{ github.repository }}/pulls?state=closed&base=main&per_page=100" \

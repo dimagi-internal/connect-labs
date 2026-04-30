@@ -244,8 +244,11 @@ def main() -> None:
     slack_url = os.environ.get("SLACK_WEBHOOK_URL", "")
     if slack_url:
         print("Posting to Slack...")
-        post_to_slack(slack_url, week_label, summary, prs)
-        print("  ✓ Slack message sent to #connect-labs")
+        try:
+            post_to_slack(slack_url, week_label, summary, prs)
+            print("  ✓ Slack message sent to #connect-labs")
+        except Exception as e:
+            print(f"  [warn] Slack notification failed (non-fatal): {e}")
     else:
         print("  [warn] SLACK_WEBHOOK_URL not set — skipping Slack notification")
 
