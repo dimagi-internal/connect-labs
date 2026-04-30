@@ -675,9 +675,28 @@ class AnalysisPipeline:
             visit_dicts = self._visit_dicts
             raw_data_already_stored = self._raw_data_already_stored
 
-            # Process with backend
-            yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} visits..."})
-            logger.info(f"[Pipeline/{self.backend_name}] Processing {len(visit_dicts)} visits")
+            # Process with backend.
+            # The status message tells the user what's coming because
+            # process_and_cache is a single blocking call — once we enter it,
+            # the SSE stream stays silent until aggregation finishes. The
+            # AGGREGATED stage in particular runs two SQL phases (visit-field
+            # extraction ~30s, then per-FLW aggregation that can take 5-10 min
+            # on large opps with JOIN+attribution-heavy fields). Without this
+            # framing, users on minute 5 of "Processing visits..." rightly
+            # wonder if it's hung.
+            stage_name = _stage_name(terminal_stage)
+            n = len(visit_dicts)
+            if terminal_stage == CacheStage.AGGREGATED:
+                msg = (
+                    f"Aggregating {n:,} visits to per-{stage_name} summaries — "
+                    f"step 1/2 extracts fields (~30s), step 2/2 runs the "
+                    f"per-FLW aggregation (5-10 min on large opps with "
+                    f"JOIN-heavy schemas)..."
+                )
+            else:
+                msg = f"Processing {n:,} visits to {stage_name}-level results..."
+            yield (EVENT_STATUS, {"message": msg})
+            logger.info(f"[Pipeline/{self.backend_name}] Processing {n} visits ({stage_name})")
 
             result = self.backend.process_and_cache(
                 self.request,
