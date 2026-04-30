@@ -52,6 +52,29 @@ class TestConfigValidation:
         )
         assert config.linking_field == "entity_id"
 
+    def test_field_collision_with_base_column_logs_warning(self, caplog):
+        """Custom FieldComputation whose name shadows a base raw_visit_cache column
+        is flagged via a logger.warning so silent shadowing is visible. We don't
+        raise (would break pre-existing pipelines) but the warning is the contract."""
+        with caplog.at_level("WARNING", logger="commcare_connect.labs.analysis.config"):
+            AnalysisPipelineConfig(
+                grouping_key="username",
+                fields=[FieldComputation(name="visit_date", path="form.x", aggregation="first")],
+                experiment="collision_test",
+            )
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("['visit_date']" in m and "collide with base columns" in m for m in msgs), msgs
+
+    def test_no_warning_when_field_names_dont_collide(self, caplog):
+        with caplog.at_level("WARNING", logger="commcare_connect.labs.analysis.config"):
+            AnalysisPipelineConfig(
+                grouping_key="username",
+                fields=[FieldComputation(name="form_visit_date", path="form.x", aggregation="first")],
+                experiment="no_collision_test",
+            )
+        msgs = [r.getMessage() for r in caplog.records]
+        assert not any("collide with base columns" in m for m in msgs), msgs
+
 
 # ---------------------------------------------------------------------------
 # Pure SQL-string tests (no DB)
