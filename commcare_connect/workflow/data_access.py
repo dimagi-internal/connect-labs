@@ -1859,6 +1859,7 @@ class PipelineDataAccess(BaseDataAccess):
                 "metadata": {
                     "row_count": len(rows),
                     "from_cache": getattr(result, "from_cache", False),
+                    "pipeline_id": definition_id,
                     "pipeline_name": definition.name,
                     "terminal_stage": schema.get("terminal_stage", "visit_level"),
                 },
