@@ -152,6 +152,13 @@ class FieldComputation:
     paths: list[str] | None = None
     extractor: Callable[[dict], Any] | None = None  # Custom extractor receives full visit dict
     filter_path: str = ""  # Optional: path for FILTER (WHERE ...) clause
+    # Optional: list of paths to try via COALESCE (mirrors `paths` for the value
+    # extraction). Use this when the field already coalesces multiple paths AND
+    # the filter must apply to the SAME coalesced value. Mutually exclusive with
+    # filter_path. Required for v1 fidelity on MBW's EBF metric, where v1 reads
+    # a coalesced bf_status and checks `if "ebf" in bf_status.split()` against
+    # that exact value, not against any one path.
+    filter_paths: list[str] | None = None
     filter_value: str = ""  # Optional: value to compare against in filter
     # Filter comparison kind. "eq" is exact equality; "contains_word" treats the
     # filter_path's value as a whitespace-separated token list and matches if
@@ -190,6 +197,8 @@ class FieldComputation:
             raise ValueError(f"Invalid pre_aggregation type: {self.pre_aggregation}")
         if self.filter_op not in VALID_FILTER_OPS:
             raise ValueError(f"Invalid filter_op: {self.filter_op}. Valid: {sorted(VALID_FILTER_OPS)}")
+        if self.filter_paths and self.filter_path:
+            raise ValueError(f"FieldComputation {self.name!r}: filter_paths and filter_path are mutually exclusive")
 
     def get_paths(self) -> list[str]:
         """Get list of paths to try (paths if set, otherwise [path])."""

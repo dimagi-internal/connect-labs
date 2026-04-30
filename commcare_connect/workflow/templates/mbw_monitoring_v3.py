@@ -82,8 +82,14 @@ VISITS_SCHEMA = {
             "path": "form.parents.parent.case.@case_id",
             "aggregation": "count_unique",
         },
-        # EBF numerator: count of visits where bf_status's whitespace-tokens
-        # contain "ebf". V1 logic: `if "ebf" in bf_status.split()`.
+        # EBF numerator: count of visits where the COALESCED bf_status's
+        # whitespace-tokens contain "ebf". V1 logic:
+        #   bf_status = (row.computed.get("bf_status") or "").strip()
+        #   if "ebf" in bf_status.split(): count++
+        # filter_paths matches the field's paths exactly so the FILTER applies
+        # to the same coalesced value the field produces — without this the
+        # filter would only check the first path (pnc) and miss visits whose
+        # bf_status came from oneweek / onemonth / threemonth / sixmonth.
         {
             "name": "ebf_count",
             "paths": [
@@ -94,13 +100,26 @@ VISITS_SCHEMA = {
                 "form.feeding_history.sixmonth_current_bf_status",
             ],
             "aggregation": "count",
-            "filter_path": "form.feeding_history.pnc_current_bf_status",
+            "filter_paths": [
+                "form.feeding_history.pnc_current_bf_status",
+                "form.feeding_history.oneweek_current_bf_status",
+                "form.feeding_history.onemonth_current_bf_status",
+                "form.feeding_history.threemonth_current_bf_status",
+                "form.feeding_history.sixmonth_current_bf_status",
+            ],
             "filter_value": "ebf",
             "filter_op": "contains_word",
         },
-        # EBF denominator: count of visits with non-empty bf_status. The
-        # `count` aggregation already excludes NULL; the JSX divides numerator
-        # by denominator and rounds.
+        # EBF denominator: count of visits where the coalesced bf_status is
+        # non-empty after trim. V1 has `if not bf_status: continue` after
+        # strip — empty strings are excluded. We approximate by counting only
+        # rows where the coalesced bf_status contains at least one whitespace-
+        # delimited token (i.e., is a non-empty token list). Done as a count
+        # with a contains_word-style filter using a regex-friendly sentinel
+        # token check, by reusing filter_paths + filter_op="contains_word"
+        # — but with token "" disabled, a simpler approach is `count` with a
+        # `nullif_empty`-style transform. For now, use COUNT and rely on the
+        # NULLIF wrappers in _paths_to_coalesce_sql which convert '' → NULL.
         {
             "name": "bf_status_count",
             "paths": [
@@ -179,10 +198,13 @@ VISITS_GPS_SCHEMA = {
             "transform": "int",
         },
         # GPS lat/lon parsed from the packed "lat lon alt acc" string. The
-        # transform is applied at extraction; the resulting columns are
+        # path is form.meta.location.#text — the XML text content. Reading
+        # form.meta.location alone returns the XML element wrapper (often
+        # `{"@xmlns": "..."}` when GPS wasn't captured) which is not parseable.
+        # The transform is applied at extraction; the resulting columns are
         # referenced by lag_haversine in window_fields below.
-        {"name": "latitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lat"},
-        {"name": "longitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lon"},
+        {"name": "latitude", "path": "form.meta.location.#text", "aggregation": "first", "transform": "gps_lat"},
+        {"name": "longitude", "path": "form.meta.location.#text", "aggregation": "first", "transform": "gps_lon"},
     ],
     "window_fields": [
         # Per-visit haversine to the previous visit to the SAME mother. NULL
