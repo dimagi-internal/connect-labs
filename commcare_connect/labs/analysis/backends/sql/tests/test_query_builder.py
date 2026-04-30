@@ -60,3 +60,55 @@ class TestAggregationToSql:
         """min/max are now explicit branches, not the else fallback."""
         assert _aggregation_to_sql("min", "v", "f") == "MIN(v)"
         assert _aggregation_to_sql("max", "v", "f") == "MAX(v)"
+
+    def test_median_uses_percentile_cont(self):
+        """`median` is the standard interpolated 50th percentile in Postgres."""
+        sql = _aggregation_to_sql("median", "v", "f")
+        assert sql == "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v)"
+
+    def test_mode_uses_mode_within_group(self):
+        """`mode` returns the most frequent non-null value (ties broken by Postgres)."""
+        sql = _aggregation_to_sql("mode", "v", "f")
+        assert sql == "MODE() WITHIN GROUP (ORDER BY v)"
+
+    def test_mode_share_uses_correlated_subquery(self):
+        """`mode_share` returns share (0..1) of rows whose value equals the mode.
+
+        Implementation note: Postgres rejects aggregate functions inside FILTER
+        (WHERE ...) clauses, so the obvious shape `COUNT FILTER (= MODE())` is
+        illegal. Instead this aggregation emits a correlated subquery that
+        groups by value and takes max-count / sum-count. Mirrors the first/last
+        subquery pattern.
+
+        Used for fraud-concentration metrics: 1.0 means every visit by an FLW
+        has the same parity; 0.1 means parity is well-distributed across visits.
+        """
+        sql = _aggregation_to_sql("mode_share", "v", "f")
+        # Subquery shape over labs_raw_visit_cache aliased as sub
+        assert "SELECT MAX(c)::float / NULLIF(SUM(c), 0)" in sql
+        assert "FROM labs_raw_visit_cache sub" in sql
+        # Correlation against the outer row's username/opportunity
+        assert "sub.opportunity_id = labs_raw_visit_cache.opportunity_id" in sql
+        assert "sub.username = labs_raw_visit_cache.username" in sql
+        # Inner GROUP BY value, COUNT(*) — that's what produces per-value frequencies.
+        assert "GROUP BY v" in sql
+        assert "COUNT(*) AS c" in sql
+        # MUST NOT use the illegal FILTER (= MODE()) shape.
+        assert "= MODE()" not in sql
+
+
+class TestAggregationTypeLiteral:
+    """The `AggregationType` Literal in config.py must list every aggregation
+    `_aggregation_to_sql` accepts; otherwise template authors get a typing
+    error at edit time but a runtime ValueError at execution time.
+    """
+
+    def test_new_aggregations_in_literal(self):
+        from typing import get_args
+
+        from commcare_connect.labs.analysis.config import AggregationType
+
+        members = set(get_args(AggregationType))
+        assert "median" in members
+        assert "mode" in members
+        assert "mode_share" in members

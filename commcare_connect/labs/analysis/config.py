@@ -15,11 +15,37 @@ Becomes:
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 AggregationType = Literal[
-    "sum", "avg", "count", "min", "max", "list", "first", "last", "count_unique", "count_distinct"
+    "sum",
+    "avg",
+    "count",
+    "min",
+    "max",
+    "list",
+    "first",
+    "last",
+    "count_unique",
+    "count_distinct",
+    "median",
+    "mode",
+    "mode_share",
 ]
+
+# Single source of truth for valid aggregation names — derived from the
+# Literal so adding a new aggregation in one place stays in sync.
+VALID_AGGREGATIONS = frozenset(get_args(AggregationType))
+
+
+# Comparison operations available on FieldComputation.filter_path/filter_value.
+# - `eq`: exact equality (default; preserves prior behaviour).
+# - `contains_word`: filter_path's value is treated as a whitespace-separated
+#   token list; matches if filter_value is one of the tokens. Mirrors V1
+#   logic like `if "ebf" in bf_status.split()` for multi-select form fields.
+FilterOp = Literal["eq", "contains_word"]
+
+VALID_FILTER_OPS = frozenset(get_args(FilterOp))
 
 
 class CacheStage(Enum):
@@ -126,6 +152,30 @@ class FieldComputation:
     extractor: Callable[[dict], Any] | None = None  # Custom extractor receives full visit dict
     filter_path: str = ""  # Optional: path for FILTER (WHERE ...) clause
     filter_value: str = ""  # Optional: value to compare against in filter
+    # Filter comparison kind. "eq" is exact equality; "contains_word" treats the
+    # filter_path's value as a whitespace-separated token list and matches if
+    # filter_value is one of the tokens. Used for multi-select form fields like
+    # MBW's bf_status, where v1 logic is `if "ebf" in bf_status.split()`.
+    filter_op: str = "eq"
+    # Two-pass aggregation. When set, the field is computed as a nested
+    # aggregation: rows are first grouped by `pre_aggregate_by` (an inner
+    # JSON path, typically `mother_case_id` or another secondary key) and
+    # collapsed using `pre_aggregation`; the resulting per-pre-group values
+    # are then grouped by the pipeline's outer grouping_key and aggregated
+    # using `aggregation`.
+    #
+    # Concrete example — parity concentration per FLW:
+    #   pre_aggregate_by = "form.parents.parent.case.@case_id"  # mother
+    #   pre_aggregation = "first"                                # per-mother first parity
+    #   aggregation     = "mode_share"                           # per-FLW concentration
+    # ⇒ SQL groups visits by (FLW, mother), takes one parity per mother,
+    # then computes mode_share of the per-mother parities per FLW.
+    #
+    # Mirrors v1's chained-loop quality computations without needing a full
+    # multi-stage pipeline cache refactor. Empty values mean single-pass
+    # aggregation as before.
+    pre_aggregate_by: str = ""
+    pre_aggregation: str = "first"
 
     def __post_init__(self):
         """Validate configuration."""
@@ -133,19 +183,12 @@ class FieldComputation:
             raise ValueError("Field name is required")
         if not self.path and not self.paths and not self.extractor:
             raise ValueError("Field requires path, paths, or extractor")
-        if self.aggregation not in [
-            "sum",
-            "avg",
-            "count",
-            "min",
-            "max",
-            "list",
-            "first",
-            "last",
-            "count_unique",
-            "count_distinct",
-        ]:
+        if self.aggregation not in VALID_AGGREGATIONS:
             raise ValueError(f"Invalid aggregation type: {self.aggregation}")
+        if self.pre_aggregate_by and self.pre_aggregation not in VALID_AGGREGATIONS:
+            raise ValueError(f"Invalid pre_aggregation type: {self.pre_aggregation}")
+        if self.filter_op not in VALID_FILTER_OPS:
+            raise ValueError(f"Invalid filter_op: {self.filter_op}. Valid: {sorted(VALID_FILTER_OPS)}")
 
     def get_paths(self) -> list[str]:
         """Get list of paths to try (paths if set, otherwise [path])."""

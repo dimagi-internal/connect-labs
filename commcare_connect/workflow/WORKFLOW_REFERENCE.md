@@ -328,6 +328,9 @@ Output rows shape:
 | `min`            | Minimum value                              | same as input |
 | `max`            | Maximum value                              | same as input |
 | `list`           | Collect all values into a list             | list          |
+| `median`         | Interpolated 50th percentile               | float         |
+| `mode`           | Most frequent non-null value               | same as input |
+| `mode_share`     | Share (0..1) of rows equal to the mode     | float         |
 
 ### Transform Types
 
