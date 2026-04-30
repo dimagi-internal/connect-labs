@@ -891,6 +891,16 @@ function WorkflowRunner({
             );
             // Don't set the small error banner — the framework gate panel
             // we just reopened is the more useful UI.
+          } else if (payload.concurrent_run) {
+            // Cache-layer concurrency conflict: another tab/session is
+            // running the same pipeline and got there first. Re-running
+            // once their write finishes will hit cache cleanly.
+            setError(
+              `Another pipeline run for this opportunity is already in ` +
+                `progress (collided on ${payload.cache_table}). Wait ~30s ` +
+                `for it to finish, then click Retry — the cached result ` +
+                `should load instantly.`,
+            );
           } else {
             setError(data.error);
           }

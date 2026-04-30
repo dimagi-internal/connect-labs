@@ -57,6 +57,18 @@ class RawVisitCache(models.Model):
     class Meta:
         app_label = "labs"
         db_table = "labs_raw_visit_cache"
+        constraints = [
+            # Prevents concurrent streaming writers (each tagged with its
+            # own negative sentinel visit_count) from creating duplicate
+            # rows for the same visit. Different writers' sentinels mean
+            # the SAME visit_id can coexist under different visit_counts;
+            # within a single writer, dups raise CacheConcurrencyError.
+            # See incident on opp 765 (172120 rows for 86060 visits).
+            models.UniqueConstraint(
+                fields=["opportunity_id", "visit_count", "visit_id"],
+                name="uniq_raw_visit_cache_opp_count_visit",
+            ),
+        ]
         indexes = [
             models.Index(fields=["opportunity_id", "visit_count"]),
             models.Index(fields=["opportunity_id", "username"]),
@@ -110,6 +122,17 @@ class ComputedVisitCache(models.Model):
     class Meta:
         app_label = "labs"
         db_table = "labs_computed_visit_cache"
+        constraints = [
+            # Concurrent pipeline runs targeting the same (opp, config)
+            # used to silently both succeed and produce 2x rows. The
+            # constraint forces one writer to win on insert; the loser
+            # raises CacheConcurrencyError → pipeline reports a clear
+            # "another run in flight" message and stops.
+            models.UniqueConstraint(
+                fields=["opportunity_id", "config_hash", "visit_id"],
+                name="uniq_computed_visit_cache_opp_config_visit",
+            ),
+        ]
         indexes = [
             models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
         ]
@@ -173,6 +196,13 @@ class ComputedEntityCache(models.Model):
     class Meta:
         app_label = "labs"
         db_table = "labs_computed_entity_cache"
+        constraints = [
+            # See ComputedVisitCache constraint — same concurrency contract.
+            models.UniqueConstraint(
+                fields=["opportunity_id", "config_hash", "entity_id"],
+                name="uniq_computed_entity_cache_opp_config_entity",
+            ),
+        ]
         indexes = [
             models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
             models.Index(fields=["opportunity_id", "config_hash", "username"]),
@@ -227,6 +257,13 @@ class ComputedFLWCache(models.Model):
     class Meta:
         app_label = "labs"
         db_table = "labs_computed_flw_cache"
+        constraints = [
+            # See ComputedVisitCache constraint — same concurrency contract.
+            models.UniqueConstraint(
+                fields=["opportunity_id", "config_hash", "username"],
+                name="uniq_computed_flw_cache_opp_config_username",
+            ),
+        ]
         indexes = [
             models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
         ]

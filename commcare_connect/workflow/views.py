@@ -2473,6 +2473,7 @@ class PipelineDataStreamView(BaseSSEStreamView):
                                         row_dict.update(custom)
                                     merged_rows.append(row_dict)
                         except Exception as e:
+                            from commcare_connect.labs.analysis.backends.sql.cache import CacheConcurrencyError
                             from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
 
                             logger.exception(
@@ -2484,6 +2485,44 @@ class PipelineDataStreamView(BaseSSEStreamView):
                             if isinstance(e, CCHQAuthError):
                                 per_opp_entry["auth_error"] = "commcare_hq"
                                 per_opp_entry["auth_error_domain"] = e.domain
+                            if isinstance(e, CacheConcurrencyError):
+                                # Loud terminal error: another pipeline run for the
+                                # same (opportunity, config) collided with this one
+                                # in the cache layer. Re-running once the other
+                                # writer finishes will hit the cache cleanly.
+                                per_opp_entry["concurrent_run"] = True
+                                per_opp_entry["cache_table"] = e.table
+                                yield send_sse_event(
+                                    f"Pipeline '{pipeline_def.name}' aborted: another run "
+                                    f"for opp {opp_id} is already in flight (collided on "
+                                    f"{e.table}). Wait a moment and retry — a cache hit "
+                                    f"is likely.",
+                                    error=str(e),
+                                    data={
+                                        "pipeline_alias": alias,
+                                        "pipeline_name": pipeline_def.name,
+                                        "pipeline_error": str(e)[:500],
+                                        "concurrent_run": True,
+                                        "cache_table": e.table,
+                                    },
+                                )
+                                # Stop the entire pipeline stream — don't proceed
+                                # to the next pipeline source. Any subsequent
+                                # writer would just collide too.
+                                per_opp_meta[str(opp_id)] = per_opp_entry
+                                pipeline_data[alias] = {
+                                    "rows": [],
+                                    "metadata": {
+                                        "pipeline_id": pipeline_id,
+                                        "pipeline_name": pipeline_def.name,
+                                        "row_count": 0,
+                                        "concurrent_run": True,
+                                        "cache_table": e.table,
+                                        "opportunity_ids": list(opp_ids),
+                                        "per_opp": per_opp_meta,
+                                    },
+                                }
+                                return
                             per_opp_meta[str(opp_id)] = per_opp_entry
                             # Surface per-pipeline failure to the FE with the
                             # pipeline name so users see which one broke
