@@ -42,6 +42,14 @@ DEFINITION = {
         "showSummaryCards": False,
         "showFilters": False,
         # No job_type — all metrics are computed declaratively in the pipelines.
+        # Workflow framework auth gate: runner blocks the template render
+        # until each of these OAuth providers shows active. With this set,
+        # the upfront auth screen replaces the template's manual mid-load
+        # OAuth check, so users see "Authorize CommCare HQ" within ~1s of
+        # landing instead of after the FLW table renders and they click
+        # Launch Dashboard. v3 doesn't depend on OCS so we drop it from
+        # v2's `["connect", "commcare_hq", "ocs"]` list.
+        "auth_requires": ["connect", "commcare_hq"],
     },
     "pipeline_sources": [],
 }
