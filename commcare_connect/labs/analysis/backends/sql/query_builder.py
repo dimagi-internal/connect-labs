@@ -12,7 +12,12 @@ import logging
 
 from django.db import connection
 
-from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, FieldComputation, HistogramComputation
+from commcare_connect.labs.analysis.config import (
+    AnalysisPipelineConfig,
+    FieldComputation,
+    HistogramComputation,
+    JoinConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,150 @@ def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
             sql_parts.append(f"->'{part}'")
 
     return "".join(sql_parts)
+
+
+def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int) -> str:
+    """Build a parenthesized subquery that mirrors labs_raw_visit_cache, with
+    each join's fields injected into form_json under `joined.<from_alias>.<field>`.
+
+    Designed to be substituted everywhere `labs_raw_visit_cache` appears in a
+    query, including correlated subqueries that reference column-qualified names
+    like `labs_raw_visit_cache.opportunity_id` and `sub.username`. The returned
+    string is a parenthesized SELECT that the caller MUST alias.
+
+    Each join LEFT JOINs labs_computed_visit_cache filtered by the joined
+    pipeline's `resolved_config_hash`, pre-aggregated by remote_key_field via
+    DISTINCT ON to prevent row blow-up if multiple cache rows share the same
+    join key (e.g., a mother with two registration forms — we keep the latest).
+    """
+    join_clauses = []
+    join_obj_kvs = []  # for outer jsonb_build_object building `joined`
+
+    for j in joins:
+        if not j.resolved_config_hash:
+            raise ValueError(
+                f"JoinConfig from_alias={j.from_alias!r}: resolved_config_hash not set; "
+                "the orchestration layer must populate it before SQL build."
+            )
+
+        cache_alias = f"_jcache_{j.from_alias}"
+
+        # Per-row joined object keyed by output names — built from the
+        # pre-aggregated subquery's pre-sliced JSONB column.
+        kv_pairs = [f"'{jf['name']}', {cache_alias}.computed_fields_json->'{jf['name']}'" for jf in j.fields]
+        per_alias_object = f"COALESCE(jsonb_build_object({', '.join(kv_pairs)}), '{{}}'::jsonb)"
+        join_obj_kvs.append(f"'{j.from_alias}', {per_alias_object}")
+
+        # Local key extraction (JSONB path on the visit's form_json).
+        local_key_sql = _jsonb_path_to_sql(j.local_key, "rv.form_json")
+
+        # Pre-aggregate the joined cache by remote_key_field; pick the latest
+        # per key so multiple cache rows for the same key don't multiply visit rows.
+        # Build a sliced JSONB object containing only the requested fields.
+        remote_kv_pairs = [f"'{jf['name']}', computed_fields->'{jf['from']}'" for jf in j.fields]
+        remote_obj = f"jsonb_build_object({', '.join(remote_kv_pairs)})"
+
+        join_clauses.append(
+            f"""LEFT JOIN (
+                SELECT DISTINCT ON (computed_fields->>'{j.remote_key_field}')
+                    computed_fields->>'{j.remote_key_field}' AS join_key,
+                    {remote_obj} AS computed_fields_json
+                FROM labs_computed_visit_cache
+                WHERE opportunity_id = {opportunity_id}
+                  AND config_hash = '{j.resolved_config_hash}'
+                  AND computed_fields->>'{j.remote_key_field}' IS NOT NULL
+                ORDER BY
+                    computed_fields->>'{j.remote_key_field}',
+                    visit_date DESC NULLS LAST,
+                    visit_id DESC
+            ) {cache_alias}
+                ON {cache_alias}.join_key = {local_key_sql}"""
+        )
+
+    joined_object = f"jsonb_build_object({', '.join(join_obj_kvs)})"
+    join_clauses_sql = "\n            ".join(join_clauses)
+
+    # SELECT the same columns as labs_raw_visit_cache so callers see no
+    # difference except form_json now contains a `joined` key. We list every
+    # column explicitly because `rv.*` would collide with our replaced
+    # form_json. Order matches the model definition.
+    return f"""(
+            SELECT
+                rv.opportunity_id,
+                rv.visit_count,
+                rv.expires_at,
+                rv.created_at,
+                rv.visit_id,
+                rv.username,
+                rv.deliver_unit,
+                rv.deliver_unit_id,
+                rv.entity_id,
+                rv.entity_name,
+                rv.visit_date,
+                rv.status,
+                rv.reason,
+                rv.location,
+                rv.flagged,
+                rv.flag_reason,
+                jsonb_set(
+                    COALESCE(rv.form_json, '{{}}'::jsonb),
+                    '{{joined}}',
+                    {joined_object},
+                    true
+                ) AS form_json,
+                rv.completed_work,
+                rv.status_modified_date,
+                rv.review_status,
+                rv.review_created_on,
+                rv.justification,
+                rv.date_created,
+                rv.completed_work_id,
+                rv.images
+            FROM labs_raw_visit_cache rv
+            {join_clauses_sql}
+        )"""
+
+
+_JOINED_VISITS_CTE = "_visits_with_joins"
+
+
+def _visit_source_sql(config: AnalysisPipelineConfig, opportunity_id: int) -> str:
+    """Return the FROM-source token for visit reads inside aggregation queries.
+
+    No joins → the literal table name `labs_raw_visit_cache`.
+    With joins → the CTE alias `_visits_with_joins` (the CTE itself is
+    emitted by `build_flw_aggregation_query` so it materializes once).
+
+    The CTE indirection matters at scale: without it, every inner
+    correlated subquery (per FLW × per field) re-executes the
+    LEFT JOIN to `labs_computed_visit_cache`, blowing query time
+    from seconds to tens of minutes. With CTE materialization the
+    JOIN runs once and is hash-probed by the inner aggregations.
+
+    Caller still aliases this token like `FROM {source} AS labs_raw_visit_cache`
+    or `FROM {source} sub`; both work whether the source is a real table
+    name or a CTE alias.
+    """
+    if not config.joins:
+        return "labs_raw_visit_cache"
+    return _JOINED_VISITS_CTE
+
+
+def _visit_source_cte_body(config: AnalysisPipelineConfig, opportunity_id: int) -> str | None:
+    """Return the CTE body for the join-extended visit source, or None.
+
+    Used by `build_flw_aggregation_query` (and other top-level builders) to
+    emit a `WITH _visits_with_joins AS MATERIALIZED (...)` prologue when
+    joins are configured. None when there are no joins.
+    """
+    if not config.joins:
+        return None
+    # `_build_join_subquery` wraps its SELECT in parens so it can be used as
+    # a `FROM (subquery)` token. CTE bodies don't take outer parens — strip them.
+    body = _build_join_subquery(config.joins, opportunity_id).strip()
+    if body.startswith("(") and body.endswith(")"):
+        body = body[1:-1].strip()
+    return body
 
 
 def _paths_to_coalesce_sql(paths: list[str], column: str = "form_json") -> str:
@@ -202,6 +351,7 @@ def _aggregation_to_sql(
     filter_value: str = "",
     filter_op: str = "eq",
     filter_paths: list[str] | None = None,
+    inner_source: str = "labs_raw_visit_cache",
 ) -> str:
     """Convert aggregation type to SQL aggregate function.
 
@@ -281,7 +431,7 @@ def _aggregation_to_sql(
             SELECT MAX(c)::float / NULLIF(SUM(c), 0)
             FROM (
                 SELECT COUNT(*) AS c
-                FROM labs_raw_visit_cache sub
+                FROM {inner_source} sub
                 WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
                   AND sub.username = labs_raw_visit_cache.username
                   AND {value_expr} IS NOT NULL
@@ -302,7 +452,7 @@ def _aggregation_to_sql(
             SELECT COALESCE(SUM(c) FILTER (WHERE c > 1), 0)::float / NULLIF(SUM(c), 0)
             FROM (
                 SELECT COUNT(*) AS c
-                FROM labs_raw_visit_cache sub
+                FROM {inner_source} sub
                 WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
                   AND sub.username = labs_raw_visit_cache.username
                   AND {value_expr} IS NOT NULL
@@ -433,7 +583,7 @@ def _inner_agg_expr(agg: str, value_expr: str) -> str:
     raise ValueError(f"pre_aggregation {agg!r} not supported as inner step (mode_share/list invalid here)")
 
 
-def _pre_aggregated_field_sql(field: FieldComputation) -> str:
+def _pre_aggregated_field_sql(field: FieldComputation, inner_source: str = "labs_raw_visit_cache") -> str:
     """SQL for a field with `pre_aggregate_by` set.
 
     Two-pass aggregation: inner GROUP BY pre_aggregate_by collapses with
@@ -456,19 +606,39 @@ def _pre_aggregated_field_sql(field: FieldComputation) -> str:
     inner_collapse = _inner_agg_expr(field.pre_aggregation, transformed_expr)
 
     # Build the inner-subquery WHERE clause. Always restrict to the outer
-    # row's (opportunity_id, username) via correlated reference, plus
-    # pre_aggregate_by IS NOT NULL. If the field declares a filter, apply
-    # the SAME filter to the inner subquery — without this, pre_aggregation
-    # collapses ALL rows per pre-group, including ones the outer filter
-    # would have excluded. v1 fidelity requires the filter applied at row
-    # level (e.g., MBW's parity_concentration only looks at ANC visits;
-    # collapsing across non-ANC visits would pick the wrong "last parity
-    # per mother"). This adds the filter for both 'eq' and 'contains_word'.
+    # row's opportunity_id via correlated reference, plus pre_aggregate_by
+    # IS NOT NULL. The username correlation depends on attribute_to mode:
+    #
+    # - default ("" attribute_to): scope inner rows to outer FLW's visits,
+    #   so the pre_group is counted once per FLW that visited it.
+    #
+    # - "last_username": drop the per-visit username scope; instead require
+    #   the outer FLW to be the LAST-visit FLW for the pre_group. Mirrors
+    #   v1's winner-takes-all mother→FLW attribution. Each pre_group then
+    #   appears under exactly one outer FLW — the right semantics for
+    #   fraud-detection metrics where double-counting shared mothers
+    #   inflates the signal.
+    #
+    # If the field declares a filter, apply the SAME filter to the inner
+    # subquery — without this, pre_aggregation collapses ALL rows per
+    # pre-group, including ones the outer filter would have excluded. v1
+    # fidelity requires the filter applied at row level (e.g., MBW's
+    # parity_concentration only looks at ANC visits; collapsing across
+    # non-ANC visits would pick the wrong "last parity per mother").
     inner_where_clauses = [
         "sub.opportunity_id = labs_raw_visit_cache.opportunity_id",
-        "sub.username = labs_raw_visit_cache.username",
         f"{pre_path_sql} IS NOT NULL",
     ]
+    if field.pre_aggregate_attribute_to == "last_username":
+        # Filter handled below via JOIN to the owner-attribution CTE; no
+        # username-correlation predicate goes in inner_where here. The
+        # earlier per-row correlated-subquery shape was correct semantically
+        # but timed out at production scale (>14 min on opp 765). The CTE
+        # version computes mother→owner ONCE per opp; the field-level inner
+        # subquery just hash-joins to it.
+        pass
+    else:
+        inner_where_clauses.append("sub.username = labs_raw_visit_cache.username")
     if (field.filter_path or field.filter_paths) and field.filter_value:
         if field.filter_paths:
             inner_filter_sql = _paths_to_coalesce_sql(field.filter_paths)
@@ -483,8 +653,23 @@ def _pre_aggregated_field_sql(field: FieldComputation) -> str:
 
     inner_where = " AND ".join(inner_where_clauses)
 
+    # Inner subquery FROM clause: JOIN to the owner-attribution CTE when
+    # attribute_to=last_username so each pre_group is filtered to the
+    # outer FLW that "owns" it (last-visit FLW). Otherwise plain FROM.
+    if field.pre_aggregate_attribute_to == "last_username":
+        cte_alias = _owner_cte_name(field.pre_aggregate_by)
+        sub_pre_path = _jsonb_path_to_sql(field.pre_aggregate_by, "sub.form_json")
+        from_clause = (
+            f"{inner_source} sub "
+            f"INNER JOIN {cte_alias} "
+            f"ON {cte_alias}.pre_group_key = {sub_pre_path} "
+            f"AND {cte_alias}.owner_username = labs_raw_visit_cache.username"
+        )
+    else:
+        from_clause = f"{inner_source} sub"
+
     inner_subquery = f"""SELECT {pre_path_sql} AS pre_group, {inner_collapse} AS v
-            FROM labs_raw_visit_cache sub
+            FROM {from_clause}
             WHERE {inner_where}
             GROUP BY {pre_path_sql}"""
 
@@ -554,6 +739,88 @@ def _outer_agg_over_v(agg: str) -> str:
     raise ValueError(f"aggregation {agg!r} not supported as outer step over pre-aggregated values")
 
 
+def _owner_cte_name(pre_aggregate_by: str) -> str:
+    """Sanitize a JSONB path into a deterministic CTE alias.
+
+    `form.parents.parent.case.@case_id` → `_owners_form_parents_parent_case_case_id`.
+    Used to deduplicate the per-opp owner-attribution CTE: every field that
+    declares the same `pre_aggregate_by` + `attribute_to=last_username` shares
+    one CTE so the per-mother last-visit lookup runs ONCE, not once per field
+    per outer row.
+    """
+    sanitized = pre_aggregate_by.replace(".", "_").replace("@", "")
+    return f"_owners_{sanitized}"
+
+
+def _build_owner_attribution_cte(pre_aggregate_by: str, opportunity_id: int) -> str:
+    """SQL CTE body that maps each pre_aggregate_by key to its last-visit username.
+
+    Replaces the per-row correlated subquery that timed out at production
+    scale (14+ minutes on opp 765 with 99 FLWs × 26k mothers × 4 attributed
+    fields). The CTE runs once per opportunity, and the per-field
+    aggregation joins to it on the pre_group key — Postgres can hash-join
+    the JSONB-extracted key once instead of correlated-scanning per row.
+
+    Reads from the literal `labs_raw_visit_cache` (NOT the join-extended
+    source) because owner attribution uses base columns only — joined
+    fields are irrelevant to "which FLW visited this mother last".
+    """
+    pre_path_sql = _jsonb_path_to_sql(pre_aggregate_by)
+    return f"""SELECT DISTINCT ON ({pre_path_sql})
+        {pre_path_sql} AS pre_group_key,
+        username AS owner_username
+    FROM labs_raw_visit_cache
+    WHERE opportunity_id = {opportunity_id}
+      AND {pre_path_sql} IS NOT NULL
+    ORDER BY {pre_path_sql}, visit_date DESC NULLS LAST, visit_id DESC"""
+
+
+def _collect_owner_ctes(config: AnalysisPipelineConfig, opportunity_id: int) -> dict[str, str]:
+    """Return {cte_alias: cte_body} for every distinct pre_aggregate_by path
+    referenced by a field with attribute_to=last_username. Empty dict if none."""
+    seen: dict[str, str] = {}
+    for f in config.fields:
+        if f.pre_aggregate_attribute_to == "last_username" and f.pre_aggregate_by:
+            alias = _owner_cte_name(f.pre_aggregate_by)
+            if alias not in seen:
+                seen[alias] = _build_owner_attribution_cte(f.pre_aggregate_by, opportunity_id)
+    return seen
+
+
+def _build_cte_prologue(
+    config: AnalysisPipelineConfig,
+    opportunity_id: int,
+    include_owners: bool,
+) -> str:
+    """Build the leading `WITH ...` clause for top-level builders.
+
+    Two kinds of CTE may stack:
+      1. `_visits_with_joins` — JOIN-extended visit source, materialized
+         once so per-row JSON path extraction below hash-probes one
+         instance instead of re-running the LEFT JOIN to the joined
+         pipeline's computed cache. MATERIALIZED is required: without it
+         Postgres' default CTE inlining defeats the optimization at scale
+         (>14 minutes on opp 765 with 99 FLWs × 4 attributed fields).
+      2. `_owners_<path>` — one per distinct `pre_aggregate_by` used with
+         `attribute_to=last_username`. Maps pre_group key (e.g.,
+         mother_case_id) → owner username (last-visit FLW), so the inner
+         per-field aggregations hash-join instead of running a per-row
+         correlated subquery. Only emitted when `include_owners=True`
+         (FLW-stage builder) — visit-extraction and entity-stage paths
+         don't run pre_aggregate_by today, so they pass `False`.
+
+    Returns "" when no CTE is needed.
+    """
+    cte_parts: list[str] = []
+    visits_cte_body = _visit_source_cte_body(config, opportunity_id)
+    if visits_cte_body is not None:
+        cte_parts.append(f"{_JOINED_VISITS_CTE} AS MATERIALIZED (\n{visits_cte_body}\n)")
+    if include_owners:
+        for alias, body in _collect_owner_ctes(config, opportunity_id).items():
+            cte_parts.append(f"{alias} AS MATERIALIZED (\n{body}\n)")
+    return ("WITH " + ",\n".join(cte_parts) + "\n") if cte_parts else ""
+
+
 def build_flw_aggregation_query(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
@@ -573,6 +840,12 @@ def build_flw_aggregation_query(
         "MAX(visit_date) as _base_last_visit_date",
     ]
 
+    # If joins are configured, both the outer FROM and the correlated inner
+    # subqueries must read from the same join-extended source — otherwise inner
+    # aggregations (mode_share, dup_share, pre_aggregate_by) would not see the
+    # `joined.<alias>.<field>` paths. Resolve once and pass through.
+    visit_source = _visit_source_sql(config, opportunity_id)
+
     # Add custom fields from config. first/last go through _aggregation_to_sql which
     # uses ARRAY_AGG ORDER BY visit_date+visit_id — same shape entity stage uses.
     for field in config.fields:
@@ -580,7 +853,7 @@ def build_flw_aggregation_query(
         # correlated subquery scoped to the outer (opportunity_id, username).
         # Single-pass field handling continues below for the typical case.
         if field.pre_aggregate_by:
-            select_parts.append(f"{_pre_aggregated_field_sql(field)} as {field.name}")
+            select_parts.append(f"{_pre_aggregated_field_sql(field, inner_source=visit_source)} as {field.name}")
             continue
 
         paths = field.paths if field.paths else [field.path]
@@ -599,6 +872,7 @@ def build_flw_aggregation_query(
                 filter_paths=field.filter_paths,
                 filter_value=field.filter_value,
                 filter_op=field.filter_op,
+                inner_source=visit_source,
             )
             select_parts.append(f"{agg_expr} as {field.name}")
 
@@ -610,6 +884,8 @@ def build_flw_aggregation_query(
 
     select_clause = ",\n    ".join(select_parts)
 
+    with_clause = _build_cte_prologue(config, opportunity_id, include_owners=True)
+
     # Note: opportunity_id must appear in GROUP BY even though the WHERE clause
     # restricts it to a single value. The `first`/`last` aggregations use a
     # correlated subquery that references labs_raw_visit_cache.opportunity_id
@@ -618,9 +894,9 @@ def build_flw_aggregation_query(
     # WHERE filter. Grouping by opportunity_id is free here (it's constant
     # within the filter) but makes the subquery legal.
     query = f"""
-        SELECT
+        {with_clause}SELECT
             {select_clause}
-        FROM labs_raw_visit_cache
+        FROM {visit_source} AS labs_raw_visit_cache
         WHERE opportunity_id = {opportunity_id}
         GROUP BY username, opportunity_id
         ORDER BY username
@@ -764,12 +1040,18 @@ def build_entity_aggregation_query(
 
     select_clause = ",\n    ".join(select_parts)
 
+    visit_source = _visit_source_sql(config, opportunity_id)
+    # Entity-stage doesn't currently use pre_aggregate_by/attribute_to, so the
+    # owner-attribution CTEs aren't needed here (include_owners=False). The
+    # joined-visits CTE is still emitted when joins are configured.
+    with_clause = _build_cte_prologue(config, opportunity_id, include_owners=False)
+
     # GROUP BY the linking-field expression and opportunity_id (same reasoning as FLW —
     # opportunity_id is used by correlated subqueries and must be grouped or aggregated).
     query = f"""
-        SELECT
+        {with_clause}SELECT
             {select_clause}
-        FROM labs_raw_visit_cache
+        FROM {visit_source} AS labs_raw_visit_cache
         WHERE opportunity_id = {opportunity_id}
         GROUP BY ({group_expr}), opportunity_id
         ORDER BY entity_id
@@ -943,12 +1225,20 @@ def build_visit_extraction_query(
 
     where_clause = " AND ".join(where_clauses)
 
+    # If joins are configured, swap in the join-extended source for both the
+    # plain extraction path and the window-wrapped path below. Visit-level
+    # extraction has no per-row correlated subqueries, so the joined-visits
+    # CTE here is mostly for symmetry with the FLW builder; the perf benefit
+    # is small but the structure stays uniform.
+    visit_source = _visit_source_sql(config, opportunity_id)
+    with_clause = _build_cte_prologue(config, opportunity_id, include_owners=False)
+
     # If no window fields, emit the simple flat extraction query.
     if not config.window_fields:
         query = f"""
-            SELECT
+            {with_clause}SELECT
                 {select_clause}
-            FROM labs_raw_visit_cache
+            FROM {visit_source} AS labs_raw_visit_cache
             WHERE {where_clause}
             ORDER BY visit_id
         """
@@ -987,14 +1277,14 @@ def build_visit_extraction_query(
             extracted_filter_clause = "WHERE " + " AND ".join(predicates)
 
     query = f"""
-        SELECT
+        {with_clause}SELECT
             base.*,
             {window_select_clause}
         FROM (
             SELECT * FROM (
                 SELECT
                     {select_clause}
-                FROM labs_raw_visit_cache
+                FROM {visit_source} AS labs_raw_visit_cache
                 WHERE {where_clause}
             ) extracted
             {extracted_filter_clause}

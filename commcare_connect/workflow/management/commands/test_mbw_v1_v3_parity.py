@@ -55,8 +55,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from commcare_connect.labs.analysis.backends.sql.backend import SQLBackend
+        from commcare_connect.labs.analysis.backends.sql.cchq_cache_loader import (
+            populate_computed_cache_from_form_dicts,
+        )
         from commcare_connect.labs.analysis.data_access import fetch_flw_names
         from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
+        from commcare_connect.labs.analysis.utils import resolve_join_hashes
         from commcare_connect.labs.integrations.connect.cli import create_cli_request
         from commcare_connect.workflow.data_access import PipelineDataAccess
         from commcare_connect.workflow.templates.mbw_monitoring.data_transforms import (
@@ -79,7 +83,11 @@ class Command(BaseCommand):
         )
         from commcare_connect.workflow.templates.mbw_monitoring.pipeline_config import MBW_GPS_PIPELINE_CONFIG
         from commcare_connect.workflow.templates.mbw_monitoring.serializers import serialize_flw_summary
-        from commcare_connect.workflow.templates.mbw_monitoring_v3 import VISITS_GPS_SCHEMA, VISITS_SCHEMA
+        from commcare_connect.workflow.templates.mbw_monitoring_v3 import (
+            REGISTRATIONS_SCHEMA,
+            VISITS_GPS_SCHEMA,
+            VISITS_SCHEMA,
+        )
 
         opportunity_id = options["opportunity_id"]
         verbose = options["verbose"]
@@ -220,8 +228,32 @@ class Command(BaseCommand):
         backend = SQLBackend()
         access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
 
+        # V3 registrations — populate computed_visit_cache directly from the
+        # CCHQ form dicts already fetched above. Bypasses raw_visit_cache so it
+        # doesn't commingle with Connect-side visits for the same opportunity.
+        # Required precondition for the JOIN: the visits pipeline reads
+        # registration fields out of computed_visit_cache filtered by the
+        # registrations config_hash.
+        registrations_config = access._schema_to_config(REGISTRATIONS_SCHEMA, definition_id=opportunity_id)
+        try:
+            n_reg = populate_computed_cache_from_form_dicts(
+                config=registrations_config,
+                opportunity_id=opportunity_id,
+                form_dicts=registration_forms,
+            )
+            self.stdout.write(self.style.SUCCESS(f"  -> v3 registrations cache populated: {n_reg} rows"))
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"  -> v3 registrations cache populate failed: {e}"))
+
         # V3 visits (aggregated FLW summaries)
         visits_config = access._schema_to_config(VISITS_SCHEMA, definition_id=opportunity_id)
+
+        # JOIN setup: thread the registrations config_hash into visits_config.joins[]
+        # so the SQL builder can read the right rows from computed_visit_cache.
+        # Without this, the JOIN-aware path raises immediately, so a missing
+        # resolution is loud rather than silent.
+        resolve_join_hashes({"visits": visits_config, "registrations": registrations_config})
+
         # The raw visit cache was populated by stream_analysis_ignore_events above;
         # process_and_cache needs visit_dicts only for len(); skip_raw_store=True.
         v3_visits_result = backend.process_and_cache(
@@ -280,24 +312,30 @@ class Command(BaseCommand):
                 v3_overview["ebf_pct_by_flw"][flw] = round(ebf_count / bf_total * 100)
 
         # V3 quality_metrics — computed from v3's SQL pipeline outputs ONLY.
-        # parity_concentration is fully expressible in SQL via the existing
-        # primitives (mode/mode_share/dup_share + pre_aggregate_by). The
-        # remaining v1 leaves require cross-pipeline JOIN that v3's SQL
-        # framework doesn't yet ship: phone_dup_pct + age_concentration need
-        # registration data joined per-mother; anc_pnc_same_date_count needs
-        # cross-form-type per-mother extraction; age_equals_reg_pct needs
-        # DOB+reg-date joined. Those are flagged as JOIN-blocked rather than
-        # filled in via v1 Python helpers (which would defeat the "v3 is
-        # pure SQL" purpose).
+        # parity_concentration ships via single-pipeline two-pass aggregation;
+        # phone_dup + age_concentration ship via the visits ⋈ registrations
+        # JOIN added in this PR. Remaining gaps (anc_pnc_same_date_count,
+        # age_equals_reg_pct) require cross-form-type per-mother extraction
+        # and date-arithmetic comparisons that aren't yet expressible — flagged
+        # as JOIN-blocked rather than filled in via v1 Python helpers.
         v3_quality = {}
         for flw, fields in v3_visits_by_flw.items():
-            mode_share = fields.get("parity_mode_share")
-            dup_share = fields.get("parity_dup_share")
+            parity_mode_share = fields.get("parity_mode_share")
+            parity_dup_share = fields.get("parity_dup_share")
+            phone_dup_share = fields.get("phone_dup_share")
+            age_mode_share = fields.get("age_concentration_mode_share")
+            age_dup_share = fields.get("age_concentration_dup_share")
             v3_quality[flw] = {
                 "parity_concentration": {
-                    "mode_pct": round(mode_share * 100) if mode_share is not None else 0,
+                    "mode_pct": round(parity_mode_share * 100) if parity_mode_share is not None else 0,
                     "mode_value": fields.get("parity_mode_value", ""),
-                    "pct_duplicate": round(dup_share * 100) if dup_share is not None else 0,
+                    "pct_duplicate": round(parity_dup_share * 100) if parity_dup_share is not None else 0,
+                },
+                "phone_dup_pct": round(phone_dup_share * 100) if phone_dup_share is not None else 0,
+                "age_concentration": {
+                    "mode_pct": round(age_mode_share * 100) if age_mode_share is not None else 0,
+                    "mode_value": fields.get("age_concentration_mode_value", "") or "",
+                    "pct_duplicate": round(age_dup_share * 100) if age_dup_share is not None else 0,
                 },
             }
 
@@ -890,17 +928,20 @@ class Command(BaseCommand):
         return diffs
 
     def _compare_quality_full(self, v1, v3):
-        """Compare quality_metrics leaves v3 actually produces in SQL today.
+        """Compare quality_metrics leaves v3 produces in SQL today.
 
         v1 emits 6 leaves per FLW: phone_dup_pct, anc_pnc_same_date_count,
         anc_pnc_denominator, parity_concentration, age_concentration,
-        age_equals_reg_pct. v3 currently only computes parity_concentration
-        in SQL (via mode/mode_share/dup_share + pre_aggregate_by). The rest
-        need cross-pipeline JOIN that v3 doesn't yet ship.
+        age_equals_reg_pct. With the visits ⋈ registrations JOIN, v3 now
+        also produces phone_dup_pct + age_concentration. The remaining
+        leaves still need cross-form-type extraction or date arithmetic
+        that isn't expressible in SQL primitives yet.
 
-        This compares parity_concentration and reports the rest as
-        "v3 JOIN-blocked" so the report shows an honest picture of v3's
-        current SQL coverage.
+        Tolerances: phone_dup_pct and age_concentration leaves accept ±1
+        because v1 rounds early (per-mother) while v3 rounds late
+        (mode_share/dup_share float * 100, then round). For age_concentration
+        in particular, v1's value is DOB-derived when DOB is set, while v3's
+        age_recorded reads the recorded age field — small drift expected.
         """
         if not v1:
             self.stdout.write(
@@ -908,20 +949,21 @@ class Command(BaseCommand):
             )
             return []
 
-        # Report which leaves are JOIN-blocked
+        # Report which leaves are still JOIN-blocked
         join_blocked_leaves = (
-            "phone_dup_pct",
             "anc_pnc_same_date_count",
             "anc_pnc_denominator",
             "age_equals_reg_pct",
-            "age_concentration",
         )
         self.stdout.write(
             self.style.WARNING(
-                "  ⚠ JOIN-blocked leaves (v3 cannot compute in pure SQL today, needs "
-                "cross-pipeline JOIN visits ⋈ registrations): " + ", ".join(join_blocked_leaves)
+                "  ⚠ JOIN-blocked leaves (still need cross-form-type or "
+                "date-arithmetic primitives not yet in v3): " + ", ".join(join_blocked_leaves)
             )
         )
+
+        # Tolerance per leaf (max abs diff that still counts as a match).
+        TOLERANCE_PCT = 2  # 2 percentage points
 
         diffs = []
         all_keys = set(v1) | set(v3)
@@ -935,7 +977,8 @@ class Command(BaseCommand):
             if not v3_q:
                 diffs.append(f"quality[{flw}]: missing in v3")
                 continue
-            # Compare parity_concentration only — the leaf v3 actually computes.
+
+            # parity_concentration — exact match (single-pipeline aggregation)
             v1_pc = v1_q.get("parity_concentration") or {}
             v3_pc = v3_q.get("parity_concentration") or {}
             for inner in ("mode_pct", "mode_value", "pct_duplicate"):
@@ -944,6 +987,23 @@ class Command(BaseCommand):
                         f"quality[{flw}].parity_concentration.{inner}: "
                         f"v1={v1_pc.get(inner)!r} v3={v3_pc.get(inner)!r}"
                     )
+
+            # phone_dup_pct — ±2pp tolerance
+            v1_phone = v1_q.get("phone_dup_pct")
+            v3_phone = v3_q.get("phone_dup_pct")
+            if v1_phone is not None and v3_phone is not None:
+                if abs(v1_phone - v3_phone) > TOLERANCE_PCT:
+                    diffs.append(f"quality[{flw}].phone_dup_pct: v1={v1_phone} v3={v3_phone}")
+
+            # age_concentration — pct fields with ±2pp tolerance, mode_value exact
+            v1_age = v1_q.get("age_concentration") or {}
+            v3_age = v3_q.get("age_concentration") or {}
+            for pct_key in ("mode_pct", "pct_duplicate"):
+                v1v = v1_age.get(pct_key)
+                v3v = v3_age.get(pct_key)
+                if v1v is not None and v3v is not None:
+                    if abs(v1v - v3v) > TOLERANCE_PCT:
+                        diffs.append(f"quality[{flw}].age_concentration.{pct_key}: " f"v1={v1v} v3={v3v}")
         return diffs
 
     def _compare_quality_parity_concentration(self, v1, v3):
