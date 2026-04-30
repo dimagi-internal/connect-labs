@@ -209,7 +209,7 @@ VISITS_SCHEMA = {
         # that FLW. v1's quality_metrics.age_concentration.mode_pct.
         {
             "name": "age_concentration_mode_share",
-            "path": "joined.registrations.age_recorded",
+            "path": "joined.registrations.age",
             "aggregation": "mode_share",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "first",
@@ -220,7 +220,7 @@ VISITS_SCHEMA = {
         # dashboard can display "X% of mothers report age N".
         {
             "name": "age_concentration_mode_value",
-            "path": "joined.registrations.age_recorded",
+            "path": "joined.registrations.age",
             "aggregation": "mode",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "first",
@@ -231,7 +231,7 @@ VISITS_SCHEMA = {
         # other owned mother's age.
         {
             "name": "age_concentration_dup_share",
-            "path": "joined.registrations.age_recorded",
+            "path": "joined.registrations.age",
             "aggregation": "dup_share",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "first",
@@ -250,6 +250,7 @@ VISITS_SCHEMA = {
             "remote_key_field": "mother_case_id",
             "fields": [
                 {"name": "phone_number", "from": "phone_number"},
+                {"name": "age", "from": "age"},
                 {"name": "age_recorded", "from": "age_recorded"},
                 {"name": "mother_dob", "from": "mother_dob"},
                 {"name": "eligible_full_intervention_bonus", "from": "eligible_full_intervention_bonus"},
@@ -383,6 +384,14 @@ REGISTRATIONS_SCHEMA = {
             "paths": ["form.mother_details.age_in_years_rounded", "form.mother_details.mothers_age"],
             "aggregation": "first",
         },
+        # `age` mirrors v1's `extract_mother_metadata_from_forms` exactly:
+        # if mother_dob is parseable, derive years-since-DOB at the current
+        # date; else fall back to age_in_years_rounded then mothers_age.
+        # Drives the age_concentration leaves on the visits side. Without
+        # this, those leaves drift on FLWs whose mothers have DOBs set
+        # (v3's age_recorded would read the recorded field directly while
+        # v1 prefers DOB-derived).
+        {"name": "age", "extractor": "v1_mbw_age", "aggregation": "first"},
         # Household + eligibility (used in quality_metrics)
         {"name": "household_size", "path": "form.number_of_other_household_members", "aggregation": "first"},
         {

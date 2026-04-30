@@ -80,13 +80,25 @@ def populate_computed_cache_from_form_dicts(
 
         computed = {}
         for f in config.fields:
-            paths = f.get_paths()
-            value = extract_json_path_multi(fd, paths) if paths else None
-            if f.transform and callable(f.transform):
+            # `extractor` takes precedence over path-based extraction. It
+            # receives the full form dict so it can access multiple paths
+            # (e.g., v1's MBW age = years-since-mother_dob if set, else
+            # age_in_years_rounded, else mothers_age — three paths in one
+            # field). Used only on the cchq side; the SQL builders ignore
+            # extractor on aggregated queries.
+            if f.extractor and callable(f.extractor):
                 try:
-                    value = f.transform(value)
+                    value = f.extractor(fd)
                 except Exception:
                     value = None
+            else:
+                paths = f.get_paths()
+                value = extract_json_path_multi(fd, paths) if paths else None
+                if f.transform and callable(f.transform):
+                    try:
+                        value = f.transform(value)
+                    except Exception:
+                        value = None
             computed[f.name] = value
 
         rows.append(
