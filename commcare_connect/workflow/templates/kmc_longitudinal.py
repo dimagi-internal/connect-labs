@@ -443,46 +443,16 @@ function KpiCard(props) {
 """
 
 
-def build_snapshot(pipelines: dict, state: dict, opportunity_id: int) -> dict:
-    """Freeze the per-child dashboard shape into a snapshot blob.
-
-    The render code's first move when `instance.snapshot` is present is to read
-    `snapshot.children` instead of the live `pipelines.children.rows`. That gives
-    historical fidelity (the dashboard reflects what was true at freeze time)
-    without storing raw visit rows. Visit-level drill-down still hits live
-    pipeline data because the snapshot intentionally captures only the
-    aggregated per-child shape.
-    """
-    children = (pipelines or {}).get("children", {}).get("rows", []) or []
-
-    # Light derivations the render code repeats (weight gain, overdue) — pre-computed
-    # so the snapshot is fully self-describing. Render code can re-derive too;
-    # keeping these here means a stable read path even if render code changes.
-    enriched = []
-    for c in children:
-        bw = float(c["birth_weight"]) if c.get("birth_weight") not in (None, "") else None
-        cw = float(c["current_weight"]) if c.get("current_weight") not in (None, "") else None
-        weight_gain = (cw - bw) if (cw is not None and bw is not None) else None
-        reached = cw is not None and cw >= 2500
-        enriched.append({**c, "weight_gain": weight_gain, "reached_threshold": reached})
-
-    return {
-        "schema_version": 1,
-        "children": enriched,
-        "kpis": {
-            "total": len(enriched),
-            "reached_threshold": sum(1 for c in enriched if c.get("reached_threshold")),
-        },
-    }
-
-
 TEMPLATE = {
     "key": "kmc_longitudinal",
     "name": "KMC Longitudinal Tracking",
     "description": "Track KMC children with per-beneficiary dashboard, child list, and timeline drill-down.",
     "icon": "fa-baby",
     "color": "teal",
-    "supports_snapshots": True,
+    # No supports_snapshots: this is continuous per-child tracking, not a periodic
+    # action with a "moment of completion." Snapshot-shaped templates are the ones
+    # where a run captures "what I did this week" — see performance_review for
+    # the canonical example.
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schemas": PIPELINE_SCHEMAS,
