@@ -204,7 +204,7 @@ def create_review(
             type=REVIEW_TYPE,
             data=data,
             labs_record_id=response_id,
-            public=True,
+            public=False,
         )
         return _serialize_record(record)
     finally:
@@ -245,6 +245,8 @@ def update_review(user, review_id: int, update_data: dict) -> dict:
             raise MCPToolError("NOT_FOUND", f"Review {review_id} not found")
 
         merged_data = dict(current.data or {})
+        update_data.pop("is_public", None)
+        update_data.pop("public", None)
         merged_data.update(update_data)
 
         record = client.update_record(

@@ -316,7 +316,7 @@ def pipeline_update_schema(
         "properties": {
             "pipeline_id": {"type": "integer"},
             "opportunity_id": {"type": "integer"},
-            "sample_size": {"type": "integer", "default": 50},
+            "sample_size": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200},
             "schema_override": {"type": "object"},
             "opportunity_ids": {
                 "type": "array",
@@ -332,6 +332,9 @@ def pipeline_update_schema(
         "additionalProperties": False,
     },
 )
+_PIPELINE_PREVIEW_MAX_ROWS = 200
+
+
 def pipeline_preview(
     user,
     pipeline_id: int,
@@ -340,6 +343,11 @@ def pipeline_preview(
     schema_override: dict = None,
     opportunity_ids: list[int] = None,
 ):
+    if not 1 <= sample_size <= _PIPELINE_PREVIEW_MAX_ROWS:
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"sample_size must be between 1 and {_PIPELINE_PREVIEW_MAX_ROWS}. Got {sample_size}.",
+        )
     if schema_override is not None:
         _validate_pipeline_schema(schema_override)
 

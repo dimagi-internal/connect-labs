@@ -218,7 +218,7 @@ def create_fund(
             type=FUND_TYPE,
             data=data,
             program_id=int(program_id),
-            public=True,
+            public=False,
         )
         return _serialize_record(record)
     finally:
@@ -259,6 +259,8 @@ def update_fund(user, fund_id: int, update_data: dict) -> dict:
             raise MCPToolError("NOT_FOUND", f"Fund {fund_id} not found")
 
         merged_data = dict(current.data or {})
+        update_data.pop("is_public", None)
+        update_data.pop("public", None)
         merged_data.update(update_data)
 
         record = client.update_record(
