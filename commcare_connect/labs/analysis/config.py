@@ -333,6 +333,92 @@ class HistogramComputation:
         return min(index, self.num_bins - 1)
 
 
+# Base columns on labs_raw_visit_cache available without extraction. Used for
+# WindowFieldComputation reference validation — partition_by/order_by can name
+# either a base column (visit_date, visit_id, username, etc.) or an extracted
+# field declared in fields[].
+_BASE_VISIT_COLUMNS = frozenset(
+    {
+        "visit_id",
+        "username",
+        "visit_date",
+        "visit_datetime",
+        "status",
+        "flagged",
+        "location",
+        "deliver_unit",
+        "deliver_unit_id",
+        "entity_id",
+        "entity_name",
+    }
+)
+
+
+# Window operations supported by WindowFieldComputation.
+# - `lag_haversine`: haversine distance in meters between this row's GPS and
+#   the previous row's GPS in the same partition. Requires lat_field and
+#   lon_field to name extracted/base columns containing the latitude and
+#   longitude as floats. Returns NULL on the first row of each partition or
+#   when either coordinate is NULL (sparse-GPS-friendly).
+WindowOperation = Literal["lag_haversine"]
+
+VALID_WINDOW_OPERATIONS = frozenset(get_args(WindowOperation))
+
+
+@dataclass
+class WindowFieldComputation:
+    """Per-row window-function field evaluated AFTER per-row extraction.
+
+    Each WindowFieldComputation produces one extra column per visit row, computed
+    via a SQL window function over the extraction subquery. The operation accesses
+    other already-extracted fields by name and applies a partition/order spec.
+
+    Use case: GPS distance between consecutive visits to the same mother. The
+    visits are in `labs_raw_visit_cache`; the extracted lat/lon columns are
+    declared in fields[]; this WindowFieldComputation says "for each visit,
+    compute haversine to the prev visit in the same mother_case_id partition,
+    ordered by visit_datetime."
+
+    Attributes:
+        name: Output column name (e.g., "distance_from_prev_case_visit_m").
+        operation: Which window op to apply. Currently only "lag_haversine".
+        partition_by: Name of an extracted field or base column to partition over.
+            For per-mother revisit distance: "mother_case_id". For per-FLW-day
+            travel chain: would need a tuple — not supported in this primitive.
+        order_by: Name of an extracted field or base column to order within
+            each partition. Typically "visit_datetime".
+        lat_field: (lag_haversine only) Name of the latitude field.
+        lon_field: (lag_haversine only) Name of the longitude field.
+        description: Optional human-readable description for docs/UI.
+    """
+
+    name: str
+    operation: WindowOperation = "lag_haversine"
+    partition_by: str = ""
+    order_by: str = ""
+    lat_field: str = ""
+    lon_field: str = ""
+    description: str = ""
+
+    def __post_init__(self):
+        if not self.name:
+            raise ValueError("WindowFieldComputation name is required")
+        if self.operation not in VALID_WINDOW_OPERATIONS:
+            raise ValueError(
+                f"WindowFieldComputation {self.name!r}: unknown operation {self.operation!r}. "
+                f"Valid: {sorted(VALID_WINDOW_OPERATIONS)}"
+            )
+        if self.operation == "lag_haversine":
+            if not self.lat_field or not self.lon_field:
+                raise ValueError(
+                    f"WindowFieldComputation {self.name!r}: lag_haversine requires lat_field and lon_field"
+                )
+            if not self.partition_by:
+                raise ValueError(f"WindowFieldComputation {self.name!r}: lag_haversine requires partition_by")
+            if not self.order_by:
+                raise ValueError(f"WindowFieldComputation {self.name!r}: lag_haversine requires order_by")
+
+
 @dataclass
 class AnalysisPipelineConfig:
     """
@@ -400,6 +486,13 @@ class AnalysisPipelineConfig:
     # Data source configuration
     data_source: DataSourceConfig = field(default_factory=DataSourceConfig)
 
+    # Window-function fields evaluated AFTER per-row extraction. Each
+    # WindowFieldComputation references already-extracted fields by name and
+    # produces one extra value per visit (e.g., distance from previous visit
+    # to the same mother). Backwards-compatible: empty list means no window
+    # processing, identical to today's behaviour.
+    window_fields: list["WindowFieldComputation"] = field(default_factory=list)
+
     def __post_init__(self):
         """Validate configuration."""
         if not self.grouping_key:
@@ -428,6 +521,23 @@ class AnalysisPipelineConfig:
             )
 
         # Note: Empty fields/histograms is valid for basic caching scenarios
+
+        # Validate window fields reference existing extracted fields by name.
+        # We do this in __post_init__ rather than at template-load time so the
+        # error is raised against the constructed config (close to the failure).
+        field_names = {f.name for f in self.fields}
+        for wf in self.window_fields:
+            for ref_name, ref_value in (
+                ("partition_by", wf.partition_by),
+                ("order_by", wf.order_by),
+                ("lat_field", wf.lat_field),
+                ("lon_field", wf.lon_field),
+            ):
+                if ref_value and ref_value not in field_names and ref_value not in _BASE_VISIT_COLUMNS:
+                    raise ValueError(
+                        f"WindowFieldComputation {wf.name!r} references "
+                        f"{ref_name}={ref_value!r}, but no extracted field or base column has that name."
+                    )
 
     def add_field(self, field_comp: FieldComputation) -> None:
         """Add a field computation to the config."""
