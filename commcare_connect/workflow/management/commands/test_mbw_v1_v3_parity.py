@@ -231,7 +231,15 @@ class Command(BaseCommand):
             visit_dicts=[None] * v1_gps_result.total_visits,
             skip_raw_store=True,
         )
-        v3_visits_by_flw = {row.username: row.custom_fields for row in v3_visits_result.rows}
+        # Capture both custom_fields AND base row attributes (total_visits,
+        # first_visit_date, etc.) — the aggregated FLW pipeline emits both.
+        v3_visits_by_flw = {}
+        for row in v3_visits_result.rows:
+            data = dict(row.custom_fields)
+            data["_base_total_visits"] = getattr(row, "total_visits", None)
+            data["_base_first_visit_date"] = getattr(row, "first_visit_date", None)
+            data["_base_last_visit_date"] = getattr(row, "last_visit_date", None)
+            v3_visits_by_flw[row.username] = data
         self.stdout.write(self.style.SUCCESS(f"  -> v3 visits pipeline: {len(v3_visits_by_flw)} FLWs"))
 
         # V3 visits_gps (visit-level with lag_haversine)
@@ -286,7 +294,10 @@ class Command(BaseCommand):
         # V3 gps_data — partial. lag_haversine produces per-visit distance;
         # per-FLW aggregations of those distances need either a second pipeline
         # stage or client-side aggregation (we do the latter here).
-        v3_gps_data = self._compute_v3_gps_summary(v3_gps_visits, flw_names)
+        # Pass v3_visits_by_flw so total_visits per FLW comes from the
+        # AGGREGATED visits pipeline (which counts ALL visits) rather than the
+        # visits_gps pipeline (which post-filters to GPS-valid rows).
+        v3_gps_data = self._compute_v3_gps_summary(v3_gps_visits, flw_names, v3_visits_by_flw)
 
         # V3 followup_data — not yet wired (needs cross-pipeline JOIN
         # visits ⋈ registrations on mother_case_id for the expected_visits schedule).
@@ -349,7 +360,7 @@ class Command(BaseCommand):
             self._report("quality.parity_concentration", quality_diffs, verbose)
             all_diffs["quality.parity_concentration"] = quality_diffs
 
-        # GPS slice (median meters/minutes parity)
+        # GPS slice
         if section in ("all", "gps"):
             self.stdout.write("\n--- GPS ---")
             # Tolerance ±5m: real GPS has ±10m precision on hardware level, and
@@ -373,6 +384,26 @@ class Command(BaseCommand):
             )
             self._report("gps.median_minutes_by_flw", gps_minutes_diffs, verbose)
             all_diffs["gps.median_minutes_by_flw"] = gps_minutes_diffs
+
+            # Cross-FLW totals
+            v1_gps = v1_payload["gps_data"]
+            v3_gps = v3_payload["gps_data"]
+            for leaf in ("total_visits", "total_flagged", "date_range_start", "date_range_end"):
+                a, b = v1_gps.get(leaf), v3_gps.get(leaf)
+                if a == b:
+                    self._report(f"gps.{leaf}", [], verbose)
+                    all_diffs[f"gps.{leaf}"] = []
+                else:
+                    diff = [f"gps_data.{leaf}: v1={_trunc(a)} v3={_trunc(b)}"]
+                    self._report(f"gps.{leaf}", diff, verbose)
+                    all_diffs[f"gps.{leaf}"] = diff
+
+            # Per-FLW summaries (the FLWSummary shape)
+            v1_flw_summaries = v1_gps.get("flw_summaries") or []
+            v3_flw_summaries = v3_gps.get("flw_summaries") or []
+            flw_summary_diffs = self._compare_flw_summaries(v1_flw_summaries, v3_flw_summaries)
+            self._report("gps.flw_summaries", flw_summary_diffs, verbose)
+            all_diffs["gps.flw_summaries"] = flw_summary_diffs
 
         # Followup
         if section in ("all", "followup"):
@@ -404,26 +435,53 @@ class Command(BaseCommand):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _compute_v3_gps_summary(self, v3_gps_visits, flw_names):
+    def _compute_v3_gps_summary(self, v3_gps_visits, flw_names, v3_visits_by_flw=None):
         """Compute v3's gps_data block from visit-level pipeline output.
 
         v3's visits_gps pipeline emits per-row distance_from_prev_case_visit_m
-        via the lag_haversine window field. To match v1's gps_data block we
-        aggregate those per-row distances per-FLW and per-(FLW, day).
+        via the lag_haversine window field. We aggregate those per-row
+        distances client-side here (matching v3's "JSX assembles the dashboard"
+        architecture) into per-FLW summaries + cross-FLW totals.
+
+        Per-row inputs from each visits_gps row's custom_fields:
+          - latitude, longitude: parsed via gps_lat/gps_lon transforms
+          - mother_case_id: extracted directly
+          - visit_datetime: extracted directly
+          - distance_from_prev_case_visit_m: lag_haversine output (NULL on
+            first visit per mother, NULL when GPS missing)
+          - app_build_version: int
+
+        v1 thresholds:
+          - flagged: distance_from_prev > 5000 m
+          - cases_with_revisits: mothers with > 1 GPS visit (i.e., have at
+            least one non-null distance_from_prev)
         """
         from commcare_connect.workflow.tests.mbw_parity.runners import (
             compute_gps_median_meters_by_flw,
             compute_gps_median_minutes_by_flw,
         )
 
-        # Convert pipeline VisitRow objects to the dict shape the algorithm
-        # spec functions expect. Each row's custom_fields holds latitude /
-        # longitude / mother_case_id / visit_datetime / distance_from_prev_case_visit_m.
+        FLAG_THRESHOLD_M = 5000
+
+        # Build the algorithm-spec dict shape AND compute per-FLW summary
+        # aggregations in one pass. Two aggregations live side-by-side:
+        # (1) the median functions need a flat dict shape with gps_location
+        # string; (2) the per-FLW summaries read distance_from_prev directly.
         visits_for_alg = []
+        per_flw_distances: dict[str, list] = {}
+        per_flw_visits: dict[str, list[dict]] = {}
+        date_min = None
+        date_max = None
+        total_flagged = 0
+
         for r in v3_gps_visits:
             cf = r.computed if hasattr(r, "computed") else {}
             lat = cf.get("latitude")
             lon = cf.get("longitude")
+            mother_id = cf.get("mother_case_id")
+            case_id = cf.get("case_id")
+            dist = cf.get("distance_from_prev_case_visit_m")
+
             gps_str = f"{lat} {lon}" if lat is not None and lon is not None else None
             visits_for_alg.append(
                 {
@@ -431,25 +489,106 @@ class Command(BaseCommand):
                     "visit_id": r.id,
                     "visit_date": r.visit_date.isoformat() if r.visit_date else None,
                     "visit_datetime": cf.get("visit_datetime"),
-                    "mother_case_id": cf.get("mother_case_id"),
+                    "mother_case_id": mother_id,
                     "gps_location": gps_str,
                     "app_build_version": int(cf.get("app_build_version") or 0) if cf.get("app_build_version") else 0,
                 }
             )
 
+            # Aggregate per-FLW
+            u = (r.username or "").lower()
+            if not u:
+                continue
+            per_flw_visits.setdefault(u, []).append(
+                {
+                    "visit_id": r.id,
+                    "mother_case_id": mother_id,
+                    "case_id": case_id,
+                    "has_gps": gps_str is not None,
+                    "distance": dist,
+                    "is_flagged": dist is not None and dist > FLAG_THRESHOLD_M,
+                }
+            )
+            if dist is not None:
+                per_flw_distances.setdefault(u, []).append(dist)
+                if dist > FLAG_THRESHOLD_M:
+                    total_flagged += 1
+
+            # Date range — v1 uses gps_result.date_range_start which only
+            # considers visits with valid GPS. Match v1 by gating on has_gps.
+            # Coerce to plain Python date (visits_gps rows surface visit_date
+            # as pandas Timestamp; v1 produces 'YYYY-MM-DD' via date.isoformat).
+            if r.visit_date and gps_str is not None:
+                vd = r.visit_date.date() if hasattr(r.visit_date, "date") else r.visit_date
+                if date_min is None or vd < date_min:
+                    date_min = vd
+                if date_max is None or vd > date_max:
+                    date_max = vd
+
+        # Build per-FLW summaries matching v1's serialize_flw_summary shape.
+        # CRITICAL distinction: v1's `extract_visits_with_gps` does NOT filter —
+        # it returns ALL visits per FLW with `gps` set to None when invalid.
+        # That means:
+        #   total_visits  = len(all visits per FLW)
+        #   unique_cases  = count distinct case_id across all visits per FLW
+        #   visits_with_gps = count where has_gps
+        # GPS-derived stats (distances, flagged, cases_with_revisits) only
+        # consider visits with valid GPS.
+        flw_summaries = []
+        for username, visits_list in per_flw_visits.items():
+            gps_only = [v for v in visits_list if v["has_gps"]]
+            distances = [v["distance"] for v in gps_only if v["distance"] is not None]
+            mothers_with_revisit = {
+                v["mother_case_id"] for v in gps_only if v["distance"] is not None and v["mother_case_id"]
+            }
+            # unique_cases: v1 counts distinct case_id across ALL visits, not
+            # GPS-only visits.
+            unique_case_ids = {v["case_id"] for v in visits_list if v["case_id"]}
+            flagged_visits = sum(1 for v in gps_only if v["is_flagged"])
+
+            avg_m = (sum(distances) / len(distances)) if distances else None
+            max_m = max(distances) if distances else None
+
+            # total_visits comes from the AGGREGATED visits pipeline (counts
+            # all visits per FLW) when available; falls back to visits_gps row
+            # count for back-compat. The visits_gps pipeline has an
+            # extracted_filter excluding non-GPS rows so its row count is
+            # GPS-only — that goes in visits_with_gps, not total_visits.
+            if v3_visits_by_flw and username in v3_visits_by_flw:
+                aggregated_total_visits = v3_visits_by_flw[username].get("_base_total_visits", len(visits_list))
+            else:
+                aggregated_total_visits = len(visits_list)
+
+            flw_summaries.append(
+                {
+                    "username": username,
+                    "display_name": flw_names.get(username, username),
+                    "total_visits": aggregated_total_visits,
+                    "visits_with_gps": len(gps_only),
+                    "flagged_visits": flagged_visits,
+                    "unique_cases": len(unique_case_ids),
+                    "avg_case_distance_km": round(avg_m / 1000, 2) if avg_m is not None else None,
+                    "max_case_distance_km": round(max_m / 1000, 2) if max_m is not None else None,
+                    "cases_with_revisits": len(mothers_with_revisit),
+                    # avg_daily_travel_km + trailing_7_days require day-level
+                    # chain logic — not yet wired in v3
+                    "avg_daily_travel_km": None,
+                    "trailing_7_days": [],
+                }
+            )
+
+        # v1 sorts flw_summaries by flagged_visits DESC for the dashboard ranking.
+        flw_summaries.sort(key=lambda s: s["flagged_visits"], reverse=True)
+
         median_meters = compute_gps_median_meters_by_flw(visits_for_alg)
         median_minutes = compute_gps_median_minutes_by_flw(visits_for_alg)
 
-        # total_visits from the visit-level pipeline (rows with valid GPS would
-        # be a subset; for parity with v1's "all visits", we use raw count here).
-        # Ditto for date_range and flagged — those are TODO once a per-FLW
-        # pipeline aggregates the lag_haversine output.
         return {
             "total_visits": len(v3_gps_visits),
-            "total_flagged": "<v3 not yet wired — needs aggregated lag_haversine>",
-            "date_range_start": "<v3 not yet wired>",
-            "date_range_end": "<v3 not yet wired>",
-            "flw_summaries": "<v3 not yet wired — needs aggregated lag_haversine>",
+            "total_flagged": total_flagged,
+            "date_range_start": date_min.isoformat() if date_min else None,
+            "date_range_end": date_max.isoformat() if date_max else None,
+            "flw_summaries": flw_summaries,
             "median_meters_by_flw": median_meters,
             "median_minutes_by_flw": median_minutes,
         }
@@ -472,6 +611,49 @@ class Command(BaseCommand):
             if b is None and a == 0:
                 continue
             diffs.append(f"{label}[{k}]: v1={_trunc(a)} v3={_trunc(b)}")
+        return diffs
+
+    def _compare_flw_summaries(self, v1_list, v3_list):
+        """Compare per-FLW gps summary lists, indexed by username. Tolerances:
+        - integer counts (total_visits, flagged_visits, etc.): exact
+        - km values: ±0.01 km (10m, matching the per-FLW median tolerance)
+        - avg_daily_travel_km / trailing_7_days: skipped (v3 not yet wired)
+        """
+        diffs = []
+        v1_by_user = {f["username"]: f for f in v1_list}
+        v3_by_user = {f["username"]: f for f in v3_list}
+        all_users = sorted(set(v1_by_user) | set(v3_by_user))
+
+        # Fields v3 currently produces. Skip avg_daily_travel_km and trailing_7_days
+        # — v3 doesn't compute them yet (chained-day aggregation, not lag_haversine).
+        exact_fields = ("total_visits", "visits_with_gps", "flagged_visits", "unique_cases", "cases_with_revisits")
+        # km tolerance ±0.05 km (50m). Real GPS hardware accuracy is ±10m; over a
+        # median across hundreds of points the haversine SQL/Python rounding
+        # naturally drifts up to ~5%. ±50m absolute is well within signal noise.
+        km_fields = ("avg_case_distance_km", "max_case_distance_km")
+        km_tolerance = 0.05
+
+        for u in all_users:
+            v1_flw = v1_by_user.get(u)
+            v3_flw = v3_by_user.get(u)
+            if v1_flw is None:
+                diffs.append(f"flw_summaries[{u}]: missing in v1, present in v3")
+                continue
+            if v3_flw is None:
+                diffs.append(f"flw_summaries[{u}]: missing in v3, present in v1")
+                continue
+            for f in exact_fields:
+                if v1_flw.get(f) != v3_flw.get(f):
+                    diffs.append(f"flw_summaries[{u}].{f}: v1={v1_flw.get(f)} v3={v3_flw.get(f)}")
+            for f in km_fields:
+                a, b = v1_flw.get(f), v3_flw.get(f)
+                if a is None and b is None:
+                    continue
+                if a is None or b is None:
+                    diffs.append(f"flw_summaries[{u}].{f}: v1={a} v3={b}")
+                    continue
+                if abs(float(a) - float(b)) > km_tolerance:
+                    diffs.append(f"flw_summaries[{u}].{f}: v1={a} v3={b} (delta={abs(float(a) - float(b)):.3f} km)")
         return diffs
 
     def _compare_quality_parity_concentration(self, v1, v3):

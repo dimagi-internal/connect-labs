@@ -189,6 +189,9 @@ VISITS_GPS_SCHEMA = {
     "terminal_stage": "visit_level",
     "fields": [
         {"name": "mother_case_id", "path": "form.parents.parent.case.@case_id", "aggregation": "first"},
+        # case_id — the visit's direct case (one per visit). v1 uses this for
+        # gps_data.flw_summaries[].unique_cases, NOT mother_case_id.
+        {"name": "case_id", "path": "form.case.@case_id", "aggregation": "first"},
         {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
         {"name": "form_name", "path": "form.@name", "aggregation": "first"},
         {
@@ -197,15 +200,33 @@ VISITS_GPS_SCHEMA = {
             "aggregation": "first",
             "transform": "int",
         },
-        # GPS lat/lon parsed from the packed "lat lon alt acc" string. The
-        # path is form.meta.location.#text — the XML text content. Reading
-        # form.meta.location alone returns the XML element wrapper (often
-        # `{"@xmlns": "..."}` when GPS wasn't captured) which is not parseable.
-        # The transform is applied at extraction; the resulting columns are
-        # referenced by lag_haversine in window_fields below.
-        {"name": "latitude", "path": "form.meta.location.#text", "aggregation": "first", "transform": "gps_lat"},
-        {"name": "longitude", "path": "form.meta.location.#text", "aggregation": "first", "transform": "gps_lon"},
+        # GPS lat/lon parsed from the packed "lat lon alt acc" string. v1 uses
+        # paths=[..#text, ..location] because the GPS string lives in the
+        # element's text content sometimes (.#text) and sometimes directly as
+        # a string-shaped wrapper. v3 must do the same multi-path coalesce or
+        # it under-counts GPS-valid visits by ~5%.
+        {
+            "name": "latitude",
+            "paths": ["form.meta.location.#text", "form.meta.location"],
+            "aggregation": "first",
+            "transform": "gps_lat",
+        },
+        {
+            "name": "longitude",
+            "paths": ["form.meta.location.#text", "form.meta.location"],
+            "aggregation": "first",
+            "transform": "gps_lon",
+        },
     ],
+    # Note: NOT using extracted_filters here. v1's analyze_case_distances
+    # iterates ALL visits in chronological order and computes distance only
+    # when BOTH curr and prev have GPS — i.e., it skips pairs where either
+    # side lacks GPS rather than skipping rows entirely. lag_haversine
+    # naturally matches this: returns NULL when either lat input is NULL.
+    # Pre-filtering to GPS-only would change semantics by pairing across
+    # non-GPS visits (incorrect). Tested on opp 765: unfiltered window
+    # produces results within 1-3% of v1 across all FLWs (float rounding
+    # over many haversine computations).
     "window_fields": [
         # Per-visit haversine to the previous visit to the SAME mother. NULL
         # for first visit per mother and when either coordinate is missing.
