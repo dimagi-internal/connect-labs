@@ -128,6 +128,11 @@ PIPELINE_SCHEMAS = [
             "grouping_key": "case_id",
             "terminal_stage": "visit_level",
             "fields": [
+                # case_id is the mother's case_id (registration forms create
+                # the mother case, so form.case.@case_id is the mother case
+                # id by definition). Required by count_mothers_from_pipeline
+                # to count distinct mothers per FLW.
+                {"name": "case_id", "path": "form.case.@case_id", "aggregation": "first"},
                 {"name": "expected_visits", "path": "form.expected_visits", "aggregation": "first"},
                 {"name": "mother_name", "path": "form.mother_name", "aggregation": "first"},
                 {"name": "user_connect_id", "path": "form.user_connect_id", "aggregation": "first"},

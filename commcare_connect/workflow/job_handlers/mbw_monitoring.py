@@ -499,10 +499,14 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         if not adapted_visit_rows:
             adapted_visit_rows = _adapt_rows(visit_rows)
 
+        # V2: pass registration pipeline rows (slim dicts, one per registered
+        # mother) via the dedicated `registration_rows` parameter. The older
+        # `registration_forms` parameter expects V1's full CCHQ form dicts
+        # and is kept for back-compat with V1 callers only.
         mother_counts = count_mothers_from_pipeline(
             adapted_visit_rows,
             active_usernames,
-            registration_forms=registration_rows,
+            registration_rows=registration_rows,
         )
 
         ebf_pct_by_flw = _compute_ebf_by_flw(adapted_visit_rows)
