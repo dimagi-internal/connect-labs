@@ -4,17 +4,17 @@ on:
   push:
     branches: [main]
     paths:
-      - "package.json"
-      - "package-lock.json"
-      - "webpack/**"
-      - "components/**"
-      - "lib/**"
-      - "tailwind/**"
-      - "tsconfig.json"
-      - "commcare_connect/static/js/**"
-      - "commcare_connect/static/css/**"
-      - "commcare_connect/templates/**"
-      - "Dockerfile.node"
+      - 'package.json'
+      - 'package-lock.json'
+      - 'webpack/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'tailwind/**'
+      - 'tsconfig.json'
+      - 'commcare_connect/static/js/**'
+      - 'commcare_connect/static/css/**'
+      - 'commcare_connect/templates/**'
+      - 'Dockerfile.node'
 
   workflow_dispatch:
 
