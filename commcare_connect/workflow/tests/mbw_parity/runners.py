@@ -432,6 +432,138 @@ def compute_v1_overview_reference(
     }
 
 
+def _parse_gps_string(gps_str: str | None) -> tuple[float, float] | None:
+    """Parse 'lat lon [alt] [acc]' → (lat, lon). None on missing or malformed.
+
+    Mirrors v1's gps_utils.parse_gps_location: split on whitespace, take
+    first two tokens as floats. Tokens past index 1 are ignored.
+    """
+    if not gps_str or not isinstance(gps_str, str):
+        return None
+    parts = gps_str.split()
+    if len(parts) < 2:
+        return None
+    try:
+        return (float(parts[0]), float(parts[1]))
+    except ValueError:
+        return None
+
+
+def _daily_visit_pairs(
+    visits: list[dict],
+    *,
+    require_app_version: bool = False,
+) -> dict[str, list[tuple[dict, dict]]]:
+    """For each FLW, return consecutive (visit_a, visit_b) pairs within each
+    day, with per-mother dedup.
+
+    Mirrors v1's _prepare_daily_visit_pairs. Both v1 and v3 use this same
+    grouping/dedup/pairing — the parity is in the data filter (app_build_version
+    cutoff for meters; no cutoff for minutes) and the distance/time math.
+
+    Returns {username: [(a, b), (b, c), ...]}.
+    """
+    valid: list[dict] = []
+    for v in visits:
+        gps = _parse_gps_string(v.get("gps_location"))
+        if gps is None:
+            continue
+        if not v.get("mother_case_id"):
+            continue
+        if not v.get("visit_date") or not v.get("visit_datetime"):
+            continue
+        if require_app_version:
+            ver = v.get("app_build_version")
+            if ver is None or ver <= 0:
+                continue
+        # Annotate with parsed gps for downstream use
+        valid.append({**v, "_gps": gps})
+
+    by_flw_day: dict[tuple, list[dict]] = {}
+    for v in valid:
+        by_flw_day.setdefault((v["username"], v["visit_date"]), []).append(v)
+
+    pairs_by_flw: dict[str, list[tuple[dict, dict]]] = {}
+    for (username, _day), day_visits in by_flw_day.items():
+        day_visits.sort(key=lambda v: v["visit_datetime"])
+
+        # Dedup by mother_case_id, keep first per mother per day
+        seen: set = set()
+        unique: list[dict] = []
+        for v in day_visits:
+            mid = v["mother_case_id"]
+            if mid in seen:
+                continue
+            seen.add(mid)
+            unique.append(v)
+
+        if len(unique) < 2:
+            continue
+
+        bucket = pairs_by_flw.setdefault(username, [])
+        for i in range(len(unique) - 1):
+            bucket.append((unique[i], unique[i + 1]))
+
+    return pairs_by_flw
+
+
+def compute_gps_median_meters_by_flw(visits: list[dict]) -> dict[str, int | None]:
+    """Median haversine distance (meters) between consecutive same-day visits
+    to different mothers, per FLW. Returns rounded int, or None when no
+    qualifying pairs exist.
+
+    Mirrors v1's `compute_median_meters_per_visit` on the synthetic-fixture row
+    shape. Uses haversine_meters (the Python mirror of the new SQL function)
+    so this implementation is the definitive algorithm spec — when v3 ships
+    a SQL window-field implementation, a future Postgres-execution test will
+    pin SQL output to this function's output (same bounding pattern as
+    test_aggregation_execution.py).
+
+    Algorithm steps (must match v1 exactly):
+    1. Filter to visits with parsed GPS, mother_case_id, visit_date, visit_datetime.
+    2. Filter to visits with app_build_version > 0 (v1 min_app_version default).
+    3. Group by (username, visit_date), sort each group by visit_datetime.
+    4. Dedupe by mother_case_id within each (FLW, day) — first visit wins.
+    5. Skip days with < 2 unique mothers.
+    6. For each consecutive pair, compute haversine.
+    7. Per FLW, take median across all pairs from all days; round to int.
+    """
+    pairs_by_flw = _daily_visit_pairs(visits, require_app_version=True)
+    result: dict[str, int | None] = {}
+    for username, pairs in pairs_by_flw.items():
+        distances = []
+        for a, b in pairs:
+            d = haversine_meters(a["_gps"][0], a["_gps"][1], b["_gps"][0], b["_gps"][1])
+            if d is not None:
+                distances.append(d)
+        result[username] = round(statistics.median(distances)) if distances else None
+    return result
+
+
+def compute_gps_median_minutes_by_flw(visits: list[dict]) -> dict[str, int | None]:
+    """Median time difference (minutes) between consecutive same-day visits
+    to different mothers, per FLW. Returns rounded int, or None when no
+    qualifying pairs exist.
+
+    Same grouping/dedup/pairing as compute_gps_median_meters_by_flw, but with
+    NO app_build_version filter (mirrors v1's `compute_median_minutes_per_visit`
+    where min_app_version is implicit zero).
+    """
+    from datetime import datetime as _dt
+
+    pairs_by_flw = _daily_visit_pairs(visits, require_app_version=False)
+    result: dict[str, int | None] = {}
+    for username, pairs in pairs_by_flw.items():
+        diffs = []
+        for a, b in pairs:
+            dt_a = _dt.fromisoformat(a["visit_datetime"].replace("Z", "+00:00"))
+            dt_b = _dt.fromisoformat(b["visit_datetime"].replace("Z", "+00:00"))
+            diff_min = abs((dt_b - dt_a).total_seconds()) / 60.0
+            diffs.append(diff_min)
+        result[username] = round(statistics.median(diffs)) if diffs else None
+    return result
+
+
 def compute_v1_quality_reference(
     visits: list[dict],
     registrations: list[dict],  # noqa: ARG001
