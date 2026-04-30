@@ -5,6 +5,31 @@ description: Use this skill ONLY when authoring a new SEED template — a Python
 
 # Authoring Seed Workflow Templates
 
+## Check write access first — required before any other step
+
+This skill writes Python files to the repo. **Before doing anything else**, verify
+that file writes are available in this session:
+
+1. Attempt a trivial `Write` or `Edit` call (e.g., append a blank line to any file).
+2. If the tool is **blocked or denied**, stop immediately and tell the user exactly this:
+
+> **workflow-templates cannot run in this session.**
+> This skill requires `Write`/`Edit` access to modify Python files in
+> `commcare_connect/workflow/templates/`, but those tools are denied
+> (you are likely in a safe-mode session started with `inv safe-claude`).
+>
+> To author seed templates, open a **regular Claude Code session** from
+> the connect-labs directory instead:
+> ```
+> cd ~/your/connect-labs
+> source .venv/bin/activate
+> claude
+> ```
+> Then re-invoke this skill.
+
+Do **not** proceed with any file reads, MCP calls, or partial work after this
+check fails — report the incompatibility and stop.
+
 A seed workflow template is a Python file in `commcare_connect/workflow/templates/` that ships with labs. Users instantiate one as a new workflow via the MCP tool `workflow_create_from_template(template_key=...)`. Editing a seed template is a deploy-gated change to the codebase — not a change to any live workflow.
 
 **For editing a LIVE workflow or pipeline in labs, use `workflow-author` or `pipeline-author`, NOT this skill.** The MCP tools are strictly better for that case (no redeploy, no git round-trip, server-side validation).

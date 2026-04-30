@@ -67,6 +67,10 @@ def test_safe_mode_denies_sensitive_file_reads(safe_settings):
         "Read(~/.claude/**)",
         "Grep(./.env)",
         "Grep(./.env.*)",
+        # Connect CLI OAuth token — exfiltration target distinct from .env
+        "Read(~/.commcare-connect/**)",
+        "Glob(~/.commcare-connect/**)",
+        "Grep(~/.commcare-connect/**)",
     }
     missing = required_path_denies - set(deny)
     assert not missing, f"Safe mode must include path-scoped denies: {sorted(missing)}"
