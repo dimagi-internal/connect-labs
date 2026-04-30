@@ -203,57 +203,22 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
     template_name = "workflow/run.html"
 
     def get(self, request, *args, **kwargs):
-        """Create-and-redirect when no run_id is provided.
+        """Render the workflow runner.
 
-        When the URL has no ``?run_id=`` and is not in edit mode, create a new
-        run and redirect to the same URL with ``?run_id=<id>``.  This ensures
-        the URL always reflects the active run, preventing duplicate run
-        creation when the user is redirected back (e.g. after OAuth
-        re-authorization).
+        Pre-2026-04-30 this view auto-created a run on every visit without a
+        `run_id`, which silently piled up untouched run records every time
+        someone reloaded the URL. The new lifecycle (see
+        docs/plans/2026-04-30-run-lifecycle.md) removes the auto-create:
+
+        - `?run_id=<id>` → render that specific run (active or frozen)
+        - `?edit=true`   → preview-only, no run record involved
+        - no run_id      → render the run-picker (list of past runs +
+                          "Start Run" button). Creating a run is now an
+                          explicit user action.
+
+        The picker is just the same template with `select_run_mode=True` —
+        run.html branches on it.
         """
-        definition_id = kwargs.get("definition_id")
-        run_id = request.GET.get("run_id")
-        is_edit_mode = request.GET.get("edit") == "true"
-
-        if not run_id and not is_edit_mode:
-            labs_context = getattr(request, "labs_context", {})
-            opportunity_id = labs_context.get("opportunity_id")
-            if opportunity_id:
-                from datetime import datetime, timedelta, timezone
-
-                from django.shortcuts import redirect
-
-                data_access = WorkflowDataAccess(request=request)
-                try:
-                    today = datetime.now(timezone.utc).date()
-                    week_start = today - timedelta(days=today.weekday())
-                    week_end = week_start + timedelta(days=6)
-                    run = data_access.create_run(
-                        definition_id=definition_id,
-                        opportunity_id=opportunity_id,
-                        period_start=week_start.isoformat(),
-                        period_end=week_end.isoformat(),
-                        initial_state={"worker_states": {}},
-                    )
-                    org_data = get_org_data(request)
-                    opp_map = {o["id"]: o.get("name", "") for o in org_data.get("opportunities", [])}
-                    # definition_name and template_type omitted — require loading the
-                    # definition record (extra API call); definition_id in the row
-                    # allows downstream joins.
-                    s3_export.upsert_workflow_run(
-                        run,
-                        opportunity_name=opp_map.get(run.opportunity_id, ""),
-                        username=getattr(request.user, "username", "") or "",
-                    )
-                except Exception:
-                    logger.exception("Failed to create run for opp %s", opportunity_id)
-                    return super().get(request, *args, **kwargs)
-                finally:
-                    data_access.close()
-                params = request.GET.copy()
-                params["run_id"] = str(run.id)
-                return redirect(f"{request.path}?{params.urlencode()}")
-
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -380,23 +345,44 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "opportunity_id": opportunity_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
-                    "status": run.data.get("status", "in_progress"),
-                    "state": run.data.get("state", {}),
-                    "period_start": run.data.get("period_start"),
-                    "period_end": run.data.get("period_end"),
-                    # Frozen snapshot blob (None if the run has never been snapshotted).
-                    # Render code reads `instance.snapshot` and short-circuits live
-                    # recomputation when present. See
-                    # commcare_connect/workflow/templates/__init__.py build_snapshot_for_template
-                    # for the contract.
-                    "snapshot": run.data.get("snapshot"),
+                    # Use the proxy property so legacy statuses ("in_progress",
+                    # "completed") get mapped to the canonical "active"/"frozen"
+                    # without callers seeing the old vocabulary.
+                    "status": run.status,
+                    "state": run.state,
+                    "period_start": run.period_start,
+                    "period_end": run.period_end,
+                    "frozen_at": run.frozen_at,
+                    # Frozen snapshot blob (None on active runs). When status="frozen"
+                    # render code reads from snapshot only — no live recompute.
+                    "snapshot": run.snapshot,
                 }
                 context["is_edit_mode"] = False
             else:
-                # No run_id and not edit mode — get() should have redirected.
-                # This branch only executes if opportunity_id was missing at
-                # get() time (no labs context), so show a friendly error.
-                context["error"] = "Could not create a new run. Please select an opportunity."
+                # No run_id and not edit mode — render the run picker. Past runs
+                # are listed; user clicks "Open" to load one or "Start Run" to
+                # create a fresh active run via POST /api/<def_id>/run/start/.
+                # No auto-create, ever. (Pre-2026-04-30 this branch silently spawned
+                # a new run on every URL hit.)
+                context["select_run_mode"] = True
+                past_runs = []
+                for r in data_access.list_runs(definition_id):
+                    if r.opportunity_id != opportunity_id:
+                        continue
+                    past_runs.append(
+                        {
+                            "id": r.id,
+                            "status": r.status,
+                            "frozen_at": r.frozen_at,
+                            "period_start": r.period_start,
+                            "period_end": r.period_end,
+                            "created_at": r.created_at,
+                        }
+                    )
+                # Most recent first.
+                past_runs.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+                context["past_runs"] = past_runs
+                context["start_run_url"] = f"/labs/workflow/api/{definition_id}/run/start/"
                 return context
 
             # Pipeline data will be loaded async via SSE - don't block page load
@@ -1083,9 +1069,6 @@ def build_snapshot_api(request, run_id):
       - 400 if the template doesn't declare `supports_snapshots`
       - 400 if the template's hook returns non-dict
     """
-    from datetime import datetime
-    from datetime import timezone as _tz
-
     from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
 
     try:
@@ -1152,21 +1135,104 @@ def build_snapshot_api(request, run_id):
                 status=400,
             )
 
-        # Stamp the freeze time so the FE can show "snapshot taken at X".
-        snapshot_payload = dict(snapshot_payload)
-        snapshot_payload.setdefault("frozen_at", datetime.now(_tz.utc).isoformat())
-
-        data_access.save_run_snapshot(run_id, snapshot_payload)
+        # Atomic active→frozen transition. freeze_run stamps frozen_at, persists
+        # the snapshot, sets status=frozen, all in one LabsRecord write. If this
+        # call raises, the run stays active — no partial transition.
+        frozen_run = data_access.freeze_run(run_id, snapshot_payload, run=run)
+        if frozen_run is None:
+            return JsonResponse(
+                {"error": "Failed to persist frozen state — run stays active"},
+                status=500,
+            )
 
         return JsonResponse(
             {
                 "success": True,
-                "snapshot": snapshot_payload,
-                "frozen_at": snapshot_payload["frozen_at"],
+                "snapshot": frozen_run.snapshot,
+                "frozen_at": frozen_run.frozen_at,
+                "status": frozen_run.status,
             }
         )
     except Exception:
         logger.exception("Failed to build snapshot for run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+@require_POST
+def start_run_api(request, definition_id):
+    """Create a new active run for a workflow definition.
+
+    Replaces the implicit auto-create that used to happen on every URL visit.
+    Now an explicit user action: client POSTs here, gets back the new run_id,
+    redirects to ?run_id=<id>.
+
+    Failure mode: returns 4xx if the workflow doesn't exist or the user has no
+    opportunity_id in their session context.
+    """
+    from datetime import datetime, timedelta
+    from datetime import timezone as _tz
+
+    labs_context = getattr(request, "labs_context", {})
+    opportunity_id = labs_context.get("opportunity_id")
+    if not opportunity_id:
+        return JsonResponse({"error": "Select an opportunity before starting a run"}, status=400)
+
+    try:
+        data_access = WorkflowDataAccess(request=request)
+        definition = data_access.get_definition(definition_id)
+        if not definition:
+            return JsonResponse({"error": "Workflow not found"}, status=404)
+
+        # Default period: current ISO week (Mon–Sun, UTC). Templates that need a
+        # different period scheme should override via update_run_state immediately
+        # after creation.
+        today = datetime.now(_tz.utc).date()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+
+        run = data_access.create_run(
+            definition_id=definition_id,
+            opportunity_id=opportunity_id,
+            period_start=week_start.isoformat(),
+            period_end=week_end.isoformat(),
+            initial_state={"worker_states": {}},
+        )
+
+        # Mirror to S3 for the runs-list export (same convention as legacy auto-create).
+        try:
+            org_data = get_org_data(request)
+            opp_map = {o["id"]: o.get("name", "") for o in org_data.get("opportunities", [])}
+            s3_export.upsert_workflow_run(
+                run,
+                opportunity_name=opp_map.get(run.opportunity_id, ""),
+                username=getattr(request.user, "username", "") or "",
+            )
+        except Exception:
+            logger.exception("Failed to S3-mirror new run %s", run.id)
+
+        redirect_url = f"/labs/workflow/{definition_id}/run/?run_id={run.id}"
+
+        # If the request came from an HTML form (e.g. the run-picker page's
+        # "Start Run" button), redirect into the new run. Programmatic clients
+        # that ask for JSON (Accept includes application/json) get the run_id
+        # back and decide what to do client-side.
+        accepts_json = "application/json" in request.headers.get("Accept", "")
+        if not accepts_json and "text/html" in request.headers.get("Accept", ""):
+            from django.shortcuts import redirect as _redirect
+
+            return _redirect(redirect_url)
+
+        return JsonResponse(
+            {
+                "success": True,
+                "run_id": run.id,
+                "status": run.status,
+                "redirect": redirect_url,
+            }
+        )
+    except Exception:
+        logger.exception("Failed to start run for definition %s", definition_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
