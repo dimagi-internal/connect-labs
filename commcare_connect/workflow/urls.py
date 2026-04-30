@@ -34,6 +34,10 @@ urlpatterns = [
     path("api/run/<int:run_id>/state/", views.update_state_api, name="api_update_state"),
     path("api/run/<int:run_id>/worker-result/", views.save_worker_result_api, name="api_save_worker_result"),
     path("api/run/<int:run_id>/complete/", views.complete_run_api, name="api_complete_run"),
+    # Generic run snapshot endpoints (template-agnostic — the build endpoint dispatches
+    # to the template's `build_snapshot(pipelines, state, opportunity_id)` hook).
+    path("api/run/<int:run_id>/snapshot/", views.get_snapshot_api, name="api_get_snapshot"),
+    path("api/run/<int:run_id>/snapshot/build/", views.build_snapshot_api, name="api_build_snapshot"),
     path("api/run/<int:run_id>/", views.get_run_api, name="api_get_run"),
     # API endpoints - Chat history
     path("api/<int:definition_id>/chat/history/", views.get_chat_history_api, name="api_chat_history"),

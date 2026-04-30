@@ -53,6 +53,13 @@ def _discover_templates() -> None:
 
     Each module should export a TEMPLATE dict. Modules starting with '_' or
     named 'base' are skipped.
+
+    Optional template extensions, picked up by attribute presence:
+    - `build_snapshot(pipelines, state, opportunity_id) -> dict`: a module-level
+      function that turns the raw pipeline output into the dashboard shape that
+      the render code reads from `instance.snapshot`. Templates declare opt-in
+      via `TEMPLATE["supports_snapshots"] = True`. The function is attached to
+      the registered template under the `build_snapshot` key for runtime lookup.
     """
     import commcare_connect.workflow.templates as templates_package
 
@@ -67,6 +74,12 @@ def _discover_templates() -> None:
                 template = module.TEMPLATE
                 key = template.get("key")
                 if key:
+                    # Attach optional snapshot builder for runtime lookup. The TEMPLATE
+                    # dict's `supports_snapshots` flag is what marks opt-in; the function
+                    # itself is plumbed through here so callers don't need to import
+                    # the module again.
+                    if hasattr(module, "build_snapshot") and callable(module.build_snapshot):
+                        template["build_snapshot"] = module.build_snapshot
                     TEMPLATES[key] = template
                     logger.debug(f"Registered workflow template: {key}")
                 else:
@@ -113,9 +126,34 @@ def list_templates() -> list[dict]:
             "icon": t.get("icon", "fa-cog"),
             "color": t.get("color", "gray"),
             "multi_opp": bool(t.get("multi_opp", False)),
+            "supports_snapshots": bool(t.get("supports_snapshots", False)),
         }
         for key, t in TEMPLATES.items()
     ]
+
+
+def build_snapshot_for_template(template_key: str, pipelines: dict, state: dict, opportunity_id: int) -> dict | None:
+    """
+    Run a template's `build_snapshot(pipelines, state, opportunity_id)` hook.
+
+    Returns the dashboard-shape dict the hook produced, or None if:
+      - the template isn't registered
+      - the template doesn't declare `supports_snapshots: True`
+      - the template has no `build_snapshot` function
+
+    Hooks should be pure: take pipeline rows + run state and return the snapshot
+    blob the FE renders from. They run server-side (Celery / API endpoint) so
+    they have full Python access; no JS-shipped row aggregation needed.
+    """
+    template = TEMPLATES.get(template_key)
+    if not template:
+        return None
+    if not template.get("supports_snapshots"):
+        return None
+    builder = template.get("build_snapshot")
+    if not callable(builder):
+        return None
+    return builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id)
 
 
 def create_workflow_from_template(

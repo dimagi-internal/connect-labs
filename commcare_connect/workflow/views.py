@@ -384,6 +384,12 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "state": run.data.get("state", {}),
                     "period_start": run.data.get("period_start"),
                     "period_end": run.data.get("period_end"),
+                    # Frozen snapshot blob (None if the run has never been snapshotted).
+                    # Render code reads `instance.snapshot` and short-circuits live
+                    # recomputation when present. See
+                    # commcare_connect/workflow/templates/__init__.py build_snapshot_for_template
+                    # for the contract.
+                    "snapshot": run.data.get("snapshot"),
                 }
                 context["is_edit_mode"] = False
             else:
@@ -426,6 +432,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
                     "completeRun": f"/labs/workflow/api/run/{run_data['id']}/complete/",
                     "updateOpportunityIds": f"/labs/workflow/api/{definition_id}/opportunity-ids/",
+                    # Generic snapshot endpoints (template-agnostic — dispatch via
+                    # build_snapshot hook). Edit mode hides them since there's no
+                    # real run id to write against.
+                    "getSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/"),
+                    "buildSnapshot": (
+                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/build/"
+                    ),
                 },
             }
 
@@ -1014,6 +1027,7 @@ def get_run_api(request, run_id):
                         "opportunity_id": run.opportunity_id,
                         "status": run.data.get("status", "in_progress"),
                         "state": run.data.get("state", {}),
+                        "snapshot": run.data.get("snapshot"),
                     }
                 }
             )
@@ -1022,6 +1036,122 @@ def get_run_api(request, run_id):
 
     except Exception:
         logger.exception("Failed to get run")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+@require_GET
+def get_snapshot_api(request, run_id):
+    """Return the frozen snapshot for a workflow run, if any.
+
+    Generic replacement for per-template snapshot endpoints (e.g.
+    `MBWSnapshotView`). Reads `run.data["snapshot"]` and returns it verbatim
+    plus the `frozen_at` timestamp the build endpoint stamped.
+    """
+    try:
+        data_access = WorkflowDataAccess(request=request)
+        run = data_access.get_run(run_id)
+        if not run:
+            return JsonResponse({"error": "Run not found"}, status=404)
+        snapshot = run.data.get("snapshot")
+        return JsonResponse(
+            {
+                "has_snapshot": bool(snapshot),
+                "snapshot": snapshot,
+                "frozen_at": (snapshot or {}).get("frozen_at"),
+            }
+        )
+    except Exception:
+        logger.exception("Failed to get snapshot for run %s", run_id)
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+@require_POST
+def build_snapshot_api(request, run_id):
+    """Build and persist a snapshot for a run by calling the template's
+    `build_snapshot(pipelines, state, opportunity_id)` hook.
+
+    Generic replacement for per-template save endpoints (e.g. `MBWSaveSnapshotView`).
+    Looks up the template, runs its hook against current pipeline data, writes
+    the result to `run.data["snapshot"]` with a `frozen_at` timestamp, and
+    returns the snapshot.
+
+    Errors:
+      - 404 if the run is not found
+      - 400 if the run's workflow has no `templateType` config
+      - 400 if the template doesn't declare `supports_snapshots`
+      - 400 if the template's hook returns non-dict
+    """
+    from datetime import datetime
+    from datetime import timezone as _tz
+
+    from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
+
+    try:
+        data_access = WorkflowDataAccess(request=request)
+        run = data_access.get_run(run_id)
+        if not run:
+            return JsonResponse({"error": "Run not found"}, status=404)
+
+        definition_id = run.data.get("definition_id")
+        if not definition_id:
+            return JsonResponse({"error": "Run has no definition_id"}, status=400)
+
+        definition = data_access.get_definition(definition_id)
+        if not definition:
+            return JsonResponse({"error": "Workflow definition not found"}, status=404)
+
+        template_key = definition.template_type
+        if not template_key:
+            return JsonResponse(
+                {"error": "Workflow has no template_type; cannot resolve build_snapshot hook"},
+                status=400,
+            )
+
+        template = TEMPLATES.get(template_key)
+        if not template:
+            return JsonResponse({"error": f"Unknown template: {template_key}"}, status=400)
+        if not template.get("supports_snapshots"):
+            return JsonResponse(
+                {"error": f"Template {template_key!r} does not declare supports_snapshots=True"},
+                status=400,
+            )
+
+        opportunity_id = run.opportunity_id or definition.opportunity_id
+        if not opportunity_id:
+            return JsonResponse({"error": "Run has no opportunity_id"}, status=400)
+
+        # Fetch pipeline data the same way the runner does — single source of truth.
+        pipelines = data_access.get_pipeline_data(definition_id, opportunity_id)
+
+        snapshot_payload = build_snapshot_for_template(
+            template_key=template_key,
+            pipelines=pipelines,
+            state=run.data.get("state", {}),
+            opportunity_id=opportunity_id,
+        )
+        if not isinstance(snapshot_payload, dict):
+            return JsonResponse(
+                {"error": f"build_snapshot for {template_key!r} returned non-dict"},
+                status=400,
+            )
+
+        # Stamp the freeze time so the FE can show "snapshot taken at X".
+        snapshot_payload = dict(snapshot_payload)
+        snapshot_payload.setdefault("frozen_at", datetime.now(_tz.utc).isoformat())
+
+        data_access.save_run_snapshot(run_id, snapshot_payload)
+
+        return JsonResponse(
+            {
+                "success": True,
+                "snapshot": snapshot_payload,
+                "frozen_at": snapshot_payload["frozen_at"],
+            }
+        )
+    except Exception:
+        logger.exception("Failed to build snapshot for run %s", run_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
