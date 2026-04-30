@@ -68,6 +68,11 @@ class TestV3TemplateLoads:
 
         for schema in (VISITS_SCHEMA, VISITS_GPS_SCHEMA, REGISTRATIONS_SCHEMA, GS_FORMS_SCHEMA):
             for field_dict in schema["fields"]:
+                # Skip extractor-only fields — they don't go through the SQL
+                # path/transform pipeline; the cchq cache loader runs the
+                # extractor in Python before any SQL aggregation sees them.
+                if "extractor" in field_dict and "path" not in field_dict and "paths" not in field_dict:
+                    continue
                 # Synthesize a value_expr of the right shape for the SQL
                 # builder. The real pipeline does this; here we just need
                 # SOMETHING legal so _aggregation_to_sql can emit SQL.

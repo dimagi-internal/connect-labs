@@ -1817,6 +1817,41 @@ class PipelineDataAccess(BaseDataAccess):
                 return None
             return transform_registry.get(name)
 
+        # Extractor registry — multi-path / multi-input field computations
+        # that the path/transform machinery can't express. Schemas reference
+        # by name (string); only the cchq cache loader currently consumes
+        # extractors (SQL builders ignore them on aggregated queries).
+        from datetime import date
+
+        def _v1_mbw_age(form_dict: dict) -> str:
+            """v1-fidelity mother age: DOB-derived if mother_dob is parseable,
+            else fall back to recorded age fields. Mirrors
+            `extract_mother_metadata_from_forms` line 615-629 in v1.
+            """
+            form = form_dict.get("form", {}) if isinstance(form_dict, dict) else {}
+            md = form.get("mother_details", {}) if isinstance(form, dict) else {}
+            if not isinstance(md, dict):
+                return ""
+            mother_dob = md.get("mother_dob") or ""
+            if mother_dob:
+                try:
+                    dob = date.fromisoformat(str(mother_dob)[:10])
+                    today = date.today()
+                    age_years = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+                    return str(age_years)
+                except (ValueError, TypeError):
+                    pass
+            return md.get("age_in_years_rounded") or md.get("mothers_age") or ""
+
+        extractor_registry = {
+            "v1_mbw_age": _v1_mbw_age,
+        }
+
+        def get_extractor(name):
+            if not name:
+                return None
+            return extractor_registry.get(name)
+
         fields = []
         for field_def in schema.get("fields", []):
             fields.append(
@@ -1835,6 +1870,7 @@ class PipelineDataAccess(BaseDataAccess):
                     pre_aggregate_by=field_def.get("pre_aggregate_by", ""),
                     pre_aggregation=field_def.get("pre_aggregation", "first"),
                     pre_aggregate_attribute_to=field_def.get("pre_aggregate_attribute_to", ""),
+                    extractor=get_extractor(field_def.get("extractor")),
                 )
             )
 
