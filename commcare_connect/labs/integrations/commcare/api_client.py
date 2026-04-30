@@ -461,7 +461,7 @@ class CommCareDataAccess:
         self,
         xmlns: str | None = None,
         app_id: str | None = None,
-        limit: int = 1000,
+        limit: int = 2500,
         received_on_start: str | None = None,
         received_on_end: str | None = None,
     ) -> list[dict]:
@@ -565,7 +565,7 @@ class CommCareDataAccess:
         self,
         xmlns: str | None = None,
         app_id: str | None = None,
-        limit: int = 1000,
+        limit: int = 2500,
         received_on_start: str | None = None,
         received_on_end: str | None = None,
     ) -> Iterator[dict]:

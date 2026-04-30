@@ -558,7 +558,14 @@ class WorkflowDataAccess(BaseDataAccess):
         return None
 
     def save_render_code(self, definition_id: int, component_code: str, version: int = 1) -> WorkflowRenderCodeRecord:
-        """Save render code for a workflow definition."""
+        """Save render code for a workflow definition.
+
+        After writing the render_code record, repoints the workflow
+        definition's `render_code_id` at it. Without that step, repeated
+        saves create orphan records and the runner reads stale (or null)
+        code — exactly the bug that hit MBW v3 when push-render appeared
+        to succeed but the dashboard kept rendering blank.
+        """
         existing = self.get_render_code(definition_id)
 
         data = {
@@ -579,6 +586,20 @@ class WorkflowDataAccess(BaseDataAccess):
                 experiment=self.EXPERIMENT,
                 type="workflow_render_code",
                 data=data,
+            )
+
+        # Repoint the workflow's render_code_id at the (possibly new) record
+        # so the runner's `get_render_code` finds it. Initial creation via
+        # `create_from_template` sets this once; subsequent saves used to
+        # leak orphan records.
+        definition = self.get_definition(definition_id)
+        if definition and definition.data.get("render_code_id") != result.id:
+            updated_data = {**definition.data, "render_code_id": result.id}
+            self.labs_api.update_record(
+                record_id=definition_id,
+                experiment=self.EXPERIMENT,
+                type="workflow_definition",
+                data=updated_data,
             )
 
         return WorkflowRenderCodeRecord(
@@ -1956,12 +1977,18 @@ class PipelineDataAccess(BaseDataAccess):
         # extractors (SQL builders ignore them on aggregated queries).
         from datetime import date
 
-        def _v1_mbw_age(form_dict: dict) -> str:
+        def _v1_mbw_age(visit_dict: dict) -> str:
             """v1-fidelity mother age: DOB-derived if mother_dob is parseable,
             else fall back to recorded age fields. Mirrors
             `extract_mother_metadata_from_forms` line 615-629 in v1.
+
+            Receives the visit_dict wrapper (form_json + base fields), same
+            shape produced by both cchq_cache_loader and
+            SQLBackend._process_visit_level. The actual cchq form payload
+            sits under `form_json`.
             """
-            form = form_dict.get("form", {}) if isinstance(form_dict, dict) else {}
+            form_json = visit_dict.get("form_json", {}) if isinstance(visit_dict, dict) else {}
+            form = form_json.get("form", {}) if isinstance(form_json, dict) else {}
             md = form.get("mother_details", {}) if isinstance(form, dict) else {}
             if not isinstance(md, dict):
                 return ""
@@ -1989,13 +2016,17 @@ class PipelineDataAccess(BaseDataAccess):
             "6 Month Visit": "create_six_month_visit",
         }
 
-        def _mbw_visit_schedules(form_dict: dict) -> list:
+        def _mbw_visit_schedules(visit_dict: dict) -> list:
             """v1-fidelity expected-visits extraction. Walks var_visit_1..6
             on the registration form, filters out blocks where the create
             flag isn't set, and returns a list of schedule dicts the JS
             follow-up adapter can match against actual visits.
+
+            Receives the visit_dict wrapper (form_json + base fields). The
+            actual cchq form payload sits under `form_json`.
             """
-            form = form_dict.get("form", {}) if isinstance(form_dict, dict) else {}
+            form_json = visit_dict.get("form_json", {}) if isinstance(visit_dict, dict) else {}
+            form = form_json.get("form", {}) if isinstance(form_json, dict) else {}
             if not isinstance(form, dict):
                 return []
             schedules = []
