@@ -36,8 +36,15 @@ urlpatterns = [
     path("api/run/<int:run_id>/complete/", views.complete_run_api, name="api_complete_run"),
     # Generic run snapshot endpoints (template-agnostic — the build endpoint dispatches
     # to the template's `build_snapshot(pipelines, state, opportunity_id)` hook).
+    # `build` is the original endpoint name kept for back-compat; `freeze` points at
+    # the same handler under a name that better matches the new lifecycle (atomic
+    # snapshot + status active→frozen transition).
     path("api/run/<int:run_id>/snapshot/", views.get_snapshot_api, name="api_get_snapshot"),
     path("api/run/<int:run_id>/snapshot/build/", views.build_snapshot_api, name="api_build_snapshot"),
+    path("api/run/<int:run_id>/freeze/", views.build_snapshot_api, name="api_freeze_run"),
+    # Explicit run creation — replaces the implicit auto-create that fired on every
+    # visit to /workflow/<def>/run/ with no run_id.
+    path("api/<int:definition_id>/run/start/", views.start_run_api, name="api_start_run"),
     path("api/run/<int:run_id>/", views.get_run_api, name="api_get_run"),
     # API endpoints - Chat history
     path("api/<int:definition_id>/chat/history/", views.get_chat_history_api, name="api_chat_history"),
