@@ -1735,10 +1735,10 @@ function WorkflowUI({
                               h.last_audit_result === 'eligible_for_renewal'
                                 ? 'text-green-700 bg-green-50 px-2 py-0.5 rounded text-xs'
                                 : h.last_audit_result === 'probation'
-                                ? 'text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-xs'
-                                : h.last_audit_result === 'suspended'
-                                ? 'text-red-700 bg-red-50 px-2 py-0.5 rounded text-xs'
-                                : 'text-gray-600 text-xs'
+                                  ? 'text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-xs'
+                                  : h.last_audit_result === 'suspended'
+                                    ? 'text-red-700 bg-red-50 px-2 py-0.5 rounded text-xs'
+                                    : 'text-gray-600 text-xs'
                             }
                           >
                             {h.last_audit_result.replace(/_/g, ' ')}
@@ -1976,10 +1976,10 @@ function WorkflowUI({
                   (regCount > 0
                     ? 'fa-circle-check text-green-500'
                     : pipelines &&
-                      pipelines.registrations &&
-                      pipelines.registrations.rows
-                    ? 'fa-circle-check text-amber-500'
-                    : 'fa-spinner fa-spin text-blue-500')
+                        pipelines.registrations &&
+                        pipelines.registrations.rows
+                      ? 'fa-circle-check text-amber-500'
+                      : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
               <span className="text-sm text-gray-700">Registration Forms</span>
@@ -1987,10 +1987,10 @@ function WorkflowUI({
                 {regCount > 0
                   ? regCount + ' rows'
                   : pipelines &&
-                    pipelines.registrations &&
-                    pipelines.registrations.rows
-                  ? '0 rows (none found)'
-                  : 'Loading...'}
+                      pipelines.registrations &&
+                      pipelines.registrations.rows
+                    ? '0 rows (none found)'
+                    : 'Loading...'}
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -2000,8 +2000,8 @@ function WorkflowUI({
                   (gsCount > 0
                     ? 'fa-circle-check text-green-500'
                     : pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
-                    ? 'fa-circle-check text-amber-500'
-                    : 'fa-spinner fa-spin text-blue-500')
+                      ? 'fa-circle-check text-amber-500'
+                      : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
               <span className="text-sm text-gray-700">Gold Standard Forms</span>
@@ -2009,8 +2009,8 @@ function WorkflowUI({
                 {gsCount > 0
                   ? gsCount + ' rows'
                   : pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
-                  ? '0 rows (none found)'
-                  : 'Loading...'}
+                    ? '0 rows (none found)'
+                    : 'Loading...'}
               </span>
             </div>
           </div>
@@ -4010,8 +4010,8 @@ function WorkflowUI({
                                     f.last_active_days <= 7
                                       ? 'text-green-600 font-medium'
                                       : f.last_active_days <= 15
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600'
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600'
                                   }
                                 >
                                   {f.last_active_days + 'd ago'}
@@ -4039,8 +4039,8 @@ function WorkflowUI({
                                     Number(f.first_gs_score) >= 70
                                       ? 'text-green-600 font-medium'
                                       : Number(f.first_gs_score) >= 50
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600'
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600'
                                   }
                                 >
                                   {f.first_gs_score}%
@@ -4067,8 +4067,8 @@ function WorkflowUI({
                                       ((f.followup_rate || 0) >= 75
                                         ? 'bg-green-500'
                                         : (f.followup_rate || 0) >= 50
-                                        ? 'bg-yellow-500'
-                                        : 'bg-red-500')
+                                          ? 'bg-yellow-500'
+                                          : 'bg-red-500')
                                     }
                                     style={{
                                       width:
@@ -4083,8 +4083,8 @@ function WorkflowUI({
                                     ((f.followup_rate || 0) >= 75
                                       ? 'text-green-600'
                                       : (f.followup_rate || 0) >= 50
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600')
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600')
                                   }
                                 >
                                   {f.followup_rate != null
@@ -4103,8 +4103,8 @@ function WorkflowUI({
                                     getEligibleColor(cse.pct) === 'green'
                                       ? 'text-green-600 font-medium'
                                       : getEligibleColor(cse.pct) === 'yellow'
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600'
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600'
                                   }
                                 >
                                   {cse.eligible}/{cse.total} ({cse.pct}%)
@@ -4123,9 +4123,9 @@ function WorkflowUI({
                                     f.ebf_pct >= 50 && f.ebf_pct <= 85
                                       ? 'text-green-600 font-medium'
                                       : (f.ebf_pct >= 31 && f.ebf_pct < 50) ||
-                                        (f.ebf_pct > 85 && f.ebf_pct <= 95)
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600'
+                                          (f.ebf_pct > 85 && f.ebf_pct <= 95)
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600'
                                   }
                                 >
                                   {f.ebf_pct}%
@@ -4159,8 +4159,8 @@ function WorkflowUI({
                                     f.median_meters_per_visit >= 1000
                                       ? 'text-green-600 font-medium'
                                       : f.median_meters_per_visit >= 100
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600'
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600'
                                   }
                                 >
                                   {f.median_meters_per_visit + ' m'}
@@ -4199,8 +4199,8 @@ function WorkflowUI({
                                     f.phone_dup_pct <= 10
                                       ? 'text-green-600 font-medium'
                                       : f.phone_dup_pct <= 30
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600'
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600'
                                   }
                                 >
                                   {f.phone_dup_pct}%
@@ -4219,8 +4219,8 @@ function WorkflowUI({
                                     f.anc_pnc_same_date_count <= 1
                                       ? 'text-green-600 font-medium'
                                       : f.anc_pnc_same_date_count < 5
-                                      ? 'text-yellow-600'
-                                      : 'text-red-600'
+                                        ? 'text-yellow-600'
+                                        : 'text-red-600'
                                   }
                                 >
                                   {f.anc_pnc_same_date_count}
@@ -4467,14 +4467,15 @@ function WorkflowUI({
                                             (taskStatus === 'investigating'
                                               ? 'bg-blue-100 text-blue-700'
                                               : taskStatus ===
-                                                'flw_action_in_progress'
-                                              ? 'bg-yellow-100 text-yellow-700'
-                                              : taskStatus ===
-                                                'flw_action_completed'
-                                              ? 'bg-green-100 text-green-700'
-                                              : taskStatus === 'review_needed'
-                                              ? 'bg-purple-100 text-purple-700'
-                                              : 'bg-gray-100 text-gray-700')
+                                                  'flw_action_in_progress'
+                                                ? 'bg-yellow-100 text-yellow-700'
+                                                : taskStatus ===
+                                                    'flw_action_completed'
+                                                  ? 'bg-green-100 text-green-700'
+                                                  : taskStatus ===
+                                                      'review_needed'
+                                                    ? 'bg-purple-100 text-purple-700'
+                                                    : 'bg-gray-100 text-gray-700')
                                           }
                                         >
                                           {(
@@ -5121,8 +5122,8 @@ function WorkflowUI({
                                 g.median_meters_per_visit >= 1000
                                   ? 'text-green-600 font-medium'
                                   : g.median_meters_per_visit >= 100
-                                  ? 'text-yellow-600'
-                                  : 'text-red-600'
+                                    ? 'text-yellow-600'
+                                    : 'text-red-600'
                               }
                             >
                               {g.median_meters_per_visit + ' m'}
@@ -5370,7 +5371,8 @@ function WorkflowUI({
                                                   );
                                                 },
                                               ) || {}
-                                            ).form_entity_name || 'Selected mother'}
+                                            ).form_entity_name ||
+                                              'Selected mother'}
                                             <button
                                               onClick={function () {
                                                 setSelectedMother(null);
@@ -5624,8 +5626,8 @@ function WorkflowUI({
                     (overallFuRate >= 75
                       ? 'text-green-600'
                       : overallFuRate >= 50
-                      ? 'text-yellow-600'
-                      : 'text-red-600')
+                        ? 'text-yellow-600'
+                        : 'text-red-600')
                   }
                 >
                   {overallFuRate}%
@@ -5848,20 +5850,20 @@ function WorkflowUI({
                     statusColor === 'green'
                       ? 'bg-green-500'
                       : statusColor === 'yellow'
-                      ? 'bg-yellow-500'
-                      : 'bg-red-500';
+                        ? 'bg-yellow-500'
+                        : 'bg-red-500';
                   var textColorClass =
                     statusColor === 'green'
                       ? 'text-green-600'
                       : statusColor === 'yellow'
-                      ? 'text-yellow-600'
-                      : 'text-red-600';
+                        ? 'text-yellow-600'
+                        : 'text-red-600';
                   var avatarClass =
                     statusColor === 'green'
                       ? 'bg-green-100 text-green-700'
                       : statusColor === 'yellow'
-                      ? 'bg-yellow-100 text-yellow-700'
-                      : 'bg-red-100 text-red-700';
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-red-100 text-red-700';
                   var dueTotalVal = (f.due_on_time || 0) + (f.due_late || 0);
                   var completedPct =
                     f.total_visits > 0
@@ -6073,8 +6075,8 @@ function WorkflowUI({
                                       (mother.follow_up_rate || 0) >= 80
                                         ? 'bg-green-100 text-green-800'
                                         : (mother.follow_up_rate || 0) >= 60
-                                        ? 'bg-yellow-100 text-yellow-800'
-                                        : 'bg-red-100 text-red-800';
+                                          ? 'bg-yellow-100 text-yellow-800'
+                                          : 'bg-red-100 text-red-800';
                                     return (
                                       <div
                                         key={mother.mother_case_id}
@@ -6427,9 +6429,9 @@ function WorkflowUI({
                               'green'
                                 ? '#22c55e'
                                 : getEligibleColor(row.pct_still_eligible) ===
-                                  'yellow'
-                                ? '#eab308'
-                                : '#ef4444',
+                                    'yellow'
+                                  ? '#eab308'
+                                  : '#ef4444',
                           }}
                         >
                           {row.pct_still_eligible}%
@@ -6557,10 +6559,10 @@ function WorkflowUI({
                   {monthlyViewPct
                     ? 'Completion rate (%) by type and month'
                     : monthlyCountMode === 'completed'
-                    ? 'Completed visits by type and month'
-                    : monthlyCountMode === 'scheduled'
-                    ? 'Total scheduled visits by type and month'
-                    : 'Completed vs total scheduled visits by type and month'}{' '}
+                      ? 'Completed visits by type and month'
+                      : monthlyCountMode === 'scheduled'
+                        ? 'Total scheduled visits by type and month'
+                        : 'Completed vs total scheduled visits by type and month'}{' '}
                   (Sep 2025 &ndash; Jul 2026).
                 </p>
               </div>
