@@ -17,10 +17,38 @@ Why an in-memory mirror, not just integration tests?
   and asserts agreement with the mirror.
 """
 
+import math
 import statistics
 from collections import Counter
 from collections.abc import Iterable
 from typing import Any
+
+# ---- haversine distance ----
+#
+# Python mirror of the `haversine_meters` Postgres function. Used by the
+# parity harness so GPS distance computations can be exercised without
+# Postgres. Bounded against the SQL function via a Postgres-execution
+# sanity test (test_haversine_execution.py).
+
+_EARTH_RADIUS_M = 6371000.0  # same constant as the SQL function and v1
+
+
+def haversine_meters(lat1: float | None, lon1: float | None, lat2: float | None, lon2: float | None) -> float | None:
+    """Great-circle distance in meters between two lat/lon points.
+
+    Returns None when any coordinate is None — sparse-GPS-friendly, mirrors
+    the SQL function. Float-precision-equivalent to v1's gps_utils.haversine_distance.
+    """
+    if lat1 is None or lon1 is None or lat2 is None or lon2 is None:
+        return None
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = phi2 - phi1
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return _EARTH_RADIUS_M * c
+
 
 # ---- in-memory aggregation runner ----
 
