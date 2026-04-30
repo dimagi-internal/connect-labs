@@ -435,9 +435,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     # Generic snapshot endpoints (template-agnostic — dispatch via
                     # build_snapshot hook). Edit mode hides them since there's no
                     # real run id to write against.
-                    "getSnapshot": (
-                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/"
-                    ),
+                    "getSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/"),
                     "buildSnapshot": (
                         None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/build/"
                     ),
