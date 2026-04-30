@@ -20,6 +20,7 @@ Requires env vars:
 """
 
 import argparse
+import html
 import json
 import os
 import re
@@ -119,7 +120,7 @@ def markdown_to_storage(text: str) -> str:
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("• ") or stripped.startswith("- "):
-            content = stripped[2:].strip()
+            content = html.escape(stripped[2:].strip())
             content = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", content)
             if not in_ul:
                 html_lines.append("<ul>")
@@ -130,7 +131,7 @@ def markdown_to_storage(text: str) -> str:
                 html_lines.append("</ul>")
                 in_ul = False
             if stripped:
-                content = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", stripped)
+                content = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html.escape(stripped))
                 html_lines.append(f"<p>{content}</p>")
     if in_ul:
         html_lines.append("</ul>")

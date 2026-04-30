@@ -8,6 +8,7 @@ Connect Labs gives non-developers a way to edit workflows using Claude Code (an 
 
 Normally, editing a workflow's display logic or data fields requires a developer to write React/JavaScript code. With the Connect MCP (Model Context Protocol), you can describe changes in plain English and Claude Code makes the edits for you:
 
+<!-- prettier-ignore -->
 > _"Add a column showing how many weeks since the last visit"_
 > _"Change the status colors so 'Overdue' shows in red"_
 > _"Remove the RUTF field from the table — it's not relevant for this program"_
