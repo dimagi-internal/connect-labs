@@ -60,10 +60,11 @@ into 1Password under `Connect Labs .env` → `LABS_MCP_TOKEN`, then re-inject.
 
 The task:
 
-1. Reads `ANTHROPIC_API_KEY` and `LABS_MCP_TOKEN` from `.env`.
-2. Renders `safe-claude/mcp.json` to a `0600` tempfile with the PAT inlined.
-3. Execs `claude --settings safe-claude/settings.json --mcp-config <tempfile> --strict-mcp-config --permission-mode dontAsk`.
-4. Deletes the tempfile when the session exits.
+1. Fetches the auth secret from 1Password (API key or Vertex service-account JSON).
+2. Reads `LABS_MCP_TOKEN` from `~/.claude.json` (written by `/labs-token-setup`) or from `.env`.
+3. Sets `LABS_MCP_TOKEN` as an environment variable — Claude Code expands the `${LABS_MCP_TOKEN}` placeholder in `safe-claude/mcp.json` at runtime, so the PAT is never written to disk.
+4. Execs `claude --settings safe-claude/settings.json --mcp-config safe-claude/mcp.json --strict-mcp-config --permission-mode dontAsk`.
+5. Deletes any ephemeral Vertex credentials tempfile when the session exits.
 
 Verify the lockdown from inside the session:
 
@@ -149,11 +150,21 @@ safe-claude/settings.json ...` and defeat the whole lockdown.
   permissions, so this isn't a privilege escalation, but it prevents
   parallel contexts accumulating extra tool credits we haven't reviewed
   and keeps the audit trail linear.
-- **`CronCreate`, `CronDelete`, `CronList`, `ScheduleWakeup`** — scheduling
-  tools. Denied because a scheduled future session would run with the
-  user's default Claude Code config, not this safe-mode config. That's a
-  persistence/escape route: a compromised prompt inside safe mode could
-  schedule a later run that operates outside the lockdown.
+- **`CronCreate`, `CronDelete`, `CronList`, `ScheduleWakeup`, `RemoteTrigger`** —
+  scheduling tools. Denied because a scheduled or remotely-triggered future
+  session would run with the user's default Claude Code config, not this
+  safe-mode config. That's a persistence/escape route: a compromised prompt
+  inside safe mode could schedule a later run that operates outside the
+  lockdown.
+- **`Read(./.env)`, `Read(./.env.*)`, `Read(./.gcp/**)`, `Read(~/.claude.json)`,
+  `Read(~/.claude/**)`, `Grep(./.env)`, `Grep(./.env.*)`** — path-scoped
+  denies that block reading credential files while leaving `Read`/`Grep`
+  open for repo source files. This closes a prompt-injection exfiltration
+  path: without these, a malicious instruction embedded in a workflow
+  definition retrieved via MCP could direct the model to read `.env` (which
+  contains `COMMCARE_API_KEY`) and relay its contents to labs via an allowed
+  MCP write tool. `Grep` is included alongside `Read` because it also returns
+  file contents and is subject to the same vector.
 
 #### `env.DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `DISABLE_NON_ESSENTIAL_MODEL_CALLS`
 
