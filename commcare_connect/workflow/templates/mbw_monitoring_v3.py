@@ -155,6 +155,54 @@ VISITS_SCHEMA = {
     ],
 }
 
+VISITS_GPS_SCHEMA = {
+    # Same data source as the aggregated visits pipeline, but produces per-row
+    # output enriched with window-function distances. The GPS dashboard tab
+    # consumes this pipeline; the JSX aggregates per-FLW (median, max, etc.)
+    # using the algorithm spec captured in
+    # workflow/tests/mbw_parity/runners.compute_gps_median_*.
+    #
+    # Terminal stage MUST be visit_level — window fields only run during the
+    # visit-level extraction pass that wraps the raw cache in a base subquery.
+    # An aggregated terminal stage skips that path and reads form_json directly.
+    "data_source": {"type": "connect_csv"},
+    "grouping_key": "username",
+    "terminal_stage": "visit_level",
+    "fields": [
+        {"name": "mother_case_id", "path": "form.parents.parent.case.@case_id", "aggregation": "first"},
+        {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
+        {"name": "form_name", "path": "form.@name", "aggregation": "first"},
+        {
+            "name": "app_build_version",
+            "path": "form.meta.app_build_version",
+            "aggregation": "first",
+            "transform": "int",
+        },
+        # GPS lat/lon parsed from the packed "lat lon alt acc" string. The
+        # transform is applied at extraction; the resulting columns are
+        # referenced by lag_haversine in window_fields below.
+        {"name": "latitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lat"},
+        {"name": "longitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lon"},
+    ],
+    "window_fields": [
+        # Per-visit haversine to the previous visit to the SAME mother. NULL
+        # for first visit per mother and when either coordinate is missing.
+        # Foundation for the gps_data.flw_summaries[].avg_case_distance_km +
+        # max_case_distance_km + cases_with_revisits leaves; JSX or a future
+        # second-stage aggregation rolls these per-row distances into per-FLW
+        # stats.
+        {
+            "name": "distance_from_prev_case_visit_m",
+            "operation": "lag_haversine",
+            "partition_by": "mother_case_id",
+            "order_by": "visit_datetime",
+            "lat_field": "latitude",
+            "lon_field": "longitude",
+        },
+    ],
+}
+
+
 REGISTRATIONS_SCHEMA = {
     "data_source": {
         "type": "cchq_forms",
@@ -201,6 +249,12 @@ PIPELINE_SCHEMAS = [
         "name": "MBW Visit Forms (V3)",
         "description": "Connect visits — pipeline-native aggregations",
         "schema": VISITS_SCHEMA,
+    },
+    {
+        "alias": "visits_gps",
+        "name": "MBW Visit GPS (V3)",
+        "description": "Per-visit GPS data with lag_haversine distance to previous mother visit",
+        "schema": VISITS_GPS_SCHEMA,
     },
     {
         "alias": "registrations",
