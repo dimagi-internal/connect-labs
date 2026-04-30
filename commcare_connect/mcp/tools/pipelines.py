@@ -444,6 +444,25 @@ def pipeline_preview(
 
         # If every opp errored, surface the first error with a hint.
         if not merged_rows and first_error:
+            # Special-case the "this pipeline uses cchq_forms but we have no
+            # web session" failure. Without this, callers see a generic
+            # UPSTREAM_ERROR and can't tell that the problem is structural
+            # (the pipeline simply cannot run via MCP today) rather than a
+            # transient failure worth retrying.
+            if "headless context" in first_error or "cchq_forms" in first_error.lower():
+                raise MCPToolError(
+                    "UPSTREAM_ERROR",
+                    f"Pipeline execution error: {first_error}",
+                    details={
+                        "per_opp": per_opp_metadata,
+                        "headless_cchq_forms": True,
+                        "remediation": (
+                            "Run the preview from the web UI (which has the "
+                            "CommCare HQ OAuth session), or change the "
+                            "pipeline's data_source.type to 'connect_csv'."
+                        ),
+                    },
+                )
             hint = _hint_for_sql_error(first_error, error_hint_schema)
             raise MCPToolError(
                 "UPSTREAM_ERROR",

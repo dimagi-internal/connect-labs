@@ -444,10 +444,7 @@ def load_currency_and_country_data(apps, schema_editor):
 
     Currency.objects.bulk_create(currency_objs, ignore_conflicts=True)
 
-    code_to_currency = {
-        c.code: c
-        for c in Currency.objects.filter(code__in=[code for _, code in CURRENCIES])
-    }
+    code_to_currency = {c.code: c for c in Currency.objects.filter(code__in=[code for _, code in CURRENCIES])}
 
     country_objs = []
     for code, name, currency_code in COUNTRIES:
@@ -460,7 +457,6 @@ def load_currency_and_country_data(apps, schema_editor):
         )
 
     Country.objects.bulk_create(country_objs, ignore_conflicts=True)
-
 
 
 def populate_currency_and_country_fk(apps, schema_editor):
@@ -496,16 +492,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="opportunity",
             name="currency_fk",
-            field=models.ForeignKey(
-                null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.currency"
-            ),
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.currency"),
         ),
         migrations.AddField(
             model_name="opportunity",
             name="country",
-            field=models.ForeignKey(
-                null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.country"
-            ),
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.country"),
         ),
         migrations.RunPython(
             load_currency_and_country_data,

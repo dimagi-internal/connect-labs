@@ -26,5 +26,5 @@ class Migration(migrations.Migration):
             backfill_payment_created_date,
             migrations.RunPython.noop,
             hints={"run_on_secondary": False},
-        )
+        ),
     ]

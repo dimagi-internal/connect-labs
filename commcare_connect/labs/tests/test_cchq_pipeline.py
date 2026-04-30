@@ -78,3 +78,50 @@ class TestNormalizeCCHQForm:
         }
         result = normalize_cchq_form_to_visit_dict(form, 0)
         assert result["username"] == "user-uuid-123"
+
+
+class TestHeadlessGuard:
+    """fetch_cchq_forms_as_visit_dicts must fail loudly with a typed error
+    when called without a Django request (MCP / headless contexts).
+
+    Regression: a None request fell through to CommCareDataAccess(None, ...)
+    which did `request.session.get(...)` and crashed with
+    `'NoneType' object has no attribute 'session'`. That message gave
+    callers no way to tell that this is a structural limitation (cchq_forms
+    needs a web session OAuth) rather than a transient bug.
+    """
+
+    def test_fetch_cchq_forms_raises_headless_error_when_request_is_none(self):
+        import pytest
+
+        from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import fetch_cchq_forms_as_visit_dicts
+        from commcare_connect.labs.analysis.config import DataSourceConfig
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQHeadlessError
+
+        ds = DataSourceConfig(type="cchq_forms", form_name="visit", app_id="app-1")
+
+        with pytest.raises(CCHQHeadlessError) as exc:
+            fetch_cchq_forms_as_visit_dicts(
+                request=None,
+                data_source=ds,
+                access_token="connect-token",
+                opportunity_id=765,
+            )
+        # Message should be actionable, not a NoneType traceback.
+        msg = str(exc.value)
+        assert "cchq_forms" in msg
+        assert "headless" in msg.lower() or "no request" in msg.lower()
+
+    def test_commcare_data_access_check_token_valid_raises_when_headless(self):
+        """The lower-level CommCareDataAccess client used to die with a
+        NoneType error. Now it raises a typed CCHQHeadlessError so callers
+        can translate it into a structured message."""
+        import pytest
+
+        from commcare_connect.labs.integrations.commcare.api_client import CCHQHeadlessError, CommCareDataAccess
+
+        # Constructor must be tolerant — only the actual call should raise.
+        # Some upstream code instantiates the client and *then* probes.
+        client = CommCareDataAccess(request=None, domain="example")
+        with pytest.raises(CCHQHeadlessError):
+            client.check_token_valid()

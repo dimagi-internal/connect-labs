@@ -16,19 +16,23 @@ class TestAggregationToSQL:
         result = _aggregation_to_sql("count_unique", "case_id", "cases")
         assert "COUNT(DISTINCT" in result
 
-    def test_last_uses_desc_subquery(self):
+    def test_last_uses_desc_array_agg(self):
+        # As of the entity-stage refactor, first/last use ARRAY_AGG with explicit
+        # ORDER BY (visit_date, visit_id) instead of a correlated subquery, because
+        # the subquery's outer-column references were rejected by Postgres when the
+        # GROUP BY was a JSONB-extracted entity-stage linking_field expression.
         result = _aggregation_to_sql("last", "weight", "last_weight")
+        assert "ARRAY_AGG" in result
         assert "ORDER BY visit_date DESC" in result
-        assert "LIMIT 1" in result
 
     def test_count(self):
         result = _aggregation_to_sql("count", "visit_id", "total_visits")
         assert result == "COUNT(visit_id)"
 
-    def test_first_uses_asc_subquery(self):
+    def test_first_uses_asc_array_agg(self):
         result = _aggregation_to_sql("first", "weight", "first_weight")
+        assert "ARRAY_AGG" in result
         assert "ORDER BY visit_date ASC" in result
-        assert "LIMIT 1" in result
 
     def test_unknown_raises(self):
         """Previously fell through to MIN() silently. A typo like `counts`

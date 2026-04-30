@@ -1742,7 +1742,8 @@ class PipelineDataAccess(BaseDataAccess):
                         "id": getattr(row, "id", None),
                         "username": getattr(row, "username", None),
                         "visit_date": format_date(getattr(row, "visit_date", None)),
-                        # Built-in FLW aggregation fields
+                        # Built-in FLW aggregation fields (zero for entity/visit stages
+                        # via getattr defaults — entity rows don't carry status counters).
                         "total_visits": getattr(row, "total_visits", 0),
                         "approved_visits": getattr(row, "approved_visits", 0),
                         "pending_visits": getattr(row, "pending_visits", 0),
@@ -1750,9 +1751,12 @@ class PipelineDataAccess(BaseDataAccess):
                         "flagged_visits": getattr(row, "flagged_visits", 0),
                         "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
                         "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
+                        # Entity-stage / visit-level fields. None on FLW rows.
+                        "entity_id": getattr(row, "entity_id", None),
+                        "entity_name": getattr(row, "entity_name", None),
                     }
                     # Add computed fields (custom fields from config)
-                    # FLWRow uses custom_fields, VisitRow uses computed
+                    # FLWRow / EntityRow use custom_fields, VisitRow uses computed
                     custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
                     if custom:
                         row_dict.update(custom)
@@ -1843,6 +1847,8 @@ class PipelineDataAccess(BaseDataAccess):
         terminal_stage = CacheStage.VISIT_LEVEL
         if schema.get("terminal_stage") == "aggregated":
             terminal_stage = CacheStage.AGGREGATED
+        elif schema.get("terminal_stage") == "entity":
+            terminal_stage = CacheStage.ENTITY
 
         # Parse data source config
         data_source_dict = schema.get("data_source") or {}

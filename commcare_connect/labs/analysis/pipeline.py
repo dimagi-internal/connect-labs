@@ -38,7 +38,7 @@ from django.conf import settings
 from django.http import HttpRequest
 
 from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, CacheStage
-from commcare_connect.labs.analysis.models import FLWAnalysisResult, VisitAnalysisResult
+from commcare_connect.labs.analysis.models import EntityAnalysisResult, FLWAnalysisResult, VisitAnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +211,11 @@ class AnalysisPipeline:
                 self.backend.get_cached_flw_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
                 is not None
             )
+        elif terminal_stage == CacheStage.ENTITY:
+            return (
+                self.backend.get_cached_entity_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
+                is not None
+            )
         else:
             return (
                 self.backend.get_cached_visit_result(opp_id, config, self.visit_count, tolerance_pct=tolerance)
@@ -272,7 +277,7 @@ class AnalysisPipeline:
         self,
         config: AnalysisPipelineConfig,
         opportunity_id: int | None = None,
-    ) -> FLWAnalysisResult | VisitAnalysisResult:
+    ) -> FLWAnalysisResult | VisitAnalysisResult | EntityAnalysisResult:
         """
         Run analysis synchronously, ignoring progress events.
 
@@ -367,9 +372,25 @@ class AnalysisPipeline:
         force_refresh = self.request is not None and self.request.GET.get("refresh") == "1"
         terminal_stage = config.terminal_stage
 
+        def _stage_name(stage: CacheStage) -> str:
+            return {
+                CacheStage.AGGREGATED: "FLW",
+                CacheStage.ENTITY: "entity",
+                CacheStage.VISIT_LEVEL: "visit",
+            }.get(stage, "visit")
+
+        def _get_cached_for_stage(expected_count: int):
+            """Cache lookup dispatched by terminal_stage."""
+            if terminal_stage == CacheStage.AGGREGATED:
+                return self.backend.get_cached_flw_result(opp_id, config, expected_count, tolerance_pct=tolerance)
+            elif terminal_stage == CacheStage.ENTITY:
+                return self.backend.get_cached_entity_result(opp_id, config, expected_count, tolerance_pct=tolerance)
+            else:
+                return self.backend.get_cached_visit_result(opp_id, config, expected_count, tolerance_pct=tolerance)
+
         try:
             # Check cache first
-            stage_name = "FLW" if terminal_stage == CacheStage.AGGREGATED else "visit"
+            stage_name = _stage_name(terminal_stage)
             logger.info(
                 f"[Pipeline/{self.backend_name}] Checking {stage_name}-level cache for opp {opp_id} "
                 f"(expected visits: {self.visit_count})"
@@ -390,21 +411,7 @@ class AnalysisPipeline:
             is_cchq = config.data_source.type == "cchq_forms"
             expected_count = 0 if (is_cchq or has_filters) else self.visit_count
             if not force_refresh:
-                cached_result = None
-                if terminal_stage == CacheStage.AGGREGATED:
-                    cached_result = self.backend.get_cached_flw_result(
-                        opp_id,
-                        config,
-                        expected_count,
-                        tolerance_pct=tolerance,
-                    )
-                else:
-                    cached_result = self.backend.get_cached_visit_result(
-                        opp_id,
-                        config,
-                        expected_count,
-                        tolerance_pct=tolerance,
-                    )
+                cached_result = _get_cached_for_stage(expected_count)
 
                 if cached_result:
                     yield (EVENT_STATUS, {"message": f"{stage_name.capitalize()}-level cache HIT!"})
@@ -490,20 +497,7 @@ class AnalysisPipeline:
                         yield (EVENT_STATUS, {"message": "Applying filters..."})
 
                         # expected_count=0: we just wrote this cache, skip count validation
-                        if terminal_stage == CacheStage.AGGREGATED:
-                            filtered_result = self.backend.get_cached_flw_result(
-                                opp_id,
-                                config,
-                                0,
-                                tolerance_pct=tolerance,
-                            )
-                        else:
-                            filtered_result = self.backend.get_cached_visit_result(
-                                opp_id,
-                                config,
-                                0,
-                                tolerance_pct=tolerance,
-                            )
+                        filtered_result = _get_cached_for_stage(0)
 
                         if filtered_result:
                             yield (EVENT_STATUS, {"message": "Complete!"})
@@ -582,20 +576,7 @@ class AnalysisPipeline:
                     yield (EVENT_STATUS, {"message": "Applying filters..."})
 
                     # expected_count=0: we just wrote this cache, skip count validation
-                    if terminal_stage == CacheStage.AGGREGATED:
-                        filtered_result = self.backend.get_cached_flw_result(
-                            opp_id,
-                            config,
-                            0,
-                            tolerance_pct=tolerance,
-                        )
-                    else:
-                        filtered_result = self.backend.get_cached_visit_result(
-                            opp_id,
-                            config,
-                            0,
-                            tolerance_pct=tolerance,
-                        )
+                    filtered_result = _get_cached_for_stage(0)
 
                     if filtered_result:
                         yield (EVENT_STATUS, {"message": "Complete!"})

@@ -8,7 +8,7 @@ def backfill_org_amount(apps, schema_editor):
 
     payment_units_to_update = []
     for pu in PaymentUnit.objects.filter(opportunity__managed=True):
-        if m_opp := getattr(pu.opportunity, "managedopportunity", None):        
+        if m_opp := getattr(pu.opportunity, "managedopportunity", None):
             if org_amount := m_opp.org_pay_per_visit:
                 pu.org_amount = org_amount
                 payment_units_to_update.append(pu)
@@ -32,5 +32,7 @@ class Migration(migrations.Migration):
             name="org_amount",
             field=models.PositiveIntegerField(default=0),
         ),
-        migrations.RunPython(backfill_org_amount, reverse_code=migrations.RunPython.noop, hints={"run_on_secondary": False}),
+        migrations.RunPython(
+            backfill_org_amount, reverse_code=migrations.RunPython.noop, hints={"run_on_secondary": False}
+        ),
     ]

@@ -4,22 +4,22 @@ from django.db import migrations, models
 
 
 def migrate_old_status_to_new(apps, schema_editor):
-    PaymentInvoice = apps.get_model('opportunity', 'PaymentInvoice')
+    PaymentInvoice = apps.get_model("opportunity", "PaymentInvoice")
     status_mapping = {
-        'pending': 'pending_nm_review',
-        'submitted': 'pending_pm_review',
-        'approved': 'paid',
+        "pending": "pending_nm_review",
+        "submitted": "pending_pm_review",
+        "approved": "paid",
     }
     for old_status, new_status in status_mapping.items():
         PaymentInvoice.objects.filter(status=old_status).update(status=new_status)
 
 
 def reverse_migrate_new_status_to_old(apps, schema_editor):
-    PaymentInvoice = apps.get_model('opportunity', 'PaymentInvoice')
+    PaymentInvoice = apps.get_model("opportunity", "PaymentInvoice")
     reverse_mapping = {
-        'pending_nm_review': 'pending',
-        'pending_pm_review': 'submitted',
-        'paid': 'approved',
+        "pending_nm_review": "pending",
+        "pending_pm_review": "submitted",
+        "paid": "approved",
     }
     for new_status, old_status in reverse_mapping.items():
         PaymentInvoice.objects.filter(status=new_status).update(status=old_status)
@@ -54,4 +54,3 @@ class Migration(migrations.Migration):
             hints={"run_on_secondary": False},
         ),
     ]
-

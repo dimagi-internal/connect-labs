@@ -27,6 +27,9 @@ urlpatterns = [
     path("run/<int:run_id>/", views.WorkflowRunDetailView.as_view(), name="run_detail"),
     # API endpoints - Workers
     path("api/workers/", views.get_workers_api, name="api_workers"),
+    # Framework: per-template OAuth dependency check (drives the "Authorize X"
+    # gate in the workflow runner before any template-specific render fires).
+    path("api/auth-status/", views.workflow_auth_status_api, name="api_auth_status"),
     # API endpoints - Workflow runs
     path("api/run/<int:run_id>/state/", views.update_state_api, name="api_update_state"),
     path("api/run/<int:run_id>/worker-result/", views.save_worker_result_api, name="api_save_worker_result"),

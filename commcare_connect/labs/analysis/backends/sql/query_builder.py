@@ -182,6 +182,23 @@ def _aggregation_to_sql(
         filter_op: How to compare filter_path against filter_value. "eq" for
             exact equality (default), "contains_word" for whitespace-tokenized
             membership (mirrors V1 logic like `"ebf" in bf_status.split()`).
+
+    Notes on `first` / `last`:
+        Both use ARRAY_AGG with explicit ORDER BY (visit_date ASC|DESC, visit_id ASC|DESC).
+        This is a true aggregate over the GROUP — no correlated subquery — which means
+        it works for any GROUP BY expression (FLW's `username`, entity's JSONB-extracted
+        linking_field, etc.) without needing to resolve outer-vs-inner column qualification.
+        The previous correlated-subquery implementation broke at entity stage because
+        Postgres rejected ungrouped `form_json` references when the linking_field was a
+        JSONB path expression. Tiebreaker is visit_id ASC for `first`, DESC for `last`,
+        consistent at every stage.
+
+    Notes on `mode_share` / `pre_aggregate_by`:
+        Both still use correlated subqueries scoped to (opportunity_id, username), so
+        they only work at FLW (`username`) grouping, NOT entity-stage. Widening them
+        is straightforward — replace the WHERE clause with a parameterized outer
+        grouping key — but unblocking that wasn't needed for the MBW v3 work that
+        introduced them. Tracked as a known gap.
     """
     if agg == "count":
         base = f"COUNT({value_expr})"
@@ -190,37 +207,17 @@ def _aggregation_to_sql(
     elif agg == "avg":
         base = f"AVG({value_expr})"
     elif agg == "first":
-        # Use subquery to get value from row with earliest visit_date
-        # This properly implements "first" semantics
-        # Note: FILTER not supported for subquery-based aggregations
-        return f"""(
-            SELECT sub.val FROM (
-                SELECT {value_expr} as val, visit_date
-                FROM labs_raw_visit_cache sub
-                WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
-                  AND sub.username = labs_raw_visit_cache.username
-                  AND {value_expr} IS NOT NULL
-                ORDER BY visit_date ASC
-                LIMIT 1
-            ) sub
-        )"""
+        return (
+            f"(ARRAY_AGG({value_expr} ORDER BY visit_date ASC NULLS LAST, visit_id ASC) "
+            f"FILTER (WHERE {value_expr} IS NOT NULL))[1]"
+        )
     elif agg == "count_distinct" or agg == "count_unique":
         base = f"COUNT(DISTINCT {value_expr})"
     elif agg == "last":
-        # Use subquery to get value from row with latest visit_date
-        # Mirrors "first" but with DESC ordering
-        # Note: FILTER not supported for subquery-based aggregations
-        return f"""(
-            SELECT sub.val FROM (
-                SELECT {value_expr} as val, visit_date
-                FROM labs_raw_visit_cache sub
-                WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
-                  AND sub.username = labs_raw_visit_cache.username
-                  AND {value_expr} IS NOT NULL
-                ORDER BY visit_date DESC
-                LIMIT 1
-            ) sub
-        )"""
+        return (
+            f"(ARRAY_AGG({value_expr} ORDER BY visit_date DESC NULLS LAST, visit_id DESC) "
+            f"FILTER (WHERE {value_expr} IS NOT NULL))[1]"
+        )
     elif agg == "list":
         # Aggregate as array, will be converted to Python list
         # Note: list already has its own FILTER clause, skip per-field filter
@@ -470,7 +467,8 @@ def build_flw_aggregation_query(
         "MAX(visit_date) as _base_last_visit_date",
     ]
 
-    # Add custom fields from config
+    # Add custom fields from config. first/last go through _aggregation_to_sql which
+    # uses ARRAY_AGG ORDER BY visit_date+visit_id — same shape entity stage uses.
     for field in config.fields:
         # Two-pass aggregation gets its own dedicated builder — it produces a
         # correlated subquery scoped to the outer (opportunity_id, username).
@@ -483,14 +481,7 @@ def build_flw_aggregation_query(
         value_expr = _paths_to_coalesce_sql(paths)
         transformed_expr = _transform_to_sql(field, value_expr)
 
-        if field.aggregation == "first":
-            # For "first", order by visit_id to match Python iteration order
-            # (visits are typically processed in order they come from API, which is by ID)
-            first_expr = f"""(
-                ARRAY_AGG({transformed_expr} ORDER BY visit_id ASC) FILTER (WHERE {transformed_expr} IS NOT NULL)
-            )[1]"""
-            select_parts.append(f"{first_expr} as {field.name}")
-        elif field.aggregation == "list":
+        if field.aggregation == "list":
             agg_expr = f"ARRAY_AGG({transformed_expr}) FILTER (WHERE {transformed_expr} IS NOT NULL)"
             select_parts.append(f"{agg_expr} as {field.name}")
         else:
@@ -529,6 +520,178 @@ def build_flw_aggregation_query(
     """
 
     return query
+
+
+# Base columns on labs_raw_visit_cache that can be used directly as the linking_field
+# without going through a FieldComputation. Anything not in this set must be the name of
+# a FieldComputation declared in config.fields.
+_RAW_VISIT_BASE_COLUMNS = frozenset(
+    {
+        "visit_id",
+        "username",
+        "deliver_unit",
+        "deliver_unit_id",
+        "entity_id",
+        "entity_name",
+        "visit_date",
+        "status",
+        "review_status",
+    }
+)
+
+
+def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
+    """Build the SQL expression for the linking_field, used as the GROUP BY column.
+
+    Resolution order:
+    1. If linking_field is the name of a base column on labs_raw_visit_cache, use
+       that column directly.
+    2. Otherwise, look up linking_field as the name of a FieldComputation in
+       config.fields and build a coalesced JSONB path expression from it.
+    3. If neither matches, raise.
+
+    The expression is unqualified — bare column references (`form_json`, `username`)
+    resolve to the implicit FROM table at SQL evaluation time. This is the same
+    convention `build_flw_aggregation_query` uses.
+    """
+    name = config.linking_field
+    if name in _RAW_VISIT_BASE_COLUMNS:
+        return name
+
+    # Look for a FieldComputation named the same as linking_field
+    field_comp = config.get_field(name)
+    if field_comp is None:
+        raise ValueError(
+            f"linking_field {name!r} is not a base column on labs_raw_visit_cache and "
+            f"no FieldComputation with that name was found in config.fields. "
+            f"Either use a base column name ({sorted(_RAW_VISIT_BASE_COLUMNS)}) or declare "
+            f"the linking field as a FieldComputation."
+        )
+
+    paths = field_comp.paths if field_comp.paths else [field_comp.path]
+    if not paths or not any(paths):
+        raise ValueError(
+            f"linking_field FieldComputation {name!r} has no path or paths set; " f"cannot use as GROUP BY column."
+        )
+    return _paths_to_coalesce_sql(paths)
+
+
+def build_entity_aggregation_query(
+    config: AnalysisPipelineConfig,
+    opportunity_id: int,
+) -> str:
+    """
+    Build SQL query to aggregate raw visits to entity level.
+
+    Mirrors `build_flw_aggregation_query` but groups by `config.linking_field`
+    instead of username. Standard counters are total_visits + first/last_visit_date;
+    the FLW status counters (approved/pending/rejected/flagged) are dropped because
+    an entity is not approved-vs-rejected — its visits are. Templates that need
+    those at entity level declare them as FieldComputations.
+
+    Two pieces survive from the FLW shape:
+    - A representative `username` column (first(username) per entity) — useful for
+      "all entities served by this FLW" queries.
+    - An `entity_name` column (first(entity_name) per entity) — denormalized from
+      the base raw-visit column.
+    """
+    if not config.linking_field:
+        raise ValueError("config.linking_field must be set for entity-stage aggregation")
+
+    group_expr = _resolve_linking_field_outer_expr(config)
+
+    # entity_id is the same expression as the GROUP BY — the row key.
+    # `first` and `last` use ARRAY_AGG ORDER BY visit_date+visit_id internally, so they
+    # work over any group expression — no need to special-case the linking_field shape.
+    rep_username = _aggregation_to_sql("first", "username", "username")
+    rep_entity_name = _aggregation_to_sql("first", "entity_name", "entity_name")
+
+    select_parts = [
+        f"({group_expr}) as entity_id",
+        f"{rep_username} as username",
+        f"{rep_entity_name} as entity_name",
+        "COUNT(*) as total_visits",
+        # Use _base_ prefix to avoid conflicts with custom config fields of the same name
+        "MIN(visit_date) as _base_first_visit_date",
+        "MAX(visit_date) as _base_last_visit_date",
+    ]
+
+    # Add custom fields from config. All aggregations (including first/last) go through
+    # _aggregation_to_sql; first/last use ARRAY_AGG ORDER BY visit_date, visit_id so the
+    # group column doesn't matter — works for any GROUP BY expression.
+    #
+    # Note: pre_aggregate_by and the mode_share aggregation aren't supported at entity
+    # stage yet — both rely on a correlated subquery scoped to (opportunity_id, username)
+    # and would need parameterization to work with linking-field grouping.
+    for field in config.fields:
+        if field.pre_aggregate_by:
+            raise ValueError(
+                f"pre_aggregate_by isn't supported at entity stage (field {field.name!r}). "
+                "Track at the FLW-stage two-pass primitive — extend if needed."
+            )
+
+        paths = field.paths if field.paths else [field.path]
+        value_expr = _paths_to_coalesce_sql(paths)
+        transformed_expr = _transform_to_sql(field, value_expr)
+
+        if field.aggregation == "list":
+            agg_expr = f"ARRAY_AGG({transformed_expr}) FILTER (WHERE {transformed_expr} IS NOT NULL)"
+            select_parts.append(f"{agg_expr} as {field.name}")
+        else:
+            agg_expr = _aggregation_to_sql(
+                field.aggregation,
+                transformed_expr,
+                field.name,
+                filter_path=field.filter_path,
+                filter_value=field.filter_value,
+                filter_op=field.filter_op,
+            )
+            select_parts.append(f"{agg_expr} as {field.name}")
+
+    # Add histogram fields (same code as FLW — doesn't reference username)
+    for hist in config.histograms:
+        hist_fields = _build_histogram_fields(hist, opportunity_id)
+        for field_name, field_sql in hist_fields:
+            select_parts.append(f"{field_sql} as {field_name}")
+
+    select_clause = ",\n    ".join(select_parts)
+
+    # GROUP BY the linking-field expression and opportunity_id (same reasoning as FLW —
+    # opportunity_id is used by correlated subqueries and must be grouped or aggregated).
+    query = f"""
+        SELECT
+            {select_clause}
+        FROM labs_raw_visit_cache
+        WHERE opportunity_id = {opportunity_id}
+        GROUP BY ({group_expr}), opportunity_id
+        ORDER BY entity_id
+    """
+
+    return query
+
+
+def execute_entity_aggregation(
+    config: AnalysisPipelineConfig,
+    opportunity_id: int,
+) -> list[dict]:
+    """Execute entity aggregation query and return results as list of dicts."""
+    query = build_entity_aggregation_query(config, opportunity_id)
+
+    logger.info(f"[SQL] Executing entity aggregation query for opp {opportunity_id}")
+    logger.debug(f"[SQL] Query:\n{query}")
+
+    with connection.cursor() as cursor:
+        cursor.execute(query)
+        columns = [col[0] for col in cursor.description]
+        rows = cursor.fetchall()
+
+    results = []
+    for row in rows:
+        row_dict = {col: val for col, val in zip(columns, row)}
+        results.append(row_dict)
+
+    logger.info(f"[SQL] Aggregated {len(results)} entities")
+    return results
 
 
 def execute_flw_aggregation(
