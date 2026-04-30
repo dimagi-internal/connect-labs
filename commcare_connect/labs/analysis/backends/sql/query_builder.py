@@ -202,6 +202,7 @@ def _aggregation_to_sql(
     filter_path: str = "",
     filter_value: str = "",
     filter_op: str = "eq",
+    filter_paths: list[str] | None = None,
 ) -> str:
     """Convert aggregation type to SQL aggregate function.
 
@@ -318,17 +319,30 @@ def _aggregation_to_sql(
             "count_unique, list, median, mode, mode_share, dup_share."
         )
 
-    # Apply per-field FILTER clause if both filter_path and filter_value are provided.
-    # filter_op switches the comparison shape: "eq" (default) is the prior
-    # behaviour; "contains_word" treats the value as a whitespace-tokenized list
-    # and matches when filter_value is one of the tokens.
-    if filter_path and filter_value:
-        filter_sql = _jsonb_path_to_sql(filter_path)
+    # Apply per-field FILTER clause if filter_value is provided. The filter
+    # source is either a single path (filter_path) or a list coalesced via
+    # NULLIF (filter_paths) — the latter mirrors the field's `paths` semantics
+    # so a multi-path field can filter on the SAME coalesced value, required
+    # for v1 fidelity on metrics like EBF where the field coalesces 5 form
+    # paths and the check applies to whichever one matched.
+    #
+    # filter_op switches the comparison shape: "eq" (default) is exact
+    # equality; "contains_word" treats the value as a whitespace-tokenized
+    # list and matches when filter_value is one of the tokens.
+    if (filter_path or filter_paths) and filter_value:
+        if filter_paths:
+            filter_sql = _paths_to_coalesce_sql(filter_paths)
+        else:
+            filter_sql = _jsonb_path_to_sql(filter_path)
+        # TRIM the extracted value before comparison — production form data
+        # often has trailing whitespace (e.g., MBW form_name = "ANC Visit "
+        # with a trailing space). v1 always strips before comparing; without
+        # TRIM here, v3 would fail to match and miss rows entirely.
+        # contains_word does its own tokenization (string_to_array) which
+        # naturally handles whitespace; TRIM is unnecessary there.
         if filter_op == "eq":
-            predicate = f"{filter_sql} = '{filter_value}'"
+            predicate = f"TRIM({filter_sql}) = '{filter_value}'"
         elif filter_op == "contains_word":
-            # Postgres: split on whitespace, test array membership.
-            # COALESCE keeps the predicate well-defined when the path is NULL.
             predicate = f"'{filter_value}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' '))"
         else:
             raise ValueError(f"Unknown filter_op {filter_op!r} on field {field_name!r}. Valid: 'eq', 'contains_word'.")
@@ -557,6 +571,7 @@ def build_flw_aggregation_query(
                 transformed_expr,
                 field.name,
                 filter_path=field.filter_path,
+                filter_paths=field.filter_paths,
                 filter_value=field.filter_value,
                 filter_op=field.filter_op,
             )
@@ -692,6 +707,7 @@ def build_entity_aggregation_query(
                 transformed_expr,
                 field.name,
                 filter_path=field.filter_path,
+                filter_paths=field.filter_paths,
                 filter_value=field.filter_value,
                 filter_op=field.filter_op,
             )
