@@ -1843,8 +1843,50 @@ class PipelineDataAccess(BaseDataAccess):
                     pass
             return md.get("age_in_years_rounded") or md.get("mothers_age") or ""
 
+        # MBW visit-type create flags + completion flags. v1 uses these to
+        # determine which visits a mother is scheduled for and which were
+        # completed. JS-side follow-up classification consumes the schedules
+        # list shape produced by `_mbw_visit_schedules`.
+        _MBW_VISIT_CREATE_FLAGS = {
+            "ANC Visit": "create_antenatal_visit",
+            "Postnatal Delivery Visit": "create_postnatal_visit",
+            "1 Week Visit": "create_one_two_visit",
+            "1 Month Visit": "create_one_month_visit",
+            "3 Month Visit": "create_three_month_visit",
+            "6 Month Visit": "create_six_month_visit",
+        }
+
+        def _mbw_visit_schedules(form_dict: dict) -> list:
+            """v1-fidelity expected-visits extraction. Walks var_visit_1..6
+            on the registration form, filters out blocks where the create
+            flag isn't set, and returns a list of schedule dicts the JS
+            follow-up adapter can match against actual visits.
+            """
+            form = form_dict.get("form", {}) if isinstance(form_dict, dict) else {}
+            if not isinstance(form, dict):
+                return []
+            schedules = []
+            for i in range(1, 7):
+                var_visit = form.get(f"var_visit_{i}")
+                if not isinstance(var_visit, dict):
+                    continue
+                visit_type = var_visit.get("visit_type", "")
+                create_flag_name = _MBW_VISIT_CREATE_FLAGS.get(visit_type)
+                if create_flag_name and str(var_visit.get(create_flag_name, "")) != "1":
+                    continue
+                schedules.append(
+                    {
+                        "visit_type": visit_type,
+                        "visit_date_scheduled": var_visit.get("visit_date_scheduled", ""),
+                        "visit_expiry_date": var_visit.get("visit_expiry_date", ""),
+                        "mother_case_id": var_visit.get("mother_case_id", ""),
+                    }
+                )
+            return schedules
+
         extractor_registry = {
             "v1_mbw_age": _v1_mbw_age,
+            "mbw_visit_schedules": _mbw_visit_schedules,
         }
 
         def get_extractor(name):
