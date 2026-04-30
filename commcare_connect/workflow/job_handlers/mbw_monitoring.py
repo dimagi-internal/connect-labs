@@ -257,6 +257,45 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
     registration_rows = pipeline_data.get("registrations", {}).get("rows", [])
     gs_form_rows = pipeline_data.get("gs_forms", {}).get("rows", [])
 
+    # Load FULL CCHQ registration forms from RawVisitCache for use by the V1
+    # helpers (build_followup_from_pipeline, extract_mother_metadata_from_forms).
+    # Those helpers walk var_visit_1..6 schedule blocks, mother_details groups,
+    # and other ~30 fields the V2 pipeline schema doesn't extract — they need
+    # the raw form envelope, not slim row dicts.
+    #
+    # Architecture: the registrations pipeline already fetches every Register
+    # Mother form once and stores it in RawVisitCache.form_json (per
+    # cchq_fetcher.normalize_cchq_form_to_visit_dict). Before #116, this
+    # cache got clobbered by the gs_forms pipeline running after; with
+    # pipeline-isolated raw cache, registrations rows survive and we can
+    # read full forms back without a second CCHQ round-trip.
+    registration_full_forms: list[dict] = []
+    registrations_pipeline_id = pipeline_data.get("registrations", {}).get("metadata", {}).get("pipeline_id")
+    opportunity_id_for_lookup = job_config.get("opportunity_id")
+    if registrations_pipeline_id and opportunity_id_for_lookup:
+        try:
+            from commcare_connect.labs.analysis.backends.sql.models import RawVisitCache
+
+            # form_json column already holds the full CCHQ Form API envelope
+            # ({"id": ..., "form": {...}, "metadata": {...}}) — exactly the
+            # shape V1 helpers expect.
+            registration_full_forms = list(
+                RawVisitCache.objects.filter(
+                    opportunity_id=opportunity_id_for_lookup,
+                    pipeline_id=registrations_pipeline_id,
+                    visit_count__gt=0,  # exclude streaming-sentinel rows
+                ).values_list("form_json", flat=True)
+            )
+            logger.info(
+                "[MBW Job] Loaded %d full registration forms from RawVisitCache " "(opp=%s, pipeline=%s)",
+                len(registration_full_forms),
+                opportunity_id_for_lookup,
+                registrations_pipeline_id,
+            )
+        except Exception:
+            logger.exception("[MBW Job] Loading full registration forms from cache raised; continuing")
+            registration_full_forms = []
+
     # Apply visit approval status filter to all visit rows.
     # V1 applies this at the SQL layer (query_builder.py:481) so non-matching
     # rows never reach analysis. V2 filters post-fetch since the pipeline data
@@ -376,15 +415,18 @@ def handle_mbw_monitoring_job(job_config: dict, _access_token: str, progress_cal
         # Adapt visit rows for followup_analysis functions
         adapted_visit_rows = _adapt_rows(visit_rows)
 
-        # Build follow-up visit data from registration forms + pipeline completions
+        # Build follow-up visit data from registration forms + pipeline completions.
+        # V1 helpers expect full CCHQ form dicts (form + metadata + var_visit_N
+        # schedule blocks), not V2's slim row shape. We load the full forms from
+        # RawVisitCache.form_json above (per-pipeline isolation, see #116).
         visit_cases_by_flw = build_followup_from_pipeline(
             adapted_visit_rows,
             active_usernames,
-            registration_forms=registration_rows,
+            registration_forms=registration_full_forms,
         )
 
-        # Extract mother metadata from registration forms
-        mother_metadata = extract_mother_metadata_from_forms(registration_rows, current_date=current_date)
+        # Extract mother metadata from full CCHQ registration forms.
+        mother_metadata = extract_mother_metadata_from_forms(registration_full_forms, current_date=current_date)
 
         # Aggregate per-FLW follow-up summaries
         flw_followup = aggregate_flw_followup(
