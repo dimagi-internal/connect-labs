@@ -22,6 +22,25 @@ from commcare_connect.labs.analysis.config import (
 logger = logging.getLogger(__name__)
 
 
+def _pipeline_scope_where(opportunity_id: int, pipeline_id: int | None, *, alias: str = "") -> str:
+    """SQL WHERE-fragment scoping a labs_raw_visit_cache read to one pipeline's slot.
+
+    All extraction queries must include this — without filtering by
+    pipeline_id we'd read another pipeline's rows for the same
+    opportunity (#116). Pass `alias=""` for unqualified column refs in
+    the outer query, or the alias name (e.g. "sub") for qualified refs
+    inside correlated subqueries.
+
+    pipeline_id=None matches the legacy/ad-hoc-caller slot (rows written
+    by callers without a workflow definition id, where the column is
+    NULL). The check is `IS NULL` rather than `= NULL` because SQL.
+    """
+    prefix = f"{alias}." if alias else ""
+    if pipeline_id is None:
+        return f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id IS NULL"
+    return f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id = {pipeline_id}"
+
+
 def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
     """
     Convert a dot-notation path to PostgreSQL JSONB extraction.
@@ -207,6 +226,8 @@ def _aggregation_to_sql(
     filter_value: str = "",
     filter_op: str = "eq",
     filter_paths: list[str] | None = None,
+    group_column_outer_expr: str = "labs_raw_visit_cache.username",
+    pipeline_id: int | None = None,
 ) -> str:
     """Convert aggregation type to SQL aggregate function.
 
@@ -236,6 +257,16 @@ def _aggregation_to_sql(
         grouping key — but unblocking that wasn't needed for the MBW v3 work that
         introduced them. Tracked as a known gap.
     """
+    # NOTE: main refactored first/last from correlated subqueries to
+    # ARRAY_AGG with explicit ORDER BY — no subquery, no outer-vs-inner
+    # column qualification needed. The outer query's WHERE already
+    # filters by pipeline_id so the aggregate stays in this pipeline's
+    # slot. group_column_outer_expr / pipeline_id parameters are still
+    # accepted for forward-compat with any future agg type that adds a
+    # correlated subquery (mode_share / pre_aggregate_by per docstring).
+    # When that happens, build the sub-pipe scope here:
+    #   sub_pipe = "AND sub.pipeline_id IS NULL" if pipeline_id is None
+    #              else f"AND sub.pipeline_id = {pipeline_id}"
     if agg == "count":
         base = f"COUNT({value_expr})"
     elif agg == "sum":
@@ -540,6 +571,7 @@ def build_flw_aggregation_query(
     """
     Build SQL query to aggregate raw visits to FLW level.
     """
+    pipeline_id = config.pipeline_id
     select_parts = [
         "username",
         "COUNT(*) as total_visits",
@@ -578,6 +610,7 @@ def build_flw_aggregation_query(
                 filter_paths=field.filter_paths,
                 filter_value=field.filter_value,
                 filter_op=field.filter_op,
+                pipeline_id=pipeline_id,
             )
             select_parts.append(f"{agg_expr} as {field.name}")
 
@@ -588,6 +621,7 @@ def build_flw_aggregation_query(
             select_parts.append(f"{field_sql} as {field_name}")
 
     select_clause = ",\n    ".join(select_parts)
+    where_clause = _pipeline_scope_where(opportunity_id, pipeline_id)
 
     # Note: opportunity_id must appear in GROUP BY even though the WHERE clause
     # restricts it to a single value. The `first`/`last` aggregations use a
@@ -600,7 +634,7 @@ def build_flw_aggregation_query(
         SELECT
             {select_clause}
         FROM labs_raw_visit_cache
-        WHERE opportunity_id = {opportunity_id}
+        WHERE {where_clause}
         GROUP BY username, opportunity_id
         ORDER BY username
     """
@@ -666,13 +700,16 @@ def build_entity_aggregation_query(
     if not config.linking_field:
         raise ValueError("config.linking_field must be set for entity-stage aggregation")
 
+    pipeline_id = config.pipeline_id
     group_expr = _resolve_linking_field_outer_expr(config)
 
     # entity_id is the same expression as the GROUP BY — the row key.
-    # `first` and `last` use ARRAY_AGG ORDER BY visit_date+visit_id internally, so they
-    # work over any group expression — no need to special-case the linking_field shape.
-    rep_username = _aggregation_to_sql("first", "username", "username")
-    rep_entity_name = _aggregation_to_sql("first", "entity_name", "entity_name")
+    # `first` and `last` use ARRAY_AGG ORDER BY visit_date+visit_id internally,
+    # so they work over any group expression — no need to special-case the
+    # linking_field shape. pipeline_id is threaded through for forward-compat
+    # with any future agg type that adds a correlated subquery.
+    rep_username = _aggregation_to_sql("first", "username", "username", pipeline_id=pipeline_id)
+    rep_entity_name = _aggregation_to_sql("first", "entity_name", "entity_name", pipeline_id=pipeline_id)
 
     select_parts = [
         f"({group_expr}) as entity_id",
@@ -714,6 +751,7 @@ def build_entity_aggregation_query(
                 filter_paths=field.filter_paths,
                 filter_value=field.filter_value,
                 filter_op=field.filter_op,
+                pipeline_id=pipeline_id,
             )
             select_parts.append(f"{agg_expr} as {field.name}")
 
@@ -724,6 +762,7 @@ def build_entity_aggregation_query(
             select_parts.append(f"{field_sql} as {field_name}")
 
     select_clause = ",\n    ".join(select_parts)
+    where_clause = _pipeline_scope_where(opportunity_id, pipeline_id)
 
     # GROUP BY the linking-field expression and opportunity_id (same reasoning as FLW —
     # opportunity_id is used by correlated subqueries and must be grouped or aggregated).
@@ -731,7 +770,7 @@ def build_entity_aggregation_query(
         SELECT
             {select_clause}
         FROM labs_raw_visit_cache
-        WHERE opportunity_id = {opportunity_id}
+        WHERE {where_clause}
         GROUP BY ({group_expr}), opportunity_id
         ORDER BY entity_id
     """
@@ -872,8 +911,9 @@ def build_visit_extraction_query(
 
     select_clause = ",\n    ".join(select_parts)
 
-    # Build WHERE clause with filters
-    where_clauses = [f"opportunity_id = {opportunity_id}"]
+    # Build WHERE clause with filters. Pipeline-id scope is required so we
+    # don't read another pipeline's rows for the same opp (#116).
+    where_clauses = [_pipeline_scope_where(opportunity_id, config.pipeline_id)]
 
     # Add entity_id filter if present
     if "entity_id" in config.filters:

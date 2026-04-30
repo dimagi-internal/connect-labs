@@ -27,17 +27,29 @@ from commcare_connect.labs.analysis.backends.sql.models import (
 )
 
 
-@pytest.fixture
-def manager():
-    """Cache manager with a non-empty config_hash so computed-cache writes are not no-ops."""
-    m = SQLCacheManager(opportunity_id=42, config=None)
+def _make_manager(opportunity_id=42, pipeline_id=1001):
+    """Cache manager with config_hash + pipeline_id set so writes are scoped properly.
+
+    Real production callers always have a pipeline_id (the workflow definition id).
+    Tests pass an explicit one so unique constraints fire — Postgres treats NULLs
+    as distinct, so the constraint doesn't catch in-batch dups when pipeline_id is None.
+    """
+    from commcare_connect.labs.analysis.config import AnalysisPipelineConfig
+
+    config = AnalysisPipelineConfig(grouping_key="username", pipeline_id=pipeline_id)
+    m = SQLCacheManager(opportunity_id=opportunity_id, config=config)
     m.config_hash = "deadbeefcafe1234deadbeefcafe1234"
     return m
 
 
+@pytest.fixture
+def manager():
+    return _make_manager()
+
+
 @pytest.mark.django_db
 class TestRawVisitCacheConcurrency:
-    """RawVisitCache: UNIQUE(opportunity_id, visit_count, visit_id)."""
+    """RawVisitCache: UNIQUE(opportunity_id, pipeline_id, visit_count, visit_id)."""
 
     def test_single_write_succeeds(self, manager):
         manager.store_raw_visits(
@@ -69,8 +81,9 @@ class TestRawVisitCacheConcurrency:
         visit_count sentinels differ (UNIQUE includes visit_count). After
         finalize, one wins and the other's rows are deleted.
         """
-        writer_a = SQLCacheManager(opportunity_id=42, config=None)
-        writer_b = SQLCacheManager(opportunity_id=42, config=None)
+        # Same pipeline_id — both writers are racing within the same pipeline's slot.
+        writer_a = _make_manager(pipeline_id=1001)
+        writer_b = _make_manager(pipeline_id=1001)
 
         writer_a.store_raw_visits_start(visit_count=10)
         writer_b.store_raw_visits_start(visit_count=10)
@@ -87,6 +100,41 @@ class TestRawVisitCacheConcurrency:
         # Writer A finalizes -> wipes everything except its own rows
         writer_a.store_raw_visits_finalize(actual_count=1)
         assert RawVisitCache.objects.filter(opportunity_id=42, visit_count=1).count() == 1
+
+    def test_different_pipelines_dont_clobber_each_other(self):
+        """Two pipelines for the same opp keep separate raw caches (#116).
+
+        This is the core regression that produced empty per-mother metrics
+        on V2: each pipeline used to wholesale DELETE+INSERT for the opp,
+        so the last pipeline to run was the only one with raw rows visible.
+        """
+        visits_pipeline = _make_manager(pipeline_id=2718)
+        regs_pipeline = _make_manager(pipeline_id=2719)
+
+        visits_pipeline.store_raw_visits(
+            visit_dicts=[{"id": "v1", "username": "alice"}, {"id": "v2", "username": "bob"}],
+            visit_count=2,
+        )
+        # Registrations writes after — must NOT delete the visits pipeline's rows.
+        regs_pipeline.store_raw_visits(
+            visit_dicts=[{"id": "m1", "username": "alice"}],
+            visit_count=1,
+        )
+
+        # Each pipeline reads only its own slot
+        assert RawVisitCache.objects.filter(opportunity_id=42, pipeline_id=2718).count() == 2
+        assert RawVisitCache.objects.filter(opportunity_id=42, pipeline_id=2719).count() == 1
+        # Total across pipelines
+        assert RawVisitCache.objects.filter(opportunity_id=42).count() == 3
+
+        # Same visit_id can exist in both pipelines without conflict
+        # (separate slots, separate unique keys)
+        regs_pipeline2 = _make_manager(pipeline_id=2719)
+        regs_pipeline2.store_raw_visits(
+            visit_dicts=[{"id": "v1", "username": "alice"}],  # same visit_id as visits pipeline
+            visit_count=1,
+        )
+        assert RawVisitCache.objects.filter(opportunity_id=42, visit_id="v1").count() == 2
 
 
 @pytest.mark.django_db
