@@ -78,12 +78,15 @@ function _v3MedianOf(values) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function _v3BuildOverviewData(visitsRows) {
-  // Per-FLW mother count + EBF percentage, sourced directly from the visits
-  // pipeline's pre-aggregated fields. v3 SQL already produced these — JS
-  // just normalizes keys to lowercase to match v2's shape.
+function _v3BuildOverviewData(visitsRows, todayStr) {
+  // Per-FLW mother count + EBF percentage + last-active timestamp, sourced
+  // directly from the visits pipeline's pre-aggregated fields. v3 SQL
+  // already produced these — JS just normalizes keys to lowercase to match
+  // v2's shape.
   var motherCounts = {};
   var ebfPctByFlw = {};
+  var lastActiveByFlw = {};
+  var today = todayStr ? new Date(todayStr) : new Date();
   visitsRows.forEach(function (r) {
     var flw = (r._username || '').toLowerCase();
     if (!flw) return;
@@ -91,8 +94,26 @@ function _v3BuildOverviewData(visitsRows) {
     var num = r.ebf_count || 0;
     var den = r.bf_status_count || 0;
     if (den > 0) ebfPctByFlw[flw] = Math.round((num / den) * 100);
+    // visits pipeline aggregates per-FLW with `_base_last_visit_date` —
+    // exposed at the row level so the JSX overview table can show
+    // "N days ago" without a second pipeline query.
+    var lastDate = r.last_visit_date || r._base_last_visit_date;
+    if (lastDate) {
+      var d = new Date(lastDate);
+      if (!isNaN(d.getTime())) {
+        var days = Math.max(0, Math.floor((today - d) / 86400000));
+        lastActiveByFlw[flw] = {
+          date: (lastDate + '').slice(0, 10),
+          days: days,
+        };
+      }
+    }
   });
-  return { mother_counts: motherCounts, ebf_pct_by_flw: ebfPctByFlw };
+  return {
+    mother_counts: motherCounts,
+    ebf_pct_by_flw: ebfPctByFlw,
+    last_active_by_flw: lastActiveByFlw,
+  };
 }
 
 function _v3BuildQualityMetrics(visitsRows) {
@@ -379,7 +400,7 @@ function buildResultsFromV3Pipelines(
   var visitsGpsRows = _v3PipelineRows(pipelines, 'visits_gps');
   var registrationsRows = _v3PipelineRows(pipelines, 'registrations');
   return {
-    overview_data: _v3BuildOverviewData(visitsRows),
+    overview_data: _v3BuildOverviewData(visitsRows, currentDateStr),
     quality_metrics: _v3BuildQualityMetrics(visitsRows),
     gps_data: _v3BuildGpsData(visitsGpsRows, flwNameMap),
     followup_data: _v3BuildFollowupData(
@@ -957,6 +978,7 @@ function WorkflowUI({
           });
           var totalEligible = eligibleMothers.length;
 
+          var lastActive = (overviewSummary.last_active_by_flw || {})[uLower];
           return Object.assign(
             {
               username: uLower,
@@ -965,6 +987,8 @@ function WorkflowUI({
               eligible_mothers: totalEligible,
               first_gs_score: null, // populated below from gs_forms pipeline
               post_test_attempts: null,
+              last_active_date: lastActive ? lastActive.date : null,
+              last_active_days: lastActive ? lastActive.days : null,
               followup_rate: fuFlw.completion_rate || 0,
               ebf_pct: ebfPct != null ? ebfPct : null,
               revisit_distance_km:
@@ -2137,91 +2161,158 @@ function WorkflowUI({
 
   // ---- Pipeline loading / Job running / Error state ----
   if (!analysisComplete || !dashData) {
-    var visitCount =
-      pipelines && pipelines.visits && pipelines.visits.rows
-        ? pipelines.visits.rows.length
-        : 0;
+    // Two distinct numbers per pipeline:
+    //   - rawCount: forms/visits actually downloaded into the cache
+    //   - aggregatedCount: rows the SQL pipeline produced (e.g. visits
+    //     pipeline aggregates 86k visits → 99 per-FLW rows)
+    //
+    // Visits pipeline is `terminal_stage=aggregated`, so .rows.length is
+    // the aggregated row count (~99 FLWs). The underlying visit count is
+    // the SUM of total_visits across rows. For visit_level pipelines
+    // (registrations, gs_forms), .rows.length IS the raw count.
+    var visitsRows =
+      (pipelines && pipelines.visits && pipelines.visits.rows) || [];
+    var visitsRawCount = visitsRows.reduce(function (s, r) {
+      return s + (r.total_visits || 0);
+    }, 0);
+    var visitsAggCount = visitsRows.length;
+    var visitsLoaded = visitsRows.length > 0 || visitsRawCount > 0;
+
     var regCount =
       pipelines && pipelines.registrations && pipelines.registrations.rows
         ? pipelines.registrations.rows.length
         : 0;
+    var regLoaded =
+      pipelines && pipelines.registrations && pipelines.registrations.rows;
+
     var gsCount =
       pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
         ? pipelines.gs_forms.rows.length
         : 0;
+    var gsLoaded = pipelines && pipelines.gs_forms && pipelines.gs_forms.rows;
+
+    var fmt = function (n) {
+      return Number(n || 0).toLocaleString();
+    };
 
     return (
       <div className="space-y-4">
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900">
-            {instance.state?.title || 'MBW Monitoring V2'}
+            {instance.state?.title || 'MBW Monitoring V3'}
           </h2>
-          <p className="text-gray-500 mt-1">Pipeline-based dashboard</p>
+          <p className="text-gray-500 mt-1">
+            Pipeline-based dashboard. Raw forms are downloaded into the cache,
+            then per-pipeline SQL aggregations produce the dashboard inputs
+            you'll see after clicking <strong>Run Analysis</strong>.
+          </p>
         </div>
 
         {/* Pipeline Status */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            Pipeline Data Sources
+          <h3 className="text-sm font-semibold text-gray-700 mb-1">
+            Pipelines &amp; Inputs
           </h3>
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
+          <p className="text-xs text-gray-500 mb-3">
+            Each row shows what was <em>downloaded</em> from Connect / CommCare
+            HQ and what the pipeline <em>produced</em>. Aggregated pipelines
+            collapse many rows of raw data into per-FLW summaries.
+          </p>
+          <div className="space-y-3">
+            {/* Visit Forms — aggregated pipeline */}
+            <div className="flex items-start gap-3">
               <i
                 className={
-                  'fa-solid ' +
-                  (visitCount > 0
+                  'fa-solid mt-0.5 ' +
+                  (visitsLoaded
                     ? 'fa-circle-check text-green-500'
                     : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
-              <span className="text-sm text-gray-700">Visit Forms</span>
-              <span className="text-xs text-gray-500 ml-auto">
-                {visitCount > 0 ? visitCount + ' rows' : 'Loading...'}
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium text-gray-800">
+                    Visit Forms
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Connect / aggregated
+                  </span>
+                </div>
+                {visitsLoaded ? (
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    <span className="font-mono">{fmt(visitsRawCount)}</span>{' '}
+                    visits downloaded →{' '}
+                    <span className="font-mono">{fmt(visitsAggCount)}</span>{' '}
+                    per-FLW summaries
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-0.5">Loading…</div>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-3">
+            {/* Registration Forms — visit-level pipeline */}
+            <div className="flex items-start gap-3">
               <i
                 className={
-                  'fa-solid ' +
+                  'fa-solid mt-0.5 ' +
                   (regCount > 0
                     ? 'fa-circle-check text-green-500'
-                    : pipelines &&
-                      pipelines.registrations &&
-                      pipelines.registrations.rows
+                    : regLoaded
                     ? 'fa-circle-check text-amber-500'
                     : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
-              <span className="text-sm text-gray-700">Registration Forms</span>
-              <span className="text-xs text-gray-500 ml-auto">
-                {regCount > 0
-                  ? regCount + ' rows'
-                  : pipelines &&
-                    pipelines.registrations &&
-                    pipelines.registrations.rows
-                  ? '0 rows (none found)'
-                  : 'Loading...'}
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium text-gray-800">
+                    Registration Forms
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    CommCare HQ / per-form
+                  </span>
+                </div>
+                {regLoaded ? (
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    <span className="font-mono">{fmt(regCount)}</span> forms
+                    downloaded
+                    {regCount === 0 ? ' (none found)' : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-0.5">Loading…</div>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-3">
+            {/* Gold Standard Forms — visit-level pipeline */}
+            <div className="flex items-start gap-3">
               <i
                 className={
-                  'fa-solid ' +
+                  'fa-solid mt-0.5 ' +
                   (gsCount > 0
                     ? 'fa-circle-check text-green-500'
-                    : pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
+                    : gsLoaded
                     ? 'fa-circle-check text-amber-500'
                     : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
-              <span className="text-sm text-gray-700">Gold Standard Forms</span>
-              <span className="text-xs text-gray-500 ml-auto">
-                {gsCount > 0
-                  ? gsCount + ' rows'
-                  : pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
-                  ? '0 rows (none found)'
-                  : 'Loading...'}
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium text-gray-800">
+                    Gold Standard Forms
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    CommCare HQ / per-form
+                  </span>
+                </div>
+                {gsLoaded ? (
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    <span className="font-mono">{fmt(gsCount)}</span> forms
+                    downloaded
+                    {gsCount === 0 ? ' (none found)' : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-0.5">Loading…</div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2274,8 +2365,9 @@ function WorkflowUI({
                   All pipelines loaded
                 </span>
                 <p className="text-sm text-green-600 mt-1">
-                  {visitCount} visits, {regCount} registrations, {gsCount} GS
-                  forms loaded.
+                  {fmt(visitsRawCount)} visits → {fmt(visitsAggCount)} FLW
+                  summaries · {fmt(regCount)} registrations · {fmt(gsCount)} GS
+                  forms.
                 </p>
               </div>
               <button
