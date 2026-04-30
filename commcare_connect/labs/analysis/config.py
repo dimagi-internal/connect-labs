@@ -12,10 +12,13 @@ Becomes:
     )
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal, get_args
+
+logger = logging.getLogger(__name__)
 
 AggregationType = Literal[
     "sum",
@@ -47,6 +50,32 @@ VALID_AGGREGATIONS = frozenset(get_args(AggregationType))
 FilterOp = Literal["eq", "contains_word"]
 
 VALID_FILTER_OPS = frozenset(get_args(FilterOp))
+
+
+# Base columns on labs_raw_visit_cache that ship with every visit. A FieldComputation
+# whose `name` collides with one of these silently shadows the base column in the
+# extraction query — the result is the JSONB-extracted value (typically a string)
+# instead of the typed base column. That breaks downstream consumers that assume
+# the typed shape (e.g. VisitRow.to_dict() calling .isoformat() on visit_date).
+# AnalysisPipelineConfig.__post_init__ raises on collision rather than letting the
+# silent override happen — the fix is to namespace the custom field (e.g. rename
+# `visit_date` → `form_visit_date` if it extracts a different value than the base).
+RAW_VISIT_BASE_COLUMNS = frozenset(
+    {
+        "visit_id",
+        "username",
+        "deliver_unit",
+        "deliver_unit_id",
+        "entity_id",
+        "entity_name",
+        "visit_date",
+        "status",
+        "review_status",
+        "flagged",
+        "location",
+        "form_json",
+    }
+)
 
 
 class CacheStage(Enum):
@@ -377,6 +406,27 @@ class AnalysisPipelineConfig:
             raise ValueError("Grouping key is required")
         if self.terminal_stage == CacheStage.ENTITY and not self.linking_field:
             raise ValueError("linking_field is required when terminal_stage is ENTITY")
+
+        # Warn on FieldComputation names that collide with raw_visit_cache base columns.
+        # See RAW_VISIT_BASE_COLUMNS for why this matters — silent shadowing causes
+        # downstream type-shape bugs (most notably VisitRow.to_dict crashing on a
+        # string `visit_date` because it expects a date with `.isoformat()`). This is
+        # a warning rather than a hard error because several existing pipelines
+        # (KMC, RUTF, MBW custom-analyses) have pre-existing collisions and would
+        # break if we raised. Audit and rename them, then promote to a hard raise.
+        collisions = sorted({f.name for f in self.fields} & RAW_VISIT_BASE_COLUMNS)
+        if collisions:
+            logger.warning(
+                "FieldComputation name(s) %s collide with base columns on "
+                "labs_raw_visit_cache (experiment=%r). Custom fields silently shadow "
+                "the typed base column with their JSONB-extracted (typically string) "
+                "value, breaking downstream consumers that assume the base shape "
+                "(e.g. VisitRow.to_dict). Rename to namespace the custom field "
+                "(e.g. `visit_date` -> `form_visit_date`).",
+                collisions,
+                self.experiment or "<unnamed>",
+            )
+
         # Note: Empty fields/histograms is valid for basic caching scenarios
 
     def add_field(self, field_comp: FieldComputation) -> None:

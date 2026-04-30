@@ -12,7 +12,12 @@ import logging
 
 from django.db import connection
 
-from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, FieldComputation, HistogramComputation
+from commcare_connect.labs.analysis.config import (
+    RAW_VISIT_BASE_COLUMNS,
+    AnalysisPipelineConfig,
+    FieldComputation,
+    HistogramComputation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -558,24 +563,6 @@ def build_flw_aggregation_query(
     return query
 
 
-# Base columns on labs_raw_visit_cache that can be used directly as the linking_field
-# without going through a FieldComputation. Anything not in this set must be the name of
-# a FieldComputation declared in config.fields.
-_RAW_VISIT_BASE_COLUMNS = frozenset(
-    {
-        "visit_id",
-        "username",
-        "deliver_unit",
-        "deliver_unit_id",
-        "entity_id",
-        "entity_name",
-        "visit_date",
-        "status",
-        "review_status",
-    }
-)
-
-
 def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
     """Build the SQL expression for the linking_field, used as the GROUP BY column.
 
@@ -591,7 +578,7 @@ def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
     convention `build_flw_aggregation_query` uses.
     """
     name = config.linking_field
-    if name in _RAW_VISIT_BASE_COLUMNS:
+    if name in RAW_VISIT_BASE_COLUMNS:
         return name
 
     # Look for a FieldComputation named the same as linking_field
@@ -600,7 +587,7 @@ def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
         raise ValueError(
             f"linking_field {name!r} is not a base column on labs_raw_visit_cache and "
             f"no FieldComputation with that name was found in config.fields. "
-            f"Either use a base column name ({sorted(_RAW_VISIT_BASE_COLUMNS)}) or declare "
+            f"Either use a base column name ({sorted(RAW_VISIT_BASE_COLUMNS)}) or declare "
             f"the linking field as a FieldComputation."
         )
 
