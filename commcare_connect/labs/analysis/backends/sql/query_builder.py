@@ -169,20 +169,24 @@ def _transform_to_sql(field: FieldComputation | HistogramComputation, value_expr
 
     elif transform_src == "gps_lat":
         # Packed "lat lon alt acc" → first whitespace-separated float.
-        # split_part is 1-indexed; NULLIF avoids '' → 0.0 cast errors when
-        # split_part returns the empty string for a missing field.
+        # Uses regexp_split_to_array to match v1's `.split()` behaviour
+        # (any whitespace, ignores empty results from runs of whitespace).
+        # split_part(' ') would mis-handle "1.0  2.0" (double-space) by
+        # returning '' for the second part. The regex requires decimal-
+        # convertible numerics — accepts -1.234, .5, 5, 5.0; rejects empty
+        # strings and JSON-serialized dicts (when GPS is missing).
         return (
             f"CASE WHEN {value_expr} IS NOT NULL AND TRIM({value_expr}) != '' "
-            f"AND split_part({value_expr}, ' ', 1) ~ '^-?[0-9]*\\.?[0-9]+$' "
-            f"THEN split_part({value_expr}, ' ', 1)::FLOAT ELSE NULL END"
+            f"AND (regexp_split_to_array(TRIM({value_expr}), '\\s+'))[1] ~ '^-?[0-9]*\\.?[0-9]+$' "
+            f"THEN ((regexp_split_to_array(TRIM({value_expr}), '\\s+'))[1])::FLOAT ELSE NULL END"
         )
 
     elif transform_src == "gps_lon":
         # Same as gps_lat but second token.
         return (
             f"CASE WHEN {value_expr} IS NOT NULL AND TRIM({value_expr}) != '' "
-            f"AND split_part({value_expr}, ' ', 2) ~ '^-?[0-9]*\\.?[0-9]+$' "
-            f"THEN split_part({value_expr}, ' ', 2)::FLOAT ELSE NULL END"
+            f"AND (regexp_split_to_array(TRIM({value_expr}), '\\s+'))[2] ~ '^-?[0-9]*\\.?[0-9]+$' "
+            f"THEN ((regexp_split_to_array(TRIM({value_expr}), '\\s+'))[2])::FLOAT ELSE NULL END"
         )
 
     else:
@@ -935,15 +939,39 @@ def build_visit_extraction_query(
 
     window_select_clause = ",\n        ".join(window_select_parts)
 
+    # Post-extraction filters apply AFTER extraction and BEFORE window
+    # functions, so e.g. a `latitude IS NOT NULL` filter excludes GPS-less
+    # rows from the LAG window's view. Translate each filter into a SQL
+    # predicate on the extracted column.
+    extracted_filter_clause = ""
+    if config.extracted_filters:
+        predicates = []
+        for f in config.extracted_filters:
+            field_name = f.get("field")
+            op = f.get("op", "is_not_null")
+            if not field_name:
+                continue
+            if op == "is_not_null":
+                predicates.append(f"{field_name} IS NOT NULL")
+            elif op == "is_null":
+                predicates.append(f"{field_name} IS NULL")
+            else:
+                raise ValueError(f"Unknown extracted_filter op {op!r} for field {field_name!r}")
+        if predicates:
+            extracted_filter_clause = "WHERE " + " AND ".join(predicates)
+
     query = f"""
         SELECT
             base.*,
             {window_select_clause}
         FROM (
-            SELECT
-                {select_clause}
-            FROM labs_raw_visit_cache
-            WHERE {where_clause}
+            SELECT * FROM (
+                SELECT
+                    {select_clause}
+                FROM labs_raw_visit_cache
+                WHERE {where_clause}
+            ) extracted
+            {extracted_filter_clause}
         ) base
         ORDER BY visit_id
     """
