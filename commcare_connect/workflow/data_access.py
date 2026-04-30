@@ -1030,6 +1030,12 @@ class WorkflowDataAccess(BaseDataAccess):
                 results[alias] = {
                     "rows": merged_rows,
                     "metadata": {
+                        # pipeline_id is the same across opp_ids (it's the
+                        # pipeline definition id, not opp-specific). Surfaced
+                        # at alias level so the V2 job handler can look up
+                        # full forms in RawVisitCache by (opp, pipeline_id)
+                        # without digging into per_opp metadata.
+                        "pipeline_id": pipeline_id,
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                         "row_count": len(merged_rows),
@@ -1846,6 +1852,13 @@ class PipelineDataAccess(BaseDataAccess):
                         # Entity-stage / visit-level fields. None on FLW rows.
                         "entity_id": getattr(row, "entity_id", None),
                         "entity_name": getattr(row, "entity_name", None),
+                        # Per-visit status / flagged. Required by job handlers that
+                        # filter visit rows post-pipeline (e.g. MBW V2's
+                        # status_filter=["approved"]). Missing them used to drop
+                        # every visit because `(r.get("status") or "").lower()`
+                        # returned "" for every row.
+                        "status": getattr(row, "status", None),
+                        "flagged": getattr(row, "flagged", None),
                     }
                     # Add computed fields (custom fields from config)
                     # FLWRow / EntityRow use custom_fields, VisitRow uses computed
