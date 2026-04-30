@@ -352,24 +352,15 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         f"Synced render code for definition {definition_id} from template '{matched_template}'"
                     )
 
-            # Get render code — in DEBUG mode, try template file first so local
-            # edits are reflected immediately without a manual sync step.
-            # Falls back to DB if no template name match (e.g. custom-named workflow).
-            if settings.DEBUG:
-                name_lower = definition.name.lower().replace(" ", "_")
-                live_code = None
-                for key, tmpl in TEMPLATES.items():
-                    if key == name_lower or tmpl["name"].lower() == definition.name.lower():
-                        live_code = tmpl.get("render_code")
-                        break
-                if live_code is not None:
-                    context["render_code"] = live_code
-                else:
-                    render_code = data_access.get_render_code(definition_id)
-                    context["render_code"] = render_code.data.get("component_code") if render_code else None
-            else:
-                render_code = data_access.get_render_code(definition_id)
-                context["render_code"] = render_code.data.get("component_code") if render_code else None
+            # Render code always comes from the workflow's LabsRecord — same
+            # in local and prod. Local doesn't shortcut to the template file:
+            # a workflow's render_code is data, not source, and serving it
+            # from disk in DEBUG diverges local behavior from prod in a
+            # confusing way. Iteration loop for render-code edits is now:
+            # edit .js → `inv push-render` → reload page (works against any
+            # environment, including labs.connect.dimagi.com).
+            render_code = data_access.get_render_code(definition_id)
+            context["render_code"] = render_code.data.get("component_code") if render_code else None
 
             # Determine effective opportunity list (fallback to primary)
             effective_opp_ids = definition.opportunity_ids or [opportunity_id]
