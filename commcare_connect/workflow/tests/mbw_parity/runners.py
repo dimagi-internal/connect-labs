@@ -164,6 +164,15 @@ def _reduce(values: list[Any], aggregation: str, field_name: str) -> Any:
             return None
         m = _mode(non_null)
         return sum(1 for v in non_null if v == m) / len(non_null)
+    if aggregation == "dup_share":
+        # Share (0..1) of values that appear in duplicate groups (count > 1).
+        # Mirrors v1's _compute_value_concentration.pct_duplicate (without the
+        # *100 + round — caller does that if it wants a percentage).
+        if not non_null:
+            return None
+        counts = Counter(non_null)
+        dup_count = sum(c for c in counts.values() if c > 1)
+        return dup_count / len(non_null)
     raise ValueError(f"Unknown aggregation {aggregation!r} for field {field_name!r}")
 
 
@@ -293,8 +302,9 @@ def compute_v3_quality(
     """
     # parity_mode_share: per-FLW mode_share over per-mother parities (last seen).
     # Mirrors the v3 template's `parity_mode_share` field.
+    anc_visits = [r for r in visits if r.get("form_name") == "ANC Visit" and r.get("mother_case_id")]
     parity_mode_share = aggregate(
-        [r for r in visits if r.get("form_name") == "ANC Visit" and r.get("mother_case_id")],
+        anc_visits,
         grouping_key="username",
         field_name="parity_mode_share",
         source_path="parity",
@@ -303,7 +313,7 @@ def compute_v3_quality(
         pre_aggregation="last",
     )
     parity_mode_value = aggregate(
-        [r for r in visits if r.get("form_name") == "ANC Visit" and r.get("mother_case_id")],
+        anc_visits,
         grouping_key="username",
         field_name="parity_mode_value",
         source_path="parity",
@@ -311,16 +321,28 @@ def compute_v3_quality(
         pre_aggregate_by="mother_case_id",
         pre_aggregation="last",
     )
+    parity_dup_share = aggregate(
+        anc_visits,
+        grouping_key="username",
+        field_name="parity_dup_share",
+        source_path="parity",
+        aggregation="dup_share",
+        pre_aggregate_by="mother_case_id",
+        pre_aggregation="last",
+    )
 
     quality: dict[str, dict] = {}
-    all_flws = set(parity_mode_share) | set(parity_mode_value)
+    all_flws = set(parity_mode_share) | set(parity_mode_value) | set(parity_dup_share)
     for flw in all_flws:
         share = parity_mode_share.get(flw)
         mode_pct = round(share * 100) if share is not None else 0
+        dup = parity_dup_share.get(flw)
+        pct_duplicate = round(dup * 100) if dup is not None else 0
         quality[flw] = {
             "parity_concentration": {
                 "mode_pct": mode_pct,
                 "mode_value": parity_mode_value.get(flw),
+                "pct_duplicate": pct_duplicate,
             }
         }
     return quality
@@ -419,10 +441,14 @@ def compute_v1_quality_reference(
         counter = Counter(parities)
         mode_value, mode_count = counter.most_common(1)[0]
         mode_pct = round(mode_count / len(parities) * 100)
+        # v1's pct_duplicate: count of values appearing in groups > 1 / total
+        dup_count = sum(c for c in counter.values() if c > 1)
+        pct_duplicate = round(dup_count / len(parities) * 100)
         quality[u] = {
             "parity_concentration": {
                 "mode_pct": mode_pct,
                 "mode_value": mode_value,
+                "pct_duplicate": pct_duplicate,
             }
         }
     return quality

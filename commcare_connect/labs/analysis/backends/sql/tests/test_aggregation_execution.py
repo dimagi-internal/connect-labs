@@ -116,6 +116,45 @@ class TestAggregationSqlExecution:
         assert results["fraud"] == pytest.approx(1.0)
         assert results["diverse"] == pytest.approx(1.0 / 3.0)
 
+    def test_dup_share_executes(self, db):
+        """`dup_share` SQL executes and matches in-memory mirror.
+
+        For [A, A, B, C] the dup_share is 2/4 = 0.5 (A appears twice, B and C
+        once each — only A's two rows are "in a duplicate group"). For
+        [A, A, B, B] it's 4/4 = 1.0 (both pairs are duplicates).
+        """
+        future = timezone.now() + timezone.timedelta(days=1)
+        rows = [
+            ("a_only_dup", "A"),
+            ("a_only_dup", "A"),
+            ("a_only_dup", "B"),
+            ("a_only_dup", "C"),
+            ("all_dup", "A"),
+            ("all_dup", "A"),
+            ("all_dup", "B"),
+            ("all_dup", "B"),
+            ("all_distinct", "A"),
+            ("all_distinct", "B"),
+            ("all_distinct", "C"),
+        ]
+        for i, (u, p) in enumerate(rows):
+            RawVisitCache.objects.create(
+                opportunity_id=9997,
+                visit_count=len(rows),
+                expires_at=future,
+                visit_id=str(50000 + i),
+                username=u,
+                form_json={"form": {"x": p}},
+                visit_date="2024-01-15",
+                status="approved",
+            )
+        value_expr = "form_json #>> '{form,x}'"
+        agg_sql = _aggregation_to_sql("dup_share", value_expr, "ds")
+        results = dict(self._run_sql(agg_sql, 9997))
+        assert results["a_only_dup"] == pytest.approx(0.5)
+        assert results["all_dup"] == pytest.approx(1.0)
+        assert results["all_distinct"] == pytest.approx(0.0)
+
     def test_contains_word_filter_executes(self, db):
         """`contains_word` filter_op produces tokenized membership SQL that
         Postgres accepts. V1 logic: `if "ebf" in bf_status.split()`.

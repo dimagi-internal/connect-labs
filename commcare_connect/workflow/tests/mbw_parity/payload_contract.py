@@ -124,6 +124,12 @@ DASHBOARD_CONTRACT: list[Leaf] = [
         EXACT,
         "Per-FLW most-common parity value across mothers.",
     ),
+    Leaf(
+        "quality_metrics{}.parity_concentration.pct_duplicate",
+        int,
+        EXACT,
+        "Per-FLW % of mothers whose parity is reported by >1 mother. v1's pct_duplicate.",
+    ),
     # ---------- performance_data ----------
     Leaf("performance_data[].status", str, EXACT),
     Leaf("performance_data[].flw_count", int, EXACT),
