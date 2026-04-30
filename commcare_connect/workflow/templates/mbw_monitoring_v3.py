@@ -255,9 +255,69 @@ REGISTRATIONS_SCHEMA = {
     "grouping_key": "case_id",
     "terminal_stage": "visit_level",
     "fields": [
+        # mother_case_id: v1 walks form.var_visit_1..6.mother_case_id and
+        # picks the first non-empty. The pipeline framework's paths-coalesce
+        # handles this declaratively — v1's per-form Python loop becomes a
+        # single SQL COALESCE(NULLIF(...), ...) chain.
+        {
+            "name": "mother_case_id",
+            "paths": [
+                "form.var_visit_1.mother_case_id",
+                "form.var_visit_2.mother_case_id",
+                "form.var_visit_3.mother_case_id",
+                "form.var_visit_4.mother_case_id",
+                "form.var_visit_5.mother_case_id",
+                "form.var_visit_6.mother_case_id",
+            ],
+            "aggregation": "first",
+        },
+        # Mother identity. v1 uses fallback chain
+        # `format_mother_name → mother_full_name → mother_name + mother_surname`.
+        # Multi-path covers the first two; the surname concat happens client-side.
+        {
+            "name": "mother_name",
+            "paths": [
+                "form.mother_details.format_mother_name",
+                "form.mother_details.mother_full_name",
+            ],
+            "aggregation": "first",
+        },
+        {"name": "mother_first_name", "path": "form.mother_details.mother_name", "aggregation": "first"},
+        {"name": "mother_surname", "path": "form.mother_details.mother_surname", "aggregation": "first"},
+        # Phone — primary, then backup
+        {
+            "name": "phone_number",
+            "paths": ["form.mother_details.phone_number", "form.mother_details.back_up_phone_number"],
+            "aggregation": "first",
+        },
+        # Mother DOB / recorded age. v1 computes age from DOB if available.
+        {"name": "mother_dob", "path": "form.mother_details.mother_dob", "aggregation": "first"},
+        {
+            "name": "age_recorded",
+            "paths": ["form.mother_details.age_in_years_rounded", "form.mother_details.mothers_age"],
+            "aggregation": "first",
+        },
+        # Household + eligibility (used in quality_metrics)
+        {"name": "household_size", "path": "form.number_of_other_household_members", "aggregation": "first"},
+        {
+            "name": "eligible_full_intervention_bonus",
+            "path": "form.eligible_full_intervention_bonus",
+            "aggregation": "first",
+        },
+        # Birth outcome / expected delivery
+        {
+            "name": "expected_delivery_date",
+            "path": "form.mother_birth_outcome.expected_delivery_date",
+            "aggregation": "first",
+        },
+        # Preferred visit time (used by v1 metadata extraction; comes from
+        # the FIRST var_visit block, not mother_details).
+        {"name": "preferred_visit_time", "path": "form.var_visit_1.preferred_visit_time", "aggregation": "first"},
+        # Schedule + FLW link
         {"name": "expected_visits", "path": "form.expected_visits", "aggregation": "first"},
-        {"name": "mother_name", "path": "form.mother_name", "aggregation": "first"},
         {"name": "user_connect_id", "path": "form.user_connect_id", "aggregation": "first"},
+        # Registration date — top-level form metadata (the form-end timestamp)
+        {"name": "registration_date", "path": "form.meta.timeEnd", "aggregation": "first"},
     ],
 }
 

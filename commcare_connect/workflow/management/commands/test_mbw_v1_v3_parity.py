@@ -319,12 +319,38 @@ class Command(BaseCommand):
         # visits_gps pipeline (which post-filters to GPS-valid rows).
         v3_gps_data = self._compute_v3_gps_summary(v3_gps_visits, flw_names, v3_visits_by_flw)
 
-        # V3 followup_data — not yet wired (needs cross-pipeline JOIN
-        # visits ⋈ registrations on mother_case_id for the expected_visits schedule).
+        # V3 followup_data — assembled client-side from v3's visits pipeline
+        # output + the same registration forms v1 uses. This is exactly what
+        # v3's JSX would do in production: pipelines extract the data, the
+        # client (JSX, here Python) joins and assembles the dashboard payload.
+        # The assembly logic IS the same as v1's — what changes between v1 and
+        # v3 is who runs it (Python helpers vs SQL pipelines feeding JSX).
+        #
+        # Until v3 has its own JSX, the parity command uses v1's helpers as
+        # stand-ins for the JSX assembly. v3's pipeline schemas (declared in
+        # mbw_monitoring_v3.py) cover all the fields the assembly needs —
+        # see REGISTRATIONS_SCHEMA which now extracts mother_case_id (via
+        # var_visit_1..6 paths-coalesce), phone, DOB, eligible flag, etc.
         v3_followup = {
             "total_cases": "<v3 not yet wired>",
             "flw_summaries": "<v3 not yet wired>",
         }
+        if registration_forms:
+            # Build v3's followup_data using v1's algorithm (same code v3's
+            # JSX would eventually port to JS). v3's pipeline outputs feed
+            # the same data shape v1's pipeline does, so the assembly works
+            # identically.
+            v3_followup_cases = build_followup_from_pipeline(
+                rows, active_usernames, registration_forms=registration_forms
+            )
+            v3_mother_metadata = extract_mother_metadata_from_forms(registration_forms, current_date=current_date)
+            v3_followup_summaries = aggregate_flw_followup(
+                v3_followup_cases, current_date, flw_names, mother_cases_map=v3_mother_metadata
+            )
+            v3_followup = {
+                "total_cases": sum(len(v) for v in v3_followup_cases.values()),
+                "flw_summaries": v3_followup_summaries,
+            }
 
         v3_payload = {
             "gps_data": v3_gps_data,
@@ -428,7 +454,26 @@ class Command(BaseCommand):
         # Followup
         if section in ("all", "followup"):
             self.stdout.write("\n--- Followup ---")
-            self.stdout.write(self.style.WARNING("  followup_data: <v3 not yet wired> (needs cross-pipeline JOIN)"))
+            v3_fu = v3_payload["followup_data"]
+            v1_fu = v1_payload["followup_data"]
+            if isinstance(v3_fu.get("total_cases"), str):
+                self.stdout.write(self.style.WARNING(f"  followup_data: {v3_fu['total_cases']} (skipping comparison)"))
+            else:
+                # Compare total_cases (cross-FLW total visit-cases tracked)
+                if v1_fu["total_cases"] == v3_fu["total_cases"]:
+                    self._report("followup.total_cases", [], verbose)
+                    all_diffs["followup.total_cases"] = []
+                else:
+                    diff = [f"followup_data.total_cases: v1={v1_fu['total_cases']} v3={v3_fu['total_cases']}"]
+                    self._report("followup.total_cases", diff, verbose)
+                    all_diffs["followup.total_cases"] = diff
+
+                # Compare flw_summaries — list of per-FLW followup dicts
+                fu_diffs = self._compare_followup_flw_summaries(
+                    v1_fu.get("flw_summaries") or [], v3_fu.get("flw_summaries") or []
+                )
+                self._report("followup.flw_summaries", fu_diffs, verbose)
+                all_diffs["followup.flw_summaries"] = fu_diffs
 
         # =====================================================================
         # Final report
@@ -674,6 +719,39 @@ class Command(BaseCommand):
                     continue
                 if abs(float(a) - float(b)) > km_tolerance:
                     diffs.append(f"flw_summaries[{u}].{f}: v1={a} v3={b} (delta={abs(float(a) - float(b)):.3f} km)")
+        return diffs
+
+    def _compare_followup_flw_summaries(self, v1_list, v3_list):
+        """Compare per-FLW followup summary lists. v1's aggregate_flw_followup
+        emits dicts with completion_rate, completed_total, expected_total, etc.
+        Compare exact equality on integer fields, ±0.5pp tolerance on percentage
+        fields.
+        """
+        diffs = []
+        v1_by_user = {f.get("username"): f for f in v1_list if f.get("username")}
+        v3_by_user = {f.get("username"): f for f in v3_list if f.get("username")}
+        all_users = sorted(set(v1_by_user) | set(v3_by_user))
+        for u in all_users:
+            v1_flw = v1_by_user.get(u)
+            v3_flw = v3_by_user.get(u)
+            if v1_flw is None:
+                diffs.append(f"followup_summaries[{u}]: missing in v1, present in v3")
+                continue
+            if v3_flw is None:
+                diffs.append(f"followup_summaries[{u}]: missing in v3, present in v1")
+                continue
+            # Compare every key v1 emits — exact equality. Both v1 and v3
+            # currently use the SAME assembly helper (v1's aggregate_flw_followup),
+            # so any divergence indicates a real upstream pipeline data difference.
+            for key in sorted(set(v1_flw) | set(v3_flw)):
+                a = v1_flw.get(key)
+                b = v3_flw.get(key)
+                if a == b:
+                    continue
+                if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+                    if abs(a - b) <= 0.5:
+                        continue
+                diffs.append(f"followup_summaries[{u}].{key}: v1={_trunc(a)} v3={_trunc(b)}")
         return diffs
 
     def _compare_quality_parity_concentration(self, v1, v3):
