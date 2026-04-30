@@ -1992,4 +1992,7 @@ class PipelineDataAccess(BaseDataAccess):
             data_source=data_source,
             window_fields=window_fields,
             extracted_filters=schema.get("extracted_filters", []),
+            # Discriminate the raw-visit cache by pipeline id so multiple
+            # pipelines for the same opp don't clobber each other (#116).
+            pipeline_id=definition_id,
         )

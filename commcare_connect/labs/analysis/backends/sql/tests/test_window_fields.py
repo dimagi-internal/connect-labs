@@ -202,10 +202,15 @@ class TestGpsTransformsExecuteEndToEnd:
     """
 
     def _seed_packed_gps(self, opp_id: int, rows: list[tuple]) -> None:
+        # pipeline_id matches what `_schema_to_config(..., definition_id=opp_id)`
+        # produces below — required after RawVisitCache became
+        # pipeline-discriminated (#116). Without this, the extraction
+        # query filters by pipeline_id=opp_id and finds nothing.
         future = timezone.now() + timezone.timedelta(days=1)
         for i, (vid, mid, gps_str, dt) in enumerate(rows):
             RawVisitCache.objects.create(
                 opportunity_id=opp_id,
+                pipeline_id=opp_id,
                 visit_count=len(rows),
                 expires_at=future,
                 visit_id=str(vid),

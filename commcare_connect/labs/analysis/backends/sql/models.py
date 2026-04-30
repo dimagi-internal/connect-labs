@@ -25,6 +25,14 @@ class RawVisitCache(models.Model):
 
     # Cache metadata
     opportunity_id = models.IntegerField(db_index=True)
+    # Pipeline-id discriminator. Multiple pipelines for the same opportunity
+    # (e.g. visits + registrations + gs_forms in MBW V2) used to share this
+    # table — each pipeline's wholesale DELETE+INSERT clobbered the previous
+    # pipeline's rows, leaving only the last writer's data (issue #116).
+    # With pipeline_id set, every pipeline owns its own slot. Nullable so
+    # callers without a workflow definition id (legacy / ad-hoc analyses)
+    # still work; in that case the cache behaves as it did before #116.
+    pipeline_id = models.IntegerField(null=True, blank=True, db_index=True)
     visit_count = models.IntegerField(help_text="Visit count when cached, for invalidation")
     expires_at = models.DateTimeField(db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -58,15 +66,16 @@ class RawVisitCache(models.Model):
         app_label = "labs"
         db_table = "labs_raw_visit_cache"
         constraints = [
-            # Prevents concurrent streaming writers (each tagged with its
-            # own negative sentinel visit_count) from creating duplicate
-            # rows for the same visit. Different writers' sentinels mean
-            # the SAME visit_id can coexist under different visit_counts;
-            # within a single writer, dups raise CacheConcurrencyError.
-            # See incident on opp 765 (172120 rows for 86060 visits).
+            # Pipeline-isolated unique key. Includes pipeline_id so two
+            # pipelines for the same opportunity don't collide (#116);
+            # includes visit_count so concurrent streaming writers (each
+            # tagged with its own negative sentinel visit_count) can
+            # coexist until one finalizes (#109). Within a single writer
+            # for a single pipeline, an in-batch dup raises
+            # CacheConcurrencyError.
             models.UniqueConstraint(
-                fields=["opportunity_id", "visit_count", "visit_id"],
-                name="uniq_raw_visit_cache_opp_count_visit",
+                fields=["opportunity_id", "pipeline_id", "visit_count", "visit_id"],
+                name="uniq_raw_visit_cache_opp_pipe_count_visit",
             ),
         ]
         indexes = [

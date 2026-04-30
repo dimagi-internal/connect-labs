@@ -511,6 +511,19 @@ class AnalysisPipelineConfig:
     # distances where v1 successfully pairs the next-valid visit.
     extracted_filters: list[dict] = field(default_factory=list)
 
+    # Pipeline-id discriminator for the raw-visit cache. Multiple pipelines
+    # for the same opportunity (e.g. connect_csv visits + cchq_forms
+    # registrations + cchq_forms gs_forms in the MBW V2 workflow) need
+    # isolated raw caches — without this, each pipeline's `store_raw_visits`
+    # used to wholesale DELETE+INSERT for the opp and clobber the previous
+    # pipeline's rows. See incident on opp 765 (issue #116). The SQL backend
+    # uses this to scope every raw-cache read and write.
+    # Optional: legacy callers without a workflow definition id (one-off
+    # tests, ad-hoc analyses) can leave it None — the cache then behaves
+    # as it did before #116, namely shared across all such callers for
+    # the same opp.
+    pipeline_id: int | None = None
+
     def __post_init__(self):
         """Validate configuration."""
         if not self.grouping_key:

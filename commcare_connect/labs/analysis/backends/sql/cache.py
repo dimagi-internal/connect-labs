@@ -100,10 +100,24 @@ class SQLCacheManager:
         self.opportunity_id = opportunity_id
         self.config = config
         self.config_hash = get_config_hash(config) if config else None
+        # Pipeline-id discriminator for the raw cache (#116). Read off the
+        # config so the manager scopes every read/write to this pipeline's
+        # rows. None means "legacy/ad-hoc caller without a pipeline id" —
+        # those callers share a single None-tagged slot per opportunity.
+        self.pipeline_id = config.pipeline_id if config else None
         from django.conf import settings
 
         ttl_hours = getattr(settings, "PIPELINE_CACHE_TTL_HOURS", DEFAULT_TTL_HOURS)
         self.ttl = timedelta(hours=ttl_hours)
+
+    def _raw_filter(self):
+        """Base filter for this pipeline's slot of RawVisitCache.
+
+        Always scopes by (opportunity_id, pipeline_id) so reads only see
+        rows written by this pipeline — visits pipeline never sees
+        registrations rows, etc.
+        """
+        return {"opportunity_id": self.opportunity_id, "pipeline_id": self.pipeline_id}
 
     def _get_expires_at(self):
         return timezone.now() + self.ttl
@@ -122,7 +136,7 @@ class SQLCacheManager:
         """
         min_count = int(expected_visit_count * tolerance_pct / 100) if tolerance_pct < 100 else expected_visit_count
         return RawVisitCache.objects.filter(
-            opportunity_id=self.opportunity_id,
+            **self._raw_filter(),
             visit_count__gte=min_count,
             expires_at__gt=timezone.now(),
         ).exists()
@@ -130,7 +144,7 @@ class SQLCacheManager:
     def get_raw_visit_count(self) -> int:
         """Get count of cached raw visits (excludes in-progress sentinel rows)."""
         return RawVisitCache.objects.filter(
-            opportunity_id=self.opportunity_id,
+            **self._raw_filter(),
             visit_count__gt=0,
             expires_at__gt=timezone.now(),
         ).count()
@@ -151,6 +165,7 @@ class SQLCacheManager:
             rows.append(
                 RawVisitCache(
                     opportunity_id=self.opportunity_id,
+                    pipeline_id=self.pipeline_id,
                     visit_count=visit_count,
                     expires_at=expires_at,
                     visit_id=v.get("id", 0),
@@ -177,26 +192,28 @@ class SQLCacheManager:
                 )
             )
 
-        # DELETE then INSERT inside a transaction. Combined with the
-        # UNIQUE(opportunity_id, visit_id) constraint added in migration
-        # 0011, this serializes concurrent writers: one wins, the loser
-        # raises IntegrityError -> CacheConcurrencyError. Without the
-        # unique constraint, concurrent bulk_creates could both succeed
-        # and we'd end up with 2x rows.
+        # DELETE-then-INSERT scoped to (opportunity_id, pipeline_id) so
+        # concurrent pipelines for the same opp don't clobber each other
+        # (#116). The unique constraint
+        # (opportunity_id, pipeline_id, visit_count, visit_id) catches
+        # within-pipeline concurrent writers (one wins, the loser raises
+        # CacheConcurrencyError — #109).
         try:
             with transaction.atomic():
-                RawVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
+                RawVisitCache.objects.filter(**self._raw_filter()).delete()
                 RawVisitCache.objects.bulk_create(rows, batch_size=1000)
         except IntegrityError as e:
             raise CacheConcurrencyError(
                 f"Concurrent write to RawVisitCache for opp {self.opportunity_id} "
-                f"detected. Another pipeline run is in flight for the same "
-                f"opportunity. Retry in a moment — a cache hit is likely.",
+                f"pipeline {self.pipeline_id} detected. Another run is in flight "
+                f"for the same (opportunity, pipeline). Retry — a cache hit is likely.",
                 table="labs_raw_visit_cache",
                 opportunity_id=self.opportunity_id,
             ) from e
 
-        logger.info(f"[SQLCache] Stored {len(rows)} raw visits for opp {self.opportunity_id}")
+        logger.info(
+            f"[SQLCache] Stored {len(rows)} raw visits for opp {self.opportunity_id} " f"pipeline {self.pipeline_id}"
+        )
 
     def store_raw_visits_start(self, visit_count: int):
         """
@@ -234,6 +251,7 @@ class SQLCacheManager:
             rows.append(
                 RawVisitCache(
                     opportunity_id=self.opportunity_id,
+                    pipeline_id=self.pipeline_id,
                     visit_count=self._pending_visit_count,
                     expires_at=self._pending_expires_at,
                     visit_id=v.get("id", 0),
@@ -286,19 +304,23 @@ class SQLCacheManager:
         the actual parsed count — making them visible to has_valid_raw_cache().
         """
         with transaction.atomic():
-            # Remove rows that don't belong to this writer (old cache + other writers)
+            # Remove rows that don't belong to this writer, but only WITHIN
+            # this pipeline's slot — DON'T touch other pipelines' rows for
+            # the same opp (#116). Within this pipeline, this still wipes
+            # old finalized rows + other writers' sentinels.
             RawVisitCache.objects.filter(
-                opportunity_id=self.opportunity_id,
+                **self._raw_filter(),
             ).exclude(
                 visit_count=self._pending_visit_count,
             ).delete()
             # Make this writer's rows visible
             updated = RawVisitCache.objects.filter(
-                opportunity_id=self.opportunity_id,
+                **self._raw_filter(),
                 visit_count=self._pending_visit_count,
             ).update(visit_count=actual_count)
         logger.info(
-            f"[SQLCache] Finalized {updated} raw visits for opp {self.opportunity_id} " f"(visit_count={actual_count})"
+            f"[SQLCache] Finalized {updated} raw visits for opp {self.opportunity_id} "
+            f"pipeline {self.pipeline_id} (visit_count={actual_count})"
         )
 
     def store_raw_visits_abort(self):
@@ -317,18 +339,19 @@ class SQLCacheManager:
             return  # nothing to abort
 
         deleted, _ = RawVisitCache.objects.filter(
-            opportunity_id=self.opportunity_id,
+            **self._raw_filter(),
             visit_count=self._pending_visit_count,
         ).delete()
         logger.info(
-            f"[SQLCache] Aborted streaming write for opp {self.opportunity_id}: " f"deleted {deleted} sentinel rows"
+            f"[SQLCache] Aborted streaming write for opp {self.opportunity_id} "
+            f"pipeline {self.pipeline_id}: deleted {deleted} sentinel rows"
         )
         self._pending_visit_count = None
 
     def get_raw_visits_queryset(self):
         """Get queryset of cached raw visits (excludes in-progress sentinel rows)."""
         return RawVisitCache.objects.filter(
-            opportunity_id=self.opportunity_id,
+            **self._raw_filter(),
             visit_count__gt=0,
             expires_at__gt=timezone.now(),
         )
