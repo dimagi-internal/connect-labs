@@ -4,6 +4,7 @@ Each submodule registers its tools with the @register decorator at import time.
 Importing this package triggers all registration.
 """
 
+from . import apps  # noqa: F401
 from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
 from . import pipelines  # noqa: F401
