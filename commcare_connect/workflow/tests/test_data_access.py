@@ -355,8 +355,11 @@ class TestGetPipelineDataMultiOpp:
 
             result = wda.get_pipeline_data(definition_id=1, opportunity_id=700)
 
-            # Only primary opp used
-            mock_instance.execute_pipeline.assert_called_once_with(101, 700)
+            # Only primary opp used. config kwarg is the JOIN-resolved config
+            # the orchestrator pre-built; we just check pipeline_id + opp_id here.
+            assert mock_instance.execute_pipeline.call_count == 1
+            call_args = mock_instance.execute_pipeline.call_args
+            assert call_args.args == (101, 700)
             assert result["visits"]["metadata"]["opportunity_ids"] == [700]
             assert result["visits"]["rows"][0]["opportunity_id"] == 700
 
@@ -369,7 +372,7 @@ class TestGetPipelineDataMultiOpp:
             mock_instance = MagicMock()
             MockPipelineAccess.return_value = mock_instance
 
-            def fake_execute(pipeline_id, opp_id):
+            def fake_execute(pipeline_id, opp_id, config=None):
                 return {
                     "rows": [{"username": f"u_{opp_id}"}],
                     "metadata": {"row_count": 1, "opp": opp_id},
@@ -401,7 +404,7 @@ class TestGetPipelineDataMultiOpp:
             mock_instance = MagicMock()
             MockPipelineAccess.return_value = mock_instance
 
-            def fake_execute(pipeline_id, opp_id):
+            def fake_execute(pipeline_id, opp_id, config=None):
                 if opp_id == 825:
                     raise RuntimeError("boom")
                 return {"rows": [{"username": "a"}], "metadata": {}}
@@ -428,7 +431,7 @@ class TestGetPipelineDataMultiOpp:
             mock_instance = MagicMock()
             MockPipelineAccess.return_value = mock_instance
 
-            def fake_execute(pipeline_id, opp_id):
+            def fake_execute(pipeline_id, opp_id, config=None):
                 if opp_id == 825:
                     return {"rows": [], "metadata": {"error": "schema invalid"}}
                 return {"rows": [{"username": "a"}], "metadata": {"row_count": 1}}

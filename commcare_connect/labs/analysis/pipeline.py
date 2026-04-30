@@ -595,26 +595,65 @@ class AnalysisPipeline:
                     else:
                         raise RuntimeError("Failed to read filtered data from cache after force refresh")
 
-            # CCHQ data source: fetch synchronously (no streaming progress)
+            # CCHQ data source: stream forms in chunks so memory stays bounded
+            # regardless of total form count. Earlier path materialized the full
+            # form list before processing — OOM'd Fargate workers at ~26k MBW
+            # registrations (~7KB each → ~180MB JSON, then ORM materialization
+            # on top, peaked ~1GB).
             if config.data_source.type == "cchq_forms":
-                from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import fetch_cchq_forms_as_visit_dicts
+                from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
+                from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import iter_cchq_forms_as_visit_dicts
 
                 yield (EVENT_STATUS, {"message": f"Fetching '{config.data_source.form_name}' from CommCare HQ..."})
 
-                visit_dicts = fetch_cchq_forms_as_visit_dicts(
-                    request=self.request,
-                    data_source=config.data_source,
-                    access_token=self.access_token,
-                    opportunity_id=opp_id,
-                )
+                # Two-phase write: store_raw_visits_start tags rows with a
+                # sentinel visit_count so they're invisible to readers, batch
+                # inserts each chunk, finalize promotes them with the real
+                # count. Same pattern the connect-side stream uses; reusing it
+                # keeps cache state consistent.
+                cache_manager = SQLCacheManager(opp_id, config)
+                cache_manager.store_raw_visits_start(visit_count=0)
+                CCHQ_CHUNK_SIZE = 500
+                total_stored = 0
+                buffer: list[dict] = []
+                try:
+                    for visit_dict in iter_cchq_forms_as_visit_dicts(
+                        request=self.request,
+                        data_source=config.data_source,
+                        access_token=self.access_token,
+                        opportunity_id=opp_id,
+                    ):
+                        buffer.append(visit_dict)
+                        if len(buffer) >= CCHQ_CHUNK_SIZE:
+                            cache_manager.store_raw_visits_batch(buffer)
+                            total_stored += len(buffer)
+                            yield (EVENT_DOWNLOAD, {"rows": total_stored, "total": None})
+                            buffer.clear()
+                    if buffer:
+                        cache_manager.store_raw_visits_batch(buffer)
+                        total_stored += len(buffer)
+                        buffer.clear()
+                    cache_manager.store_raw_visits_finalize(actual_count=total_stored)
+                except Exception:
+                    cache_manager.store_raw_visits_abort()
+                    raise
 
-                if not visit_dicts:
+                if total_stored == 0:
                     yield (EVENT_STATUS, {"message": "No forms found"})
                     yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
                     return
 
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} forms..."})
-                result = self.backend.process_and_cache(self.request, config, opp_id, visit_dicts)
+                yield (EVENT_STATUS, {"message": f"Processing {total_stored} forms..."})
+                # Raw cache is populated; process_and_cache only needs the
+                # count for length checks (skip_raw_store=True), no need to
+                # hand it the full list anymore.
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts=[None] * total_stored,
+                    skip_raw_store=True,
+                )
                 yield (EVENT_STATUS, {"message": "Complete!"})
                 yield (EVENT_RESULT, result)
                 return
