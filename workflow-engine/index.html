@@ -10,29 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://jjackson.github.io/connect-labs/">
+        <link rel="canonical" href="https://jjackson.github.io/connect-labs/workflow-engine/">
       
       
+        <link rel="prev" href="../audit/">
       
-        <link rel="next" href="audit/">
+      
+        <link rel="next" href="../task-management/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Connect Labs Help</title>
+        <title>Workflow Engine - Connect Labs Help</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,7 +53,7 @@
       
     
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -74,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#connect-labs" class="md-skip">
+        <a href="#workflow-engine" class="md-skip">
           Skip to content
         </a>
       
@@ -88,7 +90,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Connect Labs Help" class="md-header__button md-logo" aria-label="Connect Labs Help" data-md-component="logo">
+    <a href=".." title="Connect Labs Help" class="md-header__button md-logo" aria-label="Connect Labs Help" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -108,7 +110,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              Workflow Engine
             
           </span>
         </div>
@@ -179,11 +181,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="." class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
         
   
   
@@ -200,11 +200,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="audit/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../audit/" class="md-tabs__link">
           
   
   
@@ -224,7 +226,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="connect-mcp-safe-mode/" class="md-tabs__link">
+        <a href="../connect-mcp-safe-mode/" class="md-tabs__link">
           
   
   
@@ -258,7 +260,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Connect Labs Help" class="md-nav__button md-logo" aria-label="Connect Labs Help" data-md-component="logo">
+    <a href=".." title="Connect Labs Help" class="md-nav__button md-logo" aria-label="Connect Labs Help" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -271,6 +273,118 @@
     
       
       
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Feature Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audit & QA Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
   
   
     
@@ -292,7 +406,7 @@
   <span class="md-ellipsis">
     
   
-    Home
+    Workflow Engine
   
 
     
@@ -303,14 +417,14 @@
           <span class="md-nav__icon md-icon"></span>
         </label>
       
-      <a href="." class="md-nav__link md-nav__link--active">
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
   <span class="md-ellipsis">
     
   
-    Home
+    Workflow Engine
   
 
     
@@ -336,10 +450,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#how-to-log-in" class="md-nav__link">
+  <a href="#how-data-flows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to Log In
+        How Data Flows
       
     </span>
   </a>
@@ -347,10 +461,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#whats-available" class="md-nav__link">
+  <a href="#finding-your-workflows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What's Available
+        Finding Your Workflows
       
     </span>
   </a>
@@ -358,10 +472,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#getting-help" class="md-nav__link">
+  <a href="#reading-a-workflow-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting Help
+        Reading a Workflow Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-statuses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow Statuses
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#starter-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starter Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Questions
       
     </span>
   </a>
@@ -375,85 +522,6 @@
     </li>
   
 
-    
-      
-      
-  
-  
-  
-  
-    
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
-        
-          
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Feature Guides
-  
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Feature Guides
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="audit/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Audit & QA Review
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
               
             
               
@@ -463,35 +531,7 @@
   
   
     <li class="md-nav__item">
-      <a href="workflow-engine/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Workflow Engine
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="task-management/" class="md-nav__link">
+      <a href="../task-management/" class="md-nav__link">
         
   
   
@@ -519,7 +559,7 @@
   
   
     <li class="md-nav__item">
-      <a href="solicitations/" class="md-nav__link">
+      <a href="../solicitations/" class="md-nav__link">
         
   
   
@@ -547,7 +587,7 @@
   
   
     <li class="md-nav__item">
-      <a href="custom-analysis/" class="md-nav__link">
+      <a href="../custom-analysis/" class="md-nav__link">
         
   
   
@@ -575,7 +615,7 @@
   
   
     <li class="md-nav__item">
-      <a href="coverage-maps/" class="md-nav__link">
+      <a href="../coverage-maps/" class="md-nav__link">
         
   
   
@@ -603,7 +643,7 @@
   
   
     <li class="md-nav__item">
-      <a href="ai-features/" class="md-nav__link">
+      <a href="../ai-features/" class="md-nav__link">
         
   
   
@@ -690,7 +730,7 @@
   
   
     <li class="md-nav__item">
-      <a href="connect-mcp-safe-mode/" class="md-nav__link">
+      <a href="../connect-mcp-safe-mode/" class="md-nav__link">
         
   
   
@@ -745,10 +785,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#how-to-log-in" class="md-nav__link">
+  <a href="#how-data-flows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to Log In
+        How Data Flows
       
     </span>
   </a>
@@ -756,10 +796,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#whats-available" class="md-nav__link">
+  <a href="#finding-your-workflows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What's Available
+        Finding Your Workflows
       
     </span>
   </a>
@@ -767,10 +807,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#getting-help" class="md-nav__link">
+  <a href="#reading-a-workflow-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Getting Help
+        Reading a Workflow Dashboard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow-statuses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow Statuses
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#starter-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Starter Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Questions
       
     </span>
   </a>
@@ -794,76 +867,127 @@
 
 
 
-<h1 id="connect-labs">Connect Labs<a class="headerlink" href="#connect-labs" title="Permanent link">&para;</a></h1>
-<p><strong>Connect Labs</strong> is a rapid prototyping environment for CommCare Connect, hosted at <a href="https://labs.connect.dimagi.com">labs.connect.dimagi.com</a>. It gives program teams early access to new features before they reach the main Connect platform.</p>
-<div class="admonition info">
-<p class="admonition-title">What is Labs?</p>
-</div>
-<p>Labs connects directly to your live CommCare Connect data via your existing login — no separate data entry required. Features here may evolve quickly based on feedback.</p>
-<h2 id="how-to-log-in">How to Log In<a class="headerlink" href="#how-to-log-in" title="Permanent link">&para;</a></h2>
-<ol>
-<li>Go to <a href="https://labs.connect.dimagi.com">labs.connect.dimagi.com</a></li>
-<li>Click <strong>Log in with CommCare Connect</strong></li>
-<li>Approve access using your existing Connect credentials</li>
-</ol>
-<p>Once logged in, your programs and opportunities are automatically available — no extra setup.</p>
+<h1 id="workflow-engine">Workflow Engine<a class="headerlink" href="#workflow-engine" title="Permanent link">&para;</a></h1>
+<p>The Workflow Engine lets program managers create configurable dashboards that pull live data directly from CommCare. Each workflow displays field worker performance metrics and supports drill-down views, status tracking, and filtering.</p>
 <hr />
-<h2 id="whats-available">What's Available<a class="headerlink" href="#whats-available" title="Permanent link">&para;</a></h2>
-<pre class="mermaid"><code>graph LR
-    CC[CommCare Connect\nProduction] --&gt;|Live data via API| Labs
-
-    Labs --&gt; A[Audit &amp; QA Review]
-    Labs --&gt; W[Workflow Engine]
-    Labs --&gt; T[Task Management]
-    Labs --&gt; S[Solicitations]
-    Labs --&gt; C[Custom Analysis]
-    Labs --&gt; M[Coverage Maps]
-    Labs --&gt; AI[AI Features]</code></pre>
+<h2 id="how-data-flows">How Data Flows<a class="headerlink" href="#how-data-flows" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart LR
+    CC[CommCare\nForm Submissions] --&gt;|Pipeline extracts\nand aggregates| P[Pipeline]
+    P --&gt; W[Workflow Dashboard]
+    W --&gt;|Interactive\nview| PM[Program Manager]
+    PM --&gt;|Status updates\nand notes| W</code></pre>
+<p><strong>Pipelines</strong> define what data to pull and how to aggregate it (counts, sums, last values, etc.). <strong>Workflows</strong> define what to display and how users interact with it.</p>
+<hr />
+<h2 id="finding-your-workflows">Finding Your Workflows<a class="headerlink" href="#finding-your-workflows" title="Permanent link">&para;</a></h2>
+<p>Click <strong>Workflows</strong> in the top navigation. You'll see a list of all workflows configured for your program.</p>
+<p>Each row shows:</p>
+<ul>
+<li>Workflow name and type</li>
+<li>Last run time and data freshness</li>
+<li>Current status</li>
+</ul>
+<p>Click any workflow to open its dashboard.</p>
+<hr />
+<h2 id="reading-a-workflow-dashboard">Reading a Workflow Dashboard<a class="headerlink" href="#reading-a-workflow-dashboard" title="Permanent link">&para;</a></h2>
+<p>A typical workflow dashboard shows a <strong>table of field workers</strong> with performance columns:</p>
 <table>
 <thead>
 <tr>
-<th>Feature</th>
-<th>What it does</th>
+<th>Column type</th>
+<th>What it shows</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="audit/">Audit &amp; QA Review</a></td>
-<td>Review field worker visits and images for quality</td>
+<td>Count</td>
+<td>Number of visits or activities in the period</td>
 </tr>
 <tr>
-<td><a href="workflow-engine/">Workflow Engine</a></td>
-<td>Configurable dashboards pulling live CommCare data</td>
+<td>Status</td>
+<td>Current enrollment or case status</td>
 </tr>
 <tr>
-<td><a href="task-management/">Task Management</a></td>
-<td>Track follow-up actions for field workers</td>
+<td>Last value</td>
+<td>Most recent recorded measurement</td>
 </tr>
 <tr>
-<td><a href="solicitations/">Solicitations</a></td>
-<td>Manage RFPs, review responses, and award funding</td>
-</tr>
-<tr>
-<td><a href="custom-analysis/">Custom Analysis</a></td>
-<td>Program-specific nutrition and health dashboards</td>
-</tr>
-<tr>
-<td><a href="coverage-maps/">Coverage Maps</a></td>
-<td>Visualize delivery unit boundaries on a map</td>
-</tr>
-<tr>
-<td><a href="ai-features/">AI Features</a></td>
-<td>AI assistants embedded throughout Labs</td>
+<td>Percentage</td>
+<td>Proportion meeting a threshold</td>
 </tr>
 </tbody>
 </table>
-<hr />
-<h2 id="getting-help">Getting Help<a class="headerlink" href="#getting-help" title="Permanent link">&para;</a></h2>
+<p><strong>Filtering and sorting:</strong></p>
 <ul>
-<li>Questions about Labs features → post in <strong>#connect-labs</strong> on Slack</li>
-<li><a href="https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513/Connect+Labs+Changelog">Weekly changelog</a> — what changed this week</li>
-<li><a href="https://dimagi.atlassian.net/wiki/spaces/connect/pages/3916103691/Connect+Labs+Documentation">Full documentation hub</a> on Confluence</li>
+<li>Use the <strong>date range picker</strong> to focus on a specific period</li>
+<li>Click column headers to sort</li>
+<li>Use the <strong>search box</strong> to find a specific worker by name</li>
 </ul>
+<p><strong>Drilling into a worker:</strong></p>
+<p>Click any row to see that worker's detailed record — individual visit data, timeline of activities, and linked cases.</p>
+<hr />
+<h2 id="workflow-statuses">Workflow Statuses<a class="headerlink" href="#workflow-statuses" title="Permanent link">&para;</a></h2>
+<p>Many workflows include status columns that track where a case is in a process:</p>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; Active
+    Active --&gt; Review_Needed: Flag raised
+    Review_Needed --&gt; Action_Taken: Intervention done
+    Action_Taken --&gt; Closed: Case resolved
+    Active --&gt; Closed: Graduated</code></pre>
+<p>Program managers can update a case's status directly from the workflow view. These updates are stored in Labs and visible to all team members.</p>
+<hr />
+<h2 id="starter-templates">Starter Templates<a class="headerlink" href="#starter-templates" title="Permanent link">&para;</a></h2>
+<p>Labs includes pre-built workflow templates for common program types:</p>
+<table>
+<thead>
+<tr>
+<th>Template</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>KMC Longitudinal</strong></td>
+<td>Kangaroo Mother Care tracking over time</td>
+</tr>
+<tr>
+<td><strong>KMC FLW Flags</strong></td>
+<td>Flag workers needing follow-up</td>
+</tr>
+<tr>
+<td><strong>KMC Project Metrics</strong></td>
+<td>Program-level KPIs</td>
+</tr>
+<tr>
+<td><strong>MBW Monitoring</strong></td>
+<td>Mother and baby wellness visits</td>
+</tr>
+<tr>
+<td><strong>Performance Review</strong></td>
+<td>FLW performance across programs</td>
+</tr>
+<tr>
+<td><strong>SAM Follow-up</strong></td>
+<td>Severe acute malnutrition case tracking</td>
+</tr>
+<tr>
+<td><strong>OCS Outreach</strong></td>
+<td>Community health outreach tracking</td>
+</tr>
+<tr>
+<td><strong>Bulk Image Audit</strong></td>
+<td>Image-based QA combined with workflow</td>
+</tr>
+</tbody>
+</table>
+<p>Your program administrator can create a workflow from any of these templates.</p>
+<hr />
+<h2 id="common-questions">Common Questions<a class="headerlink" href="#common-questions" title="Permanent link">&para;</a></h2>
+<p><strong>Why is a worker's data missing or outdated?</strong>
+Pipelines refresh data on a schedule. If a CommCare form was submitted recently, the data may take up to 30 minutes to appear. Look for the "Last refreshed" timestamp at the top of the workflow.</p>
+<p><strong>Can I export the workflow data?</strong>
+Some workflows include an export button in the top toolbar. If yours doesn't, ask your program administrator — this can be configured.</p>
+<p><strong>The dashboard looks different from yesterday — what changed?</strong>
+Workflow dashboards are actively developed. Check the <a href="https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513/Connect+Labs+Changelog">weekly changelog</a> for recent updates.</p>
 
 
 
@@ -919,10 +1043,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
