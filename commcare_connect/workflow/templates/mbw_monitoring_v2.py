@@ -67,7 +67,12 @@ PIPELINE_SCHEMAS = [
                     "aggregation": "first",
                 },
                 {
-                    "name": "entity_name",
+                    # Form-extracted entity name (mother name + phone) — namespaced
+                    # to avoid shadowing the base `entity_name` column on
+                    # labs_raw_visit_cache. The form path may carry a richer string
+                    # than the base, so it's kept under `form_entity_name` and the
+                    # render code reads it explicitly.
+                    "name": "form_entity_name",
                     "paths": [
                         "form.mbw_visit.deliver.entity_name",
                         "form.visit_completion.mbw_visit.deliver.entity_name",
