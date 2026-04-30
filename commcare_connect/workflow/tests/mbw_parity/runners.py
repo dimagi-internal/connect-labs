@@ -35,6 +35,8 @@ def aggregate(
     filter_path: str | None = None,
     filter_value: Any = None,
     filter_op: str = "eq",
+    pre_aggregate_by: str | None = None,
+    pre_aggregation: str = "first",
 ) -> dict[Any, Any]:
     """Mirror `_aggregation_to_sql` semantics in pure Python.
 
@@ -51,9 +53,58 @@ def aggregate(
       matches when filter_value is one of the tokens. Mirrors V1 logic like
       `"ebf" in bf_status.split()`.
 
+    Two-pass: when `pre_aggregate_by` is set, rows are first grouped by
+    (grouping_key, pre_aggregate_by) and collapsed using `pre_aggregation`
+    to produce one value per pre-group; those per-pre-group values are
+    then grouped by `grouping_key` and aggregated using `aggregation`.
+    Filter is still applied at the row level (i.e., before pre-aggregation).
+
     Note `field_name` is currently only used for error messages; it's part
     of the signature so callers pattern-match the SQL builder's signature.
     """
+    # Two-pass path: collapse rows into per-pre-group values, then recurse.
+    if pre_aggregate_by:
+        # Inner: per (grouping_key, pre_aggregate_by) collapse via pre_aggregation.
+        # Apply filter at row level so it gates which rows enter the inner agg.
+        inner_rows = []
+        for row in rows:
+            if filter_path is not None:
+                field_val = row.get(filter_path)
+                if filter_op == "eq":
+                    if str(field_val) != str(filter_value):
+                        continue
+                elif filter_op == "contains_word":
+                    tokens = (field_val or "").split() if isinstance(field_val, str) else []
+                    if str(filter_value) not in tokens:
+                        continue
+                else:
+                    raise ValueError(f"Unknown filter_op {filter_op!r} for field {field_name!r}")
+            if row.get(pre_aggregate_by) is None:
+                continue
+            inner_rows.append(row)
+
+        # Group by (outer_key, pre_group) and reduce.
+        by_pre: dict[tuple, list[Any]] = {}
+        for row in inner_rows:
+            outer = row.get(grouping_key)
+            pre = row.get(pre_aggregate_by)
+            by_pre.setdefault((outer, pre), []).append(row.get(source_path))
+        per_pre_records = []
+        for (outer, _pre), values in by_pre.items():
+            collapsed = _reduce(values, pre_aggregation, field_name)
+            if collapsed is None:
+                continue
+            per_pre_records.append({"_outer": outer, "_v": collapsed})
+
+        # Outer: aggregate the per-pre-group values by grouping_key.
+        return aggregate(
+            per_pre_records,
+            grouping_key="_outer",
+            field_name=field_name,
+            source_path="_v",
+            aggregation=aggregation,
+        )
+
     by_group: dict[Any, list[Any]] = {}
     for row in rows:
         if filter_path is not None:
@@ -73,41 +124,47 @@ def aggregate(
 
     out: dict[Any, Any] = {}
     for group, values in by_group.items():
-        non_null = [v for v in values if v is not None]
-        if aggregation == "count":
-            out[group] = len(non_null)
-        elif aggregation in ("count_unique", "count_distinct"):
-            out[group] = len(set(non_null))
-        elif aggregation == "sum":
-            nums = [float(v) for v in non_null if _is_num(v)]
-            out[group] = sum(nums)
-        elif aggregation == "avg":
-            nums = [float(v) for v in non_null if _is_num(v)]
-            out[group] = (sum(nums) / len(nums)) if nums else None
-        elif aggregation == "min":
-            out[group] = min(non_null) if non_null else None
-        elif aggregation == "max":
-            out[group] = max(non_null) if non_null else None
-        elif aggregation == "first":
-            out[group] = non_null[0] if non_null else None
-        elif aggregation == "last":
-            out[group] = non_null[-1] if non_null else None
-        elif aggregation == "list":
-            out[group] = list(non_null)
-        elif aggregation == "median":
-            nums = [float(v) for v in non_null if _is_num(v)]
-            out[group] = statistics.median(nums) if nums else None
-        elif aggregation == "mode":
-            out[group] = _mode(non_null) if non_null else None
-        elif aggregation == "mode_share":
-            if not non_null:
-                out[group] = None
-            else:
-                m = _mode(non_null)
-                out[group] = sum(1 for v in non_null if v == m) / len(non_null)
-        else:
-            raise ValueError(f"Unknown aggregation {aggregation!r} for field {field_name!r}")
+        out[group] = _reduce(values, aggregation, field_name)
     return out
+
+
+def _reduce(values: list[Any], aggregation: str, field_name: str) -> Any:
+    """Apply an aggregation to a list of values. Returns the reduced value
+    (or None when the list reduces to nothing, e.g. all-null with `min`).
+    Shared between the single-pass and pre-aggregated paths.
+    """
+    non_null = [v for v in values if v is not None]
+    if aggregation == "count":
+        return len(non_null)
+    if aggregation in ("count_unique", "count_distinct"):
+        return len(set(non_null))
+    if aggregation == "sum":
+        nums = [float(v) for v in non_null if _is_num(v)]
+        return sum(nums)
+    if aggregation == "avg":
+        nums = [float(v) for v in non_null if _is_num(v)]
+        return (sum(nums) / len(nums)) if nums else None
+    if aggregation == "min":
+        return min(non_null) if non_null else None
+    if aggregation == "max":
+        return max(non_null) if non_null else None
+    if aggregation == "first":
+        return non_null[0] if non_null else None
+    if aggregation == "last":
+        return non_null[-1] if non_null else None
+    if aggregation == "list":
+        return list(non_null)
+    if aggregation == "median":
+        nums = [float(v) for v in non_null if _is_num(v)]
+        return statistics.median(nums) if nums else None
+    if aggregation == "mode":
+        return _mode(non_null) if non_null else None
+    if aggregation == "mode_share":
+        if not non_null:
+            return None
+        m = _mode(non_null)
+        return sum(1 for v in non_null if v == m) / len(non_null)
+    raise ValueError(f"Unknown aggregation {aggregation!r} for field {field_name!r}")
 
 
 def _is_num(v: Any) -> bool:
@@ -219,6 +276,56 @@ def compute_v3_overview(
     }
 
 
+# ---- v3 quality-metrics computation (partial slice) ----
+
+
+def compute_v3_quality(
+    visits: list[dict],
+    registrations: list[dict],  # noqa: ARG001 — needed for future JOIN-backed leaves
+    gs_forms: list[dict],  # noqa: ARG001
+) -> dict[str, dict]:
+    """Compute the dashboard's quality_metrics block via pipeline-equivalent ops.
+
+    PR #3 slice — parity_concentration only. Future PRs add the other
+    quality leaves (phone_dup_pct, age_concentration, anc_pnc_same_date_count,
+    age_equals_reg_pct) once cross-pipeline JOIN and cross-form-type
+    extraction primitives land.
+    """
+    # parity_mode_share: per-FLW mode_share over per-mother parities (last seen).
+    # Mirrors the v3 template's `parity_mode_share` field.
+    parity_mode_share = aggregate(
+        [r for r in visits if r.get("form_name") == "ANC Visit" and r.get("mother_case_id")],
+        grouping_key="username",
+        field_name="parity_mode_share",
+        source_path="parity",
+        aggregation="mode_share",
+        pre_aggregate_by="mother_case_id",
+        pre_aggregation="last",
+    )
+    parity_mode_value = aggregate(
+        [r for r in visits if r.get("form_name") == "ANC Visit" and r.get("mother_case_id")],
+        grouping_key="username",
+        field_name="parity_mode_value",
+        source_path="parity",
+        aggregation="mode",
+        pre_aggregate_by="mother_case_id",
+        pre_aggregation="last",
+    )
+
+    quality: dict[str, dict] = {}
+    all_flws = set(parity_mode_share) | set(parity_mode_value)
+    for flw in all_flws:
+        share = parity_mode_share.get(flw)
+        mode_pct = round(share * 100) if share is not None else 0
+        quality[flw] = {
+            "parity_concentration": {
+                "mode_pct": mode_pct,
+                "mode_value": parity_mode_value.get(flw),
+            }
+        }
+    return quality
+
+
 # ---- v1 reference implementations ----
 #
 # Side-by-side ground-truth implementations of each overview_data leaf,
@@ -273,3 +380,49 @@ def compute_v1_overview_reference(
         "total_registration_forms": len(registrations),
         "total_gs_forms": len(gs_forms),
     }
+
+
+def compute_v1_quality_reference(
+    visits: list[dict],
+    registrations: list[dict],  # noqa: ARG001
+    gs_forms: list[dict],  # noqa: ARG001
+) -> dict[str, dict]:
+    """Reference implementation of v1's quality_metrics — parity slice only.
+
+    Mirrors `_extract_per_mother_fields` (overwrite-in-loop = `last` semantics
+    on iteration order) plus `_compute_value_concentration.mode_pct` /
+    `mode_value`. The other quality leaves (phone_dup_pct, age_concentration,
+    anc_pnc_same_date_count, age_equals_reg_pct) need data v3 doesn't yet
+    pull, so they're not in this reference.
+    """
+    # Per-FLW per-mother last parity, ANC visits only.
+    by_flw_mother: dict[tuple, str] = {}
+    for row in visits:
+        if row.get("form_name") != "ANC Visit":
+            continue
+        u = row.get("username")
+        m = row.get("mother_case_id")
+        p = row.get("parity")
+        if not u or not m or not p:
+            continue
+        by_flw_mother[(u, m)] = p  # overwrite — `last` semantics
+
+    # Per-FLW collect per-mother parities, then compute mode_pct + mode_value.
+    parities_by_flw: dict[str, list[str]] = {}
+    for (u, _m), parity in by_flw_mother.items():
+        parities_by_flw.setdefault(u, []).append(parity)
+
+    quality: dict[str, dict] = {}
+    for u, parities in parities_by_flw.items():
+        if not parities:
+            continue
+        counter = Counter(parities)
+        mode_value, mode_count = counter.most_common(1)[0]
+        mode_pct = round(mode_count / len(parities) * 100)
+        quality[u] = {
+            "parity_concentration": {
+                "mode_pct": mode_pct,
+                "mode_value": mode_value,
+            }
+        }
+    return quality

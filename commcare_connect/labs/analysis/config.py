@@ -150,6 +150,25 @@ class FieldComputation:
     # filter_value is one of the tokens. Used for multi-select form fields like
     # MBW's bf_status, where v1 logic is `if "ebf" in bf_status.split()`.
     filter_op: str = "eq"
+    # Two-pass aggregation. When set, the field is computed as a nested
+    # aggregation: rows are first grouped by `pre_aggregate_by` (an inner
+    # JSON path, typically `mother_case_id` or another secondary key) and
+    # collapsed using `pre_aggregation`; the resulting per-pre-group values
+    # are then grouped by the pipeline's outer grouping_key and aggregated
+    # using `aggregation`.
+    #
+    # Concrete example — parity concentration per FLW:
+    #   pre_aggregate_by = "form.parents.parent.case.@case_id"  # mother
+    #   pre_aggregation = "first"                                # per-mother first parity
+    #   aggregation     = "mode_share"                           # per-FLW concentration
+    # ⇒ SQL groups visits by (FLW, mother), takes one parity per mother,
+    # then computes mode_share of the per-mother parities per FLW.
+    #
+    # Mirrors v1's chained-loop quality computations without needing a full
+    # multi-stage pipeline cache refactor. Empty values mean single-pass
+    # aggregation as before.
+    pre_aggregate_by: str = ""
+    pre_aggregation: str = "first"
 
     def __post_init__(self):
         """Validate configuration."""
@@ -159,6 +178,8 @@ class FieldComputation:
             raise ValueError("Field requires path, paths, or extractor")
         if self.aggregation not in VALID_AGGREGATIONS:
             raise ValueError(f"Invalid aggregation type: {self.aggregation}")
+        if self.pre_aggregate_by and self.pre_aggregation not in VALID_AGGREGATIONS:
+            raise ValueError(f"Invalid pre_aggregation type: {self.pre_aggregation}")
         if self.filter_op not in VALID_FILTER_OPS:
             raise ValueError(f"Invalid filter_op: {self.filter_op}. Valid: {sorted(VALID_FILTER_OPS)}")
 

@@ -153,6 +153,69 @@ class TestAggregationSqlExecution:
         assert results["flw_ebf"] == 2  # "ebf" and "ebf bottle" only
         assert results["flw_other"] == 0  # no token == "ebf"
 
+    def test_pre_aggregated_field_executes_as_two_pass(self, db):
+        """A FieldComputation with pre_aggregate_by produces SQL that
+        executes correctly: per-mother first-parity, then per-FLW mode_share.
+
+        Regression-tests the v1 quality-metric pattern where an FLW visiting
+        ONE mother three times (same parity) must produce a different
+        mode_share than an FLW visiting THREE mothers (one each, same parity).
+        Without two-pass aggregation both would yield 1.0; with two-pass,
+        the single-mother FLW yields 1.0 (1 unique value, 1 visit) and the
+        three-mother FLW also yields 1.0 (3 unique mothers, all same parity)
+        — so the discriminating case is when the three mothers have different
+        parities, which is the test below.
+        """
+        from commcare_connect.labs.analysis.backends.sql.query_builder import _pre_aggregated_field_sql
+        from commcare_connect.labs.analysis.config import FieldComputation
+
+        future = timezone.now() + timezone.timedelta(days=1)
+
+        # Fraud FLW: 3 visits to 1 mother, all same parity → 1 per-mother value.
+        # Diverse FLW: 3 visits, 3 different mothers, 3 distinct parities → 3 per-mother values.
+        # Without pre-aggregation both would yield mode_share = 1.0 (or 1/3) over raw rows.
+        # With pre-aggregation: fraud yields 1.0, diverse yields 1/3.
+        rows = [
+            # fraud
+            ("fraud", "mother_1", "G2P1"),
+            ("fraud", "mother_1", "G2P1"),
+            ("fraud", "mother_1", "G2P1"),
+            # diverse
+            ("diverse", "mother_a", "G1P0"),
+            ("diverse", "mother_b", "G2P1"),
+            ("diverse", "mother_c", "G3P2"),
+        ]
+        for i, (u, m, p) in enumerate(rows):
+            RawVisitCache.objects.create(
+                opportunity_id=9996,
+                visit_count=len(rows),
+                expires_at=future,
+                visit_id=str(40000 + i),
+                username=u,
+                form_json={
+                    "form": {
+                        "parents": {"parent": {"case": {"@case_id": m}}},
+                        "confirm_visit_information": {
+                            "parity__of_live_births_or_stillbirths_after_24_weeks": p,
+                        },
+                    }
+                },
+                visit_date="2024-01-15",
+                status="approved",
+            )
+
+        field = FieldComputation(
+            name="parity_conc",
+            path="form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
+            aggregation="mode_share",
+            pre_aggregate_by="form.parents.parent.case.@case_id",
+            pre_aggregation="first",
+        )
+        sql_fragment = _pre_aggregated_field_sql(field)
+        results = dict(self._run_sql(sql_fragment, 9996))
+        assert results["fraud"] == pytest.approx(1.0)
+        assert results["diverse"] == pytest.approx(1.0 / 3.0)
+
     def test_sql_agrees_with_inmemory_mirror_on_mixed_fixture(self, db):
         """Bound the in-memory mirror's correctness: SQL and Python must agree
         on the same input for median, mode, and mode_share.

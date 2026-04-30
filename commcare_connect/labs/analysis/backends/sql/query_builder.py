@@ -339,6 +339,118 @@ def _build_histogram_fields(hist: HistogramComputation, opportunity_id: int) -> 
     return fields
 
 
+def _inner_agg_expr(agg: str, value_expr: str) -> str:
+    """SQL fragment for the inner (pre_aggregation) collapse step.
+
+    Used inside `_pre_aggregated_field_sql`. Produces a single value per
+    pre_aggregate_by group. Unlike _aggregation_to_sql which emits
+    correlated subqueries against labs_raw_visit_cache for first/last,
+    this stays in the same scope as the inner GROUP BY, so it uses
+    ARRAY_AGG ordering or simple aggregates.
+    """
+    if agg == "first":
+        return f"(ARRAY_AGG({value_expr} ORDER BY visit_id ASC) FILTER (WHERE {value_expr} IS NOT NULL))[1]"
+    if agg == "last":
+        return f"(ARRAY_AGG({value_expr} ORDER BY visit_id DESC) FILTER (WHERE {value_expr} IS NOT NULL))[1]"
+    if agg == "count":
+        return f"COUNT({value_expr})"
+    if agg in ("count_unique", "count_distinct"):
+        return f"COUNT(DISTINCT {value_expr})"
+    if agg == "sum":
+        return f"SUM({value_expr})"
+    if agg == "avg":
+        return f"AVG({value_expr})"
+    if agg == "min":
+        return f"MIN({value_expr})"
+    if agg == "max":
+        return f"MAX({value_expr})"
+    if agg == "median":
+        return f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {value_expr})"
+    if agg == "mode":
+        return f"MODE() WITHIN GROUP (ORDER BY {value_expr})"
+    raise ValueError(f"pre_aggregation {agg!r} not supported as inner step (mode_share/list invalid here)")
+
+
+def _pre_aggregated_field_sql(field: FieldComputation) -> str:
+    """SQL for a field with `pre_aggregate_by` set.
+
+    Two-pass aggregation: inner GROUP BY pre_aggregate_by collapses with
+    `pre_aggregation`; outer reads the per-pre-group `v` column and
+    aggregates with `aggregation`. Filter (path/value/op) on the outer
+    isn't supported in this path — use a wrapping `WHERE v ...` clause
+    on the inner subquery if you need pre-filtering.
+
+    Mirrors the correlated-subquery pattern of first/last: the inner
+    select scopes to (sub.opportunity_id, sub.username) of the outer row.
+
+    `aggregation == "mode_share"` is the only case that requires an extra
+    nesting level (group by value, take max-count / sum-count). All other
+    aggregations are SELECT-list expressions over the per-group `v` column.
+    """
+    paths = field.paths if field.paths else [field.path]
+    value_expr = _paths_to_coalesce_sql(paths)
+    transformed_expr = _transform_to_sql(field, value_expr)
+    pre_path_sql = _jsonb_path_to_sql(field.pre_aggregate_by)
+    inner_collapse = _inner_agg_expr(field.pre_aggregation, transformed_expr)
+
+    inner_subquery = f"""SELECT {pre_path_sql} AS pre_group, {inner_collapse} AS v
+            FROM labs_raw_visit_cache sub
+            WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
+              AND sub.username = labs_raw_visit_cache.username
+              AND {pre_path_sql} IS NOT NULL
+            GROUP BY {pre_path_sql}"""
+
+    if field.aggregation == "mode_share":
+        # mode_share needs a second GROUP BY (by value) over the per-group
+        # rows, then max-count / sum-count. Add one more nesting level.
+        return f"""(
+            SELECT MAX(c)::float / NULLIF(SUM(c), 0)
+            FROM (
+                SELECT COUNT(*) AS c
+                FROM (
+                    {inner_subquery}
+                ) per_group
+                WHERE per_group.v IS NOT NULL
+                GROUP BY per_group.v
+            ) freq
+        )"""
+
+    outer_expr = _outer_agg_over_v(field.aggregation)
+    return f"""(
+        SELECT {outer_expr}
+        FROM (
+            {inner_subquery}
+        ) per_group
+    )"""
+
+
+def _outer_agg_over_v(agg: str) -> str:
+    """SQL fragment for the outer (aggregation) step that operates on
+    the column `v` produced by the inner subquery (one row per pre-group).
+    Returns a complete SELECT-list expression.
+
+    `mode_share` is handled by a dedicated branch in `_pre_aggregated_field_sql`
+    because it needs an extra GROUP BY level — don't call this for it.
+    """
+    if agg == "count":
+        return "COUNT(v)"
+    if agg in ("count_unique", "count_distinct"):
+        return "COUNT(DISTINCT v)"
+    if agg == "sum":
+        return "SUM(v::float)"
+    if agg == "avg":
+        return "AVG(v::float)"
+    if agg == "min":
+        return "MIN(v)"
+    if agg == "max":
+        return "MAX(v)"
+    if agg == "median":
+        return "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY v::float)"
+    if agg == "mode":
+        return "MODE() WITHIN GROUP (ORDER BY v)"
+    raise ValueError(f"aggregation {agg!r} not supported as outer step over pre-aggregated values")
+
+
 def build_flw_aggregation_query(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
@@ -360,6 +472,13 @@ def build_flw_aggregation_query(
 
     # Add custom fields from config
     for field in config.fields:
+        # Two-pass aggregation gets its own dedicated builder — it produces a
+        # correlated subquery scoped to the outer (opportunity_id, username).
+        # Single-pass field handling continues below for the typical case.
+        if field.pre_aggregate_by:
+            select_parts.append(f"{_pre_aggregated_field_sql(field)} as {field.name}")
+            continue
+
         paths = field.paths if field.paths else [field.path]
         value_expr = _paths_to_coalesce_sql(paths)
         transformed_expr = _transform_to_sql(field, value_expr)

@@ -112,13 +112,32 @@ VISITS_SCHEMA = {
             ],
             "aggregation": "count",
         },
-        # ---------- Quality-tab aggregations (planned PR #3) ----------
-        # parity_concentration_pct: mode_share over parity values per FLW.
-        # 1.0 = every visit reports identical parity (suspicious).
+        # ---------- Quality-tab aggregations (PR #3 partial slice) ----------
+        # parity_mode_share: per-FLW concentration of parity. Two-pass:
+        # collapse rows to one parity per mother (v1 overwrites in iteration
+        # order, so `last` matches), then mode_share over the per-mother
+        # parities. 1.0 = every mother reports identical parity (suspicious).
+        # Filter on form_name="ANC Visit" mirrors v1's `if form_name == "ANC Visit"`
+        # — only ANC visits report parity in the MBW data model.
         {
-            "name": "parity_concentration",
+            "name": "parity_mode_share",
             "path": "form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
             "aggregation": "mode_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "last",
+            "filter_path": "form.@name",
+            "filter_value": "ANC Visit",
+        },
+        # parity_mode_value: per-FLW most-common parity (the "mode_value" that
+        # accompanies mode_pct in v1's quality_concentration dict).
+        {
+            "name": "parity_mode_value",
+            "path": "form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
+            "aggregation": "mode",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "last",
+            "filter_path": "form.@name",
+            "filter_value": "ANC Visit",
         },
     ],
 }
