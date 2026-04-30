@@ -29,7 +29,8 @@ class ConfluenceClient:
         try:
             resp.raise_for_status()
         except requests.HTTPError as e:
-            raise RuntimeError(f"Confluence GET {path} failed: {e}") from e
+            status = e.response.status_code if e.response is not None else "unknown"
+            raise RuntimeError(f"Confluence GET {path} failed: HTTP {status}") from e
         return resp.json()
 
     def _put(self, path: str, body: dict) -> dict:
@@ -43,7 +44,8 @@ class ConfluenceClient:
         try:
             resp.raise_for_status()
         except requests.HTTPError as e:
-            raise RuntimeError(f"Confluence PUT {path} failed: {e}") from e
+            status = e.response.status_code if e.response is not None else "unknown"
+            raise RuntimeError(f"Confluence PUT {path} failed: HTTP {status}") from e
         return resp.json()
 
     def _post(self, path: str, body: dict) -> dict:
@@ -57,7 +59,8 @@ class ConfluenceClient:
         try:
             resp.raise_for_status()
         except requests.HTTPError as e:
-            raise RuntimeError(f"Confluence POST {path} failed: {e}") from e
+            status = e.response.status_code if e.response is not None else "unknown"
+            raise RuntimeError(f"Confluence POST {path} failed: HTTP {status}") from e
         return resp.json()
 
     def get_page(self, page_id: str) -> dict:
