@@ -1527,10 +1527,33 @@ function WorkflowRunner({
                                   {svc.label || svc.key}
                                 </span>
                                 {noDomainAccess ? (
-                                  <span className="px-3 py-1.5 bg-red-100 text-red-800 text-sm rounded border border-red-300">
-                                    Account lacks access to{' '}
-                                    {svc.domain || 'this domain'}
-                                  </span>
+                                  <>
+                                    <span className="px-3 py-1.5 bg-red-100 text-red-800 text-sm rounded border border-red-300">
+                                      Account lacks access to{' '}
+                                      {svc.domain || 'this domain'}
+                                    </span>
+                                    {/* Log-out escape hatch. The "no domain
+                                        access" state happens when the cached
+                                        OAuth token is bound to a CommCare HQ
+                                        account that doesn't have permission
+                                        on this opportunity's domain. The
+                                        framework correctly hides Authorize
+                                        because re-authorizing as the same user
+                                        won't help — but the user often DOES
+                                        have a different account that has
+                                        access. Logging out clears the token;
+                                        the next refresh shows the normal
+                                        Authorize button so they can sign in
+                                        with the right account. */}
+                                    {svc.key === 'commcare_hq' && (
+                                      <a
+                                        href="/labs/commcare/logout/"
+                                        className="px-3 py-1.5 bg-white border border-red-400 text-red-800 text-sm rounded hover:bg-red-50 no-underline"
+                                      >
+                                        Log out of CommCare HQ
+                                      </a>
+                                    )}
+                                  </>
                                 ) : svc.authorize_url ? (
                                   <a
                                     href={svc.authorize_url}
