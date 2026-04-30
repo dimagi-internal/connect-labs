@@ -29,8 +29,15 @@ class TestV3TemplateLoads:
         # No job_type — v3's whole point is that the pipeline is the job.
         assert "job_type" not in TEMPLATE["definition"]["config"]
         assert isinstance(TEMPLATE["render_code"], str) and len(TEMPLATE["render_code"]) > 50
-        assert len(TEMPLATE["pipeline_schemas"]) == 3
-        assert {p["alias"] for p in TEMPLATE["pipeline_schemas"]} == {"visits", "registrations", "gs_forms"}
+        # 4 pipelines: visits (aggregated, FLW summaries), visits_gps (visit-level
+        # with lag_haversine window), registrations + gs_forms.
+        assert len(TEMPLATE["pipeline_schemas"]) == 4
+        assert {p["alias"] for p in TEMPLATE["pipeline_schemas"]} == {
+            "visits",
+            "visits_gps",
+            "registrations",
+            "gs_forms",
+        }
 
     def test_every_visits_field_validates_as_field_computation(self):
         """If any field in the v3 visits schema fails validation, the
@@ -55,10 +62,11 @@ class TestV3TemplateLoads:
         from commcare_connect.workflow.templates.mbw_monitoring_v3 import (
             GS_FORMS_SCHEMA,
             REGISTRATIONS_SCHEMA,
+            VISITS_GPS_SCHEMA,
             VISITS_SCHEMA,
         )
 
-        for schema in (VISITS_SCHEMA, REGISTRATIONS_SCHEMA, GS_FORMS_SCHEMA):
+        for schema in (VISITS_SCHEMA, VISITS_GPS_SCHEMA, REGISTRATIONS_SCHEMA, GS_FORMS_SCHEMA):
             for field_dict in schema["fields"]:
                 # Synthesize a value_expr of the right shape for the SQL
                 # builder. The real pipeline does this; here we just need
@@ -76,6 +84,152 @@ class TestV3TemplateLoads:
                     filter_op=field_dict.get("filter_op", "eq"),
                 )
                 assert sql, f"empty SQL for {field_dict['name']}"
+
+
+class TestSchemaToConfigWiring:
+    """End-to-end: JSON schema dict → AnalysisPipelineConfig → SQL.
+
+    This is the path the live workflow runner uses. Catches regressions
+    where a new FieldComputation parameter is added but not threaded through
+    PipelineDataAccess._schema_to_config — the symptom would be silent loss
+    of filter_op / pre_aggregate_by / window_fields between template
+    declaration and runtime execution.
+    """
+
+    def test_v3_schemas_round_trip_to_config(self):
+        """Every v3 PIPELINE_SCHEMA must construct a valid AnalysisPipelineConfig
+        without crashing. Catches schema-shape regressions early — if a field
+        type or window_op declared in v3 doesn't survive parsing, this fails.
+        """
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+        from commcare_connect.workflow.templates.mbw_monitoring_v3 import (
+            GS_FORMS_SCHEMA,
+            REGISTRATIONS_SCHEMA,
+            VISITS_GPS_SCHEMA,
+            VISITS_SCHEMA,
+        )
+
+        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+        for schema in (VISITS_SCHEMA, VISITS_GPS_SCHEMA, REGISTRATIONS_SCHEMA, GS_FORMS_SCHEMA):
+            config = access._schema_to_config(schema, definition_id=0)
+            assert config is not None
+            assert len(config.fields) > 0
+
+    def test_filter_op_threads_through_schema_parsing(self):
+        """A field declared with filter_op="contains_word" must keep that
+        attribute on the resulting FieldComputation. Without the parsing
+        threading, contains_word silently degrades to "eq" — a regression
+        that wouldn't fail any aggregation test but would corrupt EBF
+        counting for every v3 dashboard.
+        """
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+
+        schema = {
+            "data_source": {"type": "connect_csv"},
+            "grouping_key": "username",
+            "terminal_stage": "aggregated",
+            "fields": [
+                {
+                    "name": "ebf_count",
+                    "path": "form.feeding_history.pnc_current_bf_status",
+                    "aggregation": "count",
+                    "filter_path": "form.feeding_history.pnc_current_bf_status",
+                    "filter_value": "ebf",
+                    "filter_op": "contains_word",
+                },
+            ],
+        }
+        # Construct a fake instance that has just the method we need.
+        # (PipelineDataAccess.__init__ requires DB plumbing we don't want here.)
+        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+        config = access._schema_to_config(schema, definition_id=42)
+        assert config.fields[0].filter_op == "contains_word"
+        assert config.fields[0].filter_value == "ebf"
+
+    def test_pre_aggregate_by_threads_through_schema_parsing(self):
+        """A field declared with pre_aggregate_by must keep that attribute."""
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+
+        schema = {
+            "data_source": {"type": "connect_csv"},
+            "grouping_key": "username",
+            "terminal_stage": "aggregated",
+            "fields": [
+                {
+                    "name": "parity_mode_share",
+                    "path": "form.parity",
+                    "aggregation": "mode_share",
+                    "pre_aggregate_by": "form.parents.parent.case.@case_id",
+                    "pre_aggregation": "last",
+                },
+            ],
+        }
+        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+        config = access._schema_to_config(schema, definition_id=42)
+        assert config.fields[0].pre_aggregate_by == "form.parents.parent.case.@case_id"
+        assert config.fields[0].pre_aggregation == "last"
+
+    def test_window_fields_thread_through_schema_parsing(self):
+        """A schema with window_fields must produce a config with the
+        WindowFieldComputation list populated."""
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+
+        schema = {
+            "data_source": {"type": "connect_csv"},
+            "grouping_key": "username",
+            "terminal_stage": "visit_level",
+            "fields": [
+                {"name": "latitude", "path": "form.lat", "aggregation": "first"},
+                {"name": "longitude", "path": "form.lon", "aggregation": "first"},
+                {"name": "mother_case_id", "path": "form.case", "aggregation": "first"},
+                {"name": "visit_datetime", "path": "form.timeEnd", "aggregation": "first"},
+            ],
+            "window_fields": [
+                {
+                    "name": "distance_from_prev_case_visit_m",
+                    "operation": "lag_haversine",
+                    "partition_by": "mother_case_id",
+                    "order_by": "visit_datetime",
+                    "lat_field": "latitude",
+                    "lon_field": "longitude",
+                },
+            ],
+        }
+        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+        config = access._schema_to_config(schema, definition_id=42)
+        assert len(config.window_fields) == 1
+        wf = config.window_fields[0]
+        assert wf.name == "distance_from_prev_case_visit_m"
+        assert wf.operation == "lag_haversine"
+        assert wf.partition_by == "mother_case_id"
+        assert wf.lat_field == "latitude"
+
+    def test_gps_lat_transform_resolves(self):
+        """gps_lat / gps_lon transforms exist in the registry and parse the
+        packed 'lat lon altitude accuracy' string format."""
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+
+        schema = {
+            "data_source": {"type": "connect_csv"},
+            "grouping_key": "username",
+            "terminal_stage": "visit_level",
+            "fields": [
+                {"name": "latitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lat"},
+                {"name": "longitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lon"},
+            ],
+        }
+        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+        config = access._schema_to_config(schema, definition_id=42)
+        # Transform is a callable (lambda). Apply it to a packed GPS string
+        # to verify the runtime parsing.
+        lat_fn = config.fields[0].transform
+        lon_fn = config.fields[1].transform
+        assert lat_fn("-1.2345 35.6789 1000 10") == pytest.approx(-1.2345)
+        assert lon_fn("-1.2345 35.6789 1000 10") == pytest.approx(35.6789)
+        # Empty / malformed → None (no crash on real-world bad data)
+        assert lat_fn("") is None
+        assert lat_fn(None) is None
+        assert lat_fn("notanumber") is None
 
 
 class TestFilterOpValidation:

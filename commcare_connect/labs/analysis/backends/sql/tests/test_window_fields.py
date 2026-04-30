@@ -194,6 +194,137 @@ class TestLagHaversineWindow:
         assert fields == ["some_field"]
 
 
+@pytest.mark.django_db
+class TestGpsTransformsExecuteEndToEnd:
+    """gps_lat / gps_lon transforms must produce correct floats from packed
+    'lat lon altitude accuracy' GPS strings, when run through the full
+    extraction pipeline (build_visit_extraction_query + Postgres).
+    """
+
+    def _seed_packed_gps(self, opp_id: int, rows: list[tuple]) -> None:
+        future = timezone.now() + timezone.timedelta(days=1)
+        for i, (vid, mid, gps_str, dt) in enumerate(rows):
+            RawVisitCache.objects.create(
+                opportunity_id=opp_id,
+                visit_count=len(rows),
+                expires_at=future,
+                visit_id=str(vid),
+                username="flw_a",
+                form_json={
+                    "form": {
+                        "parents": {"parent": {"case": {"@case_id": mid}}},
+                        "meta": {"timeEnd": dt, "location": gps_str},
+                    }
+                },
+                visit_date=dt[:10],
+                status="approved",
+            )
+
+    def test_gps_transforms_extract_lat_lon_then_lag_haversine(self, db):
+        """End-to-end: a config declaring gps_lat/gps_lon transforms PLUS a
+        lag_haversine window field over those transforms produces the right
+        per-visit distance. This is the path v3's `visits_gps` pipeline takes.
+        """
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+
+        # Seed three visits to the same mother, GPS in packed form.
+        self._seed_packed_gps(
+            20001,
+            [
+                (1, "m1", "-1.0000 35.0000 1000 10", "2024-01-10T09:00:00"),
+                (2, "m1", "-1.0010 35.0000 1000 10", "2024-01-10T10:00:00"),
+                (3, "m1", "-1.0020 35.0000 1000 10", "2024-01-10T11:00:00"),
+            ],
+        )
+
+        schema = {
+            "data_source": {"type": "connect_csv"},
+            "grouping_key": "username",
+            "terminal_stage": "visit_level",
+            "fields": [
+                {"name": "mother_case_id", "path": "form.parents.parent.case.@case_id", "aggregation": "first"},
+                {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
+                {"name": "latitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lat"},
+                {"name": "longitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lon"},
+            ],
+            "window_fields": [
+                {
+                    "name": "distance_from_prev_case_visit_m",
+                    "operation": "lag_haversine",
+                    "partition_by": "mother_case_id",
+                    "order_by": "visit_datetime",
+                    "lat_field": "latitude",
+                    "lon_field": "longitude",
+                },
+            ],
+        }
+        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+        config = access._schema_to_config(schema, definition_id=20001)
+
+        from commcare_connect.labs.analysis.backends.sql.query_builder import build_visit_extraction_query
+
+        query, _ = build_visit_extraction_query(config, opportunity_id=20001)
+
+        with connection.cursor() as cur:
+            cur.execute(query)
+            cols = [c[0] for c in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+        rows_by_visit = {r["visit_id"]: r for r in rows}
+        # Latitude/longitude correctly parsed from the packed string
+        assert rows_by_visit["1"]["latitude"] == pytest.approx(-1.0000)
+        assert rows_by_visit["1"]["longitude"] == pytest.approx(35.0000)
+        # Distance from prev: visit 1 = NULL, visits 2 & 3 ≈ 111m apart
+        assert rows_by_visit["1"]["distance_from_prev_case_visit_m"] is None
+        assert rows_by_visit["2"]["distance_from_prev_case_visit_m"] == pytest.approx(111, abs=2)
+        assert rows_by_visit["3"]["distance_from_prev_case_visit_m"] == pytest.approx(111, abs=2)
+
+    def test_gps_transforms_handle_missing_or_malformed(self, db):
+        """Missing or malformed GPS strings yield NULL lat/lon (not crashes,
+        not zero). Sparse-GPS-friendly all the way through."""
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+
+        self._seed_packed_gps(
+            20002,
+            [
+                (1, "m1", "", "2024-01-10T09:00:00"),  # empty
+                (2, "m1", "notanumber", "2024-01-10T10:00:00"),  # malformed
+                (3, "m1", "-1.0 35.0", "2024-01-10T11:00:00"),  # ok, only 2 tokens
+            ],
+        )
+
+        schema = {
+            "data_source": {"type": "connect_csv"},
+            "grouping_key": "username",
+            "terminal_stage": "visit_level",
+            "fields": [
+                {"name": "latitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lat"},
+                {"name": "longitude", "path": "form.meta.location", "aggregation": "first", "transform": "gps_lon"},
+            ],
+        }
+        access = type("_Fake", (PipelineDataAccess,), {"__init__": lambda self: None})()
+        config = access._schema_to_config(schema, definition_id=20002)
+
+        from commcare_connect.labs.analysis.backends.sql.query_builder import build_visit_extraction_query
+
+        query, _ = build_visit_extraction_query(config, opportunity_id=20002)
+
+        with connection.cursor() as cur:
+            cur.execute(query)
+            cols = [c[0] for c in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+        rows_by_visit = {r["visit_id"]: r for r in rows}
+        # Empty → NULL
+        assert rows_by_visit["1"]["latitude"] is None
+        assert rows_by_visit["1"]["longitude"] is None
+        # Malformed → NULL (regex rejects non-numeric)
+        assert rows_by_visit["2"]["latitude"] is None
+        # Well-formed even with only 2 tokens → parsed
+        assert rows_by_visit["3"]["latitude"] == pytest.approx(-1.0)
+        assert rows_by_visit["3"]["longitude"] == pytest.approx(35.0)
+
+
 class TestWindowFieldValidation:
     """Validation of WindowFieldComputation construction + config integration."""
 
