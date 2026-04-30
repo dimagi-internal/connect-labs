@@ -24,7 +24,15 @@
       "CronCreate",
       "CronDelete",
       "CronList",
-      "ScheduleWakeup"
+      "ScheduleWakeup",
+      "RemoteTrigger",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./.gcp/**)",
+      "Read(~/.claude.json)",
+      "Read(~/.claude/**)",
+      "Grep(./.env)",
+      "Grep(./.env.*)"
     ]
   },
   "env": {

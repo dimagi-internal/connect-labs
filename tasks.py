@@ -552,6 +552,9 @@ def safe_claude(c: Context, auth=None):
             # api_key mode passes any SAFE_CLAUDE_MODEL override through to
             # Claude Code unvalidated — the Anthropic API has a different
             # set of accepted IDs and we don't police it from here.
+            # ZDR is enforced at the key level (the key is scoped to the ZDR
+            # workspace), not the model level, so any model accepted by that
+            # key routes through the same governed endpoint.
             cmd_argv += ["--model", model_override]
 
         print(f"Launching Claude Code in safe mode — auth: {auth_desc}")
@@ -579,7 +582,15 @@ def safe_claude(c: Context, auth=None):
                 # state into this dir (prompts, tool transcripts) that
                 # shouldn't linger.
                 print(
-                    f"warning: failed to clean up {isolated_config_dir}: {e}",
+                    "\n"
+                    "=" * 70 + "\n"
+                    "WARNING: session state cleanup failed\n"
+                    f"  path : {isolated_config_dir}\n"
+                    f"  error: {e}\n"
+                    "Claude Code may have written conversation transcripts (possibly\n"
+                    "containing PII) into that directory. Delete it manually:\n"
+                    f"  rm -rf {isolated_config_dir}\n"
+                    "=" * 70,
                     file=sys.stderr,
                 )
 

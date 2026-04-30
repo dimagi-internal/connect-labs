@@ -46,9 +46,30 @@ def test_safe_mode_denies_filesystem_shell_network_and_subagents(safe_settings):
         "CronDelete",
         "CronList",
         "ScheduleWakeup",
+        # RemoteTrigger: same escape risk as CronCreate — a triggered background
+        # agent runs with the user's default config, not safe-mode config.
+        "RemoteTrigger",
     }
     missing = required_denies - deny
     assert not missing, f"Safe mode must deny: {sorted(missing)}"
+
+
+def test_safe_mode_denies_sensitive_file_reads(safe_settings):
+    """Path-scoped Read/Grep denies block prompt-injection exfiltration via
+    read-then-write-to-MCP. Grep is included because it also returns file
+    contents and is not covered by Read deny rules."""
+    deny = safe_settings["permissions"]["deny"]
+    required_path_denies = {
+        "Read(./.env)",
+        "Read(./.env.*)",
+        "Read(./.gcp/**)",
+        "Read(~/.claude.json)",
+        "Read(~/.claude/**)",
+        "Grep(./.env)",
+        "Grep(./.env.*)",
+    }
+    missing = required_path_denies - set(deny)
+    assert not missing, f"Safe mode must include path-scoped denies: {sorted(missing)}"
 
 
 def test_safe_mode_does_not_allow_dangerous_tools(safe_settings):
@@ -61,6 +82,7 @@ def test_safe_mode_does_not_allow_dangerous_tools(safe_settings):
         "WebFetch",
         "WebSearch",
         "Agent",
+        "RemoteTrigger",
     }
     leaked = allow & forbidden_in_allow
     assert not leaked, f"These tools must NOT appear in safe-mode allow list: {sorted(leaked)}"
