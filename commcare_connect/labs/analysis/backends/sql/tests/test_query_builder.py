@@ -71,6 +71,17 @@ class TestAggregationToSql:
         sql = _aggregation_to_sql("mode", "v", "f")
         assert sql == "MODE() WITHIN GROUP (ORDER BY v)"
 
+    def test_dup_share_uses_correlated_subquery(self):
+        """`dup_share` returns share (0..1) of values that appear in groups
+        of >1. Same correlated-subquery shape as mode_share — pairs with it
+        for fraud detection. v1's pct_duplicate.
+        """
+        sql = _aggregation_to_sql("dup_share", "v", "f")
+        assert "FROM labs_raw_visit_cache sub" in sql
+        assert "GROUP BY v" in sql
+        assert "FILTER (WHERE c > 1)" in sql
+        assert "::float" in sql
+
     def test_mode_share_uses_correlated_subquery(self):
         """`mode_share` returns share (0..1) of rows whose value equals the mode.
 

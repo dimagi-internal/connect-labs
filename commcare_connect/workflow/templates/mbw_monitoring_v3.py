@@ -139,6 +139,19 @@ VISITS_SCHEMA = {
             "filter_path": "form.@name",
             "filter_value": "ANC Visit",
         },
+        # parity_dup_share: per-FLW share (0..1) of mothers whose parity matches
+        # at least one other mother's parity for the same FLW. v1's
+        # `pct_duplicate` — high values mean the FLW reports lots of repeated
+        # parities across mothers, even if no single value dominates.
+        {
+            "name": "parity_dup_share",
+            "path": "form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
+            "aggregation": "dup_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "last",
+            "filter_path": "form.@name",
+            "filter_value": "ANC Visit",
+        },
     ],
 }
 

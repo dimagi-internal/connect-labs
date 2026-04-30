@@ -35,10 +35,13 @@ class TestQualityParity:
         # Same set of FLWs reporting parity from ANC visits.
         assert set(v1.keys()) == set(v3.keys())
         for flw in v1:
+            v1_pc = v1[flw]["parity_concentration"]
+            v3_pc = v3[flw]["parity_concentration"]
+            assert v1_pc["mode_pct"] == v3_pc["mode_pct"], f"mode_pct mismatch for {flw}: v1={v1_pc} v3={v3_pc}"
+            assert v1_pc["mode_value"] == v3_pc["mode_value"]
             assert (
-                v1[flw]["parity_concentration"]["mode_pct"] == v3[flw]["parity_concentration"]["mode_pct"]
-            ), f"mode_pct mismatch for {flw}: v1={v1[flw]} v3={v3[flw]}"
-            assert v1[flw]["parity_concentration"]["mode_value"] == v3[flw]["parity_concentration"]["mode_value"]
+                v1_pc["pct_duplicate"] == v3_pc["pct_duplicate"]
+            ), f"pct_duplicate mismatch for {flw}: v1={v1_pc} v3={v3_pc}"
 
     def test_parity_concentration_edge_cases(self):
         bundle = edge_cases()

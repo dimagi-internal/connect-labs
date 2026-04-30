@@ -31,6 +31,7 @@ AggregationType = Literal[
     "median",
     "mode",
     "mode_share",
+    "dup_share",
 ]
 
 # Single source of truth for valid aggregation names — derived from the
