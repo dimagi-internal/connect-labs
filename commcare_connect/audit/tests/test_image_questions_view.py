@@ -10,7 +10,7 @@ from commcare_connect.labs.tests.test_settings import LABS_SETTINGS
 ENDPOINT = "/audit/api/opportunity/42/image-questions/"
 
 # The Connect API URL that ExportAPIClient will call
-CONNECT_URL = "https://connect.example.com/export/opportunity/42/user_visits/?images=true"
+CONNECT_URL = "https://connect.example.com/export/opportunity/42/user_visits/?images=true&page_size=2500"
 
 # ---- Fixtures for form_json / images shapes -----
 #

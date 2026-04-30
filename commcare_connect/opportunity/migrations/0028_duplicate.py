@@ -4,9 +4,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [
-        ("opportunity", "0027_uservisit_reason")
-    ]
+    dependencies = [("opportunity", "0027_uservisit_reason")]
 
     operations = [
         migrations.AlterField(

@@ -1,10 +1,11 @@
 """
 SQL cache models for the analysis framework.
 
-Three tables for different cache levels:
+Four tables for different cache levels:
 - RawVisitCache: Raw visit data from CSV (one row per visit)
 - ComputedVisitCache: Computed visit fields (one row per visit per config)
 - ComputedFLWCache: Aggregated FLW results (one row per FLW per config)
+- ComputedEntityCache: Aggregated per-entity results (one row per linking_field value per config)
 
 All tables use TTL-based cleanup via expires_at field.
 Cache invalidation is based on visit_count changes.
@@ -56,6 +57,18 @@ class RawVisitCache(models.Model):
     class Meta:
         app_label = "labs"
         db_table = "labs_raw_visit_cache"
+        constraints = [
+            # Prevents concurrent streaming writers (each tagged with its
+            # own negative sentinel visit_count) from creating duplicate
+            # rows for the same visit. Different writers' sentinels mean
+            # the SAME visit_id can coexist under different visit_counts;
+            # within a single writer, dups raise CacheConcurrencyError.
+            # See incident on opp 765 (172120 rows for 86060 visits).
+            models.UniqueConstraint(
+                fields=["opportunity_id", "visit_count", "visit_id"],
+                name="uniq_raw_visit_cache_opp_count_visit",
+            ),
+        ]
         indexes = [
             models.Index(fields=["opportunity_id", "visit_count"]),
             models.Index(fields=["opportunity_id", "username"]),
@@ -109,8 +122,90 @@ class ComputedVisitCache(models.Model):
     class Meta:
         app_label = "labs"
         db_table = "labs_computed_visit_cache"
+        constraints = [
+            # Concurrent pipeline runs targeting the same (opp, config)
+            # used to silently both succeed and produce 2x rows. The
+            # constraint forces one writer to win on insert; the loser
+            # raises CacheConcurrencyError → pipeline reports a clear
+            # "another run in flight" message and stops.
+            models.UniqueConstraint(
+                fields=["opportunity_id", "config_hash", "visit_id"],
+                name="uniq_computed_visit_cache_opp_config_visit",
+            ),
+        ]
         indexes = [
             models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
+        ]
+
+    @classmethod
+    def cleanup_expired(cls):
+        """Delete all expired cache entries."""
+        deleted, _ = cls.objects.filter(expires_at__lt=timezone.now()).delete()
+        return deleted
+
+    @classmethod
+    def invalidate_opportunity_config(cls, opportunity_id: int, config_hash: str):
+        """Delete cache entries for a specific opportunity and config."""
+        deleted, _ = cls.objects.filter(
+            opportunity_id=opportunity_id,
+            config_hash=config_hash,
+        ).delete()
+        return deleted
+
+
+class ComputedEntityCache(models.Model):
+    """
+    Cached aggregated per-entity results.
+
+    One row per entity per config. Stores aggregated fields as JSON. Used by analyses
+    whose unit of interest is a tracked thing (a beneficiary case, child, household)
+    rather than the worker who served them. The pipeline groups raw visits by
+    AnalysisPipelineConfig.linking_field and emits one row per distinct value.
+
+    Mirrors ComputedFLWCache field-for-field, swapping `username` for `entity_id` as
+    the row key. `username` is retained as a denormalized representative FLW
+    (typically `first(username)` per entity) so callers can answer "all entities for
+    this FLW" without a join.
+    """
+
+    # Cache metadata
+    opportunity_id = models.IntegerField(db_index=True)
+    config_hash = models.CharField(max_length=32, db_index=True, help_text="Hash of analysis config")
+    visit_count = models.IntegerField(help_text="Visit count when cached, for invalidation")
+    expires_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Entity identification
+    entity_id = models.CharField(max_length=255, db_index=True)
+    entity_name = models.CharField(max_length=500, blank=True)
+    username = models.CharField(
+        max_length=255,
+        db_index=True,
+        blank=True,
+        help_text="Representative FLW (typically first(username) per entity)",
+    )
+
+    # Aggregated data
+    aggregated_fields = models.JSONField(default=dict, help_text="Aggregated field values")
+
+    # Standard counters (parallels FLW)
+    total_visits = models.IntegerField(default=0)
+    first_visit_date = models.DateField(null=True, blank=True)
+    last_visit_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        app_label = "labs"
+        db_table = "labs_computed_entity_cache"
+        constraints = [
+            # See ComputedVisitCache constraint — same concurrency contract.
+            models.UniqueConstraint(
+                fields=["opportunity_id", "config_hash", "entity_id"],
+                name="uniq_computed_entity_cache_opp_config_entity",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
+            models.Index(fields=["opportunity_id", "config_hash", "username"]),
         ]
 
     @classmethod
@@ -162,6 +257,13 @@ class ComputedFLWCache(models.Model):
     class Meta:
         app_label = "labs"
         db_table = "labs_computed_flw_cache"
+        constraints = [
+            # See ComputedVisitCache constraint — same concurrency contract.
+            models.UniqueConstraint(
+                fields=["opportunity_id", "config_hash", "username"],
+                name="uniq_computed_flw_cache_opp_config_username",
+            ),
+        ]
         indexes = [
             models.Index(fields=["opportunity_id", "config_hash", "visit_count"]),
         ]

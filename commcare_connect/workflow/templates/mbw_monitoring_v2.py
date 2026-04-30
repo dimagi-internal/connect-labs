@@ -34,6 +34,10 @@ DEFINITION = {
         "showSummaryCards": False,
         "showFilters": False,
         "job_type": "mbw_monitoring",
+        # Workflow framework auth gate: workflow runner blocks the template
+        # render until each of these OAuth providers shows active.
+        # See workflow_auth_status_api in workflow/views.py.
+        "auth_requires": ["connect", "commcare_hq", "ocs"],
     },
     "pipeline_sources": [],
 }

@@ -10,11 +10,13 @@ def gen_uuid(apps, schema_editor):
     field_name = "payment_invoice_id"
 
     with connection.cursor() as cursor:
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             UPDATE {table_name}
             SET {field_name} = gen_random_uuid()
             WHERE {field_name} IS NULL;
-        """)
+        """
+        )
 
 
 class Migration(migrations.Migration):

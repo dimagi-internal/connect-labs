@@ -54,11 +54,18 @@ class CacheStage(Enum):
 
     Determines which stage is the "terminal" output for a given analysis:
     - VISIT_LEVEL: VisitAnalysisResult is the final output (one row per visit)
-    - AGGREGATED: FLWAnalysisResult is the final output (one row per FLW/entity)
+    - AGGREGATED: FLWAnalysisResult is the final output (one row per FLW, GROUP BY username)
+    - ENTITY: EntityAnalysisResult is the final output (one row per entity, GROUP BY linking_field)
+
+    ENTITY is for analyses whose unit of interest is a tracked thing — a beneficiary case,
+    a child, a household — rather than the worker who served them. The pipeline groups raw
+    visits by `AnalysisPipelineConfig.linking_field` (which must be set when terminal_stage
+    is ENTITY) and applies the same field/histogram aggregation vocabulary used at FLW stage.
     """
 
     VISIT_LEVEL = "visit_level"
     AGGREGATED = "aggregated"
+    ENTITY = "entity"
 
 
 @dataclass
@@ -318,6 +325,8 @@ class AnalysisPipelineConfig:
                       Default "entity_id" uses the base field from Connect.
                       Can be set to a computed field name (e.g., "beneficiary_case_id")
                       for cases where entity_id doesn't correctly identify unique entities.
+                      Required when terminal_stage=CacheStage.ENTITY — its path expression
+                      becomes the GROUP BY column for entity-stage aggregation.
 
     Example:
         config = AnalysisPipelineConfig(
@@ -365,6 +374,8 @@ class AnalysisPipelineConfig:
         """Validate configuration."""
         if not self.grouping_key:
             raise ValueError("Grouping key is required")
+        if self.terminal_stage == CacheStage.ENTITY and not self.linking_field:
+            raise ValueError("linking_field is required when terminal_stage is ENTITY")
         # Note: Empty fields/histograms is valid for basic caching scenarios
 
     def add_field(self, field_comp: FieldComputation) -> None:

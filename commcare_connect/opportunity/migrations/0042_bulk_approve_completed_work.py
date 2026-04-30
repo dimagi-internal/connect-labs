@@ -35,5 +35,6 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             create_bulk_apporve_completed_work_task,
             delete_bulk_approve_completed_work_task,
-            hints={"run_on_secondary": False})
+            hints={"run_on_secondary": False},
+        )
     ]

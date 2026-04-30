@@ -4,15 +4,16 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('labs', '0002_remove_experimentrecord_opportunity_and_more'),
+        ("labs", "0002_remove_experimentrecord_opportunity_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='experimentrecord',
-            name='organization_id',
-            field=models.CharField(blank=True, help_text='Production organization slug or ID', max_length=255, null=True),
+            model_name="experimentrecord",
+            name="organization_id",
+            field=models.CharField(
+                blank=True, help_text="Production organization slug or ID", max_length=255, null=True
+            ),
         ),
     ]

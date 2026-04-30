@@ -719,6 +719,77 @@ function WorkflowRunner({
   const [isCodeEditorOpen, setIsCodeEditorOpen] = useState(false);
   const [editingCode, setEditingCode] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Workflow framework: auth-requires gate. Templates declare their OAuth
+  // dependencies in definition.config.auth_requires (e.g. ["connect",
+  // "commcare_hq"]). The runner gates the template render on every required
+  // service being active. We block here BEFORE any template-specific work
+  // fires — no FLW history fetch, no pipeline streaming, nothing — so users
+  // see "Authorize CommCare HQ" within ~1s of landing instead of after the
+  // FLW table has rendered and they've clicked Launch.
+  const authRequires: string[] = (initialData.definition?.config
+    ?.auth_requires as string[]) || ['connect'];
+  const [authStatus, setAuthStatus] = useState<Record<
+    string,
+    {
+      active: boolean;
+      authorize_url: string;
+      label: string;
+      reason?: string;
+      message?: string;
+      domain?: string;
+    }
+  > | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+
+  const refreshAuthStatus = useCallback(() => {
+    if (!initialData.apiEndpoints?.authStatus) {
+      // Older runner deployments may not have the endpoint wired yet —
+      // don't block in that case (defaults to current behavior).
+      setAuthChecking(false);
+      return;
+    }
+    setAuthChecking(true);
+    const url = new URL(
+      initialData.apiEndpoints.authStatus,
+      window.location.origin,
+    );
+    url.searchParams.set(
+      'next',
+      window.location.pathname + window.location.search,
+    );
+    // Pass opportunity_id so the BE can do a real CCHQ ping (not just
+    // a timestamp check). Catches scope-downgrade-on-refresh — the cause
+    // of the "click Authorize → still says CommCare HQ unauthorized" loop.
+    if (initialData.opportunity_id) {
+      url.searchParams.set(
+        'opportunity_id',
+        String(initialData.opportunity_id),
+      );
+    }
+    fetch(url.toString())
+      .then((r) => r.json())
+      .then((data) => {
+        setAuthStatus(data);
+        setAuthChecking(false);
+      })
+      .catch(() => {
+        // Network error — let the template try; pipeline-stream errors
+        // will surface anything the runner-level gate would have caught.
+        setAuthStatus(null);
+        setAuthChecking(false);
+      });
+  }, [initialData.apiEndpoints?.authStatus, initialData.opportunity_id]);
+
+  useEffect(() => {
+    refreshAuthStatus();
+  }, [refreshAuthStatus]);
+
+  const missingAuth = authStatus
+    ? authRequires
+        .map((key) => ({ key, ...(authStatus[key] || {}) }))
+        .filter((s) => s.active === false)
+    : [];
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Tab state for switching between workflow and pipeline editing
@@ -771,19 +842,75 @@ function WorkflowRunner({
 
     const eventSource = new EventSource(url.toString());
 
+    // Track last-received message + receipt timestamp so the onerror handler
+    // can surface useful diagnostics instead of the generic
+    // "Pipeline stream connection lost".
+    let lastMessage: string | null = null;
+    let lastMessageAt: number | null = null;
+    let receivedAny = false;
+    const startTs = Date.now();
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        receivedAny = true;
+        lastMessageAt = Date.now();
 
         if (data.error) {
           setPipelineLoadingStatus(null);
-          setError(data.error);
+          // CCHQ auth-required signal — emitted when the BE detects via
+          // verify_hq_access that CCHQ rejected the token even though our
+          // local timestamp said it was valid. Note: the typed payload
+          // (cchq_auth_required, authorize_url, domain) is nested under
+          // `data.data` per send_sse_event's wire format, NOT at the top
+          // level. Earlier the check was on `data.cchq_auth_required` and
+          // never fired even when the BE was emitting the right signal.
+          //
+          // Recovery: force-mark CommCare HQ as inactive in our local
+          // auth status and re-show the framework gate. The gate's
+          // "Authorize CommCare HQ" button is the right next click for
+          // the user.
+          const payload = data.data || {};
+          if (payload.cchq_auth_required) {
+            setAuthStatus((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    commcare_hq: {
+                      ...(prev.commcare_hq || {
+                        label: 'CommCare HQ',
+                      }),
+                      active: false,
+                      authorize_url:
+                        payload.authorize_url ||
+                        prev.commcare_hq?.authorize_url ||
+                        '/labs/commcare/initiate/',
+                    },
+                  }
+                : prev,
+            );
+            // Don't set the small error banner — the framework gate panel
+            // we just reopened is the more useful UI.
+          } else if (payload.concurrent_run) {
+            // Cache-layer concurrency conflict: another tab/session is
+            // running the same pipeline and got there first. Re-running
+            // once their write finishes will hit cache cleanly.
+            setError(
+              `Another pipeline run for this opportunity is already in ` +
+                `progress (collided on ${payload.cache_table}). Wait ~30s ` +
+                `for it to finish, then click Retry — the cached result ` +
+                `should load instantly.`,
+            );
+          } else {
+            setError(data.error);
+          }
           eventSource.close();
           return;
         }
 
         // Progress update - show status message
         if (data.message) {
+          lastMessage = data.message;
           setPipelineLoadingStatus(data.message);
         }
 
@@ -803,7 +930,34 @@ function WorkflowRunner({
 
     eventSource.onerror = () => {
       setPipelineLoadingStatus(null);
-      setError('Pipeline stream connection lost');
+      // Build a descriptive error so users know what was happening when
+      // the connection dropped. The generic "connection lost" message
+      // told them nothing — common cause is AWS ALB's 60-second idle
+      // timeout closing the SSE stream during silent operations
+      // (CCHQ form pagination, visit cold-load).
+      const elapsedSec = Math.round((Date.now() - startTs) / 1000);
+      let detail: string;
+      if (!receivedAny) {
+        detail =
+          `No events received after ${elapsedSec}s. The server may be ` +
+          `unreachable, or the SSE endpoint failed to start. Try reload.`;
+      } else if (lastMessage) {
+        const sinceLastSec = lastMessageAt
+          ? Math.round((Date.now() - lastMessageAt) / 1000)
+          : null;
+        const sinceLast =
+          sinceLastSec !== null ? ` (${sinceLastSec}s since last update)` : '';
+        detail =
+          `Connection dropped while: "${lastMessage}"${sinceLast}. ` +
+          `If this happened during a long load (CommCare HQ pagination, ` +
+          `large visit download), the AWS load balancer may have idle-` +
+          `timed-out the connection. Try reload — cached data should ` +
+          `make the second attempt much faster. If it persists, the ` +
+          `pipeline may be stalled on a backend dependency.`;
+      } else {
+        detail = `Connection dropped after ${elapsedSec}s. Try reload.`;
+      }
+      setError(detail);
       eventSource.close();
     };
 
@@ -814,9 +968,12 @@ function WorkflowRunner({
     definition.pipeline_sources,
   ]);
 
-  // Load pipeline data on mount via SSE streaming
+  // Load pipeline data on mount via SSE streaming.
+  // Gated on the framework auth check passing — no point hammering CCHQ
+  // pipelines if the user's CCHQ token is rejected; surfacing the
+  // "Authorize" gate at the top is faster and clearer.
   useEffect(() => {
-    // Only stream if we have pipeline sources and no data yet
+    if (authChecking || missingAuth.length > 0) return;
     if (
       definition.pipeline_sources?.length &&
       !Object.keys(pipelineData).length
@@ -824,7 +981,13 @@ function WorkflowRunner({
       const cleanup = streamPipelineData();
       return cleanup;
     }
-  }, [definition.pipeline_sources, pipelineData, streamPipelineData]);
+  }, [
+    definition.pipeline_sources,
+    pipelineData,
+    streamPipelineData,
+    authChecking,
+    missingAuth.length,
+  ]);
 
   // Auto-reconnect to running jobs on page load
   // This allows users to close the browser and return later while the Celery task continues
@@ -1310,9 +1473,111 @@ function WorkflowRunner({
               </div>
             )}
 
-            {/* Render the workflow - only when pipeline data is loaded */}
+            {/* Workflow framework gate: auth-requires must be satisfied
+                before any template-specific render fires. This way every
+                template gets uniform "Authorize X" UX without each
+                template having to implement its own check. */}
             <div className="px-4">
-              {pipelineLoadingStatus ? (
+              {authChecking ? (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                  <i className="fa-solid fa-spinner fa-spin text-2xl mb-3" />
+                  <p className="text-sm">Checking authorization…</p>
+                </div>
+              ) : missingAuth.length > 0 ? (
+                <div className="space-y-4 max-w-2xl mx-auto">
+                  <div className="bg-white rounded-lg shadow-sm p-6">
+                    <h2 className="text-xl font-bold text-gray-900">
+                      {definition.name || 'Workflow'}
+                    </h2>
+                    <p className="text-gray-500 mt-1">
+                      Authorization required before this workflow can run.
+                    </p>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <i className="fa-solid fa-key text-amber-600"></i>
+                      <span className="font-semibold text-amber-800">
+                        This workflow requires{' '}
+                        {missingAuth.length === 1 ? 'one' : missingAuth.length}{' '}
+                        additional authorization
+                        {missingAuth.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-amber-800 mb-4">
+                      Click each <strong>Authorize</strong> button below to
+                      grant access. After authorizing, you'll be returned here
+                      automatically.
+                    </p>
+                    <div className="space-y-2 mb-4">
+                      {missingAuth.map((svc) => {
+                        // Distinguish "token dead — re-auth fixes it" from
+                        // "user has no permission to this domain — re-auth
+                        // WON'T fix it; needs an HQ admin." Hiding the
+                        // Authorize button on no_domain_access stops the loop.
+                        const noDomainAccess =
+                          svc.reason === 'no_domain_access';
+                        return (
+                          <div key={svc.key} className="flex items-start gap-3">
+                            <i className="fa-solid fa-circle-xmark text-amber-600 mt-1"></i>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <span className="text-sm font-medium text-gray-800 w-40">
+                                  {svc.label || svc.key}
+                                </span>
+                                {noDomainAccess ? (
+                                  <span className="px-3 py-1.5 bg-red-100 text-red-800 text-sm rounded border border-red-300">
+                                    Account lacks access to{' '}
+                                    {svc.domain || 'this domain'}
+                                  </span>
+                                ) : svc.authorize_url ? (
+                                  <a
+                                    href={svc.authorize_url}
+                                    className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded hover:bg-amber-700 no-underline"
+                                  >
+                                    Authorize {svc.label || svc.key}
+                                  </a>
+                                ) : (
+                                  <span className="text-sm text-gray-500">
+                                    No authorize URL available — contact
+                                    support.
+                                  </span>
+                                )}
+                              </div>
+                              {svc.message && (
+                                <p className="text-xs text-gray-700 mt-1 ml-0">
+                                  {svc.message}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Show services that ARE active so users see overall progress */}
+                      {authStatus &&
+                        authRequires
+                          .filter((k) => authStatus[k]?.active)
+                          .map((k) => (
+                            <div key={k} className="flex items-center gap-3">
+                              <i className="fa-solid fa-circle-check text-green-600"></i>
+                              <span className="text-sm font-medium text-gray-800 w-40">
+                                {authStatus[k]?.label || k}
+                              </span>
+                              <span className="text-sm text-green-700">
+                                Active
+                              </span>
+                            </div>
+                          ))}
+                    </div>
+                    <button
+                      onClick={refreshAuthStatus}
+                      className="px-4 py-2 bg-white border border-amber-400 text-amber-800 text-sm rounded hover:bg-amber-100"
+                    >
+                      <i className="fa-solid fa-rotate mr-1"></i> Re-check after
+                      authorizing
+                    </button>
+                  </div>
+                </div>
+              ) : pipelineLoadingStatus ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-500">
                   <i className="fa-solid fa-spinner fa-spin text-2xl mb-3" />
                   <p className="text-sm">{pipelineLoadingStatus}</p>

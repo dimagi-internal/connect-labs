@@ -20,16 +20,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="program",
             name="currency_fk",
-            field=models.ForeignKey(
-                null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.currency"
-            ),
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.currency"),
         ),
         migrations.AddField(
             model_name="program",
             name="country",
-            field=models.ForeignKey(
-                null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.country"
-            ),
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.PROTECT, to="opportunity.country"),
         ),
         migrations.RunPython(
             populate_program_currency_and_country_fk,

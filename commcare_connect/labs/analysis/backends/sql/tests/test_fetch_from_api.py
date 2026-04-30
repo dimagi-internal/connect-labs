@@ -13,7 +13,7 @@ pytestmark = pytest.mark.django_db
 def test_fetch_from_api_paginates_and_converts_records(httpx_mock):
     """Verifies the full chain: ExportAPIClient pagination → record_to_visit_dict conversion."""
     httpx_mock.add_response(
-        url="https://connect.example.com/export/opportunity/42/user_visits/",
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
         json={
             "next": "https://connect.example.com/export/opportunity/42/user_visits/?last_id=1",
             "results": [
@@ -76,7 +76,7 @@ def test_fetch_from_api_paginates_and_converts_records(httpx_mock):
 def test_fetch_from_api_passes_images_param_when_requested(httpx_mock):
     """Verifies include_images=True adds ?images=true to the request URL."""
     httpx_mock.add_response(
-        url="https://connect.example.com/export/opportunity/42/user_visits/?images=true",
+        url="https://connect.example.com/export/opportunity/42/user_visits/?images=true&page_size=2500",
         json={"next": None, "results": []},
     )
 
@@ -92,7 +92,7 @@ def test_fetch_from_api_passes_images_param_when_requested(httpx_mock):
 def test_fetch_from_api_raises_runtime_error_on_export_api_failure(httpx_mock):
     """Verifies ExportAPIError is wrapped as RuntimeError for caller compatibility."""
     httpx_mock.add_response(
-        url="https://connect.example.com/export/opportunity/42/user_visits/",
+        url="https://connect.example.com/export/opportunity/42/user_visits/?page_size=2500",
         status_code=500,
     )
 

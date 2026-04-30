@@ -12,6 +12,63 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
+def refresh_connect_token(request) -> bool:
+    """
+    Attempt to refresh the Connect OAuth token using the stored refresh_token
+    in ``request.session["labs_oauth"]``.
+
+    On success, mutates the session payload in-place (new access_token,
+    refresh_token, expires_at) and returns True. On failure, leaves the
+    session unchanged and returns False.
+
+    Mirrors the CCHQ ``_refresh_token`` pattern so callers can attempt a
+    silent refresh before deciding the user must re-authenticate.
+    """
+    from django.utils import timezone
+
+    labs_oauth = request.session.get("labs_oauth") or {}
+    refresh_token = labs_oauth.get("refresh_token")
+    if not refresh_token:
+        logger.debug("No refresh_token in labs_oauth; cannot refresh")
+        return False
+
+    client_id = getattr(settings, "CONNECT_OAUTH_CLIENT_ID", "")
+    client_secret = getattr(settings, "CONNECT_OAUTH_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        logger.warning("Connect OAuth client credentials not configured for token refresh")
+        return False
+
+    token_url = f"{settings.CONNECT_PRODUCTION_URL}/o/token/"
+    try:
+        response = httpx.post(
+            token_url,
+            data={
+                "grant_type": "refresh_token",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+            },
+            timeout=30.0,
+        )
+        if response.status_code != 200:
+            logger.warning(f"Connect token refresh failed: {response.status_code} - {response.text}")
+            return False
+
+        token_data = response.json()
+        new_oauth = dict(labs_oauth)
+        new_oauth["access_token"] = token_data["access_token"]
+        new_oauth["refresh_token"] = token_data.get("refresh_token", refresh_token)
+        new_oauth["expires_at"] = timezone.now().timestamp() + token_data.get("expires_in", 3600)
+
+        request.session["labs_oauth"] = new_oauth
+        if hasattr(request.session, "modified"):
+            request.session.modified = True
+        return True
+    except Exception as e:
+        logger.warning(f"Connect token refresh error: {e}")
+        return False
+
+
 def fetch_user_organization_data(access_token: str) -> dict | None:
     """
     Fetch user's organizations, programs, and opportunities from Connect production.

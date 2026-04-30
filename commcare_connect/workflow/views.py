@@ -7,6 +7,7 @@ as LabsRecord objects with React component code for rendering.
 
 import json
 import logging
+from collections.abc import Generator
 
 import httpx
 from django.conf import settings
@@ -18,6 +19,7 @@ from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
 from commcare_connect.labs import s3_export
+from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
 from commcare_connect.utils.feature_access import can_create_from_template, get_allowed_templates
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
@@ -418,6 +420,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "getPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/",
                     # SSE stream for async pipeline data loading
                     "streamPipelineData": f"/labs/workflow/api/{definition_id}/pipeline-data/stream/",
+                    # Framework: auth-status for declared auth_requires
+                    "authStatus": "/labs/workflow/api/auth-status/",
                     # MBW monitoring actions
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
                     "completeRun": f"/labs/workflow/api/run/{run_data['id']}/complete/",
@@ -634,6 +638,161 @@ class OpportunitySummaryView(LoginRequiredMixin, TemplateView):
             summary["error"] = str(e)
 
         return summary
+
+
+@login_required
+@require_GET
+def workflow_auth_status_api(request):
+    """
+    Workflow framework auth-status endpoint.
+
+    Returns the live state of every OAuth provider the workflow runner can
+    require: Connect, CommCare HQ, OCS. Each entry has `active` (true if the
+    session has a non-expired access token), `authorize_url` (where to send
+    the user to refresh that service), and `label` (display name).
+
+    The runner reads `definition.config.auth_requires` (a list of provider
+    keys) and gates entry to the workflow's render_code on every required
+    provider being `active`. Templates that don't list this field default to
+    `["connect"]` (already enforced by labs login_required middleware).
+
+    Behavior beyond a timestamp check:
+      * For each provider, if the access token has expired, attempt a silent
+        refresh using the stored refresh_token. The framework gate then only
+        forces re-authorization when refresh actually fails.
+      * For `commcare_hq`, when ?opportunity_id= is supplied, we additionally
+        ping the CCHQ Application API for the opportunity's domain. This
+        catches the case where refresh "succeeded" but came back with a
+        downgraded scope, or the user lost domain membership — situations
+        where the timestamp would say active but pipelines still 403.
+
+    Query params:
+        next (optional): URL to redirect back to after re-authorization.
+            Defaults to the request's referer or the workflow runner page.
+        opportunity_id (optional): If supplied, enable the real CCHQ ping for
+            that opportunity's domain. Without this we can only do timestamp +
+            refresh checks for CCHQ.
+    """
+    from django.urls import reverse
+    from django.utils import timezone
+    from django.utils.http import url_has_allowed_host_and_scheme, urlencode
+
+    from commcare_connect.labs.integrations.commcare.api_client import CommCareDataAccess
+    from commcare_connect.labs.integrations.connect.oauth import refresh_connect_token
+    from commcare_connect.labs.integrations.ocs.api_client import OCSDataAccess
+
+    next_url = request.GET.get("next") or request.headers.get("Referer", "/labs/overview/")
+    next_url = (next_url or "/labs/overview/").replace("\\", "/")
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts=None):
+        next_url = "/labs/overview/"
+
+    opportunity_id_param = request.GET.get("opportunity_id")
+
+    def _is_active(session_key: str) -> bool:
+        """Timestamp check against the *current* session state."""
+        oauth = request.session.get(session_key, {}) or {}
+        if not oauth.get("access_token"):
+            return False
+        return timezone.now().timestamp() < oauth.get("expires_at", 0)
+
+    # ---- Connect -----------------------------------------------------------
+    if not _is_active("labs_oauth"):
+        # Try a silent refresh before declaring inactive.
+        refresh_connect_token(request)
+    connect_active = _is_active("labs_oauth")
+
+    # ---- OCS ---------------------------------------------------------------
+    if not _is_active("ocs_oauth"):
+        try:
+            with OCSDataAccess(request) as ocs_client:
+                ocs_client._refresh_token()
+        except Exception:
+            logger.exception("OCS silent refresh attempt raised")
+    ocs_active = _is_active("ocs_oauth")
+
+    # ---- CommCare HQ -------------------------------------------------------
+    # Two distinct questions:
+    #   1) Is the OAuth token alive at all? (verify_token_alive — domain-less)
+    #   2) Does this token have access to the *specific* domain pipelines need?
+    #      (verify_hq_access — pings form/v1 on the opp's domain)
+    #
+    # The two answers map to different user-facing actions:
+    #   token dead     → "Authorize CommCare HQ" (re-auth fixes it)
+    #   wrong domain   → "Your account doesn't have access to <domain>"
+    #                    (re-auth WON'T fix it — needs HQ admin)
+    cchq_active = _is_active("commcare_oauth")
+    cchq_reason: str | None = None
+    cchq_domain_for_probe: str | None = None
+
+    if opportunity_id_param:
+        try:
+            from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import fetch_opportunity_metadata
+
+            access_token = (request.session.get("labs_oauth") or {}).get("access_token", "")
+            if access_token:
+                metadata = fetch_opportunity_metadata(access_token, int(opportunity_id_param))
+                cchq_domain_for_probe = metadata.get("cc_domain") or None
+        except Exception:
+            logger.exception("Failed to look up cc_domain for auth-status probe")
+
+    if cchq_active:
+        # NOTE: this supersedes PR #104's "skip the probe when timestamp
+        # is active" approach. PR #104 was solving the right problem
+        # (false-negative loop for users without domain membership) but
+        # via a workaround. Here we fix the root cause: switch the probe
+        # from /api/application/v1 (needs app-builder scope LLO accounts
+        # often lack) to /api/form/v1 (the SAME endpoint pipelines use),
+        # AND split token-alive from domain-access so the UI can say
+        # "account lacks access to <domain>" instead of looping on
+        # Authorize. See verify_token_alive vs verify_hq_access.
+        try:
+            client = CommCareDataAccess(request, cchq_domain_for_probe or "")
+            if not client.verify_token_alive():
+                cchq_active = False
+                cchq_reason = "token_expired"
+            elif cchq_domain_for_probe and not client.verify_hq_access():
+                # Token works, but the user can't read forms in this opp's
+                # domain. Re-auth would not fix this — surface the actual
+                # situation so the user can talk to a CCHQ admin.
+                cchq_active = False
+                cchq_reason = "no_domain_access"
+        except Exception:
+            logger.exception("CCHQ probe raised")
+            cchq_active = False
+            cchq_reason = "probe_error"
+    elif not cchq_active:
+        cchq_reason = "token_expired"
+
+    cchq_payload: dict = {
+        "active": cchq_active,
+        "authorize_url": reverse("labs:commcare_initiate") + "?" + urlencode({"next": next_url}),
+        "label": "CommCare HQ",
+    }
+    if cchq_reason:
+        cchq_payload["reason"] = cchq_reason
+    if cchq_reason == "no_domain_access" and cchq_domain_for_probe:
+        cchq_payload["domain"] = cchq_domain_for_probe
+        cchq_payload["message"] = (
+            f"Your CommCare HQ account does not have form-read access to "
+            f"{cchq_domain_for_probe!r}. Re-authorizing won't fix this — "
+            f"contact a CommCare HQ admin to add your account to that project."
+        )
+
+    return JsonResponse(
+        {
+            "connect": {
+                "active": connect_active,
+                "authorize_url": "/labs/login/?" + urlencode({"next": next_url}),
+                "label": "Connect",
+            },
+            "commcare_hq": cchq_payload,
+            "ocs": {
+                "active": ocs_active,
+                "authorize_url": reverse("labs:ocs_initiate") + "?" + urlencode({"next": next_url}),
+                "label": "OCS",
+            },
+        }
+    )
 
 
 @login_required
@@ -2169,189 +2328,323 @@ def cancel_job_api(request, task_id):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
-class PipelineDataStreamView(LoginRequiredMixin, View):
+class PipelineDataStreamView(BaseSSEStreamView):
     """
     SSE endpoint for streaming pipeline data loading progress.
 
-    Follows same pattern as custom_analysis KMCChildListStreamView.
-    Page loads instantly, SSE streams progress, data renders when complete.
+    Inherits BaseSSEStreamView so heartbeat comments fire every 20s during
+    long silent periods (CCHQ pagination, visit cold-load, etc.). Without
+    heartbeats AWS ALB drops idle SSE connections after 60s — the user
+    sees the generic "Pipeline stream connection lost" with no diagnostic.
     """
 
-    def get(self, request, definition_id):
-        from collections.abc import Generator
-
+    def stream_data(self, request) -> Generator[str, None, None]:
         from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
         from commcare_connect.labs.analysis.sse_streaming import AnalysisPipelineSSEMixin, send_sse_event
 
+        # Django's View.dispatch() sets self.kwargs from URL path kwargs.
+        definition_id = self.kwargs.get("definition_id")
         labs_context = getattr(request, "labs_context", {})
         opportunity_id = labs_context.get("opportunity_id") or request.GET.get("opportunity_id")
 
-        def stream_data() -> Generator[str, None, None]:
-            """Stream pipeline data loading progress via SSE."""
+        try:
+            if not opportunity_id:
+                yield send_sse_event("Error", error="No opportunity selected")
+                return
+
+            # Check for OAuth token
+            labs_oauth = request.session.get("labs_oauth", {})
+            if not labs_oauth.get("access_token"):
+                yield send_sse_event("Error", error="No OAuth token found. Please log in to Connect.")
+                return
+
+            # Get workflow definition to find pipeline sources.
+            data_access = WorkflowDataAccess(request=request)
             try:
-                if not opportunity_id:
-                    yield send_sse_event("Error", error="No opportunity selected")
-                    return
+                definition = data_access.get_definition(definition_id)
+            finally:
+                data_access.close()
 
-                # Check for OAuth token
-                labs_oauth = request.session.get("labs_oauth", {})
-                if not labs_oauth.get("access_token"):
-                    yield send_sse_event("Error", error="No OAuth token found. Please log in to Connect.")
-                    return
+            if not definition:
+                yield send_sse_event("Error", error=f"Workflow {definition_id} not found")
+                return
 
-                # Get workflow definition to find pipeline sources.
-                # data_access is only used for this single lookup; close as
-                # soon as we have the record so the HTTP client doesn't leak
-                # for the duration of the pipeline streaming below.
-                data_access = WorkflowDataAccess(request=request)
-                try:
-                    definition = data_access.get_definition(definition_id)
-                finally:
-                    data_access.close()
+            if not definition.pipeline_sources:
+                yield send_sse_event("No pipelines", data={"pipelines": {}})
+                return
 
-                if not definition:
-                    yield send_sse_event("Error", error=f"Workflow {definition_id} not found")
-                    return
+            # Early CCHQ access probe — fail fast (1-2s) instead of letting
+            # the user wait through a 60s ALB timeout, before discovering
+            # CCHQ is unreachable mid-pipeline. Only fires if any pipeline
+            # source declares a cchq_forms data source.
+            yield from self._maybe_probe_cchq_access(
+                request, definition, int(opportunity_id), labs_oauth.get("access_token")
+            )
 
-                if not definition.pipeline_sources:
-                    yield send_sse_event("No pipelines", data={"pipelines": {}})
-                    return
+            yield send_sse_event("Loading pipeline configurations...")
 
-                yield send_sse_event("Loading pipeline configurations...")
+            # Determine which opps to pull data from
+            opp_ids = definition.opportunity_ids or [int(opportunity_id)]
 
-                # Determine which opps to pull data from
-                opp_ids = definition.opportunity_ids or [int(opportunity_id)]
+            def format_date(d):
+                if d and hasattr(d, "isoformat"):
+                    return d.isoformat()
+                return d
 
-                def format_date(d):
-                    if d and hasattr(d, "isoformat"):
-                        return d.isoformat()
-                    return d
+            # Execute each pipeline source with streaming.
+            pipeline_data = {}
+            pipeline_access = PipelineDataAccess(
+                request=request,
+                access_token=labs_oauth.get("access_token"),
+                opportunity_id=int(opportunity_id),
+            )
 
-                # Execute each pipeline source with streaming.
-                # Pipeline definitions are scoped to the primary opp (where the
-                # workflow record was created), so we use one pipeline_access
-                # bound to the primary opp for definition lookup, and pass the
-                # per-opp value at execute time.
-                pipeline_data = {}
-                pipeline_access = PipelineDataAccess(
-                    request=request,
-                    access_token=labs_oauth.get("access_token"),
-                    opportunity_id=int(opportunity_id),
-                )
+            try:
+                for source in definition.pipeline_sources:
+                    pipeline_id = source.get("pipeline_id")
+                    alias = source.get("alias", f"pipeline_{pipeline_id}")
 
-                try:
-                    for source in definition.pipeline_sources:
-                        pipeline_id = source.get("pipeline_id")
-                        alias = source.get("alias", f"pipeline_{pipeline_id}")
+                    if not pipeline_id:
+                        continue
 
-                        if not pipeline_id:
-                            continue
-
-                        pipeline_def = pipeline_access.get_definition(pipeline_id)
-                        if not pipeline_def:
-                            yield send_sse_event(f"Pipeline {pipeline_id} not found")
-                            pipeline_data[alias] = {
-                                "rows": [],
-                                "metadata": {
-                                    "pipeline_id": pipeline_id,
-                                    "pipeline_name": None,
-                                    "row_count": 0,
-                                    "opportunity_ids": list(opp_ids),
-                                    "per_opp": {str(oid): {"error": "Pipeline not found"} for oid in opp_ids},
-                                },
-                            }
-                            continue
-
-                        merged_rows: list[dict] = []
-                        # Keys stringified to match JSON serialization shape.
-                        per_opp_meta: dict[str, dict] = {}
-
-                        for i, opp_id in enumerate(opp_ids):
-                            # Fresh mixin per (source, opp) so state doesn't leak.
-                            mixin = AnalysisPipelineSSEMixin()
-                            suffix = f" (opp {i + 1}/{len(opp_ids)})" if len(opp_ids) > 1 else ""
-                            yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
-
-                            try:
-                                config = pipeline_access._schema_to_config(pipeline_def.schema, pipeline_id)
-                                pipeline = AnalysisPipeline(request)
-                                pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
-                                logger.info(
-                                    "[PipelineStream] Starting stream for pipeline %s, opp %s",
-                                    pipeline_id,
-                                    opp_id,
-                                )
-                                yield from mixin.stream_pipeline_events(pipeline_stream)
-
-                                result = mixin._pipeline_result
-                                from_cache = mixin._pipeline_from_cache
-
-                                row_count = len(result.rows) if result else 0
-                                per_opp_meta[str(opp_id)] = {
-                                    "row_count": row_count,
-                                    "from_cache": from_cache,
-                                }
-
-                                if result:
-                                    yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
-                                    for row in result.rows:
-                                        row_dict = {
-                                            "id": getattr(row, "id", None),
-                                            "entity_id": row.entity_id,
-                                            "entity_name": row.entity_name,
-                                            "username": row.username,
-                                            "visit_date": format_date(row.visit_date),
-                                            "total_visits": getattr(row, "total_visits", 0),
-                                            "approved_visits": getattr(row, "approved_visits", 0),
-                                            "pending_visits": getattr(row, "pending_visits", 0),
-                                            "rejected_visits": getattr(row, "rejected_visits", 0),
-                                            "flagged_visits": getattr(row, "flagged_visits", 0),
-                                            "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
-                                            "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
-                                            "opportunity_id": opp_id,
-                                        }
-                                        custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
-                                        if custom:
-                                            row_dict.update(custom)
-                                        merged_rows.append(row_dict)
-                            except Exception as e:
-                                logger.exception(
-                                    "[PipelineStream] Pipeline %s failed for opp %s",
-                                    pipeline_id,
-                                    opp_id,
-                                )
-                                per_opp_meta[str(opp_id)] = {"error": str(e)}
-
+                    pipeline_def = pipeline_access.get_definition(pipeline_id)
+                    if not pipeline_def:
+                        yield send_sse_event(f"Pipeline {pipeline_id} not found")
                         pipeline_data[alias] = {
-                            "rows": merged_rows,
+                            "rows": [],
                             "metadata": {
                                 "pipeline_id": pipeline_id,
-                                "pipeline_name": pipeline_def.name,
-                                "row_count": len(merged_rows),
+                                "pipeline_name": None,
+                                "row_count": 0,
                                 "opportunity_ids": list(opp_ids),
-                                "per_opp": per_opp_meta,
+                                "per_opp": {str(oid): {"error": "Pipeline not found"} for oid in opp_ids},
                             },
                         }
+                        continue
+
+                    merged_rows: list[dict] = []
+                    per_opp_meta: dict[str, dict] = {}
+
+                    for i, opp_id in enumerate(opp_ids):
+                        mixin = AnalysisPipelineSSEMixin()
+                        suffix = f" (opp {i + 1}/{len(opp_ids)})" if len(opp_ids) > 1 else ""
+                        yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
+
+                        try:
+                            config = pipeline_access._schema_to_config(pipeline_def.schema, pipeline_id)
+                            pipeline = AnalysisPipeline(request)
+                            pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
+                            logger.info(
+                                "[PipelineStream] Starting stream for pipeline %s, opp %s",
+                                pipeline_id,
+                                opp_id,
+                            )
+                            yield from mixin.stream_pipeline_events(pipeline_stream)
+
+                            result = mixin._pipeline_result
+                            from_cache = mixin._pipeline_from_cache
+
+                            row_count = len(result.rows) if result else 0
+                            per_opp_meta[str(opp_id)] = {
+                                "row_count": row_count,
+                                "from_cache": from_cache,
+                            }
+
+                            if result:
+                                yield send_sse_event(f"Processing {alias} data (opp {opp_id})...")
+                                for row in result.rows:
+                                    row_dict = {
+                                        "id": getattr(row, "id", None),
+                                        "entity_id": row.entity_id,
+                                        "entity_name": row.entity_name,
+                                        "username": row.username,
+                                        "visit_date": format_date(row.visit_date),
+                                        "total_visits": getattr(row, "total_visits", 0),
+                                        "approved_visits": getattr(row, "approved_visits", 0),
+                                        "pending_visits": getattr(row, "pending_visits", 0),
+                                        "rejected_visits": getattr(row, "rejected_visits", 0),
+                                        "flagged_visits": getattr(row, "flagged_visits", 0),
+                                        "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
+                                        "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
+                                        "opportunity_id": opp_id,
+                                    }
+                                    custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
+                                    if custom:
+                                        row_dict.update(custom)
+                                    merged_rows.append(row_dict)
+                        except Exception as e:
+                            from commcare_connect.labs.analysis.backends.sql.cache import CacheConcurrencyError
+                            from commcare_connect.labs.integrations.commcare.api_client import CCHQAuthError
+
+                            logger.exception(
+                                "[PipelineStream] Pipeline %s failed for opp %s",
+                                pipeline_id,
+                                opp_id,
+                            )
+                            per_opp_entry = {"error": str(e)}
+                            if isinstance(e, CCHQAuthError):
+                                per_opp_entry["auth_error"] = "commcare_hq"
+                                per_opp_entry["auth_error_domain"] = e.domain
+                            if isinstance(e, CacheConcurrencyError):
+                                # Loud terminal error: another pipeline run for the
+                                # same (opportunity, config) collided with this one
+                                # in the cache layer. Re-running once the other
+                                # writer finishes will hit the cache cleanly.
+                                per_opp_entry["concurrent_run"] = True
+                                per_opp_entry["cache_table"] = e.table
+                                yield send_sse_event(
+                                    f"Pipeline '{pipeline_def.name}' aborted: another run "
+                                    f"for opp {opp_id} is already in flight (collided on "
+                                    f"{e.table}). Wait a moment and retry — a cache hit "
+                                    f"is likely.",
+                                    error=str(e),
+                                    data={
+                                        "pipeline_alias": alias,
+                                        "pipeline_name": pipeline_def.name,
+                                        "pipeline_error": str(e)[:500],
+                                        "concurrent_run": True,
+                                        "cache_table": e.table,
+                                    },
+                                )
+                                # Stop the entire pipeline stream — don't proceed
+                                # to the next pipeline source. Any subsequent
+                                # writer would just collide too.
+                                per_opp_meta[str(opp_id)] = per_opp_entry
+                                pipeline_data[alias] = {
+                                    "rows": [],
+                                    "metadata": {
+                                        "pipeline_id": pipeline_id,
+                                        "pipeline_name": pipeline_def.name,
+                                        "row_count": 0,
+                                        "concurrent_run": True,
+                                        "cache_table": e.table,
+                                        "opportunity_ids": list(opp_ids),
+                                        "per_opp": per_opp_meta,
+                                    },
+                                }
+                                return
+                            per_opp_meta[str(opp_id)] = per_opp_entry
+                            # Surface per-pipeline failure to the FE with the
+                            # pipeline name so users see which one broke
+                            # rather than a generic "connection lost".
+                            yield send_sse_event(
+                                f"Pipeline '{pipeline_def.name}' failed for opp {opp_id}: {str(e)[:200]}",
+                                data={
+                                    "pipeline_alias": alias,
+                                    "pipeline_name": pipeline_def.name,
+                                    "pipeline_error": str(e)[:500],
+                                },
+                            )
+
+                    # Aggregate per-opp errors up to the alias level so the FE
+                    # render can detect them with a single check
+                    # (pipelines[alias].metadata.auth_error). The V2 render's
+                    # auth-error gate looks here; the SSE path used to leave
+                    # the auth_error tag buried under per_opp[opp_id], where
+                    # the render didn't see it → the dashboard happily showed
+                    # "0 rows (none found)" instead of the auth panel.
+                    alias_metadata = {
+                        "pipeline_id": pipeline_id,
+                        "pipeline_name": pipeline_def.name,
+                        "row_count": len(merged_rows),
+                        "opportunity_ids": list(opp_ids),
+                        "per_opp": per_opp_meta,
+                    }
+                    auth_failed_opps = [oid for oid, m in per_opp_meta.items() if m.get("auth_error") == "commcare_hq"]
+                    if auth_failed_opps:
+                        alias_metadata["auth_error"] = "commcare_hq"
+                        alias_metadata["auth_error_domain"] = next(
+                            (per_opp_meta[oid].get("auth_error_domain") for oid in auth_failed_opps),
+                            None,
+                        )
+                        alias_metadata["auth_authorize_url"] = "/labs/commcare/initiate/"
+                    pipeline_data[alias] = {
+                        "rows": merged_rows,
+                        "metadata": alias_metadata,
+                    }
+            finally:
+                pipeline_access.close()
+
+            # Send final complete event with all data
+            yield send_sse_event(
+                f"Loaded {sum(len(p.get('rows', [])) for p in pipeline_data.values())} records",
+                data={"pipelines": pipeline_data},
+            )
+
+        except Exception:
+            logger.exception("[PipelineStream] Error")
+            yield send_sse_event("Error", error="An internal error occurred")
+
+    def _maybe_probe_cchq_access(self, request, definition, opportunity_id, access_token):
+        """If any pipeline source uses cchq_forms, ping CCHQ before the long pull.
+
+        Yields an SSE error event and returns early (caller halts) if CCHQ
+        is unreachable. The probe takes 1-2 seconds in the success case;
+        in the failure case we surface 'CommCare HQ unreachable' to the
+        user immediately instead of letting them wait 60+ seconds for the
+        ALB to drop the connection.
+        """
+        from commcare_connect.labs.analysis.sse_streaming import send_sse_event
+        from commcare_connect.labs.integrations.commcare.api_client import CommCareDataAccess
+        from commcare_connect.workflow.templates.mbw_monitoring.data_fetchers import fetch_opportunity_metadata
+
+        # Any cchq_forms sources?
+        needs_cchq = False
+        for source in definition.pipeline_sources or []:
+            sid = source.get("pipeline_id")
+            if not sid:
+                continue
+            try:
+                pa = PipelineDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
+                try:
+                    pdef = pa.get_definition(sid)
                 finally:
-                    pipeline_access.close()
-
-                # Send final complete event with all data
-                yield send_sse_event(
-                    f"Loaded {sum(len(p.get('rows', [])) for p in pipeline_data.values())} records",
-                    data={"pipelines": pipeline_data},
-                )
-
+                    pa.close()
+                if pdef and pdef.schema and pdef.schema.get("data_source", {}).get("type") == "cchq_forms":
+                    needs_cchq = True
+                    break
             except Exception:
-                logger.exception("[PipelineStream] Error")
-                yield send_sse_event("Error", error="An internal error occurred")
+                # Don't block on probe-classification errors
+                continue
+        if not needs_cchq:
+            return
 
-        response = StreamingHttpResponse(
-            stream_data(),
-            content_type="text/event-stream",
-        )
-        response["Cache-Control"] = "no-cache"
-        response["X-Accel-Buffering"] = "no"
-        return response
+        try:
+            metadata = fetch_opportunity_metadata(access_token, opportunity_id)
+            cc_domain = metadata.get("cc_domain")
+            if not cc_domain:
+                yield send_sse_event(
+                    "Error",
+                    error=("Opportunity has no CommCare domain configured. " "Contact your project admin."),
+                )
+                return
+            client = CommCareDataAccess(request, cc_domain)
+            if not client.verify_hq_access():
+                # send_sse_event(message, data, error) — extra fields go in data,
+                # NOT as kwargs. (My first attempt passed cchq_auth_required as
+                # a kwarg and it crashed with "unexpected keyword argument", so
+                # the probe failed silently and the user saw "0 rows" instead
+                # of the auth panel — even though verify_hq_access correctly
+                # detected the 403.)
+                yield send_sse_event(
+                    "Error",
+                    error=(
+                        "CommCare HQ access denied. The OAuth token may have "
+                        "expired or you may have lost access to the project. "
+                        "Re-authorize at /labs/commcare/initiate/?next=/labs/overview/."
+                    ),
+                    data={
+                        "cchq_auth_required": True,
+                        "authorize_url": "/labs/commcare/initiate/?next=/labs/overview/",
+                        "domain": cc_domain,
+                    },
+                )
+                return
+        except Exception as e:
+            # Probe itself failed (network, etc.) — surface but don't block.
+            # The downstream pipeline will still attempt and may succeed.
+            logger.warning("[PipelineStream] CCHQ probe failed: %s", e)
+            yield send_sse_event(f"Warning: could not verify CommCare HQ access ({type(e).__name__}). Continuing...")
 
 
 @login_required

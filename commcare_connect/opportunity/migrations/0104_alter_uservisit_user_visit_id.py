@@ -45,7 +45,6 @@ class Migration(migrations.Migration):
                     ),
                 ),
             ],
-
             database_operations=[
                 # NOTE: Forward runs top → bottom
                 # Reverse runs bottom → top

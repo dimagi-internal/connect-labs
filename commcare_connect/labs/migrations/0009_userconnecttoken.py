@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("labs", "0008_change_visit_id_to_charfield"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

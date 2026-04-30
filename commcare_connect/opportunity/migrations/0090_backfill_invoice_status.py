@@ -8,11 +8,10 @@ def backfill_invoice_status(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("opportunity", "0089_paymentinvoice_status"),
     ]
 
     operations = [
-        migrations.RunPython(backfill_invoice_status, migrations.RunPython.noop,  hints={"run_on_secondary": False}),
+        migrations.RunPython(backfill_invoice_status, migrations.RunPython.noop, hints={"run_on_secondary": False}),
     ]
