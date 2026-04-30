@@ -24,31 +24,70 @@ class TestBuildSnapshotDispatch:
         assert not TEMPLATES["bulk_image_audit"].get("supports_snapshots")
         assert build_snapshot_for_template("bulk_image_audit", pipelines={}, state={}, opportunity_id=1) is None
 
-    def test_kmc_longitudinal_declares_supports_snapshots(self):
-        """First adopter — confirm the flag flows through to list_templates output."""
-        entry = next(t for t in list_templates() if t["key"] == "kmc_longitudinal")
-        assert entry["supports_snapshots"] is True
+    def test_performance_review_declares_supports_snapshots(self):
+        """First adopter — confirm the flag flows through to list_templates output.
 
-    def test_kmc_longitudinal_build_snapshot_runs_over_pipeline_rows(self):
-        pipelines = {
-            "children": {
-                "rows": [
-                    {"entity_id": "case-1", "child_name": "Asha", "birth_weight": 1800, "current_weight": 2600},
-                    {"entity_id": "case-2", "child_name": "Bina", "birth_weight": 2000, "current_weight": 2400},
-                ],
-            },
+        kmc_longitudinal does NOT opt in: continuous tracking, no "moment of
+        completion." Snapshots are for action-shaped templates (a periodic review
+        of a worker cohort, an audit batch, etc).
+        """
+        entry = next(t for t in list_templates() if t["key"] == "performance_review")
+        assert entry["supports_snapshots"] is True
+        # Negative case: kmc_longitudinal is continuous-tracking, opts out.
+        kmc_entry = next(t for t in list_templates() if t["key"] == "kmc_longitudinal")
+        assert kmc_entry["supports_snapshots"] is False
+
+    def test_performance_review_build_snapshot_freezes_workers_and_decisions(self):
+        """The performance_review hook captures: the worker list at freeze time, the
+        per-worker review decisions from state, and a summary breakdown by status.
+        """
+        workers = [
+            {"username": "alice", "name": "Alice", "visit_count": 12, "opportunity_id": 1},
+            {"username": "bob", "name": "Bob", "visit_count": 5, "opportunity_id": 1},
+            {"username": "carol", "name": "Carol", "visit_count": 8, "opportunity_id": 2},
+        ]
+        state = {
+            "worker_states": {
+                "alice": {"status": "confirmed"},
+                "bob": {"status": "needs_audit"},
+                # carol has no entry → defaults to pending
+            }
         }
-        snap = build_snapshot_for_template("kmc_longitudinal", pipelines=pipelines, state={}, opportunity_id=874)
+        snap = build_snapshot_for_template(
+            "performance_review",
+            pipelines={},
+            state=state,
+            opportunity_id=1,
+            workers=workers,
+            opportunity_ids=[1, 2],
+        )
         assert snap is not None
         assert snap["schema_version"] == 1
-        assert {c["entity_id"] for c in snap["children"]} == {"case-1", "case-2"}
-        # case-1 reached threshold (2600 >= 2500), case-2 didn't.
-        assert snap["kpis"]["total"] == 2
-        assert snap["kpis"]["reached_threshold"] == 1
-        # Derived weight_gain is pre-computed.
-        case1 = next(c for c in snap["children"] if c["entity_id"] == "case-1")
-        assert case1["weight_gain"] == 800
-        assert case1["reached_threshold"] is True
+        # Workers frozen as-is, including opportunity_id tag.
+        assert len(snap["workers"]) == 3
+        # Per-worker decisions preserved.
+        assert snap["worker_states"]["alice"]["status"] == "confirmed"
+        # Multi-opp tracking baked in.
+        assert snap["opportunity_ids"] == [1, 2]
+        # Summary: total + reviewed + by_status counts.
+        assert snap["summary"]["total"] == 3
+        assert snap["summary"]["reviewed"] == 2  # alice + bob, carol is still pending
+        assert snap["summary"]["by_status"] == {"confirmed": 1, "needs_audit": 1, "pending": 1}
+
+    def test_performance_review_build_snapshot_handles_empty_state(self):
+        """A run with no decisions yet still produces a valid snapshot —
+        all workers default to 'pending'."""
+        workers = [{"username": "u1", "opportunity_id": 1}]
+        snap = build_snapshot_for_template(
+            "performance_review",
+            pipelines={},
+            state={},
+            opportunity_id=1,
+            workers=workers,
+            opportunity_ids=[1],
+        )
+        assert snap["summary"]["reviewed"] == 0
+        assert snap["summary"]["by_status"] == {"pending": 1}
 
 
 class TestSnapshotApiEndpoints:

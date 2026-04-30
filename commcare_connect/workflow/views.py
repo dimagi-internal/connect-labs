@@ -1125,11 +1125,26 @@ def build_snapshot_api(request, run_id):
         # Fetch pipeline data the same way the runner does — single source of truth.
         pipelines = data_access.get_pipeline_data(definition_id, opportunity_id)
 
+        # Fetch workers for each opp the workflow targets and tag with opportunity_id —
+        # mirrors RunView.get_context_data so the snapshot sees the same worker set the
+        # render code sees. multi_opp templates rely on this; single-opp templates fall
+        # back to [opportunity_id].
+        effective_opp_ids = definition.opportunity_ids or [opportunity_id]
+        workers: list[dict] = []
+        for oid in effective_opp_ids:
+            try:
+                for w in data_access.get_workers(oid):
+                    workers.append({**w, "opportunity_id": oid})
+            except Exception:
+                logger.exception("Failed to load workers for opp %s", oid)
+
         snapshot_payload = build_snapshot_for_template(
             template_key=template_key,
             pipelines=pipelines,
             state=run.data.get("state", {}),
             opportunity_id=opportunity_id,
+            workers=workers,
+            opportunity_ids=effective_opp_ids,
         )
         if not isinstance(snapshot_payload, dict):
             return JsonResponse(

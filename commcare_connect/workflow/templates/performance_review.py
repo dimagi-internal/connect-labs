@@ -271,6 +271,45 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     );
 }"""
 
+
+def build_snapshot(*, workers: list = None, state: dict = None, opportunity_ids: list = None, **_kwargs) -> dict:
+    """Freeze the weekly review: the worker list reviewed + per-worker decisions.
+
+    Performance review is action-shaped — a periodic review of a worker cohort.
+    The snapshot captures everything needed to reconstruct "what I saw and decided
+    during this week's review":
+
+    - The worker list as it was at freeze time (so re-opening the run shows the
+      same workers, even if the live FLW list has since changed).
+    - The per-worker status decisions (worker_states.<username>.status).
+    - Summary counts by status, pre-computed for the dashboard cards.
+
+    Pipelines aren't used by this template's render — performance metrics come from
+    the live workers list — so they're ignored here. The hook accepts **_kwargs to
+    stay forward-compatible with new context fields the framework may add.
+    """
+    workers = workers or []
+    state = state or {}
+    worker_states = state.get("worker_states", {}) or {}
+
+    counts: dict[str, int] = {}
+    for w in workers:
+        status = (worker_states.get(w.get("username", ""), {}) or {}).get("status", "pending")
+        counts[status] = counts.get(status, 0) + 1
+
+    return {
+        "schema_version": 1,
+        "workers": workers,
+        "worker_states": worker_states,
+        "opportunity_ids": list(opportunity_ids or []),
+        "summary": {
+            "total": len(workers),
+            "reviewed": len(workers) - counts.get("pending", 0),
+            "by_status": counts,
+        },
+    }
+
+
 # Template export - this is what the registry imports
 TEMPLATE = {
     "key": "performance_review",
@@ -279,6 +318,7 @@ TEMPLATE = {
     "icon": "fa-clipboard-check",
     "color": "green",
     "multi_opp": True,
+    "supports_snapshots": True,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": PIPELINE_SCHEMA,
