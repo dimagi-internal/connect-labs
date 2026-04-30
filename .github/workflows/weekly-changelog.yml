@@ -32,7 +32,7 @@ jobs:
 
           # Fetch closed PRs merged to main in the last 7 days
           gh api "repos/${{ github.repository }}/pulls?state=closed&base=main&per_page=100" \
-            --jq "[.[] | select(.merged_at != null and .merged_at >= \"$SINCE\")]" \
+            | jq --arg since "$SINCE" '[.[] | select(.merged_at != null and .merged_at >= $since)]' \
             > /tmp/merged_prs.json
 
           COUNT=$(jq length /tmp/merged_prs.json)

@@ -23,9 +23,12 @@ class ConfluenceClient:
             auth=self.auth,
             headers=self.headers,
             params=params,
-            timeout=30,
+            timeout=60,
         )
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            raise RuntimeError(f"Confluence GET {path} failed: {e}") from e
         return resp.json()
 
     def _put(self, path: str, body: dict) -> dict:
@@ -34,9 +37,12 @@ class ConfluenceClient:
             auth=self.auth,
             headers=self.headers,
             json=body,
-            timeout=30,
+            timeout=60,
         )
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            raise RuntimeError(f"Confluence PUT {path} failed: {e}") from e
         return resp.json()
 
     def _post(self, path: str, body: dict) -> dict:
@@ -45,9 +51,12 @@ class ConfluenceClient:
             auth=self.auth,
             headers=self.headers,
             json=body,
-            timeout=30,
+            timeout=60,
         )
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            raise RuntimeError(f"Confluence POST {path} failed: {e}") from e
         return resp.json()
 
     def get_page(self, page_id: str) -> dict:
