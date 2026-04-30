@@ -639,6 +639,50 @@ def _inner_agg_expr(agg: str, value_expr: str) -> str:
     raise ValueError(f"pre_aggregation {agg!r} not supported as inner step (mode_share/list invalid here)")
 
 
+def _pre_aggregated_field_sql_via_per_mother_cte(field: FieldComputation) -> str:
+    """SQL for an attribute_to=last_username field, reading from `_per_mother_<path>` CTE.
+
+    The CTE pre-collapses visits to one row per (pre_group, owner_username)
+    with the field's per-mother value already computed. Per-FLW outer
+    aggregations just slice the CTE by `owner_username = outer.username`
+    — no per-row re-collapse, ~270-row scan instead of 86k-visit rescans.
+
+    Field aggregation maps to the same outer shape as before: mode_share /
+    dup_share count value frequencies; everything else uses _outer_agg_over_v.
+    """
+    cte = _per_mother_cte_name(field.pre_aggregate_by)
+    column = f"{field.name}_per_mother"
+    if field.aggregation == "mode_share":
+        return f"""(
+            SELECT MAX(c)::float / NULLIF(SUM(c), 0)
+            FROM (
+                SELECT COUNT(*) AS c
+                FROM {cte}
+                WHERE owner_username = labs_raw_visit_cache.username
+                  AND {column} IS NOT NULL
+                GROUP BY {column}
+            ) freq
+        )"""
+    if field.aggregation == "dup_share":
+        return f"""(
+            SELECT COALESCE(SUM(c) FILTER (WHERE c > 1), 0)::float / NULLIF(SUM(c), 0)
+            FROM (
+                SELECT COUNT(*) AS c
+                FROM {cte}
+                WHERE owner_username = labs_raw_visit_cache.username
+                  AND {column} IS NOT NULL
+                GROUP BY {column}
+            ) freq
+        )"""
+    outer_expr = _outer_agg_over_v(field.aggregation).replace("v", column)
+    return f"""(
+        SELECT {outer_expr}
+        FROM {cte}
+        WHERE owner_username = labs_raw_visit_cache.username
+          AND {column} IS NOT NULL
+    )"""
+
+
 def _pre_aggregated_field_sql(
     field: FieldComputation,
     inner_source: str = "labs_raw_visit_cache",
@@ -659,6 +703,15 @@ def _pre_aggregated_field_sql(
     nesting level (group by value, take max-count / sum-count). All other
     aggregations are SELECT-list expressions over the per-group `v` column.
     """
+    # Fast path for attributed fields: read from the shared per-pre_group
+    # CTE built by `_build_per_mother_cte`. The CTE pre-collapses visits →
+    # mothers ONCE for all attributed fields sharing this pre_aggregate_by;
+    # per-FLW aggregations here just slice it by owner_username (~270 rows
+    # per FLW vs the previous shape's full-CTE rescan per field per FLW).
+    # 99 FLWs × 7 fields = 693 rescans → 693 small slices, ~50× speedup.
+    if field.pre_aggregate_attribute_to == "last_username":
+        return _pre_aggregated_field_sql_via_per_mother_cte(field)
+
     paths = field.paths if field.paths else [field.path]
     value_expr = _paths_to_coalesce_sql(paths)
     transformed_expr = _transform_to_sql(field, value_expr)
@@ -859,6 +912,144 @@ def _collect_owner_ctes(config: AnalysisPipelineConfig, opportunity_id: int) -> 
     return seen
 
 
+def _per_mother_cte_name(pre_aggregate_by: str) -> str:
+    """CTE alias for the per-pre_group collapse. One per distinct pre_aggregate_by."""
+    sanitized = pre_aggregate_by.replace(".", "_").replace("@", "")
+    return f"_per_mother_{sanitized}"
+
+
+def _build_per_mother_cte(
+    pre_aggregate_by: str,
+    fields: list[FieldComputation],
+    visit_source: str,
+    pipeline_id: int | None,
+) -> str:
+    """Per-pre_group collapse CTE — one row per (pre_group_key, owner_username).
+
+    Replaces the previous shape where each attributed field ran its own
+    correlated subquery, doing the per-mother visit→value collapse 7 times
+    (once per attributed field × per FLW = 99 × 7 = 693 evaluations of
+    "scan visits, JOIN owners, GROUP BY mother"). The new shape collapses
+    visits → mothers ONCE, emitting one column per attributed field. The
+    outer per-FLW aggregations then read tiny per-FLW slices (~270 rows)
+    instead of rescanning the full 86k-visit CTE.
+
+    Each field column inside the CTE applies that field's own
+    `pre_aggregation` and per-field FILTER (e.g. parity filters
+    form_name='ANC Visit'; phone has no filter). Fields that share
+    pre_aggregate_by share this CTE.
+
+    Owner-username is selected directly so the outer aggregation joins
+    on it (FLW = mother's owner) instead of running a separate JOIN per
+    inner subquery.
+    """
+    pre_path_sub = _jsonb_path_to_sql(pre_aggregate_by, "sub.form_json")
+    cte_alias_owners = _owner_cte_name(pre_aggregate_by)
+
+    select_parts = [
+        f"{pre_path_sub} AS pre_group_key",
+        f"{cte_alias_owners}.owner_username AS owner_username",
+    ]
+    for f in fields:
+        paths = f.paths if f.paths else [f.path]
+        value_expr = _paths_to_coalesce_sql(paths, column="sub.form_json")
+        transformed_expr = _transform_to_sql(f, value_expr)
+        # Apply the field's per-row filter, if any, inside the inner collapse.
+        # Mirrors what `_pre_aggregated_field_sql` did pre-refactor.
+        filter_clause = ""
+        if (f.filter_path or f.filter_paths) and f.filter_value:
+            if f.filter_paths:
+                filter_sql = _paths_to_coalesce_sql(f.filter_paths, column="sub.form_json")
+            else:
+                filter_sql = _jsonb_path_to_sql(f.filter_path, "sub.form_json")
+            if f.filter_op == "eq":
+                filter_clause = (
+                    f" FILTER (WHERE TRIM({filter_sql}) = '{f.filter_value}' AND {transformed_expr} IS NOT NULL)"
+                )
+            elif f.filter_op == "contains_word":
+                filter_clause = (
+                    f" FILTER (WHERE '{f.filter_value}' = ANY(string_to_array(COALESCE({filter_sql}, ''), ' ')) "
+                    f"AND {transformed_expr} IS NOT NULL)"
+                )
+        else:
+            filter_clause = f" FILTER (WHERE {transformed_expr} IS NOT NULL)"
+
+        # Per-field collapse: pre_aggregation determines ARRAY_AGG ordering or
+        # plain aggregation. Mirrors `_inner_agg_expr` exactly so semantics
+        # match the previous correlated-subquery path.
+        agg = f.pre_aggregation
+        if agg == "first":
+            collapse = f"(ARRAY_AGG({transformed_expr} ORDER BY sub.visit_id ASC){filter_clause})[1]"
+        elif agg == "last":
+            collapse = f"(ARRAY_AGG({transformed_expr} ORDER BY sub.visit_id DESC){filter_clause})[1]"
+        elif agg == "count":
+            collapse = f"COUNT({transformed_expr}){filter_clause}"
+        elif agg in ("count_unique", "count_distinct"):
+            # DISTINCT inside aggregation can't combine with FILTER cleanly —
+            # rare in practice; fall back to the un-filtered form. If a caller
+            # hits this with a real filter, raise rather than silently drop.
+            if filter_clause and "FILTER" in filter_clause and (f.filter_path or f.filter_paths):
+                raise ValueError(
+                    f"pre_aggregation={agg!r} with a per-row filter is not supported in the "
+                    f"per-mother CTE — combine the filter into a separate field or drop the filter."
+                )
+            collapse = f"COUNT(DISTINCT {transformed_expr})"
+        elif agg == "sum":
+            collapse = f"SUM({transformed_expr}){filter_clause}"
+        elif agg == "avg":
+            collapse = f"AVG({transformed_expr}){filter_clause}"
+        elif agg == "min":
+            collapse = f"MIN({transformed_expr}){filter_clause}"
+        elif agg == "max":
+            collapse = f"MAX({transformed_expr}){filter_clause}"
+        elif agg == "median":
+            collapse = f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {transformed_expr}){filter_clause}"
+        elif agg == "mode":
+            collapse = f"MODE() WITHIN GROUP (ORDER BY {transformed_expr}){filter_clause}"
+        else:
+            raise ValueError(f"pre_aggregation {agg!r} not supported in per-mother CTE")
+
+        select_parts.append(f"{collapse} AS {f.name}_per_mother")
+
+    select_clause = ",\n        ".join(select_parts)
+
+    # Source scope: when visit_source is the JOIN-extended CTE
+    # (`_visits_with_joins`), it already filtered by opp+pipeline and we'd
+    # re-filter unnecessarily here. When it's the literal labs_raw_visit_cache
+    # (no joins case), we MUST filter — otherwise sibling pipelines on the
+    # same opp commingle. The owner CTE itself is opp+pipeline-scoped, so the
+    # INNER JOIN provides one layer of safety; we add explicit scope as the
+    # belt-and-suspenders second layer for the raw-table case.
+    sub_pipeline_scope = _pipeline_scope_where(0, pipeline_id, alias="sub")
+    sub_pipeline_clause = sub_pipeline_scope.split(" AND ", 1)[1]
+    return f"""SELECT
+        {select_clause}
+    FROM {visit_source} sub
+    INNER JOIN {cte_alias_owners} ON {cte_alias_owners}.pre_group_key = {pre_path_sub}
+    WHERE {sub_pipeline_clause}
+      AND {pre_path_sub} IS NOT NULL
+    GROUP BY {pre_path_sub}, {cte_alias_owners}.owner_username"""
+
+
+def _collect_per_mother_ctes(config: AnalysisPipelineConfig, opportunity_id: int, visit_source: str) -> dict[str, str]:
+    """Return {cte_alias: cte_body} for the per-pre_group collapse CTEs.
+
+    Groups attributed fields by their `pre_aggregate_by` path. Each group
+    becomes one CTE that pre-collapses visits → pre_groups, with a column
+    per field. The outer query then reads small per-FLW slices instead of
+    re-doing the collapse per field per FLW.
+    """
+    by_path: dict[str, list[FieldComputation]] = {}
+    for f in config.fields:
+        if f.pre_aggregate_attribute_to == "last_username" and f.pre_aggregate_by:
+            by_path.setdefault(f.pre_aggregate_by, []).append(f)
+    out: dict[str, str] = {}
+    for path, fields in by_path.items():
+        alias = _per_mother_cte_name(path)
+        out[alias] = _build_per_mother_cte(path, fields, visit_source, config.pipeline_id)
+    return out
+
+
 def _build_cte_prologue(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
@@ -889,6 +1080,15 @@ def _build_cte_prologue(
         cte_parts.append(f"{_JOINED_VISITS_CTE} AS MATERIALIZED (\n{visits_cte_body}\n)")
     if include_owners:
         for alias, body in _collect_owner_ctes(config, opportunity_id).items():
+            cte_parts.append(f"{alias} AS MATERIALIZED (\n{body}\n)")
+        # Per-pre_group collapse CTEs come AFTER the owner + visits CTEs they
+        # reference. One per distinct pre_aggregate_by used by an attributed
+        # field. Each is a one-pass GROUP BY that emits one column per
+        # attributed field sharing this pre_group — replacing what used to
+        # be 693 separate correlated subqueries on opp 765 (99 FLWs × 7
+        # fields) with one materialized table the outer query slices cheaply.
+        visit_source = _visit_source_sql(config, opportunity_id)
+        for alias, body in _collect_per_mother_ctes(config, opportunity_id, visit_source).items():
             cte_parts.append(f"{alias} AS MATERIALIZED (\n{body}\n)")
     return ("WITH " + ",\n".join(cte_parts) + "\n") if cte_parts else ""
 
