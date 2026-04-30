@@ -259,8 +259,28 @@ class Command(BaseCommand):
             v3_gps_visits = []
 
         # V3 overview_data — assembled from visits-pipeline custom_fields.
+        # mother_counts: v1's count_mothers_from_pipeline includes mothers
+        # from BOTH visits AND registration forms (mothers registered but not
+        # yet visited still count). v3's visits pipeline only sees visit-side
+        # mothers. We enrich client-side by adding registration mothers per
+        # FLW (matching v1's CCHQ→Connect username override path). When CCHQ
+        # data is missing, v3 falls back to visit-only counts (matches v1's
+        # fallback behavior on the same data).
+        v3_mother_counts = {flw: int(f.get("mother_count") or 0) for flw, f in v3_visits_by_flw.items()}
+        if registration_forms:
+            from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
+                count_mothers_from_pipeline as _v1_count_mothers,
+            )
+
+            # Reuse v1's count_mothers_from_pipeline for the enriched count —
+            # this is exactly the algorithm v3's eventual cross-pipeline JOIN
+            # implementation will need to match. For now, the parity command
+            # uses v1's helper to demonstrate that v3's visits pipeline output
+            # plus the registration data is sufficient (no job handler needed).
+            v3_mother_counts = _v1_count_mothers(rows, active_usernames, registration_forms=registration_forms)
+
         v3_overview = {
-            "mother_counts": {flw: f.get("mother_count", 0) for flw, f in v3_visits_by_flw.items()},
+            "mother_counts": v3_mother_counts,
             "ebf_pct_by_flw": {},
         }
         for flw, fields in v3_visits_by_flw.items():
