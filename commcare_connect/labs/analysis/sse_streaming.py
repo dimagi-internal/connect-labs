@@ -256,7 +256,10 @@ class AnalysisPipelineSSEMixin:
                 # Fetch progress event - yield immediately for real-time UI updates
                 # Each page from the paginated API triggers one event (page size set in ExportAPIClient).
                 rows_so_far = event_data.get("rows", 0)
-                expected_count = event_data.get("total", 0)
+                # `total` is None for sources that don't pre-announce a row count
+                # (cchq_forms streams page-by-page with no upfront tally). Treat
+                # None and missing identically — show progress without a denominator.
+                expected_count = event_data.get("total") or 0
                 if expected_count > 0:
                     pct = int(rows_so_far / expected_count * 100)
                     message = f"Fetching visits: {rows_so_far:,} / {expected_count:,} rows ({pct}%)"
