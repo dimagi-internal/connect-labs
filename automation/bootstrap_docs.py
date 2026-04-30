@@ -14,12 +14,11 @@ page per feature under parent page 3916103691 (Connect Labs Documentation).
 Prints page IDs — paste into FEATURE_PAGE_IDS in update_docs.py.
 """
 
-import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from confluence_client import ConfluenceClient  # isort: skip
+from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 PARENT_PAGE_ID = "3916103691"  # Connect Labs Documentation
 GITHUB_PAGES_BASE = "https://jjackson.github.io/connect-labs"

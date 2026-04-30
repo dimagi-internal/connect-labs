@@ -31,7 +31,7 @@ from pathlib import Path
 import anthropic
 
 sys.path.insert(0, str(Path(__file__).parent))
-from confluence_client import ConfluenceClient  # isort: skip
+from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 CHANGELOG_PAGE_ID = "3918528513"  # Connect Labs Changelog
 
@@ -76,34 +76,37 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
     for pr in prs:
         desc = extract_product_description(pr.get("body") or "")
         if desc:
-            result.append({
-                "number": pr["number"],
-                "title": pr["title"],
-                "url": pr.get("html_url", ""),
-                "merged_at": pr.get("merged_at", ""),
-                "description": desc,
-            })
+            result.append(
+                {
+                    "number": pr["number"],
+                    "title": pr["title"],
+                    "url": pr.get("html_url", ""),
+                    "merged_at": pr.get("merged_at", ""),
+                    "description": desc,
+                }
+            )
     return result
 
 
 def generate_weekly_summary(client: anthropic.Anthropic, prs: list[dict]) -> str:
     """Ask Claude for a user-friendly weekly summary."""
-    pr_text = "\n\n".join(
-        f"PR #{p['number']}: {p['title']}\n{p['description']}"
-        for p in prs
-    )
+    pr_text = "\n\n".join(f"PR #{p['number']}: {p['title']}\n{p['description']}" for p in prs)
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=800,
-        system=[{
-            "type": "text",
-            "text": WEEKLY_SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": (
-            f"Changes merged this week:\n\n{pr_text}\n\n"
-            "Write the weekly changelog entry."
-        )}],
+        system=[
+            {
+                "type": "text",
+                "text": WEEKLY_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[
+            {
+                "role": "user",
+                "content": (f"Changes merged this week:\n\n{pr_text}\n\n" "Write the weekly changelog entry."),
+            }
+        ],
     )
     return resp.content[0].text.strip()
 
@@ -137,14 +140,10 @@ def markdown_to_storage(text: str) -> str:
 def build_changelog_row(week_date: str, summary: str, prs: list[dict]) -> str:
     """Build a Confluence storage format table row for the changelog."""
     summary_html = markdown_to_storage(summary)
-    pr_links = " ".join(
-        f'<a href="{p["url"]}">#{p["number"]}</a>'
-        for p in prs[:10]
-        if p.get("url")
-    )
+    pr_links = " ".join(f'<a href="{p["url"]}">#{p["number"]}</a>' for p in prs[:10] if p.get("url"))
     return (
         "<tr>"
-        f"<td><time datetime=\"{week_date}\" /></td>"
+        f'<td><time datetime="{week_date}" /></td>'
         f"<td><strong>Week of {datetime.strptime(week_date, '%Y-%m-%d').strftime('%b %d, %Y')}</strong>"
         f"{summary_html}</td>"
         f"<td>{pr_links}</td>"
@@ -154,14 +153,8 @@ def build_changelog_row(week_date: str, summary: str, prs: list[dict]) -> str:
 
 def post_to_slack(webhook_url: str, week_label: str, summary: str, prs: list[dict]) -> None:
     """Post a Slack Block Kit message to #connect-labs."""
-    pr_links_text = "  |  ".join(
-        f"<{p['url']}|#{p['number']}>"
-        for p in prs[:10]
-        if p.get("url")
-    )
-    changelog_url = (
-        "https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513"
-    )
+    pr_links_text = "  |  ".join(f"<{p['url']}|#{p['number']}>" for p in prs[:10] if p.get("url"))
+    changelog_url = "https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513"
 
     payload = {
         "blocks": [
@@ -212,13 +205,15 @@ def main() -> None:
         slack_url = os.environ.get("SLACK_WEBHOOK_URL", "")
         if slack_url:
             payload = {
-                "blocks": [{
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*Connect Labs — {week_label}*\nNo user-visible changes this week.",
-                    },
-                }]
+                "blocks": [
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": f"*Connect Labs — {week_label}*\nNo user-visible changes this week.",
+                        },
+                    }
+                ]
             }
             data = json.dumps(payload).encode()
             req = urllib.request.Request(

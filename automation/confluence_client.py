@@ -2,8 +2,8 @@
 
 import os
 import re
-import requests
 
+import requests
 
 CONFLUENCE_BASE = "https://dimagi.atlassian.net/wiki"
 CONNECT_SPACE_ID = "2683404306"  # 'connect' space
@@ -11,10 +11,11 @@ CONNECT_SPACE_ID = "2683404306"  # 'connect' space
 
 class ConfluenceClient:
     def __init__(self, user_email: str | None = None, api_token: str | None = None):
-        self.auth = (
-            user_email or os.environ["CONFLUENCE_EMAIL"],
-            api_token or os.environ["CONFLUENCE_API_TOKEN"],
-        )
+        email = user_email or os.environ.get("CONFLUENCE_EMAIL", "")
+        token = api_token or os.environ.get("CONFLUENCE_API_TOKEN", "")
+        if not email or not token:
+            raise ValueError("CONFLUENCE_EMAIL and CONFLUENCE_API_TOKEN must be set")
+        self.auth = (email, token)
         self.headers = {"Accept": "application/json", "Content-Type": "application/json"}
 
     def _get(self, path: str, params: dict | None = None) -> dict:

@@ -28,14 +28,14 @@ Click **Tasks** in the top navigation, then **New Task**.
 
 Fill in:
 
-| Field | Description |
-|-------|-------------|
-| Title | Short description of the follow-up needed |
-| Description | Full context, what was found, what action is needed |
-| Assigned worker | The FLW this task is about |
-| Assignee | Who is responsible for resolving it (you, network manager, or program manager) |
-| Priority | High / Medium / Low |
-| Status | Starting status (usually "Investigating") |
+| Field           | Description                                                                    |
+| --------------- | ------------------------------------------------------------------------------ |
+| Title           | Short description of the follow-up needed                                      |
+| Description     | Full context, what was found, what action is needed                            |
+| Assigned worker | The FLW this task is about                                                     |
+| Assignee        | Who is responsible for resolving it (you, network manager, or program manager) |
+| Priority        | High / Medium / Low                                                            |
+| Status          | Starting status (usually "Investigating")                                      |
 
 **Option 3 — Bulk Create:**
 If you have many workers to follow up with after an audit, use **Bulk Create** to create tasks for multiple workers at once from a single audit session.
@@ -75,13 +75,14 @@ Use the status dropdown at the top of the task to move it to the next stage. Eac
 The OCS Bot can send an automated chat message to a field worker to gather information or prompt action, without a supervisor needing to make a direct call.
 
 To trigger the OCS Bot:
+
 1. Open the task
 2. Click **Start OCS Chat**
 3. The bot sends a message to the FLW via CommCare Connect messaging
 4. The conversation transcript appears in the task timeline as it progresses
 
 !!! note
-    The OCS Bot is only available for programs that have OCS (Outreach Communication System) configured. Ask your program administrator if you're unsure.
+The OCS Bot is only available for programs that have OCS (Outreach Communication System) configured. Ask your program administrator if you're unsure.
 
 ---
 

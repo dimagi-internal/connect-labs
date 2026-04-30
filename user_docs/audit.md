@@ -35,7 +35,7 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 - Adjust filters if needed, then click **Create**
 
 !!! tip "Large audits"
-    Creating a session with many visits runs in the background. You'll see a progress indicator — come back in a few minutes for large samples.
+Creating a session with many visits runs in the background. You'll see a progress indicator — come back in a few minutes for large samples.
 
 ---
 
@@ -43,25 +43,17 @@ Navigate to **Audit** in the top menu, then click **Create Audit Session**.
 
 Once a session is created, open it to start the bulk assessment:
 
-=== "Standard Review"
-    - Images are shown one at a time alongside the related form data (FLW name, visit date, patient name)
-    - Mark each image **Pass** or **Fail**
-    - Add optional notes
-    - Your progress is saved automatically
+=== "Standard Review" - Images are shown one at a time alongside the related form data (FLW name, visit date, patient name) - Mark each image **Pass** or **Fail** - Add optional notes - Your progress is saved automatically
 
-=== "AI-Assisted Review"
-    - Before you start, click **Run AI Review** to have AI pre-screen all images
-    - AI checks for issues like blurry photos, out-of-range measurements, or missing data
-    - AI results appear alongside each image as suggestions — you make the final call
-    - Images flagged by AI are highlighted so you can review them first
+=== "AI-Assisted Review" - Before you start, click **Run AI Review** to have AI pre-screen all images - AI checks for issues like blurry photos, out-of-range measurements, or missing data - AI results appear alongside each image as suggestions — you make the final call - Images flagged by AI are highlighted so you can review them first
 
 **Keyboard shortcuts:**
 
-| Key | Action |
-|-----|--------|
-| `P` | Mark Pass |
-| `F` | Mark Fail |
-| `→` | Next image |
+| Key | Action         |
+| --- | -------------- |
+| `P` | Mark Pass      |
+| `F` | Mark Fail      |
+| `→` | Next image     |
 | `←` | Previous image |
 
 ---

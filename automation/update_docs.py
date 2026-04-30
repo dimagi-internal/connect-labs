@@ -16,6 +16,7 @@ Requires env vars:
     DIFF_FILE         (path to truncated PR diff)
 """
 
+import html
 import json
 import os
 import re
@@ -25,42 +26,42 @@ from pathlib import Path
 import anthropic
 
 sys.path.insert(0, str(Path(__file__).parent))
-from confluence_client import ConfluenceClient  # isort: skip
+from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 # Maps source path prefixes to feature documentation names
 PREFIX_TO_FEATURE = {
-    "commcare_connect/audit/":               "Audit & QA Review",
-    "commcare_connect/workflow/":            "Workflow Engine",
-    "commcare_connect/tasks/":              "Task Management",
-    "commcare_connect/solicitations/":      "Solicitations",
-    "commcare_connect/custom_analysis/":    "Custom Analysis",
-    "commcare_connect/coverage/":           "Coverage Maps",
-    "commcare_connect/ai/":                 "AI Features",
-    "docs/WORKFLOW_EDITOR_QUICKSTART.md":   "Connect MCP & Safe Mode",
-    "docs/SAFE_MODE.md":                    "Connect MCP & Safe Mode",
+    "commcare_connect/audit/": "Audit & QA Review",
+    "commcare_connect/workflow/": "Workflow Engine",
+    "commcare_connect/tasks/": "Task Management",
+    "commcare_connect/solicitations/": "Solicitations",
+    "commcare_connect/custom_analysis/": "Custom Analysis",
+    "commcare_connect/coverage/": "Coverage Maps",
+    "commcare_connect/ai/": "AI Features",
+    "docs/WORKFLOW_EDITOR_QUICKSTART.md": "Connect MCP & Safe Mode",
+    "docs/SAFE_MODE.md": "Connect MCP & Safe Mode",
 }
 
 # Confluence page IDs for each feature summary page (created by bootstrap)
 FEATURE_PAGE_IDS = {
-    "Audit & QA Review":       "3927900187",
-    "Workflow Engine":         "3927801864",
-    "Task Management":         "3928293395",
-    "Solicitations":           "3927179271",
-    "Custom Analysis":         "3928817669",
-    "Coverage Maps":           "3927867398",
-    "AI Features":             "3928817690",
+    "Audit & QA Review": "3927900187",
+    "Workflow Engine": "3927801864",
+    "Task Management": "3928293395",
+    "Solicitations": "3927179271",
+    "Custom Analysis": "3928817669",
+    "Coverage Maps": "3927867398",
+    "AI Features": "3928817690",
     "Connect MCP & Safe Mode": "3927801885",
 }
 
 # Maps feature names to their GitHub Pages markdown file paths in user_docs/
 FEATURE_TO_DOC_FILE = {
-    "Audit & QA Review":       "user_docs/audit.md",
-    "Workflow Engine":         "user_docs/workflow-engine.md",
-    "Task Management":         "user_docs/task-management.md",
-    "Solicitations":           "user_docs/solicitations.md",
-    "Custom Analysis":         "user_docs/custom-analysis.md",
-    "Coverage Maps":           "user_docs/coverage-maps.md",
-    "AI Features":             "user_docs/ai-features.md",
+    "Audit & QA Review": "user_docs/audit.md",
+    "Workflow Engine": "user_docs/workflow-engine.md",
+    "Task Management": "user_docs/task-management.md",
+    "Solicitations": "user_docs/solicitations.md",
+    "Custom Analysis": "user_docs/custom-analysis.md",
+    "Coverage Maps": "user_docs/coverage-maps.md",
+    "AI Features": "user_docs/ai-features.md",
     "Connect MCP & Safe Mode": "user_docs/connect-mcp-safe-mode.md",
 }
 
@@ -83,9 +84,27 @@ Rules:
 """
 
 UI_CHANGE_KEYWORDS = {
-    "screen", "page", "button", "display", "view", "shows", "added a",
-    "now shows", "interface", "tab", "modal", "panel", "column", "table",
-    "dashboard", "icon", "label", "menu", "form", "filter", "toggle",
+    "screen",
+    "page",
+    "button",
+    "display",
+    "view",
+    "shows",
+    "added a",
+    "now shows",
+    "interface",
+    "tab",
+    "modal",
+    "panel",
+    "column",
+    "table",
+    "dashboard",
+    "icon",
+    "label",
+    "menu",
+    "form",
+    "filter",
+    "toggle",
 }
 
 
@@ -123,20 +142,27 @@ def has_user_visible_changes(
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=5,
-        system=[{
-            "type": "text",
-            "text": (
-                "Classify whether a code change has user-visible effects on a web app. "
-                "Reply only with YES or NO."
-            ),
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": (
-            f"PR title: {pr_title}\n\n"
-            f"Product description: {product_description or '(empty)'}\n\n"
-            f"Diff excerpt:\n{diff_excerpt[:3000]}\n\n"
-            "Does this change anything a non-developer user of the web app would notice?"
-        )}],
+        system=[
+            {
+                "type": "text",
+                "text": (
+                    "Classify whether a code change has user-visible effects on a web app. "
+                    "Reply only with YES or NO."
+                ),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"PR title: {pr_title}\n\n"
+                    f"Product description: {product_description or '(empty)'}\n\n"
+                    f"Diff excerpt:\n{diff_excerpt[:3000]}\n\n"
+                    "Does this change anything a non-developer user of the web app would notice?"
+                ),
+            }
+        ],
     )
     return resp.content[0].text.strip().upper().startswith("Y")
 
@@ -164,25 +190,35 @@ def update_markdown_file(
     resp = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=4096,
-        system=[{
-            "type": "text",
-            "text": DOC_SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": (
-            f"## Current documentation for '{feature}'\n\n"
-            f"{current_content}\n\n"
-            "---\n\n"
-            f"## New change to incorporate\n\n"
-            f"PR title: {pr_title}\n\n"
-            f"What changed (plain English):\n{product_description}\n\n"
-            "Update the documentation to reflect this change. Return only the "
-            "updated markdown — no preamble, no trailing explanation."
-        )}],
+        system=[
+            {
+                "type": "text",
+                "text": DOC_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"## Current documentation for '{feature}'\n\n"
+                    f"{current_content}\n\n"
+                    "---\n\n"
+                    f"## New change to incorporate\n\n"
+                    f"PR title: {pr_title}\n\n"
+                    f"What changed (plain English):\n{product_description}\n\n"
+                    "Update the documentation to reflect this change. Return only the "
+                    "updated markdown — no preamble, no trailing explanation."
+                ),
+            }
+        ],
     )
 
     new_content = resp.content[0].text.strip()
     if new_content != current_content:
+        resolved = doc_path.resolve()
+        if not resolved.is_relative_to(Path("user_docs").resolve()):
+            raise ValueError(f"Refusing to write outside user_docs/: {doc_path}")
         doc_path.write_text(new_content + "\n", encoding="utf-8")
         return True
     return False
@@ -203,20 +239,27 @@ def update_confluence_summary(
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=100,
-        system=[{
-            "type": "text",
-            "text": (
-                "Write a single plain-English sentence (under 30 words) describing "
-                "what the named Labs feature does, incorporating the recent change. "
-                "No jargon, no code references."
-            ),
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": (
-            f"Feature: {feature}\n"
-            f"Recent change: {product_description}\n\n"
-            "Write the updated one-sentence feature description."
-        )}],
+        system=[
+            {
+                "type": "text",
+                "text": (
+                    "Write a single plain-English sentence (under 30 words) describing "
+                    "what the named Labs feature does, incorporating the recent change. "
+                    "No jargon, no code references."
+                ),
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f"Feature: {feature}\n"
+                    f"Recent change: {product_description}\n\n"
+                    "Write the updated one-sentence feature description."
+                ),
+            }
+        ],
     )
     summary = resp.content[0].text.strip()
     page = confluence.get_page(page_id)
@@ -224,7 +267,7 @@ def update_confluence_summary(
         page_id=page_id,
         title=page["title"],
         body_storage=(
-            f"<p>{summary}</p>"
+            f"<p>{html.escape(summary)}</p>"
             f'<p><a href="{github_url}">📖 Full guide with diagrams and step-by-step instructions →</a></p>'
             "<p><em>Last updated automatically.</em></p>"
         ),
@@ -239,6 +282,7 @@ def post_screenshot_comment(pr_number: str, features: list[str]) -> None:
     if not gh_token or not repo or not pr_number or not features:
         return
     import urllib.request
+
     feature_list = "\n".join(f"- `{f}`" for f in sorted(features))
     body = (
         "📷 **Screenshot update needed**: The following doc pages may need updated "
@@ -335,7 +379,7 @@ def main() -> None:
         if changed:
             print(f"    ✓ Markdown updated: {FEATURE_TO_DOC_FILE[feature]}")
         else:
-            print(f"    — No markdown change needed")
+            print("    — No markdown change needed")
 
         if feature not in [f.split(" (")[0] for f in missing_pages]:
             update_confluence_summary(confluence, feature, product_description, ai_client)

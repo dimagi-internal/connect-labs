@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - 'user_docs/**'  # don't retrigger when we commit updated docs
-      - 'mkdocs.yml'
+      - "user_docs/**" # don't retrigger when we commit updated docs
+      - "mkdocs.yml"
 
 concurrency:
   group: docs-automation
@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install script dependencies
         run: pip install anthropic requests

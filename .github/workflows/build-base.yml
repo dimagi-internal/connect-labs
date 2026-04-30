@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'requirements/*.txt'
-      - 'requirements/*.in'
-      - 'Dockerfile.base'
-      - 'docker/*'
+      - "requirements/*.txt"
+      - "requirements/*.in"
+      - "Dockerfile.base"
+      - "docker/*"
 
   workflow_dispatch:
 

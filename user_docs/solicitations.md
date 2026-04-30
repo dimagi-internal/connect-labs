@@ -25,17 +25,17 @@ Click **Solicitations** in the top navigation, then **Manage Solicitations**, th
 
 Fill in:
 
-| Field | Description |
-|-------|-------------|
-| Title | Name of the solicitation (e.g., "EOI: OCS Implementation – Niger 2026") |
-| Type | EOI (Expression of Interest) or RFP (Request for Proposals) |
-| Description | Full context: program background, what you're looking for |
-| Scope of Work | What the implementing organization must do |
-| Budget | Maximum funding available |
-| Deadline | When responses are due |
-| Evaluation criteria | What you'll score responses on (see AI assist below) |
-| Response template | Questions responding organizations must answer |
-| Status | Draft (not yet public) or Published |
+| Field               | Description                                                             |
+| ------------------- | ----------------------------------------------------------------------- |
+| Title               | Name of the solicitation (e.g., "EOI: OCS Implementation – Niger 2026") |
+| Type                | EOI (Expression of Interest) or RFP (Request for Proposals)             |
+| Description         | Full context: program background, what you're looking for               |
+| Scope of Work       | What the implementing organization must do                              |
+| Budget              | Maximum funding available                                               |
+| Deadline            | When responses are due                                                  |
+| Evaluation criteria | What you'll score responses on (see AI assist below)                    |
+| Response template   | Questions responding organizations must answer                          |
+| Status              | Draft (not yet public) or Published                                     |
 
 **AI-assisted criteria generation:**
 Upload a PDF or paste text describing your program requirements. The AI will suggest a structured set of evaluation criteria and scoring weights based on your input. Review and adjust before saving.
@@ -45,6 +45,7 @@ Upload a PDF or paste text describing your program requirements. The AI will sug
 Once the deadline passes, go to the solicitation and click **Responses**.
 
 For each response:
+
 1. Click the response to open it
 2. Read the organization's answers to each question
 3. Click **Review** to score the submission
@@ -56,6 +57,7 @@ Multiple reviewers can score independently. Average scores are calculated automa
 ### Awarding a Response
 
 When the team agrees on a winner:
+
 1. Open the winning response
 2. Click **Award Response**
 3. Confirm the award amount
@@ -77,7 +79,7 @@ Public solicitations are visible at the Labs solicitations page without logging 
 4. Review your answers, then click **Submit**
 
 !!! warning "Deadlines"
-    Responses cannot be edited after submission. Make sure your response is final before submitting. Contact the program team directly if you need to make a correction.
+Responses cannot be edited after submission. Make sure your response is final before submitting. Contact the program team directly if you need to make a correction.
 
 ### Tracking Your Submission
 
