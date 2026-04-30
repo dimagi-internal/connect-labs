@@ -1,0 +1,54 @@
+site_name: Connect Labs Help
+site_description: User documentation for Connect Labs at labs.connect.dimagi.com
+site_url: https://jjackson.github.io/connect-labs/
+
+docs_dir: user_docs
+
+theme:
+  name: material
+  palette:
+    primary: blue
+    accent: light blue
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Feature Guides:
+    - Audit & QA Review: audit.md
+    - Workflow Engine: workflow-engine.md
+    - Task Management: task-management.md
+    - Solicitations: solicitations.md
+    - Custom Analysis: custom-analysis.md
+    - Coverage Maps: coverage-maps.md
+    - AI Features: ai-features.md
+  - For Power Users:
+    - Connect MCP & Safe Mode: connect-mcp-safe-mode.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
