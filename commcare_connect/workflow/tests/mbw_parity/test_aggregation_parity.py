@@ -68,6 +68,24 @@ class TestAggregationRunner:
         )
         assert result["fraud"] == pytest.approx(1.0)
 
+    def test_dup_share_all_same(self):
+        """All-same values → dup_share = 1.0 (every value is in a duplicate group)."""
+        rows = [{"u": "fraud", "v": "G2P1"} for _ in range(5)]
+        result = aggregate(rows, grouping_key="u", field_name="ds", source_path="v", aggregation="dup_share")
+        assert result["fraud"] == pytest.approx(1.0)
+
+    def test_dup_share_all_distinct(self):
+        """All-distinct values → dup_share = 0.0 (no duplicates)."""
+        rows = [{"u": "diverse", "v": v} for v in ["G1P0", "G2P1", "G3P2", "G4P3"]]
+        result = aggregate(rows, grouping_key="u", field_name="ds", source_path="v", aggregation="dup_share")
+        assert result["diverse"] == pytest.approx(0.0)
+
+    def test_dup_share_mixed(self):
+        """[A, A, B, B, C] → 4/5 = 0.8 of values are in dup groups (A and B)."""
+        rows = [{"u": "mixed", "v": v} for v in ["A", "A", "B", "B", "C"]]
+        result = aggregate(rows, grouping_key="u", field_name="ds", source_path="v", aggregation="dup_share")
+        assert result["mixed"] == pytest.approx(0.8)
+
     def test_mode_share_diverse(self):
         rows = [
             {"u": "diverse", "v": "G1P0"},

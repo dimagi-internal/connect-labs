@@ -257,13 +257,34 @@ def _aggregation_to_sql(
                 GROUP BY {value_expr}
             ) freq
         )"""
+    elif agg == "dup_share":
+        # Share (0..1) of non-null rows whose value is part of a duplicate group
+        # (i.e., the value appears more than once in the FLW's data). Mirrors
+        # v1's _compute_value_concentration.pct_duplicate logic:
+        #     duplicate_count = sum(c for c in counter.values() if c > 1)
+        #     pct_duplicate = duplicate_count / total
+        #
+        # Used alongside mode_share for fraud detection: high dup_share means
+        # the FLW reports lots of repeating values, even if no single value
+        # dominates. Same correlated-subquery shape as mode_share.
+        return f"""(
+            SELECT COALESCE(SUM(c) FILTER (WHERE c > 1), 0)::float / NULLIF(SUM(c), 0)
+            FROM (
+                SELECT COUNT(*) AS c
+                FROM labs_raw_visit_cache sub
+                WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
+                  AND sub.username = labs_raw_visit_cache.username
+                  AND {value_expr} IS NOT NULL
+                GROUP BY {value_expr}
+            ) freq
+        )"""
     else:
         # Fail loudly on unknown aggregations rather than silently substituting
         # MIN(). Prior behaviour made typos produce wrong data without warning.
         raise ValueError(
             f"Unknown aggregation {agg!r} on field {field_name!r}. "
             "Valid: count, sum, avg, min, max, first, last, count_distinct, "
-            "count_unique, list, median, mode, mode_share."
+            "count_unique, list, median, mode, mode_share, dup_share."
         )
 
     # Apply per-field FILTER clause if both filter_path and filter_value are provided.
@@ -402,6 +423,21 @@ def _pre_aggregated_field_sql(field: FieldComputation) -> str:
         # rows, then max-count / sum-count. Add one more nesting level.
         return f"""(
             SELECT MAX(c)::float / NULLIF(SUM(c), 0)
+            FROM (
+                SELECT COUNT(*) AS c
+                FROM (
+                    {inner_subquery}
+                ) per_group
+                WHERE per_group.v IS NOT NULL
+                GROUP BY per_group.v
+            ) freq
+        )"""
+
+    if field.aggregation == "dup_share":
+        # Same shape as mode_share but takes "values appearing >1 time" / total
+        # rather than "max group / total".
+        return f"""(
+            SELECT COALESCE(SUM(c) FILTER (WHERE c > 1), 0)::float / NULLIF(SUM(c), 0)
             FROM (
                 SELECT COUNT(*) AS c
                 FROM (
