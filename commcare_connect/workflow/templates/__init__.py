@@ -141,12 +141,21 @@ def build_snapshot_for_template(
     **context,
 ) -> dict | None:
     """
-    Run a template's `build_snapshot(...)` hook.
+    Run a template's `build_snapshot(...)` hook, or fall back to a default
+    snapshot of the inputs when no hook is defined.
 
-    Returns the dashboard-shape dict the hook produced, or None if:
-      - the template isn't registered
-      - the template doesn't declare `supports_snapshots: True`
-      - the template has no `build_snapshot` function
+    Returns:
+      - `None` if the template isn't registered or doesn't declare
+        `supports_snapshots: True`.
+      - The dashboard-shape dict the hook produced, if the template defines
+        a `build_snapshot` function.
+      - A default `{schema_version, pipelines, workers, state,
+        opportunity_ids}` dict if `supports_snapshots: True` but no hook is
+        defined. This lets a template opt in with a single line and have
+        the render JS reconstruct the dashboard from frozen pipelines on
+        load — no Python aggregation needed. Templates that want a
+        compact/derived shape (e.g. performance_review) define their own
+        hook and override this default.
 
     Hook contract: templates declare a module-level
     `build_snapshot(*, pipelines, state, opportunity_id, **context) -> dict`
@@ -163,9 +172,15 @@ def build_snapshot_for_template(
     if not template.get("supports_snapshots"):
         return None
     builder = template.get("build_snapshot")
-    if not callable(builder):
-        return None
-    return builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id, **context)
+    if callable(builder):
+        return builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id, **context)
+    return {
+        "schema_version": 1,
+        "pipelines": pipelines,
+        "workers": context.get("workers", []),
+        "state": state,
+        "opportunity_ids": context.get("opportunity_ids", [opportunity_id]),
+    }
 
 
 def create_workflow_from_template(
