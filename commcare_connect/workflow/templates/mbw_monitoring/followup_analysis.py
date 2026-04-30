@@ -891,11 +891,28 @@ def build_followup_from_pipeline(
 def count_mothers_from_pipeline(
     pipeline_rows: list,
     active_usernames: set[str],
+    registration_rows: list[dict] | None = None,
     registration_forms: list[dict] | None = None,
 ) -> dict[str, int]:
     """Count unique mothers registered per FLW.
 
-    Uses CCHQ registration forms if available, falls back to pipeline data.
+    Three input shapes supported, in priority order:
+
+    1. ``registration_rows`` (V2): slim dicts produced by the V2
+       ``CCHQ Registration Forms`` pipeline. Each dict represents one
+       registered mother and must have ``username`` (the FLW's CCHQ
+       username — same as the connect_id) and ``case_id`` (the mother's
+       case_id, since registration forms create the mother case so
+       ``form.case.@case_id`` IS the mother case id).
+
+    2. ``registration_forms`` (V1): full CCHQ form dicts in the shape
+       returned by the Form API — ``{"form": {...}, "metadata": {...}}``.
+       Walks ``var_visit_1..6`` schedule blocks for mother_case_id.
+
+    3. Fallback: scan ``pipeline_rows`` (visits-pipeline output) for
+       ``mother_case_id`` extracted from each visit form. Undercounts
+       any mother registered but never visited, but works without a
+       registrations pipeline at all.
 
     Returns:
         dict mapping username → count of unique mother case IDs
@@ -904,8 +921,24 @@ def count_mothers_from_pipeline(
     active_usernames = {u.lower() for u in active_usernames}
     mothers_by_flw: dict[str, set[str]] = defaultdict(set)
 
-    if registration_forms:
-        # Count from CCHQ registration forms
+    if registration_rows:
+        # V2 pipeline rows. Pipeline serialization flattens computed fields
+        # onto the row dict, so case_id may be at top level OR nested under
+        # "computed" depending on how the row was assembled. Try both.
+        for row in registration_rows:
+            username = (row.get("username") or "").strip().lower()
+            if username not in active_usernames:
+                continue
+            case_id = row.get("case_id")
+            if not case_id:
+                computed = row.get("computed")
+                if isinstance(computed, dict):
+                    case_id = computed.get("case_id")
+            if case_id:
+                mothers_by_flw[username].add(case_id)
+
+    elif registration_forms:
+        # V1 full CCHQ form dicts.
         for form_dict in registration_forms:
             metadata = form_dict.get("metadata", {})
             username = (metadata.get("username", "") or "").lower()
@@ -916,8 +949,9 @@ def count_mothers_from_pipeline(
                 mother_case_id = sched.get("mother_case_id", "")
                 if mother_case_id:
                     mothers_by_flw[username].add(mother_case_id)
+
     else:
-        # Fallback: count from pipeline rows with mother_case_id
+        # Fallback: count from visit-pipeline rows that carry mother_case_id.
         for row in pipeline_rows:
             row_username = (row.username or "").lower()
             if row_username not in active_usernames:

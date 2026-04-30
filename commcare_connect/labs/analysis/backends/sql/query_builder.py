@@ -13,6 +13,7 @@ import logging
 from django.db import connection
 
 from commcare_connect.labs.analysis.config import (
+    RAW_VISIT_BASE_COLUMNS,
     AnalysisPipelineConfig,
     FieldComputation,
     HistogramComputation,
@@ -20,6 +21,25 @@ from commcare_connect.labs.analysis.config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _pipeline_scope_where(opportunity_id: int, pipeline_id: int | None, *, alias: str = "") -> str:
+    """SQL WHERE-fragment scoping a labs_raw_visit_cache read to one pipeline's slot.
+
+    All extraction queries must include this — without filtering by
+    pipeline_id we'd read another pipeline's rows for the same
+    opportunity (#116). Pass `alias=""` for unqualified column refs in
+    the outer query, or the alias name (e.g. "sub") for qualified refs
+    inside correlated subqueries.
+
+    pipeline_id=None matches the legacy/ad-hoc-caller slot (rows written
+    by callers without a workflow definition id, where the column is
+    NULL). The check is `IS NULL` rather than `= NULL` because SQL.
+    """
+    prefix = f"{alias}." if alias else ""
+    if pipeline_id is None:
+        return f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id IS NULL"
+    return f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id = {pipeline_id}"
 
 
 def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
@@ -42,7 +62,7 @@ def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
     return "".join(sql_parts)
 
 
-def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int) -> str:
+def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int, pipeline_id: int | None) -> str:
     """Build a parenthesized subquery that mirrors labs_raw_visit_cache, with
     each join's fields injected into form_json under `joined.<from_alias>.<field>`.
 
@@ -55,6 +75,10 @@ def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int) -> str:
     pipeline's `resolved_config_hash`, pre-aggregated by remote_key_field via
     DISTINCT ON to prevent row blow-up if multiple cache rows share the same
     join key (e.g., a mother with two registration forms — we keep the latest).
+
+    pipeline_id scopes the inner read of labs_raw_visit_cache so JOIN-extension
+    only sees rows from THIS pipeline's slot. Without it, multiple pipelines
+    sharing an opportunity would commingle visits in the joined source.
     """
     join_clauses = []
     join_obj_kvs = []  # for outer jsonb_build_object building `joined`
@@ -110,6 +134,7 @@ def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int) -> str:
     return f"""(
             SELECT
                 rv.opportunity_id,
+                rv.pipeline_id,
                 rv.visit_count,
                 rv.expires_at,
                 rv.created_at,
@@ -141,6 +166,7 @@ def _build_join_subquery(joins: list[JoinConfig], opportunity_id: int) -> str:
                 rv.images
             FROM labs_raw_visit_cache rv
             {join_clauses_sql}
+            WHERE {_pipeline_scope_where(opportunity_id, pipeline_id, alias="rv")}
         )"""
 
 
@@ -175,12 +201,16 @@ def _visit_source_cte_body(config: AnalysisPipelineConfig, opportunity_id: int) 
     Used by `build_flw_aggregation_query` (and other top-level builders) to
     emit a `WITH _visits_with_joins AS MATERIALIZED (...)` prologue when
     joins are configured. None when there are no joins.
+
+    pipeline_id from `config.pipeline_id` scopes the inner read of
+    labs_raw_visit_cache so the JOIN-extended view only includes rows
+    from this pipeline's slot.
     """
     if not config.joins:
         return None
     # `_build_join_subquery` wraps its SELECT in parens so it can be used as
     # a `FROM (subquery)` token. CTE bodies don't take outer parens — strip them.
-    body = _build_join_subquery(config.joins, opportunity_id).strip()
+    body = _build_join_subquery(config.joins, opportunity_id, config.pipeline_id).strip()
     if body.startswith("(") and body.endswith(")"):
         body = body[1:-1].strip()
     return body
@@ -352,6 +382,8 @@ def _aggregation_to_sql(
     filter_op: str = "eq",
     filter_paths: list[str] | None = None,
     inner_source: str = "labs_raw_visit_cache",
+    group_column_outer_expr: str = "labs_raw_visit_cache.username",
+    pipeline_id: int | None = None,
 ) -> str:
     """Convert aggregation type to SQL aggregate function.
 
@@ -381,6 +413,16 @@ def _aggregation_to_sql(
         grouping key — but unblocking that wasn't needed for the MBW v3 work that
         introduced them. Tracked as a known gap.
     """
+    # NOTE: main refactored first/last from correlated subqueries to
+    # ARRAY_AGG with explicit ORDER BY — no subquery, no outer-vs-inner
+    # column qualification needed. The outer query's WHERE already
+    # filters by pipeline_id so the aggregate stays in this pipeline's
+    # slot. group_column_outer_expr / pipeline_id parameters are still
+    # accepted for forward-compat with any future agg type that adds a
+    # correlated subquery (mode_share / pre_aggregate_by per docstring).
+    # When that happens, build the sub-pipe scope here:
+    #   sub_pipe = "AND sub.pipeline_id IS NULL" if pipeline_id is None
+    #              else f"AND sub.pipeline_id = {pipeline_id}"
     if agg == "count":
         base = f"COUNT({value_expr})"
     elif agg == "sum":
@@ -424,15 +466,26 @@ def _aggregation_to_sql(
         # the same FLW's rows by value, then take the max group-count over
         # the total non-null count.
         #
+        # pipeline_id is injected as a SQL constant (not correlated to outer)
+        # to avoid pollution of the outer GROUP BY. Adding pipeline_id to the
+        # correlated WHERE clause would force callers to include it in their
+        # GROUP BY — breaks tests that build minimal queries around just this
+        # SQL fragment, and changes the contract of every existing extraction.
+        #
         # Mirrors the first/last subquery pattern; like those, the per-field
         # FILTER (path/value) clause isn't supported on this aggregation —
         # early return below.
+        sub_pipeline_scope = _pipeline_scope_where(0, pipeline_id, alias="sub")
+        # Strip the leading opp clause (which we already correlate against
+        # the outer row) — keep just the pipeline_id portion.
+        sub_pipeline_clause = sub_pipeline_scope.split(" AND ", 1)[1]
         return f"""(
             SELECT MAX(c)::float / NULLIF(SUM(c), 0)
             FROM (
                 SELECT COUNT(*) AS c
                 FROM {inner_source} sub
                 WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
+                  AND {sub_pipeline_clause}
                   AND sub.username = labs_raw_visit_cache.username
                   AND {value_expr} IS NOT NULL
                 GROUP BY {value_expr}
@@ -448,12 +501,15 @@ def _aggregation_to_sql(
         # Used alongside mode_share for fraud detection: high dup_share means
         # the FLW reports lots of repeating values, even if no single value
         # dominates. Same correlated-subquery shape as mode_share.
+        sub_pipeline_scope = _pipeline_scope_where(0, pipeline_id, alias="sub")
+        sub_pipeline_clause = sub_pipeline_scope.split(" AND ", 1)[1]
         return f"""(
             SELECT COALESCE(SUM(c) FILTER (WHERE c > 1), 0)::float / NULLIF(SUM(c), 0)
             FROM (
                 SELECT COUNT(*) AS c
                 FROM {inner_source} sub
                 WHERE sub.opportunity_id = labs_raw_visit_cache.opportunity_id
+                  AND {sub_pipeline_clause}
                   AND sub.username = labs_raw_visit_cache.username
                   AND {value_expr} IS NOT NULL
                 GROUP BY {value_expr}
@@ -583,7 +639,11 @@ def _inner_agg_expr(agg: str, value_expr: str) -> str:
     raise ValueError(f"pre_aggregation {agg!r} not supported as inner step (mode_share/list invalid here)")
 
 
-def _pre_aggregated_field_sql(field: FieldComputation, inner_source: str = "labs_raw_visit_cache") -> str:
+def _pre_aggregated_field_sql(
+    field: FieldComputation,
+    inner_source: str = "labs_raw_visit_cache",
+    pipeline_id: int | None = None,
+) -> str:
     """SQL for a field with `pre_aggregate_by` set.
 
     Two-pass aggregation: inner GROUP BY pre_aggregate_by collapses with
@@ -625,8 +685,17 @@ def _pre_aggregated_field_sql(field: FieldComputation, inner_source: str = "labs
     # fidelity requires the filter applied at row level (e.g., MBW's
     # parity_concentration only looks at ANC visits; collapsing across
     # non-ANC visits would pick the wrong "last parity per mother").
+    # pipeline_id is injected as a SQL constant (via _pipeline_scope_where)
+    # rather than correlated against the outer row. Correlation would force
+    # the outer query to add pipeline_id to its GROUP BY, which breaks
+    # callers that build minimal queries around this SQL fragment. Constant
+    # injection achieves the same isolation (sibling pipelines on the same
+    # opp don't commingle) without the GROUP BY contract change.
+    sub_pipeline_scope = _pipeline_scope_where(0, pipeline_id, alias="sub")
+    sub_pipeline_clause = sub_pipeline_scope.split(" AND ", 1)[1]
     inner_where_clauses = [
         "sub.opportunity_id = labs_raw_visit_cache.opportunity_id",
+        sub_pipeline_clause,
         f"{pre_path_sql} IS NOT NULL",
     ]
     if field.pre_aggregate_attribute_to == "last_username":
@@ -752,7 +821,7 @@ def _owner_cte_name(pre_aggregate_by: str) -> str:
     return f"_owners_{sanitized}"
 
 
-def _build_owner_attribution_cte(pre_aggregate_by: str, opportunity_id: int) -> str:
+def _build_owner_attribution_cte(pre_aggregate_by: str, opportunity_id: int, pipeline_id: int | None) -> str:
     """SQL CTE body that maps each pre_aggregate_by key to its last-visit username.
 
     Replaces the per-row correlated subquery that timed out at production
@@ -764,13 +833,16 @@ def _build_owner_attribution_cte(pre_aggregate_by: str, opportunity_id: int) -> 
     Reads from the literal `labs_raw_visit_cache` (NOT the join-extended
     source) because owner attribution uses base columns only — joined
     fields are irrelevant to "which FLW visited this mother last".
+
+    pipeline_id scopes the read so multi-pipeline opps don't attribute a
+    mother to a worker who only visited her on a different pipeline.
     """
     pre_path_sql = _jsonb_path_to_sql(pre_aggregate_by)
     return f"""SELECT DISTINCT ON ({pre_path_sql})
         {pre_path_sql} AS pre_group_key,
         username AS owner_username
     FROM labs_raw_visit_cache
-    WHERE opportunity_id = {opportunity_id}
+    WHERE {_pipeline_scope_where(opportunity_id, pipeline_id)}
       AND {pre_path_sql} IS NOT NULL
     ORDER BY {pre_path_sql}, visit_date DESC NULLS LAST, visit_id DESC"""
 
@@ -783,7 +855,7 @@ def _collect_owner_ctes(config: AnalysisPipelineConfig, opportunity_id: int) -> 
         if f.pre_aggregate_attribute_to == "last_username" and f.pre_aggregate_by:
             alias = _owner_cte_name(f.pre_aggregate_by)
             if alias not in seen:
-                seen[alias] = _build_owner_attribution_cte(f.pre_aggregate_by, opportunity_id)
+                seen[alias] = _build_owner_attribution_cte(f.pre_aggregate_by, opportunity_id, config.pipeline_id)
     return seen
 
 
@@ -828,6 +900,7 @@ def build_flw_aggregation_query(
     """
     Build SQL query to aggregate raw visits to FLW level.
     """
+    pipeline_id = config.pipeline_id
     select_parts = [
         "username",
         "COUNT(*) as total_visits",
@@ -853,7 +926,8 @@ def build_flw_aggregation_query(
         # correlated subquery scoped to the outer (opportunity_id, username).
         # Single-pass field handling continues below for the typical case.
         if field.pre_aggregate_by:
-            select_parts.append(f"{_pre_aggregated_field_sql(field, inner_source=visit_source)} as {field.name}")
+            pre_agg_sql = _pre_aggregated_field_sql(field, inner_source=visit_source, pipeline_id=pipeline_id)
+            select_parts.append(f"{pre_agg_sql} as {field.name}")
             continue
 
         paths = field.paths if field.paths else [field.path]
@@ -873,6 +947,7 @@ def build_flw_aggregation_query(
                 filter_value=field.filter_value,
                 filter_op=field.filter_op,
                 inner_source=visit_source,
+                pipeline_id=pipeline_id,
             )
             select_parts.append(f"{agg_expr} as {field.name}")
 
@@ -883,6 +958,7 @@ def build_flw_aggregation_query(
             select_parts.append(f"{field_sql} as {field_name}")
 
     select_clause = ",\n    ".join(select_parts)
+    where_clause = _pipeline_scope_where(opportunity_id, pipeline_id)
 
     with_clause = _build_cte_prologue(config, opportunity_id, include_owners=True)
 
@@ -897,30 +973,12 @@ def build_flw_aggregation_query(
         {with_clause}SELECT
             {select_clause}
         FROM {visit_source} AS labs_raw_visit_cache
-        WHERE opportunity_id = {opportunity_id}
+        WHERE {where_clause}
         GROUP BY username, opportunity_id
         ORDER BY username
     """
 
     return query
-
-
-# Base columns on labs_raw_visit_cache that can be used directly as the linking_field
-# without going through a FieldComputation. Anything not in this set must be the name of
-# a FieldComputation declared in config.fields.
-_RAW_VISIT_BASE_COLUMNS = frozenset(
-    {
-        "visit_id",
-        "username",
-        "deliver_unit",
-        "deliver_unit_id",
-        "entity_id",
-        "entity_name",
-        "visit_date",
-        "status",
-        "review_status",
-    }
-)
 
 
 def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
@@ -938,7 +996,7 @@ def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
     convention `build_flw_aggregation_query` uses.
     """
     name = config.linking_field
-    if name in _RAW_VISIT_BASE_COLUMNS:
+    if name in RAW_VISIT_BASE_COLUMNS:
         return name
 
     # Look for a FieldComputation named the same as linking_field
@@ -947,7 +1005,7 @@ def _resolve_linking_field_outer_expr(config: AnalysisPipelineConfig) -> str:
         raise ValueError(
             f"linking_field {name!r} is not a base column on labs_raw_visit_cache and "
             f"no FieldComputation with that name was found in config.fields. "
-            f"Either use a base column name ({sorted(_RAW_VISIT_BASE_COLUMNS)}) or declare "
+            f"Either use a base column name ({sorted(RAW_VISIT_BASE_COLUMNS)}) or declare "
             f"the linking field as a FieldComputation."
         )
 
@@ -981,13 +1039,16 @@ def build_entity_aggregation_query(
     if not config.linking_field:
         raise ValueError("config.linking_field must be set for entity-stage aggregation")
 
+    pipeline_id = config.pipeline_id
     group_expr = _resolve_linking_field_outer_expr(config)
 
     # entity_id is the same expression as the GROUP BY — the row key.
-    # `first` and `last` use ARRAY_AGG ORDER BY visit_date+visit_id internally, so they
-    # work over any group expression — no need to special-case the linking_field shape.
-    rep_username = _aggregation_to_sql("first", "username", "username")
-    rep_entity_name = _aggregation_to_sql("first", "entity_name", "entity_name")
+    # `first` and `last` use ARRAY_AGG ORDER BY visit_date+visit_id internally,
+    # so they work over any group expression — no need to special-case the
+    # linking_field shape. pipeline_id is threaded through for forward-compat
+    # with any future agg type that adds a correlated subquery.
+    rep_username = _aggregation_to_sql("first", "username", "username", pipeline_id=pipeline_id)
+    rep_entity_name = _aggregation_to_sql("first", "entity_name", "entity_name", pipeline_id=pipeline_id)
 
     select_parts = [
         f"({group_expr}) as entity_id",
@@ -1029,6 +1090,7 @@ def build_entity_aggregation_query(
                 filter_paths=field.filter_paths,
                 filter_value=field.filter_value,
                 filter_op=field.filter_op,
+                pipeline_id=pipeline_id,
             )
             select_parts.append(f"{agg_expr} as {field.name}")
 
@@ -1039,6 +1101,7 @@ def build_entity_aggregation_query(
             select_parts.append(f"{field_sql} as {field_name}")
 
     select_clause = ",\n    ".join(select_parts)
+    where_clause = _pipeline_scope_where(opportunity_id, pipeline_id)
 
     visit_source = _visit_source_sql(config, opportunity_id)
     # Entity-stage doesn't currently use pre_aggregate_by/attribute_to, so the
@@ -1052,7 +1115,7 @@ def build_entity_aggregation_query(
         {with_clause}SELECT
             {select_clause}
         FROM {visit_source} AS labs_raw_visit_cache
-        WHERE opportunity_id = {opportunity_id}
+        WHERE {where_clause}
         GROUP BY ({group_expr}), opportunity_id
         ORDER BY entity_id
     """
@@ -1193,8 +1256,9 @@ def build_visit_extraction_query(
 
     select_clause = ",\n    ".join(select_parts)
 
-    # Build WHERE clause with filters
-    where_clauses = [f"opportunity_id = {opportunity_id}"]
+    # Build WHERE clause with filters. Pipeline-id scope is required so we
+    # don't read another pipeline's rows for the same opp (#116).
+    where_clauses = [_pipeline_scope_where(opportunity_id, config.pipeline_id)]
 
     # Add entity_id filter if present
     if "entity_id" in config.filters:

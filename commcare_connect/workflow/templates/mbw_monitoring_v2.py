@@ -67,7 +67,12 @@ PIPELINE_SCHEMAS = [
                     "aggregation": "first",
                 },
                 {
-                    "name": "entity_name",
+                    # Form-extracted entity name (mother name + phone) — namespaced
+                    # to avoid shadowing the base `entity_name` column on
+                    # labs_raw_visit_cache. The form path may carry a richer string
+                    # than the base, so it's kept under `form_entity_name` and the
+                    # render code reads it explicitly.
+                    "name": "form_entity_name",
                     "paths": [
                         "form.mbw_visit.deliver.entity_name",
                         "form.visit_completion.mbw_visit.deliver.entity_name",
@@ -123,6 +128,11 @@ PIPELINE_SCHEMAS = [
             "grouping_key": "case_id",
             "terminal_stage": "visit_level",
             "fields": [
+                # case_id is the mother's case_id (registration forms create
+                # the mother case, so form.case.@case_id is the mother case
+                # id by definition). Required by count_mothers_from_pipeline
+                # to count distinct mothers per FLW.
+                {"name": "case_id", "path": "form.case.@case_id", "aggregation": "first"},
                 {"name": "expected_visits", "path": "form.expected_visits", "aggregation": "first"},
                 {"name": "mother_name", "path": "form.mother_name", "aggregation": "first"},
                 {"name": "user_connect_id", "path": "form.user_connect_id", "aggregation": "first"},

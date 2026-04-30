@@ -97,6 +97,13 @@ class WorkflowRenderCodeRecord(LocalLabsRecord):
         return self.data.get("version", 1)
 
 
+# Workflow run status enum. Two states only — failed runs are deleted, not
+# transitioned. See docs/plans/2026-04-30-run-lifecycle.md for the design.
+RUN_STATUS_ACTIVE = "active"
+RUN_STATUS_FROZEN = "frozen"
+RUN_STATUSES = frozenset({RUN_STATUS_ACTIVE, RUN_STATUS_FROZEN})
+
+
 class WorkflowRunRecord(LocalLabsRecord):
     """Proxy model for workflow run LabsRecords."""
 
@@ -120,14 +127,37 @@ class WorkflowRunRecord(LocalLabsRecord):
 
     @property
     def status(self):
-        top = self.data.get("status")
-        if top:
+        """Run status. Defaults to "active" for legacy/missing values.
+
+        New lifecycle (2026-04-30): only "active" or "frozen". Legacy values
+        ("in_progress", "completed", etc.) are migrated to one of the two by
+        the migrate_run_statuses management command. Until that runs, this
+        property maps unknowns to "active" so render code never sees a third
+        state.
+        """
+        top = self.data.get("status") or self.data.get("state", {}).get("status")
+        if top in RUN_STATUSES:
             return top
-        return self.data.get("state", {}).get("status", "in_progress")
+        # Legacy mappings — keep render code unaware of the rename.
+        if top == "completed":
+            return RUN_STATUS_FROZEN
+        return RUN_STATUS_ACTIVE
+
+    @property
+    def is_frozen(self) -> bool:
+        return self.status == RUN_STATUS_FROZEN
+
+    @property
+    def frozen_at(self):
+        return self.data.get("frozen_at")
 
     @property
     def state(self):
         return self.data.get("state", {})
+
+    @property
+    def snapshot(self):
+        return self.data.get("snapshot")
 
     @property
     def created_at(self):
@@ -610,7 +640,7 @@ class WorkflowDataAccess(BaseDataAccess):
             "definition_id": definition_id,
             "period_start": period_start,
             "period_end": period_end,
-            "status": "in_progress",
+            "status": RUN_STATUS_ACTIVE,
             "state": initial_state or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -685,7 +715,7 @@ class WorkflowDataAccess(BaseDataAccess):
             "definition_id": definition_id,
             "period_start": week_start.isoformat(),
             "period_end": week_end.isoformat(),
-            "status": "in_progress",
+            "status": RUN_STATUS_ACTIVE,
             "state": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -781,6 +811,63 @@ class WorkflowDataAccess(BaseDataAccess):
             )
         return None
 
+    def freeze_run(
+        self,
+        run_id: int,
+        snapshot: dict,
+        run: WorkflowRunRecord | None = None,
+    ) -> WorkflowRunRecord | None:
+        """Atomic active→frozen transition: persist the snapshot, set status=frozen,
+        stamp frozen_at. Single LabsRecord write.
+
+        Caller (the freeze API endpoint) is responsible for building the snapshot
+        (via the template's build_snapshot hook). This method just persists it
+        atomically with the status transition. If the snapshot build raises, the
+        caller never invokes this — the run stays active.
+
+        Args:
+            run_id: The workflow run ID.
+            snapshot: Snapshot blob to persist (must be a dict).
+            run: Optional pre-fetched run record (avoids redundant API call).
+
+        Returns:
+            Updated WorkflowRunRecord, or None if not found.
+        """
+        if run is None:
+            run = self.get_run(run_id)
+        if not run:
+            return None
+
+        # Stamp freeze time inside the snapshot for caller convenience and also
+        # at the top level so the proxy property exposes it without unwrapping.
+        frozen_at = datetime.now(timezone.utc).isoformat()
+        snapshot_with_meta = {**snapshot, "frozen_at": frozen_at}
+        updated_data = {
+            **run.data,
+            "status": RUN_STATUS_FROZEN,
+            "frozen_at": frozen_at,
+            "snapshot": snapshot_with_meta,
+        }
+
+        result = self.labs_api.update_record(
+            record_id=run_id,
+            experiment=self.EXPERIMENT,
+            type="workflow_run",
+            data=updated_data,
+            current_record=run,
+        )
+        if result:
+            return WorkflowRunRecord(
+                {
+                    "id": result.id,
+                    "experiment": result.experiment,
+                    "type": result.type,
+                    "data": result.data,
+                    "opportunity_id": result.opportunity_id,
+                }
+            )
+        return None
+
     def complete_run(
         self,
         run_id: int,
@@ -788,16 +875,20 @@ class WorkflowDataAccess(BaseDataAccess):
         notes: str = "",
         run: WorkflowRunRecord | None = None,
     ) -> WorkflowRunRecord | None:
-        """Mark a workflow run as completed.
+        """DEPRECATED: kept as a compat shim for render code that calls
+        `actions.completeRun(...)`. Now sets status to "frozen" without taking
+        a snapshot — equivalent to a freeze with no snapshot data, marking the
+        run as historical.
 
-        Updates run.data.status to 'completed' and stores overall_result/notes
-        in the state.
+        New code should use `freeze_run(run_id, snapshot)` directly via the
+        framework's snapshot-build endpoint, which produces a meaningful
+        snapshot via the template's build_snapshot hook.
 
         Args:
             run_id: The workflow run ID.
-            overall_result: Completion result string.
-            notes: Completion notes.
-            run: Optional pre-fetched run record (avoids redundant API call).
+            overall_result: Completion result string (preserved in state for compat).
+            notes: Completion notes (preserved in state for compat).
+            run: Optional pre-fetched run record.
 
         Returns:
             Updated WorkflowRunRecord, or None if not found.
@@ -810,7 +901,8 @@ class WorkflowDataAccess(BaseDataAccess):
         current_state = run.data.get("state", {})
         updated_data = {
             **run.data,
-            "status": "completed",
+            "status": RUN_STATUS_FROZEN,
+            "frozen_at": datetime.now(timezone.utc).isoformat(),
             "state": {
                 **current_state,
                 "overall_result": overall_result,
@@ -938,6 +1030,12 @@ class WorkflowDataAccess(BaseDataAccess):
                 results[alias] = {
                     "rows": merged_rows,
                     "metadata": {
+                        # pipeline_id is the same across opp_ids (it's the
+                        # pipeline definition id, not opp-specific). Surfaced
+                        # at alias level so the V2 job handler can look up
+                        # full forms in RawVisitCache by (opp, pipeline_id)
+                        # without digging into per_opp metadata.
+                        "pipeline_id": pipeline_id,
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                         "row_count": len(merged_rows),
@@ -1754,6 +1852,13 @@ class PipelineDataAccess(BaseDataAccess):
                         # Entity-stage / visit-level fields. None on FLW rows.
                         "entity_id": getattr(row, "entity_id", None),
                         "entity_name": getattr(row, "entity_name", None),
+                        # Per-visit status / flagged. Required by job handlers that
+                        # filter visit rows post-pipeline (e.g. MBW V2's
+                        # status_filter=["approved"]). Missing them used to drop
+                        # every visit because `(r.get("status") or "").lower()`
+                        # returned "" for every row.
+                        "status": getattr(row, "status", None),
+                        "flagged": getattr(row, "flagged", None),
                     }
                     # Add computed fields (custom fields from config)
                     # FLWRow / EntityRow use custom_fields, VisitRow uses computed
@@ -1767,6 +1872,7 @@ class PipelineDataAccess(BaseDataAccess):
                 "metadata": {
                     "row_count": len(rows),
                     "from_cache": getattr(result, "from_cache", False),
+                    "pipeline_id": definition_id,
                     "pipeline_name": definition.name,
                     "terminal_stage": schema.get("terminal_stage", "visit_level"),
                 },
@@ -1798,9 +1904,9 @@ class PipelineDataAccess(BaseDataAccess):
 
         # Transform registry
         transform_registry = {
-            "kg_to_g": lambda x: int(float(x) * 1000)
-            if x and str(x).replace(".", "").replace("-", "").isdigit()
-            else None,
+            "kg_to_g": lambda x: (
+                int(float(x) * 1000) if x and str(x).replace(".", "").replace("-", "").isdigit() else None
+            ),
             "float": lambda x: float(x) if x else None,
             "int": lambda x: int(float(x)) if x else None,
             "date": None,
@@ -1997,4 +2103,7 @@ class PipelineDataAccess(BaseDataAccess):
             window_fields=window_fields,
             extracted_filters=schema.get("extracted_filters", []),
             joins=joins,
+            # Discriminate the raw-visit cache by pipeline id so multiple
+            # pipelines for the same opp don't clobber each other (#116).
+            pipeline_id=definition_id,
         )

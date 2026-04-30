@@ -915,7 +915,7 @@ function WorkflowUI({
             motherMap[mid] = motherMap[mid] || { visits: [] };
             motherMap[mid].lat = v.gps.latitude;
             motherMap[mid].lng = v.gps.longitude;
-            motherMap[mid].name = v.entity_name || mid;
+            motherMap[mid].name = v.form_entity_name || mid;
             motherMap[mid].latest = v.visit_date;
           }
           motherMap[mid].visits.push(v);
@@ -962,7 +962,7 @@ function WorkflowUI({
           });
           marker.bindPopup(
             '<strong>' +
-              escapeHtml(v.entity_name || '-') +
+              escapeHtml(v.form_entity_name || '-') +
               '</strong><br/>' +
               'Date: ' +
               escapeHtml(v.visit_date || '-') +
@@ -5370,7 +5370,8 @@ function WorkflowUI({
                                                   );
                                                 },
                                               ) || {}
-                                            ).entity_name || 'Selected mother'}
+                                            ).form_entity_name ||
+                                              'Selected mother'}
                                             <button
                                               onClick={function () {
                                                 setSelectedMother(null);
@@ -5445,14 +5446,14 @@ function WorkflowUI({
                                                 toggleSort(
                                                   setGpsDetailSort,
                                                   gpsDetailSort,
-                                                  'entity_name',
+                                                  'form_entity_name',
                                                 );
                                               }}
                                             >
                                               Entity
                                               {sortIcon(
                                                 gpsDetailSort,
-                                                'entity_name',
+                                                'form_entity_name',
                                               )}
                                             </th>
                                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
@@ -5510,7 +5511,7 @@ function WorkflowUI({
                                                   {v.form_name || '-'}
                                                 </td>
                                                 <td className="px-4 py-2 text-sm text-gray-900">
-                                                  {v.entity_name || '-'}
+                                                  {v.form_entity_name || '-'}
                                                 </td>
                                                 <td className="px-4 py-2 text-sm text-gray-500">
                                                   {v.gps ? (
