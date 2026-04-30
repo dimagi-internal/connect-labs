@@ -871,15 +871,65 @@ def build_visit_extraction_query(
 
     where_clause = " AND ".join(where_clauses)
 
+    # If no window fields, emit the simple flat extraction query.
+    if not config.window_fields:
+        query = f"""
+            SELECT
+                {select_clause}
+            FROM labs_raw_visit_cache
+            WHERE {where_clause}
+            ORDER BY visit_id
+        """
+        return query, computed_field_names
+
+    # Window-field path: wrap the extraction in a subquery so window functions
+    # can reference both base columns and extracted/computed columns by name.
+    # Each WindowFieldComputation appends a SELECT-list expression in the outer
+    # query, plus its column name to the computed_field_names tally.
+    window_select_parts: list[str] = []
+    for wf in config.window_fields:
+        window_select_parts.append(_window_field_to_sql(wf))
+        computed_field_names.append(wf.name)
+
+    window_select_clause = ",\n        ".join(window_select_parts)
+
     query = f"""
         SELECT
-            {select_clause}
-        FROM labs_raw_visit_cache
-        WHERE {where_clause}
+            base.*,
+            {window_select_clause}
+        FROM (
+            SELECT
+                {select_clause}
+            FROM labs_raw_visit_cache
+            WHERE {where_clause}
+        ) base
         ORDER BY visit_id
     """
-
     return query, computed_field_names
+
+
+def _window_field_to_sql(wf: "WindowFieldComputation") -> str:  # noqa: F821
+    """Translate a WindowFieldComputation into a SELECT-list expression.
+
+    The expression references columns from the wrapping subquery (`base.<col>`)
+    and uses an inline `OVER (PARTITION BY ... ORDER BY ...)` window. Each
+    operation has its own SQL pattern.
+
+    Inline windows are simpler than a top-level `WINDOW w AS (...)` clause when
+    each window field has its own partitioning; they don't require coordinating
+    a unique window name across fields.
+    """
+    if wf.operation == "lag_haversine":
+        window_spec = f"PARTITION BY base.{wf.partition_by} ORDER BY base.{wf.order_by}"
+        return (
+            f"haversine_meters("
+            f"LAG(base.{wf.lat_field}::float) OVER ({window_spec}), "
+            f"LAG(base.{wf.lon_field}::float) OVER ({window_spec}), "
+            f"base.{wf.lat_field}::float, "
+            f"base.{wf.lon_field}::float"
+            f") AS {wf.name}"
+        )
+    raise ValueError(f"Unknown window operation {wf.operation!r} in field {wf.name!r}")
 
 
 def execute_visit_extraction(
