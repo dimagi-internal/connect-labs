@@ -65,7 +65,7 @@ FEATURE_TO_DOC_FILE = {
     "Connect MCP & Safe Mode": "user_docs/connect-mcp-safe-mode.md",
 }
 
-GITHUB_PAGES_BASE = "https://jjackson.github.io/connect-labs"
+GITHUB_PAGES_BASE = "https://jjackson.github.io/connect-labs/docs"
 
 DOC_SYSTEM_PROMPT = """\
 You maintain user help documentation for Connect Labs at labs.connect.dimagi.com.
