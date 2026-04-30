@@ -3,7 +3,7 @@
 **Connect Labs** is a rapid prototyping environment for CommCare Connect, hosted at [labs.connect.dimagi.com](https://labs.connect.dimagi.com). It gives program teams early access to new features before they reach the main Connect platform.
 
 !!! info "What is Labs?"
-    Labs connects directly to your live CommCare Connect data via your existing login — no separate data entry required. Features here may evolve quickly based on feedback.
+Labs connects directly to your live CommCare Connect data via your existing login — no separate data entry required. Features here may evolve quickly based on feedback.
 
 ## How to Log In
 
@@ -30,15 +30,15 @@ graph LR
     Labs --> AI[AI Features]
 ```
 
-| Feature | What it does |
-|---------|-------------|
-| [Audit & QA Review](audit.md) | Review field worker visits and images for quality |
+| Feature                               | What it does                                       |
+| ------------------------------------- | -------------------------------------------------- |
+| [Audit & QA Review](audit.md)         | Review field worker visits and images for quality  |
 | [Workflow Engine](workflow-engine.md) | Configurable dashboards pulling live CommCare data |
-| [Task Management](task-management.md) | Track follow-up actions for field workers |
-| [Solicitations](solicitations.md) | Manage RFPs, review responses, and award funding |
-| [Custom Analysis](custom-analysis.md) | Program-specific nutrition and health dashboards |
-| [Coverage Maps](coverage-maps.md) | Visualize delivery unit boundaries on a map |
-| [AI Features](ai-features.md) | AI assistants embedded throughout Labs |
+| [Task Management](task-management.md) | Track follow-up actions for field workers          |
+| [Solicitations](solicitations.md)     | Manage RFPs, review responses, and award funding   |
+| [Custom Analysis](custom-analysis.md) | Program-specific nutrition and health dashboards   |
+| [Coverage Maps](coverage-maps.md)     | Visualize delivery unit boundaries on a map        |
+| [AI Features](ai-features.md)         | AI assistants embedded throughout Labs             |
 
 ---
 

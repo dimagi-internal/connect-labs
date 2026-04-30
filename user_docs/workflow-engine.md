@@ -36,12 +36,12 @@ Click any workflow to open its dashboard.
 
 A typical workflow dashboard shows a **table of field workers** with performance columns:
 
-| Column type | What it shows |
-|------------|---------------|
-| Count | Number of visits or activities in the period |
-| Status | Current enrollment or case status |
-| Last value | Most recent recorded measurement |
-| Percentage | Proportion meeting a threshold |
+| Column type | What it shows                                |
+| ----------- | -------------------------------------------- |
+| Count       | Number of visits or activities in the period |
+| Status      | Current enrollment or case status            |
+| Last value  | Most recent recorded measurement             |
+| Percentage  | Proportion meeting a threshold               |
 
 **Filtering and sorting:**
 
@@ -76,16 +76,16 @@ Program managers can update a case's status directly from the workflow view. The
 
 Labs includes pre-built workflow templates for common program types:
 
-| Template | Best for |
-|----------|---------|
-| **KMC Longitudinal** | Kangaroo Mother Care tracking over time |
-| **KMC FLW Flags** | Flag workers needing follow-up |
-| **KMC Project Metrics** | Program-level KPIs |
-| **MBW Monitoring** | Mother and baby wellness visits |
-| **Performance Review** | FLW performance across programs |
-| **SAM Follow-up** | Severe acute malnutrition case tracking |
-| **OCS Outreach** | Community health outreach tracking |
-| **Bulk Image Audit** | Image-based QA combined with workflow |
+| Template                | Best for                                |
+| ----------------------- | --------------------------------------- |
+| **KMC Longitudinal**    | Kangaroo Mother Care tracking over time |
+| **KMC FLW Flags**       | Flag workers needing follow-up          |
+| **KMC Project Metrics** | Program-level KPIs                      |
+| **MBW Monitoring**      | Mother and baby wellness visits         |
+| **Performance Review**  | FLW performance across programs         |
+| **SAM Follow-up**       | Severe acute malnutrition case tracking |
+| **OCS Outreach**        | Community health outreach tracking      |
+| **Bulk Image Audit**    | Image-based QA combined with workflow   |
 
 Your program administrator can create a workflow from any of these templates.
 

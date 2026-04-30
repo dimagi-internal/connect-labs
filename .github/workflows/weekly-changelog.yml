@@ -2,8 +2,8 @@ name: Weekly Changelog
 
 on:
   schedule:
-    - cron: '0 9 * * 1'  # Mondays at 09:00 UTC
-  workflow_dispatch:       # Manual trigger: Actions → Weekly Changelog → Run workflow
+    - cron: "0 9 * * 1" # Mondays at 09:00 UTC
+  workflow_dispatch: # Manual trigger: Actions → Weekly Changelog → Run workflow
 
 jobs:
   weekly-changelog:
@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install script dependencies
         run: pip install anthropic requests

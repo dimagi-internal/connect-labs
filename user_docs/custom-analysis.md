@@ -21,11 +21,13 @@ flowchart LR
 ```
 
 **Child Timeline (`/kmc/children/`):**
+
 - List of all KMC beneficiaries with key metrics: visit count, weight progression, nutritional status
 - Filter by FLW, date range, or status
 - Click any child to see their full visit timeline, weight chart, and images
 
 **FLW Metrics:**
+
 - Aggregate view of each FLW's KMC caseload
 - Columns: number of active cases, average visit frequency, cases needing follow-up
 
@@ -54,9 +56,10 @@ Dashboard for Community Health Center nutrition programs.
 ### Audit of Audits
 
 !!! note "Dimagi staff only"
-    This dashboard is visible to Dimagi program managers and is used for quality oversight across organizations.
+This dashboard is visible to Dimagi program managers and is used for quality oversight across organizations.
 
 Shows summary statistics on audit session quality across all programs:
+
 - Which programs are conducting audits
 - Pass rates by template type and organization
 - Heatmaps of audit activity over time
@@ -79,6 +82,7 @@ Data streams in progressively from CommCare. A progress bar shows how much has l
 
 **Filtering:**
 Most dashboards let you filter by:
+
 - Date range (reporting period)
 - Field worker
 - Geographic area (if configured)

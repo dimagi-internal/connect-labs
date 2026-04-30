@@ -21,15 +21,15 @@ theme:
 nav:
   - Home: index.md
   - Feature Guides:
-    - Audit & QA Review: audit.md
-    - Workflow Engine: workflow-engine.md
-    - Task Management: task-management.md
-    - Solicitations: solicitations.md
-    - Custom Analysis: custom-analysis.md
-    - Coverage Maps: coverage-maps.md
-    - AI Features: ai-features.md
+      - Audit & QA Review: audit.md
+      - Workflow Engine: workflow-engine.md
+      - Task Management: task-management.md
+      - Solicitations: solicitations.md
+      - Custom Analysis: custom-analysis.md
+      - Coverage Maps: coverage-maps.md
+      - AI Features: ai-features.md
   - For Power Users:
-    - Connect MCP & Safe Mode: connect-mcp-safe-mode.md
+      - Connect MCP & Safe Mode: connect-mcp-safe-mode.md
 
 markdown_extensions:
   - admonition

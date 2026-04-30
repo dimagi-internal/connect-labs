@@ -17,20 +17,21 @@ flowchart LR
 
 The map has three layers:
 
-| Layer | What it shows |
-|-------|--------------|
+| Layer                        | What it shows                                                        |
+| ---------------------------- | -------------------------------------------------------------------- |
 | **Delivery unit boundaries** | Geographic polygons showing each FLW's assigned area, colored by FLW |
-| **Service point markers** | Individual locations where services have been delivered |
-| **FLW legend** | Color key listing each FLW and their assigned color |
+| **Service point markers**    | Individual locations where services have been delivered              |
+| **FLW legend**               | Color key listing each FLW and their assigned color                  |
 
 ---
 
 ## Connecting to CommCare HQ
 
 !!! warning "Separate login required"
-    Coverage Maps pulls boundary data directly from CommCare HQ using a separate OAuth connection. You must authorize this connection before the map will load.
+Coverage Maps pulls boundary data directly from CommCare HQ using a separate OAuth connection. You must authorize this connection before the map will load.
 
 **First-time setup:**
+
 1. Go to **Coverage Maps** in the top navigation
 2. If not yet connected, you'll see a "Connect CommCare HQ" button
 3. Click it and log in with your CommCare credentials
@@ -49,6 +50,7 @@ Click a FLW's name in the legend to toggle their delivery units on or off. This 
 If your program uses service areas (larger geographic zones containing multiple delivery units), use the service area filter at the top to focus on a specific zone.
 
 **Zooming and panning:**
+
 - Use the `+` / `−` buttons or scroll to zoom
 - Click and drag to pan the map
 - Double-click any location to zoom in
