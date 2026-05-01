@@ -277,6 +277,7 @@ def _generate_confluence_body(
         paragraph = str(data.get("paragraph", "")).strip()
         bullets = [str(b).strip() for b in data.get("bullets", []) if str(b).strip()]
     except (json.JSONDecodeError, AttributeError):
+        print(f"  [warn] Failed to parse JSON for '{feature}' — using raw text as paragraph")
         paragraph = raw
         bullets = []
 
