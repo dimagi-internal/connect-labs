@@ -1,23 +1,15 @@
 """v1↔v3 parity for the Followups tab.
 
-The followup tab is the first tab where v1 and v3 use materially different
-algorithms — v1 has a "filtered follow-up rate" that requires (a) the
-mother to be eligible_full_intervention_bonus=1 and (b) the visit to be 5+
-days past its scheduled date. v3's JS uses a naive
-total_completed/total_expected ratio with no eligibility or grace-period
-filter.
-
-These tests pin both behaviours and document the gap. When v3's JS is
-fixed to match v1, the divergence test will start failing and signal that
-v3 is now in lockstep — at which point the test should be flipped to
-assert agreement (or removed in favor of the agreement test).
+v3 used to diverge from v1 in two places — completion_rate (no eligibility
+filter, no grace period) and mother→FLW attribution (no fallback to the
+registration form's submitter when no visits existed). Both are now fixed
+in the v3 JS (and mirrored in v3_python_port.py); these tests are the
+regression guard.
 """
 
 from __future__ import annotations
 
 from datetime import date
-
-import pytest
 
 from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
     aggregate_flw_followup,
@@ -267,34 +259,22 @@ class TestFollowupRateParity:
         # Sanity: 3 of 4 visits completed.
         assert v1_rates["alice"] == 75
 
-    @pytest.mark.xfail(
-        reason=(
-            "Known divergence: v1 filters by eligible_full_intervention_bonus before "
-            "computing completion_rate; v3 does not. v3's rate will be lower because "
-            "ineligible mothers' uncompleted visits drag the denominator down. "
-            "When v3's JS is fixed to match v1, this test should pass."
-        ),
-        strict=True,
-    )
     def test_eligibility_split_v1_and_v3_agree(self):
-        """m1 eligible (2/2 completed), m2 ineligible (0/2 completed).
-        v1: filters m2 out → 2/2 = 100%.
-        v3: counts both → 2/4 = 50%.
-        These should match; today they don't."""
+        """m1 eligible (2/2 completed), m2 ineligible (1/2 completed).
+        Both should produce 100% — v1 filters m2 out; v3 (now patched)
+        also filters m2 out via eligible_full_intervention_bonus."""
         reg_forms, pipeline_rows, v3_regs, v3_visits = _eligibility_split_fixture()
         v1_rates = _build_v1_completion_rate(reg_forms, pipeline_rows)
         v3_rates = _build_v3_completion_rate(v3_regs, v3_visits)
         assert v1_rates == v3_rates, f"v1={v1_rates} v3={v3_rates}"
+        assert v1_rates["alice"] == 100
 
-    def test_v3_drops_mothers_with_zero_visits(self):
-        """v3's mother→FLW attribution is "last visit wins from visits_gps"
-        with no fallback. v1 attributes via the registration form's
-        metadata.username when no pipeline rows exist for a mother.
-
-        Result: a mother registered but never visited shows up in v1's
-        followup table (with all visits Missed) but is silently absent in
-        v3.
-        """
+    def test_registered_but_unvisited_mothers_attributed_to_form_submitter(self):
+        """v3 used to drop registered-but-not-yet-visited mothers entirely
+        because mother→FLW was last-visit-wins from visits_gps with no
+        fallback. The fix attributes them to the registration form's
+        submitter (registrations row `_username`/`username`), matching
+        v1's behaviour."""
         schedules = [
             {"visit_type": "ANC Visit", "scheduled": "2025-05-01", "expiry": "2025-05-08"},
         ]
@@ -326,29 +306,30 @@ class TestFollowupRateParity:
             v3_regs, v3_visits, flw_name_map={"alice": "Alice"}, current_date_str=CURRENT_DATE_STR
         )
         v1_alice = next(s for s in v1_summaries if s["username"] == "alice")
-        # v1 sees both mothers — m2's missed ANC counted in `missed`.
-        assert v1_alice["missed"] == 1, f"v1 missed = {v1_alice['missed']}"
-        # v3's drilldown only has m1 — m2 dropped entirely.
         v3_drilldown = v3_out["flw_drilldown"]["alice"]
-        assert len(v3_drilldown) == 1, f"v3 drilldown mothers = {len(v3_drilldown)}"
-        assert v3_drilldown[0]["mother_case_id"] == "m1"
+        # Both mothers visible in both views.
+        assert v1_alice["missed"] == 1, f"v1 missed = {v1_alice['missed']}"
+        assert len(v3_drilldown) == 2, f"v3 drilldown mothers = {len(v3_drilldown)}"
+        v3_mids = {m["mother_case_id"] for m in v3_drilldown}
+        assert v3_mids == {"m1", "m2"}
 
-    def test_eligibility_split_documents_current_v1_and_v3_outputs(self):
-        """The non-strict counterpart of the xfail above: documents what v1
-        and v3 actually produce on the eligibility-split fixture, so a
-        future change to v3 doesn't silently flip this without us noticing.
-
-        Setup: alice has m1 (eligible, 2/2 completed) and m2 (ineligible,
-        1/2 completed). All visits are scheduled in May; current date June 1
-        so all are well past the 5-day grace period.
-
-        - v1: filters out m2 because she's not eligible_full_intervention_bonus.
-          2 completed / 2 eligible+past-grace = 100%.
-        - v3: counts every non-Upcoming visit across all mothers.
-          3 completed / 4 (m1 ANC+Week, m2 ANC completed; m2 Week missed) = 75%.
-        """
+    def test_unfiltered_totals_still_visible_post_fix(self):
+        """The fix changed completion_rate to be eligibility-filtered, but
+        the unfiltered totals (total_expected, total_completed) stay
+        present in the per-FLW summary so the drilldown table can still
+        show them. This test pins those non-rate fields so a future
+        refactor doesn't accidentally drop them."""
         reg_forms, pipeline_rows, v3_regs, v3_visits = _eligibility_split_fixture()
+        out = build_followup_data_v3(
+            v3_regs, v3_visits, flw_name_map={"alice": "Alice"}, current_date_str=CURRENT_DATE_STR
+        )
+        alice = next(s for s in out["flw_summaries"] if s["username"] == "alice")
+        # 4 expected (m1 ANC+Week, m2 ANC+Week non-Upcoming), 3 completed
+        # (m1 both, m2 ANC).
+        assert alice["total_expected"] == 4
+        assert alice["total_completed"] == 3
+        # completion_rate is the eligibility-filtered rate, not 75%.
+        assert alice["completion_rate"] == 100
+        # Sanity: v1 agrees on the same 100%.
         v1_rates = _build_v1_completion_rate(reg_forms, pipeline_rows)
-        v3_rates = _build_v3_completion_rate(v3_regs, v3_visits)
-        assert v1_rates["alice"] == 100, f"v1 rate (eligibility filter active) = {v1_rates['alice']}"
-        assert v3_rates["alice"] == 75, f"v3 rate (no eligibility filter) = {v3_rates['alice']}"
+        assert v1_rates["alice"] == 100
