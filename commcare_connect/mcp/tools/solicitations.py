@@ -413,11 +413,13 @@ def award_response(
 
             _add_allocation_to_fund(client, fund_id, allocation)
 
-        updated_response["_warning"] = (
+        warning_msg = (
             "award_response sets the response record to public=True so the "
             "awarded organisation can read their own award status. Do not embed "
             "PII from pipeline previews or form data in the response record fields."
         )
+        logger.warning("award_response: %s", warning_msg)
+        updated_response["_warning"] = warning_msg
         return updated_response
     finally:
         client.close()
