@@ -1,6 +1,6 @@
 # Connect Labs
 
-**Connect Labs** is a rapid prototyping environment for CommCare Connect, hosted at [labs.connect.dimagi.com](https://labs.connect.dimagi.com). It gives program teams early access to new features before they reach the main Connect platform.
+**Connect Labs** is a rapid prototyping environment for CommCare Connect, hosted at [labs.connect.dimagi.com](https://labs.connect.dimagi.com). It gives program teams early access to new tools — dashboards, audit workflows, AI assistants, and more — before they reach the main Connect platform.
 
 !!! info "What is Labs?"
 Labs connects directly to your live CommCare Connect data via your existing login — no separate data entry required. Features here may evolve quickly based on feedback.
@@ -30,15 +30,17 @@ graph LR
     Labs --> AI[AI Features]
 ```
 
-| Feature                               | What it does                                       |
-| ------------------------------------- | -------------------------------------------------- |
-| [Audit & QA Review](audit.md)         | Review field worker visits and images for quality  |
-| [Workflow Engine](workflow-engine.md) | Configurable dashboards pulling live CommCare data |
-| [Task Management](task-management.md) | Track follow-up actions for field workers          |
-| [Solicitations](solicitations.md)     | Manage RFPs, review responses, and award funding   |
-| [Custom Analysis](custom-analysis.md) | Program-specific nutrition and health dashboards   |
-| [Coverage Maps](coverage-maps.md)     | Visualize delivery unit boundaries on a map        |
-| [AI Features](ai-features.md)         | AI assistants embedded throughout Labs             |
+| Feature                               | What it does                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| [Audit & QA Review](audit.md)         | Review field worker visit images for quality; flag issues with AI assistance  |
+| [Workflow Engine](workflow-engine.md) | Configurable dashboards showing live CommCare data by worker and case         |
+| [Task Management](task-management.md) | Create and track follow-up actions from audits or manual triage               |
+| [Solicitations](solicitations.md)     | Post RFPs/EOIs, collect responses from organizations, score and award funding |
+| [Custom Analysis](custom-analysis.md) | Program-specific dashboards for KMC, MBW, nutrition, and SAM tracking         |
+| [Coverage Maps](coverage-maps.md)     | Interactive map of delivery unit boundaries and service point locations       |
+| [AI Features](ai-features.md)         | AI assistants embedded throughout Labs for editing, reviewing, and analysis   |
+
+These features work together. A common flow: review visits with **Audit**, create follow-up **Tasks** for flagged workers, and monitor outcomes in a **Workflow** dashboard.
 
 ---
 

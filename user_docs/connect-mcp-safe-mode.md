@@ -1,12 +1,15 @@
 # Connect MCP & Safe Mode
 
-Connect Labs gives non-developers a way to edit workflows using Claude Code (an AI assistant) from the command line — without writing any code themselves. **Safe Mode** adds security guardrails so that even when AI has access to real program data, it cannot leak that data outside approved channels.
+Connect Labs gives technical program staff a way to edit workflows using Claude Code (an AI assistant) from the command line — without writing code themselves. **Safe Mode** adds security guardrails so that when AI has access to real program data, it cannot leak that data outside approved channels.
+
+!!! note "Who this is for"
+This feature is for program administrators and technical staff who are comfortable working in a terminal. If you just want to use the AI assistant inside the Labs browser app, see [AI Features](ai-features.md) instead.
 
 ---
 
 ## What Is This For?
 
-Normally, editing a workflow's display logic or data fields requires a developer to write React/JavaScript code. With the Connect MCP (Model Context Protocol), you can describe changes in plain English and Claude Code makes the edits for you:
+Normally, editing a workflow's display logic or data fields requires a developer to modify code. With the Connect MCP (Model Context Protocol), you can describe changes in plain English and Claude Code makes the edits for you:
 
 <!-- prettier-ignore -->
 > _"Add a column showing how many weeks since the last visit"_
@@ -24,7 +27,7 @@ Before you start, you'll need these tools installed:
 | Tool                 | How to get it                                                                        |
 | -------------------- | ------------------------------------------------------------------------------------ |
 | `git`                | [git-scm.com](https://git-scm.com)                                                   |
-| Python 3.11          | [python.org](https://www.python.org)                                                 |
+| Python 3.11+         | [python.org](https://www.python.org)                                                 |
 | Node.js              | [nodejs.org](https://nodejs.org)                                                     |
 | Claude Code CLI      | `npm install -g @anthropic-ai/claude-code`                                           |
 | 1Password CLI (`op`) | [1password.com/downloads/command-line](https://1password.com/downloads/command-line) |
@@ -33,7 +36,7 @@ You'll also need:
 
 - A Dimagi 1Password account with access to the **AI-Agents** vault
 - A **Labs login** (same account you use at [labs.connect.dimagi.com](https://labs.connect.dimagi.com))
-- GitHub access to the connect-labs repository
+- Access to the connect-labs GitHub repository
 
 Ask in **#engineering-connect** if you're unsure about any of these.
 
@@ -44,30 +47,32 @@ Ask in **#engineering-connect** if you're unsure about any of these.
 ### 1. Install 1Password CLI and sign in
 
 === "macOS"
-`bash
+
+    ```bash
     brew install 1password-cli
     op signin --account dimagi
-    `
+    ```
 
 === "Windows (WSL)"
-`bash
+
+    ```bash
     curl -sS https://downloads.1password.com/linux/keys/1password.asc | \
       sudo gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg
     sudo apt update && sudo apt install 1password-cli
     op signin --account dimagi
-    `
+    ```
 
 ### 2. Clone the repo and set up credentials
 
 ```bash
-git clone https://github.com/dimagi/connect-labs.git
+git clone https://github.com/jjackson/connect-labs.git
 cd connect-labs
 op inject -f -i .env.tpl -o .env
 ```
 
 ### 3. Set up your Labs token
 
-Your Labs token lets Claude Code talk to the Labs MCP server securely. Open a normal Claude Code session in any folder and run:
+Your Labs token lets Claude Code talk to the Labs MCP server securely. Open a normal Claude Code session (in any folder) and run:
 
 ```
 /labs-token-setup
@@ -84,7 +89,7 @@ Pull the latest changes, then launch:
 ```bash
 cd connect-labs
 git pull origin main
-source .venv/bin/activate    # or the path to your Python venv
+source .venv/bin/activate
 inv safe-claude --auth=api-key
 ```
 
@@ -97,7 +102,7 @@ The `--auth` flag is required every time — choose:
 
 ## Editing Workflows
 
-Once inside `inv safe-claude`, you can use the MCP-powered workflow skill:
+Once inside `inv safe-claude`, use the MCP-powered workflow skill:
 
 ```
 /workflow-author
@@ -116,7 +121,7 @@ To verify your change: open the workflow in your browser at [labs.connect.dimagi
 
 ## Safe Mode: What It Protects Against
 
-Safe Mode is designed to prevent accidental exposure of patient data when an AI assistant has access to real program information.
+Safe Mode prevents accidental exposure of patient data when an AI assistant has access to real program information.
 
 ```mermaid
 flowchart LR
@@ -129,18 +134,18 @@ flowchart LR
     SM -->|Routes through| ZDR[Zero Data Retention\nAI Endpoint]
 ```
 
-| Safe Mode blocks                    | Why                                                         |
-| ----------------------------------- | ----------------------------------------------------------- |
-| Shell commands (`ls`, `curl`, etc.) | Can't execute arbitrary code or leak data to the filesystem |
-| Web fetch / web search              | Can't send data to external URLs                            |
-| Writing local files                 | Can't dump patient data to disk                             |
-| Spawning sub-agents                 | Keeps the session audit trail linear                        |
+| Safe Mode blocks                    | Why                                                                |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| Shell commands (`ls`, `curl`, etc.) | Can't execute arbitrary code or exfiltrate data via the filesystem |
+| Web fetch / web search              | Can't send data to external URLs                                   |
+| Writing local files                 | Can't dump patient data to disk                                    |
+| Spawning sub-agents                 | Keeps the session audit trail linear and reviewable                |
 
 **Safe Mode allows only:**
 
 - Reading and editing workflows and pipelines via the Labs MCP
 - Reading CommCare HQ app structure (form definitions only — no patient data)
-- Reading files in the connect-labs repo
+- Reading files in the connect-labs repository
 
 ---
 
@@ -150,7 +155,7 @@ flowchart LR
 | --------------------------------- | -------------------------------------------------------------------------------- |
 | "No connect_labs PAT found"       | Run `/labs-token-setup` in a normal Claude Code session                          |
 | `op` errors or sign-in failures   | Run `op signin --account dimagi` in your terminal                                |
-| "Workflow not found" or 403 error | Check the workflow ID; confirm you can open it in the Labs browser               |
+| "Workflow not found" or 403 error | Check the workflow ID; confirm you can open it in Labs in the browser            |
 | Claude says "I can't edit files"  | That's correct in Safe Mode — ask it to use the `connect_labs` MCP tools instead |
 
 ---
