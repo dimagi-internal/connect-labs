@@ -354,6 +354,73 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
 // known business window where FLWs can still legitimately catch up.
 var V3_FOLLOWUP_GRACE_PERIOD_DAYS = 5;
 
+// On-time completion window per visit type (days from scheduled date).
+// Matches v1's VISIT_ON_TIME_DAYS — most visits get 7 days, PNC gets 4.
+var V3_VISIT_ON_TIME_DAYS = {
+  'ANC Visit': 7,
+  'Postnatal Visit': 4,
+  'Postnatal Delivery Visit': 4,
+  '1 Week Visit': 7,
+  '1 Month Visit': 7,
+  '3 Month Visit': 7,
+  '6 Month Visit': 7,
+};
+var V3_DEFAULT_ON_TIME_DAYS = 7;
+
+// 6-category visit status (matches v1's calculate_visit_status). v3 used
+// to use only 4 (Completed/Missed/Due/Upcoming); the JSX visit-status
+// chart expects the 6-category breakdown so it can show on-time vs late.
+var V3_STATUS_COMPLETED_ON_TIME = 'Completed - On Time';
+var V3_STATUS_COMPLETED_LATE = 'Completed - Late';
+var V3_STATUS_DUE_ON_TIME = 'Due - On Time';
+var V3_STATUS_DUE_LATE = 'Due - Late';
+var V3_STATUS_MISSED = 'Missed';
+var V3_STATUS_NOT_DUE_YET = 'Not Due Yet';
+var V3_STATUS_TO_KEY = {
+  'Completed - On Time': 'completed_on_time',
+  'Completed - Late': 'completed_late',
+  'Due - On Time': 'due_on_time',
+  'Due - Late': 'due_late',
+  Missed: 'missed',
+  'Not Due Yet': 'not_due_yet',
+};
+var V3_STATUS_KEYS = [
+  'completed_on_time',
+  'completed_late',
+  'due_on_time',
+  'due_late',
+  'missed',
+  'not_due_yet',
+];
+
+// Per-visit-type bucket key for the by_visit_type breakdown. Matches v1's
+// VISIT_TYPE_KEYS / _VISIT_TYPE_KEY_TO_DISPLAY.
+var V3_VISIT_TYPE_TO_BUCKET_KEY = {
+  'ANC Visit': 'anc',
+  'Postnatal Visit': 'postnatal',
+  'Postnatal Delivery Visit': 'postnatal',
+  '1 Week Visit': 'week1',
+  '1 Month Visit': 'month1',
+  '3 Month Visit': 'month3',
+  '6 Month Visit': 'month6',
+};
+var V3_VISIT_TYPE_BUCKET_ORDER = [
+  'anc',
+  'postnatal',
+  'week1',
+  'month1',
+  'month3',
+  'month6',
+];
+var V3_VISIT_TYPE_BUCKET_DISPLAY = {
+  anc: 'ANC',
+  postnatal: 'Postnatal',
+  week1: 'Week 1',
+  month1: 'Month 1',
+  month3: 'Month 3',
+  month6: 'Month 6',
+};
+
 function _v3BuildFollowupData(
   registrationsRows,
   visitsGpsRows,
@@ -432,15 +499,37 @@ function _v3BuildFollowupData(
       var expiryStr = s.visit_expiry_date || '';
       var completedDate = motherVisits[visitType];
       var scheduledMs = scheduledStr ? Date.parse(scheduledStr) : 0;
+      var expiryMs = expiryStr ? Date.parse(expiryStr) : 0;
+      var onTimeDays =
+        V3_VISIT_ON_TIME_DAYS[visitType] != null
+          ? V3_VISIT_ON_TIME_DAYS[visitType]
+          : V3_DEFAULT_ON_TIME_DAYS;
+      var onTimeEndMs =
+        scheduledMs > 0 ? scheduledMs + onTimeDays * 86400000 : 0;
+      // 6-category status, mirrors v1's calculate_visit_status. The JSX
+      // visit-status chart consumes this categorization grouped by
+      // visit_type, so the on-time / late split has to actually be
+      // computed (not collapsed to a single "Completed").
       var status;
       if (completedDate) {
-        status = 'Completed';
-      } else if (expiryStr && Date.parse(expiryStr) < nowMs) {
-        status = 'Missed';
-      } else if (scheduledStr && scheduledMs <= nowMs) {
-        status = 'Due';
+        var completedMs = Date.parse(completedDate);
+        if (
+          !isNaN(completedMs) &&
+          onTimeEndMs > 0 &&
+          completedMs <= onTimeEndMs
+        ) {
+          status = V3_STATUS_COMPLETED_ON_TIME;
+        } else {
+          status = V3_STATUS_COMPLETED_LATE;
+        }
+      } else if (expiryMs > 0 && expiryMs < nowMs) {
+        status = V3_STATUS_MISSED;
+      } else if (scheduledMs > 0 && scheduledMs > nowMs) {
+        status = V3_STATUS_NOT_DUE_YET;
+      } else if (onTimeEndMs > 0 && nowMs <= onTimeEndMs) {
+        status = V3_STATUS_DUE_ON_TIME;
       } else {
-        status = 'Upcoming';
+        status = V3_STATUS_DUE_LATE;
       }
       // past_grace: scheduled date is at least GRACE_PERIOD_DAYS in the
       // past. Determines whether this visit counts in completion_rate's
@@ -456,10 +545,10 @@ function _v3BuildFollowupData(
       };
     });
     var hasMissed = visitEntries.some(function (v) {
-      return v.status === 'Missed';
+      return v.status === V3_STATUS_MISSED;
     });
     var completedCount = visitEntries.filter(function (v) {
-      return v.status === 'Completed';
+      return v.status && v.status.indexOf('Completed') === 0;
     }).length;
     flwBuckets[flw].mothers.push({
       mother_case_id: mid,
@@ -481,13 +570,14 @@ function _v3BuildFollowupData(
     var filteredDenominator = 0;
     mothers.forEach(function (m) {
       m.visits.forEach(function (v) {
-        if (v.status !== 'Upcoming') {
+        var isCompleted = v.status && v.status.indexOf('Completed') === 0;
+        if (v.status !== V3_STATUS_NOT_DUE_YET) {
           totalExpected += 1;
-          if (v.status === 'Completed') totalCompleted += 1;
+          if (isCompleted) totalCompleted += 1;
         }
         if (m.eligible_full_intervention_bonus && v.past_grace) {
           filteredDenominator += 1;
-          if (v.status === 'Completed') filteredCompleted += 1;
+          if (isCompleted) filteredCompleted += 1;
         }
       });
     });
@@ -509,20 +599,64 @@ function _v3BuildFollowupData(
     flwDrilldown[flw] = flwBuckets[flw].mothers;
   });
 
-  // Visit-status distribution (across all FLWs, all visit types).
-  var visitStatusDist = { Completed: 0, Missed: 0, Due: 0, Upcoming: 0 };
+  // Visit-status distribution: {by_visit_type: [{visit_type, completed_on_time,
+  // completed_late, due_on_time, due_late, missed, not_due_yet, total}, ...],
+  // totals: {...}}. Matches v1's aggregate_visit_status_distribution shape so
+  // the JSX visit-status chart (which checks for `by_visit_type` and
+  // `totals`) actually renders.
+  var byBucket = {};
+  V3_VISIT_TYPE_BUCKET_ORDER.forEach(function (k) {
+    byBucket[k] = {
+      completed_on_time: 0,
+      completed_late: 0,
+      due_on_time: 0,
+      due_late: 0,
+      missed: 0,
+      not_due_yet: 0,
+    };
+  });
+  var totals = {
+    completed_on_time: 0,
+    completed_late: 0,
+    due_on_time: 0,
+    due_late: 0,
+    missed: 0,
+    not_due_yet: 0,
+  };
   Object.values(flwBuckets).forEach(function (bucket) {
     bucket.mothers.forEach(function (m) {
       m.visits.forEach(function (v) {
-        if (visitStatusDist[v.status] != null) visitStatusDist[v.status] += 1;
+        var bucketKey = V3_VISIT_TYPE_TO_BUCKET_KEY[v.visit_type];
+        if (!bucketKey) return;
+        var statusKey = V3_STATUS_TO_KEY[v.status];
+        if (!statusKey) return;
+        byBucket[bucketKey][statusKey] += 1;
+        totals[statusKey] += 1;
       });
     });
   });
+  var byVisitType = V3_VISIT_TYPE_BUCKET_ORDER.map(function (k) {
+    var counts = byBucket[k];
+    var total = 0;
+    V3_STATUS_KEYS.forEach(function (sk) {
+      total += counts[sk];
+    });
+    return Object.assign(
+      { visit_type: V3_VISIT_TYPE_BUCKET_DISPLAY[k] },
+      counts,
+      { total: total },
+    );
+  });
+  var totalSum = 0;
+  V3_STATUS_KEYS.forEach(function (sk) {
+    totalSum += totals[sk];
+  });
+  totals.total = totalSum;
 
   return {
     flw_summaries: flwSummaries,
     flw_drilldown: flwDrilldown,
-    visit_status_distribution: visitStatusDist,
+    visit_status_distribution: { by_visit_type: byVisitType, totals: totals },
   };
 }
 

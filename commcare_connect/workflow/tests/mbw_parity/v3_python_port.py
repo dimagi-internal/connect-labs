@@ -53,6 +53,60 @@ def _parse_iso_datetime_ms(s: str | None) -> int:
 
 FOLLOWUP_GRACE_PERIOD_DAYS = 5
 
+VISIT_ON_TIME_DAYS = {
+    "ANC Visit": 7,
+    "Postnatal Visit": 4,
+    "Postnatal Delivery Visit": 4,
+    "1 Week Visit": 7,
+    "1 Month Visit": 7,
+    "3 Month Visit": 7,
+    "6 Month Visit": 7,
+}
+DEFAULT_ON_TIME_DAYS = 7
+
+STATUS_COMPLETED_ON_TIME = "Completed - On Time"
+STATUS_COMPLETED_LATE = "Completed - Late"
+STATUS_DUE_ON_TIME = "Due - On Time"
+STATUS_DUE_LATE = "Due - Late"
+STATUS_MISSED = "Missed"
+STATUS_NOT_DUE_YET = "Not Due Yet"
+
+STATUS_TO_KEY = {
+    STATUS_COMPLETED_ON_TIME: "completed_on_time",
+    STATUS_COMPLETED_LATE: "completed_late",
+    STATUS_DUE_ON_TIME: "due_on_time",
+    STATUS_DUE_LATE: "due_late",
+    STATUS_MISSED: "missed",
+    STATUS_NOT_DUE_YET: "not_due_yet",
+}
+STATUS_KEYS = [
+    "completed_on_time",
+    "completed_late",
+    "due_on_time",
+    "due_late",
+    "missed",
+    "not_due_yet",
+]
+
+VISIT_TYPE_TO_BUCKET_KEY = {
+    "ANC Visit": "anc",
+    "Postnatal Visit": "postnatal",
+    "Postnatal Delivery Visit": "postnatal",
+    "1 Week Visit": "week1",
+    "1 Month Visit": "month1",
+    "3 Month Visit": "month3",
+    "6 Month Visit": "month6",
+}
+VISIT_TYPE_BUCKET_ORDER = ["anc", "postnatal", "week1", "month1", "month3", "month6"]
+VISIT_TYPE_BUCKET_DISPLAY = {
+    "anc": "ANC",
+    "postnatal": "Postnatal",
+    "week1": "Week 1",
+    "month1": "Month 1",
+    "month3": "Month 3",
+    "month6": "Month 6",
+}
+
 
 def build_followup_data_v3(
     registrations_rows: list[dict],
@@ -144,14 +198,22 @@ def build_followup_data_v3(
             completed_date = mother_visits.get(visit_type)
             scheduled_ms = _parse_iso_datetime_ms(scheduled_str) if scheduled_str else 0
             expiry_ms = _parse_iso_datetime_ms(expiry_str) if expiry_str else 0
+            on_time_days = VISIT_ON_TIME_DAYS.get(visit_type, DEFAULT_ON_TIME_DAYS)
+            on_time_end_ms = scheduled_ms + on_time_days * 86_400_000 if scheduled_ms > 0 else 0
             if completed_date:
-                status = "Completed"
-            elif expiry_str and expiry_ms < today_ms:
-                status = "Missed"
-            elif scheduled_str and scheduled_ms <= today_ms:
-                status = "Due"
+                completed_ms = _parse_iso_datetime_ms(completed_date)
+                if completed_ms and on_time_end_ms > 0 and completed_ms <= on_time_end_ms:
+                    status = STATUS_COMPLETED_ON_TIME
+                else:
+                    status = STATUS_COMPLETED_LATE
+            elif expiry_ms > 0 and expiry_ms < today_ms:
+                status = STATUS_MISSED
+            elif scheduled_ms > 0 and scheduled_ms > today_ms:
+                status = STATUS_NOT_DUE_YET
+            elif on_time_end_ms > 0 and today_ms <= on_time_end_ms:
+                status = STATUS_DUE_ON_TIME
             else:
-                status = "Upcoming"
+                status = STATUS_DUE_LATE
             past_grace = scheduled_ms > 0 and scheduled_ms <= grace_cutoff_ms
             visit_entries.append(
                 {
@@ -163,8 +225,8 @@ def build_followup_data_v3(
                     "past_grace": past_grace,
                 }
             )
-        has_missed = any(v["status"] == "Missed" for v in visit_entries)
-        completed_count = sum(1 for v in visit_entries if v["status"] == "Completed")
+        has_missed = any(v["status"] == STATUS_MISSED for v in visit_entries)
+        completed_count = sum(1 for v in visit_entries if str(v["status"]).startswith("Completed"))
         bucket["mothers"].append(
             {
                 "mother_case_id": mid,
@@ -185,13 +247,14 @@ def build_followup_data_v3(
         filtered_denominator = 0
         for m in mothers:
             for v in m["visits"]:
-                if v["status"] != "Upcoming":
+                is_completed = str(v["status"]).startswith("Completed")
+                if v["status"] != STATUS_NOT_DUE_YET:
                     total_expected += 1
-                    if v["status"] == "Completed":
+                    if is_completed:
                         total_completed += 1
                 if m["eligible_full_intervention_bonus"] and v["past_grace"]:
                     filtered_denominator += 1
-                    if v["status"] == "Completed":
+                    if is_completed:
                         filtered_completed += 1
         flw_summaries.append(
             {
@@ -208,20 +271,37 @@ def build_followup_data_v3(
 
     flw_drilldown = {flw: bucket["mothers"] for flw, bucket in flw_buckets.items()}
 
-    # Visit-status distribution (across all FLWs).
-    dist = {"Completed": 0, "Missed": 0, "Due": 0, "Upcoming": 0}
+    # Visit-status distribution: rich {by_visit_type, totals} shape that
+    # matches v1's aggregate_visit_status_distribution. The JSX
+    # visit-status chart consumes by_visit_type[].<status_key> + total per
+    # row, so the shape is load-bearing — not just a stats blob.
+    by_bucket: dict[str, dict[str, int]] = {k: {sk: 0 for sk in STATUS_KEYS} for k in VISIT_TYPE_BUCKET_ORDER}
+    totals = {sk: 0 for sk in STATUS_KEYS}
     total_cases = 0
     for bucket in flw_buckets.values():
         for m in bucket["mothers"]:
             total_cases += 1
             for v in m["visits"]:
-                dist[v["status"]] = dist.get(v["status"], 0) + 1
+                bucket_key = VISIT_TYPE_TO_BUCKET_KEY.get(v["visit_type"])
+                if not bucket_key:
+                    continue
+                status_key = STATUS_TO_KEY.get(v["status"])
+                if not status_key:
+                    continue
+                by_bucket[bucket_key][status_key] += 1
+                totals[status_key] += 1
+    by_visit_type = []
+    for k in VISIT_TYPE_BUCKET_ORDER:
+        counts = by_bucket[k]
+        total = sum(counts.values())
+        by_visit_type.append({"visit_type": VISIT_TYPE_BUCKET_DISPLAY[k], **counts, "total": total})
+    totals["total"] = sum(totals[sk] for sk in STATUS_KEYS)
 
     return {
         "flw_summaries": flw_summaries,
         "flw_drilldown": flw_drilldown,
         "total_cases": total_cases,
-        "visit_status_distribution": dist,
+        "visit_status_distribution": {"by_visit_type": by_visit_type, "totals": totals},
     }
 
 
