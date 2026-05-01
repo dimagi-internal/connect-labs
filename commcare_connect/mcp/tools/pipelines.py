@@ -294,6 +294,8 @@ def pipeline_update_schema(
             pda.close()
 
 
+_PIPELINE_PREVIEW_MAX_ROWS = 200
+
 @register(
     name="pipeline_preview",
     description=(
@@ -316,7 +318,7 @@ def pipeline_update_schema(
         "properties": {
             "pipeline_id": {"type": "integer"},
             "opportunity_id": {"type": "integer"},
-            "sample_size": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200},
+            "sample_size": {"type": "integer", "default": 50, "minimum": 1, "maximum": _PIPELINE_PREVIEW_MAX_ROWS},
             "schema_override": {"type": "object"},
             "opportunity_ids": {
                 "type": "array",
@@ -332,7 +334,6 @@ def pipeline_update_schema(
         "additionalProperties": False,
     },
 )
-_PIPELINE_PREVIEW_MAX_ROWS = 200
 
 
 def pipeline_preview(

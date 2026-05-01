@@ -306,7 +306,7 @@ def run(
     # chosen mode needs. Prevents stale CLAUDE_CODE_USE_VERTEX or
     # ANTHROPIC_API_KEY from leaking across auth modes.
     env = os.environ.copy()
-    for k in (
+    _strip_keys = (
         "ANTHROPIC_API_KEY",
         # Higher precedence than ANTHROPIC_API_KEY — must strip to prevent
         # a parent-shell claude.ai token from overriding the ZDR key and
@@ -320,8 +320,12 @@ def run(
         "ANTHROPIC_VERTEX_PROJECT_ID",
         "CLOUD_ML_REGION",
         "GOOGLE_APPLICATION_CREDENTIALS",
-    ):
+    )
+    stripped = [k for k in _strip_keys if k in env]
+    for k in _strip_keys:
         env.pop(k, None)
+    if stripped:
+        print(f"[safe-claude] stripped from env: {', '.join(stripped)}", file=sys.stderr)
     env.update(auth_overrides)
     # Consumed by Claude Code's ${LABS_MCP_TOKEN} expansion in the
     # checked-in mcp.safe.json — no MCP-config tempfile needed.
