@@ -1,6 +1,6 @@
 # Task Management
 
-The Task module helps program teams track follow-up actions for field workers. Create tasks from audit findings or manually, assign them to supervisors or managers, monitor progress, and coordinate automated outreach.
+The Task module helps program teams track follow-up actions for field workers. Create tasks from audit findings or manually, assign them to supervisors or managers, monitor progress, and trigger automated outreach via the OCS bot.
 
 ---
 
@@ -9,10 +9,10 @@ The Task module helps program teams track follow-up actions for field workers. C
 ```mermaid
 stateDiagram-v2
     [*] --> Investigating: Task created
-    Investigating --> FLW_Action_In_Progress: Outreach started
-    FLW_Action_In_Progress --> FLW_Action_Completed: FLW responds
-    FLW_Action_Completed --> Review_Needed: Manager review required
-    Review_Needed --> Closed: Issue resolved
+    Investigating --> "FLW Action In Progress": Outreach started
+    "FLW Action In Progress" --> "FLW Action Completed": FLW responds
+    "FLW Action Completed" --> "Review Needed": Manager review required
+    "Review Needed" --> Closed: Issue resolved
     Investigating --> Closed: No action needed
 ```
 
@@ -28,29 +28,29 @@ Click **Tasks** in the top navigation, then **New Task**.
 
 Fill in:
 
-| Field           | Description                                                                    |
-| --------------- | ------------------------------------------------------------------------------ |
-| Title           | Short description of the follow-up needed                                      |
-| Description     | Full context, what was found, what action is needed                            |
-| Assigned worker | The FLW this task is about                                                     |
-| Assignee        | Who is responsible for resolving it (you, network manager, or program manager) |
-| Priority        | High / Medium / Low                                                            |
-| Status          | Starting status (usually "Investigating")                                      |
+| Field           | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| Title           | Short description of the follow-up needed                 |
+| Description     | Full context — what was found and what action is required |
+| Assigned worker | The FLW this task is about                                |
+| Assignee        | Who is responsible for resolving it                       |
+| Priority        | High / Medium / Low                                       |
+| Status          | Starting status (usually "Investigating")                 |
 
 **Option 3 — Bulk Create:**
-If you have many workers to follow up with after an audit, use **Bulk Create** to create tasks for multiple workers at once from a single audit session.
+If you have many workers to follow up with after an audit, use **Bulk Create** to generate tasks for multiple workers from a single audit session at once.
 
 ---
 
 ## Task List
 
-The task list shows all tasks for your program. Use filters to focus on what you need:
+The task list shows all tasks for your program. Use filters to focus on what matters:
 
 - **Status** — filter by where tasks are in the lifecycle
-- **Priority** — see high-priority tasks first
+- **Priority** — surface high-priority tasks first
 - **Search** — find tasks by worker name or keyword
 
-Each task row shows the current status, assigned worker, priority, and when it was last updated.
+Each row shows the current status, assigned worker, priority, and when it was last updated.
 
 ---
 
@@ -60,7 +60,7 @@ Open a task to see its full timeline — a chronological record of all activity:
 
 - Status changes with timestamps
 - Comments from team members
-- AI session summaries (if OCS bot was used)
+- OCS bot conversation transcripts (if automated outreach was used)
 
 **Adding a comment:**
 Type in the comment box and click **Post**. Comments are visible to all team members with access to the program.
@@ -72,17 +72,17 @@ Use the status dropdown at the top of the task to move it to the next stage. Eac
 
 ## OCS Bot (Automated Outreach)
 
-The OCS Bot can send an automated chat message to a field worker to gather information or prompt action, without a supervisor needing to make a direct call.
+The OCS bot sends an automated chat message to a field worker via CommCare Connect messaging — gathering information or prompting action without a supervisor needing to make a direct call. The conversation is logged automatically in the task timeline.
 
-To trigger the OCS Bot:
+To trigger the OCS bot:
 
 1. Open the task
 2. Click **Start OCS Chat**
-3. The bot sends a message to the FLW via CommCare Connect messaging
+3. The bot sends a message to the FLW through CommCare Connect
 4. The conversation transcript appears in the task timeline as it progresses
 
 !!! note
-The OCS Bot is only available for programs that have OCS (Outreach Communication System) configured. Ask your program administrator if you're unsure.
+The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
 
 ---
 
@@ -92,7 +92,10 @@ The OCS Bot is only available for programs that have OCS (Outreach Communication
 Tasks are visible to all team members with access to your program in Labs.
 
 **Can I delete a task?**
-Tasks can be closed but not deleted. This keeps the audit trail intact.
+Tasks can be closed but not deleted — this keeps the audit trail intact.
 
 **How do I know when a task is updated?**
-Currently, Labs doesn't send email notifications — check the task list regularly or ask your team to update you directly.
+Labs doesn't currently send email notifications. Check the task list regularly, or coordinate directly with your team.
+
+**How do tasks connect to audits?**
+Tasks created from an audit session link back to that session automatically. You can navigate between a task and its source audit from either view.
