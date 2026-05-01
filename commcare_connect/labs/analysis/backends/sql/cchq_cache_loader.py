@@ -78,17 +78,31 @@ def populate_computed_cache_from_form_dicts(
         meta = form_data.get("meta", {}) if isinstance(form_data, dict) else {}
         username = meta.get("username", "") or meta.get("userID", "")
 
+        # Wrap the cchq form into the same visit_dict shape that
+        # SQLBackend._process_visit_level builds (form_json under
+        # 'form_json' key, plus the other base fields). Keeping the
+        # extractor contract identical between the cchq-side direct loader
+        # and the SQL-side post-processor means an extractor written once
+        # works in both — without that uniformity, an extractor that does
+        # `form_dict.get('form', {})` accidentally works here (cchq form
+        # has 'form' at top level) and silently returns empty there
+        # (visit_dict has 'form_json' instead, no 'form' key).
+        visit_dict = {
+            "form_json": fd,
+            "images": [],
+            "username": username,
+            "visit_date": fd.get("received_on", ""),
+            "entity_name": "",
+        }
+
         computed = {}
         for f in config.fields:
             # `extractor` takes precedence over path-based extraction. It
-            # receives the full form dict so it can access multiple paths
-            # (e.g., v1's MBW age = years-since-mother_dob if set, else
-            # age_in_years_rounded, else mothers_age — three paths in one
-            # field). Used only on the cchq side; the SQL builders ignore
-            # extractor on aggregated queries.
+            # receives the visit_dict wrapper so an extractor that needs
+            # multiple form paths (or images) can read them all.
             if f.extractor and callable(f.extractor):
                 try:
-                    value = f.extractor(fd)
+                    value = f.extractor(visit_dict)
                 except Exception:
                     value = None
             else:

@@ -381,3 +381,4 @@ docs/.dry-run/
 # Local debug/utility scripts
 scripts/
 .gstack/
+.claude/settings.local.json

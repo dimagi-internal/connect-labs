@@ -613,11 +613,12 @@ class AnalysisPipeline:
                 # keeps cache state consistent.
                 cache_manager = SQLCacheManager(opp_id, config)
                 cache_manager.store_raw_visits_start(visit_count=0)
-                # 1000 matches `iter_forms` page size — each CCHQ page becomes
+                # 2500 matches `iter_forms` page size — each CCHQ page becomes
                 # exactly one bulk_create, no buffering across page boundaries.
-                # Peak chunk memory: ~30MB (1000 forms × ~7KB × 4x ORM overhead),
-                # well under Fargate's 1-2GB.
-                CCHQ_CHUNK_SIZE = 1000
+                # Peak chunk memory: ~75MB (2500 forms × ~7KB × 4x ORM overhead),
+                # well under Fargate's 1-2GB. Mirrors Connect's DEFAULT_PAGE_SIZE
+                # so both pipelines round-trip the same number of times.
+                CCHQ_CHUNK_SIZE = 2500
                 total_stored = 0
                 buffer: list[dict] = []
                 try:
