@@ -231,6 +231,12 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
   };
 }
 
+// Number of days a visit must be past its scheduled date before it counts
+// in the completion-rate denominator. Matches v1's GRACE_PERIOD_DAYS — a
+// visit just barely past its scheduled date isn't yet "missed," it's a
+// known business window where FLWs can still legitimately catch up.
+var V3_FOLLOWUP_GRACE_PERIOD_DAYS = 5;
+
 function _v3BuildFollowupData(
   registrationsRows,
   visitsGpsRows,
@@ -239,12 +245,15 @@ function _v3BuildFollowupData(
 ) {
   // Per-mother expected-visits schedule (from registrations) ⨯ actual
   // completions (from visits) → per-FLW follow-up summaries + drilldown.
-  // Mirrors v1's build_followup_from_pipeline + aggregate_flw_followup
-  // closely enough for the UI to render the same way; minor deltas in
-  // edge cases (mother→FLW attribution) accepted as the price of moving
-  // off the celery handler.
+  // Mirrors v1's build_followup_from_pipeline + aggregate_flw_followup so
+  // completion_rate (eligibility-filtered + grace period) and the per-FLW
+  // mother list match v1 — fixing the parity gap that left ineligible
+  // mothers' uncompleted visits dragging down v3's rate while v1 filtered
+  // them out, and the gap that silently hid registered-but-not-yet-visited
+  // mothers because v3 only attributed via visits_gps last-visit-wins.
   var today = currentDateStr ? new Date(currentDateStr) : new Date();
   var nowMs = today.getTime();
+  var graceCutoffMs = nowMs - V3_FOLLOWUP_GRACE_PERIOD_DAYS * 86400000;
 
   // Build mother → owner-username map from visits (last-visit wins —
   // matches v1's mother_to_username override step).
@@ -269,9 +278,16 @@ function _v3BuildFollowupData(
     }
   });
 
-  // Per-FLW: collect mothers + their schedules.
+  // Per-FLW: collect mothers + their schedules + eligibility flag.
+  // motherToFlwFallback: registration-form-attributed FLW for mothers with
+  // no visit-side rows. v1 uses the form's metadata.username; we use the
+  // pipeline row's `_username` (the form-submitter), then prefer
+  // visits-side mapping when present (v1 does the same — pipeline overrides
+  // form metadata).
   var motherToSchedules = {};
   var motherToRegDate = {};
+  var motherToEligibility = {}; // {mid: bool} — eligible_full_intervention_bonus === "1"
+  var motherToFlwFallback = {};
   registrationsRows.forEach(function (reg) {
     var schedules = reg.schedules || [];
     if (!Array.isArray(schedules) || !schedules.length) return;
@@ -280,11 +296,15 @@ function _v3BuildFollowupData(
     motherToSchedules[firstMid] = schedules;
     if (reg.registration_date)
       motherToRegDate[firstMid] = reg.registration_date;
+    motherToEligibility[firstMid] =
+      String(reg.eligible_full_intervention_bonus || '') === '1';
+    var regUser = (reg._username || reg.username || '').toLowerCase();
+    if (regUser) motherToFlwFallback[firstMid] = regUser;
   });
 
   var flwBuckets = {}; // {flw: {mothers: [{mother_case_id, eligible, visits:[]}]}}
   Object.keys(motherToSchedules).forEach(function (mid) {
-    var flw = motherToFlw[mid];
+    var flw = motherToFlw[mid] || motherToFlwFallback[mid];
     if (!flw) return;
     if (!flwBuckets[flw]) flwBuckets[flw] = { mothers: [] };
     var schedules = motherToSchedules[mid];
@@ -294,22 +314,28 @@ function _v3BuildFollowupData(
       var scheduledStr = s.visit_date_scheduled || '';
       var expiryStr = s.visit_expiry_date || '';
       var completedDate = motherVisits[visitType];
+      var scheduledMs = scheduledStr ? Date.parse(scheduledStr) : 0;
       var status;
       if (completedDate) {
         status = 'Completed';
       } else if (expiryStr && Date.parse(expiryStr) < nowMs) {
         status = 'Missed';
-      } else if (scheduledStr && Date.parse(scheduledStr) <= nowMs) {
+      } else if (scheduledStr && scheduledMs <= nowMs) {
         status = 'Due';
       } else {
         status = 'Upcoming';
       }
+      // past_grace: scheduled date is at least GRACE_PERIOD_DAYS in the
+      // past. Determines whether this visit counts in completion_rate's
+      // denominator (matches v1's `_is_due_past_grace`).
+      var pastGrace = scheduledMs > 0 && scheduledMs <= graceCutoffMs;
       return {
         visit_type: visitType,
         scheduled: scheduledStr,
         expiry: expiryStr,
         completed_date: completedDate || null,
         status: status,
+        past_grace: pastGrace,
       };
     });
     var hasMissed = visitEntries.some(function (v) {
@@ -318,24 +344,33 @@ function _v3BuildFollowupData(
     var completedCount = visitEntries.filter(function (v) {
       return v.status === 'Completed';
     }).length;
-    var totalEligible = visitEntries.length;
     flwBuckets[flw].mothers.push({
       mother_case_id: mid,
+      eligible_full_intervention_bonus: !!motherToEligibility[mid],
       eligible: !hasMissed || completedCount > 0,
       visits: visitEntries,
     });
   });
 
-  // Per-FLW summary: total expected, completed, completion rate.
+  // Per-FLW summary: completion_rate filtered by v1's business definition
+  // (eligibility + 5-day grace). Also keeps total_mothers,
+  // total_expected, total_completed for the unfiltered counts the v3
+  // dashboard already showed.
   var flwSummaries = Object.keys(flwBuckets).map(function (flw) {
     var mothers = flwBuckets[flw].mothers;
     var totalExpected = 0;
     var totalCompleted = 0;
+    var filteredCompleted = 0;
+    var filteredDenominator = 0;
     mothers.forEach(function (m) {
       m.visits.forEach(function (v) {
         if (v.status !== 'Upcoming') {
           totalExpected += 1;
           if (v.status === 'Completed') totalCompleted += 1;
+        }
+        if (m.eligible_full_intervention_bonus && v.past_grace) {
+          filteredDenominator += 1;
+          if (v.status === 'Completed') filteredCompleted += 1;
         }
       });
     });
@@ -346,8 +381,8 @@ function _v3BuildFollowupData(
       total_expected: totalExpected,
       total_completed: totalCompleted,
       completion_rate:
-        totalExpected > 0
-          ? Math.round((totalCompleted / totalExpected) * 100)
+        filteredDenominator > 0
+          ? Math.round((filteredCompleted / filteredDenominator) * 100)
           : 0,
     };
   });

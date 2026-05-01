@@ -50,6 +50,9 @@ def _parse_iso_datetime_ms(s: str | None) -> int:
         return 0
 
 
+FOLLOWUP_GRACE_PERIOD_DAYS = 5
+
+
 def build_followup_data_v3(
     registrations_rows: list[dict],
     visits_gps_rows: list[dict],
@@ -65,10 +68,17 @@ def build_followup_data_v3(
 
     The JS reads `r._username` / `r._visit_date` (set by `_v3PipelineRows`
     for visits_gps rows) and `r.schedules` / `r.registration_date` /
-    `r.mother_case_id` for registrations.
+    `r.mother_case_id` / `r.eligible_full_intervention_bonus` for
+    registrations.
+
+    completion_rate matches v1's filtered definition: numerator counts
+    completed visits among mothers with eligible_full_intervention_bonus=1
+    that are past the 5-day grace period; denominator counts all such
+    eligible+past-grace visits.
     """
     today = _parse_iso_date(current_date_str) if current_date_str else date.today()
     today_ms = int(datetime.combine(today, datetime.min.time()).timestamp() * 1000)
+    grace_cutoff_ms = today_ms - FOLLOWUP_GRACE_PERIOD_DAYS * 86_400_000
 
     # mother → owner (last-visit-wins from visits_gps).
     mother_to_flw: dict[str, str] = {}
@@ -91,9 +101,14 @@ def build_followup_data_v3(
                 visits_by_mother_type[mid] = {}
             visits_by_mother_type[mid][visit_type] = (str(dt))[:10]
 
-    # mother → schedules (from registrations).
+    # mother → schedules + eligibility + form-side FLW fallback (from
+    # registrations). The fallback lets registered-but-not-yet-visited
+    # mothers still appear in the table, attributed to whoever submitted
+    # the registration form.
     mother_to_schedules: dict[str, list[dict]] = {}
     mother_to_reg_date: dict[str, str] = {}
+    mother_to_eligibility: dict[str, bool] = {}
+    mother_to_flw_fallback: dict[str, str] = {}
     for reg in registrations_rows:
         schedules = reg.get("schedules") or []
         if not isinstance(schedules, list) or not schedules:
@@ -105,11 +120,17 @@ def build_followup_data_v3(
         rd = reg.get("registration_date")
         if rd:
             mother_to_reg_date[first_mid] = rd
+        mother_to_eligibility[first_mid] = str(reg.get("eligible_full_intervention_bonus") or "") == "1"
+        reg_user = (reg.get("_username") or reg.get("username") or "").lower()
+        if reg_user:
+            mother_to_flw_fallback[first_mid] = reg_user
 
-    # Per-FLW buckets of (mother → {eligible, visits[]}).
+    # Per-FLW buckets of (mother → {eligible, visits[]}). Visits-side
+    # attribution wins; registration-side is the fallback for unvisited
+    # mothers (mirrors v1's pipeline-overrides-form-metadata precedence).
     flw_buckets: dict[str, dict] = {}
     for mid, schedules in mother_to_schedules.items():
-        flw = mother_to_flw.get(mid)
+        flw = mother_to_flw.get(mid) or mother_to_flw_fallback.get(mid)
         if not flw:
             continue
         bucket = flw_buckets.setdefault(flw, {"mothers": []})
@@ -130,6 +151,7 @@ def build_followup_data_v3(
                 status = "Due"
             else:
                 status = "Upcoming"
+            past_grace = scheduled_ms > 0 and scheduled_ms <= grace_cutoff_ms
             visit_entries.append(
                 {
                     "visit_type": visit_type,
@@ -137,6 +159,7 @@ def build_followup_data_v3(
                     "expiry": expiry_str,
                     "completed_date": completed_date or None,
                     "status": status,
+                    "past_grace": past_grace,
                 }
             )
         has_missed = any(v["status"] == "Missed" for v in visit_entries)
@@ -144,23 +167,31 @@ def build_followup_data_v3(
         bucket["mothers"].append(
             {
                 "mother_case_id": mid,
+                "eligible_full_intervention_bonus": bool(mother_to_eligibility.get(mid)),
                 "eligible": (not has_missed) or completed_count > 0,
                 "visits": visit_entries,
             }
         )
 
-    # Per-FLW summary.
+    # Per-FLW summary. completion_rate is the v1-business-defined filtered
+    # rate (eligibility + 5-day grace), matching v1's _build_flw_summary.
     flw_summaries: list[dict] = []
     for flw, bucket in flw_buckets.items():
         mothers = bucket["mothers"]
         total_expected = 0
         total_completed = 0
+        filtered_completed = 0
+        filtered_denominator = 0
         for m in mothers:
             for v in m["visits"]:
                 if v["status"] != "Upcoming":
                     total_expected += 1
                     if v["status"] == "Completed":
                         total_completed += 1
+                if m["eligible_full_intervention_bonus"] and v["past_grace"]:
+                    filtered_denominator += 1
+                    if v["status"] == "Completed":
+                        filtered_completed += 1
         flw_summaries.append(
             {
                 "username": flw,
@@ -168,7 +199,9 @@ def build_followup_data_v3(
                 "total_mothers": len(mothers),
                 "total_expected": total_expected,
                 "total_completed": total_completed,
-                "completion_rate": (round(total_completed / total_expected * 100) if total_expected > 0 else 0),
+                "completion_rate": (
+                    round(filtered_completed / filtered_denominator * 100) if filtered_denominator > 0 else 0
+                ),
             }
         )
 
