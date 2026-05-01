@@ -67,6 +67,18 @@ FEATURE_TO_DOC_FILE = {
 
 GITHUB_PAGES_BASE = "https://jjackson.github.io/connect-labs/docs"
 
+CONFLUENCE_SUMMARY_SYSTEM_PROMPT = """\
+You write concise Confluence summary pages for Connect Labs features.
+Audience: non-developer program staff who use the app daily for field program management.
+
+Rules:
+- Plain English only — no code, no GitHub references, no technical jargon
+- 2–3 sentence overview paragraph describing what the feature does and who it is for
+- 4–5 bullet points highlighting the key tasks or capabilities users get from this feature
+- Return valid JSON with exactly two keys: "paragraph" (string) and "bullets" (array of strings)
+- No preamble, no trailing explanation — return only the JSON object
+"""
+
 DOC_SYSTEM_PROMPT = """\
 You maintain user help documentation for Connect Labs at labs.connect.dimagi.com.
 Audience: non-developer program staff who use the app daily for field program management.
@@ -229,6 +241,58 @@ def update_markdown_file(
     return False
 
 
+def _generate_confluence_body(
+    client: anthropic.Anthropic,
+    feature: str,
+    doc_content: str,
+    github_url: str,
+    recent_change: str = "",
+) -> str:
+    """Generate Confluence storage HTML (paragraph + bullets + link) for a feature summary."""
+    user_content = f"Feature: {feature}\n\nDocumentation:\n{doc_content[:6000]}"
+    if recent_change:
+        user_content += f"\n\nRecent change to incorporate: {recent_change}"
+    user_content += '\n\nReturn a JSON object with "paragraph" and "bullets" keys.'
+
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=500,
+        system=[
+            {
+                "type": "text",
+                "text": CONFLUENCE_SUMMARY_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": user_content}],
+    )
+    raw = resp.content[0].text.strip()
+
+    try:
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw.rstrip())
+        data = json.loads(raw)
+        paragraph = str(data.get("paragraph", "")).strip()
+        bullets = [str(b).strip() for b in data.get("bullets", []) if str(b).strip()]
+    except (json.JSONDecodeError, AttributeError):
+        paragraph = raw
+        bullets = []
+
+    parts = []
+    if paragraph:
+        parts.append(f"<p>{html.escape(paragraph)}</p>")
+    if bullets:
+        items = "".join(f"<li>{html.escape(b)}</li>" for b in bullets)
+        parts.append(f"<ul>{items}</ul>")
+    parts.append(
+        f'<p><a href="{github_url}">📖 Read the full guide with diagrams and step-by-step instructions →</a></p>'
+    )
+    parts.append("<p><em>Last updated automatically.</em></p>")
+    return "".join(parts)
+
+
 def update_confluence_summary(
     confluence: ConfluenceClient,
     feature: str,
@@ -237,45 +301,17 @@ def update_confluence_summary(
 ) -> None:
     """Update the Confluence summary page for this feature."""
     page_id = FEATURE_PAGE_IDS[feature]
-    doc_slug = Path(FEATURE_TO_DOC_FILE[feature]).stem
+    doc_path = Path(FEATURE_TO_DOC_FILE[feature])
+    doc_slug = doc_path.stem
     github_url = f"{GITHUB_PAGES_BASE}/{doc_slug}/"
 
-    # Ask Claude for a one-sentence summary of the updated feature
-    resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=100,
-        system=[
-            {
-                "type": "text",
-                "text": (
-                    "Write a single plain-English sentence (under 30 words) describing "
-                    "what the named Labs feature does, incorporating the recent change. "
-                    "No jargon, no code references."
-                ),
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Feature: {feature}\n"
-                    f"Recent change: {product_description}\n\n"
-                    "Write the updated one-sentence feature description."
-                ),
-            }
-        ],
-    )
-    summary = resp.content[0].text.strip()
+    doc_content = doc_path.read_text(encoding="utf-8") if doc_path.exists() else ""
+    body = _generate_confluence_body(client, feature, doc_content, github_url, recent_change=product_description)
     page = confluence.get_page(page_id)
     confluence.update_page(
         page_id=page_id,
         title=page["title"],
-        body_storage=(
-            f"<p>{html.escape(summary)}</p>"
-            f'<p><a href="{github_url}">📖 Full guide with diagrams and step-by-step instructions →</a></p>'
-            "<p><em>Last updated automatically.</em></p>"
-        ),
+        body_storage=body,
         version_number=page["version_number"],
     )
 
