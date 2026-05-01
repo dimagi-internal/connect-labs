@@ -11,7 +11,8 @@ changes, change here too — and the parity test will catch any drift.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+import math
+from datetime import date, datetime, timedelta
 
 # Mirrors MBW_FORM_NAME_TO_VISIT_TYPE in the JS.
 MBW_FORM_NAME_TO_VISIT_TYPE = {
@@ -221,4 +222,162 @@ def build_followup_data_v3(
         "flw_drilldown": flw_drilldown,
         "total_cases": total_cases,
         "visit_status_distribution": dist,
+    }
+
+
+# ---- GPS data builder ---------------------------------------------------
+
+GPS_FLAG_THRESHOLD_M = 5000  # matches v1's DEFAULT_CASE_DISTANCE_THRESHOLD_METERS
+GPS_TRAILING_DAYS = 7
+
+
+def _haversine_meters(lat1, lon1, lat2, lon2):
+    """Mirror of `haversine_meters` (Postgres + the JS port). Returns None
+    when any input is None or NaN — sparse-GPS-friendly."""
+    for v in (lat1, lon1, lat2, lon2):
+        if v is None or not isinstance(v, (int, float)) or (isinstance(v, float) and math.isnan(v)):
+            return None
+    R = 6371000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = phi2 - phi1
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
+def _median(values):
+    sorted_vals = sorted(v for v in values if isinstance(v, (int, float)) and not math.isnan(v))
+    if not sorted_vals:
+        return None
+    n = len(sorted_vals)
+    mid = n // 2
+    return sorted_vals[mid] if n % 2 else (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
+
+
+def build_gps_data_v3(visits_gps_rows: list[dict], flw_name_map: dict[str, str]) -> dict:
+    """Python port of `_v3BuildGpsData` from mbw_monitoring_v3_render.js.
+
+    Mirrors v1's analyze_gps_metrics output shape (per-FLW summaries with
+    flagged_visits, unique_cases, cases_with_revisits as distinct mother
+    count, avg_daily_travel_km via trailing-7-days path-distance average).
+    """
+    by_flw: dict[str, dict] = {}
+    all_dates: list[str] = []
+    total_flagged = 0
+    for r in visits_gps_rows:
+        flw = (r.get("_username") or "").lower()
+        if not flw:
+            continue
+        if flw not in by_flw:
+            by_flw[flw] = {
+                "username": flw,
+                "display_name": flw_name_map.get(flw, flw),
+                "total_visits": 0,
+                "visits_with_gps": 0,
+                "flagged_visits": 0,
+                "unique_case_ids": set(),
+                "revisit_mother_ids": set(),
+                "distances_m": [],
+                "timestamps_ms": [],
+                "daily_visits": {},  # {date_str: [{lat, lon, ts}]}
+            }
+        bucket = by_flw[flw]
+        bucket["total_visits"] += 1
+        lat = r.get("latitude")
+        lon = r.get("longitude")
+        has_gps = isinstance(lat, (int, float)) and isinstance(lon, (int, float))
+        if has_gps:
+            bucket["visits_with_gps"] += 1
+        if r.get("case_id"):
+            bucket["unique_case_ids"].add(r["case_id"])
+        dist = r.get("distance_from_prev_case_visit_m")
+        if isinstance(dist, (int, float)) and not math.isnan(dist):
+            bucket["distances_m"].append(dist)
+            mid = r.get("mother_case_id")
+            if mid:
+                bucket["revisit_mother_ids"].add(mid)
+            if dist > GPS_FLAG_THRESHOLD_M:
+                bucket["flagged_visits"] += 1
+                total_flagged += 1
+        dt = r.get("visit_datetime") or r.get("_visit_date") or ""
+        if dt:
+            ms = _parse_iso_datetime_ms(dt)
+            if ms:
+                bucket["timestamps_ms"].append(ms)
+            d = str(dt)[:10]
+            if d:
+                all_dates.append(d)
+                if has_gps:
+                    bucket["daily_visits"].setdefault(d, []).append({"lat": lat, "lon": lon, "ts": ms})
+
+    all_dates.sort()
+    max_date_str = all_dates[-1] if all_dates else None
+    max_date = _parse_iso_date(max_date_str) if max_date_str else None
+
+    median_meters: dict[str, int] = {}
+    median_minutes: dict[str, int] = {}
+    summaries: list[dict] = []
+    for flw, b in by_flw.items():
+        dist_med = _median(b["distances_m"])
+        if dist_med is not None:
+            median_meters[flw] = round(dist_med)
+        ts_sorted = sorted(b["timestamps_ms"])
+        gaps = [(ts_sorted[i] - ts_sorted[i - 1]) / 60000 for i in range(1, len(ts_sorted))]
+        min_med = _median(gaps)
+        if min_med is not None:
+            median_minutes[flw] = round(min_med)
+        sum_dist = sum(b["distances_m"])
+        avg_km = (sum_dist / len(b["distances_m"]) / 1000) if b["distances_m"] else None
+        max_km = (max(b["distances_m"]) / 1000) if b["distances_m"] else None
+
+        # Trailing-7-days daily travel path distance average.
+        avg_daily_travel_km: float | None = None
+        if max_date is not None:
+            daily_kms: list[float] = []
+            for i in range(GPS_TRAILING_DAYS):
+                d = max_date - timedelta(days=i)
+                d_str = d.isoformat()
+                day_visits = b["daily_visits"].get(d_str)
+                if not day_visits:
+                    continue
+                sorted_day = sorted(day_visits, key=lambda x: x["ts"])
+                path_m = 0.0
+                for j in range(1, len(sorted_day)):
+                    seg = _haversine_meters(
+                        sorted_day[j - 1]["lat"],
+                        sorted_day[j - 1]["lon"],
+                        sorted_day[j]["lat"],
+                        sorted_day[j]["lon"],
+                    )
+                    if seg is not None:
+                        path_m += seg
+                daily_kms.append(path_m / 1000)
+            if daily_kms:
+                avg_daily_travel_km = sum(daily_kms) / len(daily_kms)
+
+        summaries.append(
+            {
+                "username": flw,
+                "display_name": b["display_name"],
+                "total_visits": b["total_visits"],
+                "visits_with_gps": b["visits_with_gps"],
+                "flagged_visits": b["flagged_visits"],
+                "unique_cases": len(b["unique_case_ids"]),
+                "avg_case_distance_km": avg_km,
+                "max_case_distance_km": max_km,
+                "cases_with_revisits": len(b["revisit_mother_ids"]),
+                "avg_daily_travel_km": avg_daily_travel_km,
+            }
+        )
+
+    return {
+        "flw_summaries": summaries,
+        "median_meters_by_flw": median_meters,
+        "median_minutes_by_flw": median_minutes,
+        "total_visits": len(visits_gps_rows),
+        "total_flagged": total_flagged,
+        "date_range_start": all_dates[0] if all_dates else None,
+        "date_range_end": max_date_str,
     }

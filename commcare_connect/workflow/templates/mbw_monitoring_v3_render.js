@@ -154,11 +154,51 @@ function _v3BuildQualityMetrics(visitsRows) {
   return quality;
 }
 
+// v1's DEFAULT_CASE_DISTANCE_THRESHOLD_METERS — distances above this from
+// the previous same-mother visit flag the visit as suspicious. 5km.
+var V3_GPS_FLAG_THRESHOLD_M = 5000;
+// Days included in the trailing-7 daily travel window (v1's
+// get_trailing_7_days uses 7 calendar days ending at max visit date).
+var V3_GPS_TRAILING_DAYS = 7;
+
+function _v3HaversineMeters(lat1, lon1, lat2, lon2) {
+  // Mirror of `haversine_meters` (Postgres + Python parity-harness). Used
+  // for the daily-travel path-distance reduction; lag_haversine already
+  // produced the per-visit case distances in SQL.
+  if (
+    typeof lat1 !== 'number' ||
+    typeof lon1 !== 'number' ||
+    typeof lat2 !== 'number' ||
+    typeof lon2 !== 'number' ||
+    isNaN(lat1) ||
+    isNaN(lon1) ||
+    isNaN(lat2) ||
+    isNaN(lon2)
+  ) {
+    return null;
+  }
+  var R = 6371000;
+  var toRad = function (x) {
+    return (x * Math.PI) / 180;
+  };
+  var phi1 = toRad(lat1);
+  var phi2 = toRad(lat2);
+  var dphi = phi2 - phi1;
+  var dlam = toRad(lon2 - lon1);
+  var a =
+    Math.sin(dphi / 2) * Math.sin(dphi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlam / 2) * Math.sin(dlam / 2);
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
-  // Aggregate per-visit GPS rows (with lag_haversine distances) to per-FLW
-  // summaries: avg/max distance, count, median meters/minutes per visit.
-  // v2's GPS tab + overview FLW table both consume `flw_summaries[].avg_case_distance_km`
-  // and the median maps below.
+  // Per-visit GPS rows (lag_haversine distances pre-computed in SQL) →
+  // per-FLW summaries that mirror v1's analyze_gps_metrics output:
+  // total_visits, visits_with_gps, flagged_visits (5km+), unique_cases,
+  // avg/max case distance, cases_with_revisits (distinct mothers with
+  // ≥1 distance entry — NOT total distance count), avg_daily_travel_km
+  // (trailing-7-days path-distance average).
   var byFlw = {};
   var allDates = [];
   var totalFlagged = 0;
@@ -170,22 +210,57 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
         username: flw,
         display_name: flwNameMap[flw] || flw,
         total_visits: 0,
+        visits_with_gps: 0,
+        flagged_visits: 0,
+        unique_case_ids: {}, // set semantics via key-presence
+        revisit_mother_ids: {},
         distances_m: [],
         timestamps_ms: [],
+        daily_visits: {}, // {date: [{lat, lon, ts}, ...]}
       };
     }
     var bucket = byFlw[flw];
     bucket.total_visits += 1;
+    var lat = r.latitude;
+    var lon = r.longitude;
+    var hasGps =
+      typeof lat === 'number' &&
+      typeof lon === 'number' &&
+      !isNaN(lat) &&
+      !isNaN(lon);
+    if (hasGps) bucket.visits_with_gps += 1;
+    if (r.case_id) bucket.unique_case_ids[r.case_id] = 1;
     var dist = r.distance_from_prev_case_visit_m;
-    if (typeof dist === 'number' && !isNaN(dist)) bucket.distances_m.push(dist);
+    if (typeof dist === 'number' && !isNaN(dist)) {
+      bucket.distances_m.push(dist);
+      if (r.mother_case_id) bucket.revisit_mother_ids[r.mother_case_id] = 1;
+      if (dist > V3_GPS_FLAG_THRESHOLD_M) {
+        bucket.flagged_visits += 1;
+        totalFlagged += 1;
+      }
+    }
     var dt = r.visit_datetime || r._visit_date;
     if (dt) {
       var ms = Date.parse(dt);
       if (!isNaN(ms)) bucket.timestamps_ms.push(ms);
       var d = (dt + '').slice(0, 10);
-      if (d) allDates.push(d);
+      if (d) {
+        allDates.push(d);
+        if (hasGps) {
+          if (!bucket.daily_visits[d]) bucket.daily_visits[d] = [];
+          bucket.daily_visits[d].push({
+            lat: lat,
+            lon: lon,
+            ts: isNaN(ms) ? 0 : ms,
+          });
+        }
+      }
     }
   });
+
+  allDates.sort();
+  var maxDate = allDates[allDates.length - 1] || null;
+
   var medianMeters = {};
   var medianMinutes = {};
   var summaries = Object.keys(byFlw).map(function (flw) {
@@ -201,6 +276,7 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
     for (var i = 1; i < ts.length; i++) gaps.push((ts[i] - ts[i - 1]) / 60000);
     var minMed = _v3MedianOf(gaps);
     if (minMed != null) medianMinutes[flw] = Math.round(minMed);
+
     var sumDist = b.distances_m.reduce(function (s, v) {
       return s + v;
     }, 0);
@@ -210,16 +286,57 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
     var maxKm = b.distances_m.length
       ? Math.max.apply(null, b.distances_m) / 1000
       : null;
+
+    // avg_daily_travel_km: trailing-7-days path-distance average. v1
+    // takes the most recent visit date globally and walks back 7 calendar
+    // days, summing each day's chronologically-sorted-GPS path distance,
+    // then averages across the days that actually had visits.
+    var avgDailyTravelKm = null;
+    if (maxDate) {
+      var dailyKms = [];
+      for (var i = 0; i < V3_GPS_TRAILING_DAYS; i++) {
+        var d = new Date(maxDate);
+        d.setDate(d.getDate() - i);
+        var dStr = d.toISOString().slice(0, 10);
+        var dayVisits = b.daily_visits[dStr];
+        if (!dayVisits || !dayVisits.length) continue;
+        var sortedDay = dayVisits.slice().sort(function (a, b) {
+          return a.ts - b.ts;
+        });
+        var pathM = 0;
+        for (var j = 1; j < sortedDay.length; j++) {
+          var seg = _v3HaversineMeters(
+            sortedDay[j - 1].lat,
+            sortedDay[j - 1].lon,
+            sortedDay[j].lat,
+            sortedDay[j].lon,
+          );
+          if (seg != null) pathM += seg;
+        }
+        dailyKms.push(pathM / 1000);
+      }
+      if (dailyKms.length > 0) {
+        var sumKm = dailyKms.reduce(function (s, v) {
+          return s + v;
+        }, 0);
+        avgDailyTravelKm = sumKm / dailyKms.length;
+      }
+    }
+
     return {
       username: flw,
       display_name: b.display_name,
       total_visits: b.total_visits,
+      visits_with_gps: b.visits_with_gps,
+      flagged_visits: b.flagged_visits,
+      unique_cases: Object.keys(b.unique_case_ids).length,
       avg_case_distance_km: avgKm,
       max_case_distance_km: maxKm,
-      cases_with_revisits: b.distances_m.length,
+      cases_with_revisits: Object.keys(b.revisit_mother_ids).length,
+      avg_daily_travel_km: avgDailyTravelKm,
     };
   });
-  allDates.sort();
+
   return {
     flw_summaries: summaries,
     median_meters_by_flw: medianMeters,
@@ -227,7 +344,7 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
     total_visits: visitsGpsRows.length,
     total_flagged: totalFlagged,
     date_range_start: allDates[0] || null,
-    date_range_end: allDates[allDates.length - 1] || null,
+    date_range_end: maxDate,
   };
 }
 
