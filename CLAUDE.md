@@ -112,6 +112,16 @@ Labs deploys to **AWS ECS Fargate** via `.github/workflows/deploy-labs.yml`.
 - **ECS cluster:** `labs-jj-cluster` in `us-east-1`
 - **Services:** `labs-jj-web` (web), `labs-jj-worker` (celery)
 
+## Pull Requests
+
+Before creating any pull request, read `.github/PULL_REQUEST_TEMPLATE.md` and follow its structure exactly. Key sections:
+
+- **`## Product Description`** — plain English, written for non-developer program staff. Describe what users will notice or be able to do differently. Leave blank only for pure infra/refactor changes with zero user-visible effect.
+- **`## Technical Summary`** — links to tickets, design decisions, rationale.
+- **`## Safety Assurance`** — how you tested it, what automated coverage exists, QA plan.
+
+The `## Product Description` section drives automated documentation updates and the weekly changelog. PRs that skip it or use a different section name (e.g. `## Summary`) are invisible to that automation.
+
 ## Git Worktrees and Virtualenv
 
 This repo uses emdash which manages git worktrees. In a worktree, the virtualenv
