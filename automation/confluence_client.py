@@ -45,7 +45,8 @@ class ConfluenceClient:
             resp.raise_for_status()
         except requests.HTTPError as e:
             status = e.response.status_code if e.response is not None else "unknown"
-            raise RuntimeError(f"Confluence PUT {path} failed: HTTP {status}") from e
+            body_text = e.response.text[:500] if e.response is not None else ""
+            raise RuntimeError(f"Confluence PUT {path} failed: HTTP {status} — {body_text}") from e
         return resp.json()
 
     def _post(self, path: str, body: dict) -> dict:
@@ -87,6 +88,7 @@ class ConfluenceClient:
             f"/api/v2/pages/{page_id}",
             {
                 "id": page_id,
+                "spaceId": CONNECT_SPACE_ID,
                 "status": "current",
                 "title": title,
                 "body": {"representation": "storage", "value": body_storage},
