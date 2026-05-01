@@ -381,3 +381,112 @@ def build_gps_data_v3(visits_gps_rows: list[dict], flw_name_map: dict[str, str])
         "date_range_start": all_dates[0] if all_dates else None,
         "date_range_end": max_date_str,
     }
+
+
+# ---- Performance tab builder --------------------------------------------
+
+V3_FLW_STATUS_DISPLAY = {
+    "eligible_for_renewal": "Eligible for Renewal",
+    "probation": "Probation",
+    "suspended": "Suspended",
+    "none": "No Category",
+}
+
+# (canonical visit_type, min_completed_to_be_on_track, output_key) — v3
+# uses canonical visit_type values (not v1's display name shorthand).
+V3_VISIT_MILESTONES = [
+    ("1 Month Visit", 3, "pct_4_visits_on_track"),
+    ("3 Month Visit", 4, "pct_5_visits_complete"),
+    ("6 Month Visit", 5, "pct_6_visits_complete"),
+]
+
+
+def build_performance_data_v3(
+    flw_statuses: dict,
+    flw_drilldown: dict[str, list],
+    current_date_str: str | None = None,
+) -> list[dict]:
+    """Python port of `_v3BuildPerformanceData` from the v3 render JS.
+
+    Mirrors v1's compute_flw_performance_by_status: 4 status-bucket rows
+    (eligible_for_renewal / probation / suspended / none), each with
+    aggregate counts and milestone percentages.
+    """
+    flw_statuses = flw_statuses or {}
+    flw_drilldown = flw_drilldown or {}
+    today = _parse_iso_date(current_date_str) if current_date_str else date.today()
+    today_ms = int(datetime.combine(today, datetime.min.time()).timestamp() * 1000)
+    grace_cutoff_ms = today_ms - FOLLOWUP_GRACE_PERIOD_DAYS * 86_400_000
+
+    status_order = ["eligible_for_renewal", "probation", "suspended", "none"]
+    buckets: dict[str, list[str]] = {s: [] for s in status_order}
+    for username, raw in flw_statuses.items():
+        status = (raw.get("status") if isinstance(raw, dict) else raw) or "none"
+        bucket_key = status if status in buckets else "none"
+        buckets[bucket_key].append(username.lower())
+
+    results: list[dict] = []
+    for status_key in status_order:
+        flw_list = buckets[status_key]
+        all_mothers: list[dict] = []
+        for username in flw_list:
+            for m in flw_drilldown.get(username, []):
+                all_mothers.append(m)
+
+        total_cases = len(all_mothers)
+        eligible_mothers = [m for m in all_mothers if m.get("eligible")]
+        total_eligible = len(eligible_mothers)
+
+        still_eligible = 0
+        for m in eligible_mothers:
+            completed = sum(1 for v in m.get("visits", []) if (v.get("status") or "").startswith("Completed"))
+            missed = sum(1 for v in m.get("visits", []) if v.get("status") == "Missed")
+            if completed >= 5 or missed <= 1:
+                still_eligible += 1
+
+        missed_1_or_less = 0
+        for m in eligible_mothers:
+            missed = sum(1 for v in m.get("visits", []) if v.get("status") == "Missed")
+            if missed <= 1:
+                missed_1_or_less += 1
+
+        milestone_results: dict[str, int] = {}
+        for visit_type, min_completed, metric_key in V3_VISIT_MILESTONES:
+            denominator = 0
+            numerator = 0
+            for m in eligible_mothers:
+                milestone_visit = next(
+                    (v for v in m.get("visits", []) if v.get("visit_type") == visit_type),
+                    None,
+                )
+                if milestone_visit is None:
+                    continue
+                sched = milestone_visit.get("scheduled") or ""
+                if not sched:
+                    continue
+                sched_ms = _parse_iso_datetime_ms(sched)
+                if not sched_ms or sched_ms > grace_cutoff_ms:
+                    continue
+                denominator += 1
+                completed = sum(1 for v in m.get("visits", []) if (v.get("status") or "").startswith("Completed"))
+                if completed >= min_completed:
+                    numerator += 1
+            milestone_results[metric_key] = round(numerator / denominator * 100) if denominator > 0 else 0
+
+        results.append(
+            {
+                "status": V3_FLW_STATUS_DISPLAY.get(status_key, status_key),
+                "status_key": status_key,
+                "num_flws": len(flw_list),
+                "total_cases": total_cases,
+                "total_cases_eligible_at_registration": total_eligible,
+                "total_cases_still_eligible": still_eligible,
+                "pct_still_eligible": round(still_eligible / total_eligible * 100) if total_eligible > 0 else 0,
+                "pct_missed_1_or_less_visits": round(missed_1_or_less / total_eligible * 100)
+                if total_eligible > 0
+                else 0,
+                **milestone_results,
+            }
+        )
+
+    return results
