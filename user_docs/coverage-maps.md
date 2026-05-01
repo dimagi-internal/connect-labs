@@ -21,45 +21,47 @@ The map has three layers:
 | ---------------------------- | -------------------------------------------------------------------- |
 | **Delivery unit boundaries** | Geographic polygons showing each FLW's assigned area, colored by FLW |
 | **Service point markers**    | Individual locations where services have been delivered              |
-| **FLW legend**               | Color key listing each FLW and their assigned color                  |
+| **FLW legend**               | Color key listing each FLW and their assigned boundary color         |
 
 ---
 
 ## Connecting to CommCare HQ
 
 !!! warning "Separate login required"
-Coverage Maps pulls boundary data directly from CommCare HQ using a separate OAuth connection. You must authorize this connection before the map will load.
+Coverage Maps pulls boundary data directly from CommCare HQ using a separate OAuth connection. You must authorize this connection before the map will load. This is separate from your CommCare Connect login.
 
 **First-time setup:**
 
 1. Go to **Coverage Maps** in the top navigation
 2. If not yet connected, you'll see a "Connect CommCare HQ" button
-3. Click it and log in with your CommCare credentials
+3. Click it and log in with your CommCare HQ credentials
 4. Approve the access request
 
-Your CommCare HQ token lasts for a limited time. Check **Token Status** in the Coverage Maps menu to see when it expires. Re-authorize when it expires.
+Your CommCare HQ token is time-limited. Check **Token Status** in the Coverage Maps menu to see when it expires.
+
+!!! tip "Token expired?"
+Go to **Coverage Maps → Token Status** and click **Re-authorize** to reconnect with your CommCare HQ credentials. This is quick and only takes a minute.
 
 ---
 
 ## Using the Map
 
 **Filtering by FLW:**
-Click a FLW's name in the legend to toggle their delivery units on or off. This is useful when you have many FLWs and want to focus on a specific worker's area.
+Click a FLW's name in the legend to toggle their delivery units on or off. Useful when you have many workers and want to focus on a specific area.
 
 **Filtering by service area:**
-If your program uses service areas (larger geographic zones containing multiple delivery units), use the service area filter at the top to focus on a specific zone.
+If your program uses service areas (larger geographic zones that contain multiple delivery units), use the service area filter at the top to narrow the view.
 
 **Zooming and panning:**
 
 - Use the `+` / `−` buttons or scroll to zoom
 - Click and drag to pan the map
-- Double-click any location to zoom in
 
 **Clicking a delivery unit:**
-Click any colored polygon to see a popup with the delivery unit name, assigned FLW, and associated metrics.
+Click any colored polygon to see a popup with the delivery unit name, the FLW it's assigned to, and associated metrics.
 
 **Clicking a service point:**
-Click any marker to see the service point name, location, and recent activity summary.
+Click any marker to see the service point name, location, and a recent activity summary.
 
 ---
 
@@ -72,10 +74,10 @@ Coverage data loads progressively as you interact with the map. A loading indica
 ## Common Questions
 
 **My delivery units aren't showing on the map.**
-Coverage Maps requires that delivery units have geographic boundaries defined in CommCare HQ. If your delivery units don't have boundary polygons attached, they won't appear on the map. Contact your CommCare administrator to add boundary data.
+Coverage Maps requires that delivery units have geographic boundary polygons defined in CommCare HQ. If boundary data hasn't been added for your program, units won't appear. Contact your CommCare administrator to add boundary data.
 
 **The map is showing the wrong FLW assignments.**
-FLW assignments come from CommCare HQ. If an assignment changed recently in CommCare, wait a few minutes and refresh — data is pulled on-demand each time you load the map.
+FLW assignments come from CommCare HQ. If an assignment changed recently, wait a few minutes and refresh — data is fetched on-demand each time you load the map.
 
-**My token expired. What do I do?**
-Go to **Coverage Maps → Token Status** and click **Re-authorize** to connect again with your CommCare credentials.
+**I see a blank map with no boundaries.**
+This usually means your CommCare HQ token has expired or your program doesn't have boundary data configured. Check **Token Status** first, then contact your CommCare administrator if the issue persists.
