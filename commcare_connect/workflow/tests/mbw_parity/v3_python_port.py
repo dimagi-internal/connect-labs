@@ -225,13 +225,13 @@ def build_followup_data_v3(
                     "past_grace": past_grace,
                 }
             )
-        has_missed = any(v["status"] == STATUS_MISSED for v in visit_entries)
-        completed_count = sum(1 for v in visit_entries if str(v["status"]).startswith("Completed"))
+        # drilldown.eligible mirrors v1: is the mother in the
+        # eligible_full_intervention_bonus cohort? (Not an on-track flag.)
         bucket["mothers"].append(
             {
                 "mother_case_id": mid,
                 "eligible_full_intervention_bonus": bool(mother_to_eligibility.get(mid)),
-                "eligible": (not has_missed) or completed_count > 0,
+                "eligible": bool(mother_to_eligibility.get(mid)),
                 "visits": visit_entries,
             }
         )
@@ -277,10 +277,14 @@ def build_followup_data_v3(
     # row, so the shape is load-bearing — not just a stats blob.
     by_bucket: dict[str, dict[str, int]] = {k: {sk: 0 for sk in STATUS_KEYS} for k in VISIT_TYPE_BUCKET_ORDER}
     totals = {sk: 0 for sk in STATUS_KEYS}
+    # v1's followup_data.total_cases is the count of expected visits
+    # (one per scheduled FLW×mother×visit_type), NOT distinct mothers —
+    # the field name is historical (CommCare "cases" = scheduled visits
+    # in v1's followup synthesis).
     total_cases = 0
     for bucket in flw_buckets.values():
         for m in bucket["mothers"]:
-            total_cases += 1
+            total_cases += len(m["visits"])
             for v in m["visits"]:
                 bucket_key = VISIT_TYPE_TO_BUCKET_KEY.get(v["visit_type"])
                 if not bucket_key:
@@ -570,3 +574,154 @@ def build_performance_data_v3(
         )
 
     return results
+
+
+# ---- Full dashboard assembler (Python port of _v3AssembleDashData) -----
+
+
+def build_v3_dashboard_payload(
+    *,
+    visits_rows: list[dict],
+    visits_gps_rows: list[dict],
+    registrations_rows: list[dict],
+    gs_forms_rows: list[dict],
+    active_usernames: set[str],
+    flw_name_map: dict[str, str],
+    flw_statuses: dict | None = None,
+    current_date_str: str | None = None,
+) -> dict:
+    """Python equivalent of `_v3AssembleDashData` from the v3 render JS.
+
+    Takes already-computed pipeline rows (the same shape `_v3PipelineRows`
+    produces in the browser) and builds the dashData blob the JSX
+    consumes. Used by the dashboard parity harness to compare v3's output
+    against v1's `build_v1_dashboard_payload` on the same opp.
+    """
+    flw_statuses = flw_statuses or {}
+    active_usernames = {u.lower() for u in active_usernames}
+    flw_name_map = {k.lower(): v for k, v in flw_name_map.items()}
+
+    today_str = current_date_str or date.today().isoformat()
+
+    followup_data = build_followup_data_v3(
+        registrations_rows, visits_gps_rows, flw_name_map, current_date_str=today_str
+    )
+    gps_data = build_gps_data_v3(visits_gps_rows, flw_name_map=flw_name_map)
+    performance_data = build_performance_data_v3(
+        flw_statuses, followup_data["flw_drilldown"], current_date_str=today_str
+    )
+
+    # Per-FLW visits-pipeline aggregates (mother_count, ebf_count,
+    # bf_status_count, last_visit_date) — visits pipeline is aggregated
+    # so each row corresponds to one FLW.
+    mother_counts: dict[str, int] = {}
+    ebf_pct_by_flw: dict[str, int] = {}
+    last_active_by_flw: dict[str, dict] = {}
+    today = _parse_iso_date(today_str) or date.today()
+    for r in visits_rows:
+        flw = (r.get("_username") or r.get("username") or "").lower()
+        if not flw:
+            continue
+        mother_counts[flw] = r.get("mother_count") or 0
+        num = r.get("ebf_count") or 0
+        den = r.get("bf_status_count") or 0
+        if den > 0:
+            ebf_pct_by_flw[flw] = round(num / den * 100)
+        last_date_str = r.get("last_visit_date") or r.get("_base_last_visit_date")
+        if last_date_str:
+            ld = _parse_iso_date(last_date_str)
+            if ld:
+                last_active_by_flw[flw] = {
+                    "date": ld.isoformat(),
+                    "days": max(0, (today - ld).days),
+                }
+
+    # GS scores enrichment.
+    gs_by_flw: dict[str, list[dict]] = {}
+    for row in gs_forms_rows:
+        connect_id = (row.get("user_connect_id") or row.get("_username") or "").lower()
+        if not connect_id:
+            continue
+        try:
+            score = float(row.get("gs_score") or 0)
+        except (TypeError, ValueError):
+            continue
+        gs_by_flw.setdefault(connect_id, []).append({"score": score, "date": row.get("assessment_date") or ""})
+
+    # Per-FLW summary (Overview tab).
+    overview_flw_summaries: list[dict] = []
+    flw_drilldown = followup_data.get("flw_drilldown") or {}
+    fu_summaries_by_flw = {s["username"]: s for s in followup_data["flw_summaries"]}
+    gps_summaries_by_flw = {s["username"]: s for s in gps_data["flw_summaries"]}
+
+    for username in sorted(active_usernames):
+        u_lower = username.lower()
+        display_name = flw_name_map.get(u_lower, username)
+        gps_flw = gps_summaries_by_flw.get(u_lower) or {}
+        median_meters = gps_data.get("median_meters_by_flw", {}).get(u_lower)
+        median_minutes = gps_data.get("median_minutes_by_flw", {}).get(u_lower)
+        fu_flw = fu_summaries_by_flw.get(u_lower) or {}
+
+        mother_count = mother_counts.get(u_lower, 0)
+        ebf_pct = ebf_pct_by_flw.get(u_lower)
+
+        drilldown = flw_drilldown.get(u_lower, [])
+        eligible_mothers = [m for m in drilldown if m.get("eligible")]
+        still_on_track = 0
+        for m in eligible_mothers:
+            completed = sum(1 for v in m.get("visits", []) if str(v.get("status", "")).startswith("Completed"))
+            missed = sum(1 for v in m.get("visits", []) if v.get("status") == "Missed")
+            if completed >= 5 or missed <= 1:
+                still_on_track += 1
+        total_eligible = len(eligible_mothers)
+
+        last_active = last_active_by_flw.get(u_lower)
+
+        first_gs_score = None
+        gs_entries = gs_by_flw.get(u_lower) or []
+        if gs_entries:
+            gs_entries.sort(key=lambda e: e.get("date") or "")
+            first_gs_score = round(gs_entries[0]["score"])
+
+        overview_flw_summaries.append(
+            {
+                "username": u_lower,
+                "display_name": display_name,
+                "cases_registered": mother_count,
+                "eligible_mothers": total_eligible,
+                "first_gs_score": first_gs_score,
+                "post_test_attempts": None,
+                "last_active_date": last_active["date"] if last_active else None,
+                "last_active_days": last_active["days"] if last_active else None,
+                "followup_rate": fu_flw.get("completion_rate", 0),
+                "ebf_pct": ebf_pct,
+                "revisit_distance_km": (
+                    round(gps_flw["avg_case_distance_km"], 2)
+                    if gps_flw.get("avg_case_distance_km") is not None
+                    else None
+                ),
+                "median_meters_per_visit": median_meters,
+                "median_minutes_per_visit": median_minutes,
+                "cases_still_eligible": {
+                    "eligible": still_on_track,
+                    "total": total_eligible,
+                    "pct": (round(still_on_track / total_eligible * 100) if total_eligible > 0 else 0),
+                },
+            }
+        )
+
+    overview_data = {
+        "flw_summaries": overview_flw_summaries,
+        "visit_status_distribution": followup_data.get("visit_status_distribution", {}),
+        "mother_counts": mother_counts,
+        "ebf_pct_by_flw": ebf_pct_by_flw,
+    }
+
+    return {
+        "gps_data": gps_data,
+        "followup_data": followup_data,
+        "overview_data": overview_data,
+        "performance_data": performance_data,
+        "active_usernames": sorted(active_usernames),
+        "flw_names": flw_name_map,
+    }
