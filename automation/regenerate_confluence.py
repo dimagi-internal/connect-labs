@@ -36,6 +36,11 @@ def main() -> None:
 
     email = os.environ.get("CONFLUENCE_EMAIL", "(not set)")
     print(f"Authenticating as: {email}")
+    try:
+        me = confluence._get("/rest/api/user/current")
+        print(f"Confluence user: {me.get('displayName')} / {me.get('emailAddress')} (accountId={me.get('accountId')})")
+    except Exception as e:
+        print(f"  [warn] Could not fetch current Confluence user: {e}")
     print("Regenerating Confluence summary pages from user_docs/...")
     print()
 
