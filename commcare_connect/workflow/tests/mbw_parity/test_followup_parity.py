@@ -313,6 +313,63 @@ class TestFollowupRateParity:
         v3_mids = {m["mother_case_id"] for m in v3_drilldown}
         assert v3_mids == {"m1", "m2"}
 
+    def test_visit_status_distribution_uses_v1_rich_shape(self):
+        """v3 used to produce {Completed, Missed, Due, Upcoming} totals
+        only. The JSX visit-status chart expects v1's
+        {by_visit_type, totals} shape with completed_on_time /
+        completed_late / due_on_time / due_late / missed / not_due_yet
+        per visit type — without it the chart silently doesn't render."""
+        reg_forms, pipeline_rows, v3_regs, v3_visits = _all_eligible_past_grace_fixture()
+        out = build_followup_data_v3(
+            v3_regs, v3_visits, flw_name_map={"alice": "Alice"}, current_date_str=CURRENT_DATE_STR
+        )
+        dist = out["visit_status_distribution"]
+        assert "by_visit_type" in dist, f"missing by_visit_type: {dist}"
+        assert "totals" in dist, f"missing totals: {dist}"
+        # 6 visit-type buckets, in canonical order.
+        bucket_keys = [b["visit_type"] for b in dist["by_visit_type"]]
+        assert bucket_keys == ["ANC", "Postnatal", "Week 1", "Month 1", "Month 3", "Month 6"]
+        # Each bucket has all 6 status keys + total.
+        for bucket in dist["by_visit_type"]:
+            for sk in (
+                "completed_on_time",
+                "completed_late",
+                "due_on_time",
+                "due_late",
+                "missed",
+                "not_due_yet",
+            ):
+                assert sk in bucket, f"missing {sk} in {bucket['visit_type']}"
+            assert "total" in bucket
+        # Totals sum across buckets.
+        assert dist["totals"]["total"] == sum(b["total"] for b in dist["by_visit_type"])
+
+    def test_visit_status_uses_six_category_split(self):
+        """Visits in v3's drilldown carry the 6-category status string
+        (Completed - On Time / Completed - Late / etc.), not the old
+        4-category lumped status. Tests the per-mother visit entries."""
+        v3_regs = [
+            _v3_registrations_row(
+                mother_case_id="m1",
+                username="alice",
+                schedules=[{"visit_type": "ANC Visit", "scheduled": "2025-05-01", "expiry": "2025-05-08"}],
+            ),
+        ]
+        v3_visits = [
+            _v3_visits_gps_row(
+                mother_case_id="m1",
+                username="alice",
+                visit_date="2025-05-03",  # within 7-day on-time window of 2025-05-01
+                form_name="ANC Visit",
+            ),
+        ]
+        out = build_followup_data_v3(
+            v3_regs, v3_visits, flw_name_map={"alice": "Alice"}, current_date_str=CURRENT_DATE_STR
+        )
+        visit = out["flw_drilldown"]["alice"][0]["visits"][0]
+        # Completed within on-time window → "Completed - On Time".
+        assert visit["status"] == "Completed - On Time", f"got {visit['status']!r}"
+
     def test_unfiltered_totals_still_visible_post_fix(self):
         """The fix changed completion_rate to be eligibility-filtered, but
         the unfiltered totals (total_expected, total_completed) stay
