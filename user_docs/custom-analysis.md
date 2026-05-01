@@ -35,7 +35,7 @@ flowchart LR
 
 ### RUTF (Ready-to-Use Therapeutic Food)
 
-Dashboard for tracking SAM (Severe Acute Malnutrition) treatment with RUTF. The layout mirrors the KMC Child Timeline.
+Dashboard for tracking SAM (Severe Acute Malnutrition) treatment with RUTF. The layout follows the same pattern as KMC, but tracks MUAC measurements and SAM treatment progress instead of weight.
 
 **Child List (`/rutf/children/`):**
 

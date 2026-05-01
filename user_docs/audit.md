@@ -51,15 +51,6 @@ Once a session is created, open it to start the bulk assessment.
     - Add optional notes
     - Your progress saves automatically
 
-    **Keyboard shortcuts:**
-
-    | Key | Action |
-    | --- | --- |
-    | `P` | Mark Pass |
-    | `F` | Mark Fail |
-    | `→` | Next image |
-    | `←` | Previous image |
-
 === "AI-Assisted Review"
 
     Before you start, click **Run AI Review** to have AI pre-screen all images in the session.
@@ -71,6 +62,15 @@ Once a session is created, open it to start the bulk assessment.
     - **Required elements** — whether the required items are clearly visible in the photo
 
     AI results appear alongside each image as suggestions — you make the final Pass/Fail call. Images flagged by the AI are highlighted so you can prioritize reviewing them first.
+
+**Keyboard shortcuts** (work in both review modes):
+
+| Key | Action         |
+| --- | -------------- |
+| `P` | Mark Pass      |
+| `F` | Mark Fail      |
+| `→` | Next image     |
+| `←` | Previous image |
 
 ---
 
