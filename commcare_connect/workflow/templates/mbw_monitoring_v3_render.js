@@ -78,12 +78,15 @@ function _v3MedianOf(values) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function _v3BuildOverviewData(visitsRows) {
-  // Per-FLW mother count + EBF percentage, sourced directly from the visits
-  // pipeline's pre-aggregated fields. v3 SQL already produced these — JS
-  // just normalizes keys to lowercase to match v2's shape.
+function _v3BuildOverviewData(visitsRows, todayStr) {
+  // Per-FLW mother count + EBF percentage + last-active timestamp, sourced
+  // directly from the visits pipeline's pre-aggregated fields. v3 SQL
+  // already produced these — JS just normalizes keys to lowercase to match
+  // v2's shape.
   var motherCounts = {};
   var ebfPctByFlw = {};
+  var lastActiveByFlw = {};
+  var today = todayStr ? new Date(todayStr) : new Date();
   visitsRows.forEach(function (r) {
     var flw = (r._username || '').toLowerCase();
     if (!flw) return;
@@ -91,8 +94,26 @@ function _v3BuildOverviewData(visitsRows) {
     var num = r.ebf_count || 0;
     var den = r.bf_status_count || 0;
     if (den > 0) ebfPctByFlw[flw] = Math.round((num / den) * 100);
+    // visits pipeline aggregates per-FLW with `_base_last_visit_date` —
+    // exposed at the row level so the JSX overview table can show
+    // "N days ago" without a second pipeline query.
+    var lastDate = r.last_visit_date || r._base_last_visit_date;
+    if (lastDate) {
+      var d = new Date(lastDate);
+      if (!isNaN(d.getTime())) {
+        var days = Math.max(0, Math.floor((today - d) / 86400000));
+        lastActiveByFlw[flw] = {
+          date: (lastDate + '').slice(0, 10),
+          days: days,
+        };
+      }
+    }
   });
-  return { mother_counts: motherCounts, ebf_pct_by_flw: ebfPctByFlw };
+  return {
+    mother_counts: motherCounts,
+    ebf_pct_by_flw: ebfPctByFlw,
+    last_active_by_flw: lastActiveByFlw,
+  };
 }
 
 function _v3BuildQualityMetrics(visitsRows) {
@@ -133,11 +154,51 @@ function _v3BuildQualityMetrics(visitsRows) {
   return quality;
 }
 
+// v1's DEFAULT_CASE_DISTANCE_THRESHOLD_METERS — distances above this from
+// the previous same-mother visit flag the visit as suspicious. 5km.
+var V3_GPS_FLAG_THRESHOLD_M = 5000;
+// Days included in the trailing-7 daily travel window (v1's
+// get_trailing_7_days uses 7 calendar days ending at max visit date).
+var V3_GPS_TRAILING_DAYS = 7;
+
+function _v3HaversineMeters(lat1, lon1, lat2, lon2) {
+  // Mirror of `haversine_meters` (Postgres + Python parity-harness). Used
+  // for the daily-travel path-distance reduction; lag_haversine already
+  // produced the per-visit case distances in SQL.
+  if (
+    typeof lat1 !== 'number' ||
+    typeof lon1 !== 'number' ||
+    typeof lat2 !== 'number' ||
+    typeof lon2 !== 'number' ||
+    isNaN(lat1) ||
+    isNaN(lon1) ||
+    isNaN(lat2) ||
+    isNaN(lon2)
+  ) {
+    return null;
+  }
+  var R = 6371000;
+  var toRad = function (x) {
+    return (x * Math.PI) / 180;
+  };
+  var phi1 = toRad(lat1);
+  var phi2 = toRad(lat2);
+  var dphi = phi2 - phi1;
+  var dlam = toRad(lon2 - lon1);
+  var a =
+    Math.sin(dphi / 2) * Math.sin(dphi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlam / 2) * Math.sin(dlam / 2);
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
-  // Aggregate per-visit GPS rows (with lag_haversine distances) to per-FLW
-  // summaries: avg/max distance, count, median meters/minutes per visit.
-  // v2's GPS tab + overview FLW table both consume `flw_summaries[].avg_case_distance_km`
-  // and the median maps below.
+  // Per-visit GPS rows (lag_haversine distances pre-computed in SQL) →
+  // per-FLW summaries that mirror v1's analyze_gps_metrics output:
+  // total_visits, visits_with_gps, flagged_visits (5km+), unique_cases,
+  // avg/max case distance, cases_with_revisits (distinct mothers with
+  // ≥1 distance entry — NOT total distance count), avg_daily_travel_km
+  // (trailing-7-days path-distance average).
   var byFlw = {};
   var allDates = [];
   var totalFlagged = 0;
@@ -149,22 +210,57 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
         username: flw,
         display_name: flwNameMap[flw] || flw,
         total_visits: 0,
+        visits_with_gps: 0,
+        flagged_visits: 0,
+        unique_case_ids: {}, // set semantics via key-presence
+        revisit_mother_ids: {},
         distances_m: [],
         timestamps_ms: [],
+        daily_visits: {}, // {date: [{lat, lon, ts}, ...]}
       };
     }
     var bucket = byFlw[flw];
     bucket.total_visits += 1;
+    var lat = r.latitude;
+    var lon = r.longitude;
+    var hasGps =
+      typeof lat === 'number' &&
+      typeof lon === 'number' &&
+      !isNaN(lat) &&
+      !isNaN(lon);
+    if (hasGps) bucket.visits_with_gps += 1;
+    if (r.case_id) bucket.unique_case_ids[r.case_id] = 1;
     var dist = r.distance_from_prev_case_visit_m;
-    if (typeof dist === 'number' && !isNaN(dist)) bucket.distances_m.push(dist);
+    if (typeof dist === 'number' && !isNaN(dist)) {
+      bucket.distances_m.push(dist);
+      if (r.mother_case_id) bucket.revisit_mother_ids[r.mother_case_id] = 1;
+      if (dist > V3_GPS_FLAG_THRESHOLD_M) {
+        bucket.flagged_visits += 1;
+        totalFlagged += 1;
+      }
+    }
     var dt = r.visit_datetime || r._visit_date;
     if (dt) {
       var ms = Date.parse(dt);
       if (!isNaN(ms)) bucket.timestamps_ms.push(ms);
       var d = (dt + '').slice(0, 10);
-      if (d) allDates.push(d);
+      if (d) {
+        allDates.push(d);
+        if (hasGps) {
+          if (!bucket.daily_visits[d]) bucket.daily_visits[d] = [];
+          bucket.daily_visits[d].push({
+            lat: lat,
+            lon: lon,
+            ts: isNaN(ms) ? 0 : ms,
+          });
+        }
+      }
     }
   });
+
+  allDates.sort();
+  var maxDate = allDates[allDates.length - 1] || null;
+
   var medianMeters = {};
   var medianMinutes = {};
   var summaries = Object.keys(byFlw).map(function (flw) {
@@ -180,6 +276,7 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
     for (var i = 1; i < ts.length; i++) gaps.push((ts[i] - ts[i - 1]) / 60000);
     var minMed = _v3MedianOf(gaps);
     if (minMed != null) medianMinutes[flw] = Math.round(minMed);
+
     var sumDist = b.distances_m.reduce(function (s, v) {
       return s + v;
     }, 0);
@@ -189,16 +286,57 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
     var maxKm = b.distances_m.length
       ? Math.max.apply(null, b.distances_m) / 1000
       : null;
+
+    // avg_daily_travel_km: trailing-7-days path-distance average. v1
+    // takes the most recent visit date globally and walks back 7 calendar
+    // days, summing each day's chronologically-sorted-GPS path distance,
+    // then averages across the days that actually had visits.
+    var avgDailyTravelKm = null;
+    if (maxDate) {
+      var dailyKms = [];
+      for (var i = 0; i < V3_GPS_TRAILING_DAYS; i++) {
+        var d = new Date(maxDate);
+        d.setDate(d.getDate() - i);
+        var dStr = d.toISOString().slice(0, 10);
+        var dayVisits = b.daily_visits[dStr];
+        if (!dayVisits || !dayVisits.length) continue;
+        var sortedDay = dayVisits.slice().sort(function (a, b) {
+          return a.ts - b.ts;
+        });
+        var pathM = 0;
+        for (var j = 1; j < sortedDay.length; j++) {
+          var seg = _v3HaversineMeters(
+            sortedDay[j - 1].lat,
+            sortedDay[j - 1].lon,
+            sortedDay[j].lat,
+            sortedDay[j].lon,
+          );
+          if (seg != null) pathM += seg;
+        }
+        dailyKms.push(pathM / 1000);
+      }
+      if (dailyKms.length > 0) {
+        var sumKm = dailyKms.reduce(function (s, v) {
+          return s + v;
+        }, 0);
+        avgDailyTravelKm = sumKm / dailyKms.length;
+      }
+    }
+
     return {
       username: flw,
       display_name: b.display_name,
       total_visits: b.total_visits,
+      visits_with_gps: b.visits_with_gps,
+      flagged_visits: b.flagged_visits,
+      unique_cases: Object.keys(b.unique_case_ids).length,
       avg_case_distance_km: avgKm,
       max_case_distance_km: maxKm,
-      cases_with_revisits: b.distances_m.length,
+      cases_with_revisits: Object.keys(b.revisit_mother_ids).length,
+      avg_daily_travel_km: avgDailyTravelKm,
     };
   });
-  allDates.sort();
+
   return {
     flw_summaries: summaries,
     median_meters_by_flw: medianMeters,
@@ -206,9 +344,82 @@ function _v3BuildGpsData(visitsGpsRows, flwNameMap) {
     total_visits: visitsGpsRows.length,
     total_flagged: totalFlagged,
     date_range_start: allDates[0] || null,
-    date_range_end: allDates[allDates.length - 1] || null,
+    date_range_end: maxDate,
   };
 }
+
+// Number of days a visit must be past its scheduled date before it counts
+// in the completion-rate denominator. Matches v1's GRACE_PERIOD_DAYS — a
+// visit just barely past its scheduled date isn't yet "missed," it's a
+// known business window where FLWs can still legitimately catch up.
+var V3_FOLLOWUP_GRACE_PERIOD_DAYS = 5;
+
+// On-time completion window per visit type (days from scheduled date).
+// Matches v1's VISIT_ON_TIME_DAYS — most visits get 7 days, PNC gets 4.
+var V3_VISIT_ON_TIME_DAYS = {
+  'ANC Visit': 7,
+  'Postnatal Visit': 4,
+  'Postnatal Delivery Visit': 4,
+  '1 Week Visit': 7,
+  '1 Month Visit': 7,
+  '3 Month Visit': 7,
+  '6 Month Visit': 7,
+};
+var V3_DEFAULT_ON_TIME_DAYS = 7;
+
+// 6-category visit status (matches v1's calculate_visit_status). v3 used
+// to use only 4 (Completed/Missed/Due/Upcoming); the JSX visit-status
+// chart expects the 6-category breakdown so it can show on-time vs late.
+var V3_STATUS_COMPLETED_ON_TIME = 'Completed - On Time';
+var V3_STATUS_COMPLETED_LATE = 'Completed - Late';
+var V3_STATUS_DUE_ON_TIME = 'Due - On Time';
+var V3_STATUS_DUE_LATE = 'Due - Late';
+var V3_STATUS_MISSED = 'Missed';
+var V3_STATUS_NOT_DUE_YET = 'Not Due Yet';
+var V3_STATUS_TO_KEY = {
+  'Completed - On Time': 'completed_on_time',
+  'Completed - Late': 'completed_late',
+  'Due - On Time': 'due_on_time',
+  'Due - Late': 'due_late',
+  Missed: 'missed',
+  'Not Due Yet': 'not_due_yet',
+};
+var V3_STATUS_KEYS = [
+  'completed_on_time',
+  'completed_late',
+  'due_on_time',
+  'due_late',
+  'missed',
+  'not_due_yet',
+];
+
+// Per-visit-type bucket key for the by_visit_type breakdown. Matches v1's
+// VISIT_TYPE_KEYS / _VISIT_TYPE_KEY_TO_DISPLAY.
+var V3_VISIT_TYPE_TO_BUCKET_KEY = {
+  'ANC Visit': 'anc',
+  'Postnatal Visit': 'postnatal',
+  'Postnatal Delivery Visit': 'postnatal',
+  '1 Week Visit': 'week1',
+  '1 Month Visit': 'month1',
+  '3 Month Visit': 'month3',
+  '6 Month Visit': 'month6',
+};
+var V3_VISIT_TYPE_BUCKET_ORDER = [
+  'anc',
+  'postnatal',
+  'week1',
+  'month1',
+  'month3',
+  'month6',
+];
+var V3_VISIT_TYPE_BUCKET_DISPLAY = {
+  anc: 'ANC',
+  postnatal: 'Postnatal',
+  week1: 'Week 1',
+  month1: 'Month 1',
+  month3: 'Month 3',
+  month6: 'Month 6',
+};
 
 function _v3BuildFollowupData(
   registrationsRows,
@@ -218,12 +429,15 @@ function _v3BuildFollowupData(
 ) {
   // Per-mother expected-visits schedule (from registrations) ⨯ actual
   // completions (from visits) → per-FLW follow-up summaries + drilldown.
-  // Mirrors v1's build_followup_from_pipeline + aggregate_flw_followup
-  // closely enough for the UI to render the same way; minor deltas in
-  // edge cases (mother→FLW attribution) accepted as the price of moving
-  // off the celery handler.
+  // Mirrors v1's build_followup_from_pipeline + aggregate_flw_followup so
+  // completion_rate (eligibility-filtered + grace period) and the per-FLW
+  // mother list match v1 — fixing the parity gap that left ineligible
+  // mothers' uncompleted visits dragging down v3's rate while v1 filtered
+  // them out, and the gap that silently hid registered-but-not-yet-visited
+  // mothers because v3 only attributed via visits_gps last-visit-wins.
   var today = currentDateStr ? new Date(currentDateStr) : new Date();
   var nowMs = today.getTime();
+  var graceCutoffMs = nowMs - V3_FOLLOWUP_GRACE_PERIOD_DAYS * 86400000;
 
   // Build mother → owner-username map from visits (last-visit wins —
   // matches v1's mother_to_username override step).
@@ -248,9 +462,16 @@ function _v3BuildFollowupData(
     }
   });
 
-  // Per-FLW: collect mothers + their schedules.
+  // Per-FLW: collect mothers + their schedules + eligibility flag.
+  // motherToFlwFallback: registration-form-attributed FLW for mothers with
+  // no visit-side rows. v1 uses the form's metadata.username; we use the
+  // pipeline row's `_username` (the form-submitter), then prefer
+  // visits-side mapping when present (v1 does the same — pipeline overrides
+  // form metadata).
   var motherToSchedules = {};
   var motherToRegDate = {};
+  var motherToEligibility = {}; // {mid: bool} — eligible_full_intervention_bonus === "1"
+  var motherToFlwFallback = {};
   registrationsRows.forEach(function (reg) {
     var schedules = reg.schedules || [];
     if (!Array.isArray(schedules) || !schedules.length) return;
@@ -259,11 +480,15 @@ function _v3BuildFollowupData(
     motherToSchedules[firstMid] = schedules;
     if (reg.registration_date)
       motherToRegDate[firstMid] = reg.registration_date;
+    motherToEligibility[firstMid] =
+      String(reg.eligible_full_intervention_bonus || '') === '1';
+    var regUser = (reg._username || reg.username || '').toLowerCase();
+    if (regUser) motherToFlwFallback[firstMid] = regUser;
   });
 
   var flwBuckets = {}; // {flw: {mothers: [{mother_case_id, eligible, visits:[]}]}}
   Object.keys(motherToSchedules).forEach(function (mid) {
-    var flw = motherToFlw[mid];
+    var flw = motherToFlw[mid] || motherToFlwFallback[mid];
     if (!flw) return;
     if (!flwBuckets[flw]) flwBuckets[flw] = { mothers: [] };
     var schedules = motherToSchedules[mid];
@@ -273,48 +498,85 @@ function _v3BuildFollowupData(
       var scheduledStr = s.visit_date_scheduled || '';
       var expiryStr = s.visit_expiry_date || '';
       var completedDate = motherVisits[visitType];
+      var scheduledMs = scheduledStr ? Date.parse(scheduledStr) : 0;
+      var expiryMs = expiryStr ? Date.parse(expiryStr) : 0;
+      var onTimeDays =
+        V3_VISIT_ON_TIME_DAYS[visitType] != null
+          ? V3_VISIT_ON_TIME_DAYS[visitType]
+          : V3_DEFAULT_ON_TIME_DAYS;
+      var onTimeEndMs =
+        scheduledMs > 0 ? scheduledMs + onTimeDays * 86400000 : 0;
+      // 6-category status, mirrors v1's calculate_visit_status. The JSX
+      // visit-status chart consumes this categorization grouped by
+      // visit_type, so the on-time / late split has to actually be
+      // computed (not collapsed to a single "Completed").
       var status;
       if (completedDate) {
-        status = 'Completed';
-      } else if (expiryStr && Date.parse(expiryStr) < nowMs) {
-        status = 'Missed';
-      } else if (scheduledStr && Date.parse(scheduledStr) <= nowMs) {
-        status = 'Due';
+        var completedMs = Date.parse(completedDate);
+        if (
+          !isNaN(completedMs) &&
+          onTimeEndMs > 0 &&
+          completedMs <= onTimeEndMs
+        ) {
+          status = V3_STATUS_COMPLETED_ON_TIME;
+        } else {
+          status = V3_STATUS_COMPLETED_LATE;
+        }
+      } else if (expiryMs > 0 && expiryMs < nowMs) {
+        status = V3_STATUS_MISSED;
+      } else if (scheduledMs > 0 && scheduledMs > nowMs) {
+        status = V3_STATUS_NOT_DUE_YET;
+      } else if (onTimeEndMs > 0 && nowMs <= onTimeEndMs) {
+        status = V3_STATUS_DUE_ON_TIME;
       } else {
-        status = 'Upcoming';
+        status = V3_STATUS_DUE_LATE;
       }
+      // past_grace: scheduled date is at least GRACE_PERIOD_DAYS in the
+      // past. Determines whether this visit counts in completion_rate's
+      // denominator (matches v1's `_is_due_past_grace`).
+      var pastGrace = scheduledMs > 0 && scheduledMs <= graceCutoffMs;
       return {
         visit_type: visitType,
         scheduled: scheduledStr,
         expiry: expiryStr,
         completed_date: completedDate || null,
         status: status,
+        past_grace: pastGrace,
       };
     });
-    var hasMissed = visitEntries.some(function (v) {
-      return v.status === 'Missed';
-    });
-    var completedCount = visitEntries.filter(function (v) {
-      return v.status === 'Completed';
-    }).length;
-    var totalEligible = visitEntries.length;
+    // `eligible` matches v1's drilldown: is this mother in the
+    // eligible_full_intervention_bonus cohort? Earlier v3 set this to an
+    // "on-track" heuristic instead, which silently corrupted the Overview
+    // `eligible_mothers` and `cases_still_eligible` columns plus the
+    // Performance bucket aggregations that filter on `m.eligible`.
     flwBuckets[flw].mothers.push({
       mother_case_id: mid,
-      eligible: !hasMissed || completedCount > 0,
+      eligible_full_intervention_bonus: !!motherToEligibility[mid],
+      eligible: !!motherToEligibility[mid],
       visits: visitEntries,
     });
   });
 
-  // Per-FLW summary: total expected, completed, completion rate.
+  // Per-FLW summary: completion_rate filtered by v1's business definition
+  // (eligibility + 5-day grace). Also keeps total_mothers,
+  // total_expected, total_completed for the unfiltered counts the v3
+  // dashboard already showed.
   var flwSummaries = Object.keys(flwBuckets).map(function (flw) {
     var mothers = flwBuckets[flw].mothers;
     var totalExpected = 0;
     var totalCompleted = 0;
+    var filteredCompleted = 0;
+    var filteredDenominator = 0;
     mothers.forEach(function (m) {
       m.visits.forEach(function (v) {
-        if (v.status !== 'Upcoming') {
+        var isCompleted = v.status && v.status.indexOf('Completed') === 0;
+        if (v.status !== V3_STATUS_NOT_DUE_YET) {
           totalExpected += 1;
-          if (v.status === 'Completed') totalCompleted += 1;
+          if (isCompleted) totalCompleted += 1;
+        }
+        if (m.eligible_full_intervention_bonus && v.past_grace) {
+          filteredDenominator += 1;
+          if (isCompleted) filteredCompleted += 1;
         }
       });
     });
@@ -325,8 +587,8 @@ function _v3BuildFollowupData(
       total_expected: totalExpected,
       total_completed: totalCompleted,
       completion_rate:
-        totalExpected > 0
-          ? Math.round((totalCompleted / totalExpected) * 100)
+        filteredDenominator > 0
+          ? Math.round((filteredCompleted / filteredDenominator) * 100)
           : 0,
     };
   });
@@ -336,33 +598,202 @@ function _v3BuildFollowupData(
     flwDrilldown[flw] = flwBuckets[flw].mothers;
   });
 
-  // Visit-status distribution (across all FLWs, all visit types).
-  var visitStatusDist = { Completed: 0, Missed: 0, Due: 0, Upcoming: 0 };
+  // Visit-status distribution: {by_visit_type: [{visit_type, completed_on_time,
+  // completed_late, due_on_time, due_late, missed, not_due_yet, total}, ...],
+  // totals: {...}}. Matches v1's aggregate_visit_status_distribution shape so
+  // the JSX visit-status chart (which checks for `by_visit_type` and
+  // `totals`) actually renders.
+  var byBucket = {};
+  V3_VISIT_TYPE_BUCKET_ORDER.forEach(function (k) {
+    byBucket[k] = {
+      completed_on_time: 0,
+      completed_late: 0,
+      due_on_time: 0,
+      due_late: 0,
+      missed: 0,
+      not_due_yet: 0,
+    };
+  });
+  var totals = {
+    completed_on_time: 0,
+    completed_late: 0,
+    due_on_time: 0,
+    due_late: 0,
+    missed: 0,
+    not_due_yet: 0,
+  };
+  // total_cases counts expected visits (matches v1's
+  // sum(len(v) for v in visit_cases_by_flw.values())) — historical
+  // misnomer: "cases" here means scheduled visits, not mothers.
+  var totalCases = 0;
   Object.values(flwBuckets).forEach(function (bucket) {
     bucket.mothers.forEach(function (m) {
+      totalCases += m.visits.length;
       m.visits.forEach(function (v) {
-        if (visitStatusDist[v.status] != null) visitStatusDist[v.status] += 1;
+        var bucketKey = V3_VISIT_TYPE_TO_BUCKET_KEY[v.visit_type];
+        if (!bucketKey) return;
+        var statusKey = V3_STATUS_TO_KEY[v.status];
+        if (!statusKey) return;
+        byBucket[bucketKey][statusKey] += 1;
+        totals[statusKey] += 1;
       });
     });
   });
+  var byVisitType = V3_VISIT_TYPE_BUCKET_ORDER.map(function (k) {
+    var counts = byBucket[k];
+    var total = 0;
+    V3_STATUS_KEYS.forEach(function (sk) {
+      total += counts[sk];
+    });
+    return Object.assign(
+      { visit_type: V3_VISIT_TYPE_BUCKET_DISPLAY[k] },
+      counts,
+      { total: total },
+    );
+  });
+  var totalSum = 0;
+  V3_STATUS_KEYS.forEach(function (sk) {
+    totalSum += totals[sk];
+  });
+  totals.total = totalSum;
 
   return {
     flw_summaries: flwSummaries,
     flw_drilldown: flwDrilldown,
-    visit_status_distribution: visitStatusDist,
+    total_cases: totalCases,
+    visit_status_distribution: { by_visit_type: byVisitType, totals: totals },
   };
 }
 
-function _v3BuildPerformanceData(instance) {
-  // Per-FLW status (eligible_for_renewal / probation / suspended). v2 read
-  // this from the celery handler's worker_status fetch; v3 reads it
-  // directly from `instance.state.flw_statuses`, which the workflow runner
-  // already populates from the Connect worker management API.
-  var statuses =
-    (instance && instance.state && instance.state.flw_statuses) || {};
-  return Object.keys(statuses).map(function (username) {
-    var s = statuses[username] || {};
-    return Object.assign({ username: username.toLowerCase() }, s);
+// FLW status display labels (matches v1's FLW_STATUS_DISPLAY).
+var V3_FLW_STATUS_DISPLAY = {
+  eligible_for_renewal: 'Eligible for Renewal',
+  probation: 'Probation',
+  suspended: 'Suspended',
+  none: 'No Category',
+};
+
+// Visit milestones for the Performance tab. Tuple shape:
+//   (canonical visit_type, min_completed_to_be_on_track, output_key).
+// v3's drilldown uses canonical visit_type values ("1 Month Visit"),
+// not v1's display names ("Month 1"); semantics are identical.
+var V3_VISIT_MILESTONES = [
+  ['1 Month Visit', 3, 'pct_4_visits_on_track'],
+  ['3 Month Visit', 4, 'pct_5_visits_complete'],
+  ['6 Month Visit', 5, 'pct_6_visits_complete'],
+];
+
+function _v3BuildPerformanceData(flwStatuses, flwDrilldown, currentDateStr) {
+  // Per-status bucket aggregation that mirrors v1's
+  // compute_flw_performance_by_status. The Performance tab JSX expects
+  // per-bucket rows (Eligible for Renewal / Probation / Suspended / No
+  // Category) with aggregate counts and milestone percentages — the
+  // earlier implementation returned per-FLW rows instead, leaving the
+  // tab rendering wrong shape entirely.
+  flwStatuses = flwStatuses || {};
+  flwDrilldown = flwDrilldown || {};
+  var today = currentDateStr ? new Date(currentDateStr) : new Date();
+  var graceCutoffMs =
+    today.getTime() - V3_FOLLOWUP_GRACE_PERIOD_DAYS * 86400000;
+
+  var statusOrder = ['eligible_for_renewal', 'probation', 'suspended', 'none'];
+  var buckets = {};
+  statusOrder.forEach(function (s) {
+    buckets[s] = [];
+  });
+  Object.keys(flwStatuses).forEach(function (username) {
+    var raw = flwStatuses[username];
+    var status =
+      (typeof raw === 'object' && raw !== null ? raw.status : raw) || 'none';
+    var bucketKey = buckets[status] !== undefined ? status : 'none';
+    buckets[bucketKey].push(username.toLowerCase());
+  });
+
+  return statusOrder.map(function (statusKey) {
+    var flwList = buckets[statusKey];
+    var allMothers = [];
+    flwList.forEach(function (username) {
+      var motherList = flwDrilldown[username] || [];
+      motherList.forEach(function (m) {
+        allMothers.push(m);
+      });
+    });
+
+    var totalCases = allMothers.length;
+    var eligibleMothers = allMothers.filter(function (m) {
+      return m.eligible;
+    });
+    var totalEligible = eligibleMothers.length;
+
+    // still eligible: eligible AND (completed >= 5 OR missed <= 1).
+    // Mirrors v1's _build_flw_summary's eligibility-rate logic.
+    var stillEligible = 0;
+    eligibleMothers.forEach(function (m) {
+      var completed = (m.visits || []).filter(function (v) {
+        return v.status && v.status.indexOf('Completed') === 0;
+      }).length;
+      var missed = (m.visits || []).filter(function (v) {
+        return v.status === 'Missed';
+      }).length;
+      if (completed >= 5 || missed <= 1) stillEligible += 1;
+    });
+
+    // pct missed ≤1 across eligible mothers.
+    var missed1OrLess = 0;
+    eligibleMothers.forEach(function (m) {
+      var missed = (m.visits || []).filter(function (v) {
+        return v.status === 'Missed';
+      }).length;
+      if (missed <= 1) missed1OrLess += 1;
+    });
+
+    // Milestone percentages.
+    var milestoneResults = {};
+    V3_VISIT_MILESTONES.forEach(function (milestone) {
+      var visitType = milestone[0];
+      var minCompleted = milestone[1];
+      var metricKey = milestone[2];
+      var denominator = 0;
+      var numerator = 0;
+      eligibleMothers.forEach(function (m) {
+        var milestoneVisit = (m.visits || []).find(function (v) {
+          return v.visit_type === visitType;
+        });
+        if (!milestoneVisit) return;
+        var sched = milestoneVisit.scheduled || '';
+        if (!sched) return;
+        var schedMs = Date.parse(sched);
+        if (isNaN(schedMs)) return;
+        if (schedMs > graceCutoffMs) return; // not yet due past buffer
+        denominator += 1;
+        var completed = (m.visits || []).filter(function (v) {
+          return v.status && v.status.indexOf('Completed') === 0;
+        }).length;
+        if (completed >= minCompleted) numerator += 1;
+      });
+      milestoneResults[metricKey] =
+        denominator > 0 ? Math.round((numerator / denominator) * 100) : 0;
+    });
+
+    return Object.assign(
+      {
+        status: V3_FLW_STATUS_DISPLAY[statusKey] || statusKey,
+        status_key: statusKey,
+        num_flws: flwList.length,
+        total_cases: totalCases,
+        total_cases_eligible_at_registration: totalEligible,
+        total_cases_still_eligible: stillEligible,
+        pct_still_eligible:
+          totalEligible > 0
+            ? Math.round((stillEligible / totalEligible) * 100)
+            : 0,
+        pct_missed_1_or_less_visits:
+          totalEligible > 0
+            ? Math.round((missed1OrLess / totalEligible) * 100)
+            : 0,
+      },
+      milestoneResults,
+    );
   });
 }
 
@@ -378,17 +809,165 @@ function buildResultsFromV3Pipelines(
   var visitsRows = _v3PipelineRows(pipelines, 'visits');
   var visitsGpsRows = _v3PipelineRows(pipelines, 'visits_gps');
   var registrationsRows = _v3PipelineRows(pipelines, 'registrations');
+  var followupData = _v3BuildFollowupData(
+    registrationsRows,
+    visitsGpsRows,
+    flwNameMap,
+    currentDateStr,
+  );
+  var flwStatuses =
+    (instance && instance.state && instance.state.flw_statuses) || {};
   return {
-    overview_data: _v3BuildOverviewData(visitsRows),
+    overview_data: _v3BuildOverviewData(visitsRows, currentDateStr),
     quality_metrics: _v3BuildQualityMetrics(visitsRows),
     gps_data: _v3BuildGpsData(visitsGpsRows, flwNameMap),
-    followup_data: _v3BuildFollowupData(
-      registrationsRows,
-      visitsGpsRows,
-      flwNameMap,
+    followup_data: followupData,
+    performance_data: _v3BuildPerformanceData(
+      flwStatuses,
+      followupData.flw_drilldown || {},
       currentDateStr,
     ),
-    performance_data: _v3BuildPerformanceData(instance),
+  };
+}
+
+function _v3AssembleDashData(pipelines, state, flwNameMap, currentDateStr) {
+  // Build the full dashData blob from raw inputs (pipelines + state +
+  // flwNameMap). Single entry point shared by:
+  //   - runAnalysis (live path: pipelines + instance.state)
+  //   - snapshot loader (frozen path: snap.pipelines + snap.state)
+  //
+  // Keeping this in one function means snapshot reload always re-derives
+  // the dashboard the same way live analysis does — no risk of the two
+  // paths drifting apart when columns or per-section logic changes.
+  var instanceLike = { state: state || {} };
+  var results = buildResultsFromV3Pipelines(
+    pipelines,
+    instanceLike,
+    flwNameMap,
+    currentDateStr,
+  );
+
+  var gpsData = results.gps_data || {};
+  var followupData = results.followup_data || {};
+  var qualityMetrics = results.quality_metrics || {};
+  var overviewSummary = results.overview_data || {};
+  var performanceData = results.performance_data || [];
+
+  var activeUsernamesList =
+    (state && (state.selected_workers || state.selected_flws)) || [];
+
+  var overviewFlwSummaries = activeUsernamesList.map(function (username) {
+    var uLower = username.toLowerCase();
+    var displayName = flwNameMap[uLower] || username;
+
+    var gpsFlw =
+      (gpsData.flw_summaries || []).find(function (g) {
+        return g.username === uLower;
+      }) || {};
+    var medianMeters = (gpsData.median_meters_by_flw || {})[uLower];
+    var medianMinutes = (gpsData.median_minutes_by_flw || {})[uLower];
+
+    var fuFlw =
+      (followupData.flw_summaries || []).find(function (f) {
+        return f.username === uLower;
+      }) || {};
+
+    var quality = qualityMetrics[uLower] || {};
+
+    var motherCount = (overviewSummary.mother_counts || {})[uLower] || 0;
+    var ebfPct = (overviewSummary.ebf_pct_by_flw || {})[uLower];
+
+    var drilldown = (followupData.flw_drilldown || {})[uLower] || [];
+    var eligibleMothers = drilldown.filter(function (m) {
+      return m.eligible;
+    });
+    var stillOnTrack = 0;
+    eligibleMothers.forEach(function (m) {
+      var completedCount = 0;
+      var missedCount = 0;
+      (m.visits || []).forEach(function (v) {
+        if (v.status && v.status.indexOf('Completed') === 0) completedCount++;
+        if (v.status === 'Missed') missedCount++;
+      });
+      if (completedCount >= 5 || missedCount <= 1) stillOnTrack++;
+    });
+    var totalEligible = eligibleMothers.length;
+
+    var lastActive = (overviewSummary.last_active_by_flw || {})[uLower];
+    return Object.assign(
+      {
+        username: uLower,
+        display_name: displayName,
+        cases_registered: motherCount,
+        eligible_mothers: totalEligible,
+        first_gs_score: null, // populated below from gs_forms pipeline
+        post_test_attempts: null,
+        last_active_date: lastActive ? lastActive.date : null,
+        last_active_days: lastActive ? lastActive.days : null,
+        followup_rate: fuFlw.completion_rate || 0,
+        ebf_pct: ebfPct != null ? ebfPct : null,
+        revisit_distance_km:
+          gpsFlw.avg_case_distance_km != null
+            ? Math.round(gpsFlw.avg_case_distance_km * 100) / 100
+            : null,
+        median_meters_per_visit: medianMeters != null ? medianMeters : null,
+        median_minutes_per_visit: medianMinutes != null ? medianMinutes : null,
+        cases_still_eligible: {
+          eligible: stillOnTrack,
+          total: totalEligible,
+          pct:
+            totalEligible > 0
+              ? Math.round((stillOnTrack / totalEligible) * 100)
+              : 0,
+        },
+      },
+      quality,
+    );
+  });
+
+  // Enrich with GS scores from gs_forms pipeline data.
+  var gsFormRows = (pipelines.gs_forms && pipelines.gs_forms.rows) || [];
+  var gsByFlw = {};
+  gsFormRows.forEach(function (row) {
+    var connectId = (row.computed || row).user_connect_id || row.username || '';
+    var uLower = connectId.toLowerCase();
+    var score = parseFloat((row.computed || row).gs_score);
+    if (!isNaN(score)) {
+      if (!gsByFlw[uLower]) gsByFlw[uLower] = [];
+      gsByFlw[uLower].push({
+        score: score,
+        date: (row.computed || row).assessment_date || '',
+      });
+    }
+  });
+  overviewFlwSummaries.forEach(function (flw) {
+    var gsEntries = gsByFlw[flw.username] || [];
+    if (gsEntries.length > 0) {
+      gsEntries.sort(function (a, b) {
+        return (a.date || '').localeCompare(b.date || '');
+      });
+      flw.first_gs_score = Math.round(gsEntries[0].score);
+    }
+  });
+
+  return {
+    success: true,
+    gps_data: gpsData,
+    followup_data: followupData,
+    overview_data: {
+      flw_summaries: overviewFlwSummaries,
+      visit_status_distribution: followupData.visit_status_distribution || {},
+    },
+    performance_data: performanceData,
+    active_usernames: activeUsernamesList
+      .map(function (u) {
+        return u.toLowerCase();
+      })
+      .sort(),
+    flw_names: flwNameMap,
+    open_tasks: (state && state.open_tasks) || {},
+    open_task_usernames: Object.keys((state && state.open_tasks) || {}),
+    monitoring_session: (state && state.monitoring_session) || null,
   };
 }
 
@@ -661,19 +1240,19 @@ function WorkflowUI({
   // can be loaded by either path.
   var saveSnapshot = React.useCallback(
     function () {
-      if (!instance.id || !dashData) return Promise.resolve(false);
+      if (!instance.id || !links?.buildSnapshot) return Promise.resolve(false);
       setSavingSnapshot(true);
-      return fetch('/custom_analysis/mbw_monitoring/api/save-snapshot/', {
+      // Native snapshot framework: server fetches pipelines + workers +
+      // state itself via build_snapshot_api, runs the template's
+      // build_snapshot hook (or the default fallback), and atomically
+      // freezes the run. No body needed — we don't ship the dashData
+      // blob across the wire any more.
+      return fetch(links.buildSnapshot, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': getCSRF(),
         },
-        body: JSON.stringify({
-          run_id: instance.id,
-          opportunity_id: instance.opportunity_id,
-          snapshot_data: dashData,
-        }),
       })
         .then(function (r) {
           return r.json();
@@ -681,7 +1260,7 @@ function WorkflowUI({
         .then(function (resp) {
           setSavingSnapshot(false);
           if (resp && resp.success) {
-            setSnapshotTimestamp(resp.timestamp || new Date().toISOString());
+            setSnapshotTimestamp(resp.frozen_at || new Date().toISOString());
             return true;
           }
           showToast('Snapshot save failed: ' + (resp?.error || 'Unknown'));
@@ -694,59 +1273,69 @@ function WorkflowUI({
           return false;
         });
     },
-    [instance.id, instance.opportunity_id, dashData, getCSRF],
+    [instance.id, links, getCSRF],
   );
 
   // Load snapshot on mount — runs once per instance to skip live re-analysis
-  // when a saved snapshot exists on the run.
+  // when a frozen snapshot exists on the run.
   //
-  // Gated on selected_workers being non-empty: V1's MBWSnapshotView uses
-  // load_monitoring_run() which returns None (and the view returns 404
-  // {"error":"Run not found"}) for runs that don't yet have selected_flws
-  // or selected_workers in state. Fresh runs have none. We skip the fetch
-  // in that case to avoid the spurious 404 in the console.
+  // Native framework path: GET links.getSnapshot returns
+  // `{has_snapshot, snapshot, frozen_at}`. The snapshot envelope is the
+  // default-hook shape `{schema_version, pipelines, workers, state,
+  // opportunity_ids}` (mbw_monitoring_v3 opts in without a custom
+  // build_snapshot hook), so we re-run the same _v3AssembleDashData
+  // helper that runAnalysis uses on the live path. Live and frozen
+  // dashboards therefore go through identical derivation code.
   React.useEffect(
     function () {
       if (snapshotChecked) return;
-      if (!instance.id) {
-        setSnapshotChecked(true);
-        return;
-      }
-      var hasSelected =
-        (instance.state?.selected_workers || []).length > 0 ||
-        (instance.state?.selected_flws || []).length > 0;
-      if (!hasSelected) {
-        // Run is too fresh — no snapshot can exist yet. Skip the load.
+      if (!instance.id || !links?.getSnapshot) {
         setSnapshotChecked(true);
         return;
       }
       var cancelled = false;
-      fetch(
-        '/custom_analysis/mbw_monitoring/api/snapshot/?run_id=' +
-          encodeURIComponent(String(instance.id)),
-      )
+      fetch(links.getSnapshot)
         .then(function (r) {
           return r.json();
         })
         .then(function (data) {
           if (cancelled) return;
-          if (data && data.has_snapshot && data.success) {
-            setDashData({
-              gps_data: data.gps_data || {},
-              followup_data: data.followup_data || {},
-              overview_data: data.overview_data || {},
-              performance_data: data.performance_data || [],
-              active_usernames: data.active_usernames || [],
-              flw_names: data.flw_names || {},
-              open_tasks: data.open_tasks || {},
-              open_task_usernames: data.open_task_usernames || [],
-              monitoring_session: data.monitoring_session || null,
+          if (data && data.has_snapshot && data.snapshot) {
+            var snap = data.snapshot;
+            // Re-derive flwNameMap from the workers list captured at
+            // freeze time — render must show the same names the user
+            // saw when they froze, even if the live worker roster has
+            // since changed.
+            var snapFlwNameMap = {};
+            (snap.workers || []).forEach(function (w) {
+              if (w.username) {
+                snapFlwNameMap[w.username.toLowerCase()] = w.name || w.username;
+              }
             });
-            setAnalysisComplete(true);
-            setDataSource('snapshot');
-            setSnapshotTimestamp(data.snapshot_timestamp || null);
-            if (data.monitoring_session?.flw_results) {
-              setWorkerResults(data.monitoring_session.flw_results);
+            var frozenAt = data.frozen_at || snap.frozen_at;
+            // Date arithmetic ("days since last visit") must be relative
+            // to freeze time, not today, so a snapshot opened a month
+            // later still shows the same numbers it did the day it was
+            // saved.
+            var dateStr = frozenAt
+              ? String(frozenAt).slice(0, 10)
+              : new Date().toISOString().slice(0, 10);
+            try {
+              var builtDashData = _v3AssembleDashData(
+                snap.pipelines || {},
+                snap.state || {},
+                snapFlwNameMap,
+                dateStr,
+              );
+              setDashData(builtDashData);
+              setAnalysisComplete(true);
+              setDataSource('snapshot');
+              setSnapshotTimestamp(frozenAt || null);
+              if (builtDashData.monitoring_session?.flw_results) {
+                setWorkerResults(builtDashData.monitoring_session.flw_results);
+              }
+            } catch (err) {
+              console.error('Failed to assemble snapshot dashboard:', err);
             }
           }
           setSnapshotChecked(true);
@@ -760,7 +1349,7 @@ function WorkflowUI({
         cancelled = true;
       };
     },
-    [instance.id, snapshotChecked],
+    [instance.id, snapshotChecked, links],
   );
 
   // =========================================================================
@@ -884,14 +1473,13 @@ function WorkflowUI({
       setAnalysisComplete(false);
 
       try {
-        // Single synchronous call into the adapter. Returns the v2-shape
-        // results dict so the rest of this render file consumes it
-        // unchanged. Uses today's date for follow-up date arithmetic;
-        // matches v1's `current_date` semantics in compute_overview_quality_metrics.
+        // Synchronous derivation: pipelines + state → dashData blob.
+        // Same helper drives the snapshot reload path (see snapshot loader
+        // below), so live and frozen views go through the same code.
         var todayStr = new Date().toISOString().slice(0, 10);
-        var results = buildResultsFromV3Pipelines(
+        var builtDashData = _v3AssembleDashData(
           pipelines,
-          instance,
+          instance.state,
           flwNameMap,
           todayStr,
         );
@@ -899,143 +1487,6 @@ function WorkflowUI({
         setJobRunning(false);
         setAnalysisComplete(true);
         setDataSource('live');
-
-        // The block below is copied verbatim from v2's onComplete handler;
-        // having results in the same shape keeps the per-FLW table + GS
-        // enrichment + dashData assembly identical between v2 and v3.
-        var gpsData = results.gps_data || {};
-        var followupData = results.followup_data || {};
-        var qualityMetrics = results.quality_metrics || {};
-        var overviewSummary = results.overview_data || {};
-        var performanceData = results.performance_data || [];
-
-        // Build overview flw_summaries by merging data from multiple result sections
-        var activeUsernamesList =
-          instance.state?.selected_workers ||
-          instance.state?.selected_flws ||
-          [];
-        var overviewFlwSummaries = activeUsernamesList.map(function (username) {
-          var uLower = username.toLowerCase();
-          var displayName = flwNameMap[uLower] || username;
-
-          // From GPS data
-          var gpsFlw =
-            (gpsData.flw_summaries || []).find(function (g) {
-              return g.username === uLower;
-            }) || {};
-          var medianMeters = (gpsData.median_meters_by_flw || {})[uLower];
-          var medianMinutes = (gpsData.median_minutes_by_flw || {})[uLower];
-
-          // From follow-up data
-          var fuFlw =
-            (followupData.flw_summaries || []).find(function (f) {
-              return f.username === uLower;
-            }) || {};
-
-          // From quality metrics
-          var quality = qualityMetrics[uLower] || {};
-
-          // From overview summary
-          var motherCount = (overviewSummary.mother_counts || {})[uLower] || 0;
-          var ebfPct = (overviewSummary.ebf_pct_by_flw || {})[uLower];
-
-          // Build cases_still_eligible from drilldown
-          var drilldown = (followupData.flw_drilldown || {})[uLower] || [];
-          var eligibleMothers = drilldown.filter(function (m) {
-            return m.eligible;
-          });
-          var stillOnTrack = 0;
-          eligibleMothers.forEach(function (m) {
-            var completedCount = 0;
-            var missedCount = 0;
-            (m.visits || []).forEach(function (v) {
-              if (v.status && v.status.indexOf('Completed') === 0)
-                completedCount++;
-              if (v.status === 'Missed') missedCount++;
-            });
-            if (completedCount >= 5 || missedCount <= 1) stillOnTrack++;
-          });
-          var totalEligible = eligibleMothers.length;
-
-          return Object.assign(
-            {
-              username: uLower,
-              display_name: displayName,
-              cases_registered: motherCount,
-              eligible_mothers: totalEligible,
-              first_gs_score: null, // populated below from gs_forms pipeline
-              post_test_attempts: null,
-              followup_rate: fuFlw.completion_rate || 0,
-              ebf_pct: ebfPct != null ? ebfPct : null,
-              revisit_distance_km:
-                gpsFlw.avg_case_distance_km != null
-                  ? Math.round(gpsFlw.avg_case_distance_km * 100) / 100
-                  : null,
-              median_meters_per_visit:
-                medianMeters != null ? medianMeters : null,
-              median_minutes_per_visit:
-                medianMinutes != null ? medianMinutes : null,
-              cases_still_eligible: {
-                eligible: stillOnTrack,
-                total: totalEligible,
-                pct:
-                  totalEligible > 0
-                    ? Math.round((stillOnTrack / totalEligible) * 100)
-                    : 0,
-              },
-            },
-            quality,
-          );
-        });
-
-        // Enrich with GS scores from gs_forms pipeline data
-        var gsFormRows = (pipelines.gs_forms && pipelines.gs_forms.rows) || [];
-        var gsByFlw = {};
-        gsFormRows.forEach(function (row) {
-          var connectId =
-            (row.computed || row).user_connect_id || row.username || '';
-          var uLower = connectId.toLowerCase();
-          var score = parseFloat((row.computed || row).gs_score);
-          if (!isNaN(score)) {
-            if (!gsByFlw[uLower]) gsByFlw[uLower] = [];
-            gsByFlw[uLower].push({
-              score: score,
-              date: (row.computed || row).assessment_date || '',
-            });
-          }
-        });
-        overviewFlwSummaries.forEach(function (flw) {
-          var gsEntries = gsByFlw[flw.username] || [];
-          if (gsEntries.length > 0) {
-            // Use the oldest (first) GS score
-            gsEntries.sort(function (a, b) {
-              return (a.date || '').localeCompare(b.date || '');
-            });
-            flw.first_gs_score = Math.round(gsEntries[0].score);
-          }
-        });
-
-        var builtDashData = {
-          success: true,
-          gps_data: gpsData,
-          followup_data: followupData,
-          overview_data: {
-            flw_summaries: overviewFlwSummaries,
-            visit_status_distribution:
-              followupData.visit_status_distribution || {},
-          },
-          performance_data: performanceData,
-          active_usernames: activeUsernamesList
-            .map(function (u) {
-              return u.toLowerCase();
-            })
-            .sort(),
-          flw_names: flwNameMap,
-          open_tasks: instance.state?.open_tasks || {},
-          open_task_usernames: Object.keys(instance.state?.open_tasks || {}),
-          monitoring_session: instance.state?.monitoring_session || null,
-        };
-
         setDashData(builtDashData);
 
         // Restore worker results from monitoring session if available
@@ -2137,91 +2588,158 @@ function WorkflowUI({
 
   // ---- Pipeline loading / Job running / Error state ----
   if (!analysisComplete || !dashData) {
-    var visitCount =
-      pipelines && pipelines.visits && pipelines.visits.rows
-        ? pipelines.visits.rows.length
-        : 0;
+    // Two distinct numbers per pipeline:
+    //   - rawCount: forms/visits actually downloaded into the cache
+    //   - aggregatedCount: rows the SQL pipeline produced (e.g. visits
+    //     pipeline aggregates 86k visits → 99 per-FLW rows)
+    //
+    // Visits pipeline is `terminal_stage=aggregated`, so .rows.length is
+    // the aggregated row count (~99 FLWs). The underlying visit count is
+    // the SUM of total_visits across rows. For visit_level pipelines
+    // (registrations, gs_forms), .rows.length IS the raw count.
+    var visitsRows =
+      (pipelines && pipelines.visits && pipelines.visits.rows) || [];
+    var visitsRawCount = visitsRows.reduce(function (s, r) {
+      return s + (r.total_visits || 0);
+    }, 0);
+    var visitsAggCount = visitsRows.length;
+    var visitsLoaded = visitsRows.length > 0 || visitsRawCount > 0;
+
     var regCount =
       pipelines && pipelines.registrations && pipelines.registrations.rows
         ? pipelines.registrations.rows.length
         : 0;
+    var regLoaded =
+      pipelines && pipelines.registrations && pipelines.registrations.rows;
+
     var gsCount =
       pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
         ? pipelines.gs_forms.rows.length
         : 0;
+    var gsLoaded = pipelines && pipelines.gs_forms && pipelines.gs_forms.rows;
+
+    var fmt = function (n) {
+      return Number(n || 0).toLocaleString();
+    };
 
     return (
       <div className="space-y-4">
         <div className="bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-bold text-gray-900">
-            {instance.state?.title || 'MBW Monitoring V2'}
+            {instance.state?.title || 'MBW Monitoring V3'}
           </h2>
-          <p className="text-gray-500 mt-1">Pipeline-based dashboard</p>
+          <p className="text-gray-500 mt-1">
+            Pipeline-based dashboard. Raw forms are downloaded into the cache,
+            then per-pipeline SQL aggregations produce the dashboard inputs
+            you'll see after clicking <strong>Run Analysis</strong>.
+          </p>
         </div>
 
         {/* Pipeline Status */}
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            Pipeline Data Sources
+          <h3 className="text-sm font-semibold text-gray-700 mb-1">
+            Pipelines &amp; Inputs
           </h3>
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
+          <p className="text-xs text-gray-500 mb-3">
+            Each row shows what was <em>downloaded</em> from Connect / CommCare
+            HQ and what the pipeline <em>produced</em>. Aggregated pipelines
+            collapse many rows of raw data into per-FLW summaries.
+          </p>
+          <div className="space-y-3">
+            {/* Visit Forms — aggregated pipeline */}
+            <div className="flex items-start gap-3">
               <i
                 className={
-                  'fa-solid ' +
-                  (visitCount > 0
+                  'fa-solid mt-0.5 ' +
+                  (visitsLoaded
                     ? 'fa-circle-check text-green-500'
                     : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
-              <span className="text-sm text-gray-700">Visit Forms</span>
-              <span className="text-xs text-gray-500 ml-auto">
-                {visitCount > 0 ? visitCount + ' rows' : 'Loading...'}
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium text-gray-800">
+                    Visit Forms
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Connect / aggregated
+                  </span>
+                </div>
+                {visitsLoaded ? (
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    <span className="font-mono">{fmt(visitsRawCount)}</span>{' '}
+                    visits downloaded →{' '}
+                    <span className="font-mono">{fmt(visitsAggCount)}</span>{' '}
+                    per-FLW summaries
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-0.5">Loading…</div>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-3">
+            {/* Registration Forms — visit-level pipeline */}
+            <div className="flex items-start gap-3">
               <i
                 className={
-                  'fa-solid ' +
+                  'fa-solid mt-0.5 ' +
                   (regCount > 0
                     ? 'fa-circle-check text-green-500'
-                    : pipelines &&
-                      pipelines.registrations &&
-                      pipelines.registrations.rows
+                    : regLoaded
                     ? 'fa-circle-check text-amber-500'
                     : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
-              <span className="text-sm text-gray-700">Registration Forms</span>
-              <span className="text-xs text-gray-500 ml-auto">
-                {regCount > 0
-                  ? regCount + ' rows'
-                  : pipelines &&
-                    pipelines.registrations &&
-                    pipelines.registrations.rows
-                  ? '0 rows (none found)'
-                  : 'Loading...'}
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium text-gray-800">
+                    Registration Forms
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    CommCare HQ / per-form
+                  </span>
+                </div>
+                {regLoaded ? (
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    <span className="font-mono">{fmt(regCount)}</span> forms
+                    downloaded
+                    {regCount === 0 ? ' (none found)' : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-0.5">Loading…</div>
+                )}
+              </div>
             </div>
-            <div className="flex items-center gap-3">
+            {/* Gold Standard Forms — visit-level pipeline */}
+            <div className="flex items-start gap-3">
               <i
                 className={
-                  'fa-solid ' +
+                  'fa-solid mt-0.5 ' +
                   (gsCount > 0
                     ? 'fa-circle-check text-green-500'
-                    : pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
+                    : gsLoaded
                     ? 'fa-circle-check text-amber-500'
                     : 'fa-spinner fa-spin text-blue-500')
                 }
               ></i>
-              <span className="text-sm text-gray-700">Gold Standard Forms</span>
-              <span className="text-xs text-gray-500 ml-auto">
-                {gsCount > 0
-                  ? gsCount + ' rows'
-                  : pipelines && pipelines.gs_forms && pipelines.gs_forms.rows
-                  ? '0 rows (none found)'
-                  : 'Loading...'}
-              </span>
+              <div className="flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm font-medium text-gray-800">
+                    Gold Standard Forms
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    CommCare HQ / per-form
+                  </span>
+                </div>
+                {gsLoaded ? (
+                  <div className="text-xs text-gray-600 mt-0.5">
+                    <span className="font-mono">{fmt(gsCount)}</span> forms
+                    downloaded
+                    {gsCount === 0 ? ' (none found)' : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-0.5">Loading…</div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -2274,8 +2792,9 @@ function WorkflowUI({
                   All pipelines loaded
                 </span>
                 <p className="text-sm text-green-600 mt-1">
-                  {visitCount} visits, {regCount} registrations, {gsCount} GS
-                  forms loaded.
+                  {fmt(visitsRawCount)} visits → {fmt(visitsAggCount)} FLW
+                  summaries · {fmt(regCount)} registrations · {fmt(gsCount)} GS
+                  forms.
                 </p>
               </div>
               <button
