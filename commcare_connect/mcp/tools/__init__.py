@@ -7,6 +7,7 @@ Importing this package triggers all registration.
 from . import apps  # noqa: F401
 from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
+from . import mbw_parity  # noqa: F401
 from . import pipelines  # noqa: F401
 from . import reviews  # noqa: F401
 from . import sample_ids  # noqa: F401
