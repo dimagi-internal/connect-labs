@@ -14,6 +14,7 @@ Requires env vars:
     CONFLUENCE_EMAIL
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -33,6 +34,8 @@ def main() -> None:
     ai_client = anthropic.Anthropic()
     confluence = ConfluenceClient()
 
+    email = os.environ.get("CONFLUENCE_EMAIL", "(not set)")
+    print(f"Authenticating as: {email}")
     print("Regenerating Confluence summary pages from user_docs/...")
     print()
 
