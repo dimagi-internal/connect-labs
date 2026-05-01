@@ -526,16 +526,135 @@ function _v3BuildFollowupData(
   };
 }
 
-function _v3BuildPerformanceData(instance) {
-  // Per-FLW status (eligible_for_renewal / probation / suspended). v2 read
-  // this from the celery handler's worker_status fetch; v3 reads it
-  // directly from `instance.state.flw_statuses`, which the workflow runner
-  // already populates from the Connect worker management API.
-  var statuses =
-    (instance && instance.state && instance.state.flw_statuses) || {};
-  return Object.keys(statuses).map(function (username) {
-    var s = statuses[username] || {};
-    return Object.assign({ username: username.toLowerCase() }, s);
+// FLW status display labels (matches v1's FLW_STATUS_DISPLAY).
+var V3_FLW_STATUS_DISPLAY = {
+  eligible_for_renewal: 'Eligible for Renewal',
+  probation: 'Probation',
+  suspended: 'Suspended',
+  none: 'No Category',
+};
+
+// Visit milestones for the Performance tab. Tuple shape:
+//   (canonical visit_type, min_completed_to_be_on_track, output_key).
+// v3's drilldown uses canonical visit_type values ("1 Month Visit"),
+// not v1's display names ("Month 1"); semantics are identical.
+var V3_VISIT_MILESTONES = [
+  ['1 Month Visit', 3, 'pct_4_visits_on_track'],
+  ['3 Month Visit', 4, 'pct_5_visits_complete'],
+  ['6 Month Visit', 5, 'pct_6_visits_complete'],
+];
+
+function _v3BuildPerformanceData(flwStatuses, flwDrilldown, currentDateStr) {
+  // Per-status bucket aggregation that mirrors v1's
+  // compute_flw_performance_by_status. The Performance tab JSX expects
+  // per-bucket rows (Eligible for Renewal / Probation / Suspended / No
+  // Category) with aggregate counts and milestone percentages — the
+  // earlier implementation returned per-FLW rows instead, leaving the
+  // tab rendering wrong shape entirely.
+  flwStatuses = flwStatuses || {};
+  flwDrilldown = flwDrilldown || {};
+  var today = currentDateStr ? new Date(currentDateStr) : new Date();
+  var graceCutoffMs =
+    today.getTime() - V3_FOLLOWUP_GRACE_PERIOD_DAYS * 86400000;
+
+  var statusOrder = ['eligible_for_renewal', 'probation', 'suspended', 'none'];
+  var buckets = {};
+  statusOrder.forEach(function (s) {
+    buckets[s] = [];
+  });
+  Object.keys(flwStatuses).forEach(function (username) {
+    var raw = flwStatuses[username];
+    var status =
+      (typeof raw === 'object' && raw !== null ? raw.status : raw) || 'none';
+    var bucketKey = buckets[status] !== undefined ? status : 'none';
+    buckets[bucketKey].push(username.toLowerCase());
+  });
+
+  return statusOrder.map(function (statusKey) {
+    var flwList = buckets[statusKey];
+    var allMothers = [];
+    flwList.forEach(function (username) {
+      var motherList = flwDrilldown[username] || [];
+      motherList.forEach(function (m) {
+        allMothers.push(m);
+      });
+    });
+
+    var totalCases = allMothers.length;
+    var eligibleMothers = allMothers.filter(function (m) {
+      return m.eligible;
+    });
+    var totalEligible = eligibleMothers.length;
+
+    // still eligible: eligible AND (completed >= 5 OR missed <= 1).
+    // Mirrors v1's _build_flw_summary's eligibility-rate logic.
+    var stillEligible = 0;
+    eligibleMothers.forEach(function (m) {
+      var completed = (m.visits || []).filter(function (v) {
+        return v.status && v.status.indexOf('Completed') === 0;
+      }).length;
+      var missed = (m.visits || []).filter(function (v) {
+        return v.status === 'Missed';
+      }).length;
+      if (completed >= 5 || missed <= 1) stillEligible += 1;
+    });
+
+    // pct missed ≤1 across eligible mothers.
+    var missed1OrLess = 0;
+    eligibleMothers.forEach(function (m) {
+      var missed = (m.visits || []).filter(function (v) {
+        return v.status === 'Missed';
+      }).length;
+      if (missed <= 1) missed1OrLess += 1;
+    });
+
+    // Milestone percentages.
+    var milestoneResults = {};
+    V3_VISIT_MILESTONES.forEach(function (milestone) {
+      var visitType = milestone[0];
+      var minCompleted = milestone[1];
+      var metricKey = milestone[2];
+      var denominator = 0;
+      var numerator = 0;
+      eligibleMothers.forEach(function (m) {
+        var milestoneVisit = (m.visits || []).find(function (v) {
+          return v.visit_type === visitType;
+        });
+        if (!milestoneVisit) return;
+        var sched = milestoneVisit.scheduled || '';
+        if (!sched) return;
+        var schedMs = Date.parse(sched);
+        if (isNaN(schedMs)) return;
+        if (schedMs > graceCutoffMs) return; // not yet due past buffer
+        denominator += 1;
+        var completed = (m.visits || []).filter(function (v) {
+          return v.status && v.status.indexOf('Completed') === 0;
+        }).length;
+        if (completed >= minCompleted) numerator += 1;
+      });
+      milestoneResults[metricKey] =
+        denominator > 0 ? Math.round((numerator / denominator) * 100) : 0;
+    });
+
+    return Object.assign(
+      {
+        status: V3_FLW_STATUS_DISPLAY[statusKey] || statusKey,
+        status_key: statusKey,
+        num_flws: flwList.length,
+        total_cases: totalCases,
+        total_cases_eligible_at_registration: totalEligible,
+        total_cases_still_eligible: stillEligible,
+        pct_still_eligible:
+          totalEligible > 0
+            ? Math.round((stillEligible / totalEligible) * 100)
+            : 0,
+        pct_missed_1_or_less_visits:
+          totalEligible > 0
+            ? Math.round((missed1OrLess / totalEligible) * 100)
+            : 0,
+      },
+      milestoneResults,
+    );
   });
 }
 
@@ -551,17 +670,24 @@ function buildResultsFromV3Pipelines(
   var visitsRows = _v3PipelineRows(pipelines, 'visits');
   var visitsGpsRows = _v3PipelineRows(pipelines, 'visits_gps');
   var registrationsRows = _v3PipelineRows(pipelines, 'registrations');
+  var followupData = _v3BuildFollowupData(
+    registrationsRows,
+    visitsGpsRows,
+    flwNameMap,
+    currentDateStr,
+  );
+  var flwStatuses =
+    (instance && instance.state && instance.state.flw_statuses) || {};
   return {
     overview_data: _v3BuildOverviewData(visitsRows, currentDateStr),
     quality_metrics: _v3BuildQualityMetrics(visitsRows),
     gps_data: _v3BuildGpsData(visitsGpsRows, flwNameMap),
-    followup_data: _v3BuildFollowupData(
-      registrationsRows,
-      visitsGpsRows,
-      flwNameMap,
+    followup_data: followupData,
+    performance_data: _v3BuildPerformanceData(
+      flwStatuses,
+      followupData.flw_drilldown || {},
       currentDateStr,
     ),
-    performance_data: _v3BuildPerformanceData(instance),
   };
 }
 
