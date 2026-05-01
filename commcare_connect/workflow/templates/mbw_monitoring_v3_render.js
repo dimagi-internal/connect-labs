@@ -544,16 +544,15 @@ function _v3BuildFollowupData(
         past_grace: pastGrace,
       };
     });
-    var hasMissed = visitEntries.some(function (v) {
-      return v.status === V3_STATUS_MISSED;
-    });
-    var completedCount = visitEntries.filter(function (v) {
-      return v.status && v.status.indexOf('Completed') === 0;
-    }).length;
+    // `eligible` matches v1's drilldown: is this mother in the
+    // eligible_full_intervention_bonus cohort? Earlier v3 set this to an
+    // "on-track" heuristic instead, which silently corrupted the Overview
+    // `eligible_mothers` and `cases_still_eligible` columns plus the
+    // Performance bucket aggregations that filter on `m.eligible`.
     flwBuckets[flw].mothers.push({
       mother_case_id: mid,
       eligible_full_intervention_bonus: !!motherToEligibility[mid],
-      eligible: !hasMissed || completedCount > 0,
+      eligible: !!motherToEligibility[mid],
       visits: visitEntries,
     });
   });
@@ -623,8 +622,13 @@ function _v3BuildFollowupData(
     missed: 0,
     not_due_yet: 0,
   };
+  // total_cases counts expected visits (matches v1's
+  // sum(len(v) for v in visit_cases_by_flw.values())) — historical
+  // misnomer: "cases" here means scheduled visits, not mothers.
+  var totalCases = 0;
   Object.values(flwBuckets).forEach(function (bucket) {
     bucket.mothers.forEach(function (m) {
+      totalCases += m.visits.length;
       m.visits.forEach(function (v) {
         var bucketKey = V3_VISIT_TYPE_TO_BUCKET_KEY[v.visit_type];
         if (!bucketKey) return;
@@ -656,6 +660,7 @@ function _v3BuildFollowupData(
   return {
     flw_summaries: flwSummaries,
     flw_drilldown: flwDrilldown,
+    total_cases: totalCases,
     visit_status_distribution: { by_visit_type: byVisitType, totals: totals },
   };
 }
