@@ -60,7 +60,12 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, links, actions, onU
     const isCompleted = view.isCompleted;
     const [showOnlyUnderperforming, setShowOnlyUnderperforming] = React.useState(false);
 
-    const rowsByUser = (view.pipelines.flw_kpis || []).reduce((acc, r) => {
+    // Placeholders: `actions.spawnCoachingTask` and `actions.openTaskDrawer` are
+    // not part of the default ActionHandlers interface — the ACE Phase 6
+    // `synthetic-workflow-polish` skill replaces this render code with versions
+    // that wire those up to real labs Task records and the chat-styled drawer.
+    // Until then, clicking the buttons is a no-op (the handler is undefined).
+    const rowsByUser = (view.pipelines.flw_kpis?.rows || []).reduce((acc, r) => {
         acc[r.username] = r;
         return acc;
     }, {});
