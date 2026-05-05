@@ -133,3 +133,18 @@ def test_synthetic_generate_rejects_invalid_manifest(user):
     with pytest.raises(MCPToolError) as exc:
         tool.handler(user=user, opportunity_id=1, manifest_yaml="not: valid: yaml: at all: :")
     assert exc.value.code == "INVALID_SCHEMA"
+
+
+def test_all_phase6_tools_are_registered():
+    """All five tools added in Phase 6 are present in the registry by name."""
+    from commcare_connect.mcp.tool_registry import list_tools
+
+    names = {t["name"] for t in list_tools()}
+    expected = {
+        "synthetic_register",
+        "synthetic_disable",
+        "synthetic_generate_from_manifest",
+        "task_create_synthetic",
+        "workflow_save_snapshot",
+    }
+    assert expected.issubset(names), f"missing tools: {expected - names}"
