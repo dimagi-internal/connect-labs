@@ -35,6 +35,49 @@ export interface WorkflowProps {
 
   /** Callback to update workflow instance state */
   onUpdateState: (newState: Record<string, unknown>) => Promise<void>;
+
+  /**
+   * Run view — abstracts snapshot-vs-live data reads so render code is the
+   * same whether the run is in_progress or completed. Always read run data
+   * via this helper rather than the bare `workers`/`pipelines`/`instance`
+   * props. See WORKFLOW_REFERENCE.md §"Saved-runs templates".
+   */
+  view: RunView;
+}
+
+/**
+ * Helper for reading run data without branching on status.
+ *
+ * - When `instance.status === 'in_progress'`: returns the live workers,
+ *   pipelines, and state passed in via props.
+ * - When `instance.status === 'completed'`: returns the workers, pipelines,
+ *   and state captured at completion time, derived from `instance.snapshot`.
+ *
+ * `complete()` is the canonical way to mark a run completed from render
+ * code — it confirms with the user, atomically builds + persists the
+ * snapshot, and reloads the page so the runner re-mounts in completed mode.
+ */
+export interface RunView {
+  /** Workers — live while in_progress, snapshot-frozen while completed. */
+  workers: WorkerData[];
+
+  /** Pipelines (keyed by alias) — live or snapshot-frozen. */
+  pipelines: Record<string, PipelineResult>;
+
+  /** State (working area). Live while in_progress; frozen while completed. */
+  state: WorkflowState;
+
+  /** True iff `instance.status === 'completed'`. */
+  isCompleted: boolean;
+
+  /** ISO timestamp data is "as of" — completed_at when completed, else now. */
+  asOf: string | null;
+
+  /**
+   * Mark the run completed. Returns true on success, false on user cancel
+   * or server error (errors are surfaced via window.alert for now).
+   */
+  complete(opts?: { confirm?: string }): Promise<boolean>;
 }
 
 // =============================================================================
@@ -221,11 +264,20 @@ export interface WorkflowInstance {
   /** Opportunity this instance is for */
   opportunity_id: number;
 
-  /** Current status: in_progress or completed */
+  /** Current status. `in_progress` is mutable, `completed` is immutable. */
   status: 'in_progress' | 'completed';
 
   /** Flexible state object - structure defined by the workflow */
   state: WorkflowState;
+
+  /** ISO timestamp the run was completed (null while in_progress). */
+  completed_at?: string | null;
+
+  /**
+   * Saved snapshot — null while in_progress, populated on completion.
+   * Render code reads this via the `useRunView` helper, not directly.
+   */
+  snapshot?: Record<string, unknown> | null;
 }
 
 /**
@@ -677,15 +729,19 @@ export interface SaveWorkerResultResponse {
   error?: string;
 }
 
-export interface CompleteRunParams {
-  overall_result?: string;
-  notes?: string;
-}
+/**
+ * Body for POST /api/run/<id>/complete/. The endpoint takes no input —
+ * the snapshot is built server-side from the template's hook and the
+ * current pipelines/workers/state. Kept as an empty interface for
+ * forward compatibility (e.g. future per-completion notes).
+ */
+export interface CompleteRunParams {}
 
 export interface CompleteRunResponse {
   success: boolean;
-  status?: string;
-  overall_result?: string;
+  status?: 'completed';
+  completed_at?: string;
+  snapshot?: Record<string, unknown>;
   error?: string;
 }
 
@@ -726,6 +782,8 @@ export interface WorkflowDataFromDjango {
     opportunity_id: number;
     status: string;
     state: WorkflowState;
+    completed_at?: string | null;
+    snapshot?: Record<string, unknown> | null;
   };
   workers: WorkerData[];
   pipeline_data?: Record<string, PipelineResult>;
@@ -734,12 +792,13 @@ export interface WorkflowDataFromDjango {
     taskUrlBase: string;
   };
   apiEndpoints: {
-    updateState: string;
+    updateState: string | null;
     getWorkers: string;
     getPipelineData?: string;
     streamPipelineData?: string;
     saveWorkerResult?: string;
-    completeRun?: string;
+    completeRun?: string | null;
+    getSnapshot?: string | null;
   };
   render_code?: string;
   is_edit_mode?: boolean;

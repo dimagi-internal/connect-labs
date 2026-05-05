@@ -13,7 +13,7 @@ This is a pure API client with no local database storage.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import httpx
 from django.conf import settings
@@ -97,11 +97,19 @@ class WorkflowRenderCodeRecord(LocalLabsRecord):
         return self.data.get("version", 1)
 
 
-# Workflow run status enum. Two states only — failed runs are deleted, not
-# transitioned. See docs/plans/2026-04-30-run-lifecycle.md for the design.
-RUN_STATUS_ACTIVE = "active"
-RUN_STATUS_FROZEN = "frozen"
-RUN_STATUSES = frozenset({RUN_STATUS_ACTIVE, RUN_STATUS_FROZEN})
+# Workflow run status enum. Two states only — abandoned runs are
+# indistinguishable from in-progress, so the user explicitly marking a run
+# completed is the only terminal transition. See docs/plans/2026-05-04-run-state-final.md.
+RUN_STATUS_IN_PROGRESS = "in_progress"
+RUN_STATUS_COMPLETED = "completed"
+RUN_STATUSES = frozenset({RUN_STATUS_IN_PROGRESS, RUN_STATUS_COMPLETED})
+
+# Defensive mapping: any prod row that the (now-reverted) 04-30 migration
+# touched will read back through the proxy as the canonical value.
+_LEGACY_STATUS_MAP = {
+    "active": RUN_STATUS_IN_PROGRESS,
+    "frozen": RUN_STATUS_COMPLETED,
+}
 
 
 class WorkflowRunRecord(LocalLabsRecord):
@@ -127,29 +135,28 @@ class WorkflowRunRecord(LocalLabsRecord):
 
     @property
     def status(self):
-        """Run status. Defaults to "active" for legacy/missing values.
+        """Run status. Two values only: in_progress, completed.
 
-        New lifecycle (2026-04-30): only "active" or "frozen". Legacy values
-        ("in_progress", "completed", etc.) are migrated to one of the two by
-        the migrate_run_statuses management command. Until that runs, this
-        property maps unknowns to "active" so render code never sees a third
-        state.
+        Defaults to in_progress for missing/unknown values so render code never
+        sees a third state. Legacy `active`/`frozen` (from a brief vocabulary
+        detour) map back to in_progress/completed defensively, so any row a
+        deleted migration may have touched still reads correctly.
         """
         top = self.data.get("status") or self.data.get("state", {}).get("status")
         if top in RUN_STATUSES:
             return top
-        # Legacy mappings — keep render code unaware of the rename.
-        if top == "completed":
-            return RUN_STATUS_FROZEN
-        return RUN_STATUS_ACTIVE
+        if top in _LEGACY_STATUS_MAP:
+            return _LEGACY_STATUS_MAP[top]
+        return RUN_STATUS_IN_PROGRESS
 
     @property
-    def is_frozen(self) -> bool:
-        return self.status == RUN_STATUS_FROZEN
+    def is_completed(self) -> bool:
+        return self.status == RUN_STATUS_COMPLETED
 
     @property
-    def frozen_at(self):
-        return self.data.get("frozen_at")
+    def completed_at(self):
+        # Some legacy rows may have stamped `frozen_at` instead.
+        return self.data.get("completed_at") or self.data.get("frozen_at")
 
     @property
     def state(self):
@@ -640,7 +647,7 @@ class WorkflowDataAccess(BaseDataAccess):
             "definition_id": definition_id,
             "period_start": period_start,
             "period_end": period_end,
-            "status": RUN_STATUS_ACTIVE,
+            "status": RUN_STATUS_IN_PROGRESS,
             "state": initial_state or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -700,154 +707,31 @@ class WorkflowDataAccess(BaseDataAccess):
 
         return deleted_counts
 
-    def get_or_create_run(self, definition_id: int, opportunity_id: int) -> WorkflowRunRecord:
-        """Get or create a workflow run for the current week."""
-        today = datetime.now(timezone.utc).date()
-        week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=6)
-
-        runs = self.list_runs(definition_id)
-        for run in runs:
-            if run.opportunity_id == opportunity_id and run.data.get("period_start") == week_start.isoformat():
-                return run
-
-        data = {
-            "definition_id": definition_id,
-            "period_start": week_start.isoformat(),
-            "period_end": week_end.isoformat(),
-            "status": RUN_STATUS_ACTIVE,
-            "state": {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        record = self.labs_api.create_record(
-            experiment=self.EXPERIMENT,
-            type="workflow_run",
-            data=data,
-        )
-
-        return WorkflowRunRecord(
-            {
-                "id": record.id,
-                "experiment": record.experiment,
-                "type": record.type,
-                "data": record.data,
-                "opportunity_id": record.opportunity_id,
-            }
-        )
-
     def update_run_state(
         self, run_id: int, new_state: dict, run: WorkflowRunRecord | None = None
     ) -> WorkflowRunRecord | None:
-        """Update workflow run state (merge with existing).
+        """Merge new_state into run.data['state']. In-progress runs only.
 
-        Args:
-            run_id: The workflow run ID.
-            new_state: Dict of state keys to merge.
-            run: Optional pre-fetched run record (avoids redundant API call).
+        Returns None if the run doesn't exist or is already completed (caller
+        view turns that into a 409). Status and period_* are not accepted in
+        new_state — those are managed by create_run / complete_run.
         """
         if run is None:
             run = self.get_run(run_id)
         if not run:
             return None
+        if run.is_completed:
+            # Caller is responsible for translating this into a 409 response.
+            return None
+
+        # Strip protected keys silently — render code occasionally piggybacks
+        # them and we want a clean separation between state writes and status
+        # transitions. Status changes go through complete_run only.
+        sanitized = {k: v for k, v in new_state.items() if k not in {"status", "period_start", "period_end"}}
 
         current_state = run.data.get("state", {})
-        merged_state = {**current_state, **new_state}
+        merged_state = {**current_state, **sanitized}
         updated_data = {**run.data, "state": merged_state}
-
-        # Promote certain fields from state to top-level data so WorkflowRunRecord
-        # properties (which check top-level first) reflect the latest values.
-        for key in ("status", "period_start", "period_end"):
-            if key in new_state:
-                updated_data[key] = new_state[key]
-
-        result = self.labs_api.update_record(
-            record_id=run_id,
-            experiment=self.EXPERIMENT,
-            type="workflow_run",
-            data=updated_data,
-            current_record=run,
-        )
-        if result:
-            return WorkflowRunRecord(
-                {
-                    "id": result.id,
-                    "experiment": result.experiment,
-                    "type": result.type,
-                    "data": result.data,
-                    "opportunity_id": result.opportunity_id,
-                }
-            )
-        return None
-
-    def save_run_snapshot(self, run_id: int, snapshot: dict) -> WorkflowRunRecord | None:
-        """Save a data snapshot on the run (writes to run.data['snapshot']).
-
-        Unlike update_run_state() which merges into run.data['state'],
-        this writes directly to run.data['snapshot'] as a sibling key.
-        """
-        run = self.get_run(run_id)
-        if not run:
-            return None
-
-        updated_data = {**run.data, "snapshot": snapshot}
-
-        result = self.labs_api.update_record(
-            record_id=run_id,
-            experiment=self.EXPERIMENT,
-            type="workflow_run",
-            data=updated_data,
-            current_record=run,
-        )
-        if result:
-            return WorkflowRunRecord(
-                {
-                    "id": result.id,
-                    "experiment": result.experiment,
-                    "type": result.type,
-                    "data": result.data,
-                    "opportunity_id": result.opportunity_id,
-                }
-            )
-        return None
-
-    def freeze_run(
-        self,
-        run_id: int,
-        snapshot: dict,
-        run: WorkflowRunRecord | None = None,
-    ) -> WorkflowRunRecord | None:
-        """Atomic active→frozen transition: persist the snapshot, set status=frozen,
-        stamp frozen_at. Single LabsRecord write.
-
-        Caller (the freeze API endpoint) is responsible for building the snapshot
-        (via the template's build_snapshot hook). This method just persists it
-        atomically with the status transition. If the snapshot build raises, the
-        caller never invokes this — the run stays active.
-
-        Args:
-            run_id: The workflow run ID.
-            snapshot: Snapshot blob to persist (must be a dict).
-            run: Optional pre-fetched run record (avoids redundant API call).
-
-        Returns:
-            Updated WorkflowRunRecord, or None if not found.
-        """
-        if run is None:
-            run = self.get_run(run_id)
-        if not run:
-            return None
-
-        # Stamp freeze time inside the snapshot for caller convenience and also
-        # at the top level so the proxy property exposes it without unwrapping.
-        frozen_at = datetime.now(timezone.utc).isoformat()
-        snapshot_with_meta = {**snapshot, "frozen_at": frozen_at}
-        updated_data = {
-            **run.data,
-            "status": RUN_STATUS_FROZEN,
-            "frozen_at": frozen_at,
-            "snapshot": snapshot_with_meta,
-        }
 
         result = self.labs_api.update_record(
             record_id=run_id,
@@ -871,43 +755,34 @@ class WorkflowDataAccess(BaseDataAccess):
     def complete_run(
         self,
         run_id: int,
-        overall_result: str = "completed",
-        notes: str = "",
+        snapshot: dict,
         run: WorkflowRunRecord | None = None,
     ) -> WorkflowRunRecord | None:
-        """DEPRECATED: kept as a compat shim for render code that calls
-        `actions.completeRun(...)`. Now sets status to "frozen" without taking
-        a snapshot — equivalent to a freeze with no snapshot data, marking the
-        run as historical.
+        """Atomic in_progress → completed transition: persist the snapshot,
+        flip status, stamp completed_at — single LabsRecord write.
 
-        New code should use `freeze_run(run_id, snapshot)` directly via the
-        framework's snapshot-build endpoint, which produces a meaningful
-        snapshot via the template's build_snapshot hook.
+        The caller (the completion API endpoint) builds the snapshot via the
+        template's build_snapshot hook before calling this. If the build
+        raises, the caller never invokes complete_run and the run stays
+        in_progress.
 
-        Args:
-            run_id: The workflow run ID.
-            overall_result: Completion result string (preserved in state for compat).
-            notes: Completion notes (preserved in state for compat).
-            run: Optional pre-fetched run record.
-
-        Returns:
-            Updated WorkflowRunRecord, or None if not found.
+        Returns None if the run is missing or already completed.
         """
         if run is None:
             run = self.get_run(run_id)
         if not run:
             return None
+        if run.is_completed:
+            # Idempotency: completed is terminal. Caller should 409 rather than
+            # silently re-write a snapshot the user can't re-derive.
+            return None
 
-        current_state = run.data.get("state", {})
+        completed_at = datetime.now(timezone.utc).isoformat()
         updated_data = {
             **run.data,
-            "status": RUN_STATUS_FROZEN,
-            "frozen_at": datetime.now(timezone.utc).isoformat(),
-            "state": {
-                **current_state,
-                "overall_result": overall_result,
-                "notes": notes,
-            },
+            "status": RUN_STATUS_COMPLETED,
+            "completed_at": completed_at,
+            "snapshot": snapshot,
         }
 
         result = self.labs_api.update_record(

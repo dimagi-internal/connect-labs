@@ -33,15 +33,13 @@ urlpatterns = [
     # API endpoints - Workflow runs
     path("api/run/<int:run_id>/state/", views.update_state_api, name="api_update_state"),
     path("api/run/<int:run_id>/worker-result/", views.save_worker_result_api, name="api_save_worker_result"),
+    # Single terminal-transition verb. Atomic: build snapshot via the template's
+    # `build_snapshot` hook (or the snapshot_inputs fallback), then flip status to
+    # completed in one LabsRecord write. See WORKFLOW_REFERENCE.md §"Saved-runs templates".
     path("api/run/<int:run_id>/complete/", views.complete_run_api, name="api_complete_run"),
-    # Generic run snapshot endpoints (template-agnostic — the build endpoint dispatches
-    # to the template's `build_snapshot(pipelines, state, opportunity_id)` hook).
-    # `build` is the original endpoint name kept for back-compat; `freeze` points at
-    # the same handler under a name that better matches the new lifecycle (atomic
-    # snapshot + status active→frozen transition).
+    # Read-only snapshot inspection (debug/admin). Render code reads
+    # `instance.snapshot` from props via the `useRunView` helper, not this URL.
     path("api/run/<int:run_id>/snapshot/", views.get_snapshot_api, name="api_get_snapshot"),
-    path("api/run/<int:run_id>/snapshot/build/", views.build_snapshot_api, name="api_build_snapshot"),
-    path("api/run/<int:run_id>/freeze/", views.build_snapshot_api, name="api_freeze_run"),
     # Explicit run creation — replaces the implicit auto-create that fired on every
     # visit to /workflow/<def>/run/ with no run_id.
     path("api/<int:definition_id>/run/start/", views.start_run_api, name="api_start_run"),

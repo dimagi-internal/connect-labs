@@ -1,13 +1,12 @@
 """Unit tests for the workflow snapshot framework.
 
 Covers the cross-template plumbing that turns `template.build_snapshot(...)` +
-`supports_snapshots: True` into a frozen blob on `run.data["snapshot"]`. The
-per-template hook contents are tested separately at the template level.
+`supports_saved_runs: True` (or `snapshot_inputs`) into a snapshot blob on
+`run.data["snapshot"]` at completion time. Per-template hook contents are
+tested separately at the template level.
 """
 
 from __future__ import annotations
-
-import pytest
 
 from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template, list_templates
 
@@ -18,28 +17,25 @@ class TestBuildSnapshotDispatch:
     def test_returns_none_for_unknown_template(self):
         assert build_snapshot_for_template("does_not_exist", pipelines={}, state={}, opportunity_id=1) is None
 
-    def test_returns_none_when_template_lacks_supports_snapshots(self):
-        # bulk_image_audit is a real registered template that doesn't declare snapshots.
+    def test_returns_none_when_template_lacks_supports_saved_runs(self):
+        # bulk_image_audit is action-shaped — no saved runs, so completion is
+        # not a thing for it and build_snapshot_for_template returns None.
         assert "bulk_image_audit" in TEMPLATES, "fixture assumption: template must be registered"
-        assert not TEMPLATES["bulk_image_audit"].get("supports_snapshots")
+        assert not TEMPLATES["bulk_image_audit"].get("supports_saved_runs")
         assert build_snapshot_for_template("bulk_image_audit", pipelines={}, state={}, opportunity_id=1) is None
 
-    def test_performance_review_declares_supports_snapshots(self):
-        """First adopter — confirm the flag flows through to list_templates output.
-
-        kmc_longitudinal does NOT opt in: continuous tracking, no "moment of
-        completion." Snapshots are for action-shaped templates (a periodic review
-        of a worker cohort, an audit batch, etc).
-        """
+    def test_performance_review_declares_supports_saved_runs(self):
+        """Reference adopter — confirm the flag flows through to list_templates output."""
         entry = next(t for t in list_templates() if t["key"] == "performance_review")
-        assert entry["supports_snapshots"] is True
-        # Negative case: kmc_longitudinal is continuous-tracking, opts out.
+        assert entry["supports_saved_runs"] is True
+        # kmc_longitudinal opts out: continuous tracking has no "moment of completion."
         kmc_entry = next(t for t in list_templates() if t["key"] == "kmc_longitudinal")
-        assert kmc_entry["supports_snapshots"] is False
+        assert kmc_entry["supports_saved_runs"] is False
 
     def test_performance_review_build_snapshot_freezes_workers_and_decisions(self):
-        """The performance_review hook captures: the worker list at freeze time, the
-        per-worker review decisions from state, and a summary breakdown by status.
+        """The hook captures: workers at completion, per-worker decisions under
+        `state.worker_states` (so view.state.worker_states reads identically
+        in_progress vs completed), and a precomputed by-status summary.
         """
         workers = [
             {"username": "alice", "name": "Alice", "visit_count": 12, "opportunity_id": 1},
@@ -65,13 +61,14 @@ class TestBuildSnapshotDispatch:
         assert snap["schema_version"] == 1
         # Workers frozen as-is, including opportunity_id tag.
         assert len(snap["workers"]) == 3
-        # Per-worker decisions preserved.
-        assert snap["worker_states"]["alice"]["status"] == "confirmed"
+        # Per-worker decisions live under snapshot.state.worker_states so the
+        # view helper exposes them as view.state.worker_states.
+        assert snap["state"]["worker_states"]["alice"]["status"] == "confirmed"
         # Multi-opp tracking baked in.
         assert snap["opportunity_ids"] == [1, 2]
         # Summary: total + reviewed + by_status counts.
         assert snap["summary"]["total"] == 3
-        assert snap["summary"]["reviewed"] == 2  # alice + bob, carol is still pending
+        assert snap["summary"]["reviewed"] == 2  # alice + bob, carol still pending
         assert snap["summary"]["by_status"] == {"confirmed": 1, "needs_audit": 1, "pending": 1}
 
     def test_performance_review_build_snapshot_handles_empty_state(self):
@@ -90,21 +87,102 @@ class TestBuildSnapshotDispatch:
         assert snap["summary"]["by_status"] == {"pending": 1}
 
 
-class TestSnapshotApiEndpoints:
-    """Endpoint-level: build_snapshot_api wires the dispatch + persistence + freeze stamp."""
+class TestDefaultHookSnapshotInputs:
+    """Templates that opt in without a `build_snapshot` hook get the framework
+    default, which honors a declarative `snapshot_inputs` manifest."""
 
-    @pytest.mark.django_db
-    def test_get_snapshot_api_returns_404_for_missing_run(self, client, settings):
-        # Lightweight sanity — full request lifecycle covered in integration tests.
-        # Just verify the URL is reachable and returns the framework's 404 shape.
-        from django.urls import reverse
+    def _stub_template(self, monkeypatch, **template_overrides):
+        """Register a temporary stub template for default-hook testing."""
+        key = "_test_default_hook"
+        template = {
+            "key": key,
+            "name": "Test default hook",
+            "description": "stub",
+            "supports_saved_runs": True,
+            **template_overrides,
+        }
+        monkeypatch.setitem(TEMPLATES, key, template)
+        return key
 
-        # Without auth this returns a redirect; we just check URL resolves.
-        url = reverse("labs:workflow:api_get_snapshot", kwargs={"run_id": 999999})
-        assert url.endswith("/api/run/999999/snapshot/")
+    def test_default_hook_with_full_pipelines_workers_state(self, monkeypatch):
+        """No snapshot_inputs declared — falls back to dump-everything (with
+        a logged warning)."""
+        key = self._stub_template(monkeypatch)
+        snap = build_snapshot_for_template(
+            key,
+            pipelines={"visits": {"rows": [{"id": 1}]}},
+            state={"foo": "bar"},
+            opportunity_id=42,
+            workers=[{"username": "u"}],
+            opportunity_ids=[42],
+        )
+        assert snap is not None
+        assert snap["pipelines"] == {"visits": {"rows": [{"id": 1}]}}
+        assert snap["workers"] == [{"username": "u"}]
+        assert snap["state"] == {"foo": "bar"}
+        assert snap["opportunity_ids"] == [42]
 
-    def test_build_snapshot_url_pattern_resolves(self):
-        from django.urls import reverse
+    def test_default_hook_filters_to_declared_pipeline_aliases(self, monkeypatch):
+        key = self._stub_template(
+            monkeypatch,
+            snapshot_inputs={"pipelines": ["visits"]},
+        )
+        snap = build_snapshot_for_template(
+            key,
+            pipelines={
+                "visits": {"rows": [{"id": 1}]},
+                "registrations": {"rows": [{"id": 2}]},  # not declared — should drop
+            },
+            state={},
+            opportunity_id=1,
+            workers=[],
+            opportunity_ids=[1],
+        )
+        assert "visits" in snap["pipelines"]
+        assert "registrations" not in snap["pipelines"]
 
-        url = reverse("labs:workflow:api_build_snapshot", kwargs={"run_id": 999999})
-        assert url.endswith("/api/run/999999/snapshot/build/")
+    def test_default_hook_filters_state_keys(self, monkeypatch):
+        key = self._stub_template(
+            monkeypatch,
+            snapshot_inputs={"state_keys": ["worker_states"]},
+        )
+        snap = build_snapshot_for_template(
+            key,
+            pipelines={},
+            state={"worker_states": {"a": {}}, "ui_scratch": {"sort": "name"}},
+            opportunity_id=1,
+            workers=[],
+        )
+        assert snap["state"] == {"worker_states": {"a": {}}}
+
+    def test_default_hook_can_omit_workers(self, monkeypatch):
+        key = self._stub_template(
+            monkeypatch,
+            snapshot_inputs={"workers": False},
+        )
+        snap = build_snapshot_for_template(
+            key,
+            pipelines={},
+            state={},
+            opportunity_id=1,
+            workers=[{"username": "should_not_be_captured"}],
+        )
+        assert "workers" not in snap
+
+    def test_default_hook_warns_on_missing_pipeline_alias(self, monkeypatch, caplog):
+        """If a declared alias isn't in the live pipelines dict, we log and skip it
+        — this is contract drift between the template and its workflow definition."""
+        key = self._stub_template(
+            monkeypatch,
+            snapshot_inputs={"pipelines": ["visits", "registrations"]},
+        )
+        with caplog.at_level("WARNING"):
+            snap = build_snapshot_for_template(
+                key,
+                pipelines={"visits": {"rows": []}},  # registrations missing
+                state={},
+                opportunity_id=1,
+                workers=[],
+            )
+        assert "registrations" in caplog.text
+        assert "registrations" not in snap["pipelines"]

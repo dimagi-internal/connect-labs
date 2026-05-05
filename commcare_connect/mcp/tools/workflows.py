@@ -99,7 +99,12 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
     description=(
         "Fetch everything needed to iterate on a workflow in one call: "
         "definition (name, description, statuses, config), latest render_code "
-        "with its version number, and linked pipeline metadata. "
+        "with its version number, linked pipeline metadata, and (if the "
+        "workflow was created from a run-shaped template) saved-runs metadata "
+        "from the template registry: supports_saved_runs, snapshot_inputs, "
+        "and snapshot_schema. Use saved-runs metadata to know whether render "
+        "code should expect the `view` prop (in_progress|completed lifecycle) "
+        "and what shape `view.X` will have when the run is completed. "
         "Set include_render_code=false for a lighter response when you only "
         "need metadata (render_code can be 20+ KB)."
     ),
@@ -166,6 +171,30 @@ def workflow_get(user, workflow_id: int, opportunity_id: int, include_render_cod
         "render_code_version": render_code.version if render_code else None,
         "pipeline_sources": enriched_sources,
     }
+
+    # Saved-runs metadata — only present when the workflow was created from a
+    # template that's still registered. Tells callers whether render code
+    # should expect the `view` prop and what shape the snapshot takes when
+    # the run is completed. See WORKFLOW_REFERENCE.md §"Saved-runs templates".
+    from commcare_connect.workflow.templates import TEMPLATES as _TEMPLATES
+
+    template = _TEMPLATES.get(definition.template_type) if definition.template_type else None
+    if template is not None:
+        saved_runs_meta: dict = {
+            "supports_saved_runs": bool(template.get("supports_saved_runs", False)),
+        }
+        # Only include the optional manifests when present — keeps the response
+        # tight for action-shaped templates that opt out entirely.
+        if "snapshot_inputs" in template:
+            saved_runs_meta["snapshot_inputs"] = template["snapshot_inputs"]
+        if "snapshot_schema" in template:
+            saved_runs_meta["snapshot_schema"] = template["snapshot_schema"]
+        # Surface whether the template defines a custom build_snapshot hook
+        # (callable) vs relying on the default-input fallback. Useful for the
+        # agent to know whether the snapshot shape is computed or verbatim.
+        saved_runs_meta["has_build_snapshot_hook"] = callable(template.get("build_snapshot"))
+        out["saved_runs"] = saved_runs_meta
+
     if include_render_code:
         out["render_code"] = render_code.component_code if render_code else None
     return out
