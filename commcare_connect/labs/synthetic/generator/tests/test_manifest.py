@@ -76,3 +76,20 @@ def test_manifest_rejects_end_before_start():
     )
     with pytest.raises(ManifestValidationError):
         Manifest.from_yaml(bad)
+
+
+def test_manifest_rejects_coaching_arc_with_unknown_flw_id():
+    base = "\n".join(
+        line for line in VALID_MANIFEST_YAML.splitlines() if line.strip() != "coaching_arcs: []"
+    )
+    bad = base + """
+coaching_arcs:
+  - flw_id: not_a_real_persona
+    week_triggered: 2
+    persona: supportive_coach
+    target_behavior: improve accuracy
+    transcript:
+      - { role: bot, text: hi, ts: 2026-02-15T09:00:00 }
+"""
+    with pytest.raises(ManifestValidationError):
+        Manifest.from_yaml(bad)

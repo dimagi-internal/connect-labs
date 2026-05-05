@@ -9,7 +9,7 @@ saved manifest.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import (
@@ -18,7 +18,6 @@ from pydantic import (
     NonNegativeInt,
     PositiveInt,
     ValidationError,
-    field_validator,
     model_validator,
 )
 
@@ -151,6 +150,13 @@ class Timeline(BaseModel):
     def _check_dates(self):
         if self.end_date <= self.start_date:
             raise ValueError("end_date must be after start_date")
+        span_days = (self.end_date - self.start_date).days
+        expected_weeks = round(span_days / 7)
+        if abs(self.weeks - expected_weeks) > 1:
+            raise ValueError(
+                f"weeks={self.weeks} is inconsistent with date range "
+                f"({span_days} days = ~{expected_weeks} weeks)"
+            )
         return self
 
 
@@ -177,13 +183,6 @@ class Manifest(BaseModel):
             return cls.model_validate(data)
         except ValidationError as exc:
             raise ManifestValidationError(str(exc)) from exc
-
-    @field_validator("coaching_arcs")
-    @classmethod
-    def _arcs_reference_known_flws(cls, arcs, info):
-        # Cross-field check happens in _check_references below; keep field validator
-        # as a no-op for ordering.
-        return arcs
 
     @model_validator(mode="after")
     def _check_references(self):
