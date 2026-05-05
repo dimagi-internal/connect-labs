@@ -15,10 +15,28 @@ from commcare_connect.labs.models import LocalLabsRecord
 logger = logging.getLogger(__name__)
 
 
-class LabsAPIError(Exception):
-    """Exception raised for Labs API errors."""
+_BODY_TRUNCATION = 2000
 
-    pass
+
+class LabsAPIError(Exception):
+    """Exception raised for Labs API errors.
+
+    For HTTP errors with a response, ``status_code`` and ``body`` carry the
+    upstream detail so MCP clients can debug the failure without server log
+    access. For pure network errors, both are ``None``.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None, body: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body[:_BODY_TRUNCATION] if body is not None else None
+
+
+def _wrap_http_error(message: str, exc: httpx.HTTPError) -> LabsAPIError:
+    response = getattr(exc, "response", None)
+    status_code = response.status_code if response is not None else None
+    body = response.text if response is not None else None
+    return LabsAPIError(message, status_code=status_code, body=body)
 
 
 class LabsRecordAPIClient:
@@ -155,7 +173,7 @@ class LabsRecordAPIClient:
 
         except httpx.HTTPError as e:
             logger.error(f"Failed to fetch records: {e}", exc_info=True)
-            raise LabsAPIError(f"Failed to fetch records from production API: {e}") from e
+            raise _wrap_http_error(f"Failed to fetch records from production API: {e}", e) from e
 
     def get_record_by_id(
         self,
@@ -205,7 +223,7 @@ class LabsRecordAPIClient:
 
         except httpx.HTTPError as e:
             logger.error(f"Failed to fetch record {record_id}: {e}", exc_info=True)
-            raise LabsAPIError(f"Failed to fetch record {record_id}: {e}") from e
+            raise _wrap_http_error(f"Failed to fetch record {record_id}: {e}", e) from e
 
     def create_record(
         self,
@@ -272,7 +290,7 @@ class LabsRecordAPIClient:
 
         except httpx.HTTPError as e:
             logger.error(f"Failed to create record: {e}", exc_info=True)
-            raise LabsAPIError(f"Failed to create record in production API: {e}") from e
+            raise _wrap_http_error(f"Failed to create record in production API: {e}", e) from e
 
     def update_record(
         self,
@@ -371,7 +389,7 @@ class LabsRecordAPIClient:
 
         except httpx.HTTPError as e:
             logger.error(f"Failed to update record: {e}", exc_info=True)
-            raise LabsAPIError(f"Failed to update record in production API: {e}") from e
+            raise _wrap_http_error(f"Failed to update record in production API: {e}", e) from e
 
     def delete_record(self, record_id: int) -> None:
         """Delete a single record.
@@ -407,4 +425,4 @@ class LabsRecordAPIClient:
 
         except httpx.HTTPError as e:
             logger.error(f"Failed to delete records: {e}", exc_info=True)
-            raise LabsAPIError(f"Failed to delete records in production API: {e}") from e
+            raise _wrap_http_error(f"Failed to delete records in production API: {e}", e) from e
