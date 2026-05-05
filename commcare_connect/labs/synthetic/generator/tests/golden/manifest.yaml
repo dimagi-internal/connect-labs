@@ -1,0 +1,34 @@
+opportunity_id: 9999
+opportunity_name: Golden Demo
+random_seed: 1234
+timeline:
+  start_date: 2026-02-01
+  end_date: 2026-02-28
+  weeks: 4
+  visit_cadence_per_week_per_flw: { mean: 4, stddev: 0 }
+flw_personas:
+  - id: asha
+    display_name: Asha M.
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.92, stddev: 0.0 }
+    completeness_distribution: { mean: 0.95, stddev: 0.0 }
+    flag_rate: 0.0
+  - id: ravi
+    archetype: struggling
+    accuracy_distribution: { mean: 0.62, stddev: 0.0 }
+    completeness_distribution: { mean: 0.80, stddev: 0.0 }
+    flag_rate: 0.5
+beneficiary_cohorts:
+  - id: primary
+    size: 50
+    field_distributions:
+      "form.weight_kg": { distribution: normal, mean: 12.4, stddev: 0.5 }
+    progression: flat
+anomalies: []
+kpi_config:
+  - kpi: accuracy
+    field_path: form.weight_kg
+    aggregation: validated_rate
+    threshold_underperform: 0.75
+    threshold_target: 0.90
+coaching_arcs: []
