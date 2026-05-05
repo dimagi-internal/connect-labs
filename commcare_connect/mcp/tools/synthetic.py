@@ -25,6 +25,51 @@ from ..tool_registry import MCPToolError, register
 logger = logging.getLogger(__name__)
 
 
+def _accessible_opp_ids_for_user(user) -> set[int]:
+    """Return the set of opportunity IDs the user has Connect access to.
+
+    The labs UI's ``registry.accessible_opp_ids(request)`` reads the org
+    data the OAuth callback stashed in the user's session. MCP tools don't
+    have a request, so we fetch the same data fresh from production using
+    the user's stored Connect access token. This is the same upstream
+    endpoint (``/export/opp_org_program_list/``) the OAuth callback hits.
+
+    Returns an empty set if the user has no Connect token, or if the
+    upstream call fails — callers must treat empty as "deny everything".
+    """
+    from commcare_connect.labs.integrations.connect.oauth import (
+        fetch_user_organization_data,
+    )
+
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        return set()
+
+    org_data = fetch_user_organization_data(token) or {}
+    return {
+        int(o["id"])
+        for o in org_data.get("opportunities", [])
+        if o.get("id") is not None
+    }
+
+
+def _require_opportunity_access(user, opportunity_id: int) -> None:
+    """Raise PERMISSION_DENIED if the user has no access to ``opportunity_id``.
+
+    Checked against the user's live Connect membership data — same source
+    the labs synthetic UI uses, just without the request-bound session
+    detour. Empty set (no token, upstream failure) is treated as "no
+    access" so an unauthenticated MCP caller can't slip a write through.
+    """
+    accessible = _accessible_opp_ids_for_user(user)
+    if opportunity_id not in accessible:
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"opportunity_id {opportunity_id} is not in your accessible set",
+        )
+
+
 @register(
     name="synthetic_register",
     description=(
@@ -53,6 +98,7 @@ def synthetic_register(
     enabled: bool = True,
     label: str | None = None,
 ) -> dict[str, Any]:
+    _require_opportunity_access(user, opportunity_id)
     defaults: dict[str, Any] = {
         "gdrive_folder_id": gdrive_folder_id,
         "enabled": enabled,
@@ -89,6 +135,7 @@ def synthetic_register(
     is_write=True,
 )
 def synthetic_disable(user, *, opportunity_id: int) -> dict[str, Any]:
+    _require_opportunity_access(user, opportunity_id)
     try:
         row = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id)
     except SyntheticOpportunity.DoesNotExist:
@@ -199,6 +246,7 @@ def synthetic_generate_from_manifest(
     opportunity_id: int,
     manifest_yaml: str,
 ) -> dict[str, Any]:
+    _require_opportunity_access(user, opportunity_id)
     try:
         manifest = Manifest.from_yaml(manifest_yaml)
     except ManifestValidationError as exc:

@@ -4,7 +4,19 @@ import pytest
 
 import commcare_connect.mcp.tools.synthetic  # noqa: F401 — trigger @register side effects
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
-from commcare_connect.mcp.tool_registry import get_tool
+from commcare_connect.mcp.tool_registry import MCPToolError, get_tool
+
+
+@pytest.fixture(autouse=True)
+def _allow_opp_access(monkeypatch):
+    """By default, every test sees all opps as accessible.
+
+    Tests that exercise the permission denial path override this with
+    monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403).
+    """
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    monkeypatch.setattr(syn, "_require_opportunity_access", lambda user, opportunity_id: None)
 
 
 @pytest.mark.django_db
@@ -58,7 +70,6 @@ def test_synthetic_disable_clears_enabled_flag(user):
 
 @pytest.mark.django_db
 def test_synthetic_disable_404s_on_missing_row(user):
-    from commcare_connect.mcp.tool_registry import MCPToolError
     tool = get_tool("synthetic_disable")
     with pytest.raises(MCPToolError) as exc:
         tool.handler(user=user, opportunity_id=99999)
@@ -100,8 +111,11 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
     )
 
     class _FakeDrive:
-        def create_folder(self, name, parent_id): return f"folder-{name}"
-        def upload_file(self, fid, fname, content): return f"file-{fname}"
+        def create_folder(self, name, parent_id):
+            return f"folder-{name}"
+
+        def upload_file(self, fid, fname, content):
+            return f"file-{fname}"
 
     monkeypatch.setattr(syn_tools, "DriveClient", lambda: _FakeDrive())
     monkeypatch.setattr(
@@ -128,7 +142,6 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
 
 @pytest.mark.django_db
 def test_synthetic_generate_rejects_invalid_manifest(user):
-    from commcare_connect.mcp.tool_registry import MCPToolError
     tool = get_tool("synthetic_generate_from_manifest")
     with pytest.raises(MCPToolError) as exc:
         tool.handler(user=user, opportunity_id=1, manifest_yaml="not: valid: yaml: at all: :")
@@ -148,3 +161,91 @@ def test_all_phase6_tools_are_registered():
         "workflow_save_snapshot",
     }
     assert expected.issubset(names), f"missing tools: {expected - names}"
+
+
+# -----------------------------------------------------------------------------
+# Permission-denial tests (Plan A C3 fix)
+# -----------------------------------------------------------------------------
+
+
+def _raise_403(user, opportunity_id):
+    raise MCPToolError("PERMISSION_DENIED", "stubbed")
+
+
+@pytest.mark.django_db
+def test_synthetic_register_denies_inaccessible_opp(user, monkeypatch):
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
+    tool = get_tool("synthetic_register")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, opportunity_id=9999, gdrive_folder_id="f")
+    assert exc.value.code == "PERMISSION_DENIED"
+    # The DB row is never created when access is denied.
+    assert not SyntheticOpportunity.objects.filter(opportunity_id=9999).exists()
+
+
+@pytest.mark.django_db
+def test_synthetic_disable_denies_inaccessible_opp(user, monkeypatch):
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=9999, gdrive_folder_id="x", enabled=True
+    )
+    monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
+    tool = get_tool("synthetic_disable")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, opportunity_id=9999)
+    assert exc.value.code == "PERMISSION_DENIED"
+    # The row's enabled flag is unchanged.
+    assert SyntheticOpportunity.objects.get(opportunity_id=9999).enabled is True
+
+
+@pytest.mark.django_db
+def test_synthetic_generate_denies_inaccessible_opp(user, monkeypatch):
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
+    tool = get_tool("synthetic_generate_from_manifest")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, opportunity_id=9999, manifest_yaml="opportunity_id: 9999\n")
+    assert exc.value.code == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_accessible_opp_ids_uses_user_token(user, monkeypatch):
+    """The User-callable helper hits fetch_user_organization_data with the user's token."""
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    captured = {}
+
+    def _fake_token(u):
+        captured["user"] = u
+        return "tok-abc"
+
+    def _fake_fetch(token):
+        captured["token"] = token
+        return {"opportunities": [{"id": 1}, {"id": 2}, {"id": 3}]}
+
+    # Patch the symbols in the module where they're used.
+    monkeypatch.setattr(syn, "require_connect_token", _fake_token)
+    # fetch_user_organization_data is imported lazily inside the helper.
+    import commcare_connect.labs.integrations.connect.oauth as oauth_mod
+    monkeypatch.setattr(oauth_mod, "fetch_user_organization_data", _fake_fetch)
+
+    accessible = syn._accessible_opp_ids_for_user(user)
+    assert accessible == {1, 2, 3}
+    assert captured["token"] == "tok-abc"
+    assert captured["user"] is user
+
+
+@pytest.mark.django_db
+def test_accessible_opp_ids_empty_set_when_no_token(user, monkeypatch):
+    """Helper returns empty set when require_connect_token raises."""
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    def _raise(u):
+        raise MCPToolError("PERMISSION_DENIED", "no token")
+
+    monkeypatch.setattr(syn, "require_connect_token", _raise)
+    assert syn._accessible_opp_ids_for_user(user) == set()

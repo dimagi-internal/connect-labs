@@ -10,20 +10,19 @@ from commcare_connect.mcp.connect_token import require_connect_token
 from ..tool_registry import register
 
 
-def _labs_api_for_user(user) -> LabsRecordAPIClient:
-    """Build a LabsRecordAPIClient for the authenticated user.
+def _labs_api_for_user(user, opportunity_id: int) -> LabsRecordAPIClient:
+    """Build a LabsRecordAPIClient scoped to the given opportunity.
 
-    Passes opportunity_id=None at construction; the opportunity scope is
-    embedded in the record payload's ``data`` dict and sent as a POST-body
-    field rather than via the constructor, since ``create_record`` does not
-    accept ``opportunity_id`` as a call-time kwarg.
+    The ``opportunity_id`` is passed to the client constructor so every
+    write through ``create_record`` includes it in the upstream payload —
+    that's what triggers production's per-record permission check (the user
+    must have membership in the opp's owning organization).
 
     Raises whatever ``require_connect_token`` raises if the user has no
-    token; the MCP framework converts that to a structured error for the
-    caller.
+    token; the MCP framework converts that to a structured error.
     """
     token = require_connect_token(user)
-    return LabsRecordAPIClient(access_token=token)
+    return LabsRecordAPIClient(access_token=token, opportunity_id=opportunity_id)
 
 
 @register(
@@ -67,15 +66,16 @@ def task_create_synthetic(
     ocs_conversation: list[dict[str, Any]],
     status: str = "completed",
 ) -> dict[str, Any]:
-    client = _labs_api_for_user(user)
+    client = _labs_api_for_user(user, opportunity_id)
     try:
+        # opportunity_id is in the constructor; the client adds it to the
+        # POST payload itself, so we don't duplicate it in `data`.
         record = client.create_record(
             experiment="task",
             type="synthetic_task",
             data={
                 "title": subject,
                 "assigned_to": assigned_to,
-                "opportunity_id": opportunity_id,
                 "ocs_conversation": ocs_conversation,
                 "status": status,
                 "synthetic": True,
