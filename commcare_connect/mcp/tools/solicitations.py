@@ -40,23 +40,40 @@ def _serialize_record(record) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _coerce_id(value: str | int | None) -> int | None:
+    """Coerce an ID to int; return None for empty/invalid values."""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @register(
     name="list_solicitations",
     description=(
         "List solicitations from the Labs Record API. "
-        "Optionally filter by program_id, organization_id, status, or solicitation_type."
+        "Pass program_id or organization_id to scope the read so the prod-side "
+        "membership check authorizes non-public records — without scope, only "
+        "is_public=true records are returned."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "program_id": {
                 "type": "string",
-                "description": "Program ID to scope the listing (used as experiment filter).",
+                "description": (
+                    "Program ID to scope the listing. Used both as an experiment "
+                    "filter and as the prod-side membership scope that authorizes "
+                    "non-public records."
+                ),
             },
             "organization_id": {
                 "type": "string",
                 "description": (
-                    "Organization ID to scope the listing " "(used as experiment filter when program_id is absent)."
+                    "Organization ID to scope the listing when program_id is absent. "
+                    "Authorizes non-public records via org membership."
                 ),
             },
             "status": {
@@ -80,7 +97,11 @@ def list_solicitations(
 ) -> dict:
     """List solicitations from the Labs Record API."""
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        organization_id=_coerce_id(organization_id),
+    )
     try:
         kwargs: dict = {"type": "solicitation"}
         experiment = program_id or organization_id
@@ -99,7 +120,11 @@ def list_solicitations(
 
 @register(
     name="get_solicitation",
-    description="Get a single solicitation by its Labs Record ID.",
+    description=(
+        "Get a single solicitation by its Labs Record ID. "
+        "Pass program_id (or organization_id) to read non-public records — without "
+        "scope, prod returns only is_public=true solicitations."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -107,15 +132,38 @@ def list_solicitations(
                 "type": "integer",
                 "description": "The Labs Record ID of the solicitation.",
             },
+            "program_id": {
+                "type": "string",
+                "description": (
+                    "Program ID that owns the solicitation. Required to read non-public "
+                    "records (prod authorizes via program membership)."
+                ),
+            },
+            "organization_id": {
+                "type": "string",
+                "description": (
+                    "Organization ID alternative to program_id when the solicitation is "
+                    "scoped to an org rather than a program."
+                ),
+            },
         },
         "required": ["solicitation_id"],
         "additionalProperties": False,
     },
 )
-def get_solicitation(user, solicitation_id: int) -> dict:
+def get_solicitation(
+    user,
+    solicitation_id: int,
+    program_id: str | None = None,
+    organization_id: str | None = None,
+) -> dict:
     """Get a single solicitation by ID. Returns the record or raises NOT_FOUND."""
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        organization_id=_coerce_id(organization_id),
+    )
     try:
         record = client.get_record_by_id(solicitation_id, type="solicitation")
         if record is None:
@@ -252,7 +300,9 @@ def create_solicitation(
     name="update_solicitation",
     description=(
         "Update an existing solicitation. Merges update_data into the existing data dict; "
-        "keys present in update_data overwrite existing values, all other keys are preserved."
+        "keys present in update_data overwrite existing values, all other keys are preserved. "
+        "Pass program_id (or organization_id) for non-public records — the merge starts with "
+        "a get_record_by_id that needs scope to authorize the read."
     ),
     input_schema={
         "type": "object",
@@ -266,16 +316,40 @@ def create_solicitation(
                 "description": "Fields to update. Merged (shallow) into the existing data dict.",
                 "additionalProperties": True,
             },
+            "program_id": {
+                "type": "string",
+                "description": (
+                    "Program ID that owns the solicitation. Required for non-public "
+                    "records so prod authorizes the underlying read."
+                ),
+            },
+            "organization_id": {
+                "type": "string",
+                "description": (
+                    "Organization ID alternative to program_id when the solicitation is "
+                    "org-scoped rather than program-scoped."
+                ),
+            },
         },
         "required": ["solicitation_id", "update_data"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def update_solicitation(user, solicitation_id: int, update_data: dict) -> dict:
+def update_solicitation(
+    user,
+    solicitation_id: int,
+    update_data: dict,
+    program_id: str | None = None,
+    organization_id: str | None = None,
+) -> dict:
     """Update an existing solicitation by merging update_data into its data dict."""
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        organization_id=_coerce_id(organization_id),
+    )
     try:
         # Fetch current record to read current data and metadata
         current = client.get_record_by_id(solicitation_id, type="solicitation")
