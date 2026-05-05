@@ -5,8 +5,11 @@ MCP server. No SSE / long-polling yet — tools are short-running.
 """
 import json
 import logging
+import uuid
 
 from django.http import HttpRequest, JsonResponse
+
+from commcare_connect.labs.integrations.connect.api_client import LabsAPIError
 
 from .models import MCPAuditLog
 from .rate_limit import enforce_write_limit
@@ -60,11 +63,41 @@ def handle_request(request: HttpRequest, user) -> JsonResponse:
                 },
             }
         )
-    except Exception:
-        logger.exception("MCP internal error")
-        return _jsonrpc_error(msg_id, -32603, "Internal error")
+    except Exception as exc:
+        request_id = uuid.uuid4().hex[:8]
+        logger.exception("MCP internal error [request_id=%s]", request_id)
+        return _internal_error_response(msg_id, exc, request_id)
 
     return JsonResponse({"jsonrpc": "2.0", "id": msg_id, "result": result})
+
+
+def _internal_error_response(msg_id, exc: Exception, request_id: str) -> JsonResponse:
+    """Build a -32603 envelope that surfaces enough detail for the client to debug.
+
+    JSON-RPC 2.0 lets us populate `error.data` with arbitrary structured detail
+    (https://www.jsonrpc.org/specification#error_object). Clients that key off
+    the numeric code keep working; clients that care can read `error.data` for
+    exception type, request id, and (for upstream HTTP failures) the upstream
+    status + body.
+    """
+    details = {"exception_type": type(exc).__name__, "request_id": request_id}
+    if isinstance(exc, LabsAPIError):
+        if exc.status_code is not None:
+            details["upstream_status"] = exc.status_code
+        if exc.body is not None:
+            details["upstream_body"] = exc.body
+    detail_msg = str(exc) or "Internal error"
+    return JsonResponse(
+        {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {
+                "code": -32603,
+                "message": f"Internal error: {type(exc).__name__}: {detail_msg}"[:500],
+                "data": details,
+            },
+        }
+    )
 
 
 def _handle_initialize(params: dict) -> dict:
