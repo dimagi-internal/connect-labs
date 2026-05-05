@@ -13,7 +13,7 @@ from commcare_connect.workflow.data_access import WorkflowRunRecord
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _make_run(run_id=1, status="active", opportunity_id=42, username="testuser"):
+def _make_run(run_id=1, status="in_progress", opportunity_id=42, username="testuser"):
     """Build a minimal WorkflowRunRecord from a dict."""
     api_data = {
         "id": run_id,
@@ -92,7 +92,7 @@ def test_upsert_workflow_run_creates_new_file(mock_boto3, settings):
     mock_boto3.client.return_value = mock_s3
     mock_s3.get_object.side_effect = _no_such_key_error()
 
-    run = _make_run(run_id=1, status="active")
+    run = _make_run(run_id=1, status="in_progress")
     s3_export.upsert_workflow_run(run, opportunity_name="My Opp")
 
     mock_s3.put_object.assert_called_once()
@@ -104,7 +104,7 @@ def test_upsert_workflow_run_creates_new_file(mock_boto3, settings):
     assert len(reader) == 1
     assert reader[0]["run_id"] == "1"
     assert reader[0]["opportunity_name"] == "My Opp"
-    assert reader[0]["status"] == "active"
+    assert reader[0]["status"] == "in_progress"
 
 
 @patch("commcare_connect.labs.s3_export.boto3")
@@ -113,7 +113,7 @@ def test_upsert_workflow_run_replaces_existing_row(mock_boto3, settings):
     settings.LABS_EXPORTS_BUCKET = "test-bucket"
 
     existing_row = {f: "" for f in s3_export.WORKFLOW_RUN_FIELDS}
-    existing_row.update({"run_id": "1", "status": "active", "opportunity_name": "My Opp"})
+    existing_row.update({"run_id": "1", "status": "in_progress", "opportunity_name": "My Opp"})
 
     mock_s3 = MagicMock()
     mock_boto3.client.return_value = mock_s3
@@ -121,13 +121,13 @@ def test_upsert_workflow_run_replaces_existing_row(mock_boto3, settings):
         "Body": MagicMock(read=lambda: _csv_body([existing_row], s3_export.WORKFLOW_RUN_FIELDS))
     }
 
-    run = _make_run(run_id=1, status="frozen")
+    run = _make_run(run_id=1, status="completed")
     s3_export.upsert_workflow_run(run)
 
     body = mock_s3.put_object.call_args[1]["Body"].decode("utf-8")
     reader = list(csv.DictReader(io.StringIO(body)))
     assert len(reader) == 1
-    assert reader[0]["status"] == "frozen"
+    assert reader[0]["status"] == "completed"
     # Existing opportunity_name is preserved when new value is empty
     assert reader[0]["opportunity_name"] == "My Opp"
 
