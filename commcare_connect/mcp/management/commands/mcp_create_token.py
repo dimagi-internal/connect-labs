@@ -7,6 +7,7 @@ Usage:
 from django.core.management.base import BaseCommand, CommandError
 
 from commcare_connect.mcp.models import MCPAccessToken
+from commcare_connect.mcp.snippets import build_mcp_json_snippet
 from commcare_connect.users.models import User
 
 
@@ -38,17 +39,4 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Token created. Store it now — it is not retrievable later.\n"))
         self.stdout.write(f"Token: {raw}\n")
         self.stdout.write("\nAdd this to your .claude/mcp.json:\n")
-        config_snippet = (
-            "{\n"
-            '  "mcpServers": {\n'
-            '    "connect_labs": {\n'
-            '      "type": "http",\n'
-            '      "url": "https://labs.connect.dimagi.com/mcp/",\n'
-            '      "headers": {\n'
-            f'        "Authorization": "Bearer {raw}"\n'
-            "      }\n"
-            "    }\n"
-            "  }\n"
-            "}\n"
-        )
-        self.stdout.write(self.style.WARNING(config_snippet))
+        self.stdout.write(self.style.WARNING(build_mcp_json_snippet(raw)))
