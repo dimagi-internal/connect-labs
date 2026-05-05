@@ -311,57 +311,30 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, links, actions, onU
 }"""
 
 
-def build_snapshot(*, workers: list = None, state: dict = None, opportunity_ids: list = None, **_kwargs) -> dict:
-    """Capture the weekly review at completion: workers reviewed + decisions + summary.
+# Snapshot contract for performance_review.
+#
+# Captured verbatim via the framework's default hook (see
+# templates/__init__.py:_default_snapshot_from_inputs). The render code reads
+# `view.workers` and `view.state.worker_states`, and computes summary counts
+# at render time via React.useMemo — there's nothing to precompute, so we
+# don't need a build_snapshot hook.
+#
+# - workers: FLW list at completion (so reopening shows the same workers
+#   even if the live FLW list has since changed).
+# - state.worker_states: per-FLW review decisions.
+# - pipelines: empty — the template's pipeline_schema exists for future use,
+#   but the render doesn't read pipeline rows, so we don't bloat the snapshot.
+SNAPSHOT_INPUTS = {
+    "pipelines": [],
+    "workers": True,
+    "state_keys": ["worker_states"],
+}
 
-    Performance review is run-shaped — a periodic review of a worker cohort.
-    The snapshot captures everything needed to reconstruct "what I saw and
-    decided during this week's review" when the run is reopened later:
-
-    - The worker list as it was at completion (so reopening shows the same
-      workers, even if the live FLW list has since changed).
-    - The per-worker status decisions (worker_states.<username>.status).
-    - Summary counts by status, pre-computed for the dashboard cards.
-
-    Pipelines aren't used by this template's render — performance metrics come
-    from the live workers list — so they're ignored. The hook accepts **_kwargs
-    to stay forward-compatible with new context fields the framework may add.
-    """
-    workers = workers or []
-    state = state or {}
-    worker_states = state.get("worker_states", {}) or {}
-
-    counts: dict[str, int] = {}
-    for w in workers:
-        status = (worker_states.get(w.get("username", ""), {}) or {}).get("status", "pending")
-        counts[status] = counts.get(status, 0) + 1
-
-    return {
-        "schema_version": 1,
-        # The view helper exposes snapshot.workers as view.workers and
-        # snapshot.state as view.state — render code reads view.state.worker_states,
-        # which means our snapshot's state shape must mirror run.data.state.
-        "workers": workers,
-        "state": {"worker_states": worker_states},
-        "opportunity_ids": list(opportunity_ids or []),
-        "summary": {
-            "total": len(workers),
-            "reviewed": len(workers) - counts.get("pending", 0),
-            "by_status": counts,
-        },
-    }
-
-
-# Render contract: render code reads view.workers and view.state.worker_states.
-# At completion, build_snapshot below produces a snapshot whose `workers` and
-# `worker_states` keys match what view.X exposes — so the same render works
-# both in_progress and completed.
 SNAPSHOT_SCHEMA = {
     "version": 1,
     "keys": {
         "workers": "FLW list at completion (with opportunity_id tags for multi-opp)",
-        "worker_states": "Per-FLW review decisions (keyed by username)",
-        "summary": "Counts: total / reviewed / by_status",
+        "state.worker_states": "Per-FLW review decisions (keyed by username)",
         "opportunity_ids": "Opportunities the run covered",
     },
 }
@@ -379,9 +352,10 @@ TEMPLATE = {
     # implementation for the saved-runs framework — see WORKFLOW_REFERENCE.md
     # §"Saved-runs templates".
     "supports_saved_runs": True,
-    # build_snapshot below shapes the snapshot itself (computed summary), so
-    # snapshot_inputs is not needed here. snapshot_schema documents what
-    # render code reads.
+    # Declarative snapshot — captures workers + state.worker_states verbatim;
+    # render code recomputes summary cards from that. Reference adopter for
+    # the framework's default hook path. See WORKFLOW_REFERENCE.md §9.
+    "snapshot_inputs": SNAPSHOT_INPUTS,
     "snapshot_schema": SNAPSHOT_SCHEMA,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
