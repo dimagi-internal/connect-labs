@@ -7,7 +7,6 @@ distribution with an outlier (>= 4 sigma).
 
 from __future__ import annotations
 
-import datetime as dt
 import random
 from typing import Any
 
@@ -46,7 +45,7 @@ def _default_for_kind(spec: QuestionSpec, rng: random.Random) -> Any:
     if spec.kind == "decimal":
         return round(rng.uniform(0, 10), 2)
     if spec.kind == "date":
-        return dt.date.today().isoformat()
+        return "2026-01-01"
     if spec.kind == "image":
         return ""  # synthetic visits do not produce real images
     return f"sample-{rng.randint(0, 999)}"
