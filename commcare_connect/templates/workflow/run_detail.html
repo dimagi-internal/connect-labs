@@ -41,8 +41,8 @@
             <div>
                 <span class="text-sm text-gray-500">Status:</span>
                 <span class="ml-2 px-2 py-1 rounded-full text-xs font-medium
-                    {% if instance.status == 'completed' %}bg-green-100 text-green-800{% else %}bg-blue-100 text-blue-800{% endif %}">
-                    {{ instance.status|default:"in_progress" }}
+                    {% if instance.is_completed %}bg-green-100 text-green-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                    {% if instance.is_completed %}completed{% else %}in_progress{% endif %}
                 </span>
             </div>
             <div>
@@ -60,6 +60,57 @@
            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
             <i class="fa-solid fa-play mr-2"></i> Open Workflow
         </a>
+        {% endif %}
+    </div>
+
+    <!-- Tasks created by this run -->
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-medium text-gray-900 mb-4">
+            Tasks <span class="text-sm font-normal text-gray-500">({{ tasks_for_run|length }})</span>
+        </h2>
+        {% if tasks_for_run %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500">ID</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500">Title</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500">FLW</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500">Status</th>
+                        <th class="px-3 py-2 text-left font-medium text-gray-500">Priority</th>
+                        <th class="px-3 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 bg-white">
+                    {% for task in tasks_for_run %}
+                    <tr>
+                        <td class="px-3 py-2 text-gray-700">#{{ task.id }}</td>
+                        <td class="px-3 py-2 text-gray-900">{{ task.title|default:"(untitled)" }}</td>
+                        <td class="px-3 py-2 text-gray-700">{{ task.flw_name|default:task.task_username }}</td>
+                        <td class="px-3 py-2">
+                            <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">
+                                {{ task.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-3 py-2 text-gray-700">{{ task.get_priority_display }}</td>
+                        <td class="px-3 py-2 text-right">
+                            <a href="{% url 'tasks:edit' task_id=task.id %}"
+                               class="text-blue-600 hover:text-blue-800 hover:underline text-xs"
+                               target="_blank">
+                                Open <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="text-xs text-gray-500 mt-3">
+            <i class="fa-solid fa-circle-info"></i>
+            Statuses reflect current state, not state at the time the run was completed.
+        </p>
+        {% else %}
+        <p class="text-sm text-gray-500">No tasks were created by this run.</p>
         {% endif %}
     </div>
 

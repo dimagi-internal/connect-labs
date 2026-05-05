@@ -161,6 +161,19 @@ class TaskDataAccess(BaseDataAccess):
 
         return all_tasks
 
+    def get_tasks_for_run(self, workflow_run_id: int) -> list[TaskRecord]:
+        """
+        Get tasks created by a specific workflow run.
+
+        Filters server-side via JSONField lookup on data.workflow_run_id.
+        """
+        return self.labs_api.get_records(
+            experiment="tasks",
+            type="Task",
+            model_class=TaskRecord,
+            workflow_run_id=workflow_run_id,
+        )
+
     def save_task(self, task_record: TaskRecord) -> TaskRecord:
         """
         Save a task record via API.

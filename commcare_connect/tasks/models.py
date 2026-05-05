@@ -75,6 +75,11 @@ class TaskRecord(LocalLabsRecord):
         return self.data.get("audit_session_id")
 
     @property
+    def workflow_run_id(self):
+        """Reference to the workflow run that created this task (optional)."""
+        return self.data.get("workflow_run_id")
+
+    @property
     def date_created(self):
         """Date the task was created (from first 'created' event)."""
         for event in self.data.get("events", []):

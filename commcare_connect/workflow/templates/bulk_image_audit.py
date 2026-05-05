@@ -838,7 +838,8 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
             <div className="pt-4 border-t border-gray-200">
                 <button
                     onClick={handleCreate}
-                    disabled={selectedOpps.length === 0 || selectedImageTypeIds.length === 0}
+                    disabled={selectedOpps.length === 0 || selectedImageTypeIds.length === 0 || instance.is_completed}
+                    title={instance.is_completed ? 'Run is completed; cannot create new reviews.' : ''}
                     className={'inline-flex items-center px-6 py-3 bg-blue-600 text-white ' +
                         'rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium'}
                 >

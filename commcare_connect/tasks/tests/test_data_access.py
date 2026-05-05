@@ -197,6 +197,69 @@ class TestAssignTask:
 
         _assert_update_record_kwargs(mock_api, task)
 
+
+class TestWorkflowRunLink:
+    def test_workflow_run_id_round_trips_through_create_task(self, task_data_access):
+        tda, mock_api = task_data_access
+
+        # Stub create_record to return a record echoing whatever data it received.
+        def fake_create(experiment, type, data, username):
+            return LocalLabsRecord(
+                {
+                    "id": 99,
+                    "experiment": experiment,
+                    "type": type,
+                    "data": data,
+                    "username": username,
+                    "opportunity_id": 1,
+                }
+            )
+
+        mock_api.create_record.side_effect = fake_create
+
+        task = tda.create_task(
+            username="testuser",
+            opportunity_id=1,
+            title="Hi",
+            description="There",
+            workflow_run_id=123,
+        )
+
+        assert task.workflow_run_id == 123
+        # Confirm the API client was handed the value too.
+        call_kwargs = mock_api.create_record.call_args.kwargs
+        assert call_kwargs["data"]["workflow_run_id"] == 123
+
+    def test_workflow_run_id_defaults_to_none_when_not_provided(self, task_data_access):
+        tda, mock_api = task_data_access
+        mock_api.create_record.return_value = LocalLabsRecord(
+            {
+                "id": 100,
+                "experiment": "tasks",
+                "type": "Task",
+                "data": {"workflow_run_id": None},
+                "username": "testuser",
+                "opportunity_id": 1,
+            }
+        )
+
+        task = tda.create_task(username="testuser", opportunity_id=1)
+
+        assert task.workflow_run_id is None
+
+    def test_get_tasks_for_run_filters_via_data_lookup(self, task_data_access):
+        tda, mock_api = task_data_access
+        mock_api.get_records.return_value = []
+
+        tda.get_tasks_for_run(workflow_run_id=42)
+
+        mock_api.get_records.assert_called_once_with(
+            experiment="tasks",
+            type="Task",
+            model_class=TaskRecord,
+            workflow_run_id=42,
+        )
+
     def test_assignment_fields_are_updated(self, task_data_access):
         tda, mock_api = task_data_access
         task = _make_task_record()

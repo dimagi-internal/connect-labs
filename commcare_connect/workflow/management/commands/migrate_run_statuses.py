@@ -1,24 +1,21 @@
 """
-Migrate workflow run statuses to the active|frozen lifecycle.
+Migrate workflow run statuses to the in_progress|completed lifecycle.
 
-Pre-2026-04-30 runs used `in_progress`, `completed`, and a transient
-`preview` status. The new lifecycle has only two states (see
-docs/plans/2026-04-30-run-lifecycle.md):
-
-  - `active`: writable, in progress
-  - `frozen`: read-only, snapshot is the canonical source
+History: an earlier rename to "active"/"frozen" landed on 2026-04-30 and was
+reverted on 2026-05-04 in favour of the original `in_progress`/`completed`
+vocabulary. This command flips any records still stored under the interim
+"active"/"frozen" names back to the canonical values.
 
 Mapping:
 
-  in_progress  → active
-  completed    → frozen   (and `legacy=true` set if no snapshot exists,
-                          so render code can show "snapshot unavailable")
-  preview      → unchanged (UI flag, not a real persisted status)
-  anything else → active  (defensive default; the proxy property already
-                          maps unknowns to active at read time)
+  active  → in_progress
+  frozen  → completed   (and `legacy=true` set if no snapshot exists, so
+                        render code can show "snapshot unavailable")
+  preview → unchanged   (UI flag, not a real persisted status)
+  in_progress / completed → unchanged (already canonical)
+  anything else → unchanged (the proxy property maps unknowns at read time)
 
-Idempotent: a run that's already `active` or `frozen` is left alone.
-Run with --dry-run to preview changes without writing.
+Idempotent. Run with --dry-run to preview changes without writing.
 """
 
 from __future__ import annotations
@@ -27,19 +24,19 @@ import logging
 
 from django.core.management.base import BaseCommand
 
-from commcare_connect.workflow.data_access import RUN_STATUS_ACTIVE, RUN_STATUS_FROZEN, WorkflowDataAccess
+from commcare_connect.workflow.data_access import RUN_STATUS_COMPLETED, RUN_STATUS_IN_PROGRESS, WorkflowDataAccess
 
 logger = logging.getLogger(__name__)
 
 
 _OLD_TO_NEW = {
-    "in_progress": RUN_STATUS_ACTIVE,
-    "completed": RUN_STATUS_FROZEN,
+    "active": RUN_STATUS_IN_PROGRESS,
+    "frozen": RUN_STATUS_COMPLETED,
 }
 
 
 class Command(BaseCommand):
-    help = "Migrate workflow_run records to the active|frozen status lifecycle."
+    help = "Migrate workflow_run records to the in_progress|completed status lifecycle."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -63,7 +60,7 @@ class Command(BaseCommand):
         runs = data_access.list_runs(definition_id=None)
         self.stdout.write(f"Examining {len(runs)} workflow runs...")
 
-        counts = {"active": 0, "frozen": 0, "skipped": 0, "legacy_marked": 0}
+        counts = {"in_progress": 0, "completed": 0, "skipped": 0, "legacy_marked": 0}
 
         for run in runs:
             old_status = run.data.get("status")
@@ -75,9 +72,9 @@ class Command(BaseCommand):
                 continue
 
             patch = {"status": new_status}
-            # If we're flipping to frozen but no snapshot exists, mark legacy
+            # If we're flipping to completed but no snapshot exists, mark legacy
             # so render code can show "snapshot unavailable for this older run."
-            if new_status == RUN_STATUS_FROZEN and not run.data.get("snapshot"):
+            if new_status == RUN_STATUS_COMPLETED and not run.data.get("snapshot"):
                 patch["legacy"] = True
                 counts["legacy_marked"] += 1
 
@@ -94,7 +91,7 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 "Migration "
                 + ("would be " if dry_run else "")
-                + f"complete: active={counts['active']} frozen={counts['frozen']} "
+                + f"complete: in_progress={counts['in_progress']} completed={counts['completed']} "
                 + f"skipped={counts['skipped']} legacy={counts['legacy_marked']}"
             )
         )

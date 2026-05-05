@@ -37,8 +37,8 @@ urlpatterns = [
     # Generic run snapshot endpoints (template-agnostic — the build endpoint dispatches
     # to the template's `build_snapshot(pipelines, state, opportunity_id)` hook).
     # `build` is the original endpoint name kept for back-compat; `freeze` points at
-    # the same handler under a name that better matches the new lifecycle (atomic
-    # snapshot + status active→frozen transition).
+    # the same handler under a name that matches the lifecycle's mechanism (atomic
+    # snapshot + status in_progress→completed transition).
     path("api/run/<int:run_id>/snapshot/", views.get_snapshot_api, name="api_get_snapshot"),
     path("api/run/<int:run_id>/snapshot/build/", views.build_snapshot_api, name="api_build_snapshot"),
     path("api/run/<int:run_id>/freeze/", views.build_snapshot_api, name="api_freeze_run"),

@@ -328,6 +328,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
                     "status": "preview",
+                    "is_completed": False,
                     "state": {"worker_states": {}},
                     "period_start": week_start.isoformat(),
                     "period_end": week_end.isoformat(),
@@ -345,15 +346,15 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "opportunity_id": opportunity_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
-                    # Use the proxy property so legacy statuses ("in_progress",
-                    # "completed") get mapped to the canonical "active"/"frozen"
-                    # without callers seeing the old vocabulary.
+                    # Use the proxy property so legacy statuses get mapped to
+                    # the canonical in_progress/completed.
                     "status": run.status,
+                    "is_completed": run.is_completed,
                     "state": run.state,
                     "period_start": run.period_start,
                     "period_end": run.period_end,
-                    "frozen_at": run.frozen_at,
-                    # Frozen snapshot blob (None on active runs). When status="frozen"
+                    "completed_at": run.completed_at,
+                    # Snapshot blob (None on in_progress runs). When status="completed"
                     # render code reads from snapshot only — no live recompute.
                     "snapshot": run.snapshot,
                 }
@@ -373,7 +374,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         {
                             "id": r.id,
                             "status": r.status,
-                            "frozen_at": r.frozen_at,
+                            "completed_at": r.completed_at,
                             "period_start": r.period_start,
                             "period_end": r.period_end,
                             "created_at": r.created_at,
@@ -449,10 +450,23 @@ class WorkflowRunDetailView(LoginRequiredMixin, TemplateView):
             run = data_access.get_run(run_id)
             if run:
                 context["run"] = run
+                # Template historically renders via `instance` — keep that working.
+                context["instance"] = run
                 # Also get the definition
                 definition_id = run.data.get("definition_id")
                 if definition_id:
                     context["definition"] = data_access.get_definition(definition_id)
+
+                # Tasks created by this run (live query, not snapshotted).
+                from commcare_connect.tasks.data_access import TaskDataAccess
+
+                try:
+                    task_da = TaskDataAccess(user=self.request.user, request=self.request)
+                    context["tasks_for_run"] = task_da.get_tasks_for_run(run_id)
+                    task_da.close()
+                except Exception as e:
+                    logger.warning(f"Failed to load tasks for run {run_id}: {e}")
+                    context["tasks_for_run"] = []
         except Exception as e:
             logger.error(f"Failed to load workflow run {run_id}: {e}")
             context["error"] = str(e)
@@ -1032,7 +1046,7 @@ def get_snapshot_api(request, run_id):
 
     Generic replacement for per-template snapshot endpoints (e.g.
     `MBWSnapshotView`). Reads `run.data["snapshot"]` and returns it verbatim
-    plus the `frozen_at` timestamp the build endpoint stamped.
+    plus the `completed_at` timestamp the build endpoint stamped.
     """
     try:
         data_access = WorkflowDataAccess(request=request)
@@ -1044,7 +1058,7 @@ def get_snapshot_api(request, run_id):
             {
                 "has_snapshot": bool(snapshot),
                 "snapshot": snapshot,
-                "frozen_at": (snapshot or {}).get("frozen_at"),
+                "completed_at": (snapshot or {}).get("completed_at"),
             }
         )
     except Exception:
@@ -1060,7 +1074,7 @@ def build_snapshot_api(request, run_id):
 
     Generic replacement for per-template save endpoints (e.g. `MBWSaveSnapshotView`).
     Looks up the template, runs its hook against current pipeline data, writes
-    the result to `run.data["snapshot"]` with a `frozen_at` timestamp, and
+    the result to `run.data["snapshot"]` with a `completed_at` timestamp, and
     returns the snapshot.
 
     Errors:
@@ -1135,9 +1149,9 @@ def build_snapshot_api(request, run_id):
                 status=400,
             )
 
-        # Atomic active→frozen transition. freeze_run stamps frozen_at, persists
-        # the snapshot, sets status=frozen, all in one LabsRecord write. If this
-        # call raises, the run stays active — no partial transition.
+        # Atomic in_progress→completed transition. freeze_run stamps completed_at,
+        # persists the snapshot, sets status=completed, all in one LabsRecord write.
+        # If this call raises, the run stays in_progress — no partial transition.
         frozen_run = data_access.freeze_run(run_id, snapshot_payload, run=run)
         if frozen_run is None:
             return JsonResponse(
@@ -1149,7 +1163,7 @@ def build_snapshot_api(request, run_id):
             {
                 "success": True,
                 "snapshot": frozen_run.snapshot,
-                "frozen_at": frozen_run.frozen_at,
+                "completed_at": frozen_run.completed_at,
                 "status": frozen_run.status,
             }
         )

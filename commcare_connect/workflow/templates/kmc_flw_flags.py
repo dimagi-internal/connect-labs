@@ -1022,10 +1022,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                     </div>
                     <button
                         onClick={function() { setShowModal(true); }}
-                        disabled={selectedCount === 0 || isRunning}
+                        disabled={selectedCount === 0 || isRunning || instance.is_completed}
+                        title={instance.is_completed ? 'Run is completed; cannot create new audits.' : ''}
                         className={
                             'px-5 py-2.5 rounded-lg text-sm font-medium transition-colors ' +
-                            (selectedCount === 0 || isRunning
+                            (selectedCount === 0 || isRunning || instance.is_completed
                                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 : 'bg-red-600 text-white hover:bg-red-700')
                         }

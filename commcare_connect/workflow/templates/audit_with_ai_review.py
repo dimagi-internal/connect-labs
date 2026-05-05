@@ -906,7 +906,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                     <div className="pt-4 border-t border-gray-200">
                         <button
                             onClick={handleCreateAudit}
-                            disabled={isRunning || !opportunityId}
+                            disabled={isRunning || !opportunityId || instance.is_completed}
                             className={'inline-flex items-center px-6 py-3 bg-blue-600 ' +
                                 'text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 font-medium'}
                         >
@@ -916,6 +916,11 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                         {!opportunityId && (
                             <p className="mt-2 text-sm text-red-600">
                                 No opportunity selected. Select an opportunity from the sidebar.
+                            </p>
+                        )}
+                        {instance.is_completed && (
+                            <p className="mt-2 text-sm text-gray-500">
+                                This run is completed. New audits cannot be created.
                             </p>
                         )}
                     </div>

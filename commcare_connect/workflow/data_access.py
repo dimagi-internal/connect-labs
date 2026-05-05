@@ -99,9 +99,12 @@ class WorkflowRenderCodeRecord(LocalLabsRecord):
 
 # Workflow run status enum. Two states only — failed runs are deleted, not
 # transitioned. See docs/plans/2026-04-30-run-lifecycle.md for the design.
-RUN_STATUS_ACTIVE = "active"
-RUN_STATUS_FROZEN = "frozen"
-RUN_STATUSES = frozenset({RUN_STATUS_ACTIVE, RUN_STATUS_FROZEN})
+# Vocab note: an earlier rename to "active"/"frozen" was reverted on 2026-05-04;
+# the canonical user-facing vocabulary is in_progress/completed. The legacy
+# "active"/"frozen" stored values are mapped on read by `WorkflowRunRecord.status`.
+RUN_STATUS_IN_PROGRESS = "in_progress"
+RUN_STATUS_COMPLETED = "completed"
+RUN_STATUSES = frozenset({RUN_STATUS_IN_PROGRESS, RUN_STATUS_COMPLETED})
 
 
 class WorkflowRunRecord(LocalLabsRecord):
@@ -127,29 +130,27 @@ class WorkflowRunRecord(LocalLabsRecord):
 
     @property
     def status(self):
-        """Run status. Defaults to "active" for legacy/missing values.
+        """Run status. Two values only: "in_progress" or "completed".
 
-        New lifecycle (2026-04-30): only "active" or "frozen". Legacy values
-        ("in_progress", "completed", etc.) are migrated to one of the two by
-        the migrate_run_statuses management command. Until that runs, this
-        property maps unknowns to "active" so render code never sees a third
-        state.
+        Defaults to "in_progress" for missing/unknown stored values. Legacy
+        stored values from the reverted active/frozen rename ("active",
+        "frozen") are mapped here so render code never sees them.
         """
         top = self.data.get("status") or self.data.get("state", {}).get("status")
         if top in RUN_STATUSES:
             return top
-        # Legacy mappings — keep render code unaware of the rename.
-        if top == "completed":
-            return RUN_STATUS_FROZEN
-        return RUN_STATUS_ACTIVE
+        # Legacy mappings — handle data written under the active/frozen vocab.
+        if top == "frozen":
+            return RUN_STATUS_COMPLETED
+        return RUN_STATUS_IN_PROGRESS
 
     @property
-    def is_frozen(self) -> bool:
-        return self.status == RUN_STATUS_FROZEN
+    def is_completed(self) -> bool:
+        return self.status == RUN_STATUS_COMPLETED
 
     @property
-    def frozen_at(self):
-        return self.data.get("frozen_at")
+    def completed_at(self):
+        return self.data.get("completed_at")
 
     @property
     def state(self):
@@ -640,7 +641,7 @@ class WorkflowDataAccess(BaseDataAccess):
             "definition_id": definition_id,
             "period_start": period_start,
             "period_end": period_end,
-            "status": RUN_STATUS_ACTIVE,
+            "status": RUN_STATUS_IN_PROGRESS,
             "state": initial_state or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -715,7 +716,7 @@ class WorkflowDataAccess(BaseDataAccess):
             "definition_id": definition_id,
             "period_start": week_start.isoformat(),
             "period_end": week_end.isoformat(),
-            "status": RUN_STATUS_ACTIVE,
+            "status": RUN_STATUS_IN_PROGRESS,
             "state": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -817,13 +818,13 @@ class WorkflowDataAccess(BaseDataAccess):
         snapshot: dict,
         run: WorkflowRunRecord | None = None,
     ) -> WorkflowRunRecord | None:
-        """Atomic active→frozen transition: persist the snapshot, set status=frozen,
-        stamp frozen_at. Single LabsRecord write.
+        """Atomic in_progress→completed transition: persist the snapshot, set
+        status=completed, stamp completed_at. Single LabsRecord write.
 
-        Caller (the freeze API endpoint) is responsible for building the snapshot
-        (via the template's build_snapshot hook). This method just persists it
-        atomically with the status transition. If the snapshot build raises, the
-        caller never invokes this — the run stays active.
+        Caller (the completion API endpoint) is responsible for building the
+        snapshot (via the template's build_snapshot hook). This method just
+        persists it atomically with the status transition. If the snapshot
+        build raises, the caller never invokes this — the run stays in_progress.
 
         Args:
             run_id: The workflow run ID.
@@ -840,12 +841,12 @@ class WorkflowDataAccess(BaseDataAccess):
 
         # Stamp freeze time inside the snapshot for caller convenience and also
         # at the top level so the proxy property exposes it without unwrapping.
-        frozen_at = datetime.now(timezone.utc).isoformat()
-        snapshot_with_meta = {**snapshot, "frozen_at": frozen_at}
+        completed_at = datetime.now(timezone.utc).isoformat()
+        snapshot_with_meta = {**snapshot, "completed_at": completed_at}
         updated_data = {
             **run.data,
-            "status": RUN_STATUS_FROZEN,
-            "frozen_at": frozen_at,
+            "status": RUN_STATUS_COMPLETED,
+            "completed_at": completed_at,
             "snapshot": snapshot_with_meta,
         }
 
@@ -901,8 +902,8 @@ class WorkflowDataAccess(BaseDataAccess):
         current_state = run.data.get("state", {})
         updated_data = {
             **run.data,
-            "status": RUN_STATUS_FROZEN,
-            "frozen_at": datetime.now(timezone.utc).isoformat(),
+            "status": RUN_STATUS_COMPLETED,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
             "state": {
                 **current_state,
                 "overall_result": overall_result,
