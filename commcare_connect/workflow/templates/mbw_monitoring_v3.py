@@ -42,6 +42,14 @@ DEFINITION = {
         "showSummaryCards": False,
         "showFilters": False,
         # No job_type — all metrics are computed declaratively in the pipelines.
+        # Workflow framework auth gate: runner blocks the template render
+        # until each of these OAuth providers shows active. With this set,
+        # the upfront auth screen replaces the template's manual mid-load
+        # OAuth check, so users see "Authorize CommCare HQ" within ~1s of
+        # landing instead of after the FLW table renders and they click
+        # Launch Dashboard. Same triplet as v2 — OCS is required for the
+        # FLW assessment chatbot integration in the dashboard.
+        "auth_requires": ["connect", "commcare_hq", "ocs"],
     },
     "pipeline_sources": [],
 }
@@ -138,12 +146,19 @@ VISITS_SCHEMA = {
         # parities. 1.0 = every mother reports identical parity (suspicious).
         # Filter on form_name="ANC Visit" mirrors v1's `if form_name == "ANC Visit"`
         # — only ANC visits report parity in the MBW data model.
+        #
+        # `pre_aggregate_attribute_to: last_username` attributes each mother
+        # to the FLW whose visit is the LAST one for her — matching v1's
+        # `mother_to_username` last-write-wins map that drives the entire
+        # quality_metrics block. Without this, mothers visited by multiple
+        # FLWs would be counted under each, while v1 counts them under one.
         {
             "name": "parity_mode_share",
             "path": "form.confirm_visit_information.parity__of_live_births_or_stillbirths_after_24_weeks",
             "aggregation": "mode_share",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "last",
+            "pre_aggregate_attribute_to": "last_username",
             "filter_path": "form.@name",
             "filter_value": "ANC Visit",
         },
@@ -155,6 +170,7 @@ VISITS_SCHEMA = {
             "aggregation": "mode",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "last",
+            "pre_aggregate_attribute_to": "last_username",
             "filter_path": "form.@name",
             "filter_value": "ANC Visit",
         },
@@ -168,8 +184,87 @@ VISITS_SCHEMA = {
             "aggregation": "dup_share",
             "pre_aggregate_by": "form.parents.parent.case.@case_id",
             "pre_aggregation": "last",
+            "pre_aggregate_attribute_to": "last_username",
             "filter_path": "form.@name",
             "filter_value": "ANC Visit",
+        },
+        # ---------- JOIN-dependent quality leaves ----------
+        # Each of these reads from `joined.registrations.<field>` — populated
+        # at SQL build time by the `joins[]` entry below. Two-pass
+        # (pre_aggregate_by mother_case_id + per-mother first) mirrors v1's
+        # "build a per-mother lookup, then aggregate per FLW" pattern.
+        #
+        # `pre_aggregate_attribute_to: last_username` matches v1's
+        # winner-takes-all mother→FLW attribution: a mother visited by
+        # FLWs A and B is counted under whichever FLW visited her LAST,
+        # not under both. Critical for fraud-detection metrics — without
+        # it, a single duplicated phone on a shared mother would inflate
+        # both A's and B's dup_share above v1's signal.
+        #
+        # phone_dup_share: per-FLW share (0..1) of "owned" mothers whose
+        # phone duplicates with at least one other owned mother. v1's
+        # quality_metrics.phone_dup_pct.
+        {
+            "name": "phone_dup_share",
+            "path": "joined.registrations.phone_number",
+            "aggregation": "dup_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+        # age_concentration_mode_share: per-FLW share of owned mothers
+        # whose registered age equals the most-common registered age for
+        # that FLW. v1's quality_metrics.age_concentration.mode_pct.
+        {
+            "name": "age_concentration_mode_share",
+            "path": "joined.registrations.age",
+            "aggregation": "mode_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+        # age_concentration_mode_value: most-common registered age across
+        # owned mothers per FLW. Shipped alongside mode_share so the
+        # dashboard can display "X% of mothers report age N".
+        {
+            "name": "age_concentration_mode_value",
+            "path": "joined.registrations.age",
+            "aggregation": "mode",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+        # age_concentration_dup_share: per-FLW share (0..1) of owned
+        # mothers whose registered age duplicates with at least one
+        # other owned mother's age.
+        {
+            "name": "age_concentration_dup_share",
+            "path": "joined.registrations.age",
+            "aggregation": "dup_share",
+            "pre_aggregate_by": "form.parents.parent.case.@case_id",
+            "pre_aggregation": "first",
+            "pre_aggregate_attribute_to": "last_username",
+        },
+    ],
+    # JOIN spec: pull registration-level fields per visit so per-FLW
+    # aggregations (above) can use them. The pre_aggregate_by groups
+    # visits per mother so the inner pass collapses many visits to one
+    # row per mother carrying that mother's registration data — matching
+    # v1's "build a per-mother lookup, then aggregate per FLW" pattern.
+    "joins": [
+        {
+            "from_alias": "registrations",
+            "local_key": "form.parents.parent.case.@case_id",
+            "remote_key_field": "mother_case_id",
+            "fields": [
+                {"name": "phone_number", "from": "phone_number"},
+                {"name": "age", "from": "age"},
+                {"name": "age_recorded", "from": "age_recorded"},
+                {"name": "mother_dob", "from": "mother_dob"},
+                {"name": "eligible_full_intervention_bonus", "from": "eligible_full_intervention_bonus"},
+                {"name": "expected_visits", "from": "expected_visits"},
+                {"name": "expected_delivery_date", "from": "expected_delivery_date"},
+            ],
         },
     ],
 }
@@ -297,6 +392,14 @@ REGISTRATIONS_SCHEMA = {
             "paths": ["form.mother_details.age_in_years_rounded", "form.mother_details.mothers_age"],
             "aggregation": "first",
         },
+        # `age` mirrors v1's `extract_mother_metadata_from_forms` exactly:
+        # if mother_dob is parseable, derive years-since-DOB at the current
+        # date; else fall back to age_in_years_rounded then mothers_age.
+        # Drives the age_concentration leaves on the visits side. Without
+        # this, those leaves drift on FLWs whose mothers have DOBs set
+        # (v3's age_recorded would read the recorded field directly while
+        # v1 prefers DOB-derived).
+        {"name": "age", "extractor": "v1_mbw_age", "aggregation": "first"},
         # Household + eligibility (used in quality_metrics)
         {"name": "household_size", "path": "form.number_of_other_household_members", "aggregation": "first"},
         {
@@ -318,6 +421,10 @@ REGISTRATIONS_SCHEMA = {
         {"name": "user_connect_id", "path": "form.user_connect_id", "aggregation": "first"},
         # Registration date — top-level form metadata (the form-end timestamp)
         {"name": "registration_date", "path": "form.meta.timeEnd", "aggregation": "first"},
+        # Per-mother visit schedules. The JS follow-up adapter reads this
+        # array to compute eligibility, completion, and missed visits per
+        # mother — replacing v1's `_extract_schedules_from_registration_form`.
+        {"name": "schedules", "extractor": "mbw_visit_schedules", "aggregation": "first"},
     ],
 }
 
@@ -437,6 +544,12 @@ TEMPLATE = {
     "description": "Pipeline-native MBW monitoring (parity-tested; v1 stays canonical until v3 proven)",
     "icon": "fa-baby",
     "color": "pink",
+    # Native run snapshots: opt in without a `build_snapshot` hook so the
+    # framework's default freezes raw pipelines + workers + state. The
+    # render JS reconstructs every tab from those frozen pipelines on
+    # load, so snapshots stay true to "what I saw at the time" without
+    # duplicating the JS aggregation logic in Python.
+    "supports_saved_runs": True,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schemas": PIPELINE_SCHEMAS,

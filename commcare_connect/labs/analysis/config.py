@@ -213,6 +213,21 @@ class FieldComputation:
     # aggregation as before.
     pre_aggregate_by: str = ""
     pre_aggregation: str = "first"
+    # When set to "last_username", the pre_group is attributed to a single
+    # outer group (the FLW whose visit was the LAST one for that pre_group key),
+    # rather than appearing under every FLW that visited it. Mirrors v1's
+    # `mother_to_username[mid] = row.username` last-write-wins assignment in
+    # `build_followup_from_pipeline.Step 2`.
+    #
+    # Concrete: for fraud-detection metrics like phone_dup_share, a mother
+    # visited by FLWs A and B is counted only under whichever FLW visited her
+    # LAST. Without this, a "shared" mother with a duplicated phone inflates
+    # both A and B's dup_share — making the metric noisier as a fraud signal
+    # and disagreeing with v1.
+    #
+    # Empty (default): per-visit attribution (each pre_group counted under
+    # every outer group that visited it).
+    pre_aggregate_attribute_to: str = ""
 
     def __post_init__(self):
         """Validate configuration."""
@@ -224,6 +239,15 @@ class FieldComputation:
             raise ValueError(f"Invalid aggregation type: {self.aggregation}")
         if self.pre_aggregate_by and self.pre_aggregation not in VALID_AGGREGATIONS:
             raise ValueError(f"Invalid pre_aggregation type: {self.pre_aggregation}")
+        if self.pre_aggregate_attribute_to and self.pre_aggregate_attribute_to != "last_username":
+            raise ValueError(
+                f"pre_aggregate_attribute_to: {self.pre_aggregate_attribute_to!r} is not a valid value. "
+                "Valid: '' or 'last_username'."
+            )
+        if self.pre_aggregate_attribute_to and not self.pre_aggregate_by:
+            raise ValueError(
+                f"FieldComputation {self.name!r}: pre_aggregate_attribute_to requires pre_aggregate_by to be set."
+            )
         if self.filter_op not in VALID_FILTER_OPS:
             raise ValueError(f"Invalid filter_op: {self.filter_op}. Valid: {sorted(VALID_FILTER_OPS)}")
         if self.filter_paths and self.filter_path:
@@ -429,6 +453,70 @@ class WindowFieldComputation:
 
 
 @dataclass
+class JoinConfig:
+    """
+    Cross-pipeline JOIN spec.
+
+    Pulls fields from another pipeline's already-cached visit-level rows
+    (`labs_computed_visit_cache` filtered by that pipeline's `config_hash`)
+    into THIS pipeline's row scope. Joined fields become accessible via the
+    existing JSONB-path extraction under `joined.<from_alias>.<field>`, so
+    aggregations, filters, and pre_aggregate_by all work without any new
+    field kind.
+
+    Concrete use case — visits ⋈ registrations:
+        JoinConfig(
+            from_alias="registrations",
+            local_key="form.parents.parent.case.@case_id",
+            remote_key_field="mother_case_id",
+            fields=[
+                {"name": "phone_number", "from": "phone_number"},
+                {"name": "age_recorded", "from": "age_recorded"},
+                {"name": "eligible_full_intervention_bonus",
+                 "from": "eligible_full_intervention_bonus"},
+            ],
+        )
+    Then a visits-pipeline FieldComputation can target
+    `joined.registrations.phone_number` and aggregate it normally.
+
+    Attributes:
+        from_alias: Logical alias of the joined pipeline. The schema parser
+            resolves this to a concrete `config_hash` by looking up the
+            sibling pipeline in the same workflow definition.
+        local_key: JSONB path on THIS pipeline's `form_json` whose value is
+            the join key (e.g., the mother's `@case_id` on a visit form).
+        remote_key_field: Field NAME inside the joined pipeline's
+            `computed_fields` JSON whose value matches `local_key`.
+        fields: List of `{"name": <output>, "from": <remote field name>}`
+            dicts. The output name is used both as the alias inside
+            `joined.<from_alias>.<name>` and is what aggregations reference.
+        resolved_config_hash: Populated by the orchestration layer after
+            schema parsing; the SQL builder reads it. Empty until resolved.
+    """
+
+    from_alias: str
+    local_key: str
+    remote_key_field: str
+    fields: list[dict] = field(default_factory=list)
+    resolved_config_hash: str = ""
+
+    def __post_init__(self):
+        if not self.from_alias:
+            raise ValueError("JoinConfig.from_alias is required")
+        if not self.local_key:
+            raise ValueError(f"JoinConfig({self.from_alias!r}): local_key is required")
+        if not self.remote_key_field:
+            raise ValueError(f"JoinConfig({self.from_alias!r}): remote_key_field is required")
+        if not self.fields:
+            raise ValueError(f"JoinConfig({self.from_alias!r}): fields[] is required")
+        for i, f in enumerate(self.fields):
+            if not isinstance(f, dict) or "name" not in f or "from" not in f:
+                raise ValueError(
+                    f"JoinConfig({self.from_alias!r}).fields[{i}] must be a dict with 'name' and 'from' keys"
+                )
+
+
+@dataclass
 class AnalysisPipelineConfig:
     """
     Unified configuration for analysis computation and pipeline behavior.
@@ -501,6 +589,19 @@ class AnalysisPipelineConfig:
     # to the same mother). Backwards-compatible: empty list means no window
     # processing, identical to today's behaviour.
     window_fields: list["WindowFieldComputation"] = field(default_factory=list)
+
+    # Cross-pipeline JOINs. Each JoinConfig pulls fields from another pipeline's
+    # already-cached visit-level rows (labs_computed_visit_cache filtered by
+    # that pipeline's config_hash) into THIS pipeline's row scope. Joined
+    # fields become accessible to aggregations via JSONB paths under
+    # `joined.<from_alias>.<field>` — no new field kind, just the existing
+    # path-based extraction working over a virtually-extended form_json.
+    #
+    # Concrete use case: visits ⋈ registrations on mother_case_id ↔ case_id
+    # to pull phone, age, eligible_full_intervention_bonus, etc., per visit
+    # so aggregations can compute phone_dup_pct, age_concentration, etc.
+    # per FLW (with pre_aggregate_by mother_case_id for v1 fidelity).
+    joins: list["JoinConfig"] = field(default_factory=list)
 
     # Post-extraction filters: list of {"field": <name>, "op": "is_not_null"}.
     # Applied AFTER extraction (so they can reference extracted columns) and

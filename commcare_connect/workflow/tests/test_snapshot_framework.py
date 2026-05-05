@@ -86,6 +86,55 @@ class TestBuildSnapshotDispatch:
         assert snap["summary"]["reviewed"] == 0
         assert snap["summary"]["by_status"] == {"pending": 1}
 
+    def test_default_snapshot_when_template_has_no_hook(self, monkeypatch):
+        """Templates that opt in via `supports_saved_runs: True` but do NOT
+        define a `build_snapshot` callable get a default snapshot of the
+        inputs (pipelines + workers + state). Lets a template adopt
+        snapshots with a single line and let render JS reconstruct the
+        dashboard from frozen pipelines on load.
+        """
+        fake_template = {
+            "key": "fake_minimal_adopter",
+            "name": "Fake Minimal Adopter",
+            "description": "Test fixture — opts in without a hook",
+            "supports_saved_runs": True,
+            # Deliberately no `build_snapshot` key.
+        }
+        monkeypatch.setitem(TEMPLATES, "fake_minimal_adopter", fake_template)
+        pipelines = {"visits": {"rows": [{"username": "u1"}], "config_hash": "abc"}}
+        workers = [{"username": "u1", "opportunity_id": 7}]
+        snap = build_snapshot_for_template(
+            "fake_minimal_adopter",
+            pipelines=pipelines,
+            state={"selected_workers": ["u1"]},
+            opportunity_id=7,
+            workers=workers,
+            opportunity_ids=[7],
+        )
+        assert snap is not None
+        assert snap["schema_version"] == 1
+        assert snap["pipelines"] == pipelines
+        assert snap["workers"] == workers
+        assert snap["state"] == {"selected_workers": ["u1"]}
+        assert snap["opportunity_ids"] == [7]
+
+    def test_default_snapshot_falls_back_when_opportunity_ids_missing(self, monkeypatch):
+        """Single-opp templates may not pass opportunity_ids — the default
+        falls back to [opportunity_id] so the shape stays consistent."""
+        monkeypatch.setitem(
+            TEMPLATES,
+            "fake_single_opp",
+            {"key": "fake_single_opp", "supports_saved_runs": True},
+        )
+        snap = build_snapshot_for_template(
+            "fake_single_opp",
+            pipelines={},
+            state={},
+            opportunity_id=42,
+        )
+        assert snap["opportunity_ids"] == [42]
+        assert snap["workers"] == []
+
 
 class TestDefaultHookSnapshotInputs:
     """Templates that opt in without a `build_snapshot` hook get the framework

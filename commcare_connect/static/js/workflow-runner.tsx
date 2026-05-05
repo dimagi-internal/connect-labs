@@ -934,10 +934,11 @@ function WorkflowRunner({
     eventSource.onerror = () => {
       setPipelineLoadingStatus(null);
       // Build a descriptive error so users know what was happening when
-      // the connection dropped. The generic "connection lost" message
-      // told them nothing — common cause is AWS ALB's 60-second idle
-      // timeout closing the SSE stream during silent operations
-      // (CCHQ form pagination, visit cold-load).
+      // the connection dropped. EventSource onerror fires for any
+      // connection close including: backend process crash (OOM, exception),
+      // ALB idle timeout (60s of silence), and network blips. We can't
+      // distinguish from the browser side — be honest about the
+      // possibilities and direct ops at the right place to look.
       const elapsedSec = Math.round((Date.now() - startTs) / 1000);
       let detail: string;
       if (!receivedAny) {
@@ -951,12 +952,13 @@ function WorkflowRunner({
         const sinceLast =
           sinceLastSec !== null ? ` (${sinceLastSec}s since last update)` : '';
         detail =
-          `Connection dropped while: "${lastMessage}"${sinceLast}. ` +
-          `If this happened during a long load (CommCare HQ pagination, ` +
-          `large visit download), the AWS load balancer may have idle-` +
-          `timed-out the connection. Try reload — cached data should ` +
-          `make the second attempt much faster. If it persists, the ` +
-          `pipeline may be stalled on a backend dependency.`;
+          `Connection ended while: "${lastMessage}"${sinceLast}. ` +
+          `Possible causes: (a) backend process crashed (out-of-memory ` +
+          `during a large fetch is the usual culprit — check ECS web ` +
+          `logs for "SIGKILL" or "Worker was killed"), (b) backend ` +
+          `raised an exception (check logs for traceback), (c) AWS ALB ` +
+          `idle-timed-out the SSE stream after 60s of silence. ` +
+          `Try reload — cached data should make the second attempt much faster.`;
       } else {
         detail = `Connection dropped after ${elapsedSec}s. Try reload.`;
       }
@@ -1611,10 +1613,33 @@ function WorkflowRunner({
                                   {svc.label || svc.key}
                                 </span>
                                 {noDomainAccess ? (
-                                  <span className="px-3 py-1.5 bg-red-100 text-red-800 text-sm rounded border border-red-300">
-                                    Account lacks access to{' '}
-                                    {svc.domain || 'this domain'}
-                                  </span>
+                                  <>
+                                    <span className="px-3 py-1.5 bg-red-100 text-red-800 text-sm rounded border border-red-300">
+                                      Account lacks access to{' '}
+                                      {svc.domain || 'this domain'}
+                                    </span>
+                                    {/* Log-out escape hatch. The "no domain
+                                        access" state happens when the cached
+                                        OAuth token is bound to a CommCare HQ
+                                        account that doesn't have permission
+                                        on this opportunity's domain. The
+                                        framework correctly hides Authorize
+                                        because re-authorizing as the same user
+                                        won't help — but the user often DOES
+                                        have a different account that has
+                                        access. Logging out clears the token;
+                                        the next refresh shows the normal
+                                        Authorize button so they can sign in
+                                        with the right account. */}
+                                    {svc.key === 'commcare_hq' && (
+                                      <a
+                                        href="/labs/commcare/logout/"
+                                        className="px-3 py-1.5 bg-white border border-red-400 text-red-800 text-sm rounded hover:bg-red-50 no-underline"
+                                      >
+                                        Log out of CommCare HQ
+                                      </a>
+                                    )}
+                                  </>
                                 ) : svc.authorize_url ? (
                                   <a
                                     href={svc.authorize_url}
