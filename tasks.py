@@ -58,6 +58,68 @@ def translations(c: Context):
     c.run("python manage.py compilemessages")
 
 
+@task(
+    help={
+        "workflow_id": "Workflow definition labs-record id (e.g. 2787 for MBW Monitoring V3)",
+        "file": "Path to the render-code .js file",
+        "opportunity_id": "Opportunity id used for the OAuth scope check (default: 765)",
+    }
+)
+def push_render(
+    c: Context,
+    workflow_id: int,
+    file: str,
+    opportunity_id: int = 765,
+):
+    """Push a local render-code .js file to a workflow's labs_record.
+
+    Both local and prod read render code from the workflow's stored
+    `workflow_render_code` LabsRecord — set at workflow-creation time from
+    the template's render_code, frozen thereafter. Edits to the template's
+    .js file in the source tree don't affect a workflow that already
+    exists; they only affect newly-created workflows. Use this task to
+    push the latest .js content into an existing workflow's record so the
+    next page reload picks it up.
+
+    Reads the file from disk and POSTs it via the same labs_record API
+    the connect_labs MCP `workflow_update_render_code` tool uses. The
+    local task path is preferred for v3-class templates (~380KB) because
+    round-tripping the content through Claude's context is expensive
+    (~100k tokens). For small templates the MCP tool is fine.
+
+    Usage:
+        inv push-render --workflow-id=2787 \\
+            --file=commcare_connect/workflow/templates/mbw_monitoring_v3_render.js
+    """
+    import os
+
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
+    import django
+
+    django.setup()
+
+    from commcare_connect.labs.integrations.connect.cli import create_cli_request
+    from commcare_connect.workflow.data_access import WorkflowDataAccess
+
+    request = create_cli_request(opportunity_id=opportunity_id)
+    if not request:
+        raise Exit(
+            "Failed to create CLI request — run `python manage.py get_cli_token` first.",
+            -1,
+        )
+    file_path = Path(file)
+    if not file_path.exists():
+        raise Exit(f"Render file not found: {file_path}", -1)
+
+    code = file_path.read_text()
+    print(f"Pushing {len(code):,} bytes from {file_path} to workflow {workflow_id}...")
+
+    da = WorkflowDataAccess(request=request)
+    result = da.save_render_code(definition_id=workflow_id, component_code=code)
+    print(f"OK: render_code id={result.id}, version={result.data.get('version')}")
+    print("Reload the deployed workflow page to pick up the new code.")
+
+
 @task
 def build_js(c: Context, watch=False, prod=False):
     """Build the JavaScript and CSS assets"""

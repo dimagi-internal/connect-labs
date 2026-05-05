@@ -565,7 +565,14 @@ class WorkflowDataAccess(BaseDataAccess):
         return None
 
     def save_render_code(self, definition_id: int, component_code: str, version: int = 1) -> WorkflowRenderCodeRecord:
-        """Save render code for a workflow definition."""
+        """Save render code for a workflow definition.
+
+        After writing the render_code record, repoints the workflow
+        definition's `render_code_id` at it. Without that step, repeated
+        saves create orphan records and the runner reads stale (or null)
+        code — exactly the bug that hit MBW v3 when push-render appeared
+        to succeed but the dashboard kept rendering blank.
+        """
         existing = self.get_render_code(definition_id)
 
         data = {
@@ -586,6 +593,20 @@ class WorkflowDataAccess(BaseDataAccess):
                 experiment=self.EXPERIMENT,
                 type="workflow_render_code",
                 data=data,
+            )
+
+        # Repoint the workflow's render_code_id at the (possibly new) record
+        # so the runner's `get_render_code` finds it. Initial creation via
+        # `create_from_template` sets this once; subsequent saves used to
+        # leak orphan records.
+        definition = self.get_definition(definition_id)
+        if definition and definition.data.get("render_code_id") != result.id:
+            updated_data = {**definition.data, "render_code_id": result.id}
+            self.labs_api.update_record(
+                record_id=definition_id,
+                experiment=self.EXPERIMENT,
+                type="workflow_definition",
+                data=updated_data,
             )
 
         return WorkflowRenderCodeRecord(
@@ -879,8 +900,20 @@ class WorkflowDataAccess(BaseDataAccess):
             program_id=self.program_id,
         )
 
+        # Pre-resolve cross-pipeline JOIN config_hashes and topologically sort
+        # so dependencies run before dependents. Mirrors what the SSE pipeline
+        # stream view does — keeps celery-driven and SSE-driven paths consistent.
+        # Without this, the visits pipeline (which JOINs registrations) errors
+        # out with "resolved_config_hash not set" before any SQL runs.
+        from commcare_connect.labs.analysis.utils import resolve_join_hashes
+        from commcare_connect.workflow.views import _resolve_pipeline_sources_for_run
+
+        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(pipeline_access, sources)
+        if configs_by_alias:
+            resolve_join_hashes(configs_by_alias)
+
         try:
-            for source in sources:
+            for source in ordered_sources:
                 pipeline_id = source.get("pipeline_id")
                 alias = source.get("alias")
                 if not pipeline_id or not alias:
@@ -893,7 +926,9 @@ class WorkflowDataAccess(BaseDataAccess):
                 per_opp_meta: dict[str, dict] = {}
                 for opp_id in opp_ids:
                     try:
-                        pipeline_result = pipeline_access.execute_pipeline(pipeline_id, opp_id)
+                        pipeline_result = pipeline_access.execute_pipeline(
+                            pipeline_id, opp_id, config=configs_by_alias.get(alias)
+                        )
                         merged_rows.extend(
                             {**row, "opportunity_id": opp_id} for row in pipeline_result.get("rows", [])
                         )
@@ -905,6 +940,12 @@ class WorkflowDataAccess(BaseDataAccess):
                 results[alias] = {
                     "rows": merged_rows,
                     "metadata": {
+                        # pipeline_id is the same across opp_ids (it's the
+                        # pipeline definition id, not opp-specific). Surfaced
+                        # at alias level so the V2 job handler can look up
+                        # full forms in RawVisitCache by (opp, pipeline_id)
+                        # without digging into per_opp metadata.
+                        "pipeline_id": pipeline_id,
                         "opportunity_ids": list(opp_ids),
                         "per_opp": per_opp_meta,
                         "row_count": len(merged_rows),
@@ -1654,7 +1695,7 @@ class PipelineDataAccess(BaseDataAccess):
     # Pipeline Execution
     # -------------------------------------------------------------------------
 
-    def execute_pipeline(self, definition_id: int, opportunity_id: int) -> dict:
+    def execute_pipeline(self, definition_id: int, opportunity_id: int, config=None) -> dict:
         """
         Execute a pipeline and return results.
 
@@ -1665,6 +1706,17 @@ class PipelineDataAccess(BaseDataAccess):
         inspect `result["metadata"].get("error")` to detect per-opp failures
         rather than wrapping the call in try/except.
 
+        Args:
+            definition_id: Pipeline definition labs-record id.
+            opportunity_id: Opportunity to scope this pipeline run to.
+            config: Optional pre-built `AnalysisPipelineConfig`. When the
+                caller is orchestrating multiple sibling pipelines and has
+                already resolved cross-pipeline JOIN config_hashes via
+                `resolve_join_hashes`, pass that config here. Without this,
+                a fresh `_schema_to_config` call rebuilds the config and
+                drops any resolved JOIN hashes — leading to "resolved_config_hash
+                not set" SQL build errors at execute time. Falls back to
+                fresh parsing when omitted (backwards-compatible).
         Returns:
             Dict with keys:
                 "rows": list of row dicts (empty on failure)
@@ -1683,8 +1735,10 @@ class PipelineDataAccess(BaseDataAccess):
             return {"rows": [], "metadata": {"error": "Pipeline has no schema"}}
 
         try:
-            # Convert schema to pipeline config
-            config = self._schema_to_config(schema, definition_id)
+            # Use the pre-resolved config if the caller passed one (multi-
+            # pipeline orchestration path); otherwise build a fresh one.
+            if config is None:
+                config = self._schema_to_config(schema, definition_id)
 
             # Execute pipeline using the AnalysisPipeline.
             # Works with either a Django request (web UI path) or a bare access_token
@@ -1721,6 +1775,13 @@ class PipelineDataAccess(BaseDataAccess):
                         # Entity-stage / visit-level fields. None on FLW rows.
                         "entity_id": getattr(row, "entity_id", None),
                         "entity_name": getattr(row, "entity_name", None),
+                        # Per-visit status / flagged. Required by job handlers that
+                        # filter visit rows post-pipeline (e.g. MBW V2's
+                        # status_filter=["approved"]). Missing them used to drop
+                        # every visit because `(r.get("status") or "").lower()`
+                        # returned "" for every row.
+                        "status": getattr(row, "status", None),
+                        "flagged": getattr(row, "flagged", None),
                     }
                     # Add computed fields (custom fields from config)
                     # FLWRow / EntityRow use custom_fields, VisitRow uses computed
@@ -1761,6 +1822,7 @@ class PipelineDataAccess(BaseDataAccess):
             DataSourceConfig,
             FieldComputation,
             HistogramComputation,
+            JoinConfig,
         )
 
         # Transform registry
@@ -1784,6 +1846,93 @@ class PipelineDataAccess(BaseDataAccess):
                 return None
             return transform_registry.get(name)
 
+        # Extractor registry — multi-path / multi-input field computations
+        # that the path/transform machinery can't express. Schemas reference
+        # by name (string); only the cchq cache loader currently consumes
+        # extractors (SQL builders ignore them on aggregated queries).
+        from datetime import date
+
+        def _v1_mbw_age(visit_dict: dict) -> str:
+            """v1-fidelity mother age: DOB-derived if mother_dob is parseable,
+            else fall back to recorded age fields. Mirrors
+            `extract_mother_metadata_from_forms` line 615-629 in v1.
+
+            Receives the visit_dict wrapper (form_json + base fields), same
+            shape produced by both cchq_cache_loader and
+            SQLBackend._process_visit_level. The actual cchq form payload
+            sits under `form_json`.
+            """
+            form_json = visit_dict.get("form_json", {}) if isinstance(visit_dict, dict) else {}
+            form = form_json.get("form", {}) if isinstance(form_json, dict) else {}
+            md = form.get("mother_details", {}) if isinstance(form, dict) else {}
+            if not isinstance(md, dict):
+                return ""
+            mother_dob = md.get("mother_dob") or ""
+            if mother_dob:
+                try:
+                    dob = date.fromisoformat(str(mother_dob)[:10])
+                    today = date.today()
+                    age_years = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+                    return str(age_years)
+                except (ValueError, TypeError):
+                    pass
+            return md.get("age_in_years_rounded") or md.get("mothers_age") or ""
+
+        # MBW visit-type create flags + completion flags. v1 uses these to
+        # determine which visits a mother is scheduled for and which were
+        # completed. JS-side follow-up classification consumes the schedules
+        # list shape produced by `_mbw_visit_schedules`.
+        _MBW_VISIT_CREATE_FLAGS = {
+            "ANC Visit": "create_antenatal_visit",
+            "Postnatal Delivery Visit": "create_postnatal_visit",
+            "1 Week Visit": "create_one_two_visit",
+            "1 Month Visit": "create_one_month_visit",
+            "3 Month Visit": "create_three_month_visit",
+            "6 Month Visit": "create_six_month_visit",
+        }
+
+        def _mbw_visit_schedules(visit_dict: dict) -> list:
+            """v1-fidelity expected-visits extraction. Walks var_visit_1..6
+            on the registration form, filters out blocks where the create
+            flag isn't set, and returns a list of schedule dicts the JS
+            follow-up adapter can match against actual visits.
+
+            Receives the visit_dict wrapper (form_json + base fields). The
+            actual cchq form payload sits under `form_json`.
+            """
+            form_json = visit_dict.get("form_json", {}) if isinstance(visit_dict, dict) else {}
+            form = form_json.get("form", {}) if isinstance(form_json, dict) else {}
+            if not isinstance(form, dict):
+                return []
+            schedules = []
+            for i in range(1, 7):
+                var_visit = form.get(f"var_visit_{i}")
+                if not isinstance(var_visit, dict):
+                    continue
+                visit_type = var_visit.get("visit_type", "")
+                create_flag_name = _MBW_VISIT_CREATE_FLAGS.get(visit_type)
+                if create_flag_name and str(var_visit.get(create_flag_name, "")) != "1":
+                    continue
+                schedules.append(
+                    {
+                        "visit_type": visit_type,
+                        "visit_date_scheduled": var_visit.get("visit_date_scheduled", ""),
+                        "visit_expiry_date": var_visit.get("visit_expiry_date", ""),
+                        "mother_case_id": var_visit.get("mother_case_id", ""),
+                    }
+                )
+            return schedules
+
+        extractor_registry = {
+            "v1_mbw_age": _v1_mbw_age,
+            "mbw_visit_schedules": _mbw_visit_schedules,
+        }
+
+        def get_extractor(name):
+            if not name:
+                return None
+            return extractor_registry.get(name)
+
         fields = []
         for field_def in schema.get("fields", []):
             fields.append(
@@ -1801,6 +1950,8 @@ class PipelineDataAccess(BaseDataAccess):
                     filter_op=field_def.get("filter_op", "eq"),
                     pre_aggregate_by=field_def.get("pre_aggregate_by", ""),
                     pre_aggregation=field_def.get("pre_aggregation", "first"),
+                    pre_aggregate_attribute_to=field_def.get("pre_aggregate_attribute_to", ""),
+                    extractor=get_extractor(field_def.get("extractor")),
                 )
             )
 
@@ -1856,6 +2007,22 @@ class PipelineDataAccess(BaseDataAccess):
                 )
             )
 
+        # Cross-pipeline joins. Each entry pulls fields from a sibling
+        # pipeline's computed cache. `resolved_config_hash` stays empty here —
+        # the orchestrator must populate it via `resolve_join_hashes` (or an
+        # equivalent walk) once sibling configs are constructed, because
+        # resolution requires knowing the sibling's full config to hash it.
+        joins = []
+        for j_def in schema.get("joins", []):
+            joins.append(
+                JoinConfig(
+                    from_alias=j_def["from_alias"],
+                    local_key=j_def["local_key"],
+                    remote_key_field=j_def["remote_key_field"],
+                    fields=list(j_def.get("fields", [])),
+                )
+            )
+
         return AnalysisPipelineConfig(
             grouping_key=schema.get("grouping_key", "username"),
             fields=fields,
@@ -1868,6 +2035,7 @@ class PipelineDataAccess(BaseDataAccess):
             data_source=data_source,
             window_fields=window_fields,
             extracted_filters=schema.get("extracted_filters", []),
+            joins=joins,
             # Discriminate the raw-visit cache by pipeline id so multiple
             # pipelines for the same opp don't clobber each other (#116).
             pipeline_id=definition_id,

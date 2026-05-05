@@ -595,26 +595,70 @@ class AnalysisPipeline:
                     else:
                         raise RuntimeError("Failed to read filtered data from cache after force refresh")
 
-            # CCHQ data source: fetch synchronously (no streaming progress)
+            # CCHQ data source: stream forms in chunks so memory stays bounded
+            # regardless of total form count. Earlier path materialized the full
+            # form list before processing — OOM'd Fargate workers at ~26k MBW
+            # registrations (~7KB each → ~180MB JSON, then ORM materialization
+            # on top, peaked ~1GB).
             if config.data_source.type == "cchq_forms":
-                from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import fetch_cchq_forms_as_visit_dicts
+                from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
+                from commcare_connect.labs.analysis.backends.sql.cchq_fetcher import iter_cchq_forms_as_visit_dicts
 
                 yield (EVENT_STATUS, {"message": f"Fetching '{config.data_source.form_name}' from CommCare HQ..."})
 
-                visit_dicts = fetch_cchq_forms_as_visit_dicts(
-                    request=self.request,
-                    data_source=config.data_source,
-                    access_token=self.access_token,
-                    opportunity_id=opp_id,
-                )
+                # Two-phase write: store_raw_visits_start tags rows with a
+                # sentinel visit_count so they're invisible to readers, batch
+                # inserts each chunk, finalize promotes them with the real
+                # count. Same pattern the connect-side stream uses; reusing it
+                # keeps cache state consistent.
+                cache_manager = SQLCacheManager(opp_id, config)
+                cache_manager.store_raw_visits_start(visit_count=0)
+                # 2500 matches `iter_forms` page size — each CCHQ page becomes
+                # exactly one bulk_create, no buffering across page boundaries.
+                # Peak chunk memory: ~75MB (2500 forms × ~7KB × 4x ORM overhead),
+                # well under Fargate's 1-2GB. Mirrors Connect's DEFAULT_PAGE_SIZE
+                # so both pipelines round-trip the same number of times.
+                CCHQ_CHUNK_SIZE = 2500
+                total_stored = 0
+                buffer: list[dict] = []
+                try:
+                    for visit_dict in iter_cchq_forms_as_visit_dicts(
+                        request=self.request,
+                        data_source=config.data_source,
+                        access_token=self.access_token,
+                        opportunity_id=opp_id,
+                    ):
+                        buffer.append(visit_dict)
+                        if len(buffer) >= CCHQ_CHUNK_SIZE:
+                            cache_manager.store_raw_visits_batch(buffer)
+                            total_stored += len(buffer)
+                            yield (EVENT_DOWNLOAD, {"rows": total_stored, "total": None})
+                            buffer.clear()
+                    if buffer:
+                        cache_manager.store_raw_visits_batch(buffer)
+                        total_stored += len(buffer)
+                        buffer.clear()
+                    cache_manager.store_raw_visits_finalize(actual_count=total_stored)
+                except Exception:
+                    cache_manager.store_raw_visits_abort()
+                    raise
 
-                if not visit_dicts:
+                if total_stored == 0:
                     yield (EVENT_STATUS, {"message": "No forms found"})
                     yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
                     return
 
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} forms..."})
-                result = self.backend.process_and_cache(self.request, config, opp_id, visit_dicts)
+                yield (EVENT_STATUS, {"message": f"Processing {total_stored} forms..."})
+                # Raw cache is populated; process_and_cache only needs the
+                # count for length checks (skip_raw_store=True), no need to
+                # hand it the full list anymore.
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts=[None] * total_stored,
+                    skip_raw_store=True,
+                )
                 yield (EVENT_STATUS, {"message": "Complete!"})
                 yield (EVENT_RESULT, result)
                 return
@@ -632,9 +676,28 @@ class AnalysisPipeline:
             visit_dicts = self._visit_dicts
             raw_data_already_stored = self._raw_data_already_stored
 
-            # Process with backend
-            yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} visits..."})
-            logger.info(f"[Pipeline/{self.backend_name}] Processing {len(visit_dicts)} visits")
+            # Process with backend.
+            # The status message tells the user what's coming because
+            # process_and_cache is a single blocking call — once we enter it,
+            # the SSE stream stays silent until aggregation finishes. The
+            # AGGREGATED stage in particular runs two SQL phases (visit-field
+            # extraction ~30s, then per-FLW aggregation that can take 5-10 min
+            # on large opps with JOIN+attribution-heavy fields). Without this
+            # framing, users on minute 5 of "Processing visits..." rightly
+            # wonder if it's hung.
+            stage_name = _stage_name(terminal_stage)
+            n = len(visit_dicts)
+            if terminal_stage == CacheStage.AGGREGATED:
+                msg = (
+                    f"Aggregating {n:,} visits to per-{stage_name} summaries — "
+                    f"step 1/2 extracts fields (~30s), step 2/2 runs the "
+                    f"per-FLW aggregation (5-10 min on large opps with "
+                    f"JOIN-heavy schemas)..."
+                )
+            else:
+                msg = f"Processing {n:,} visits to {stage_name}-level results..."
+            yield (EVENT_STATUS, {"message": msg})
+            logger.info(f"[Pipeline/{self.backend_name}] Processing {n} visits ({stage_name})")
 
             result = self.backend.process_and_cache(
                 self.request,

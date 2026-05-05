@@ -29,6 +29,78 @@ from commcare_connect.workflow.templates import create_workflow_from_template as
 logger = logging.getLogger(__name__)
 
 
+def _resolve_pipeline_sources_for_run(pipeline_access, pipeline_sources: list[dict]):
+    """Pre-build configs for every pipeline source and topologically sort
+    them so JOIN dependencies execute before their dependents.
+
+    Returns (ordered_sources, configs_by_alias). The caller passes
+    configs_by_alias to `resolve_join_hashes` and consumes ordered_sources
+    in order so each pipeline runs after the pipelines its JOINs read from.
+
+    Why topological sort matters: visits.joins[0]={"from_alias":"registrations"}
+    means visits' SQL reads `labs_computed_visit_cache WHERE config_hash =
+    <registrations_hash>`. If registrations hasn't run yet that cache slot is
+    empty and visits' JOIN returns NULL for every joined field — silent
+    correctness gap, not an error. Running registrations FIRST populates the
+    slot before visits queries it.
+
+    Edge cases:
+    - A pipeline whose schema can't be loaded is excluded from the topo sort
+      and appended at the end so the rest of the workflow still progresses.
+      The streaming loop will surface the per-pipeline error from its own
+      definition lookup.
+    - Cycles (rare, would mean two pipelines JOIN each other) fall through to
+      definition order rather than infinite-looping. Worth detecting later.
+    """
+    # Build {alias: (source, config)} keeping insertion order for tie-breaking
+    pipeline_meta: dict[str, dict] = {}
+    configs_by_alias: dict = {}
+    for source in pipeline_sources:
+        pid = source.get("pipeline_id")
+        alias = source.get("alias", f"pipeline_{pid}")
+        if not pid:
+            continue
+        pipeline_def = pipeline_access.get_definition(pid)
+        if not pipeline_def or not pipeline_def.schema:
+            # Defer surfacing — the streaming loop emits a per-pipeline
+            # "Pipeline not found" event for this case.
+            pipeline_meta[alias] = {"source": source, "config": None}
+            continue
+        try:
+            cfg = pipeline_access._schema_to_config(pipeline_def.schema, pid)
+            pipeline_meta[alias] = {"source": source, "config": cfg}
+            configs_by_alias[alias] = cfg
+        except Exception:
+            logger.exception("[PipelineSort] Failed to build config for pipeline %s (%s)", pid, alias)
+            pipeline_meta[alias] = {"source": source, "config": None}
+
+    # Topological order: a pipeline depends on every JOIN's from_alias. Use
+    # a simple DFS-based topo sort with cycle protection (cycles fall back
+    # to insertion order).
+    visited: set[str] = set()
+    visiting: set[str] = set()
+    ordered_aliases: list[str] = []
+
+    def _visit(alias: str):
+        if alias in visited or alias in visiting:
+            return
+        visiting.add(alias)
+        cfg = configs_by_alias.get(alias)
+        if cfg is not None:
+            for j in getattr(cfg, "joins", None) or []:
+                if j.from_alias in pipeline_meta:
+                    _visit(j.from_alias)
+        visiting.discard(alias)
+        visited.add(alias)
+        ordered_aliases.append(alias)
+
+    for alias in pipeline_meta:
+        _visit(alias)
+
+    ordered_sources = [pipeline_meta[a]["source"] for a in ordered_aliases]
+    return ordered_sources, configs_by_alias
+
+
 class WorkflowTemplateListAPIView(LoginRequiredMixin, View):
     """API endpoint to list available workflow templates."""
 
@@ -280,24 +352,15 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         f"Synced render code for definition {definition_id} from template '{matched_template}'"
                     )
 
-            # Get render code — in DEBUG mode, try template file first so local
-            # edits are reflected immediately without a manual sync step.
-            # Falls back to DB if no template name match (e.g. custom-named workflow).
-            if settings.DEBUG:
-                name_lower = definition.name.lower().replace(" ", "_")
-                live_code = None
-                for key, tmpl in TEMPLATES.items():
-                    if key == name_lower or tmpl["name"].lower() == definition.name.lower():
-                        live_code = tmpl.get("render_code")
-                        break
-                if live_code is not None:
-                    context["render_code"] = live_code
-                else:
-                    render_code = data_access.get_render_code(definition_id)
-                    context["render_code"] = render_code.data.get("component_code") if render_code else None
-            else:
-                render_code = data_access.get_render_code(definition_id)
-                context["render_code"] = render_code.data.get("component_code") if render_code else None
+            # Render code always comes from the workflow's LabsRecord — same
+            # in local and prod. Local doesn't shortcut to the template file:
+            # a workflow's render_code is data, not source, and serving it
+            # from disk in DEBUG diverges local behavior from prod in a
+            # confusing way. Iteration loop for render-code edits is now:
+            # edit .js → `inv push-render` → reload page (works against any
+            # environment, including labs.connect.dimagi.com).
+            render_code = data_access.get_render_code(definition_id)
+            context["render_code"] = render_code.data.get("component_code") if render_code else None
 
             # Determine effective opportunity list (fallback to primary)
             effective_opp_ids = definition.opportunity_ids or [opportunity_id]
@@ -421,6 +484,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
                     # Single completion verb — handles snapshot build + status flip atomically.
                     "completeRun": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
+                    # Back-compat alias for mbw_monitoring_v3 render code (it calls
+                    # `links.buildSnapshot` to drive completion). Points at the same
+                    # /complete/ endpoint as `completeRun`. Don't add new callers —
+                    # render code should use `view.complete()` from the view helper.
+                    "buildSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
                     "updateOpportunityIds": f"/labs/workflow/api/{definition_id}/opportunity-ids/",
                     # Read-only snapshot inspection (debug); render code reads
                     # instance.snapshot via the useRunView helper, not this URL.
@@ -1062,6 +1130,8 @@ def complete_run_api(request, run_id):
                 "success": True,
                 "status": completed_run.status,
                 "completed_at": completed_run.completed_at,
+                # Legacy alias for pre-rename callers (mbw_monitoring_v3 render).
+                "frozen_at": completed_run.completed_at,
                 "snapshot": completed_run.snapshot,
             }
         )
@@ -1123,6 +1193,10 @@ def get_snapshot_api(request, run_id):
                 "has_snapshot": bool(run.snapshot),
                 "snapshot": run.snapshot,
                 "completed_at": run.completed_at,
+                # Legacy alias — pre-rename callers (e.g. mbw_monitoring_v3 render)
+                # read `frozen_at` off this response. New callers should use
+                # `completed_at`. Drop after the v3 render migrates.
+                "frozen_at": run.completed_at,
                 "status": run.status,
             }
         )
@@ -2583,8 +2657,26 @@ class PipelineDataStreamView(BaseSSEStreamView):
                 opportunity_id=int(opportunity_id),
             )
 
+            # Pre-resolve cross-pipeline JOIN config hashes and topologically
+            # sort so dependencies run before dependents. Without this, the
+            # visits pipeline (which JOINs registrations) would either:
+            # (a) fail with `resolved_config_hash not set`, because the
+            #     orchestration layer didn't compute the registrations hash, or
+            # (b) read an empty registrations cache, because registrations
+            #     hadn't run yet.
+            # Both happened on the first v3 deploy — see PR #135 deploy logs
+            # at 16:16 UTC: visits errored out with the resolved_config_hash
+            # message, while registrations downloaded after.
+            from commcare_connect.labs.analysis.utils import resolve_join_hashes
+
+            ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(
+                pipeline_access, definition.pipeline_sources
+            )
+            if configs_by_alias:
+                resolve_join_hashes(configs_by_alias)
+
             try:
-                for source in definition.pipeline_sources:
+                for source in ordered_sources:
                     pipeline_id = source.get("pipeline_id")
                     alias = source.get("alias", f"pipeline_{pipeline_id}")
 
@@ -2615,7 +2707,13 @@ class PipelineDataStreamView(BaseSSEStreamView):
                         yield send_sse_event(f"Executing pipeline: {pipeline_def.name}{suffix}...")
 
                         try:
-                            config = pipeline_access._schema_to_config(pipeline_def.schema, pipeline_id)
+                            # Use the JOIN-resolved config we built above so
+                            # the visits pipeline sees its registrations
+                            # config_hash. Falling back to a fresh parse would
+                            # lose the resolved_config_hash patch.
+                            config = configs_by_alias.get(alias) or pipeline_access._schema_to_config(
+                                pipeline_def.schema, pipeline_id
+                            )
                             pipeline = AnalysisPipeline(request)
                             pipeline_stream = pipeline.stream_analysis(config, opportunity_id=opp_id)
                             logger.info(

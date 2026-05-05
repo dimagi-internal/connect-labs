@@ -61,9 +61,50 @@ def get_config_hash(config) -> str:
     # Add grouping key
     parts.append(f"grouping:{config.grouping_key}")
 
+    # Joins: changing the join graph or the joined fields must invalidate cache
+    # because join inputs feed into per-row aggregations. We do NOT include
+    # resolved_config_hash here — the joined pipeline's hash is structural
+    # (its own fields/grouping change), and including it would create circular
+    # dependency on hash order between sibling pipelines.
+    for j in getattr(config, "joins", []) or []:
+        parts.append(f"join:{j.from_alias}:{j.local_key}:{j.remote_key_field}")
+        for jf in j.fields:
+            parts.append(f"join_field:{jf.get('name')}:{jf.get('from')}")
+
     # Generate hash
     config_str = "|".join(parts)
     return hashlib.md5(config_str.encode()).hexdigest()[:12]
+
+
+def resolve_join_hashes(configs_by_alias: dict) -> None:
+    """Populate `resolved_config_hash` on every JoinConfig in `configs_by_alias`.
+
+    The orchestration layer holds a mapping `{alias: AnalysisPipelineConfig}`
+    for sibling pipelines in a workflow. JOIN SQL needs the joined pipeline's
+    `config_hash` so it can read the right rows from `labs_computed_visit_cache`.
+
+    This walker iterates each config's `joins`, looks up the sibling by alias,
+    computes its hash, and patches `resolved_config_hash` in place. Joined
+    pipelines must already be present in the dict — a missing alias is a hard
+    error (no silent fallback that would produce wrong data).
+
+    Args:
+        configs_by_alias: Mapping of pipeline alias to AnalysisPipelineConfig.
+
+    Raises:
+        ValueError: If a join references an unknown alias.
+    """
+    # Pre-compute hashes once per config (dedupe across multiple joins of same alias).
+    hashes_by_alias = {alias: get_config_hash(cfg) for alias, cfg in configs_by_alias.items()}
+    for alias, cfg in configs_by_alias.items():
+        for j in getattr(cfg, "joins", None) or []:
+            if j.from_alias not in hashes_by_alias:
+                raise ValueError(
+                    f"Pipeline {alias!r} declares JOIN from_alias={j.from_alias!r}, "
+                    f"but no sibling pipeline with that alias was supplied. "
+                    f"Known aliases: {sorted(hashes_by_alias)}"
+                )
+            j.resolved_config_hash = hashes_by_alias[j.from_alias]
 
 
 # =============================================================================
