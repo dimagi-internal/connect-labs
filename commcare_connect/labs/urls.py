@@ -5,6 +5,7 @@ from commcare_connect.labs.analysis import views as analysis_views
 from commcare_connect.labs.integrations.commcare import oauth_views as commcare_oauth_views
 from commcare_connect.labs.integrations.connect import oauth_views as connect_oauth_views
 from commcare_connect.labs.integrations.ocs import oauth_views as ocs_oauth_views
+from commcare_connect.mcp import token_views as mcp_token_views
 
 app_name = "labs"
 
@@ -12,6 +13,11 @@ urlpatterns = [
     # Context management
     path("clear-context/", views.clear_context, name="clear_context"),
     path("refresh-org-data/", views.refresh_org_data, name="refresh_org_data"),
+    # MCP Personal Access Tokens (self-service)
+    path("mcp/tokens/", mcp_token_views.tokens_index, name="mcp_tokens_index"),
+    path("mcp/tokens/create/", mcp_token_views.tokens_create, name="mcp_tokens_create"),
+    path("mcp/tokens/<int:pk>/revoke/", mcp_token_views.tokens_revoke, name="mcp_tokens_revoke"),
+    path("mcp/tokens/<int:pk>/rotate/", mcp_token_views.tokens_rotate, name="mcp_tokens_rotate"),
     # Connect OAuth (for labs authentication)
     path("login/", connect_oauth_views.labs_login_page, name="login"),
     path("initiate/", connect_oauth_views.labs_oauth_login, name="oauth_initiate"),
