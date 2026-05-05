@@ -37,6 +37,9 @@ import type {
   SaveWorkerResultResponse,
   CompleteRunParams,
   CompleteRunResponse,
+  RunView,
+  WorkerData,
+  WorkflowState,
 } from '@/components/workflow/types';
 import {
   MessageCircle,
@@ -1295,6 +1298,88 @@ function WorkflowRunner({
     return createActionHandlers(csrfToken);
   }, [csrfToken]);
 
+  // useRunView: abstracts snapshot-vs-live data reads and exposes view.complete().
+  //
+  // While the run is in_progress, returns the live workers/pipelines/state from
+  // props. Once the run is completed, returns whatever was captured in
+  // `instance.snapshot` at completion time. Render code that uses `view.X`
+  // works the same in both modes — the contract is maintained by the template's
+  // `snapshot_inputs` declaration on the BE side.
+  //
+  // See WORKFLOW_REFERENCE.md §"Saved-runs templates" for the full contract.
+  const view = useMemo<RunView>(() => {
+    const inst = initialData.instance;
+    const isCompleted = inst.status === 'completed';
+    const snapshot = (inst.snapshot || null) as {
+      workers?: WorkerData[];
+      pipelines?: Record<string, PipelineResult>;
+      state?: WorkflowState;
+    } | null;
+
+    const completeRunUrl = initialData.apiEndpoints.completeRun;
+    const completeFn = async (opts?: {
+      confirm?: string;
+    }): Promise<boolean> => {
+      if (isCompleted) {
+        return false;
+      }
+      if (!completeRunUrl) {
+        window.alert('Completion is not available for this run.');
+        return false;
+      }
+      if (opts?.confirm && !window.confirm(opts.confirm)) {
+        return false;
+      }
+      try {
+        const res = await actions.completeRun(inst.id);
+        if (!res.success) {
+          window.alert(`Failed to complete run: ${res.error || 'unknown'}`);
+          return false;
+        }
+        // Reload so the runner re-mounts in completed mode and renders from
+        // the snapshot the BE just wrote.
+        window.location.reload();
+        return true;
+      } catch (e) {
+        window.alert(
+          `Failed to complete run: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+        return false;
+      }
+    };
+
+    if (isCompleted && snapshot) {
+      return {
+        workers: (snapshot.workers as WorkerData[]) ?? initialData.workers,
+        pipelines:
+          (snapshot.pipelines as Record<string, PipelineResult>) ??
+          pipelineData,
+        state: (snapshot.state as WorkflowState) ?? instanceState,
+        isCompleted: true,
+        asOf: inst.completed_at ?? null,
+        complete: completeFn,
+      };
+    }
+
+    return {
+      workers: initialData.workers,
+      pipelines: pipelineData,
+      state: instanceState,
+      isCompleted: false,
+      asOf: null,
+      complete: completeFn,
+    };
+  }, [
+    initialData.instance,
+    initialData.workers,
+    initialData.apiEndpoints.completeRun,
+    pipelineData,
+    instanceState,
+    actions,
+  ]);
+
   // Create props for workflow component
   const workflowProps: WorkflowProps = {
     definition: definition,
@@ -1307,6 +1392,7 @@ function WorkflowRunner({
     links: createLinkHelpers(initialData.links),
     actions: actions,
     onUpdateState: handleUpdateState,
+    view: view,
   };
 
   return (

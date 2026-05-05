@@ -449,10 +449,10 @@ TEMPLATE = {
     "description": "Track KMC children with per-beneficiary dashboard, child list, and timeline drill-down.",
     "icon": "fa-baby",
     "color": "teal",
-    # No supports_snapshots: this is continuous per-child tracking, not a periodic
-    # action with a "moment of completion." Snapshot-shaped templates are the ones
-    # where a run captures "what I did this week" — see performance_review for
-    # the canonical example.
+    # No supports_saved_runs: this is continuous per-child tracking, not a periodic
+    # review with a "moment of completion." Saved-runs templates are the ones where
+    # a run captures "what I did this period" — see performance_review for the
+    # canonical example.
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schemas": PIPELINE_SCHEMAS,

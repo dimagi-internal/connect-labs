@@ -549,7 +549,7 @@ TEMPLATE = {
     # render JS reconstructs every tab from those frozen pipelines on
     # load, so snapshots stay true to "what I saw at the time" without
     # duplicating the JS aggregation logic in Python.
-    "supports_snapshots": True,
+    "supports_saved_runs": True,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schemas": PIPELINE_SCHEMAS,

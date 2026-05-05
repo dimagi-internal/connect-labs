@@ -28,6 +28,33 @@ Each seed template is a single Python file exporting these module-level names:
 - `DEFINITION` — dict with `name`, `description`, `statuses` (list), `config` (dict). Shape is validated by the MCP tool when cloning.
 - `RENDER_CODE` — a string containing the JSX. Same rules as live workflows: must declare `function WorkflowUI(...)`, must use `var` (not `const`/`let`), only `React` + Chart.js + Leaflet globals are available.
 - `PIPELINE_SCHEMAS` (optional) — a list of dicts, one per pipeline this template creates alongside the workflow. Each schema has `fields`, `aggregations`, `transforms`, `groupings`.
+- `TEMPLATE` — the registry export. Includes `key`, `name`, `description`, `icon`, `color`, `definition`, `render_code`, `pipeline_schema(s)`, plus optional flags described below.
+
+## Run-shaped vs action-shaped: choose one
+
+Decide upfront whether your template is **run-shaped** (a periodic review with a "moment of completion" — the user marks a run done and reopens it later as a frozen artifact) or **action-shaped** (an orchestration tool whose value lives in artifacts persisted in their own models — audit sessions, tasks, OCS conversations).
+
+### Run-shaped (`supports_saved_runs: True`)
+
+Add to `TEMPLATE`:
+
+- `"supports_saved_runs": True` — opts in to the in_progress|completed lifecycle. Render code receives `view`; the runner shows a completion verb.
+- One of (or both):
+  - `"snapshot_inputs"` — declarative manifest of what the framework's default hook captures: `{"pipelines": [aliases], "workers": bool, "state_keys": [keys]}`. Anything not listed is not captured. Use this when the snapshot is a verbatim subset of the inputs.
+  - Module-level `def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids, **_) -> dict:` — a custom hook that shapes the snapshot. Use when the snapshot is computed (KPI summaries, rolled-up metrics) rather than verbatim. The hook overrides `snapshot_inputs` if both are present.
+- `"snapshot_schema"` — documents the keys render code reads off `instance.snapshot`. Used by the framework for completion-confirm copy and as authoring documentation.
+
+The render code reads `view.workers`, `view.pipelines.<alias>`, `view.state.<key>`. The shape exposed by `view` when completed must match what the snapshot writes — that's the authoring contract.
+
+Reference: `commcare_connect/workflow/templates/performance_review.py`.
+
+### Action-shaped (no flag)
+
+Omit `supports_saved_runs` (or set it `False`). Don't include `snapshot_*` keys. Render code reads `workers`/`pipelines`/`instance.state` directly. There is no "Mark Run Complete" button.
+
+References: `audit_with_ai_review`, `bulk_image_audit`, `ocs_outreach`, `kmc_*` (continuous tracking).
+
+See `commcare_connect/workflow/WORKFLOW_REFERENCE.md` § 9 "Saved-runs templates" for the full contract.
 
 ## Discovering form JSON paths
 

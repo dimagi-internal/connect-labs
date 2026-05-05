@@ -1088,3 +1088,165 @@ Multi-opp workflow run pages show an "Opportunities: N selected [Edit]" control.
 ### Reference implementation
 
 `commcare_connect/workflow/templates/performance_review.py` is the canonical multi-opp template. Its table includes an **Opp** column rendering `worker.opportunity_id`. See also `docs/superpowers/specs/2026-04-17-multi-opp-workflows-design.md` for the design notes that led to the current contract.
+
+## 9. Saved-runs templates
+
+Some templates produce a periodic review whose value depends on what was true _at the moment the user finished it_ — a weekly performance review, a cohort QA pass, an audit batch. Reopening the run later should show the same workers and decisions even if the live data has shifted. The saved-runs framework provides this with two states (`in_progress | completed`), a `view` helper that abstracts snapshot-vs-live reads, and a single completion verb.
+
+Other templates are action-shaped — their value lives in the artifacts they produce (audit sessions, tasks, OCS conversations), each persisted in its own model. They opt out of saved runs and never "complete" at the run level.
+
+### Lifecycle
+
+```
+   Start Run                     view.complete()
+       │                                │
+       ▼                                ▼
+  ┌───────────┐                  ┌───────────┐
+  │in_progress│ ───────────────▶ │ completed │
+  └───────────┘                  └───────────┘
+       │                                │
+       │ delete                         │ Re-run = new in_progress run
+       ▼                                ▼
+     (gone)                       (completed run preserved as history)
+```
+
+- **`in_progress`** — mutable. State writes go to `run.data.state`. No snapshot exists.
+- **`completed`** — immutable. The completion call builds the snapshot, persists it, flips status, and stamps `completed_at` in a single LabsRecord write. The render reads from `instance.snapshot` via `view.X`; live pipelines/workers are not consulted.
+
+There is no `failed` state. If snapshot assembly raises, the run stays `in_progress` and the user can retry. There is no `abandoned` state either — abandoned runs are indistinguishable from in-progress, so the only terminal transition is the user explicitly marking complete.
+
+### Opting in
+
+Run-shaped templates declare:
+
+```python
+TEMPLATE = {
+    "key": "performance_review",
+    "supports_saved_runs": True,           # opts in to the lifecycle
+    "snapshot_inputs": {                   # optional, see below
+        "pipelines": ["visits"],
+        "workers": True,
+        "state_keys": ["worker_states", "notes"],
+    },
+    "snapshot_schema": SNAPSHOT_SCHEMA,    # optional, documents the shape
+    ...
+}
+```
+
+Action-shaped templates omit `supports_saved_runs` (or set it `False`). They never get the completion endpoint wired up, never appear with a "Mark Run Complete" button, and the run-picker shows them differently.
+
+### Declaring the snapshot — three options
+
+**A. `snapshot_inputs` (the common case)** — a manifest of what the framework's default hook should capture. Anything not listed is not captured.
+
+```python
+"snapshot_inputs": {
+    "pipelines":  ["visits", "registrations"],   # alias allow-list (None = all)
+    "workers":    True,                          # default True
+    "state_keys": ["worker_states", "notes"],    # state allow-list (None = all)
+}
+```
+
+If a declared pipeline alias isn't present at completion (because the workflow definition's pipeline_sources changed), the framework logs a warning and skips it.
+
+**B. `build_snapshot` hook (when shape differs from inputs)** — define a module-level function in your template:
+
+```python
+def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids, **_):
+    """Compute summaries / KPIs / whatever the snapshot should hold."""
+    return {
+        "schema_version": 1,
+        "workers": workers,
+        "state":   {"worker_states": state.get("worker_states", {})},
+        "summary": {...},
+    }
+```
+
+Use this when the snapshot is computed (KPI counts, weekly bins, etc.) rather than a verbatim capture. The hook owns the entire shape; the `snapshot_inputs` manifest is ignored when a hook is present.
+
+**C. `snapshot_schema` (the render contract)** — a manifest of what render code expects to read off `instance.snapshot`:
+
+```python
+SNAPSHOT_SCHEMA = {
+    "version": 1,
+    "keys": {
+        "workers":             "FLW list at completion",
+        "state.worker_states": "Per-FLW review decisions",
+        "summary":             "Counts: total / reviewed / by_status",
+    },
+}
+```
+
+The framework uses this to populate the completion confirmation copy ("Completing will save 12 workers, 8 review decisions"); render code uses it as documentation. When the shape needs to evolve, bump `version`.
+
+### Reading run data: the `view` helper
+
+Render code never reads `instance.snapshot` directly, never branches on `instance.status`, and never reads bare `workers`/`pipelines`/`state` props. It uses `view`:
+
+```jsx
+function WorkflowUI({
+  definition,
+  instance,
+  links,
+  actions,
+  onUpdateState,
+  view,
+}) {
+  const workers = view.workers; // live or snapshot, same shape
+  const workerStates = view.state.worker_states ?? {};
+  const isCompleted = view.isCompleted; // true when status == 'completed'
+  const asOf = view.asOf; // completed_at, or null while in_progress
+
+  // Mutations are no-ops once completed (and the BE rejects with 409 anyway):
+  const handleChange = (username, status) => {
+    if (isCompleted) return;
+    onUpdateState({
+      worker_states: { ...workerStates, [username]: { status } },
+    });
+  };
+
+  // Mark run complete from a button:
+  const handleComplete = () =>
+    view.complete({
+      confirm: 'Mark this run complete? Decisions are read-only after.',
+    });
+}
+```
+
+The contract: `view.workers`, `view.pipelines`, and `view.state` work identically whether the run is in_progress (live data) or completed (snapshot data). The template's `snapshot_inputs` (or hook) is what makes the round-trip safe — the snapshot's shape must match what `view` reads.
+
+### Marking a run completed
+
+`view.complete({ confirm? })`:
+
+1. Optionally shows the `confirm` dialog (skip the call on cancel).
+2. POSTs to `apiEndpoints.completeRun`. The endpoint:
+   - Refuses with **409** if the run is already completed.
+   - Refuses with **400** if the workflow's template doesn't declare `supports_saved_runs`.
+   - Calls `build_snapshot_for_template(...)` to produce the snapshot.
+   - Atomically flips status to `completed`, stamps `completed_at`, persists the snapshot.
+3. On 200 → reloads the page; the runner re-mounts in completed mode and reads from the snapshot.
+4. On error → surfaces a `window.alert`; run stays `in_progress`.
+
+Server-side write protection: while a run is `completed`, `update_state_api`, `save_worker_result_api`, and any other mutation endpoint return **409**. State is genuinely immutable, not just defensively read-only on the FE.
+
+### Re-running
+
+There is no "edit a completed run" path. The pattern is **re-run = new in_progress run**. The run picker's `Start Run` button creates a fresh run; the completed one stays in the history list. This matches what users actually want when they say "compare to last week."
+
+### Action-shaped templates (opt-out)
+
+`audit_with_ai_review`, `bulk_image_audit`, `ocs_outreach`, `sam_followup`, and `kmc_*` dashboards are action-shaped — their artifacts persist in their own models (audit sessions, tasks, child records). They don't declare `supports_saved_runs`. The runner doesn't show a complete button; the run picker labels them as working sessions rather than reviews.
+
+### Size budget
+
+Snapshots live inside `LabsRecord.data` JSON. The framework warns at 1 MB per snapshot and logs an error at 5 MB — those are signals the template is capturing too much. Tighten with `snapshot_inputs` or move computed summaries into a `build_snapshot` hook.
+
+### Reference implementation
+
+`commcare_connect/workflow/templates/performance_review.py` is the canonical run-shaped template:
+
+- `supports_saved_runs: True`.
+- Module-level `build_snapshot` hook producing `{workers, state, summary, opportunity_ids}`.
+- `SNAPSHOT_SCHEMA` documenting the shape.
+- Render code that reads `view.workers`, `view.state.worker_states`, calls `view.complete(...)` from a "Mark Run Complete" button, and surfaces a "Completed at …" banner when `view.isCompleted`.
