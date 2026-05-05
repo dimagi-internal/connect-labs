@@ -39,14 +39,20 @@ Decide upfront whether your template is **run-shaped** (a periodic review with a
 Add to `TEMPLATE`:
 
 - `"supports_saved_runs": True` — opts in to the in_progress|completed lifecycle. Render code receives `view`; the runner shows a completion verb.
-- One of (or both):
-  - `"snapshot_inputs"` — declarative manifest of what the framework's default hook captures: `{"pipelines": [aliases], "workers": bool, "state_keys": [keys]}`. Anything not listed is not captured. Use this when the snapshot is a verbatim subset of the inputs.
-  - Module-level `def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids, **_) -> dict:` — a custom hook that shapes the snapshot. Use when the snapshot is computed (KPI summaries, rolled-up metrics) rather than verbatim. The hook overrides `snapshot_inputs` if both are present.
+- `"snapshot_inputs"` — declarative manifest of what the framework's default hook captures: `{"pipelines": [aliases], "workers": bool, "state_keys": [keys]}`. Anything not listed is not captured. **Use this for almost every template** — render code recomputes derived values (summary cards, sorts, filters) at render time from the captured inputs.
 - `"snapshot_schema"` — documents the keys render code reads off `instance.snapshot`. Used by the framework for completion-confirm copy and as authoring documentation.
 
-The render code reads `view.workers`, `view.pipelines.<alias>`, `view.state.<key>`. The shape exposed by `view` when completed must match what the snapshot writes — that's the authoring contract.
+The render code reads `view.workers`, `view.pipelines.<alias>`, `view.state.<key>`. The manifest's shape mirrors what `view.X` exposes while in_progress, so render code is identical in both modes — that's the authoring contract.
 
-Reference: `commcare_connect/workflow/templates/performance_review.py`.
+**Escape hatch:** Module-level `def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids, **_) -> dict:` overrides the manifest entirely. Reach for it only when:
+
+1. Pipelines are huge and you want to capture aggregates instead of raw rows (compactness).
+2. You need server-side context the FE doesn't have (DB lookup, server-only timestamp, multi-opp roll-up).
+3. The captured shape needs to differ structurally from the inputs.
+
+If none of those apply, use `snapshot_inputs` — it's strictly simpler.
+
+Reference: `commcare_connect/workflow/templates/performance_review.py` (manifest path).
 
 ### Action-shaped (no flag)
 

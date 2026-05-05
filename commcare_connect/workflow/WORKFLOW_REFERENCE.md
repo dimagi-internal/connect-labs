@@ -1135,36 +1135,21 @@ TEMPLATE = {
 
 Action-shaped templates omit `supports_saved_runs` (or set it `False`). They never get the completion endpoint wired up, never appear with a "Mark Run Complete" button, and the run-picker shows them differently.
 
-### Declaring the snapshot — three options
+### Declaring the snapshot
 
-**A. `snapshot_inputs` (the common case)** — a manifest of what the framework's default hook should capture. Anything not listed is not captured.
+**Default path: `snapshot_inputs` (the manifest).** Declares what the framework's default hook captures — listed pipelines, the worker list, listed state keys. Anything not listed is not captured. Render code recomputes derived values (summary cards, sorts, filters) at render time from this captured data.
 
 ```python
 "snapshot_inputs": {
-    "pipelines":  ["visits", "registrations"],   # alias allow-list (None = all)
+    "pipelines":  ["visits", "registrations"],   # alias allow-list (None = all, [] = none)
     "workers":    True,                          # default True
-    "state_keys": ["worker_states", "notes"],    # state allow-list (None = all)
+    "state_keys": ["worker_states", "notes"],    # state allow-list (None = all of state)
 }
 ```
 
-If a declared pipeline alias isn't present at completion (because the workflow definition's pipeline_sources changed), the framework logs a warning and skips it.
+If a declared pipeline alias isn't present at completion (because the workflow definition's pipeline_sources changed), the framework logs a warning and skips it. Almost every saved-runs template should land here — it requires no Python and produces a snapshot whose shape mirrors what `view.X` exposes while in_progress, so render code is identical in both modes.
 
-**B. `build_snapshot` hook (when shape differs from inputs)** — define a module-level function in your template:
-
-```python
-def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids, **_):
-    """Compute summaries / KPIs / whatever the snapshot should hold."""
-    return {
-        "schema_version": 1,
-        "workers": workers,
-        "state":   {"worker_states": state.get("worker_states", {})},
-        "summary": {...},
-    }
-```
-
-Use this when the snapshot is computed (KPI counts, weekly bins, etc.) rather than a verbatim capture. The hook owns the entire shape; the `snapshot_inputs` manifest is ignored when a hook is present.
-
-**C. `snapshot_schema` (the render contract)** — a manifest of what render code expects to read off `instance.snapshot`:
+**Render contract: `snapshot_schema` (recommended companion).** Documents the keys render code expects to read off `instance.snapshot`. The framework can use this to drive completion-confirm copy ("save 12 workers, 8 review decisions"), and bumping `version` is how a template evolves its captured shape.
 
 ```python
 SNAPSHOT_SCHEMA = {
@@ -1172,12 +1157,35 @@ SNAPSHOT_SCHEMA = {
     "keys": {
         "workers":             "FLW list at completion",
         "state.worker_states": "Per-FLW review decisions",
-        "summary":             "Counts: total / reviewed / by_status",
+        "opportunity_ids":     "Opportunities the run covered",
     },
 }
 ```
 
-The framework uses this to populate the completion confirmation copy ("Completing will save 12 workers, 8 review decisions"); render code uses it as documentation. When the shape needs to evolve, bump `version`.
+#### Escape hatch: `build_snapshot` hook
+
+Use only when the snapshot needs a shape the manifest can't produce. Real reasons to reach for it:
+
+1. **Compactness.** Raw pipelines are large and the dashboard only needs aggregates. A hook can roll rows into a compact summary instead of capturing them verbatim.
+2. **Server-side context.** Something the hook has access to that the FE doesn't — a database lookup, a server-only timestamp, a roll-up across multiple opportunities.
+3. **Shape divergence.** The captured snapshot needs to differ structurally from the inputs (rename keys, reorganize) for reasons other than (1) and (2).
+
+If you don't need any of those, use `snapshot_inputs` instead — it's strictly simpler.
+
+```python
+def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids, **_):
+    """Hook signature. Returns whatever shape your render code expects under
+    instance.snapshot. The hook owns the entire shape; snapshot_inputs is
+    ignored when a hook is present. Must accept **_ for forward compatibility."""
+    return {
+        "schema_version": 1,
+        "workers": workers,
+        "state":   {"worker_states": state.get("worker_states", {})},
+        # … computed aggregates that don't fit the manifest path …
+    }
+```
+
+The hook runs server-side at completion, in the same request that flips status — if it raises, the run stays `in_progress` and the user can retry.
 
 ### Reading run data: the `view` helper
 
@@ -1244,9 +1252,10 @@ Snapshots live inside `LabsRecord.data` JSON. The framework warns at 1 MB per sn
 
 ### Reference implementation
 
-`commcare_connect/workflow/templates/performance_review.py` is the canonical run-shaped template:
+`commcare_connect/workflow/templates/performance_review.py` is the canonical run-shaped template, and exemplifies the manifest path:
 
 - `supports_saved_runs: True`.
-- Module-level `build_snapshot` hook producing `{workers, state, summary, opportunity_ids}`.
-- `SNAPSHOT_SCHEMA` documenting the shape.
-- Render code that reads `view.workers`, `view.state.worker_states`, calls `view.complete(...)` from a "Mark Run Complete" button, and surfaces a "Completed at …" banner when `view.isCompleted`.
+- `snapshot_inputs` declaring `{pipelines: [], workers: True, state_keys: ["worker_states"]}` — captures workers + decisions, no pipelines.
+- `SNAPSHOT_SCHEMA` documenting the shape for future readers.
+- No `build_snapshot` hook — the render's summary cards (`Total / Reviewed / Pending / Confirmed`) are computed in JSX via `React.useMemo` from `view.workers` + `view.state.worker_states`, so they work identically in_progress and completed.
+- Render code reads `view.workers`, `view.state.worker_states`, calls `view.complete(...)` from a "Mark Run Complete" button, and surfaces a completed banner with `view.asOf` when `view.isCompleted`.
