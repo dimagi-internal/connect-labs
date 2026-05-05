@@ -1,7 +1,7 @@
 # Workflow Run Lifecycle: active | frozen
 
 **Date:** 2026-04-30
-**Status:** In progress
+**Status:** SUPERSEDED by `2026-05-04-run-state-final.md`. The active|frozen vocabulary was reverted to in_progress|completed; the rest of the design (no auto-create, atomic completion, snapshot-on-complete, server-enforced read-only) survives.
 
 ## Goal
 

@@ -22,7 +22,13 @@ Use the `connect_labs` MCP tools to round-trip a workflow between labs and Claud
    - Must declare `function WorkflowUI(...)` as a function declaration (not arrow, not `const WorkflowUI = ...`)
    - Use `var`. No `const` or `let`.
    - Only global `React` is available, plus Chart.js and Leaflet from CDN.
-   - Props are `{definition, instance, workers, pipelines, links, actions, onUpdateState}`.
+   - Props are `{definition, instance, workers, pipelines, links, actions, onUpdateState, view}`.
+   - **Run-shaped templates (`workflow_get` returns `saved_runs.supports_saved_runs: true`):** read run data via `view`, not bare props.
+     - `view.workers`, `view.pipelines`, `view.state` resolve to live data while in_progress and to snapshot data once completed — same shape, same render.
+     - `view.isCompleted` and `view.asOf` (= `completed_at`) drive read-only banners and "as of" framing.
+     - `view.complete({ confirm: "..." })` is the canonical "Mark Run Complete" action — confirms with the user, builds the snapshot atomically, reloads.
+     - Disable mutation UIs (`disabled={view.isCompleted}`) for clarity even though the BE returns 409.
+   - **Action-shaped templates (`saved_runs.supports_saved_runs: false` or no `saved_runs` key):** read `workers`/`pipelines`/`instance.state` directly. There is no completion flow at the run level.
 
 5. **Sanity check before pushing.** Re-read the JSX. Does it reference any pipeline aliases or field names that don't exist in the schema you fetched in step 3? If so, fix the reference before pushing — server-side validation doesn't catch semantic errors.
 
@@ -58,6 +64,15 @@ User: "Create a new workflow from the performance_review template".
 
 - `workflow_create_from_template(template_key="performance_review", opportunity_id=..., name=optional)`.
 - Seed templates live in the repo at `commcare_connect/workflow/templates/*.py`. `template_key` is the module name (e.g. `performance_review`, `kmc_longitudinal`).
+
+### Editing a run-shaped template's render code
+
+When `workflow_get` returns `saved_runs.supports_saved_runs: true`:
+
+- Inspect `saved_runs.snapshot_schema` to see what keys render code can rely on after completion. If you're adding new fields the template reads, the snapshot must produce them too — either via `snapshot_inputs` (declarative manifest) or a `build_snapshot` hook (computed). Both are authored at the SEED-template level (`commcare_connect/workflow/templates/<key>.py`), not on the live workflow record. If the schema needs to change, that's a `workflow-templates` task, not a `workflow-author` task.
+- The render code's contract is `view.workers` / `view.pipelines.<alias>` / `view.state.<key>` — anywhere the existing JSX reads bare `workers` / `pipelines` / `instance.state` for run data, switch it to `view.X`. `definition`, `links`, `actions`, `onUpdateState` are unchanged.
+- A "Mark Run Complete" button always calls `view.complete({ confirm: "<copy>" })`. Don't POST to `/complete/` directly — the helper handles confirmation and the page reload.
+- Reference: `commcare_connect/workflow/templates/performance_review.py`. See also `commcare_connect/workflow/WORKFLOW_REFERENCE.md` § 9 "Saved-runs templates".
 
 ### Update definition metadata
 

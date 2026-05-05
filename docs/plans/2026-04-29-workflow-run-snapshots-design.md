@@ -1,7 +1,7 @@
 # Workflow Runs & Snapshots — Framework Design
 
 **Date:** 2026-04-29
-**Status:** Draft v2
+**Status:** SUPERSEDED by `2026-05-04-run-state-final.md`. The architecture (three layers, snapshot at completion, action vs run-shaped templates) survives; the names changed (`supports_snapshots` → `supports_saved_runs`, `frozen` → `completed`) and the entity-stage lift was deferred.
 
 ## Problem
 

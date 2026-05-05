@@ -54,12 +54,18 @@ def _discover_templates() -> None:
     Each module should export a TEMPLATE dict. Modules starting with '_' or
     named 'base' are skipped.
 
-    Optional template extensions, picked up by attribute presence:
-    - `build_snapshot(pipelines, state, opportunity_id) -> dict`: a module-level
-      function that turns the raw pipeline output into the dashboard shape that
-      the render code reads from `instance.snapshot`. Templates declare opt-in
-      via `TEMPLATE["supports_snapshots"] = True`. The function is attached to
-      the registered template under the `build_snapshot` key for runtime lookup.
+    Saved-runs opt-in (see WORKFLOW_REFERENCE.md §"Saved-runs templates"):
+    - `TEMPLATE["supports_saved_runs"] = True` enables the in_progress→completed
+      lifecycle for this template's runs.
+    - Optional `TEMPLATE["snapshot_inputs"]` declares what the framework's
+      default hook should capture: `{"pipelines": [aliases], "workers": bool,
+      "state_keys": [keys]}`. Anything not listed is not captured.
+    - Optional `TEMPLATE["snapshot_schema"]` documents the shape render code
+      can read from `instance.snapshot` (consumed by the FE `useRunView`
+      helper and the completion confirmation copy).
+    - Optional module-level `build_snapshot(*, pipelines, state, opportunity_id,
+      **context) -> dict` overrides the default hook entirely — use when the
+      snapshot shape differs from the inputs (computed summaries, KPIs, etc.).
     """
     import commcare_connect.workflow.templates as templates_package
 
@@ -74,10 +80,6 @@ def _discover_templates() -> None:
                 template = module.TEMPLATE
                 key = template.get("key")
                 if key:
-                    # Attach optional snapshot builder for runtime lookup. The TEMPLATE
-                    # dict's `supports_snapshots` flag is what marks opt-in; the function
-                    # itself is plumbed through here so callers don't need to import
-                    # the module again.
                     if hasattr(module, "build_snapshot") and callable(module.build_snapshot):
                         template["build_snapshot"] = module.build_snapshot
                     TEMPLATES[key] = template
@@ -116,7 +118,8 @@ def list_templates() -> list[dict]:
     List all available templates.
 
     Returns:
-        List of dicts with 'key', 'name', 'description', 'icon', 'color', 'multi_opp'
+        List of dicts with 'key', 'name', 'description', 'icon', 'color',
+        'multi_opp', and 'supports_saved_runs'.
     """
     return [
         {
@@ -126,10 +129,82 @@ def list_templates() -> list[dict]:
             "icon": t.get("icon", "fa-cog"),
             "color": t.get("color", "gray"),
             "multi_opp": bool(t.get("multi_opp", False)),
-            "supports_snapshots": bool(t.get("supports_snapshots", False)),
+            "supports_saved_runs": bool(t.get("supports_saved_runs", False)),
         }
         for key, t in TEMPLATES.items()
     ]
+
+
+# Soft size guards on snapshot blobs. JSON-serialized size is a reasonable
+# proxy for what ends up in LabsRecord.data. Warn at 1 MB; log loudly at
+# 5 MB (the design's hard-reject threshold — kept as a log for now to avoid
+# breaking adopters mid-migration).
+_SNAPSHOT_SIZE_WARN_BYTES = 1 * 1024 * 1024
+_SNAPSHOT_SIZE_HARD_BYTES = 5 * 1024 * 1024
+
+
+def _default_snapshot_from_inputs(
+    *, snapshot_inputs: dict, pipelines: dict, state: dict, context: dict, opportunity_id: int
+) -> dict:
+    """Build the default snapshot honoring a template's declarative manifest.
+
+    `snapshot_inputs` keys (all optional):
+      - `pipelines`: list of alias strings to capture verbatim. None/missing
+        means "all"; an empty list means "none."
+      - `workers`: bool (default True) — capture worker list if present.
+      - `state_keys`: list of state keys to capture. None/missing means "all
+        of state"; an empty list means "no state."
+    Anything not listed is not captured.
+    """
+    out: dict = {"schema_version": 1}
+
+    pipelines_filter = snapshot_inputs.get("pipelines")
+    if pipelines_filter is None:
+        out["pipelines"] = pipelines
+    else:
+        # A declared alias missing from the live result is contract drift.
+        missing = [alias for alias in pipelines_filter if alias not in pipelines]
+        if missing:
+            logger.warning("snapshot_inputs declared pipeline aliases not present at completion: %s", missing)
+        out["pipelines"] = {alias: pipelines[alias] for alias in pipelines_filter if alias in pipelines}
+
+    if snapshot_inputs.get("workers", True):
+        out["workers"] = context.get("workers", [])
+
+    state_keys = snapshot_inputs.get("state_keys")
+    if state_keys is None:
+        out["state"] = state
+    else:
+        out["state"] = {k: state.get(k) for k in state_keys if k in state}
+
+    out["opportunity_ids"] = context.get("opportunity_ids", [opportunity_id])
+    return out
+
+
+def _check_snapshot_size(template_key: str, snapshot: dict) -> None:
+    """Log a warning if the JSON-serialized snapshot is larger than the soft cap."""
+    import json as _json
+
+    try:
+        size = len(_json.dumps(snapshot, default=str).encode("utf-8"))
+    except Exception:
+        logger.exception("Could not measure snapshot size for %s", template_key)
+        return
+    if size >= _SNAPSHOT_SIZE_HARD_BYTES:
+        logger.error(
+            "Snapshot for template %r is %.1f MB (>= %.0f MB hard cap). "
+            "Consider declaring snapshot_inputs to trim, or a custom build_snapshot hook.",
+            template_key,
+            size / 1024 / 1024,
+            _SNAPSHOT_SIZE_HARD_BYTES / 1024 / 1024,
+        )
+    elif size >= _SNAPSHOT_SIZE_WARN_BYTES:
+        logger.warning(
+            "Snapshot for template %r is %.1f MB (>= %.0f MB soft cap).",
+            template_key,
+            size / 1024 / 1024,
+            _SNAPSHOT_SIZE_WARN_BYTES / 1024 / 1024,
+        )
 
 
 def build_snapshot_for_template(
@@ -140,32 +215,58 @@ def build_snapshot_for_template(
     opportunity_id: int,
     **context,
 ) -> dict | None:
-    """
-    Run a template's `build_snapshot(...)` hook.
+    """Build the snapshot for a saved-runs template.
 
-    Returns the dashboard-shape dict the hook produced, or None if:
-      - the template isn't registered
-      - the template doesn't declare `supports_snapshots: True`
-      - the template has no `build_snapshot` function
+    Resolution order:
+      1. If the template isn't registered or doesn't declare
+         `supports_saved_runs: True`, return `None`.
+      2. If the template defines a module-level `build_snapshot` hook, call
+         it. The hook owns the shape entirely; use this when the snapshot
+         shape differs from the raw inputs (computed summaries, KPIs).
+      3. Otherwise, use the framework's default hook, which respects the
+         template's `snapshot_inputs` manifest. Templates that just need
+         "capture these inputs verbatim" can opt in with one line plus the
+         manifest and never write Python.
 
-    Hook contract: templates declare a module-level
-    `build_snapshot(*, pipelines, state, opportunity_id, **context) -> dict`
-    function. The framework forwards a context dict whose keys may grow over
-    time (currently `workers`, `opportunity_ids`); hooks should accept
-    `**context` to stay forward-compatible.
+    Hook contract: `build_snapshot(*, pipelines, state, opportunity_id,
+    **context) -> dict`. Context keys may grow over time (currently
+    `workers`, `opportunity_ids`); hooks should accept `**context` to stay
+    forward-compatible.
 
-    Hooks run server-side (Celery / API endpoint) so they have full Python
-    access — no JS-shipped row aggregation needed.
+    Hooks run server-side at completion time, so they have full Python access.
     """
     template = TEMPLATES.get(template_key)
     if not template:
         return None
-    if not template.get("supports_snapshots"):
+    if not template.get("supports_saved_runs"):
         return None
+
     builder = template.get("build_snapshot")
-    if not callable(builder):
-        return None
-    return builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id, **context)
+    if callable(builder):
+        snapshot = builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id, **context)
+    else:
+        snapshot_inputs = template.get("snapshot_inputs")
+        if snapshot_inputs is None:
+            # Permissive fallback: dump everything. Logged because templates
+            # should declare what they capture for clarity and size discipline.
+            logger.warning(
+                "Template %r declares supports_saved_runs but no build_snapshot hook "
+                "and no snapshot_inputs manifest — falling back to dump-everything. "
+                "Add a `snapshot_inputs` block to the template to make the contract explicit.",
+                template_key,
+            )
+            snapshot_inputs = {}
+        snapshot = _default_snapshot_from_inputs(
+            snapshot_inputs=snapshot_inputs,
+            pipelines=pipelines,
+            state=state,
+            context=context,
+            opportunity_id=opportunity_id,
+        )
+
+    if isinstance(snapshot, dict):
+        _check_snapshot_size(template_key, snapshot)
+    return snapshot
 
 
 def create_workflow_from_template(

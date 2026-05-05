@@ -58,12 +58,19 @@ DEFINITION = {
     "pipeline_sources": [],  # Will be populated when pipeline is created
 }
 
-RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState }) {
+RENDER_CODE = """function WorkflowUI({ definition, instance, links, actions, onUpdateState, view }) {
     const [sortBy, setSortBy] = React.useState('name');
     const [filterStatus, setFilterStatus] = React.useState('all');
 
+    // Read run data via the view helper — works the same whether the run is
+    // in_progress (live data) or completed (snapshot data). Render code never
+    // reaches into instance.snapshot or live props directly. See
+    // WORKFLOW_REFERENCE.md §"Saved-runs templates".
+    const workers = view.workers;
+    const workerStates = view.state.worker_states || {};
+    const isCompleted = view.isCompleted;
+
     const statuses = definition.statuses || [];
-    const workerStates = instance.state?.worker_states || {};
     const config = definition.config || {};
 
     // Calculate stats
@@ -97,12 +104,21 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
     }, [workers, workerStates, filterStatus, sortBy]);
 
     const handleStatusChange = async (username, newStatus) => {
+        if (isCompleted) return;  // Defensive: BE rejects with 409 anyway.
         await onUpdateState({
             worker_states: {
                 ...workerStates,
                 [username]: { ...workerStates[username], status: newStatus }
             }
         });
+    };
+
+    const handleComplete = async () => {
+        const remaining = stats.total - stats.reviewed;
+        const msg = remaining > 0
+            ? "Mark this run complete? " + remaining + " worker(s) still pending — you won't be able to edit decisions after."
+            : "Mark this run complete? You won't be able to edit decisions after.";
+        await view.complete({ confirm: msg });
     };
 
     const getStatusColor = (statusId) => {
@@ -122,6 +138,18 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
 
     return (
         <div className="space-y-6">
+            {/* Completion banner — shown only when viewing a completed run.
+                Captured-at-completion-time data is the source; FE is read-only. */}
+            {isCompleted && (
+                <div className="bg-gray-100 border-l-4 border-gray-400 p-4 rounded">
+                    <div className="text-sm text-gray-700">
+                        <strong>This run is completed.</strong>
+                        {view.asOf ? " Snapshot from " + new Date(view.asOf).toLocaleString() + "." : ""}
+                        {" "}Decisions are read-only. To redo this work, start a new run.
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div className="bg-white rounded-lg shadow-sm p-6">
                 <div className="flex justify-between items-start">
@@ -129,8 +157,18 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                         <h1 className="text-2xl font-bold text-gray-900">{definition.name}</h1>
                         <p className="text-gray-600 mt-1">{definition.description}</p>
                     </div>
-                    <div className="text-sm text-gray-500">
-                        {instance.state?.period_start} - {instance.state?.period_end}
+                    <div className="flex flex-col items-end gap-2">
+                        <div className="text-sm text-gray-500">
+                            {instance.state?.period_start} - {instance.state?.period_end}
+                        </div>
+                        {!isCompleted && (
+                            <button
+                                onClick={handleComplete}
+                                className="inline-flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded"
+                            >
+                                Mark Run Complete
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -232,8 +270,9 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <select
                                             value={currentStatus}
+                                            disabled={isCompleted}
                                             onChange={e => handleStatusChange(worker.username, e.target.value)}
-                                            className="border rounded px-2 py-1 text-sm"
+                                            className="border rounded px-2 py-1 text-sm disabled:bg-gray-100 disabled:text-gray-500"
                                         >
                                             {statuses.map(s => (
                                                 <option key={s.id} value={s.id}>{s.label}</option>
@@ -273,20 +312,20 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
 
 
 def build_snapshot(*, workers: list = None, state: dict = None, opportunity_ids: list = None, **_kwargs) -> dict:
-    """Freeze the weekly review: the worker list reviewed + per-worker decisions.
+    """Capture the weekly review at completion: workers reviewed + decisions + summary.
 
-    Performance review is action-shaped — a periodic review of a worker cohort.
-    The snapshot captures everything needed to reconstruct "what I saw and decided
-    during this week's review":
+    Performance review is run-shaped — a periodic review of a worker cohort.
+    The snapshot captures everything needed to reconstruct "what I saw and
+    decided during this week's review" when the run is reopened later:
 
-    - The worker list as it was at freeze time (so re-opening the run shows the
-      same workers, even if the live FLW list has since changed).
+    - The worker list as it was at completion (so reopening shows the same
+      workers, even if the live FLW list has since changed).
     - The per-worker status decisions (worker_states.<username>.status).
     - Summary counts by status, pre-computed for the dashboard cards.
 
-    Pipelines aren't used by this template's render — performance metrics come from
-    the live workers list — so they're ignored here. The hook accepts **_kwargs to
-    stay forward-compatible with new context fields the framework may add.
+    Pipelines aren't used by this template's render — performance metrics come
+    from the live workers list — so they're ignored. The hook accepts **_kwargs
+    to stay forward-compatible with new context fields the framework may add.
     """
     workers = workers or []
     state = state or {}
@@ -299,8 +338,11 @@ def build_snapshot(*, workers: list = None, state: dict = None, opportunity_ids:
 
     return {
         "schema_version": 1,
+        # The view helper exposes snapshot.workers as view.workers and
+        # snapshot.state as view.state — render code reads view.state.worker_states,
+        # which means our snapshot's state shape must mirror run.data.state.
         "workers": workers,
-        "worker_states": worker_states,
+        "state": {"worker_states": worker_states},
         "opportunity_ids": list(opportunity_ids or []),
         "summary": {
             "total": len(workers),
@@ -308,6 +350,21 @@ def build_snapshot(*, workers: list = None, state: dict = None, opportunity_ids:
             "by_status": counts,
         },
     }
+
+
+# Render contract: render code reads view.workers and view.state.worker_states.
+# At completion, build_snapshot below produces a snapshot whose `workers` and
+# `worker_states` keys match what view.X exposes — so the same render works
+# both in_progress and completed.
+SNAPSHOT_SCHEMA = {
+    "version": 1,
+    "keys": {
+        "workers": "FLW list at completion (with opportunity_id tags for multi-opp)",
+        "worker_states": "Per-FLW review decisions (keyed by username)",
+        "summary": "Counts: total / reviewed / by_status",
+        "opportunity_ids": "Opportunities the run covered",
+    },
+}
 
 
 # Template export - this is what the registry imports
@@ -318,7 +375,14 @@ TEMPLATE = {
     "icon": "fa-clipboard-check",
     "color": "green",
     "multi_opp": True,
-    "supports_snapshots": True,
+    # Run-shaped: opts in to the in_progress | completed lifecycle. Reference
+    # implementation for the saved-runs framework — see WORKFLOW_REFERENCE.md
+    # §"Saved-runs templates".
+    "supports_saved_runs": True,
+    # build_snapshot below shapes the snapshot itself (computed summary), so
+    # snapshot_inputs is not needed here. snapshot_schema documents what
+    # render code reads.
+    "snapshot_schema": SNAPSHOT_SCHEMA,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": PIPELINE_SCHEMA,

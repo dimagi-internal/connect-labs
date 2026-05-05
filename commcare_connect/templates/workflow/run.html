@@ -157,8 +157,8 @@
             <div>
                 <h2 class="text-lg font-semibold text-gray-900">Pick a run, or start a new one</h2>
                 <p class="text-sm text-gray-600 mt-1">
-                    Each run is a snapshot of your work for that period. Active runs can still be edited;
-                    frozen runs are read-only artifacts.
+                    Each run captures your work for a period. Runs that are still in progress can be edited;
+                    completed runs are read-only artifacts.
                 </p>
             </div>
             <form method="POST" action="{{ start_run_url }}" class="m-0">
@@ -176,7 +176,7 @@
                 <tr>
                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Frozen at</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Completed at</th>
                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Open</th>
                 </tr>
             </thead>
@@ -187,17 +187,17 @@
                         {{ r.period_start|default:"—" }} → {{ r.period_end|default:"—" }}
                     </td>
                     <td class="px-4 py-2 text-sm">
-                        {% if r.status == 'frozen' %}
+                        {% if r.status == 'completed' %}
                         <span class="px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-700">
-                            <i class="fa-solid fa-snowflake mr-1"></i>frozen
+                            <i class="fa-solid fa-check mr-1"></i>completed
                         </span>
                         {% else %}
                         <span class="px-2 py-0.5 text-xs font-medium rounded bg-green-100 text-green-700">
-                            <i class="fa-solid fa-circle-play mr-1"></i>active
+                            <i class="fa-solid fa-circle-play mr-1"></i>in progress
                         </span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-2 text-sm text-gray-500">{{ r.frozen_at|default:"—" }}</td>
+                    <td class="px-4 py-2 text-sm text-gray-500">{{ r.completed_at|default:"—" }}</td>
                     <td class="px-4 py-2 text-sm text-right">
                         <a href="?run_id={{ r.id }}"
                            class="text-blue-600 hover:text-blue-800">Open →</a>
