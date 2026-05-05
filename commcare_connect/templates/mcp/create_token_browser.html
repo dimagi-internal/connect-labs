@@ -17,8 +17,8 @@
       as <strong>{{ request.user.username }}</strong>.
     </p>
     <p class="text-sm text-gray-500 mb-6">
-      Tokens default to a 90-day lifetime and can be revoked anytime at
-      <code class="bg-gray-100 px-1 rounded">/admin/mcp/mcpaccesstoken/</code>.
+      Tokens default to a 90-day lifetime and can be managed (rotated, revoked) anytime at
+      <a href="{% url 'labs:mcp_tokens_index' %}" class="text-indigo-600 hover:text-indigo-800 underline">/labs/mcp/tokens/</a>.
       After approval, Claude Code will receive the token via a redirect and wire it
       into your <code class="bg-gray-100 px-1 rounded">~/.claude/mcp.json</code> automatically.
     </p>

@@ -96,13 +96,13 @@ The **MBW Monitoring** template has five tabs. The sections below describe what 
 ### Overview tab
 
 - **Eligible mothers** counts only mothers who qualify for the full intervention bonus — this is the same eligibility rule used in the Performance tab and the drilldown, so all three figures stay consistent with each other.
-- **Expected visits** (shown as *total_cases* in exports) is the count of visits that were expected in the selected period, matching the original MBW v1 definition.
+- **Expected visits** (shown as _total_cases_ in exports) is the count of visits that were expected in the selected period, matching the original MBW v1 definition.
 
 ### Followups tab
 
 - **Completion rate** is calculated using the same eligibility filter as MBW v1, and includes a 5-day grace window so visits completed slightly after their due date are not counted as missed.
 - **Worker attribution**: if no visits have been recorded for a mother yet, the dashboard attributes her to the field worker who submitted her registration form, rather than leaving the row blank.
-- **Visit status** uses six categories: *Completed – On Time*, *Completed – Late*, *Due – On Time*, *Due – Late*, *Missed*, and *Not Due Yet*. The visit-type breakdown chart will render correctly with this data.
+- **Visit status** uses six categories: _Completed – On Time_, _Completed – Late_, _Due – On Time_, _Due – Late_, _Missed_, and _Not Due Yet_. The visit-type breakdown chart will render correctly with this data.
 
 ### GPS tab
 
@@ -114,14 +114,14 @@ The **MBW Monitoring** template has five tabs. The sections below describe what 
 
 Field workers are grouped into four categories, matching the original MBW v1 logic:
 
-| Category              | What it means                                              |
-| --------------------- | ---------------------------------------------------------- |
-| Eligible for Renewal  | Worker meets the still-eligible business rule              |
-| Probation             | Worker is at risk — missed visits above the threshold      |
-| Suspended             | Worker has exceeded the allowable missed-visit threshold   |
-| No Category           | Insufficient data to place the worker in a category        |
+| Category             | What it means                                            |
+| -------------------- | -------------------------------------------------------- |
+| Eligible for Renewal | Worker meets the still-eligible business rule            |
+| Probation            | Worker is at risk — missed visits above the threshold    |
+| Suspended            | Worker has exceeded the allowable missed-visit threshold |
+| No Category          | Insufficient data to place the worker in a category      |
 
-The tab also shows the percentage of workers who missed one visit or fewer (*pct_missed_1_or_less*) and milestone percentages.
+The tab also shows the percentage of workers who missed one visit or fewer (_pct_missed_1_or_less_) and milestone percentages.
 
 ---
 
