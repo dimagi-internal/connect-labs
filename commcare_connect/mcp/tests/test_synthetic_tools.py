@@ -40,3 +40,26 @@ def test_synthetic_register_updates_existing_row(user):
     row = SyntheticOpportunity.objects.get(opportunity_id=4242)
     assert row.gdrive_folder_id == "new"
     assert row.enabled is True
+
+
+@pytest.mark.django_db
+def test_synthetic_disable_clears_enabled_flag(user):
+    SyntheticOpportunity.objects.create(
+        opportunity_id=4242, gdrive_folder_id="x", enabled=True
+    )
+    tool = get_tool("synthetic_disable")
+    result = tool.handler(user=user, opportunity_id=4242)
+    assert result["enabled"] is False
+    row = SyntheticOpportunity.objects.get(opportunity_id=4242)
+    assert row.enabled is False
+    # folder retained
+    assert row.gdrive_folder_id == "x"
+
+
+@pytest.mark.django_db
+def test_synthetic_disable_404s_on_missing_row(user):
+    from commcare_connect.mcp.tool_registry import MCPToolError
+    tool = get_tool("synthetic_disable")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, opportunity_id=99999)
+    assert exc.value.code == "NOT_FOUND"

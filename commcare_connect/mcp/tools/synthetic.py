@@ -7,7 +7,7 @@ from typing import Any
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 from commcare_connect.labs.synthetic.registry import invalidate_cache
 
-from ..tool_registry import register
+from ..tool_registry import MCPToolError, register
 
 
 @register(
@@ -55,4 +55,34 @@ def synthetic_register(
         "gdrive_folder_id": row.gdrive_folder_id,
         "enabled": row.enabled,
         "label": row.label,
+    }
+
+
+@register(
+    name="synthetic_disable",
+    description=(
+        "Disable a synthetic-opportunity entry without deleting it. The "
+        "GDrive folder is retained for forensics; labs reverts to real "
+        "export reads for this opportunity_id on next request."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"opportunity_id": {"type": "integer"}},
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_disable(user, *, opportunity_id: int) -> dict[str, Any]:
+    try:
+        row = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id)
+    except SyntheticOpportunity.DoesNotExist:
+        raise MCPToolError("NOT_FOUND", f"No synthetic entry for opportunity_id={opportunity_id}")
+    row.enabled = False
+    row.save(update_fields=["enabled", "updated_at"])
+    invalidate_cache()
+    return {
+        "opportunity_id": row.opportunity_id,
+        "gdrive_folder_id": row.gdrive_folder_id,
+        "enabled": row.enabled,
     }
