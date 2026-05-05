@@ -179,9 +179,13 @@ def test_workflow_get_surfaces_saved_runs_metadata_for_run_shaped_template(
     assert "saved_runs" in content
     sr = content["saved_runs"]
     assert sr["supports_saved_runs"] is True
-    # performance_review defines a build_snapshot hook that shapes the output.
-    assert sr["has_build_snapshot_hook"] is True
-    # snapshot_schema is the render-contract manifest.
+    # performance_review uses the declarative path (snapshot_inputs), not a hook —
+    # render code recomputes summary cards from the captured workers + state.
+    assert sr["has_build_snapshot_hook"] is False
+    # snapshot_inputs declares what to capture.
+    assert "snapshot_inputs" in sr
+    assert sr["snapshot_inputs"]["state_keys"] == ["worker_states"]
+    # snapshot_schema documents the render-side contract.
     assert "snapshot_schema" in sr
     assert sr["snapshot_schema"]["version"] == 1
     assert "workers" in sr["snapshot_schema"]["keys"]

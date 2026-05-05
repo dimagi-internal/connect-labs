@@ -32,10 +32,11 @@ class TestBuildSnapshotDispatch:
         kmc_entry = next(t for t in list_templates() if t["key"] == "kmc_longitudinal")
         assert kmc_entry["supports_saved_runs"] is False
 
-    def test_performance_review_build_snapshot_freezes_workers_and_decisions(self):
-        """The hook captures: workers at completion, per-worker decisions under
-        `state.worker_states` (so view.state.worker_states reads identically
-        in_progress vs completed), and a precomputed by-status summary.
+    def test_performance_review_snapshot_captures_workers_and_decisions(self):
+        """performance_review uses the declarative path (snapshot_inputs) — the
+        framework's default hook captures workers + state.worker_states verbatim;
+        render code recomputes summary cards from that data on load. No Python
+        precomputation needed.
         """
         workers = [
             {"username": "alice", "name": "Alice", "visit_count": 12, "opportunity_id": 1},
@@ -47,11 +48,13 @@ class TestBuildSnapshotDispatch:
                 "alice": {"status": "confirmed"},
                 "bob": {"status": "needs_audit"},
                 # carol has no entry → defaults to pending
-            }
+            },
+            # ui_scratch is NOT in snapshot_inputs.state_keys — should be dropped.
+            "ui_scratch": {"sort": "name"},
         }
         snap = build_snapshot_for_template(
             "performance_review",
-            pipelines={},
+            pipelines={"performance_data": {"rows": []}},
             state=state,
             opportunity_id=1,
             workers=workers,
@@ -64,16 +67,18 @@ class TestBuildSnapshotDispatch:
         # Per-worker decisions live under snapshot.state.worker_states so the
         # view helper exposes them as view.state.worker_states.
         assert snap["state"]["worker_states"]["alice"]["status"] == "confirmed"
+        # Only declared state_keys flow through — ui_scratch is filtered out.
+        assert "ui_scratch" not in snap["state"]
+        # Pipelines: [] in the manifest means capture none — keeps the snapshot tight.
+        assert snap["pipelines"] == {}
         # Multi-opp tracking baked in.
         assert snap["opportunity_ids"] == [1, 2]
-        # Summary: total + reviewed + by_status counts.
-        assert snap["summary"]["total"] == 3
-        assert snap["summary"]["reviewed"] == 2  # alice + bob, carol still pending
-        assert snap["summary"]["by_status"] == {"confirmed": 1, "needs_audit": 1, "pending": 1}
+        # No precomputed summary — render code does that at render time.
+        assert "summary" not in snap
 
-    def test_performance_review_build_snapshot_handles_empty_state(self):
+    def test_performance_review_snapshot_handles_empty_state(self):
         """A run with no decisions yet still produces a valid snapshot —
-        all workers default to 'pending'."""
+        the worker_states key is just absent (or empty) under state."""
         workers = [{"username": "u1", "opportunity_id": 1}]
         snap = build_snapshot_for_template(
             "performance_review",
@@ -83,8 +88,10 @@ class TestBuildSnapshotDispatch:
             workers=workers,
             opportunity_ids=[1],
         )
-        assert snap["summary"]["reviewed"] == 0
-        assert snap["summary"]["by_status"] == {"pending": 1}
+        assert snap is not None
+        assert snap["workers"] == workers
+        assert snap["state"] == {}  # worker_states absent → snapshot.state is empty dict
+        assert snap["opportunity_ids"] == [1]
 
     def test_default_snapshot_when_template_has_no_hook(self, monkeypatch):
         """Templates that opt in via `supports_saved_runs: True` but do NOT
