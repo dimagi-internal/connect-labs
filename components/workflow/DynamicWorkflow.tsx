@@ -162,6 +162,7 @@ export function DynamicWorkflow({
   links,
   actions,
   onUpdateState,
+  view,
   onError,
 }: DynamicWorkflowProps) {
   const babelLoaded = useBabel();
@@ -244,6 +245,7 @@ export function DynamicWorkflow({
         links={links}
         actions={actions}
         onUpdateState={onUpdateState}
+        view={view}
       />
     </DynamicErrorBoundary>
   );
