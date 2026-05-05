@@ -93,9 +93,11 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 
 ## Workflow Engine
 
-Templates are single Python files in `workflow/templates/` exporting DEFINITION (statuses, config), RENDER_CODE (React JSX string transpiled by Babel), and optionally PIPELINE_SCHEMAS (CommCare form field extraction). The registry auto-discovers them. Pipeline schemas map CommCare form JSON paths to extracted fields with aggregations and transforms. Render code receives `{definition, instance, workers, pipelines, links, actions, onUpdateState}` as props.
+Templates are single Python files in `workflow/templates/` exporting DEFINITION (statuses, config), RENDER_CODE (React JSX string transpiled by Babel), and optionally PIPELINE_SCHEMAS (CommCare form field extraction). The registry auto-discovers them. Pipeline schemas map CommCare form JSON paths to extracted fields with aggregations and transforms. Render code receives `{definition, instance, workers, pipelines, links, actions, onUpdateState, view}` as props.
 
 Templates can set `multi_opp: True` on their `TEMPLATE` dict to opt into multi-opportunity support. Multi-opp workflows store an `opportunity_ids` list on the definition, merge workers and pipeline rows across those opps at runtime, and tag every row/worker with its source `opportunity_id`. Single-opp workflows (default) are unchanged — they fall back to `[primary_opp_id]` with the same tagging shape. See [WORKFLOW_REFERENCE.md §8](commcare_connect/workflow/WORKFLOW_REFERENCE.md#8-multi-opportunity-workflows) for the full contract.
+
+Templates that produce a periodic review with a definite "moment of completion" can set `supports_saved_runs: True` to opt into the **in_progress | completed** run lifecycle. They declare what the snapshot captures via `snapshot_inputs` (a manifest of pipelines/workers/state_keys), render code reads run data via the `view` helper (`view.workers`, `view.pipelines.<alias>`, `view.state.<key>`, `view.isCompleted`, `view.asOf`), and triggers completion via `view.complete({confirm})`. The framework atomically builds the snapshot, flips status, stamps `completed_at`, and write-protects the run. Reference: `commcare_connect/workflow/templates/performance_review.py`. Full contract: [WORKFLOW_REFERENCE.md §9](commcare_connect/workflow/WORKFLOW_REFERENCE.md#9-saved-runs-templates).
 
 **Existing templates:** `audit_with_ai_review`, `bulk_image_audit`, `kmc_flw_flags`, `kmc_longitudinal`, `kmc_project_metrics`, `mbw_monitoring_v2`, `ocs_outreach`, `performance_review` (multi-opp), `sam_followup`
 
