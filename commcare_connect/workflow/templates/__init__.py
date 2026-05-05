@@ -406,6 +406,7 @@ from . import (  # noqa: E402
     kmc_flw_flags,
     kmc_longitudinal,
     kmc_project_metrics,
+    llo_weekly_review,
     mbw_monitoring_v2,
     mbw_monitoring_v3,
     ocs_outreach,
@@ -427,4 +428,5 @@ __all__ = [
     "kmc_longitudinal",
     "kmc_flw_flags",
     "kmc_project_metrics",
+    "llo_weekly_review",
 ]
