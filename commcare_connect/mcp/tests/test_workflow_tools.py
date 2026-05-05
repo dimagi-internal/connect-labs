@@ -138,6 +138,90 @@ def test_workflow_get_returns_full_bundle(mock_wda_cls, mock_pda_cls, client, au
     assert content["pipeline_sources"][0]["alias"] == "data"
     assert content["pipeline_sources"][0]["name"] == "P1"
     assert content["pipeline_sources"][0]["schema_summary"]["field_count"] == 3
+    # template_type "perf" is not in the real registry — saved_runs metadata
+    # should be absent for unknown templates (rather than {} or all-defaults).
+    assert "saved_runs" not in content
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.PipelineDataAccess")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_get_surfaces_saved_runs_metadata_for_run_shaped_template(
+    mock_wda_cls, mock_pda_cls, client, auth_user
+):
+    """When the workflow's template_type points at a registered run-shaped
+    template, workflow_get returns saved_runs metadata so the agent knows
+    the render code expects the `view` prop.
+    """
+    _, raw = auth_user
+
+    mock_def = MagicMock(
+        id=99,
+        description="Performance review instance",
+        data={
+            "pipeline_sources": [],
+            "statuses": [],
+            "config": {"templateType": "performance_review"},
+        },
+    )
+    mock_def.name = "PR Instance"
+    mock_def.template_type = "performance_review"  # real registry entry
+    mock_wda_cls.return_value.get_definition.return_value = mock_def
+    mock_wda_cls.return_value.get_render_code.return_value = MagicMock(
+        component_code="function WorkflowUI(){}",
+        version=1,
+    )
+    mock_pda_cls.return_value.get_definition.return_value = None
+
+    data = _call_tool(client, raw, "workflow_get", {"workflow_id": 99, "opportunity_id": 100})
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert "saved_runs" in content
+    sr = content["saved_runs"]
+    assert sr["supports_saved_runs"] is True
+    # performance_review defines a build_snapshot hook that shapes the output.
+    assert sr["has_build_snapshot_hook"] is True
+    # snapshot_schema is the render-contract manifest.
+    assert "snapshot_schema" in sr
+    assert sr["snapshot_schema"]["version"] == 1
+    assert "workers" in sr["snapshot_schema"]["keys"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.PipelineDataAccess")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_get_action_shaped_template_reports_no_saved_runs(mock_wda_cls, mock_pda_cls, client, auth_user):
+    """Action-shaped templates (no supports_saved_runs flag) should still
+    return a saved_runs block, but with supports_saved_runs=False — so the
+    agent can branch on a single key rather than testing presence."""
+    _, raw = auth_user
+
+    mock_def = MagicMock(
+        id=77,
+        description="Action-shaped",
+        data={
+            "pipeline_sources": [],
+            "statuses": [],
+            "config": {"templateType": "bulk_image_audit"},
+        },
+    )
+    mock_def.name = "Audit Instance"
+    mock_def.template_type = "bulk_image_audit"
+    mock_wda_cls.return_value.get_definition.return_value = mock_def
+    mock_wda_cls.return_value.get_render_code.return_value = MagicMock(
+        component_code="function WorkflowUI(){}",
+        version=1,
+    )
+    mock_pda_cls.return_value.get_definition.return_value = None
+
+    data = _call_tool(client, raw, "workflow_get", {"workflow_id": 77, "opportunity_id": 100})
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["saved_runs"]["supports_saved_runs"] is False
+    assert content["saved_runs"]["has_build_snapshot_hook"] is False
+    # Action-shaped templates omit snapshot_inputs / snapshot_schema.
+    assert "snapshot_inputs" not in content["saved_runs"]
+    assert "snapshot_schema" not in content["saved_runs"]
 
 
 @pytest.mark.django_db

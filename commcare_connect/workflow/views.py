@@ -278,13 +278,13 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         """Render the workflow runner.
 
         Pre-2026-04-30 this view auto-created a run on every visit without a
-        `run_id`, which silently piled up untouched run records every time
-        someone reloaded the URL. The new lifecycle (see
-        docs/plans/2026-04-30-run-lifecycle.md) removes the auto-create:
+        `run_id`, which silently piled up untouched run records on every
+        reload. The lifecycle (see docs/plans/2026-05-04-run-state-final.md)
+        removes the auto-create:
 
-        - `?run_id=<id>` → render that specific run (active or frozen)
+        - `?run_id=<id>` → render that specific run (in_progress or completed)
         - `?edit=true`   → preview-only, no run record involved
-        - no run_id      → render the run-picker (list of past runs +
+        - no run_id      → render the run picker (list of past runs +
                           "Start Run" button). Creating a run is now an
                           explicit user action.
 
@@ -385,12 +385,14 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 week_end = week_start + timedelta(days=6)
 
                 run_data = {
-                    "id": 0,  # Temporary ID
+                    "id": 0,  # Temporary ID — edit mode is not persisted.
                     "definition_id": definition_id,
                     "opportunity_id": opportunity_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
-                    "status": "preview",
+                    # Edit mode is in_progress for render-code purposes; the FE
+                    # sees `is_edit_mode: true` separately and disables persistence.
+                    "status": "in_progress",
                     "state": {"worker_states": {}},
                     "period_start": week_start.isoformat(),
                     "period_end": week_end.isoformat(),
@@ -408,16 +410,17 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "opportunity_id": opportunity_id,
                     "opportunity_ids": effective_opp_ids,
                     "opportunity_name": labs_context.get("opportunity", {}).get("name"),
-                    # Use the proxy property so legacy statuses ("in_progress",
-                    # "completed") get mapped to the canonical "active"/"frozen"
-                    # without callers seeing the old vocabulary.
+                    # Canonical lifecycle: in_progress | completed. The proxy
+                    # also maps any legacy `active`/`frozen` rows back to this
+                    # vocabulary.
                     "status": run.status,
                     "state": run.state,
                     "period_start": run.period_start,
                     "period_end": run.period_end,
-                    "frozen_at": run.frozen_at,
-                    # Frozen snapshot blob (None on active runs). When status="frozen"
-                    # render code reads from snapshot only — no live recompute.
+                    "completed_at": run.completed_at,
+                    # Snapshot is null while in_progress; populated on completion.
+                    # The useRunView FE helper reads it when status='completed' so
+                    # render code never recomputes against live data on a finalized run.
                     "snapshot": run.snapshot,
                 }
                 context["is_edit_mode"] = False
@@ -436,7 +439,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         {
                             "id": r.id,
                             "status": r.status,
-                            "frozen_at": r.frozen_at,
+                            "completed_at": r.completed_at,
                             "period_start": r.period_start,
                             "period_end": r.period_end,
                             "created_at": r.created_at,
@@ -479,15 +482,17 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "authStatus": "/labs/workflow/api/auth-status/",
                     # MBW monitoring actions
                     "saveWorkerResult": f"/labs/workflow/api/run/{run_data['id']}/worker-result/",
-                    "completeRun": f"/labs/workflow/api/run/{run_data['id']}/complete/",
+                    # Single completion verb — handles snapshot build + status flip atomically.
+                    "completeRun": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
+                    # Back-compat alias for mbw_monitoring_v3 render code (it calls
+                    # `links.buildSnapshot` to drive completion). Points at the same
+                    # /complete/ endpoint as `completeRun`. Don't add new callers —
+                    # render code should use `view.complete()` from the view helper.
+                    "buildSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/complete/"),
                     "updateOpportunityIds": f"/labs/workflow/api/{definition_id}/opportunity-ids/",
-                    # Generic snapshot endpoints (template-agnostic — dispatch via
-                    # build_snapshot hook). Edit mode hides them since there's no
-                    # real run id to write against.
+                    # Read-only snapshot inspection (debug); render code reads
+                    # instance.snapshot via the useRunView helper, not this URL.
                     "getSnapshot": (None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/"),
-                    "buildSnapshot": (
-                        None if is_edit_mode else f"/labs/workflow/api/run/{run_data['id']}/snapshot/build/"
-                    ),
                 },
             }
 
@@ -879,7 +884,11 @@ def get_workers_api(request):
 @login_required
 @require_POST
 def update_state_api(request, run_id):
-    """API endpoint to update workflow run state."""
+    """API endpoint to update workflow run state.
+
+    Refuses with 409 if the run is already completed — completed runs are
+    immutable artifacts.
+    """
     try:
         data = json.loads(request.body)
         new_state = data.get("state")
@@ -888,7 +897,16 @@ def update_state_api(request, run_id):
             return JsonResponse({"error": "state required in request body"}, status=400)
 
         data_access = WorkflowDataAccess(request=request)
-        updated_run = data_access.update_run_state(run_id, new_state)
+        run = data_access.get_run(run_id)
+        if not run:
+            return JsonResponse({"error": "Run not found"}, status=404)
+        if run.is_completed:
+            return JsonResponse(
+                {"error": "Run is completed; state is immutable. Start a new run."},
+                status=409,
+            )
+
+        updated_run = data_access.update_run_state(run_id, new_state, run=run)
 
         if updated_run:
             s3_export.upsert_workflow_run(
@@ -905,7 +923,7 @@ def update_state_api(request, run_id):
                 }
             )
         else:
-            return JsonResponse({"error": "Run not found"}, status=404)
+            return JsonResponse({"error": "Failed to update run state"}, status=500)
 
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -952,6 +970,11 @@ def save_worker_result_api(request, run_id):
         run = data_access.get_run(run_id)
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        if run.is_completed:
+            return JsonResponse(
+                {"error": "Run is completed; worker results are immutable. Start a new run."},
+                status=409,
+            )
 
         # Read-modify-write: get full worker_results, update one entry, write back
         current_state = run.data.get("state", {})
@@ -1009,46 +1032,109 @@ def save_worker_result_api(request, run_id):
 @login_required
 @require_POST
 def complete_run_api(request, run_id):
-    """Mark a workflow run as completed.
+    """Mark a workflow run as completed — atomic terminal transition.
 
-    Updates run.data.status to 'completed' and stores overall_result/notes
-    in the state via WorkflowDataAccess.complete_run().
+    Builds the snapshot via the template's `build_snapshot` hook (or the
+    declarative-input fallback), then writes status=completed, completed_at,
+    and the snapshot in a single LabsRecord write. If snapshot assembly
+    raises, the run stays in_progress.
 
-    Request body:
-        {
-            "overall_result": "completed",  // optional, defaults to "completed"
-            "notes": ""  // optional
-        }
+    Returns:
+      - 200 with `{success, status, completed_at, snapshot}` on success.
+      - 404 if the run/definition is missing.
+      - 409 if the run is already completed.
+      - 400 if the workflow's template doesn't declare `supports_saved_runs`.
     """
+    from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
+
     data_access = None
     try:
-        data = json.loads(request.body)
-        overall_result = data.get("overall_result", "completed")
-        notes = data.get("notes", "")
-
         data_access = WorkflowDataAccess(request=request)
         run = data_access.get_run(run_id)
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
+        if run.is_completed:
+            return JsonResponse(
+                {"error": "Run is already completed; start a new run to redo this work."},
+                status=409,
+            )
 
-        result = data_access.complete_run(
-            run_id=run_id,
-            overall_result=overall_result,
-            notes=notes,
-            run=run,
+        definition_id = run.data.get("definition_id")
+        if not definition_id:
+            return JsonResponse({"error": "Run has no definition_id"}, status=400)
+
+        definition = data_access.get_definition(definition_id)
+        if not definition:
+            return JsonResponse({"error": "Workflow definition not found"}, status=404)
+
+        template_key = definition.template_type
+        if not template_key:
+            return JsonResponse(
+                {"error": "Workflow has no template_type; cannot resolve completion handler"},
+                status=400,
+            )
+
+        template = TEMPLATES.get(template_key)
+        if not template:
+            return JsonResponse({"error": f"Unknown template: {template_key}"}, status=400)
+        if not template.get("supports_saved_runs"):
+            return JsonResponse(
+                {
+                    "error": (
+                        f"Template {template_key!r} does not declare supports_saved_runs=True; "
+                        "this template's runs cannot be marked complete."
+                    )
+                },
+                status=400,
+            )
+
+        opportunity_id = run.opportunity_id or definition.opportunity_id
+        if not opportunity_id:
+            return JsonResponse({"error": "Run has no opportunity_id"}, status=400)
+
+        # Single source of truth: same pipeline+worker fetch the runner uses.
+        pipelines = data_access.get_pipeline_data(definition_id, opportunity_id)
+
+        effective_opp_ids = definition.opportunity_ids or [opportunity_id]
+        workers: list[dict] = []
+        for oid in effective_opp_ids:
+            try:
+                for w in data_access.get_workers(oid):
+                    workers.append({**w, "opportunity_id": oid})
+            except Exception:
+                logger.exception("Failed to load workers for opp %s", oid)
+
+        snapshot_payload = build_snapshot_for_template(
+            template_key=template_key,
+            pipelines=pipelines,
+            state=run.data.get("state", {}),
+            opportunity_id=opportunity_id,
+            workers=workers,
+            opportunity_ids=effective_opp_ids,
         )
+        if not isinstance(snapshot_payload, dict):
+            return JsonResponse(
+                {"error": f"build_snapshot for {template_key!r} returned non-dict"},
+                status=500,
+            )
 
-        if not result:
-            return JsonResponse({"error": "Failed to update run"}, status=500)
+        completed_run = data_access.complete_run(run_id, snapshot_payload, run=run)
+        if completed_run is None:
+            return JsonResponse(
+                {"error": "Failed to persist completion — run stays in_progress"},
+                status=500,
+            )
 
         return JsonResponse(
             {
                 "success": True,
-                "status": "completed",
-                "overall_result": overall_result,
+                "status": completed_run.status,
+                "completed_at": completed_run.completed_at,
+                # Legacy alias for pre-rename callers (mbw_monitoring_v3 render).
+                "frozen_at": completed_run.completed_at,
+                "snapshot": completed_run.snapshot,
             }
         )
-
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     except Exception:
@@ -1074,9 +1160,10 @@ def get_run_api(request, run_id):
                         "id": run.id,
                         "definition_id": run.data.get("definition_id"),
                         "opportunity_id": run.opportunity_id,
-                        "status": run.data.get("status", "in_progress"),
+                        "status": run.status,
                         "state": run.data.get("state", {}),
                         "snapshot": run.data.get("snapshot"),
+                        "completed_at": run.completed_at,
                     }
                 }
             )
@@ -1091,133 +1178,30 @@ def get_run_api(request, run_id):
 @login_required
 @require_GET
 def get_snapshot_api(request, run_id):
-    """Return the frozen snapshot for a workflow run, if any.
+    """Read-only inspection: return the saved snapshot for a completed run.
 
-    Generic replacement for per-template snapshot endpoints (e.g.
-    `MBWSnapshotView`). Reads `run.data["snapshot"]` and returns it verbatim
-    plus the `frozen_at` timestamp the build endpoint stamped.
+    Used by the framework's `useRunView` helper on the FE; render code does
+    not call this directly (it reads `instance.snapshot` from props instead).
     """
     try:
         data_access = WorkflowDataAccess(request=request)
         run = data_access.get_run(run_id)
         if not run:
             return JsonResponse({"error": "Run not found"}, status=404)
-        snapshot = run.data.get("snapshot")
         return JsonResponse(
             {
-                "has_snapshot": bool(snapshot),
-                "snapshot": snapshot,
-                "frozen_at": (snapshot or {}).get("frozen_at"),
+                "has_snapshot": bool(run.snapshot),
+                "snapshot": run.snapshot,
+                "completed_at": run.completed_at,
+                # Legacy alias — pre-rename callers (e.g. mbw_monitoring_v3 render)
+                # read `frozen_at` off this response. New callers should use
+                # `completed_at`. Drop after the v3 render migrates.
+                "frozen_at": run.completed_at,
+                "status": run.status,
             }
         )
     except Exception:
         logger.exception("Failed to get snapshot for run %s", run_id)
-        return JsonResponse({"error": "An internal error occurred"}, status=500)
-
-
-@login_required
-@require_POST
-def build_snapshot_api(request, run_id):
-    """Build and persist a snapshot for a run by calling the template's
-    `build_snapshot(pipelines, state, opportunity_id)` hook.
-
-    Generic replacement for per-template save endpoints (e.g. `MBWSaveSnapshotView`).
-    Looks up the template, runs its hook against current pipeline data, writes
-    the result to `run.data["snapshot"]` with a `frozen_at` timestamp, and
-    returns the snapshot.
-
-    Errors:
-      - 404 if the run is not found
-      - 400 if the run's workflow has no `templateType` config
-      - 400 if the template doesn't declare `supports_snapshots`
-      - 400 if the template's hook returns non-dict
-    """
-    from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
-
-    try:
-        data_access = WorkflowDataAccess(request=request)
-        run = data_access.get_run(run_id)
-        if not run:
-            return JsonResponse({"error": "Run not found"}, status=404)
-
-        definition_id = run.data.get("definition_id")
-        if not definition_id:
-            return JsonResponse({"error": "Run has no definition_id"}, status=400)
-
-        definition = data_access.get_definition(definition_id)
-        if not definition:
-            return JsonResponse({"error": "Workflow definition not found"}, status=404)
-
-        template_key = definition.template_type
-        if not template_key:
-            return JsonResponse(
-                {"error": "Workflow has no template_type; cannot resolve build_snapshot hook"},
-                status=400,
-            )
-
-        template = TEMPLATES.get(template_key)
-        if not template:
-            return JsonResponse({"error": f"Unknown template: {template_key}"}, status=400)
-        if not template.get("supports_snapshots"):
-            return JsonResponse(
-                {"error": f"Template {template_key!r} does not declare supports_snapshots=True"},
-                status=400,
-            )
-
-        opportunity_id = run.opportunity_id or definition.opportunity_id
-        if not opportunity_id:
-            return JsonResponse({"error": "Run has no opportunity_id"}, status=400)
-
-        # Fetch pipeline data the same way the runner does — single source of truth.
-        pipelines = data_access.get_pipeline_data(definition_id, opportunity_id)
-
-        # Fetch workers for each opp the workflow targets and tag with opportunity_id —
-        # mirrors RunView.get_context_data so the snapshot sees the same worker set the
-        # render code sees. multi_opp templates rely on this; single-opp templates fall
-        # back to [opportunity_id].
-        effective_opp_ids = definition.opportunity_ids or [opportunity_id]
-        workers: list[dict] = []
-        for oid in effective_opp_ids:
-            try:
-                for w in data_access.get_workers(oid):
-                    workers.append({**w, "opportunity_id": oid})
-            except Exception:
-                logger.exception("Failed to load workers for opp %s", oid)
-
-        snapshot_payload = build_snapshot_for_template(
-            template_key=template_key,
-            pipelines=pipelines,
-            state=run.data.get("state", {}),
-            opportunity_id=opportunity_id,
-            workers=workers,
-            opportunity_ids=effective_opp_ids,
-        )
-        if not isinstance(snapshot_payload, dict):
-            return JsonResponse(
-                {"error": f"build_snapshot for {template_key!r} returned non-dict"},
-                status=400,
-            )
-
-        # Atomic active→frozen transition. freeze_run stamps frozen_at, persists
-        # the snapshot, sets status=frozen, all in one LabsRecord write. If this
-        # call raises, the run stays active — no partial transition.
-        frozen_run = data_access.freeze_run(run_id, snapshot_payload, run=run)
-        if frozen_run is None:
-            return JsonResponse(
-                {"error": "Failed to persist frozen state — run stays active"},
-                status=500,
-            )
-
-        return JsonResponse(
-            {
-                "success": True,
-                "snapshot": frozen_run.snapshot,
-                "frozen_at": frozen_run.frozen_at,
-                "status": frozen_run.status,
-            }
-        )
-    except Exception:
-        logger.exception("Failed to build snapshot for run %s", run_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
