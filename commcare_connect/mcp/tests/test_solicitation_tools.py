@@ -158,6 +158,33 @@ def test_list_solicitations_no_scope(mock_client_cls, client, auth_user):
     mock_client.get_records.assert_called_once_with(type="solicitation")
 
 
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_list_solicitations_propagates_scope_to_client(mock_client_cls, client, auth_user):
+    """program_id/organization_id must be threaded into LabsRecordAPIClient init.
+
+    Without scope at the client level, the prod-side membership check never runs
+    and only is_public=true records come back. This test locks in that scope is
+    actually forwarded so non-public reads work.
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_records.return_value = []
+
+    _call_tool(client, raw, "list_solicitations", {"program_id": "130"})
+
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["program_id"] == 130
+    assert init_kwargs.get("organization_id") is None
+
+    mock_client_cls.reset_mock()
+    _call_tool(client, raw, "list_solicitations", {"organization_id": "45"})
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["organization_id"] == 45
+    assert init_kwargs.get("program_id") is None
+
+
 # ---------------------------------------------------------------------------
 # get_solicitation
 # ---------------------------------------------------------------------------
@@ -194,6 +221,26 @@ def test_get_solicitation_not_found(mock_client_cls, client, auth_user):
 
     assert data["result"]["isError"] is True, data
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_get_solicitation_propagates_scope_to_client(mock_client_cls, client, auth_user):
+    """program_id/organization_id must be threaded into LabsRecordAPIClient init.
+
+    get_record_by_id only adds prod-side scope params from self.* attributes, so
+    without scope at init time the read falls back to public-only and any non-
+    public solicitation comes back as 'not found'.
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = _make_mock_record(42, "solicitation", data={"title": "x"})
+
+    _call_tool(client, raw, "get_solicitation", {"solicitation_id": 42, "program_id": "130"})
+
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["program_id"] == 130
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +432,32 @@ def test_update_solicitation_happy_path(mock_client_cls, client, auth_user):
         data={"title": "New Title", "status": "active"},
         current_record=existing,
     )
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_propagates_scope_to_client(mock_client_cls, client, auth_user):
+    """program_id/organization_id must be threaded into LabsRecordAPIClient init.
+
+    The update path starts with get_record_by_id; without scope, that read only
+    sees public records and a non-public solicitation is unupdatable.
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    existing = _make_mock_record(42, "solicitation", data={"title": "Old"})
+    mock_client.get_record_by_id.return_value = existing
+    mock_client.update_record.return_value = existing
+
+    _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {"solicitation_id": 42, "update_data": {"status": "active"}, "program_id": "130"},
+    )
+
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["program_id"] == 130
 
 
 @pytest.mark.django_db
