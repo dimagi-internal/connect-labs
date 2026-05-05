@@ -66,3 +66,53 @@ def test_malformed_json_returns_parse_error(client, auth_header):
 def test_unknown_method_returns_method_not_found(client, auth_header):
     resp, data = _rpc(client, "does_not_exist", headers=auth_header)
     assert data["error"]["code"] == -32601
+
+
+def test_internal_error_envelope_includes_labs_api_detail():
+    """Unhandled LabsAPIError must surface upstream HTTP status + body in the envelope.
+
+    Before this fix the envelope was a bare `{"error": {"code": -32603, "message": "Internal
+    error"}}` — every upstream failure looked identical and was un-debuggable from outside the
+    labs server. The fix populates JSON-RPC's optional `error.data` with exception type,
+    request_id, and (for LabsAPIError) upstream status + body.
+    """
+    import json as _json
+
+    from commcare_connect.labs.integrations.connect.api_client import LabsAPIError
+    from commcare_connect.mcp.transport import _internal_error_response
+
+    exc = LabsAPIError("upstream boom", status_code=403, body="forbidden body")
+    response = _internal_error_response(msg_id=42, exc=exc, request_id="abc12345")
+
+    payload = _json.loads(response.content)
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == 42
+    assert payload["error"]["code"] == -32603
+    assert "LabsAPIError" in payload["error"]["message"]
+    assert "upstream boom" in payload["error"]["message"]
+
+    detail = payload["error"]["data"]
+    assert detail["exception_type"] == "LabsAPIError"
+    assert detail["upstream_status"] == 403
+    assert detail["upstream_body"] == "forbidden body"
+    assert detail["request_id"] == "abc12345"
+
+
+def test_internal_error_envelope_for_non_labs_exception():
+    """Non-LabsAPIError exceptions still surface type + request_id, just no upstream fields."""
+    import json as _json
+
+    from commcare_connect.mcp.transport import _internal_error_response
+
+    response = _internal_error_response(msg_id=1, exc=ValueError("unexpected"), request_id="xyz")
+    payload = _json.loads(response.content)
+
+    assert payload["error"]["code"] == -32603
+    assert "ValueError" in payload["error"]["message"]
+    assert "unexpected" in payload["error"]["message"]
+
+    detail = payload["error"]["data"]
+    assert detail["exception_type"] == "ValueError"
+    assert detail["request_id"] == "xyz"
+    assert "upstream_status" not in detail
+    assert "upstream_body" not in detail
