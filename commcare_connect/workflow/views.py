@@ -517,10 +517,23 @@ class WorkflowRunDetailView(LoginRequiredMixin, TemplateView):
             run = data_access.get_run(run_id)
             if run:
                 context["run"] = run
+                # Template historically renders via `instance` — keep that working.
+                context["instance"] = run
                 # Also get the definition
                 definition_id = run.data.get("definition_id")
                 if definition_id:
                     context["definition"] = data_access.get_definition(definition_id)
+
+                # Tasks created by this run (live query — current state, not snapshot).
+                from commcare_connect.tasks.data_access import TaskDataAccess
+
+                try:
+                    task_da = TaskDataAccess(user=self.request.user, request=self.request)
+                    context["tasks_for_run"] = task_da.get_tasks_for_run(run_id)
+                    task_da.close()
+                except Exception as e:
+                    logger.warning(f"Failed to load tasks for run {run_id}: {e}")
+                    context["tasks_for_run"] = []
         except Exception as e:
             logger.error(f"Failed to load workflow run {run_id}: {e}")
             context["error"] = str(e)
