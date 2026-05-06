@@ -373,10 +373,11 @@ def test_create_solicitation_propagates_is_public_to_server(mock_client_cls, cli
         {"program_id": "25", "data": {"title": "Public Sol", "is_public": True}},
     )
 
+    # is_public is forwarded as public= and stripped from the persisted JSON
     mock_client.create_record.assert_called_once_with(
         experiment="25",
         type="solicitation",
-        data={"title": "Public Sol", "is_public": True},
+        data={"title": "Public Sol"},
         program_id=25,
         public=True,
     )
@@ -467,11 +468,17 @@ def test_update_solicitation_propagates_scope_to_client(mock_client_cls, client,
 
 @pytest.mark.django_db
 @patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
-def test_get_solicitation_exposes_server_public_flag(mock_client_cls, client, auth_user):
-    """The serialized response must include `public` (server-side ACL) so agents can debug visibility."""
+def test_get_solicitation_returns_canonical_is_public_from_envelope(mock_client_cls, client, auth_user):
+    """`is_public` in the response is sourced from record.public, not data.
+
+    Stale ``is_public`` keys in legacy ``data`` payloads are dropped — the
+    response always has exactly one source of truth (the server flag).
+    """
     _, raw = auth_user
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
+    # Legacy record: data contains a stale is_public=True from before the
+    # cleanup, but the actual server flag is False.
     mock_client.get_record_by_id.return_value = _make_mock_record(
         42, "solicitation", data={"title": "Sol", "is_public": True}, public=False
     )
@@ -479,9 +486,8 @@ def test_get_solicitation_exposes_server_public_flag(mock_client_cls, client, au
     data = _call_tool(client, raw, "get_solicitation", {"solicitation_id": 42})
     content = data["result"]["structuredContent"]
 
-    # Both fields surface, so the data/server divergence is diagnosable
-    assert content["is_public"] is True  # application-level flag (legacy data field)
-    assert content["public"] is False  # server-side ACL flag (the marketplace one)
+    assert content["is_public"] is False  # sourced from envelope, NOT data
+    assert "public" not in content  # the duplicate key is gone
 
 
 @pytest.mark.django_db
