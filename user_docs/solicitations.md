@@ -108,5 +108,8 @@ Yes — each solicitation is independent.
 **What is a "fund" in the context of an award?**
 Funds are optional tracking records in Labs that let program teams monitor disbursements after an award is made. They are not required to complete an award.
 
+**How do I remove a solicitation from the public listing?**
+Edit the solicitation and uncheck the **Publicly Listed** checkbox. Saving the form immediately removes it from the public marketplace.
+
 **My solicitation shows as published but isn't appearing on the public listing — what's wrong?**
-This can happen to solicitations that were created or edited outside the standard Labs interface. The solicitation may appear to be public in its own record while a separate visibility setting — the one the public marketplace actually checks — is still set to hidden. If you believe a solicitation is affected, contact your Labs administrator. They can run a recovery process to bring those two settings back into sync so the solicitation appears on the public listing as expected.
+This should no longer occur for solicitations edited through the standard Labs interface — unchecking **Publicly Listed** and saving is all that is needed. If you are working with a solicitation that was last edited before this fix was in place and it still appears incorrectly, contact your Labs administrator to have the visibility settings corrected.
