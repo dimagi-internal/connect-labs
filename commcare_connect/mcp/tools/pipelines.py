@@ -296,6 +296,7 @@ def pipeline_update_schema(
 
 _PIPELINE_PREVIEW_MAX_ROWS = 200
 
+
 @register(
     name="pipeline_preview",
     description=(
@@ -334,8 +335,6 @@ _PIPELINE_PREVIEW_MAX_ROWS = 200
         "additionalProperties": False,
     },
 )
-
-
 def pipeline_preview(
     user,
     pipeline_id: int,
