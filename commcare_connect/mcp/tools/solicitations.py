@@ -262,8 +262,12 @@ def get_response(user, response_id: int) -> dict:
                 "type": "object",
                 "description": (
                     "Application-level solicitation fields (title, status, solicitation_type, etc.). "
-                    "MCP-created records are always private — `is_public=true` is rejected with "
-                    "POLICY_VIOLATION. Public listing must go through the form-based UI."
+                    "Set `is_public=true` to surface the record on the public /solicitations/ "
+                    "marketplace listing — this also flips the server-side `public` ACL flag, which "
+                    "is the field the marketplace query actually filters on. Solicitations are an "
+                    "exception to the broader MCP no-public-records policy because their data is "
+                    "public-facing by design (title, scope, questions). Do NOT include PII or "
+                    "pipeline-derived data in a public solicitation."
                 ),
                 "additionalProperties": True,
             },
@@ -285,19 +289,11 @@ def create_solicitation(
     experiment = program_id or organization_id
     if not experiment:
         raise MCPToolError("INVALID_SCHEMA", "Either program_id or organization_id is required")
-    if data.get("is_public"):
-        raise MCPToolError(
-            "POLICY_VIOLATION",
-            "Creating public LabsRecords is not permitted via the MCP. "
-            "Remove is_public from data (or set it to false) and retry. "
-            "Public records are readable without authentication and must not "
-            "contain PII or data derived from pipeline previews.",
-        )
 
     token = require_connect_token(user)
     client = LabsRecordAPIClient(access_token=token)
     try:
-        is_public = False
+        is_public = bool(data.get("is_public", False))
         prog_id = int(program_id) if program_id else None
         record = client.create_record(
             experiment=experiment,
@@ -317,7 +313,9 @@ def create_solicitation(
         "Update an existing solicitation. Merges update_data into the existing data dict; "
         "keys present in update_data overwrite existing values, all other keys are preserved. "
         "Pass program_id (or organization_id) for non-public records — the merge starts with "
-        "a get_record_by_id that needs scope to authorize the read."
+        "a get_record_by_id that needs scope to authorize the read. Setting `is_public` in "
+        "update_data also flips the server-side `public` ACL flag (the one the marketplace "
+        "filters on); omit `is_public` to leave the existing visibility unchanged."
     ),
     input_schema={
         "type": "object",
@@ -360,10 +358,12 @@ def update_solicitation(
 ) -> dict:
     """Update an existing solicitation by merging update_data into its data dict.
 
-    Visibility keys (``is_public``, ``public``) are stripped before merging — the
-    public ACL flag lives on the LabsRecord envelope as a security boundary and
-    cannot be flipped via the MCP. To recover the marketplace flag on existing
-    records, use the ``fix_solicitation_public`` management command.
+    Visibility (``is_public``) lives on the LabsRecord envelope as a separate ACL
+    column, not inside the JSON ``data``. When ``update_data`` includes
+    ``is_public``, we capture it before stripping the key from the merge and
+    forward it as ``public=`` to the server, so the public marketplace listing
+    actually sees the change. The redundant ``public`` key is also stripped to
+    prevent the envelope name from being shadowed inside ``data``.
     """
     token = require_connect_token(user)
     client = LabsRecordAPIClient(
@@ -377,6 +377,12 @@ def update_solicitation(
         if current is None:
             raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
 
+        # Capture envelope-level is_public BEFORE stripping it from the merge —
+        # otherwise the propagation check below always sees a missing key.
+        public_override: bool | None = None
+        if "is_public" in update_data:
+            public_override = bool(update_data["is_public"])
+
         # Merge: existing data wins on unspecified keys; update_data wins on overlapping keys.
         # Strip visibility keys — public flag lives on the LabsRecord envelope, not inside data.
         merged_data = dict(current.data or {})
@@ -384,13 +390,17 @@ def update_solicitation(
         update_data.pop("public", None)
         merged_data.update(update_data)
 
-        record = client.update_record(
-            record_id=solicitation_id,
-            experiment=current.experiment,
-            type=current.type,
-            data=merged_data,
-            current_record=current,
-        )
+        update_kwargs: dict = {
+            "record_id": solicitation_id,
+            "experiment": current.experiment,
+            "type": current.type,
+            "data": merged_data,
+            "current_record": current,
+        }
+        if public_override is not None:
+            update_kwargs["public"] = public_override
+
+        record = client.update_record(**update_kwargs)
         return _serialize_record(record)
     finally:
         client.close()
