@@ -30,5 +30,18 @@ jobs:
       - name: Install MkDocs
         run: pip install mkdocs-material
 
-      - name: Deploy to GitHub Pages
-        run: mkdocs gh-deploy --force --dest-dir docs
+      - name: Build docs
+        run: mkdocs build --site-dir site
+
+      - name: Deploy to gh-pages /docs/ subdirectory
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages
+          git checkout gh-pages
+          # Remove only the docs/ subdirectory, preserving slide decks at root
+          git rm -rf --ignore-unmatch docs/
+          cp -r site/ docs/
+          git add docs/
+          git diff --cached --quiet || git commit -m "Deploy MkDocs to /docs/ [skip ci]"
+          git push origin gh-pages
