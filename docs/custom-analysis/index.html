@@ -1,0 +1,1082 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="User documentation for Connect Labs at labs.connect.dimagi.com">
+      
+      
+      
+        <link rel="canonical" href="https://jjackson.github.io/connect-labs/docs/custom-analysis/">
+      
+      
+        <link rel="prev" href="../solicitations/">
+      
+      
+        <link rel="next" href="../coverage-maps/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Custom Analysis - Connect Labs Help</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#custom-analysis-dashboards" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Connect Labs Help" class="md-header__button md-logo" aria-label="Connect Labs Help" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Connect Labs Help
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Custom Analysis
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../audit/" class="md-tabs__link">
+          
+  
+  
+  Feature Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../connect-mcp-safe-mode/" class="md-tabs__link">
+          
+  
+  
+  For Power Users
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Connect Labs Help" class="md-nav__button md-logo" aria-label="Connect Labs Help" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Connect Labs Help
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Feature Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audit & QA Review
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../workflow-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow Engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../solicitations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Solicitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Analysis
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Custom Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#available-dashboards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Dashboards
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available Dashboards">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kmc-kangaroo-mother-care" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KMC (Kangaroo Mother Care)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rutf-ready-to-use-therapeutic-food" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUTF (Ready-to-Use Therapeutic Food)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mbw-mother-and-baby-wellness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MBW (Mother and Baby Wellness)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chc-nutrition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CHC Nutrition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audit-of-audits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit of Audits
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-features-across-dashboards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Features Across Dashboards
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coverage-maps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coverage Maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ai-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    For Power Users
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    For Power Users
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../connect-mcp-safe-mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connect MCP & Safe Mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#available-dashboards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available Dashboards
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Available Dashboards">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kmc-kangaroo-mother-care" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KMC (Kangaroo Mother Care)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rutf-ready-to-use-therapeutic-food" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUTF (Ready-to-Use Therapeutic Food)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mbw-mother-and-baby-wellness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MBW (Mother and Baby Wellness)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chc-nutrition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CHC Nutrition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audit-of-audits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit of Audits
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-features-across-dashboards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Features Across Dashboards
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="custom-analysis-dashboards">Custom Analysis Dashboards<a class="headerlink" href="#custom-analysis-dashboards" title="Permanent link">&para;</a></h1>
+<p>Custom Analysis provides program-specific reporting dashboards built for particular health program types — nutrition monitoring, maternal and child health, SAM treatment, and audit quality review. Each dashboard is tailored to the data and workflows of that program.</p>
+<hr />
+<h2 id="available-dashboards">Available Dashboards<a class="headerlink" href="#available-dashboards" title="Permanent link">&para;</a></h2>
+<p>Which dashboards you see depends on your program. Talk to your program administrator if you expect to see a dashboard that isn't showing.</p>
+<h3 id="kmc-kangaroo-mother-care">KMC (Kangaroo Mother Care)<a class="headerlink" href="#kmc-kangaroo-mother-care" title="Permanent link">&para;</a></h3>
+<p>Dashboards for programs supporting premature and low-birth-weight newborns.</p>
+<pre class="mermaid"><code>flowchart LR
+    CC[CommCare KMC\nForm Submissions] --&gt; L[Labs]
+    L --&gt; C[Child Timeline\nDashboard]
+    L --&gt; F[FLW Metrics\nDashboard]
+    C --&gt; D[Drill-down:\nIndividual Child]</code></pre>
+<p><strong>Child Timeline (<code>/kmc/children/</code>):</strong></p>
+<ul>
+<li>List of all KMC beneficiaries with key metrics: visit count, weight progression, and nutritional status</li>
+<li>Filter by FLW, date range, or case status</li>
+<li>Click any child to see their full visit timeline, weight chart, and visit photos</li>
+</ul>
+<p><strong>FLW Metrics:</strong></p>
+<ul>
+<li>Aggregate view of each FLW's KMC caseload</li>
+<li>Columns: number of active cases, average visit frequency, cases needing follow-up</li>
+</ul>
+<hr />
+<h3 id="rutf-ready-to-use-therapeutic-food">RUTF (Ready-to-Use Therapeutic Food)<a class="headerlink" href="#rutf-ready-to-use-therapeutic-food" title="Permanent link">&para;</a></h3>
+<p>Dashboard for tracking SAM (Severe Acute Malnutrition) treatment with RUTF. The layout follows the same pattern as KMC, but tracks MUAC measurements and SAM treatment progress instead of weight.</p>
+<p><strong>Child List (<code>/rutf/children/</code>):</strong></p>
+<ul>
+<li>List of all SAM beneficiaries with key metrics: visit count, MUAC progression, and case status</li>
+<li>Filter by FLW, date range, or recovery status</li>
+<li>Click any child to open their full detail view</li>
+</ul>
+<p><strong>Child Detail View:</strong></p>
+<ul>
+<li><strong>Visit History</strong> — full timeline of all follow-up visits with dates and visit numbers</li>
+<li><strong>MUAC Progression Chart</strong> — line chart showing mid-upper arm circumference measurements over time</li>
+<li><strong>Visit Photos</strong> — MUAC measurement photos from each visit</li>
+<li><strong>Visit Locations</strong> — map showing GPS coordinates of where visits occurred</li>
+<li><strong>Visit Details</strong> — facility visits, treatment received, treatment adherence notes, and consent status</li>
+</ul>
+<hr />
+<h3 id="mbw-mother-and-baby-wellness">MBW (Mother and Baby Wellness)<a class="headerlink" href="#mbw-mother-and-baby-wellness" title="Permanent link">&para;</a></h3>
+<p>Monitoring dashboard for maternal and newborn health programs.</p>
+<ul>
+<li>FLW-level summary of visit frequency and case outcomes</li>
+<li>Flag workers or cases that need supervisory follow-up</li>
+<li>Data streams in progressively from CommCare as the page loads</li>
+</ul>
+<hr />
+<h3 id="chc-nutrition">CHC Nutrition<a class="headerlink" href="#chc-nutrition" title="Permanent link">&para;</a></h3>
+<p>Dashboard for Community Health Center nutrition programs.</p>
+<ul>
+<li>Nutrition indicators aggregated by FLW and time period</li>
+<li>Case status tracking (active, graduated, referred, lost to follow-up)</li>
+<li>Color-coded thresholds highlighting at-risk cases</li>
+</ul>
+<hr />
+<h3 id="audit-of-audits">Audit of Audits<a class="headerlink" href="#audit-of-audits" title="Permanent link">&para;</a></h3>
+<div class="admonition note">
+<p class="admonition-title">Dimagi staff only</p>
+</div>
+<p>This dashboard is visible to Dimagi program managers and is used for quality oversight across organizations.</p>
+<p>Shows summary statistics on audit session quality across all programs:</p>
+<ul>
+<li>Which programs are conducting audits and at what frequency</li>
+<li>Pass rates by audit template and organization</li>
+<li>Heatmaps of audit activity over time</li>
+<li>Filter by organization, date range, or audit template</li>
+</ul>
+<hr />
+<h2 id="common-features-across-dashboards">Common Features Across Dashboards<a class="headerlink" href="#common-features-across-dashboards" title="Permanent link">&para;</a></h2>
+<p>All custom analysis dashboards share these patterns:</p>
+<p><strong>Progressive data loading:</strong>
+Data streams in from CommCare rather than loading all at once. A progress bar shows how much has loaded. For large programs, this may take 30–60 seconds.</p>
+<p><strong>Filtering:</strong>
+Most dashboards let you filter by:</p>
+<ul>
+<li>Date range (reporting period)</li>
+<li>Field worker</li>
+<li>Geographic area (if configured)</li>
+<li>Case status</li>
+</ul>
+<p><strong>Drill-down:</strong>
+Click any row in a summary table to open the detail view for that worker or child. Detail views show the full visit timeline, individual measurements, and linked photos.</p>
+<p><strong>Export:</strong>
+Some dashboards have an <strong>Export</strong> button to download the current view as a CSV. If you need data not available for export, contact your program team.</p>
+<hr />
+<h2 id="common-questions">Common Questions<a class="headerlink" href="#common-questions" title="Permanent link">&para;</a></h2>
+<p><strong>My program isn't listed — how do I get a dashboard?</strong>
+Custom dashboards are built for specific programs and require development work. Reach out in <strong>#connect-labs</strong> on Slack to discuss what your program needs.</p>
+<p><strong>The numbers look different from CommCare's built-in reports — why?</strong>
+Labs dashboards may apply additional filters or use different date logic than CommCare's standard reports. Check the date range filter and confirm which visits are included.</p>
+<p><strong>Data is loading slowly — is something wrong?</strong>
+Large programs with many visits take longer to load. If the progress bar hasn't moved in 5+ minutes, try refreshing the page. If the problem persists, post in <strong>#connect-labs</strong>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
