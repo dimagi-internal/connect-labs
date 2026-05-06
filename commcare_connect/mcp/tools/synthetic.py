@@ -11,7 +11,7 @@ from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIC
 from commcare_connect.labs.synthetic.gdrive import DriveClient
 from commcare_connect.labs.synthetic.generator.engine import generate as _generate
 from commcare_connect.labs.synthetic.generator.manifest import Manifest, ManifestValidationError
-from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema
+from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, parse_form_schema_from_app_json
 from commcare_connect.labs.synthetic.generator.uploader import upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 from commcare_connect.labs.synthetic.registry import invalidate_cache
@@ -195,20 +195,50 @@ def _load_opportunity_detail(opportunity_id: int, user) -> dict:
 
 
 def _load_form_schema_for_opp(opportunity_id: int, user) -> FormSchema:
-    """Resolve the opp's primary form schema.
+    """Resolve the opp's primary deliver form schema by hitting Connect's app_structure endpoint.
 
-    For v1 this is intentionally an empty schema. The labs server does not
-    yet expose a Python wrapper for the HQ ``get_form_json_paths`` query
-    used by the local commcare_hq_mcp stdio server, and the engine's field
+    Calls ``/export/opportunity/<id>/app_structure/?app_type=deliver`` (the same
+    upstream the ``get_opportunity_apps`` MCP tool uses) and translates the
+    deliver app's primary form into ``QuestionSpec`` entries via
+    ``parse_form_schema_from_app_json``.
+
+    Falls back to an empty FormSchema if the user has no Connect token, the
+    upstream call fails, or the opp has no deliver app. The engine's field
     filler tolerates an empty schema (no per-question form_json fields are
-    added, but every visit still carries the standard metadata fields).
-
-    TODO(plan-B): wire a server-side HQ schema fetch. The likely path is to
-    call ``/export/opportunity/<id>/app_structure/`` (already exposed via
-    ``get_opportunity_apps``) and translate the deliver app's primary form
-    into ``QuestionSpec`` entries.
+    added, but every visit still carries the standard 23 metadata fields).
     """
-    return FormSchema(questions=[])
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        logger.warning(
+            "synthetic_generate_from_manifest: no Connect token for user; " "using empty form_schema for opp_id=%s",
+            opportunity_id,
+        )
+        return FormSchema(questions=[])
+
+    client = LabsRecordAPIClient(access_token=token)
+    try:
+        url = f"{client.base_url}/export/opportunity/{opportunity_id}/app_structure/"
+        try:
+            resp = client.http_client.get(url, params={"app_type": "deliver"}, timeout=120.0)
+        except httpx.RequestError as exc:
+            logger.warning(
+                "synthetic_generate_from_manifest: upstream RequestError loading app_structure for opp %s: %s; "
+                "falling back to empty schema.",
+                opportunity_id,
+                exc,
+            )
+            return FormSchema(questions=[])
+        if resp.status_code >= 400:
+            logger.warning(
+                "synthetic_generate_from_manifest: app_structure GET %s returned %s; falling back to empty schema.",
+                url,
+                resp.status_code,
+            )
+            return FormSchema(questions=[])
+        return parse_form_schema_from_app_json(resp.json(), app_type="deliver")
+    finally:
+        client.close()
 
 
 @register(
