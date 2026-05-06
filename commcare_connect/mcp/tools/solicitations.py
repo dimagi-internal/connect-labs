@@ -23,6 +23,11 @@ def _serialize_record(record) -> dict:
     The original code merged the record's ``data`` dict into the outer envelope,
     giving callers a single flat dict with id/experiment/type/program_id/labs_record_id
     plus all application-level fields (title, status, etc.) at the top level.
+
+    ``public`` is the server-side ACL flag (LabsRecord.public column) — distinct
+    from ``data.is_public`` which the application uses. The marketplace listing
+    only filters on ``public``, so it is included here for diagnosability and
+    placed after the data spread so it always reflects the actual server flag.
     """
     data = record.data or {}
     return {
@@ -32,6 +37,7 @@ def _serialize_record(record) -> dict:
         "program_id": record.program_id,
         "labs_record_id": record.labs_record_id,
         **data,
+        "public": bool(record.public),
     }
 
 
@@ -256,7 +262,8 @@ def get_response(user, response_id: int) -> dict:
                 "type": "object",
                 "description": (
                     "Application-level solicitation fields (title, status, solicitation_type, etc.). "
-                    "Include is_public=true to make the record publicly queryable."
+                    "MCP-created records are always private — `is_public=true` is rejected with "
+                    "POLICY_VIOLATION. Public listing must go through the form-based UI."
                 ),
                 "additionalProperties": True,
             },
@@ -351,7 +358,13 @@ def update_solicitation(
     program_id: str | None = None,
     organization_id: str | None = None,
 ) -> dict:
-    """Update an existing solicitation by merging update_data into its data dict."""
+    """Update an existing solicitation by merging update_data into its data dict.
+
+    Visibility keys (``is_public``, ``public``) are stripped before merging — the
+    public ACL flag lives on the LabsRecord envelope as a security boundary and
+    cannot be flipped via the MCP. To recover the marketplace flag on existing
+    records, use the ``fix_solicitation_public`` management command.
+    """
     token = require_connect_token(user)
     client = LabsRecordAPIClient(
         access_token=token,
