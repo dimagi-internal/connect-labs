@@ -24,12 +24,12 @@ def _serialize_record(record) -> dict:
     giving callers a single flat dict with id/experiment/type/program_id/labs_record_id
     plus all application-level fields (title, status, etc.) at the top level.
 
-    ``public`` is the server-side ACL flag (LabsRecord.public column) — distinct
-    from ``data.is_public`` which the application uses. The marketplace listing
-    only filters on ``public``, so it is included here for diagnosability and
-    placed after the data spread so it always reflects the actual server flag.
+    ``is_public`` is the canonical name for the public-listing flag and is
+    sourced from ``record.public`` (the server-side LabsRecord.public column).
+    Any stale ``is_public`` inside ``data`` from legacy records is dropped
+    before the spread, so the response has exactly one source of truth.
     """
-    data = record.data or {}
+    data = {k: v for k, v in (record.data or {}).items() if k != "is_public"}
     return {
         "id": record.id,
         "experiment": record.experiment,
@@ -37,7 +37,7 @@ def _serialize_record(record) -> dict:
         "program_id": record.program_id,
         "labs_record_id": record.labs_record_id,
         **data,
-        "public": bool(record.public),
+        "is_public": bool(record.public),
     }
 
 
@@ -293,7 +293,11 @@ def create_solicitation(
     token = require_connect_token(user)
     client = LabsRecordAPIClient(access_token=token)
     try:
+        # is_public is the user-facing API name; persistence is record.public on
+        # the LabsRecord envelope. Strip from data so the JSON column never
+        # duplicates the flag.
         is_public = bool(data.get("is_public", False))
+        data = {k: v for k, v in data.items() if k != "is_public"}
         prog_id = int(program_id) if program_id else None
         record = client.create_record(
             experiment=experiment,
@@ -384,8 +388,9 @@ def update_solicitation(
             public_override = bool(update_data["is_public"])
 
         # Merge: existing data wins on unspecified keys; update_data wins on overlapping keys.
-        # Strip visibility keys — public flag lives on the LabsRecord envelope, not inside data.
-        merged_data = dict(current.data or {})
+        # Strip visibility keys from BOTH sides — flag lives on the envelope, not in JSON.
+        # Stripping current.data lets legacy records migrate naturally on first update.
+        merged_data = {k: v for k, v in (current.data or {}).items() if k not in ("is_public", "public")}
         update_data.pop("is_public", None)
         update_data.pop("public", None)
         merged_data.update(update_data)
