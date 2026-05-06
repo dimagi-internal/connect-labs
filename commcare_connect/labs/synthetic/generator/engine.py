@@ -1,0 +1,109 @@
+"""Top-level generator orchestrator.
+
+Composes manifest → timeline → fields → status → user_data → works
+into the five fixture dicts the labs synthetic system serves.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import random
+import uuid
+from typing import Any
+
+from .fields import fill_form_json
+from .manifest import Manifest
+from .opportunity import build_opportunity
+from .schema_loader import FormSchema
+from .status import decide_visit_status
+from .timeline import expand_visit_schedule
+from .user_data import build_user_data
+from .works import build_works_and_modules
+
+
+def _anomalies_at(week_index: int, flw_id: str, manifest: Manifest):
+    out = []
+    for a in manifest.anomalies:
+        if flw_id not in a.flw_ids:
+            continue
+        if a.week and a.week == week_index:
+            out.append(a)
+        elif a.weeks and week_index in a.weeks:
+            out.append(a)
+    return out
+
+
+def _persona_index(manifest: Manifest):
+    return {p.id: p for p in manifest.flw_personas}
+
+
+def _payment_units(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    return detail.get("payment_units", [])
+
+
+def _default_deliver_unit(detail: dict[str, Any]) -> int | None:
+    units = detail.get("deliver_units") or []
+    return units[0]["id"] if units else None
+
+
+def generate(
+    *,
+    manifest: Manifest,
+    opportunity_detail: dict[str, Any],
+    form_schema: FormSchema,
+) -> dict[str, Any]:
+    rng = random.Random(manifest.random_seed)
+    personas = manifest.flw_personas
+    persona_index = _persona_index(manifest)
+    cohort = manifest.beneficiary_cohorts[0]  # v1 supports the primary cohort
+    deliver_unit_id = _default_deliver_unit(opportunity_detail)
+    payment_units = _payment_units(opportunity_detail)
+
+    slots = expand_visit_schedule(manifest.timeline, personas, random_seed=manifest.random_seed)
+    slots.sort(key=lambda s: (s.visit_date, s.flw_id))
+
+    visits: list[dict[str, Any]] = []
+    for slot in slots:
+        persona = persona_index[slot.flw_id]
+        anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
+        form_json = fill_form_json(schema=form_schema, cohort=cohort, anomalies_for_visit=anomalies, rng=rng)
+        status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
+        visits.append(
+            {
+                "id": str(uuid.UUID(int=rng.getrandbits(128))),
+                "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
+                "opportunity_id": manifest.opportunity_id,
+                "username": persona.id,
+                "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
+                "deliver_unit_id": deliver_unit_id,
+                "entity_id": str(uuid.UUID(int=rng.getrandbits(128))),
+                "entity_name": f"Beneficiary {rng.randint(1, cohort.size)}",
+                "visit_date": slot.visit_date.isoformat(),
+                "status": status.status,
+                "reason": None,
+                "location": "",
+                "flagged": status.flagged,
+                "flag_reason": status.flag_reason,
+                "form_json": form_json,
+                "completed_work": "",
+                "status_modified_date": dt.datetime.combine(slot.visit_date, dt.time(12, 0)).isoformat(),
+                "review_status": status.review_status,
+                "review_created_on": dt.datetime.combine(slot.visit_date, dt.time(12, 30)).isoformat(),
+                "justification": None,
+                "date_created": dt.datetime.combine(slot.visit_date, dt.time(11, 0)).isoformat(),
+                "completed_work_id": None,
+                "images": [],
+            }
+        )
+
+    user_data = build_user_data(personas, visits)
+    works, modules = build_works_and_modules(visits, payment_units)
+    opportunity = build_opportunity(opportunity_detail, opportunity_name_override=manifest.opportunity_name)
+
+    return {
+        "opportunity": opportunity,
+        "user_visits": visits,
+        "user_data": user_data,
+        "completed_works": works,
+        "completed_module": modules,
+    }
