@@ -56,7 +56,7 @@ def _call_tool(client, raw_pat, tool_name, arguments):
     return resp.json()
 
 
-def _make_mock_record(record_id, rtype, experiment="25", program_id=25, data=None, labs_record_id=None):
+def _make_mock_record(record_id, rtype, experiment="25", program_id=25, data=None, labs_record_id=None, public=False):
     """Build a MagicMock that mimics a LocalLabsRecord."""
     rec = MagicMock()
     rec.id = record_id
@@ -65,6 +65,7 @@ def _make_mock_record(record_id, rtype, experiment="25", program_id=25, data=Non
     rec.program_id = program_id
     rec.labs_record_id = labs_record_id
     rec.data = data or {}
+    rec.public = public
     return rec
 
 
@@ -351,30 +352,24 @@ def test_create_solicitation_happy_path(mock_client_cls, client, auth_user):
 
 
 @pytest.mark.django_db
-@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
-def test_create_solicitation_uses_is_public_flag(mock_client_cls, client, auth_user):
-    """is_public in data is forwarded as public=True to create_record."""
-    _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.create_record.return_value = _make_mock_record(
-        78, "solicitation", data={"title": "Public Sol", "is_public": True}
-    )
+def test_create_solicitation_rejects_is_public(client, auth_user):
+    """Setting is_public=true via the MCP raises POLICY_VIOLATION.
 
-    _call_tool(
+    Public records are readable without auth, so the security boundary is that
+    only the form-based UI (with a real authenticated human behind it) can mark
+    a solicitation public — never an AI agent over the MCP.
+    """
+    _, raw = auth_user
+
+    data = _call_tool(
         client,
         raw,
         "create_solicitation",
         {"program_id": "25", "data": {"title": "Public Sol", "is_public": True}},
     )
 
-    mock_client.create_record.assert_called_once_with(
-        experiment="25",
-        type="solicitation",
-        data={"title": "Public Sol", "is_public": True},
-        program_id=25,
-        public=True,
-    )
+    assert data["result"]["isError"] is True, data
+    assert data["result"]["structuredContent"]["error"]["code"] == "POLICY_VIOLATION"
 
 
 @pytest.mark.django_db
@@ -458,6 +453,25 @@ def test_update_solicitation_propagates_scope_to_client(mock_client_cls, client,
 
     init_kwargs = mock_client_cls.call_args.kwargs
     assert init_kwargs["program_id"] == 130
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_get_solicitation_exposes_server_public_flag(mock_client_cls, client, auth_user):
+    """The serialized response must include `public` (server-side ACL) so agents can debug visibility."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = _make_mock_record(
+        42, "solicitation", data={"title": "Sol", "is_public": True}, public=False
+    )
+
+    data = _call_tool(client, raw, "get_solicitation", {"solicitation_id": 42})
+    content = data["result"]["structuredContent"]
+
+    # Both fields surface, so the data/server divergence is diagnosable
+    assert content["is_public"] is True  # application-level flag (legacy data field)
+    assert content["public"] is False  # server-side ACL flag (the marketplace one)
 
 
 @pytest.mark.django_db
