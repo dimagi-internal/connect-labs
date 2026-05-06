@@ -298,24 +298,31 @@ class TestCreateSolicitation:
         )
 
     def test_sets_public_flag_from_data(self, data_access, mock_api_client):
+        """is_public in input data is forwarded to public= AND stripped from the persisted JSON.
+
+        The flag lives on LabsRecord.public (the envelope), not inside data, so
+        we don't want a stale duplicate sitting in the JSON column.
+        """
         input_data = {"title": "Public Solicitation", "is_public": True}
         api_return = LocalLabsRecord(
             {
                 "id": 101,
                 "experiment": "42",
                 "type": SOLICITATION_TYPE,
-                "data": input_data,
+                "data": {"title": "Public Solicitation"},
                 "opportunity_id": 0,
+                "public": True,
             }
         )
         mock_api_client.create_record.return_value = api_return
 
         data_access.create_solicitation(input_data)
 
+        # is_public is removed from data; the value is forwarded as public=True
         mock_api_client.create_record.assert_called_once_with(
             experiment="42",
             type=SOLICITATION_TYPE,
-            data=input_data,
+            data={"title": "Public Solicitation"},
             program_id=42,
             public=True,
         )
@@ -339,11 +346,39 @@ class TestUpdateSolicitation:
 
         assert isinstance(result, SolicitationRecord)
         assert result.id == 5
+        # public=None means "preserve current envelope flag" — the API client only
+        # adds it to the payload when explicitly set.
         mock_api_client.update_record.assert_called_once_with(
             record_id=5,
             experiment="42",
             type=SOLICITATION_TYPE,
             data=updated_data,
+            public=None,
+        )
+
+    def test_forwards_is_public_to_envelope(self, data_access, mock_api_client):
+        """Toggling is_public via the form path flips the server LabsRecord.public flag."""
+        updated_data = {"title": "Updated Title", "is_public": False}
+        api_return = LocalLabsRecord(
+            {
+                "id": 5,
+                "experiment": "42",
+                "type": SOLICITATION_TYPE,
+                "data": {"title": "Updated Title"},
+                "opportunity_id": 0,
+                "public": False,
+            }
+        )
+        mock_api_client.update_record.return_value = api_return
+
+        data_access.update_solicitation(5, updated_data)
+
+        mock_api_client.update_record.assert_called_once_with(
+            record_id=5,
+            experiment="42",
+            type=SOLICITATION_TYPE,
+            data={"title": "Updated Title"},
+            public=False,
         )
 
 

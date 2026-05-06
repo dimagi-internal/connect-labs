@@ -184,16 +184,16 @@ class SolicitationsDataAccess:
         return None
 
     def create_solicitation(self, data: dict) -> SolicitationRecord:
-        """
-        Create a new solicitation via production API.
+        """Create a new solicitation via production API.
 
-        Args:
-            data: Dictionary containing solicitation data
-
-        Returns:
-            SolicitationRecord instance
+        ``is_public`` is the user-facing API name for the public-listing flag, but
+        it lives on the LabsRecord envelope (``record.public``), not inside the
+        JSON ``data`` column. Pop it before persisting so we don't store a stale
+        duplicate that could drift from the envelope.
         """
-        is_public = data.get("is_public", False)
+        # Don't mutate the caller's dict
+        data = dict(data)
+        is_public = bool(data.pop("is_public", False))
 
         record = self.labs_api.create_record(
             experiment=self.experiment,
@@ -205,21 +205,22 @@ class SolicitationsDataAccess:
         return SolicitationRecord(record.to_api_dict())
 
     def update_solicitation(self, solicitation_id: int, data: dict) -> SolicitationRecord:
-        """
-        Update an existing solicitation via production API.
+        """Update an existing solicitation via production API.
 
-        Args:
-            solicitation_id: ID of the solicitation record to update
-            data: Dictionary containing updated solicitation data
-
-        Returns:
-            Updated SolicitationRecord instance
+        Pops ``is_public`` from data (visibility lives on the envelope, not in
+        JSON) and forwards it as ``public=`` so toggling the form's "Publicly
+        Listed" checkbox actually flips the server-side ACL flag. Without this
+        the field would be saved into ``data`` but the marketplace listing
+        wouldn't see the change.
         """
+        data = dict(data)
+        public = bool(data.pop("is_public")) if "is_public" in data else None
         record = self.labs_api.update_record(
             record_id=solicitation_id,
             experiment=self.experiment,
             type=SOLICITATION_TYPE,
             data=data,
+            public=public,
         )
         return SolicitationRecord(record.to_api_dict())
 

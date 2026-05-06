@@ -31,7 +31,6 @@ def _make_solicitation(**overrides):
         "scope_of_work": "Do the work",
         "solicitation_type": "rfp",
         "status": "active",
-        "is_public": True,
         "questions": [{"id": "q1", "text": "Why?", "type": "text", "required": True}],
         "application_deadline": "2026-06-01",
         "expected_start_date": "2026-07-01",
@@ -48,6 +47,8 @@ def _make_solicitation(**overrides):
         "type": SOLICITATION_TYPE,
         "data": data,
         "opportunity_id": 0,
+        # is_public is sourced from the LabsRecord.public envelope flag
+        "public": True,
     }
     defaults.update(overrides)
     return SolicitationRecord(defaults)

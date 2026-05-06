@@ -35,7 +35,10 @@ class SolicitationRecord(LocalLabsRecord):
 
     @property
     def is_public(self):
-        return self.data.get("is_public", False)
+        # Single source of truth is the server-side LabsRecord.public column —
+        # the marketplace listing query filters on it, and there's no scenario
+        # where a record is conceptually "public-listed" but record.public=False.
+        return bool(self.public)
 
     @property
     def questions(self):
