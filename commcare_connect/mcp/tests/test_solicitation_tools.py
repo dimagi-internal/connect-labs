@@ -480,6 +480,36 @@ def test_update_solicitation_not_found(mock_client_cls, client, auth_user):
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
 
 
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_strips_public_flag(mock_client_cls, client, auth_user):
+    """update_solicitation strips is_public/public from update_data before merging."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+
+    existing = MagicMock()
+    existing.id = 10
+    existing.experiment = "25"
+    existing.type = "solicitation"
+    existing.data = {"title": "Test Sol", "status": "open"}
+    existing.labs_record_id = None
+    mock_client.get_record_by_id.return_value = existing
+    mock_client.update_record.return_value = existing
+
+    _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {"solicitation_id": 10, "update_data": {"status": "closed", "is_public": True, "public": True}},
+    )
+
+    call_kwargs = mock_client.update_record.call_args.kwargs
+    merged = call_kwargs["data"]
+    assert "is_public" not in merged, "is_public must be stripped before merge"
+    assert "public" not in merged, "public must be stripped before merge"
+
+
 # ---------------------------------------------------------------------------
 # award_response
 # ---------------------------------------------------------------------------

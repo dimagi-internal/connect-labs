@@ -189,7 +189,13 @@ def test_create_fund_happy_path(mock_client_cls, client, auth_user):
         client,
         raw,
         "create_fund",
-        {"program_id": "25", "name": "ACME Fund", "total_budget": 50000, "currency": "USD"},
+        {
+            "public_record_acknowledged": True,
+            "program_id": "25",
+            "name": "ACME Fund",
+            "total_budget": 50000,
+            "currency": "USD",
+        },
     )
 
     assert data["result"]["isError"] is False, data
@@ -225,7 +231,9 @@ def test_create_fund_minimal_params(mock_client_cls, client, auth_user):
         data={"name": "My Fund", "funder_slug": "my-fund", "status": "active", "currency": "USD", "allocations": []},
     )
 
-    data = _call_tool(client, raw, "create_fund", {"program_id": "10", "name": "My Fund"})
+    data = _call_tool(
+        client, raw, "create_fund", {"public_record_acknowledged": True, "program_id": "10", "name": "My Fund"}
+    )
 
     assert data["result"]["isError"] is False, data
     call_kwargs = mock_client.create_record.call_args.kwargs
@@ -235,6 +243,19 @@ def test_create_fund_minimal_params(mock_client_cls, client, auth_user):
     assert "description" not in record_data
     assert record_data["status"] == "active"
     assert record_data["currency"] == "USD"
+
+
+@pytest.mark.django_db
+def test_create_fund_requires_public_acknowledgment(client, auth_user):
+    """create_fund raises POLICY_VIOLATION when public_record_acknowledged is false."""
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "create_fund",
+        {"public_record_acknowledged": False, "program_id": "25", "name": "ACME Fund"},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "POLICY_VIOLATION"
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +312,31 @@ def test_update_fund_not_found(mock_client_cls, client, auth_user):
 
     assert data["result"]["isError"] is True, data
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.funds.LabsRecordAPIClient")
+def test_update_fund_strips_public_flag(mock_client_cls, client, auth_user):
+    """update_fund strips is_public/public from update_data before merging."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+
+    existing = _make_mock_fund(42, experiment="acme-fund", data={"name": "ACME Fund", "status": "active"})
+    mock_client.get_record_by_id.return_value = existing
+    mock_client.update_record.return_value = existing
+
+    _call_tool(
+        client,
+        raw,
+        "update_fund",
+        {"fund_id": 42, "update_data": {"status": "active", "is_public": True, "public": True}},
+    )
+
+    call_kwargs = mock_client.update_record.call_args.kwargs
+    merged = call_kwargs["data"]
+    assert "is_public" not in merged, "is_public must be stripped before merge"
+    assert "public" not in merged, "public must be stripped before merge"
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +496,7 @@ def test_fund_tools_require_connect_token(client, db):
     for name, args in [
         ("list_funds", {"program_id": "25"}),
         ("get_fund", {"fund_id": 1}),
-        ("create_fund", {"program_id": "25", "name": "Test Fund"}),
+        ("create_fund", {"public_record_acknowledged": True, "program_id": "25", "name": "Test Fund"}),
         ("update_fund", {"fund_id": 1, "update_data": {"status": "closed"}}),
         ("add_fund_allocation", {"fund_id": 1, "allocation": {"amount": 100}}),
         ("remove_fund_allocation", {"fund_id": 1, "index": 0}),
