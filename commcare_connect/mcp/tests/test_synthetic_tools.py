@@ -135,6 +135,7 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
         result = tool.handler(user=user, opportunity_id=4242, manifest_yaml=manifest_yaml)
 
     assert result["folder_id"].startswith("folder-")
+    assert result["folder_url"] == f"https://drive.google.com/drive/folders/{result['folder_id']}"
     assert "user_visits" in result["record_counts"]
     assert SyntheticOpportunity.objects.get(opportunity_id=4242).enabled is True
 
