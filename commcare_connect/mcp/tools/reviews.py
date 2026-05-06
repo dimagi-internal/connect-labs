@@ -106,15 +106,35 @@ def get_review(user, review_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_REVIEW_PUBLIC_WARNING = (
+    "This review record is PUBLIC — the reviewed organisation can read it. "
+    "Do not embed PII in the 'notes' field (patient names, dates of birth, "
+    "phone numbers, addresses, clinical observations, or any health data). "
+    "Safe fields: score, recommendation, criteria_scores, tags, reviewer_username."
+)
+
+
 @register(
     name="create_review",
     description=(
         "Create a review for a solicitation response. "
-        "The review is linked to the response via labs_record_id and scoped by llo_entity_id."
+        "The review is linked to the response via labs_record_id and scoped by llo_entity_id. "
+        "IMPORTANT: Review records are PUBLIC — readable by the reviewed organisation. "
+        "You MUST pass public_record_acknowledged=true and confirm the 'notes' field "
+        "contains no PII before calling this tool."
     ),
     input_schema={
         "type": "object",
         "properties": {
+            "public_record_acknowledged": {
+                "type": "boolean",
+                "description": (
+                    "Must be true. Confirms you understand this record will be publicly "
+                    "readable by the reviewed organisation and that the 'notes' field "
+                    "contains no PII (patient names, dates of birth, phone numbers, "
+                    "addresses, clinical observations, or health data)."
+                ),
+            },
             "response_id": {
                 "type": "integer",
                 "description": "ID of the response being reviewed.",
@@ -135,7 +155,10 @@ def get_review(user, review_id: int) -> dict:
             },
             "notes": {
                 "type": "string",
-                "description": "Reviewer notes.",
+                "description": (
+                    "Reviewer notes. "
+                    "Do NOT include PII — this field is publicly readable by the reviewed organisation."
+                ),
             },
             "criteria_scores": {
                 "type": "object",
@@ -151,13 +174,14 @@ def get_review(user, review_id: int) -> dict:
                 "description": "Comma-separated tags.",
             },
         },
-        "required": ["response_id", "llo_entity_id"],
+        "required": ["public_record_acknowledged", "response_id", "llo_entity_id"],
         "additionalProperties": False,
     },
     is_write=True,
 )
 def create_review(
     user,
+    public_record_acknowledged: bool,
     response_id: int,
     llo_entity_id: str,
     score: int | None = None,
@@ -167,18 +191,15 @@ def create_review(
     reviewer_username: str = "",
     tags: str = "",
 ) -> dict:
-    """Create a review for a response.
+    """Create a review for a response."""
+    if not public_record_acknowledged:
+        raise MCPToolError(
+            "POLICY_VIOLATION",
+            "public_record_acknowledged must be true. Review the field descriptions, "
+            "confirm 'notes' contains no PII, then retry with public_record_acknowledged=true.",
+        )
+    logger.warning("create_review: creating public record. %s", _REVIEW_PUBLIC_WARNING)
 
-    Args:
-        response_id: ID of the response being reviewed
-        llo_entity_id: LLO entity ID (used as experiment for API scoping)
-        score: Overall score 1-100
-        recommendation: "under_review", "approved", "rejected", "needs_revision"
-        notes: Reviewer notes
-        criteria_scores: Dict of criterion_id -> score (1-10)
-        reviewer_username: Username of the reviewer
-        tags: Comma-separated tags
-    """
     data: dict = {
         "response_id": response_id,
         "llo_entity_id": llo_entity_id,
@@ -206,7 +227,9 @@ def create_review(
             labs_record_id=response_id,
             public=True,
         )
-        return _serialize_record(record)
+        result = _serialize_record(record)
+        result["_public_warning"] = _REVIEW_PUBLIC_WARNING
+        return result
     finally:
         client.close()
 
@@ -245,6 +268,8 @@ def update_review(user, review_id: int, update_data: dict) -> dict:
             raise MCPToolError("NOT_FOUND", f"Review {review_id} not found")
 
         merged_data = dict(current.data or {})
+        update_data.pop("is_public", None)
+        update_data.pop("public", None)
         merged_data.update(update_data)
 
         record = client.update_record(

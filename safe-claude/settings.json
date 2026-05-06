@@ -24,7 +24,27 @@
       "CronCreate",
       "CronDelete",
       "CronList",
-      "ScheduleWakeup"
+      "ScheduleWakeup",
+      "RemoteTrigger",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./.gcp/**)",
+      "Read(~/.claude.json)",
+      "Read(~/.claude/**)",
+      "Grep(./.env)",
+      "Grep(./.env.*)",
+      "Read(~/.commcare-connect/**)",
+      "Glob(~/.commcare-connect/**)",
+      "Grep(~/.commcare-connect/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.config/**)",
+      "Glob(~/.aws/**)",
+      "Glob(~/.ssh/**)",
+      "Glob(~/.config/**)",
+      "mcp__Claude_in_Chrome__*",
+      "mcp__Claude_Preview__*",
+      "mcp__scheduled-tasks__*"
     ]
   },
   "env": {

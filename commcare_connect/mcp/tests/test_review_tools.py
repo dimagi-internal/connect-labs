@@ -189,6 +189,7 @@ def test_create_review_happy_path(mock_client_cls, client, auth_user):
         raw,
         "create_review",
         {
+            "public_record_acknowledged": True,
             "response_id": 10,
             "llo_entity_id": "llo-entity-1",
             "score": 90,
@@ -237,7 +238,7 @@ def test_create_review_minimal_params(mock_client_cls, client, auth_user):
         client,
         raw,
         "create_review",
-        {"response_id": 20, "llo_entity_id": "llo-entity-2"},
+        {"public_record_acknowledged": True, "response_id": 20, "llo_entity_id": "llo-entity-2"},
     )
 
     assert data["result"]["isError"] is False, data
@@ -248,6 +249,19 @@ def test_create_review_minimal_params(mock_client_cls, client, auth_user):
     assert "score" not in call_kwargs["data"]
     assert "notes" not in call_kwargs["data"]
     assert "tags" not in call_kwargs["data"]
+
+
+@pytest.mark.django_db
+def test_create_review_requires_public_acknowledgment(client, auth_user):
+    """create_review raises POLICY_VIOLATION when public_record_acknowledged is false."""
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "create_review",
+        {"public_record_acknowledged": False, "response_id": 1, "llo_entity_id": "llo-entity-1"},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "POLICY_VIOLATION"
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +339,37 @@ def test_update_review_not_found(mock_client_cls, client, auth_user):
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
 
 
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.reviews.LabsRecordAPIClient")
+def test_update_review_strips_public_flag(mock_client_cls, client, auth_user):
+    """update_review strips is_public/public from update_data before merging."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+
+    existing = _make_mock_record(
+        42,
+        "solicitation_review",
+        experiment="llo-entity-1",
+        labs_record_id=10,
+        data={"recommendation": "under_review", "score": 50},
+    )
+    mock_client.get_record_by_id.return_value = existing
+    mock_client.update_record.return_value = existing
+
+    _call_tool(
+        client,
+        raw,
+        "update_review",
+        {"review_id": 42, "update_data": {"score": 80, "is_public": True, "public": True}},
+    )
+
+    call_kwargs = mock_client.update_record.call_args.kwargs
+    merged = call_kwargs["data"]
+    assert "is_public" not in merged, "is_public must be stripped before merge"
+    assert "public" not in merged, "public must be stripped before merge"
+
+
 # ---------------------------------------------------------------------------
 # Missing Connect token
 # ---------------------------------------------------------------------------
@@ -339,7 +384,7 @@ def test_review_tools_require_connect_token(client, db):
     for name, args in [
         ("list_reviews", {"response_id": 1}),
         ("get_review", {"review_id": 1}),
-        ("create_review", {"response_id": 1, "llo_entity_id": "llo-entity-1"}),
+        ("create_review", {"public_record_acknowledged": True, "response_id": 1, "llo_entity_id": "llo-entity-1"}),
         ("update_review", {"review_id": 1, "update_data": {"recommendation": "approved"}}),
     ]:
         resp_data = _call_tool(client, raw, name, args)
