@@ -38,6 +38,7 @@ def test_upload_and_register_uploads_five_files_and_creates_row():
     )
     assert isinstance(result, UploadResult)
     assert result.folder_id.startswith("folder-")
+    assert result.folder_url == f"https://drive.google.com/drive/folders/{result.folder_id}"
     filenames = sorted(name for _, name, _ in drive.uploads)
     assert filenames == sorted(
         [

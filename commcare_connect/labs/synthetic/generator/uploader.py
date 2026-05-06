@@ -32,7 +32,18 @@ class _Drive(Protocol):
 @dataclass(frozen=True)
 class UploadResult:
     folder_id: str
+    folder_url: str
     record_counts: dict[str, int]
+
+
+def _folder_url(folder_id: str) -> str:
+    """Build the human-openable Drive URL for a folder ID.
+
+    The Drive API doesn't return webViewLink unless requested in the create
+    response, but the URL pattern is stable and works for both My Drive and
+    shared drives, so we just synthesize it.
+    """
+    return f"https://drive.google.com/drive/folders/{folder_id}"
 
 
 def upload_and_register(
@@ -65,4 +76,4 @@ def upload_and_register(
     )
     invalidate_cache()
 
-    return UploadResult(folder_id=folder_id, record_counts=counts)
+    return UploadResult(folder_id=folder_id, folder_url=_folder_url(folder_id), record_counts=counts)
