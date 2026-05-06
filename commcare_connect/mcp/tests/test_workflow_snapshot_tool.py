@@ -5,10 +5,9 @@ from unittest.mock import MagicMock
 import pytest
 from django.contrib.auth import get_user_model
 
-from commcare_connect.mcp.tool_registry import MCPToolError, get_tool
-
 # Trigger @register
 import commcare_connect.mcp.tools.workflow_snapshots  # noqa: F401
+from commcare_connect.mcp.tool_registry import MCPToolError, get_tool
 
 
 @pytest.fixture

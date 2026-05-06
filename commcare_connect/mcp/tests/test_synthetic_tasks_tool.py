@@ -1,11 +1,11 @@
-import pytest
-from django.contrib.auth import get_user_model
 from unittest.mock import MagicMock
 
-from commcare_connect.mcp.tool_registry import get_tool
+import pytest
+from django.contrib.auth import get_user_model
 
 # Trigger @register side effect
 import commcare_connect.mcp.tools.synthetic_tasks  # noqa: F401
+from commcare_connect.mcp.tool_registry import get_tool
 
 
 @pytest.fixture

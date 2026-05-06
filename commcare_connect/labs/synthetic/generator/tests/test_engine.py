@@ -1,15 +1,9 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from commcare_connect.labs.synthetic.generator.engine import generate
 from commcare_connect.labs.synthetic.generator.manifest import Manifest
-from commcare_connect.labs.synthetic.generator.schema_loader import (
-    FormSchema,
-    QuestionSpec,
-)
-
+from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, QuestionSpec
 
 GOLDEN = Path(__file__).parent / "golden"
 
@@ -18,9 +12,7 @@ def _load_inputs():
     manifest = Manifest.from_yaml((GOLDEN / "manifest.yaml").read_text())
     detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
     schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
-    schema = FormSchema(
-        questions=[QuestionSpec(**q) for q in schema_data["questions"]]
-    )
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
     return manifest, detail, schema
 
 
@@ -84,9 +76,7 @@ def test_generate_flags_visits_when_anomaly_scheduled(tmp_path):
     manifest = Manifest.from_yaml(patched)
     detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
     schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
-    schema = FormSchema(
-        questions=[QuestionSpec(**q) for q in schema_data["questions"]]
-    )
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
 
     out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
     flagged = [v for v in out["user_visits"] if v["flagged"]]

@@ -57,10 +57,7 @@ def workflow_save_snapshot(
     snapshot_name: str,
     captured_at: str,
 ) -> dict[str, Any]:
-    from commcare_connect.workflow.templates import (
-        TEMPLATES,
-        build_snapshot_for_template,
-    )
+    from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
 
     wda = _wda_for_user(user)
     try:
@@ -75,15 +72,11 @@ def workflow_save_snapshot(
 
         definition_id = run.data.get("definition_id")
         if not definition_id:
-            raise MCPToolError(
-                "INVALID_SCHEMA", f"run {run_id} has no definition_id"
-            )
+            raise MCPToolError("INVALID_SCHEMA", f"run {run_id} has no definition_id")
 
         definition = wda.get_definition(definition_id)
         if definition is None:
-            raise MCPToolError(
-                "NOT_FOUND", f"workflow definition {definition_id} not found"
-            )
+            raise MCPToolError("NOT_FOUND", f"workflow definition {definition_id} not found")
 
         template_key = definition.template_type
         if not template_key:
@@ -103,9 +96,7 @@ def workflow_save_snapshot(
 
         opportunity_id = run.opportunity_id or definition.opportunity_id
         if not opportunity_id:
-            raise MCPToolError(
-                "INVALID_SCHEMA", "run has no opportunity_id; cannot build snapshot"
-            )
+            raise MCPToolError("INVALID_SCHEMA", "run has no opportunity_id; cannot build snapshot")
 
         # Match the views.py:complete_run code path exactly: pull pipelines and
         # workers from the same data access, then call build_snapshot_for_template.

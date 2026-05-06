@@ -12,7 +12,6 @@ from django.utils import timezone
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 from commcare_connect.labs.synthetic.registry import invalidate_cache
 
-
 _FILES = (
     ("opportunity", "opportunity.json"),
     ("user_visits", "user_visits.json"),
@@ -23,8 +22,11 @@ _FILES = (
 
 
 class _Drive(Protocol):
-    def create_folder(self, name: str, parent_id: str) -> str: ...
-    def upload_file(self, folder_id: str, filename: str, content: bytes) -> str: ...
+    def create_folder(self, name: str, parent_id: str) -> str:
+        ...
+
+    def upload_file(self, folder_id: str, filename: str, content: bytes) -> str:
+        ...
 
 
 @dataclass(frozen=True)

@@ -2,11 +2,7 @@ import datetime as dt
 
 import pytest
 
-from commcare_connect.labs.synthetic.generator.manifest import (
-    Manifest,
-    ManifestValidationError,
-)
-
+from commcare_connect.labs.synthetic.generator.manifest import Manifest, ManifestValidationError
 
 VALID_MANIFEST_YAML = """
 opportunity_id: 1237
@@ -71,18 +67,16 @@ def test_manifest_rejects_negative_seed():
 
 
 def test_manifest_rejects_end_before_start():
-    bad = VALID_MANIFEST_YAML.replace(
-        "end_date: 2026-02-28", "end_date: 2026-01-01"
-    )
+    bad = VALID_MANIFEST_YAML.replace("end_date: 2026-02-28", "end_date: 2026-01-01")
     with pytest.raises(ManifestValidationError):
         Manifest.from_yaml(bad)
 
 
 def test_manifest_rejects_coaching_arc_with_unknown_flw_id():
-    base = "\n".join(
-        line for line in VALID_MANIFEST_YAML.splitlines() if line.strip() != "coaching_arcs: []"
-    )
-    bad = base + """
+    base = "\n".join(line for line in VALID_MANIFEST_YAML.splitlines() if line.strip() != "coaching_arcs: []")
+    bad = (
+        base
+        + """
 coaching_arcs:
   - flw_id: not_a_real_persona
     week_triggered: 2
@@ -91,5 +85,6 @@ coaching_arcs:
     transcript:
       - { role: bot, text: hi, ts: 2026-02-15T09:00:00 }
 """
+    )
     with pytest.raises(ManifestValidationError):
         Manifest.from_yaml(bad)

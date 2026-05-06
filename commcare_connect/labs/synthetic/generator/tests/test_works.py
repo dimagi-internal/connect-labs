@@ -1,5 +1,3 @@
-import datetime as dt
-
 from commcare_connect.labs.synthetic.generator.works import build_works_and_modules
 
 

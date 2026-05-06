@@ -10,10 +10,7 @@ import httpx
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
 from commcare_connect.labs.synthetic.gdrive import DriveClient
 from commcare_connect.labs.synthetic.generator.engine import generate as _generate
-from commcare_connect.labs.synthetic.generator.manifest import (
-    Manifest,
-    ManifestValidationError,
-)
+from commcare_connect.labs.synthetic.generator.manifest import Manifest, ManifestValidationError
 from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema
 from commcare_connect.labs.synthetic.generator.uploader import upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
@@ -37,9 +34,7 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
     Returns an empty set if the user has no Connect token, or if the
     upstream call fails — callers must treat empty as "deny everything".
     """
-    from commcare_connect.labs.integrations.connect.oauth import (
-        fetch_user_organization_data,
-    )
+    from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data
 
     try:
         token = require_connect_token(user)
@@ -47,11 +42,7 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
         return set()
 
     org_data = fetch_user_organization_data(token) or {}
-    return {
-        int(o["id"])
-        for o in org_data.get("opportunities", [])
-        if o.get("id") is not None
-    }
+    return {int(o["id"]) for o in org_data.get("opportunities", []) if o.get("id") is not None}
 
 
 def _require_opportunity_access(user, opportunity_id: int) -> None:
@@ -186,16 +177,14 @@ def _load_opportunity_detail(opportunity_id: int, user) -> dict:
             resp = client.http_client.get(url, timeout=60.0)
         except httpx.RequestError as exc:
             logger.warning(
-                "synthetic_generate_from_manifest: upstream RequestError loading opp %s: %s; "
-                "falling back to stub.",
+                "synthetic_generate_from_manifest: upstream RequestError loading opp %s: %s; " "falling back to stub.",
                 opportunity_id,
                 exc,
             )
             return fallback
         if resp.status_code >= 400:
             logger.warning(
-                "synthetic_generate_from_manifest: opp_detail GET %s returned %s; "
-                "falling back to stub.",
+                "synthetic_generate_from_manifest: opp_detail GET %s returned %s; " "falling back to stub.",
                 url,
                 resp.status_code,
             )
@@ -255,15 +244,12 @@ def synthetic_generate_from_manifest(
     if manifest.opportunity_id != opportunity_id:
         raise MCPToolError(
             "INVALID_SCHEMA",
-            f"manifest.opportunity_id ({manifest.opportunity_id}) != "
-            f"tool arg opportunity_id ({opportunity_id})",
+            f"manifest.opportunity_id ({manifest.opportunity_id}) != " f"tool arg opportunity_id ({opportunity_id})",
         )
 
     detail = _load_opportunity_detail(opportunity_id, user)
     form_schema = _load_form_schema_for_opp(opportunity_id, user)
-    fixtures = _generate(
-        manifest=manifest, opportunity_detail=detail, form_schema=form_schema
-    )
+    fixtures = _generate(manifest=manifest, opportunity_detail=detail, form_schema=form_schema)
     drive = DriveClient()
     result = upload_and_register(
         drive=drive,

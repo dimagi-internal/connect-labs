@@ -66,9 +66,7 @@ def generate(
     for slot in slots:
         persona = persona_index[slot.flw_id]
         anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
-        form_json = fill_form_json(
-            schema=form_schema, cohort=cohort, anomalies_for_visit=anomalies, rng=rng
-        )
+        form_json = fill_form_json(schema=form_schema, cohort=cohort, anomalies_for_visit=anomalies, rng=rng)
         status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
         visits.append(
             {
@@ -88,17 +86,11 @@ def generate(
                 "flag_reason": status.flag_reason,
                 "form_json": form_json,
                 "completed_work": "",
-                "status_modified_date": dt.datetime.combine(
-                    slot.visit_date, dt.time(12, 0)
-                ).isoformat(),
+                "status_modified_date": dt.datetime.combine(slot.visit_date, dt.time(12, 0)).isoformat(),
                 "review_status": status.review_status,
-                "review_created_on": dt.datetime.combine(
-                    slot.visit_date, dt.time(12, 30)
-                ).isoformat(),
+                "review_created_on": dt.datetime.combine(slot.visit_date, dt.time(12, 30)).isoformat(),
                 "justification": None,
-                "date_created": dt.datetime.combine(
-                    slot.visit_date, dt.time(11, 0)
-                ).isoformat(),
+                "date_created": dt.datetime.combine(slot.visit_date, dt.time(11, 0)).isoformat(),
                 "completed_work_id": None,
                 "images": [],
             }
@@ -106,9 +98,7 @@ def generate(
 
     user_data = build_user_data(personas, visits)
     works, modules = build_works_and_modules(visits, payment_units)
-    opportunity = build_opportunity(
-        opportunity_detail, opportunity_name_override=manifest.opportunity_name
-    )
+    opportunity = build_opportunity(opportunity_detail, opportunity_name_override=manifest.opportunity_name)
 
     return {
         "opportunity": opportunity,

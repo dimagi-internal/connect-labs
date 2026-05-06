@@ -15,7 +15,6 @@ from typing import Literal
 
 from .manifest import FlwPersona
 
-
 Status = Literal["approved", "pending", "rejected"]
 ReviewStatus = Literal["approved", "pending", "rejected"]
 

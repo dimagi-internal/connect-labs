@@ -9,10 +9,7 @@ opportunities into one audit.
 
 DEFINITION = {
     "name": "Program Admin LLO Audit",
-    "description": (
-        "Week-by-week meta view of how well the LLO is performing the "
-        "operational weekly review."
-    ),
+    "description": ("Week-by-week meta view of how well the LLO is performing the " "operational weekly review."),
     "version": 1,
     "templateType": "program_admin_audit",
     "statuses": [

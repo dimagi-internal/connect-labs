@@ -22,7 +22,7 @@ beneficiary_cohorts:
   - id: primary
     size: 50
     field_distributions:
-      "form.weight_kg": { distribution: normal, mean: 12.4, stddev: 0.5 }
+      'form.weight_kg': { distribution: normal, mean: 12.4, stddev: 0.5 }
     progression: flat
 anomalies: []
 kpi_config:

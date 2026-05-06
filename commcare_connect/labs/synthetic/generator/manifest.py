@@ -12,14 +12,7 @@ import datetime as dt
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import (
-    BaseModel,
-    Field,
-    NonNegativeInt,
-    PositiveInt,
-    ValidationError,
-    model_validator,
-)
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, ValidationError, model_validator
 
 
 class ManifestValidationError(ValueError):
@@ -27,6 +20,7 @@ class ManifestValidationError(ValueError):
 
 
 # ---------- Distributions ----------
+
 
 class NormalDistribution(BaseModel):
     distribution: Literal["normal"] = "normal"
@@ -123,6 +117,7 @@ class KpiSpec(BaseModel):
 
 # ---------- Coaching arcs ----------
 
+
 class CoachingMessage(BaseModel):
     role: Literal["bot", "flw"]
     text: str
@@ -140,6 +135,7 @@ class CoachingArc(BaseModel):
 
 # ---------- Timeline ----------
 
+
 class Timeline(BaseModel):
     start_date: dt.date
     end_date: dt.date
@@ -154,13 +150,13 @@ class Timeline(BaseModel):
         expected_weeks = round(span_days / 7)
         if abs(self.weeks - expected_weeks) > 1:
             raise ValueError(
-                f"weeks={self.weeks} is inconsistent with date range "
-                f"({span_days} days = ~{expected_weeks} weeks)"
+                f"weeks={self.weeks} is inconsistent with date range " f"({span_days} days = ~{expected_weeks} weeks)"
             )
         return self
 
 
 # ---------- Top-level manifest ----------
+
 
 class Manifest(BaseModel):
     opportunity_id: PositiveInt
@@ -174,7 +170,7 @@ class Manifest(BaseModel):
     coaching_arcs: list[CoachingArc] = Field(default_factory=list)
 
     @classmethod
-    def from_yaml(cls, source: str | bytes) -> "Manifest":
+    def from_yaml(cls, source: str | bytes) -> Manifest:
         try:
             data = yaml.safe_load(source)
         except yaml.YAMLError as exc:

@@ -1,12 +1,7 @@
-import json
-
 import pytest
 from django.test import override_settings
 
-from commcare_connect.labs.synthetic.generator.uploader import (
-    UploadResult,
-    upload_and_register,
-)
+from commcare_connect.labs.synthetic.generator.uploader import UploadResult, upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 
 
@@ -44,13 +39,15 @@ def test_upload_and_register_uploads_five_files_and_creates_row():
     assert isinstance(result, UploadResult)
     assert result.folder_id.startswith("folder-")
     filenames = sorted(name for _, name, _ in drive.uploads)
-    assert filenames == sorted([
-        "opportunity.json",
-        "user_visits.json",
-        "user_data.json",
-        "completed_works.json",
-        "completed_module.json",
-    ])
+    assert filenames == sorted(
+        [
+            "opportunity.json",
+            "user_visits.json",
+            "user_data.json",
+            "completed_works.json",
+            "completed_module.json",
+        ]
+    )
     row = SyntheticOpportunity.objects.get(opportunity_id=1237)
     assert row.enabled is True
     assert row.gdrive_folder_id == result.folder_id
@@ -66,11 +63,17 @@ def test_upload_and_register_updates_existing_row():
     )
     drive = _FakeDrive()
     fixtures = {
-        "opportunity": {}, "user_visits": [], "user_data": [],
-        "completed_works": [], "completed_module": [],
+        "opportunity": {},
+        "user_visits": [],
+        "user_data": [],
+        "completed_works": [],
+        "completed_module": [],
     }
     upload_and_register(
-        drive=drive, opportunity_id=1237, opportunity_name="X", fixtures=fixtures,
+        drive=drive,
+        opportunity_id=1237,
+        opportunity_name="X",
+        fixtures=fixtures,
     )
     row = SyntheticOpportunity.objects.get(opportunity_id=1237)
     assert row.gdrive_folder_id != "old-folder"
@@ -85,5 +88,7 @@ def test_upload_and_register_requires_parent_folder_setting():
             drive=drive,
             opportunity_id=1,
             opportunity_name="X",
-            fixtures={k: [] for k in ("opportunity", "user_visits", "user_data", "completed_works", "completed_module")},
+            fixtures={
+                k: [] for k in ("opportunity", "user_visits", "user_data", "completed_works", "completed_module")
+            },
         )

@@ -10,10 +10,7 @@ task" button and a chat-styled task drawer.
 
 PIPELINE_SCHEMA = {
     "name": "FLW KPI Aggregates",
-    "description": (
-        "Per-FLW aggregates of the KPIs declared in the workflow's "
-        "kpi_config. One row per worker."
-    ),
+    "description": ("Per-FLW aggregates of the KPIs declared in the workflow's " "kpi_config. One row per worker."),
     "version": 1,
     "grouping_key": "username",
     "terminal_stage": "aggregated",

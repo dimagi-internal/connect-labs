@@ -1,16 +1,8 @@
-import datetime as dt
 import random
 
 from commcare_connect.labs.synthetic.generator.fields import fill_form_json
-from commcare_connect.labs.synthetic.generator.manifest import (
-    Anomaly,
-    BeneficiaryCohort,
-    NormalDistribution,
-)
-from commcare_connect.labs.synthetic.generator.schema_loader import (
-    FormSchema,
-    QuestionSpec,
-)
+from commcare_connect.labs.synthetic.generator.manifest import Anomaly, BeneficiaryCohort, NormalDistribution
+from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, QuestionSpec
 
 
 def _schema():
@@ -68,10 +60,6 @@ def test_fill_form_json_applies_anomaly_outlier():
 
 
 def test_fill_form_json_is_deterministic():
-    a = fill_form_json(
-        schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(7)
-    )
-    b = fill_form_json(
-        schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(7)
-    )
+    a = fill_form_json(schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(7))
+    b = fill_form_json(schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(7))
     assert a == b

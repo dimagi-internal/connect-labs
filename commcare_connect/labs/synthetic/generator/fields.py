@@ -10,12 +10,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from .manifest import (
-    Anomaly,
-    BeneficiaryCohort,
-    NormalDistribution,
-    UniformDistribution,
-)
+from .manifest import Anomaly, BeneficiaryCohort, NormalDistribution, UniformDistribution
 from .schema_loader import FormSchema, QuestionSpec
 
 

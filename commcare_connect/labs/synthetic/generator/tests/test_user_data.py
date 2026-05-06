@@ -1,5 +1,3 @@
-import datetime as dt
-
 from commcare_connect.labs.synthetic.generator.manifest import FlwPersona, MeanStddev
 from commcare_connect.labs.synthetic.generator.user_data import build_user_data
 

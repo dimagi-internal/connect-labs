@@ -38,9 +38,7 @@ def test_synthetic_register_creates_row(user):
 
 @pytest.mark.django_db
 def test_synthetic_register_updates_existing_row(user):
-    SyntheticOpportunity.objects.create(
-        opportunity_id=4242, gdrive_folder_id="old", enabled=False
-    )
+    SyntheticOpportunity.objects.create(opportunity_id=4242, gdrive_folder_id="old", enabled=False)
     tool = get_tool("synthetic_register")
     tool.handler(
         user=user,
@@ -56,9 +54,7 @@ def test_synthetic_register_updates_existing_row(user):
 
 @pytest.mark.django_db
 def test_synthetic_disable_clears_enabled_flag(user):
-    SyntheticOpportunity.objects.create(
-        opportunity_id=4242, gdrive_folder_id="x", enabled=True
-    )
+    SyntheticOpportunity.objects.create(opportunity_id=4242, gdrive_folder_id="x", enabled=True)
     tool = get_tool("synthetic_disable")
     result = tool.handler(user=user, opportunity_id=4242)
     assert result["enabled"] is False
@@ -119,11 +115,13 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
 
     monkeypatch.setattr(syn_tools, "DriveClient", lambda: _FakeDrive())
     monkeypatch.setattr(
-        syn_tools, "_load_opportunity_detail",
+        syn_tools,
+        "_load_opportunity_detail",
         lambda opp_id, user: {"id": opp_id, "name": "X", "payment_units": [], "deliver_units": []},
     )
     monkeypatch.setattr(
-        syn_tools, "_load_form_schema_for_opp",
+        syn_tools,
+        "_load_form_schema_for_opp",
         lambda opp_id, user: __import__(
             "commcare_connect.labs.synthetic.generator.schema_loader",
             fromlist=["FormSchema"],
@@ -131,6 +129,7 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
     )
 
     from django.test import override_settings
+
     with override_settings(LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID="p"):
         tool = get_tool("synthetic_generate_from_manifest")
         result = tool.handler(user=user, opportunity_id=4242, manifest_yaml=manifest_yaml)
@@ -189,9 +188,7 @@ def test_synthetic_register_denies_inaccessible_opp(user, monkeypatch):
 def test_synthetic_disable_denies_inaccessible_opp(user, monkeypatch):
     from commcare_connect.mcp.tools import synthetic as syn
 
-    SyntheticOpportunity.objects.create(
-        opportunity_id=9999, gdrive_folder_id="x", enabled=True
-    )
+    SyntheticOpportunity.objects.create(opportunity_id=9999, gdrive_folder_id="x", enabled=True)
     monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
     tool = get_tool("synthetic_disable")
     with pytest.raises(MCPToolError) as exc:
@@ -231,6 +228,7 @@ def test_accessible_opp_ids_uses_user_token(user, monkeypatch):
     monkeypatch.setattr(syn, "require_connect_token", _fake_token)
     # fetch_user_organization_data is imported lazily inside the helper.
     import commcare_connect.labs.integrations.connect.oauth as oauth_mod
+
     monkeypatch.setattr(oauth_mod, "fetch_user_organization_data", _fake_fetch)
 
     accessible = syn._accessible_opp_ids_for_user(user)

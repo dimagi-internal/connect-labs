@@ -15,8 +15,8 @@ from typing import Any, Protocol
 class QuestionSpec:
     """One leaf question on a form, normalized for the generator."""
 
-    json_path: str          # e.g., "form.weight_kg"
-    kind: str               # "decimal", "int", "text", "select", "multiselect", "date", "image"
+    json_path: str  # e.g., "form.weight_kg"
+    kind: str  # "decimal", "int", "text", "select", "multiselect", "date", "image"
     choices: list[str] = field(default_factory=list)
 
 
@@ -31,7 +31,8 @@ class FormSchema:
 
 
 class _HqApi(Protocol):
-    def get_form_json_paths(self, app_id: str, form_xmlns: str) -> dict[str, Any]: ...
+    def get_form_json_paths(self, app_id: str, form_xmlns: str) -> dict[str, Any]:
+        ...
 
 
 _KIND_MAP = {
@@ -49,7 +50,7 @@ def _xpath_to_json_path(xpath: str) -> str:
     # /data/foo/bar -> form.foo.bar
     cleaned = xpath.lstrip("/")
     if cleaned.startswith("data/"):
-        cleaned = cleaned[len("data/"):]
+        cleaned = cleaned[len("data/") :]
     return "form." + cleaned.replace("/", ".")
 
 

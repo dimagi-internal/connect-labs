@@ -1,10 +1,6 @@
 from unittest.mock import MagicMock
 
-from commcare_connect.labs.synthetic.generator.schema_loader import (
-    FormSchema,
-    QuestionSpec,
-    load_form_schema,
-)
+from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, load_form_schema
 
 
 def test_load_form_schema_collects_question_specs():
