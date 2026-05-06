@@ -2,6 +2,19 @@
 
 This is a **labs/rapid prototyping environment** for CommCare Connect. It operates entirely via API against the production CommCare Connect instance — there is no direct database access to production data.
 
+## Always check freshness before starting non-trivial work
+
+This is a fast-moving repo with multiple parallel worktrees and frequent merges to `main`. **Before designing or implementing any non-trivial feature, refactor, or rename — and especially anything touching workflows, runs, pipelines, tasks, or other actively-evolving areas — run:**
+
+```bash
+git fetch origin main
+git log $(git merge-base HEAD origin/main)..origin/main --oneline
+```
+
+If `main` has commits the current branch doesn't, surface them to the user _before_ doing design work. Long-running branches based on a stale `main` produce silent rework — design discussions treat already-shipped code as missing, and merges later collide semantically (not just textually) with parallel work. The cost of a 5-second `git fetch` is much smaller than the cost of redoing a feature on the right base.
+
+When in doubt — especially if the user mentions a recent feature ("we just built X", "the new Y") — assume `main` has moved and verify.
+
 Most production apps have been removed from this codebase. The remaining non-labs apps (`opportunity`, `users`, `organization`, `program`) are kept only for their Django models and migrations (needed by foreign key references). Their tables are empty in this environment — do not query them expecting production data.
 
 ## Architecture at a Glance

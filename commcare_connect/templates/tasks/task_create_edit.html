@@ -102,13 +102,22 @@
                 <label class="text-sm font-medium text-gray-700">
                   Title <span class="text-red-500">*</span>
                 </label>
-                <a x-show="auditSessionId"
-                   :href="`{% url 'audit:bulk_assessment' pk=0 %}`.replace('/0/', `/${auditSessionId}/`)"
-                   class="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                   target="_blank">
-                  <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                  View Audit
-                </a>
+                <div class="flex items-center gap-3">
+                  <a x-show="workflowRunId"
+                     :href="`{% url 'labs:workflow:run_detail' run_id=0 %}`.replace('/0/', `/${workflowRunId}/`)"
+                     class="text-sm text-purple-600 hover:text-purple-800 hover:underline flex items-center gap-1"
+                     target="_blank">
+                    <i class="fa-solid fa-diagram-project"></i>
+                    From Workflow Run #<span x-text="workflowRunId"></span>
+                  </a>
+                  <a x-show="auditSessionId"
+                     :href="`{% url 'audit:bulk_assessment' pk=0 %}`.replace('/0/', `/${auditSessionId}/`)"
+                     class="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                     target="_blank">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                    View Audit
+                  </a>
+                </div>
               </div>
               <input
                 type="text"
@@ -843,6 +852,7 @@ function taskCreateEditPage() {
     },
     originalForm: null,
     auditSessionId: null,
+    workflowRunId: null,
 
     // UI state
     creating: false,
@@ -933,6 +943,7 @@ function taskCreateEditPage() {
           name: taskData.flw_name || taskData.username
         };
         this.auditSessionId = taskData.audit_session_id || null;
+        this.workflowRunId = taskData.workflow_run_id || null;
         this.originalForm = { ...this.taskForm };
       } else if (this.quickParams && Object.keys(this.quickParams).length > 0) {
         // Apply URL params for create mode (e.g., from audit session list)

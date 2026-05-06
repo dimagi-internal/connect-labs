@@ -238,6 +238,7 @@ class TaskCreateEditView(LoginRequiredMixin, TemplateView):
                         "title": task.title,
                         "description": task.description,
                         "audit_session_id": task.audit_session_id,
+                        "workflow_run_id": task.workflow_run_id,
                         "assigned_to_type": task.assigned_to_type,
                         "assigned_to_name": task.assigned_to_name,
                         "resolution_details": task.resolution_details,
@@ -395,6 +396,7 @@ def task_bulk_create(request):
         priority = body.get("priority", "medium")
         title = body.get("title", "")
         description = body.get("description", "")
+        workflow_run_id = body.get("workflow_run_id")
 
         if not opportunity_id:
             return JsonResponse({"success": False, "error": "opportunity_id is required"}, status=400)
@@ -423,6 +425,7 @@ def task_bulk_create(request):
                     title=title,
                     description=description,
                     creator_name=creator_name,
+                    workflow_run_id=workflow_run_id,
                 )
                 created_count += 1
                 created_tasks.append({"username": username, "id": task.id})
@@ -458,6 +461,7 @@ def task_single_create(request):
         priority = body.get("priority", "medium")
         title = body.get("title", "")
         description = body.get("description", "")
+        workflow_run_id = body.get("workflow_run_id")
 
         if not username:
             return JsonResponse({"success": False, "error": "username is required"}, status=400)
@@ -486,6 +490,7 @@ def task_single_create(request):
                 title=title,
                 description=description,
                 creator_name=creator_name,
+                workflow_run_id=workflow_run_id,
             )
 
             return JsonResponse(
@@ -528,6 +533,7 @@ def task_detail_api(request, task_id):
                     "priority": task.priority,
                     "description": task.description,
                     "resolution_details": task.resolution_details,
+                    "workflow_run_id": task.workflow_run_id,
                     "events": task.events,
                 },
             }
