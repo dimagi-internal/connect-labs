@@ -1,0 +1,5 @@
+{
+  "questions": [
+    { "json_path": "form.weight_kg", "kind": "decimal", "choices": [] }
+  ]
+}

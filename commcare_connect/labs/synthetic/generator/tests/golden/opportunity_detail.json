@@ -1,0 +1,7 @@
+{
+  "id": 9999,
+  "name": "Golden Demo",
+  "organization": "Golden Org",
+  "payment_units": [{ "id": 1, "name": "PU1", "deliver_units": [1] }],
+  "deliver_units": [{ "id": 1, "name": "DU1" }]
+}
