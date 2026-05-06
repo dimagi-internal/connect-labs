@@ -69,3 +69,71 @@ def load_form_schema(api: _HqApi, *, app_id: str, form_xmlns: str) -> FormSchema
                 )
             )
     return FormSchema(questions=questions)
+
+
+def parse_form_schema_from_app_json(
+    app_json: dict[str, Any],
+    *,
+    app_type: str = "deliver",
+) -> FormSchema:
+    """Translate an HQ ``/export/opportunity/<id>/app_structure/`` response into a FormSchema.
+
+    The response shape (from production Connect) is::
+
+        {
+          "learn_app":   {"modules": [{"forms": [{"questions": [...]}, ...]}, ...]} | null,
+          "deliver_app": {"modules": [...]} | null
+        }
+
+    Picks the requested app's primary form (first form of the first module
+    that has any) and flattens its question tree, descending into ``children``
+    for grouped / repeated subforms. Returns an empty FormSchema if the app of
+    that type is missing or has no forms — callers degrade gracefully.
+    """
+    if not isinstance(app_json, dict):
+        return FormSchema(questions=[])
+    app = app_json.get(f"{app_type}_app")
+    if not isinstance(app, dict):
+        return FormSchema(questions=[])
+
+    for module in app.get("modules") or []:
+        if not isinstance(module, dict):
+            continue
+        for form in module.get("forms") or []:
+            if not isinstance(form, dict):
+                continue
+            return _hq_form_to_schema(form)
+    return FormSchema(questions=[])
+
+
+def _hq_form_to_schema(form: dict[str, Any]) -> FormSchema:
+    """Flatten one HQ form's question tree into a FormSchema."""
+    questions: list[QuestionSpec] = []
+    for q in form.get("questions") or []:
+        if isinstance(q, dict):
+            questions.extend(_hq_walk_question(q))
+    return FormSchema(questions=questions)
+
+
+def _hq_walk_question(q: dict[str, Any]) -> list[QuestionSpec]:
+    """Walk an HQ question dict; descend into ``children`` for groups, emit leaves."""
+    children = q.get("children")
+    if children:
+        out: list[QuestionSpec] = []
+        for child in children:
+            if isinstance(child, dict):
+                out.extend(_hq_walk_question(child))
+        return out
+    value = q.get("value", "")
+    if not value:
+        return []
+    kind = _KIND_MAP.get(q.get("type", ""), "text")
+    options = q.get("options") or []
+    choices = [opt.get("value", "") for opt in options if isinstance(opt, dict) and opt.get("value")]
+    return [
+        QuestionSpec(
+            json_path=_xpath_to_json_path(value),
+            kind=kind,
+            choices=choices,
+        )
+    ]
