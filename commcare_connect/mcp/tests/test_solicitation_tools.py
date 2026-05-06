@@ -352,24 +352,34 @@ def test_create_solicitation_happy_path(mock_client_cls, client, auth_user):
 
 
 @pytest.mark.django_db
-def test_create_solicitation_rejects_is_public(client, auth_user):
-    """Setting is_public=true via the MCP raises POLICY_VIOLATION.
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_create_solicitation_propagates_is_public_to_server(mock_client_cls, client, auth_user):
+    """is_public=true in data flips the server-side `public` ACL flag.
 
-    Public records are readable without auth, so the security boundary is that
-    only the form-based UI (with a real authenticated human behind it) can mark
-    a solicitation public — never an AI agent over the MCP.
+    Solicitations are an exception to the broader MCP no-public-records policy
+    because their content is public-facing by design (title, scope, questions).
     """
     _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.create_record.return_value = _make_mock_record(
+        78, "solicitation", data={"title": "Public Sol", "is_public": True}, public=True
+    )
 
-    data = _call_tool(
+    _call_tool(
         client,
         raw,
         "create_solicitation",
         {"program_id": "25", "data": {"title": "Public Sol", "is_public": True}},
     )
 
-    assert data["result"]["isError"] is True, data
-    assert data["result"]["structuredContent"]["error"]["code"] == "POLICY_VIOLATION"
+    mock_client.create_record.assert_called_once_with(
+        experiment="25",
+        type="solicitation",
+        data={"title": "Public Sol", "is_public": True},
+        program_id=25,
+        public=True,
+    )
 
 
 @pytest.mark.django_db
@@ -496,20 +506,23 @@ def test_update_solicitation_not_found(mock_client_cls, client, auth_user):
 
 @pytest.mark.django_db
 @patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
-def test_update_solicitation_strips_public_flag(mock_client_cls, client, auth_user):
-    """update_solicitation strips is_public/public from update_data before merging."""
+def test_update_solicitation_propagates_is_public_to_server_flag(mock_client_cls, client, auth_user):
+    """is_public in update_data flips the server-side `public` ACL flag.
+
+    The key is also stripped from the merged data dict — visibility lives on the
+    LabsRecord envelope, not duplicated inside `data`. Solicitations are exempt
+    from the broader MCP no-public-records policy because their content is
+    public-facing by design.
+    """
     _, raw = auth_user
     mock_client = MagicMock()
     mock_client_cls.return_value = mock_client
 
-    existing = MagicMock()
-    existing.id = 10
-    existing.experiment = "25"
-    existing.type = "solicitation"
-    existing.data = {"title": "Test Sol", "status": "open"}
-    existing.labs_record_id = None
+    existing = _make_mock_record(10, "solicitation", data={"title": "Test Sol", "status": "open"}, public=False)
     mock_client.get_record_by_id.return_value = existing
-    mock_client.update_record.return_value = existing
+    mock_client.update_record.return_value = _make_mock_record(
+        10, "solicitation", data={"title": "Test Sol", "status": "closed"}, public=True
+    )
 
     _call_tool(
         client,
@@ -519,9 +532,34 @@ def test_update_solicitation_strips_public_flag(mock_client_cls, client, auth_us
     )
 
     call_kwargs = mock_client.update_record.call_args.kwargs
+    # public=True is forwarded to the envelope so the marketplace flag flips
+    assert call_kwargs["public"] is True
+    # but the keys are stripped from the merged data dict — no duplication
     merged = call_kwargs["data"]
-    assert "is_public" not in merged, "is_public must be stripped before merge"
-    assert "public" not in merged, "public must be stripped before merge"
+    assert "is_public" not in merged
+    assert "public" not in merged
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_omits_public_when_is_public_absent(mock_client_cls, client, auth_user):
+    """Updates that don't touch is_public must not send a public kwarg, preserving the existing flag."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+
+    existing = _make_mock_record(42, "solicitation", data={"title": "Old"}, public=True)
+    mock_client.get_record_by_id.return_value = existing
+    mock_client.update_record.return_value = _make_mock_record(42, "solicitation", data={"title": "New"}, public=True)
+
+    _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {"solicitation_id": 42, "update_data": {"title": "New"}},
+    )
+
+    assert "public" not in mock_client.update_record.call_args.kwargs
 
 
 # ---------------------------------------------------------------------------
