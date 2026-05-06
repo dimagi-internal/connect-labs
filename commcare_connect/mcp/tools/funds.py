@@ -132,15 +132,33 @@ def get_fund(user, fund_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_FUND_PUBLIC_WARNING = (
+    "This fund record is PUBLIC — any authenticated Connect user can read it. "
+    "Do not embed PII in the 'description' field. "
+    "Safe fields: name, currency, total_budget, status, program_ids, delivery_types."
+)
+
+
 @register(
     name="create_fund",
     description=(
         "Create a new fund. Scoped by program_id for ACL. "
-        "The experiment field stores the funder slug (derived from name)."
+        "The experiment field stores the funder slug (derived from name). "
+        "IMPORTANT: Fund records are PUBLIC (readable by any authenticated Connect user). "
+        "You MUST pass public_record_acknowledged=true and confirm the 'description' field "
+        "contains no PII before calling this tool."
     ),
     input_schema={
         "type": "object",
         "properties": {
+            "public_record_acknowledged": {
+                "type": "boolean",
+                "description": (
+                    "Must be true. Confirms you understand this record will be publicly "
+                    "readable and that the 'description' field contains no PII "
+                    "(names, dates of birth, phone numbers, addresses, health data)."
+                ),
+            },
             "program_id": {
                 "type": "string",
                 "description": "Program ID to scope the record (used for ACL).",
@@ -159,7 +177,10 @@ def get_fund(user, fund_id: int) -> dict:
             },
             "description": {
                 "type": "string",
-                "description": "Optional description of the fund.",
+                "description": (
+                    "Optional description of the fund. "
+                    "Do NOT include PII — this field is publicly readable."
+                ),
             },
             "program_ids": {
                 "type": "array",
@@ -176,13 +197,14 @@ def get_fund(user, fund_id: int) -> dict:
                 "description": "Fund status (default: active).",
             },
         },
-        "required": ["program_id", "name"],
+        "required": ["public_record_acknowledged", "program_id", "name"],
         "additionalProperties": False,
     },
     is_write=True,
 )
 def create_fund(
     user,
+    public_record_acknowledged: bool,
     program_id: str,
     name: str,
     total_budget: float | None = None,
@@ -193,6 +215,14 @@ def create_fund(
     status: str = "active",
 ) -> dict:
     """Create a new fund scoped by program_id."""
+    if not public_record_acknowledged:
+        raise MCPToolError(
+            "POLICY_VIOLATION",
+            "public_record_acknowledged must be true. Review the field descriptions, "
+            "confirm 'description' contains no PII, then retry with public_record_acknowledged=true.",
+        )
+    logger.warning("create_fund: creating public record. %s", _FUND_PUBLIC_WARNING)
+
     funder_slug = name.lower().replace(" ", "-")
     data: dict = {
         "name": name,
@@ -218,9 +248,11 @@ def create_fund(
             type=FUND_TYPE,
             data=data,
             program_id=int(program_id),
-            public=False,
+            public=True,
         )
-        return _serialize_record(record)
+        result = _serialize_record(record)
+        result["_public_warning"] = _FUND_PUBLIC_WARNING
+        return result
     finally:
         client.close()
 
