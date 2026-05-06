@@ -246,7 +246,8 @@ def _load_form_schema_for_opp(opportunity_id: int, user) -> FormSchema:
     description=(
         "Generate the five fixture JSON files from a YAML manifest, upload "
         "them to a fresh GDrive folder, and register the opportunity as "
-        "synthetic. Returns the new folder_id and per-endpoint record counts."
+        "synthetic. Returns the new folder_id, a human-openable folder_url, "
+        "and per-endpoint record counts so callers can verify the upload."
     ),
     input_schema={
         "type": "object",
@@ -289,6 +290,7 @@ def synthetic_generate_from_manifest(
     )
     return {
         "folder_id": result.folder_id,
+        "folder_url": result.folder_url,
         "record_counts": result.record_counts,
         "form_schema_questions": len(form_schema.questions),
     }
