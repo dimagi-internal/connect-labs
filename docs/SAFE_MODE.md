@@ -40,19 +40,18 @@ a pinned settings file that together:
 ## Prereqs
 
 - Claude Code CLI installed and on `PATH` (`claude --version` works).
-- `.env` rendered from `.env.tpl` via 1Password (`op inject -i .env.tpl -o .env`).
-  This gives you both `ANTHROPIC_API_KEY` (ZDR) and `LABS_MCP_TOKEN`.
+- 1Password access to the `AI-Agents` vault (for API key or Vertex credentials).
+- A `connect_labs` PAT in `~/.claude.json`, registered via the `/labs-token-setup`
+  skill. The PAT can also be passed as the `LABS_MCP_TOKEN` environment variable.
 
-If you don't have `LABS_MCP_TOKEN` in 1Password yet, generate one:
+If you don't have a PAT yet, run `/labs-token-setup` in any Claude Code session.
+Admins can also generate one on the labs host:
 
-    # On the labs host (admins):
     python manage.py mcp_create_token --user <your-username> --name safe-claude
 
-or, from Claude Code, run `/labs-token-setup` and paste the resulting token
-into 1Password under `Connect Labs .env` → `LABS_MCP_TOKEN`, then re-inject.
-
-(For backward compat, the task will also read the PAT from
-`~/.claude/mcp.json` if `LABS_MCP_TOKEN` is absent from `.env`.)
+The `.env` file is **not required** for `inv safe-claude` — auth credentials come
+from 1Password at launch. `.env` is only consulted for optional Vertex overrides
+(cached service-account path, alternate project/region for testing).
 
 ## Run
 
@@ -61,7 +60,7 @@ into 1Password under `Connect Labs .env` → `LABS_MCP_TOKEN`, then re-inject.
 The task:
 
 1. Fetches the auth secret from 1Password (API key or Vertex service-account JSON).
-2. Reads `LABS_MCP_TOKEN` from `~/.claude.json` (written by `/labs-token-setup`) or from `.env`.
+2. Reads `LABS_MCP_TOKEN` from the `LABS_MCP_TOKEN` env var or `~/.claude.json` (written by `/labs-token-setup`). The PAT is never read from `.env`.
 3. Sets `LABS_MCP_TOKEN` as an environment variable — Claude Code expands the `${LABS_MCP_TOKEN}` placeholder in `safe-claude/mcp.json` at runtime, so the PAT is never written to disk.
 4. Execs `claude --settings safe-claude/settings.json --mcp-config safe-claude/mcp.json --strict-mcp-config --permission-mode dontAsk`.
 5. Deletes any ephemeral Vertex credentials tempfile when the session exits.
@@ -158,13 +157,28 @@ safe-claude/settings.json ...` and defeat the whole lockdown.
   lockdown.
 - **`Read(./.env)`, `Read(./.env.*)`, `Read(./.gcp/**)`, `Read(~/.claude.json)`,
   `Read(~/.claude/**)`, `Grep(./.env)`, `Grep(./.env.*)`** — path-scoped
-  denies that block reading credential files while leaving `Read`/`Grep`
+  denies that block reading project credential files while leaving `Read`/`Grep`
   open for repo source files. This closes a prompt-injection exfiltration
   path: without these, a malicious instruction embedded in a workflow
   definition retrieved via MCP could direct the model to read `.env` (which
   contains `COMMCARE_API_KEY`) and relay its contents to labs via an allowed
   MCP write tool. `Grep` is included alongside `Read` because it also returns
   file contents and is subject to the same vector.
+- **`Read(~/.commcare-connect/**)`, `Glob(~/.commcare-connect/**)`,
+  `Grep(~/.commcare-connect/**)`** — the Connect CLI stores its OAuth token
+  here. An injection could read the file and forward the token via MCP write.
+  All three access tools are denied to close the read → forward chain.
+- **`Read(~/.aws/**)`, `Read(~/.ssh/**)`, `Read(~/.config/**)`** and their
+  `Glob` equivalents — cloud and SSH credentials reachable via a Glob+Read
+  chain even if direct Read is denied. Denied independently from the project
+  `.env` rules because they live in the user home directory, not the project.
+- **`mcp__Claude_in_Chrome__*`, `mcp__Claude_Preview__*`** — browser
+  automation MCP servers. A browser can fetch arbitrary URLs and execute JS,
+  making it a complete exfiltration channel. Explicit denial provides
+  defence-in-depth even when `defaultMode: dontAsk` would already block
+  unknown tools.
+- **`mcp__scheduled-tasks__*`** — scheduling MCP. Same escape concern as
+  `CronCreate`: a scheduled future run would operate outside this lockdown.
 
 #### `env.DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `DISABLE_NON_ESSENTIAL_MODEL_CALLS`
 
@@ -250,7 +264,7 @@ manual smoke test you run once after touching the config.
 
     pytest commcare_connect/labs/tests/test_safe_mode_config.py
 
-Ten assertions covering denied tool set, allow-list shape, permission mode,
+Assertions covering denied tool set, allow-list shape, permission mode,
 escape-hatch disablement, MCP surface, labs URL, and the no-committed-token
 invariant. Fails fast if anyone re-adds `Bash` to allow, flips
 `defaultMode`, or swaps labs for localhost. Does **not** test Claude Code's
@@ -326,6 +340,29 @@ Do not add `Bash`, `Write`, `Edit`, `WebFetch`, `WebSearch`, or `Agent` to
 allow without a threat-model review — and if you allow `Bash`, also turn on
 sandbox (see above). They are denied for specific reasons spelled out in
 the per-setting review.
+
+## MCP tool-level guardrails
+
+The permission rules above block Claude Code from calling dangerous *local* tools.
+The `connect_labs` MCP server also enforces policy server-side on write operations:
+
+- **`create_solicitation`** — raises `POLICY_VIOLATION` if the caller attempts to
+  set `is_public: true`. Solicitation records must remain private.
+- **`create_fund` / `create_review`** — these records are legitimately public (orgs
+  read their own fund and review data). However, both tools require the caller to
+  pass `public_record_acknowledged: true`. Passing `false` raises `POLICY_VIOLATION`.
+  The tool description, individual field descriptions, and the return value all
+  name the specific free-text fields that must not contain PII (`description` for
+  funds, `notes` for reviews).
+- **`award_response`** — sets the response record to `public=True` so the awarded
+  organisation can read their own status. The tool logs a `logger.warning()` and
+  returns a `_warning` key in the response naming the risk fields.
+- **`update_fund` / `update_review` / `update_solicitation`** — strip `is_public`
+  and `public` from the update payload before merging, preventing an injection from
+  flipping visibility on an existing record.
+- **`pipeline_preview`** — `sample_size` is capped at 200 rows both in the JSON
+  schema (`maximum: _PIPELINE_PREVIEW_MAX_ROWS`) and by a runtime check, preventing
+  large data dumps through the preview path.
 
 ## Threat model
 

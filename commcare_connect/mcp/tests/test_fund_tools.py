@@ -314,6 +314,31 @@ def test_update_fund_not_found(mock_client_cls, client, auth_user):
     assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
 
 
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.funds.LabsRecordAPIClient")
+def test_update_fund_strips_public_flag(mock_client_cls, client, auth_user):
+    """update_fund strips is_public/public from update_data before merging."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+
+    existing = _make_mock_fund(42, experiment="acme-fund", data={"name": "ACME Fund", "status": "active"})
+    mock_client.get_record_by_id.return_value = existing
+    mock_client.update_record.return_value = existing
+
+    _call_tool(
+        client,
+        raw,
+        "update_fund",
+        {"fund_id": 42, "update_data": {"status": "active", "is_public": True, "public": True}},
+    )
+
+    call_kwargs = mock_client.update_record.call_args.kwargs
+    merged = call_kwargs["data"]
+    assert "is_public" not in merged, "is_public must be stripped before merge"
+    assert "public" not in merged, "public must be stripped before merge"
+
+
 # ---------------------------------------------------------------------------
 # add_fund_allocation
 # ---------------------------------------------------------------------------
