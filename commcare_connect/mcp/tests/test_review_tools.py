@@ -348,7 +348,10 @@ def test_update_review_strips_public_flag(mock_client_cls, client, auth_user):
     mock_client_cls.return_value = mock_client
 
     existing = _make_mock_record(
-        42, "solicitation_review", experiment="llo-entity-1", labs_record_id=10,
+        42,
+        "solicitation_review",
+        experiment="llo-entity-1",
+        labs_record_id=10,
         data={"recommendation": "under_review", "score": 50},
     )
     mock_client.get_record_by_id.return_value = existing

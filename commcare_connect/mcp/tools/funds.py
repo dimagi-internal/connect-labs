@@ -178,8 +178,7 @@ _FUND_PUBLIC_WARNING = (
             "description": {
                 "type": "string",
                 "description": (
-                    "Optional description of the fund. "
-                    "Do NOT include PII — this field is publicly readable."
+                    "Optional description of the fund. " "Do NOT include PII — this field is publicly readable."
                 ),
             },
             "program_ids": {
