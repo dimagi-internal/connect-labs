@@ -36,16 +36,19 @@ def _wda_for_user(user, opportunity_id: int | None = None):
         "built via the template's build_snapshot hook (or the framework's "
         "default `snapshot_inputs` resolver) and persisted on the run record "
         "as `data.snapshot`, alongside `status=completed` and `completed_at`. "
-        "Mirrors the canonical run-completion endpoint."
+        "Mirrors the canonical run-completion endpoint. opportunity_id must "
+        "match the run's owning opp — it scopes the upstream GET so the run "
+        "is actually visible (workflow runs are opp-scoped, not public)."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "run_id": {"type": "integer"},
+            "opportunity_id": {"type": "integer"},
             "snapshot_name": {"type": "string"},
             "captured_at": {"type": "string"},
         },
-        "required": ["run_id", "snapshot_name", "captured_at"],
+        "required": ["run_id", "opportunity_id", "snapshot_name", "captured_at"],
         "additionalProperties": False,
     },
     is_write=True,
@@ -54,12 +57,13 @@ def workflow_save_snapshot(
     user,
     *,
     run_id: int,
+    opportunity_id: int,
     snapshot_name: str,
     captured_at: str,
 ) -> dict[str, Any]:
     from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
 
-    wda = _wda_for_user(user)
+    wda = _wda_for_user(user, opportunity_id=opportunity_id)
     try:
         run = wda.get_run(run_id)
         if run is None:
@@ -94,9 +98,16 @@ def workflow_save_snapshot(
                 f"template {template_key!r} does not declare supports_saved_runs=True",
             )
 
-        opportunity_id = run.opportunity_id or definition.opportunity_id
-        if not opportunity_id:
-            raise MCPToolError("INVALID_SCHEMA", "run has no opportunity_id; cannot build snapshot")
+        # Cross-check: the upstream GET already filtered by opportunity_id, so
+        # if the run came back its opp must match — but assert it explicitly to
+        # surface caller mistakes (wrong opp_id passed alongside a foreign run).
+        run_opp = run.opportunity_id or definition.opportunity_id
+        if run_opp and run_opp != opportunity_id:
+            raise MCPToolError(
+                "INVALID_SCHEMA",
+                f"run {run_id} belongs to opportunity_id={run_opp}, "
+                f"not the {opportunity_id} passed to workflow_save_snapshot",
+            )
 
         # Match the views.py:complete_run code path exactly: pull pipelines and
         # workers from the same data access, then call build_snapshot_for_template.
