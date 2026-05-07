@@ -142,7 +142,7 @@ LOCAL_APPS = [
     "commcare_connect.multidb",
     "commcare_connect.opportunity",
     "commcare_connect.organization",
-    "commcare_connect.prelogin_website",
+    "commcare_connect.prelogin",
     "commcare_connect.program",
     "commcare_connect.solicitations",
     "commcare_connect.users",
