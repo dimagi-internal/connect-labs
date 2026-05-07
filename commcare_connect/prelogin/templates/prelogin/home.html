@@ -1,0 +1,3996 @@
+<!DOCTYPE html>
+{# Imported manually from Gillian's mockup repo (connect-mockup v32 gj.html). #}
+{# On re-import: strip .mockup-bar element + CSS, template the login link's href. #}
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connect by Dimagi — Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Inks — very deep navy/indigo */
+    --ink: #0A0620;
+    --ink-2: #14103A;
+    --ink-3: #4A5468;
+    /* Light surfaces */
+    --paper: #FAFBFF;
+    --paper-2: #FFFFFF;
+    --paper-warm: #F5F6FB;
+    --paper-cool: #F0F3FF;
+    --line: #E6E7F0;
+    --rule: #C9CCE0;
+    /* Indigo/sky — primary brand palette */
+    --indigo: #3843D0;
+    --indigo-deep: #2832A0;
+    --indigo-soft: #E7E9FB;
+    --sky: #8EA1FF;
+    --sky-tint: #F0F3FF;
+    /* Mango — used sparingly: CTA buttons, single key stats */
+    --mango: #FC5F36;
+    --mango-deep: #E04A22;
+    --marigold: #FEAF31;
+    --muted: #6B7388;
+    /* Gradients — cooler now */
+    --grad: linear-gradient(135deg, var(--indigo-deep) 0%, var(--indigo) 50%, var(--sky) 100%);
+    --grad-text: linear-gradient(90deg, #14103A 0%, #3843D0 55%, #5C6FE8 100%);
+    --grad-text-on-dark: linear-gradient(90deg, #FFFFFF 0%, #8EA1FF 100%);
+    --sans: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    --radius: 14px;
+    --radius-lg: 22px;
+    --radius-xs: 8px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: var(--sans);
+    font-weight: 400;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+    font-size: 16px;
+  }
+  a { color: inherit; text-decoration: none; }
+  a:hover { color: var(--indigo); }
+  img { max-width: 100%; display: block; }
+
+  /* Header */
+  .site-header {
+    background: var(--ink);
+    color: var(--paper);
+    border-bottom: 1px solid rgba(142,161,255,0.12);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    backdrop-filter: saturate(140%) blur(14px);
+  }
+  .header-inner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .logo {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--paper);
+    letter-spacing: -0.01em;
+    flex-shrink: 0;
+  }
+  .logo span {
+    color: rgba(250, 251, 255, 0.5);
+    font-weight: 300;
+    margin-left: 4px;
+  }
+  .site-header nav {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    font-size: 14px;
+    font-weight: 400;
+  }
+  .site-header nav a {
+    color: rgba(250, 251, 255, 0.78);
+    transition: color 0.15s;
+    padding: 6px 0;
+    position: relative;
+  }
+  .site-header nav a:hover { color: var(--paper); }
+  .site-header nav a.active { color: var(--paper); }
+  .site-header nav a.active::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: -20px;
+    height: 1px;
+    background: var(--sky);
+  }
+  .site-header nav a.cta {
+    background: var(--mango);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-weight: 600;
+    transition: transform 0.15s, box-shadow 0.2s, background 0.2s, color 0.2s, border-color 0.2s;
+    border: 1px solid var(--mango);
+  }
+  .site-header nav a.cta:hover {
+    background: var(--mango-deep);
+    color: #fff;
+    border-color: var(--mango-deep);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(252,95,54,0.28);
+  }
+  .site-header nav a.cta.cta-ghost {
+    background: transparent;
+    color: var(--paper);
+    border: 1px solid rgba(255,255,255,0.4);
+  }
+  .site-header nav a.cta.cta-ghost:hover {
+    background: rgba(255,255,255,0.1);
+    color: var(--paper);
+    border-color: rgba(255,255,255,0.7);
+    box-shadow: none;
+  }
+
+  .page { display: none; animation: fade 0.3s ease-out; }
+  .page.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 32px; }
+  .wrap-narrow { max-width: 920px; margin: 0 auto; padding: 0 32px; }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    margin-bottom: 20px;
+  }
+  .eyebrow::before {
+    content: '';
+    width: 26px;
+    height: 1px;
+    background: var(--indigo);
+  }
+  .eyebrow.on-dark { color: rgba(255,255,255,0.75); }
+  .eyebrow.on-dark::before { background: rgba(142,161,255,0.7); }
+  .eyebrow.muted { color: var(--muted); }
+  .eyebrow.muted::before { background: var(--muted); }
+
+  /* Headings — light by default. Em accents are bold + gradient. */
+  h1, h2 {
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: -0.025em;
+    line-height: 1.08;
+    font-weight: 300;
+  }
+  h3 {
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    font-weight: 400;
+  }
+  h4 {
+    margin: 0;
+    color: var(--ink);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  h1 em, h2 em, h3 em {
+    font-style: normal;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 600;
+  }
+  /* Two-line headers */
+  .h-stack { display: block; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 22px;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: transform 0.15s, box-shadow 0.2s, background 0.2s, color 0.2s, border-color 0.2s;
+  }
+  .btn.primary {
+    background: var(--mango);
+    color: #fff;
+    border-color: var(--mango);
+  }
+  .btn.primary:hover {
+    background: var(--mango-deep);
+    border-color: var(--mango-deep);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(252,95,54,0.28);
+  }
+  .btn.indigo {
+    background: var(--indigo);
+    color: #fff;
+    border-color: var(--indigo);
+  }
+  .btn.indigo:hover {
+    background: var(--indigo-deep);
+    border-color: var(--indigo-deep);
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(56,67,208,0.32);
+  }
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--rule);
+  }
+  .btn.ghost:hover {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .btn.ghost.on-dark {
+    color: var(--paper);
+    border-color: rgba(255,255,255,0.32);
+  }
+  .btn.ghost.on-dark:hover {
+    background: rgba(255,255,255,0.12);
+    color: var(--paper);
+    border-color: rgba(255,255,255,0.5);
+  }
+
+  .breadcrumb {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    padding: 28px 0 0;
+  }
+  .breadcrumb a { color: var(--indigo); }
+  .breadcrumb a:hover { color: var(--mango); }
+  .breadcrumb .sep { padding: 0 8px; color: var(--rule); }
+
+  /* HOME HERO — deep indigo with split layout (text left, video right) */
+  .hero-dark {
+    position: relative;
+    background: var(--indigo);
+    color: #fff;
+    overflow: hidden;
+    padding: 80px 0 96px;
+  }
+  .hero-dark::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 80% 20%, rgba(142,161,255,0.45), transparent 65%),
+      radial-gradient(ellipse 50% 50% at 10% 110%, rgba(40,50,160,0.55), transparent 65%);
+    pointer-events: none;
+  }
+  .hero-dark::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse at 50% 30%, rgba(0,0,0,0.85), transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 30%, rgba(0,0,0,0.85), transparent 75%);
+    pointer-events: none;
+  }
+  .hero-dark .wrap { position: relative; z-index: 1; }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 56px;
+    align-items: center;
+  }
+  .hero-dark h1 {
+    color: #fff;
+    font-size: clamp(40px, 6vw, 76px);
+    max-width: 14ch;
+    margin: 18px 0 22px;
+    font-weight: 200;
+    letter-spacing: -0.03em;
+  }
+  .hero-dark h1 em {
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 600;
+  }
+  .hero-dark .lede {
+    font-size: 17px;
+    color: rgba(255,255,255,0.82);
+    max-width: 52ch;
+    line-height: 1.6;
+    font-weight: 300;
+  }
+  .hero-dark .hero-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 32px;
+    flex-wrap: wrap;
+  }
+  .hero-dark .micro {
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.16);
+    display: flex;
+    gap: 40px;
+    flex-wrap: wrap;
+  }
+  .hero-dark .micro .m-num {
+    font-size: 30px;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .hero-dark .micro .m-l {
+    margin-top: 8px;
+    color: rgba(255,255,255,0.7);
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .hero-video-frame {
+    background: rgba(10,6,32,0.5);
+    border: 1px solid rgba(142,161,255,0.32);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.32);
+    backdrop-filter: blur(10px);
+  }
+  .hero-video-frame .video-meta {
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(142,161,255,0.16);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255,255,255,0.85);
+  }
+  .hero-video-frame .video-meta .vt { font-size: 13px; font-weight: 500; }
+  .hero-video-frame .video-meta .vc {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.55);
+  }
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+  }
+  .video-wrap iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  /* Light hero */
+  .hero { padding: 64px 0 80px; }
+  .hero h1 {
+    font-size: clamp(40px, 5.6vw, 72px);
+    margin: 18px 0 22px;
+    max-width: 18ch;
+    font-weight: 200;
+  }
+  .hero .lede {
+    font-size: 18px;
+    color: var(--ink-3);
+    max-width: 60ch;
+    line-height: 1.6;
+    font-weight: 300;
+  }
+
+  .section { padding: 88px 0; border-top: 1px solid var(--line); }
+  .section.warm { background: var(--paper-warm); }
+  .section.cool { background: var(--paper-cool); }
+  .section.no-border { border-top: none; }
+
+  .sec-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-bottom: 44px;
+  }
+  .sec-head .label-group { max-width: 60ch; }
+  .sec-head h2 {
+    font-size: clamp(30px, 4.2vw, 50px);
+    margin: 6px 0 0;
+    font-weight: 300;
+  }
+  .sec-head .sub {
+    color: var(--ink-3);
+    margin-top: 16px;
+    font-size: 17px;
+    line-height: 1.55;
+    font-weight: 300;
+  }
+
+  /* Holistic visual on home */
+  .holistic-visual {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px 24px 40px;
+    overflow: hidden;
+  }
+  .holistic-visual svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  /* Impact tiles — 3 columns × 2 rows */
+  .impact-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .impact-tile {
+    padding: 32px 24px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .impact-tile:nth-child(3n) { border-right: none; }
+  .impact-tile:nth-last-child(-n+3) { border-bottom: none; }
+  .impact-tile .n {
+    font-size: clamp(34px, 3.4vw, 44px);
+    line-height: 1;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .impact-tile .l {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 12px;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+
+  /* Tagged Impact rows (Scale + Impact) on home */
+  .impact-section-block {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .impact-section-block .imp-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+  }
+  .impact-section-block .imp-row + .imp-row {
+    border-top: 1px solid var(--line);
+  }
+  .impact-section-block .imp-label {
+    background: var(--paper-cool);
+    padding: 28px 22px;
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--line);
+  }
+  .impact-section-block .imp-label .row-tag {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--indigo);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .impact-section-block .imp-tiles {
+    display: grid;
+  }
+  .impact-section-block .imp-tiles.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .impact-section-block .imp-tiles.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .impact-section-block .imp-tile {
+    padding: 30px 24px;
+    border-right: 1px solid var(--line);
+  }
+  .impact-section-block .imp-tile:last-child { border-right: none; }
+  .impact-section-block .imp-tile .n {
+    font-size: clamp(34px, 3.4vw, 46px);
+    line-height: 1;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .impact-section-block .imp-tile .l {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 12px;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+
+  /* Findings (3 boxes on home) */
+  .findings-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .finding {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 30px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    color: var(--ink);
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  }
+  .finding:hover {
+    border-color: var(--indigo);
+    color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(56,67,208,0.1);
+  }
+  .finding .sector {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .finding .big-stat {
+    font-size: 60px;
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 4px 0 0;
+  }
+  .finding .big-stat.warm {
+    background: linear-gradient(90deg, var(--mango-deep) 0%, var(--mango) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .finding h4 {
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin: 0;
+    max-width: 32ch;
+  }
+  .finding p {
+    font-size: 14px;
+    color: var(--ink-3);
+    line-height: 1.6;
+    margin: 0;
+    flex-grow: 1;
+    font-weight: 400;
+  }
+  .finding .more {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    border-top: 1px dashed var(--line);
+    padding-top: 16px;
+    margin-top: auto;
+  }
+
+  /* Programs cards (home) */
+  .prog-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .prog-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    color: var(--ink);
+    display: block;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  }
+  .prog-card:hover {
+    border-color: var(--indigo);
+    color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(56,67,208,0.1);
+  }
+  .prog-card .body { padding: 28px 30px 30px; }
+  .prog-card .sector {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .prog-card h3 { font-size: 24px; margin: 8px 0 12px; font-weight: 400; }
+  .prog-card .countries { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+  .prog-card p { color: var(--ink-3); font-size: 14.5px; line-height: 1.6; margin: 0 0 18px; font-weight: 400; }
+  .prog-card .meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-top: 1px dashed var(--line);
+    padding-top: 16px;
+  }
+  .prog-card .meta .more { color: var(--indigo); font-weight: 600; }
+
+  /* Photo placeholder blocks (used on Programs and How It Works) */
+  .photo-block {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+  }
+  .photo-block::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,0.12) 0%, transparent 32%),
+      radial-gradient(circle at 80% 70%, rgba(255,255,255,0.08) 0%, transparent 36%),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .photo-block::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .photo-block .photo-label {
+    position: relative;
+    z-index: 1;
+    margin: 0 0 14px 18px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.85);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: rgba(10,6,32,0.4);
+    padding: 5px 9px;
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
+  }
+  /* Photo gradients — distinct per program */
+  .ph-chc { background: linear-gradient(135deg, #14103A 0%, #3843D0 50%, #5C6FE8 100%); }
+  .ph-kmc { background: linear-gradient(135deg, #2832A0 0%, #5C6FE8 100%); }
+  .ph-ecd { background: linear-gradient(135deg, #1D254E 0%, #3843D0 100%); }
+  .ph-readers { background: linear-gradient(135deg, #14103A 0%, #2D3580 70%, #FC5F36 100%); }
+  .ph-mbw { background: linear-gradient(135deg, #1B2168 0%, #4252DD 100%); }
+  .ph-chlorine { background: linear-gradient(135deg, #1D254E 0%, #5C6FE8 100%); }
+  .ph-mental { background: linear-gradient(135deg, #2832A0 0%, #6878E5 100%); }
+  .ph-nutrition { background: linear-gradient(135deg, #14103A 0%, #3843D0 100%); }
+  .ph-survey { background: linear-gradient(135deg, #1B2168 0%, #3843D0 50%, #8EA1FF 100%); }
+  .ph-environment { background: linear-gradient(135deg, #14103A 0%, #2D3580 100%); }
+  /* Field photos for How It Works */
+  .ph-field-1 { background: linear-gradient(135deg, #14103A 0%, #3843D0 50%, #FC5F36 100%); }
+  .ph-field-2 { background: linear-gradient(135deg, #2832A0 0%, #5C6FE8 100%); }
+  .ph-field-3 { background: linear-gradient(135deg, #1D254E 0%, #3843D0 70%, #FEAF31 100%); }
+  .ph-field-4 { background: linear-gradient(135deg, #14103A 0%, #2D3580 100%); }
+  .ph-field-5 { background: linear-gradient(135deg, #2832A0 0%, #6878E5 100%); }
+  .ph-field-6 { background: linear-gradient(135deg, #1B2168 0%, #3843D0 50%, #FC5F36 100%); }
+
+  /* All-programs grid (Programs page) */
+  .all-programs-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+  }
+  .all-programs-grid .prog-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .all-programs-grid .prog-card.is-soon { opacity: 0.85; }
+  .all-programs-grid .prog-card.is-soon .body { background: var(--paper-cool); }
+  .all-programs-grid .prog-card .body { flex-grow: 1; display: flex; flex-direction: column; }
+  .all-programs-grid .prog-card .stat-strip {
+    display: flex;
+    gap: 22px;
+    padding: 14px 0;
+    border-top: 1px dashed var(--line);
+    border-bottom: 1px dashed var(--line);
+    margin: 8px 0 16px;
+  }
+  .all-programs-grid .prog-card .stat-strip .ps { flex: 1; }
+  .all-programs-grid .prog-card .stat-strip .n {
+    font-size: 22px;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .all-programs-grid .prog-card .stat-strip .l {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+    font-weight: 600;
+  }
+  .all-programs-grid .badge-soon {
+    display: inline-block;
+    background: var(--mango);
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 2;
+  }
+
+  /* Final CTA — original (Insights only) */
+  .final-cta {
+    text-align: center;
+    padding: 96px 24px;
+    color: #fff;
+  }
+  .final-cta .eyebrow { color: rgba(255,255,255,0.6); justify-content: center; margin-bottom: 24px; }
+  .final-cta .eyebrow::before { background: rgba(255,255,255,0.4); }
+  .final-cta h2 { color: #fff; font-size: clamp(36px, 4.4vw, 56px); max-width: 22ch; margin: 0 auto 22px; font-weight: 300; }
+  .final-cta h2 em {
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .final-cta p { color: rgba(255,255,255,0.72); max-width: 56ch; margin: 0 auto 32px; font-size: 17px; font-weight: 300; }
+
+  /* Shared closing CTA — simplified, single button */
+  .closing-cta {
+    position: relative;
+    background: var(--ink);
+    color: #fff;
+    overflow: hidden;
+  }
+  .closing-cta::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 50% 50% at 85% 30%, rgba(142,161,255,0.4), transparent 65%),
+      radial-gradient(ellipse 60% 50% at 15% 100%, rgba(56,67,208,0.55), transparent 65%);
+    pointer-events: none;
+  }
+  .closing-cta::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.85), transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.85), transparent 75%);
+    pointer-events: none;
+  }
+  .closing-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 96px 32px;
+    text-align: center;
+  }
+  .closing-cta .eyebrow { color: rgba(255,255,255,0.7); justify-content: center; margin-bottom: 24px; }
+  .closing-cta .eyebrow::before { background: rgba(142,161,255,0.7); }
+  .closing-cta h2 {
+    color: #fff;
+    font-size: clamp(36px, 4.6vw, 60px);
+    max-width: 22ch;
+    margin: 0 auto 22px;
+    font-weight: 300;
+  }
+  .closing-cta h2 em {
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 600;
+  }
+  .closing-cta .lead {
+    color: rgba(255,255,255,0.78);
+    max-width: 60ch;
+    margin: 0 auto 36px;
+    font-size: 17px;
+    font-weight: 300;
+    line-height: 1.6;
+  }
+
+  /* Footer */
+  footer.site-footer {
+    background: var(--ink);
+    color: rgba(255,255,255,0.7);
+    padding: 64px 0 32px;
+  }
+  .footer-inner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 36px;
+  }
+  .foot-brand .logo { font-size: 22px; color: var(--paper); display: inline-block; margin-bottom: 14px; }
+  .foot-brand p { font-size: 13.5px; max-width: 38ch; line-height: 1.6; margin: 0; }
+  .foot-col h5 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: rgba(255,255,255,0.5);
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
+  .foot-col ul { list-style: none; padding: 0; margin: 0; }
+  .foot-col li { margin-bottom: 10px; font-size: 13.5px; }
+  .foot-col a { color: rgba(255,255,255,0.78); }
+  .foot-col a:hover { color: var(--sky); }
+  .foot-bottom {
+    max-width: 1240px;
+    margin: 48px auto 0;
+    padding: 24px 32px 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  /* HOW IT WORKS — Two-Sided Marketplace (stacked, horizontal internal) */
+  .two-sided-market {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    margin-bottom: 32px;
+  }
+  .market-side {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 40px 44px;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 48px;
+    align-items: start;
+    position: relative;
+  }
+  .market-side-funder { border-top: 4px solid var(--indigo); }
+  .market-side-platform { border-top: 4px solid #1B998B; }
+  .market-side-header .role-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 600;
+    color: var(--indigo);
+  }
+  .market-side-platform .market-side-header .role-tag { color: #1B998B; }
+  .market-side-header h3 {
+    margin: 10px 0 0;
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1.2;
+  }
+  .market-side-header h3 em {
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600;
+    font-style: normal;
+  }
+  .market-side-platform .market-side-header h3 em {
+    background: linear-gradient(90deg, #117A6F 0%, #1B998B 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .picker-set {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr;
+    gap: 12px;
+  }
+  .picker-list h6 {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+  .picker-scroll {
+    height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--paper);
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule) transparent;
+  }
+  .picker-scroll::-webkit-scrollbar { width: 6px; }
+  .picker-scroll::-webkit-scrollbar-track { background: transparent; }
+  .picker-scroll::-webkit-scrollbar-thumb {
+    background: var(--rule);
+    border-radius: 3px;
+  }
+  .picker-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 11px 14px;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--ink);
+    transition: background 0.2s, color 0.2s;
+  }
+  .picker-item:last-child { border-bottom: none; }
+  .picker-item:hover {
+    background: var(--paper-cool);
+    color: var(--indigo);
+  }
+  .picker-item.is-active {
+    background: var(--indigo-soft);
+    color: var(--indigo);
+    font-weight: 600;
+  }
+  .picker-item-new {
+    color: var(--mango);
+    font-weight: 600;
+  }
+  .picker-item-new:hover { color: var(--mango-deep); }
+  .picker-item-new.is-active { background: rgba(252,95,54,0.1); color: var(--mango); }
+
+  .platform-promise {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .promise-item {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 18px;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--line);
+    border-right: none;
+  }
+  .promise-item:first-child { padding-top: 0; padding-left: 0; }
+  .promise-item:last-child { border-bottom: none; padding-bottom: 0; padding-right: 0; }
+  .promise-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-xs);
+    background: rgba(27,153,139,0.14);
+    color: #1B998B;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .promise-icon svg { width: 22px; height: 22px; }
+  .promise-text h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  .promise-text p {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    line-height: 1.55;
+    margin: 0 0 10px;
+  }
+  .promise-stat {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #1B998B;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .market-conclusion {
+    text-align: center;
+    margin-top: 24px;
+  }
+  .market-conclusion p {
+    font-size: clamp(22px, 2.6vw, 32px);
+    font-weight: 300;
+    margin: 0;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .market-conclusion p em {
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600;
+    font-style: normal;
+  }
+
+  /* HOW IT WORKS — combined cycle + step tabs panel */
+  .cycle-panel-combined {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 56px;
+  }
+  .cycle-panel-combined .cycle-svg-area {
+    padding: 28px 36px 8px;
+  }
+  .cycle-panel-combined svg .cycle-node-group { cursor: pointer; transition: transform 0.2s; }
+  .cycle-panel-combined svg .cycle-node-group:hover { transform: translateY(-3px) scale(1.03); transform-origin: center; transform-box: fill-box; }
+
+  /* legacy classes kept for backwards-compatibility — unused after combine */
+  .interactive-cycle-panel {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    margin-bottom: 28px;
+  }
+  .step-detail-wrap {
+    background: var(--paper-2);
+    overflow: hidden;
+  }
+  .step-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .step-tab {
+    padding: 20px 22px;
+    font-family: var(--sans);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    border-right: 1px solid var(--line);
+    color: var(--ink-3);
+    transition: background 0.15s, color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .step-tab:last-child { border-right: none; }
+  .step-bubble {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--paper-cool);
+    color: var(--indigo);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.2s, color 0.2s, transform 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+  }
+  .step-tab .name {
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--ink);
+  }
+  .step-tab:hover { background: var(--paper-2); }
+  .step-tab:hover .step-bubble { background: var(--indigo-soft); }
+  .step-tab.active {
+    background: var(--paper-2);
+    border-bottom: 2px solid var(--indigo);
+    margin-bottom: -1px;
+  }
+  .step-tab.active .step-bubble {
+    background: var(--indigo);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(56,67,208,0.25);
+  }
+  .step-tab.active .name { font-weight: 600; color: var(--indigo); }
+
+  /* Per-step colors — Learn / Deliver / Verify / Pay */
+  .step-tab[data-step="learn"] .step-bubble { color: #16006D; }
+  .step-tab[data-step="learn"]:hover .step-bubble { background: rgba(22,0,109,0.1); }
+  .step-tab[data-step="learn"].active .step-bubble { background: #16006D; color: #fff; box-shadow: 0 4px 12px rgba(22,0,109,0.3); }
+  .step-tab[data-step="learn"].active .name { color: #16006D; }
+  .step-tab[data-step="learn"].active { border-bottom-color: #16006D; }
+
+  .step-tab[data-step="deliver"] .step-bubble { color: #5D70D2; }
+  .step-tab[data-step="deliver"]:hover .step-bubble { background: rgba(93,112,210,0.12); }
+  .step-tab[data-step="deliver"].active .step-bubble { background: #5D70D2; color: #fff; box-shadow: 0 4px 12px rgba(93,112,210,0.3); }
+  .step-tab[data-step="deliver"].active .name { color: #5D70D2; }
+  .step-tab[data-step="deliver"].active { border-bottom-color: #5D70D2; }
+
+  .step-tab[data-step="verify"] .step-bubble { color: #FC5F36; }
+  .step-tab[data-step="verify"]:hover .step-bubble { background: rgba(252,95,54,0.12); }
+  .step-tab[data-step="verify"].active .step-bubble { background: #FC5F36; color: #fff; box-shadow: 0 4px 12px rgba(252,95,54,0.3); }
+  .step-tab[data-step="verify"].active .name { color: #FC5F36; }
+  .step-tab[data-step="verify"].active { border-bottom-color: #FC5F36; }
+
+  .step-tab[data-step="pay"] .step-bubble { color: #1B998B; }
+  .step-tab[data-step="pay"]:hover .step-bubble { background: rgba(27,153,139,0.12); }
+  .step-tab[data-step="pay"].active .step-bubble { background: #1B998B; color: #fff; box-shadow: 0 4px 12px rgba(27,153,139,0.3); }
+  .step-tab[data-step="pay"].active .name { color: #1B998B; }
+  .step-tab[data-step="pay"].active { border-bottom-color: #1B998B; }
+
+  /* Step detail accent colors per step */
+  .step-detail[data-step="learn"] .left h3 em,
+  .step-detail[data-step="learn"] .right .ps .n {
+    background: linear-gradient(90deg, #0E0050 0%, #16006D 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="learn"] .left .pull { border-left-color: #16006D; }
+  .step-detail[data-step="learn"] .left .deeper { color: #16006D; border-bottom-color: #16006D; }
+  .step-detail[data-step="learn"] .right .ps { border-left-color: #16006D; }
+
+  .step-detail[data-step="deliver"] .left h3 em,
+  .step-detail[data-step="deliver"] .right .ps .n {
+    background: linear-gradient(90deg, #4258B8 0%, #5D70D2 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="deliver"] .left .pull { border-left-color: #5D70D2; }
+  .step-detail[data-step="deliver"] .left .deeper { color: #5D70D2; border-bottom-color: #5D70D2; }
+  .step-detail[data-step="deliver"] .right .ps { border-left-color: #5D70D2; }
+
+  .step-detail[data-step="verify"] .left h3 em,
+  .step-detail[data-step="verify"] .right .ps .n {
+    background: linear-gradient(90deg, #E04A22 0%, #FC5F36 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="verify"] .left .pull { border-left-color: #FC5F36; }
+  .step-detail[data-step="verify"] .left .deeper { color: #FC5F36; border-bottom-color: #FC5F36; }
+  .step-detail[data-step="verify"] .right .ps { border-left-color: #FC5F36; }
+
+  .step-detail[data-step="pay"] .left h3 em,
+  .step-detail[data-step="pay"] .right .ps .n {
+    background: linear-gradient(90deg, #117A6F 0%, #1B998B 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="pay"] .left .pull { border-left-color: #1B998B; }
+  .step-detail[data-step="pay"] .left .deeper { color: #1B998B; border-bottom-color: #1B998B; }
+  .step-detail[data-step="pay"] .right .ps { border-left-color: #1B998B; }
+
+  .step-detail {
+    display: none;
+    padding: 44px 48px;
+    background: var(--paper);
+  }
+  .step-detail.active { display: grid; }
+  .step-detail {
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    align-items: start;
+  }
+  .step-detail .left h3 {
+    font-size: 32px;
+    margin: 0 0 18px;
+    font-weight: 300;
+    max-width: 18ch;
+  }
+  .step-detail .left h3 em { font-weight: 600; }
+  .step-detail .left .lede {
+    color: var(--ink-3);
+    font-size: 16px;
+    line-height: 1.65;
+    margin: 0 0 24px;
+    font-weight: 300;
+  }
+  .step-detail .left .pull {
+    font-weight: 300;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    border-left: 2px solid var(--indigo);
+    padding: 4px 0 4px 18px;
+    margin: 0 0 22px;
+    max-width: 60ch;
+  }
+  .step-detail .left .deeper {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--indigo);
+    border-bottom: 1px solid var(--indigo);
+    padding-bottom: 2px;
+    font-weight: 600;
+  }
+  .step-detail .right .pillar-stats {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .step-detail .right .ps {
+    background: var(--paper-cool);
+    border-left: 3px solid var(--indigo);
+    padding: 18px 22px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .step-detail .right .ps .n {
+    font-size: 36px;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .step-detail .right .ps .l {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 8px;
+    font-weight: 400;
+  }
+
+  /* Per-step Insights subsection (inside step-detail) */
+  .step-detail .step-insights {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+  }
+  .step-insights-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    margin-bottom: 18px;
+  }
+  .step-insight-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+  }
+  .step-insight-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .step-insight-card .program-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--indigo);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .step-insight-card h5 {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--ink);
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  .step-insight-card p {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .step-insight-card .src {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+    text-transform: none;
+  }
+
+  /* Per-step accent on insights label and program tag */
+  .step-detail[data-step="learn"] .step-insights-label,
+  .step-detail[data-step="learn"] .step-insight-card .program-tag { color: #16006D; }
+  .step-detail[data-step="deliver"] .step-insights-label,
+  .step-detail[data-step="deliver"] .step-insight-card .program-tag { color: #5D70D2; }
+  .step-detail[data-step="verify"] .step-insights-label,
+  .step-detail[data-step="verify"] .step-insight-card .program-tag { color: #FC5F36; }
+  .step-detail[data-step="pay"] .step-insights-label,
+  .step-detail[data-step="pay"] .step-insight-card .program-tag { color: #1B998B; }
+
+  /* Photo gallery on How It Works */
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .gallery-grid .photo-block {
+    height: 240px;
+    border-radius: var(--radius);
+  }
+  .gallery-grid .gallery-tall {
+    grid-row: span 2;
+    height: 496px;
+  }
+
+  /* INSIGHTS — two-axis filtering (Program × LDVP) */
+  .filter-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .filter-block:last-of-type { margin-bottom: 32px; }
+  .filter-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-weight: 600;
+    flex-shrink: 0;
+    width: 130px;
+    padding-top: 9px;
+  }
+  .filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1 1 auto;
+  }
+  .filter-pills .pill {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink-3);
+    cursor: pointer;
+    background: var(--paper-2);
+    transition: all 0.15s;
+  }
+  .filter-pills .pill:hover { border-color: var(--indigo); color: var(--indigo); }
+  .filter-pills .pill.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .insight-row.is-hidden { display: none; }
+
+  /* (Legacy single-row filter — kept for fallback styling) */
+  .insight-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 36px;
+  }
+  .insight-filter .pill {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink-3);
+    cursor: pointer;
+    background: var(--paper-2);
+    transition: all 0.15s;
+  }
+  .insight-filter .pill:hover { border-color: var(--indigo); color: var(--indigo); }
+  .insight-filter .pill.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .insight-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-top: 1px solid var(--line);
+  }
+  .insight-row {
+    display: grid;
+    grid-template-columns: 240px 1fr 200px;
+    gap: 36px;
+    padding: 32px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: start;
+    transition: background 0.15s;
+  }
+  /* Swap columns 1 and 3 — Tier+Source go left, Program+LDVP go right */
+  .insight-row > .meta-side:first-of-type { grid-column: 3; }
+  .insight-row > .meta-side:last-of-type { grid-column: 1; }
+  .insight-row > .body { grid-column: 2; }
+  .insight-row .meta-side .src-name {
+    display: block;
+    margin-top: 4px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.5;
+    font-weight: 400;
+  }
+  .insight-row:hover { background: var(--paper-2); }
+  .insight-row .num {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--indigo);
+    letter-spacing: 0.04em;
+  }
+  .insight-row .num .new {
+    display: block;
+    margin-top: 8px;
+    font-size: 9.5px;
+    color: var(--paper);
+    background: var(--mango);
+    padding: 2px 8px;
+    border-radius: 4px;
+    width: fit-content;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+  }
+  .insight-row .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--indigo);
+    padding-top: 4px;
+    font-weight: 600;
+  }
+  .insight-row .body h4 { font-size: 20px; margin: 0 0 10px; line-height: 1.25; max-width: 48ch; font-weight: 500; }
+  .insight-row .body p { color: var(--ink-3); font-size: 14.5px; line-height: 1.65; margin: 0 0 12px; max-width: 62ch; font-weight: 400; }
+  .insight-row .body .source {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .insight-row .meta-side {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+    border-left: none;
+    padding-left: 0;
+    padding-top: 4px;
+  }
+  .insight-row .meta-side b {
+    color: var(--ink);
+    display: block;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 11.5px;
+    margin: 16px 0 4px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .insight-row .meta-side b:first-child {
+    margin-top: 0;
+  }
+  .insight-row .meta-side br { display: none; }
+  .insight-row .meta-side .tier-1 { color: var(--indigo); font-weight: 600; }
+  .insight-row .meta-side .tier-2 { color: var(--sky); font-weight: 600; }
+
+  .methodology {
+    margin-top: 56px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px 36px;
+  }
+  .methodology h4 { font-size: 18px; margin: 0 0 14px; font-weight: 500; }
+  .methodology p { font-size: 14.5px; color: var(--ink-3); line-height: 1.65; margin: 0 0 12px; max-width: 70ch; }
+
+  /* Sub-heading inside Impact so far */
+  .findings-head {
+    margin-top: 64px;
+    margin-bottom: 28px;
+  }
+  .findings-head .eyebrow { margin-bottom: 12px; }
+  .findings-head h3 {
+    font-size: clamp(24px, 2.6vw, 32px);
+    font-weight: 300;
+    max-width: 30ch;
+  }
+  .findings-head h3 em {
+    font-style: normal;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 600;
+  }
+
+  /* SIGN UP page */
+  .map-panel {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 0;
+    overflow: hidden;
+  }
+  .map-panel .map-bar {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .map-panel .map-bar .map-t { font-size: 14px; font-weight: 500; }
+  .map-panel .map-bar .map-c {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .map-canvas {
+    background: linear-gradient(135deg, #14103A 0%, #1B2168 50%, #2832A0 100%);
+    position: relative;
+    overflow: hidden;
+    padding: 32px;
+    min-height: 500px;
+  }
+  .map-canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(142,161,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(142,161,255,0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  .map-canvas svg {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .map-legend {
+    padding: 18px 24px;
+    background: var(--paper-cool);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+  }
+  .map-legend .lg { display: inline-flex; align-items: center; gap: 8px; }
+  .map-legend .lg .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .map-legend .lg-active .dot { background: var(--mango); }
+  .map-legend .lg-soon .dot { background: var(--sky); }
+
+  .stories-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .story-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .story-card .photo-block { height: 180px; }
+  .story-card .body { padding: 24px 26px; flex-grow: 1; display: flex; flex-direction: column; }
+  .story-card .org {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--indigo);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .story-card .country {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .story-card blockquote {
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink);
+    margin: 0 0 14px;
+    font-weight: 300;
+    font-style: italic;
+  }
+  .story-card .attrib {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    margin-top: auto;
+  }
+  .story-card .attrib b { color: var(--ink); font-weight: 600; }
+
+  .role-cta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .role-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 40px 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  }
+  .role-card:hover {
+    border-color: var(--indigo);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 40px rgba(56,67,208,0.1);
+  }
+  .role-card.warm:hover { border-color: var(--mango); box-shadow: 0 16px 40px rgba(252,95,54,0.1); }
+  .role-card .role-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius);
+    background: var(--indigo-soft);
+    color: var(--indigo);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .role-card.warm .role-icon { background: rgba(252,95,54,0.12); color: var(--mango); }
+  .role-card .role-icon svg { width: 28px; height: 28px; }
+  .role-card .role-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--indigo);
+    font-weight: 600;
+  }
+  .role-card.warm .role-tag { color: var(--mango); }
+  .role-card h3 { font-size: 28px; font-weight: 300; }
+  .role-card h3 em { font-weight: 600; }
+  .role-card p { font-size: 15px; color: var(--ink-3); line-height: 1.6; margin: 0; }
+  .role-card ul { list-style: none; padding: 0; margin: 0; }
+  .role-card li {
+    font-size: 14px;
+    color: var(--ink-2);
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--line);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .role-card li::before {
+    content: '→';
+    color: var(--indigo);
+    font-weight: 600;
+  }
+  .role-card.warm li::before { color: var(--mango); }
+  .role-card .role-action {
+    margin-top: auto;
+  }
+
+  /* Home hero — tagged stat rows (Scale + Impact) on dark bg */
+  .hero-dark .hero-stats {
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid rgba(255,255,255,0.16);
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .hero-dark .hero-stats-row {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 32px;
+    align-items: center;
+  }
+  .hero-dark .hero-stats-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--sky);
+  }
+  .hero-dark .hero-stats-items {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 32px;
+  }
+  @media (max-width: 700px) {
+    .hero-dark .hero-stats-items { grid-template-columns: repeat(2, 1fr); gap: 22px; }
+  }
+  .hero-dark .hero-stats-items .num {
+    font-size: 30px;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .hero-dark .hero-stats-items .label {
+    margin-top: 8px;
+    color: rgba(255,255,255,0.7);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  @media (max-width: 700px) {
+    .hero-dark .hero-stats-row { grid-template-columns: 1fr; gap: 14px; }
+  }
+
+  /* Hero with video (How It Works) */
+  .hero-with-video {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+  .hero-with-video h1 { max-width: 18ch; }
+
+  /* Home — "What's different" comparison table (Old way vs Connect) */
+  .compare-table {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-top: 32px;
+  }
+  .compare-header {
+    background: var(--paper-2);
+    padding: 22px 30px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .compare-header.old {
+    color: var(--muted);
+    background: var(--paper-warm);
+  }
+  .compare-header.new {
+    color: var(--indigo);
+    background: linear-gradient(180deg, var(--paper-cool) 0%, var(--paper-2) 100%);
+  }
+  .compare-cell {
+    background: var(--paper-2);
+    padding: 28px 30px;
+    font-size: 15.5px;
+    line-height: 1.6;
+  }
+  .compare-cell.old {
+    background: var(--paper-warm);
+    color: var(--ink-3);
+  }
+  .compare-cell.new {
+    background: var(--paper-2);
+    color: var(--ink-2);
+    font-weight: 400;
+  }
+  .compare-cell.new strong {
+    color: var(--indigo);
+    font-weight: 700;
+  }
+
+  /* Home — "What's different" 3-card grid (legacy, unused after comparison table) */
+  .diff-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .diff-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  }
+  .diff-card:hover {
+    border-color: var(--indigo);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(56,67,208,0.08);
+  }
+  .diff-card .diff-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-xs);
+    background: var(--indigo-soft);
+    color: var(--indigo);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .diff-card .diff-icon svg { width: 24px; height: 24px; }
+  .diff-card h4 {
+    font-size: 19px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--ink);
+  }
+  .diff-card p {
+    font-size: 14.5px;
+    color: var(--ink-3);
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  /* Home — "Explore" 2-card grid */
+  .explore-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+  }
+  .explore-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 36px 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    color: var(--ink);
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  }
+  .explore-card:hover {
+    border-color: var(--indigo);
+    color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(56,67,208,0.08);
+  }
+  .explore-card .explore-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .explore-card h4 {
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin: 0;
+    flex-grow: 1;
+    color: var(--ink);
+  }
+  .explore-card .explore-link {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--mango);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    border-top: 1px dashed var(--line);
+    padding-top: 14px;
+  }
+
+  /* Programs intro on home — heading + smaller video side by side */
+  .programs-intro {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+    margin-bottom: 48px;
+  }
+  .programs-intro .label-group {
+    max-width: 44ch;
+  }
+  .programs-intro h2 {
+    font-size: clamp(28px, 3.6vw, 44px);
+    font-weight: 300;
+    margin: 6px 0 0;
+  }
+  .programs-intro .sub {
+    color: var(--ink-3);
+    margin-top: 16px;
+    font-size: 16px;
+    line-height: 1.55;
+    font-weight: 300;
+  }
+
+  /* Programs + Locations panel (home) */
+  .programs-locations {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 24px;
+    margin-bottom: 36px;
+  }
+  .pl-col {
+    display: flex;
+    flex-direction: column;
+  }
+  .pl-col h5 {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin: 0 0 14px;
+  }
+  .programs-narrow {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .locations-panel {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .location-row {
+    padding: 14px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+  }
+  .location-row:last-child { border-bottom: none; }
+  .location-row .country {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .location-row .country .sub {
+    font-size: 11.5px;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 8px;
+  }
+  .location-row .count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .location-row .count.is-multi { color: var(--mango); }
+
+  /* Tiny program tiles (home) */
+  .prog-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+  .prog-mini {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--ink);
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+    min-height: 140px;
+    position: relative;
+  }
+  .prog-mini:hover {
+    border-color: var(--indigo);
+    color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 22px rgba(56,67,208,0.08);
+  }
+  .prog-mini .sector {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--indigo);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .prog-mini h4 {
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin: 0;
+  }
+  .prog-mini.is-soon {
+    background: var(--paper-cool);
+  }
+  .prog-mini .badge-soon {
+    margin-top: auto;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--mango);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+  }
+
+  /* Program jump-nav (Programs page top) */
+  .prog-jump {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 40px;
+  }
+  .prog-jump .pill {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink-3);
+    cursor: pointer;
+    background: var(--paper-2);
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .prog-jump .pill:hover {
+    border-color: var(--indigo);
+    color: var(--indigo);
+  }
+  .prog-jump .pill.is-soon {
+    background: var(--paper-cool);
+    color: var(--muted);
+  }
+  .prog-jump .pill.is-soon:hover {
+    border-color: var(--mango);
+    color: var(--mango);
+  }
+  .prog-jump-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 14px;
+  }
+  /* Scroll-margin for jump-target program cards */
+  .all-programs-grid .prog-card[id] {
+    scroll-margin-top: 96px;
+  }
+
+  /* Programs page — split active vs coming-soon */
+  .all-programs-grid.cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .programs-section-divider {
+    margin: 56px 0 32px;
+    text-align: left;
+  }
+  .programs-section-divider .eyebrow {
+    margin-bottom: 8px;
+  }
+  .programs-section-divider h3 {
+    font-size: clamp(22px, 2.4vw, 28px);
+    font-weight: 400;
+  }
+  .programs-section-divider h3 em {
+    font-style: normal;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600;
+  }
+
+  /* Light-page video frame */
+  .video-frame {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .video-frame .video-meta {
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .video-frame .video-meta .vt { font-size: 14px; font-weight: 500; }
+  .video-frame .video-meta .vc {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  /* Responsive */
+  @media (max-width: 980px) {
+    .header-inner { padding: 16px 20px; gap: 14px; }
+    .site-header nav { gap: 14px; font-size: 13px; }
+    .site-header nav a:not(.cta) { display: none; }
+    .site-header nav a.cta.cta-ghost { display: none; }
+    .wrap { padding: 0 20px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 36px; }
+    .impact-grid, .prog-grid, .findings-grid, .all-programs-grid, .stories-grid, .role-cta-grid, .diff-grid { grid-template-columns: 1fr 1fr; }
+    .explore-grid { grid-template-columns: 1fr; }
+    .compare-table { grid-template-columns: 1fr; }
+    .impact-section-block .imp-row { grid-template-columns: 1fr; }
+    .impact-section-block .imp-label { border-right: none; border-bottom: 1px solid var(--line); padding: 16px 22px; }
+    .impact-section-block .imp-tiles.cols-3, .impact-section-block .imp-tiles.cols-4 { grid-template-columns: 1fr 1fr; }
+    .all-programs-grid.cols-3 { grid-template-columns: 1fr 1fr; }
+    .programs-intro { grid-template-columns: 1fr; gap: 32px; }
+    .programs-locations { grid-template-columns: 1fr; gap: 24px; }
+    .hero-with-video { grid-template-columns: 1fr; gap: 32px; }
+    .two-sided-market { grid-template-columns: 1fr; gap: 18px; }
+    .market-side { grid-template-columns: 1fr; gap: 24px; padding: 32px 28px; }
+    .picker-set { grid-template-columns: 1fr; }
+    .prog-mini-grid { grid-template-columns: repeat(3, 1fr); }
+    .step-detail { grid-template-columns: 1fr; padding: 32px 28px; gap: 24px; }
+    .step-tabs { grid-template-columns: 1fr 1fr; }
+    .step-tab { border-bottom: 1px solid var(--line); }
+    .insight-row { grid-template-columns: 1fr; gap: 14px; }
+    .insight-row .meta-side { border-left: none; padding-left: 0; border-top: 1px dashed var(--line); padding-top: 12px; }
+    .footer-inner { grid-template-columns: 1fr 1fr; }
+    .gallery-grid { grid-template-columns: 1fr 1fr; }
+    .gallery-grid .gallery-tall { grid-row: span 1; height: 240px; }
+    .hero-dark { padding: 56px 0 72px; }
+  }
+  @media (max-width: 600px) {
+    .impact-grid, .prog-grid, .findings-grid, .all-programs-grid, .stories-grid, .role-cta-grid, .diff-grid, .explore-grid { grid-template-columns: 1fr; }
+    .prog-mini-grid { grid-template-columns: 1fr 1fr; }
+    .step-tabs { grid-template-columns: 1fr 1fr; }
+    .gallery-grid { grid-template-columns: 1fr; }
+    .footer-inner { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="logo" href="#/">Connect <span>by Dimagi</span></a>
+    <nav id="primary-nav">
+      <a href="#/" data-route="/">Home</a>
+      <a href="#/how-it-works" data-route="/how-it-works">How It Works</a>
+      <a href="#/programs" data-route="/programs">Programs</a>
+      <a href="#/sign-up" data-route="/sign-up">Connect Network</a>
+      <a href="https://connect.dimagi.com/accounts/signup/" class="cta cta-ghost" target="_blank" rel="noopener">Sign Up</a>
+      <a href="{{ app_login_url }}" class="cta">Login</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ================================ HOME ================================ -->
+<section class="page" data-page="/">
+
+  <!-- Hero (single column, no video) -->
+  <div class="hero-dark">
+    <div class="wrap">
+      <span class="eyebrow on-dark">Connect by Dimagi</span>
+      <h1>Pay for verified service delivery, <em>not planned activity</em>.</h1>
+      <p class="lede">Connect delivers high-impact interventions in the places where the need is strongest — through a marketplace of local, government-aligned organizations, with every service independently verified the moment it's done.</p>
+      <div class="hero-actions">
+        <a href="#/" class="btn primary">Request a Demo</a>
+        <a href="#/how-it-works" class="btn ghost on-dark">See how it works →</a>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Scale</span>
+          <div class="hero-stats-items">
+            <div><div class="num">200+</div><div class="label">Frontline Organizations</div></div>
+            <div><div class="num">5,000+</div><div class="label">Users trained</div></div>
+            <div><div class="num">13</div><div class="label">Countries</div></div>
+          </div>
+        </div>
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Impact</span>
+          <div class="hero-stats-items">
+            <div><div class="num">1M+</div><div class="label">Verified services delivered</div></div>
+            <div><div class="num">$2M+</div><div class="label">Paid to frontline workers</div></div>
+            <div><div class="num">22%</div><div class="label">Cost reduction per visit</div></div>
+            <div><div class="num">94%</div><div class="label">Population coverage</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- What's different — old way vs Connect comparison table -->
+  <div class="section no-border">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">What's different</span>
+          <h2>Verified delivery, <em>service by service</em>.</h2>
+          <p class="sub">For decades, funders have paid for planned activity and hoped it added up. Connect changes the unit of work, the source of proof, and who can be funded directly.</p>
+        </div>
+      </div>
+
+      <div class="compare-table">
+        <div class="compare-header old">The old way</div>
+        <div class="compare-header new">Connect</div>
+
+        <div class="compare-cell old">Pay for activity — workshops held, plans filed, reports submitted.</div>
+        <div class="compare-cell new"><strong>Pay for delivery</strong> — every service rendered to a real person, verified before payment.</div>
+
+        <div class="compare-cell old">Trust the implementer to report on whether the work happened.</div>
+        <div class="compare-cell new">The platform <strong>independently verifies every service</strong> — not the provider being paid.</div>
+
+        <div class="compare-cell old">Bet on a single organization per program. Fixed price, no competition.</div>
+        <div class="compare-cell new">A <strong>marketplace of vetted local organizations</strong> bids on each program. Competition drives price down. Resilience replaces dependency.</div>
+
+        <div class="compare-cell old">Wait until the program ends to see what was delivered.</div>
+        <div class="compare-cell new">See <strong>every service as it's delivered</strong>. Service-level data from day one.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Explore — 2 cards (How it works + Programs) -->
+  <div class="section warm">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">Explore</span>
+          <h2>Take a closer <em>look</em>.</h2>
+        </div>
+      </div>
+
+      <div class="explore-grid">
+        <a class="explore-card" href="#/how-it-works">
+          <span class="explore-tag">How it works</span>
+          <h4>See the marketplace in motion.</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; margin: 0; flex-grow: 1;">Walk through the cycle: a funder commissions a program, vetted local organizations bid on it, services get delivered, the platform verifies each one, payment moves on confirmation.</p>
+          <span class="explore-link">See how it works →</span>
+        </a>
+        <a class="explore-card" href="#/programs">
+          <span class="explore-tag">Programs</span>
+          <h4>A Growing Portfolio of Programs &amp; Geographies.</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; margin: 0; flex-grow: 1;">From kangaroo mother care to child health campaigns to wasting treatment — explore the high-impact interventions running on Connect today.</p>
+          <span class="explore-link">See the programs →</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- (deprecated holistic-visual + programs-locations section, hidden from view) -->
+  <div style="display: none;" aria-hidden="true">
+      <div class="holistic-visual">
+        <svg viewBox="0 0 1200 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The four-step Connect cycle: Learn, Deliver, Verify, Pay">
+          <defs>
+            <linearGradient id="flowG" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#14103A"/>
+              <stop offset="50%" stop-color="#3843D0"/>
+              <stop offset="100%" stop-color="#8EA1FF"/>
+            </linearGradient>
+            <radialGradient id="bgG" cx="0.5" cy="0.6" r="0.7">
+              <stop offset="0%" stop-color="#3843D0" stop-opacity="0.05"/>
+              <stop offset="100%" stop-color="#3843D0" stop-opacity="0"/>
+            </radialGradient>
+            <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+              <feOffset dx="0" dy="4" result="off"/>
+              <feComponentTransfer><feFuncA type="linear" slope="0.18"/></feComponentTransfer>
+              <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <marker id="arrowFwd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#3843D0"/>
+            </marker>
+            <marker id="arrowBack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+              <path d="M0,0 L10,5 L0,10 z" fill="#8EA1FF"/>
+            </marker>
+          </defs>
+
+          <ellipse cx="600" cy="320" rx="540" ry="220" fill="url(#bgG)"/>
+
+          <path d="M 1000 218 C 1000 70, 800 30, 600 30 C 400 30, 200 70, 200 218"
+                fill="none" stroke="#C9CCE0" stroke-width="1.5"
+                stroke-dasharray="5 5"
+                marker-end="url(#arrowBack)"/>
+          <text x="600" y="56" text-anchor="middle"
+                font-family="JetBrains Mono, monospace"
+                font-size="11" fill="#6B7388"
+                letter-spacing="2">VERIFIED OUTCOME → NEXT CAMPAIGN BUDGET</text>
+
+          <g font-family="JetBrains Mono, monospace" font-size="11" letter-spacing="2" fill="#3843D0" font-weight="600">
+            <text x="200" y="190" text-anchor="middle">STEP 01</text>
+            <text x="466" y="190" text-anchor="middle">STEP 02</text>
+            <text x="734" y="190" text-anchor="middle">STEP 03</text>
+            <text x="1000" y="190" text-anchor="middle">STEP 04</text>
+          </g>
+
+          <path d="M 263 280 Q 333 220 405 280 L 528 280 Q 600 340 672 280 L 794 280 Q 866 220 937 280"
+                fill="none" stroke="url(#flowG)" stroke-width="2.5"
+                stroke-dasharray="6 5"
+                marker-end="url(#arrowFwd)"/>
+
+          <g transform="translate(200 280)" filter="url(#softShadow)">
+            <circle r="62" fill="#FFFFFF" stroke="#3843D0" stroke-width="2"/>
+            <g stroke="#3843D0" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M-22 -10 L-22 12 L0 7 L22 12 L22 -10 L0 -5 Z"/>
+              <line x1="0" y1="-5" x2="0" y2="7"/>
+            </g>
+          </g>
+          <text x="200" y="382" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="500" fill="#0A0620">Learn</text>
+          <text x="200" y="408" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="400" fill="#4A5468">Train + assess</text>
+          <text x="200" y="442" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="600" fill="#3843D0">88% pass first visit</text>
+
+          <g transform="translate(466 280)" filter="url(#softShadow)">
+            <circle r="62" fill="#FFFFFF" stroke="#3843D0" stroke-width="2"/>
+            <g stroke="#3843D0" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M-22 8 L-22 -4 L0 -22 L22 -4 L22 8 Z"/>
+              <path d="M-7 8 L-7 -8 L7 -8 L7 8"/>
+            </g>
+          </g>
+          <text x="466" y="382" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="500" fill="#0A0620">Deliver</text>
+          <text x="466" y="408" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="400" fill="#4A5468">Local partners run visits</text>
+          <text x="466" y="442" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="600" fill="#3843D0">880K+ visits in 14 mo</text>
+
+          <g transform="translate(734 280)" filter="url(#softShadow)">
+            <circle r="62" fill="#FFFFFF" stroke="#3843D0" stroke-width="2"/>
+            <g stroke="#3843D0" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+              <path d="M0 -22 L-20 -14 L-20 4 L0 22 L20 4 L20 -14 Z"/>
+              <path d="M-9 -1 L-3 5 L9 -7" stroke-width="2.5"/>
+            </g>
+          </g>
+          <text x="734" y="382" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="500" fill="#0A0620">Verify</text>
+          <text x="734" y="408" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="400" fill="#4A5468">Four checks per visit</text>
+          <text x="734" y="442" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="600" fill="#3843D0">97.5% beat fakers</text>
+
+          <g transform="translate(1000 280)" filter="url(#softShadow)">
+            <circle r="62" fill="#3843D0" stroke="#3843D0" stroke-width="2"/>
+            <text x="0" y="13" text-anchor="middle" font-family="Work Sans" font-size="44" font-weight="600" fill="#FFFFFF">$</text>
+          </g>
+          <text x="1000" y="382" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="500" fill="#0A0620">Pay</text>
+          <text x="1000" y="408" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="400" fill="#4A5468">Mobile money on confirm</text>
+          <text x="1000" y="442" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="600" fill="#3843D0">$1.70 per visit</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- Programs &amp; Locations (hidden — replaced by Explore section above) -->
+  <div class="section warm" style="display: none;" aria-hidden="true">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">Programs &amp; places</span>
+          <h2>
+            <span class="h-stack">Pick a program.</span>
+            <span class="h-stack"><em>Pick a place.</em></span>
+          </h2>
+          <p class="sub">Ten programs across thirteen countries, with 200+ partner organizations on the ground. Same four-step cycle behind all of it.</p>
+        </div>
+      </div>
+
+      <div class="programs-locations">
+        <div class="pl-col">
+          <h5>Programs · 10</h5>
+          <div class="prog-mini-grid programs-narrow">
+            <a class="prog-mini" href="#/programs">
+              <span class="sector">Child Health</span>
+              <h4>Child Health Campaign</h4>
+            </a>
+            <a class="prog-mini" href="#/programs">
+              <span class="sector">Newborn Care</span>
+              <h4>Kangaroo Mother Care</h4>
+            </a>
+            <a class="prog-mini" href="#/programs">
+              <span class="sector">Parenting</span>
+              <h4>Early Childhood Development</h4>
+            </a>
+            <a class="prog-mini" href="#/programs">
+              <span class="sector">Vision</span>
+              <h4>Reading Glasses</h4>
+            </a>
+            <a class="prog-mini is-soon" href="#/programs">
+              <span class="sector">Maternal Health</span>
+              <h4>Mother-Baby Wellness</h4>
+              <span class="badge-soon">Coming soon</span>
+            </a>
+            <a class="prog-mini is-soon" href="#/programs">
+              <span class="sector">Water &amp; Sanitation</span>
+              <h4>Chlorine Dispenser</h4>
+              <span class="badge-soon">Coming soon</span>
+            </a>
+            <a class="prog-mini is-soon" href="#/programs">
+              <span class="sector">Mental Health</span>
+              <h4>Mental Health</h4>
+              <span class="badge-soon">Coming soon</span>
+            </a>
+            <a class="prog-mini is-soon" href="#/programs">
+              <span class="sector">Nutrition</span>
+              <h4>Therapeutic Food</h4>
+              <span class="badge-soon">Coming soon</span>
+            </a>
+            <a class="prog-mini is-soon" href="#/programs">
+              <span class="sector">Research</span>
+              <h4>Survey &amp; Data Collection</h4>
+              <span class="badge-soon">Coming soon</span>
+            </a>
+            <a class="prog-mini is-soon" href="#/programs">
+              <span class="sector">Environment</span>
+              <h4>Rooftop Sampling</h4>
+              <span class="badge-soon">Coming soon</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="pl-col">
+          <h5>Countries · 13</h5>
+          <div class="locations-panel">
+            <div class="location-row">
+              <span class="country">Nigeria</span>
+              <span class="count is-multi">7 programs</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Democratic Republic of the Congo</span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Kenya</span>
+              <span class="count is-multi">2 programs</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Sierra Leone</span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Uganda</span>
+              <span class="count is-multi">3 programs</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Malawi</span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">United Republic of Tanzania</span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">India</span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Ethiopia <span class="sub">launching</span></span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Mozambique <span class="sub">launching</span></span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Liberia <span class="sub">launching</span></span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Zambia</span>
+              <span class="count">1 program</span>
+            </div>
+            <div class="location-row">
+              <span class="country">Central African Republic <span class="sub">launching</span></span>
+              <span class="count">1 program</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 36px;">
+        <a href="#/programs" class="btn ghost">Read about all programs →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ready when you are — closing CTA on home -->
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">Ready when you are</span>
+      <h2>Talk to our <em>team</em>.</h2>
+      <p class="lead">Whether you're funding a new campaign, designing a program, or running services on the ground — let's see if Connect fits.</p>
+      <a href="https://jjackson.github.io/connect-website/v11/index.html#contact" class="btn primary" target="_blank" rel="noopener">Request a Demo</a>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================================ HOW IT WORKS ================================ -->
+<section class="page" data-page="/how-it-works">
+
+  <div class="wrap">
+    <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span>How It Works</div>
+
+    <div class="hero hero-with-video">
+      <div>
+        <span class="eyebrow">How Connect works</span>
+        <h1>
+          <span class="h-stack">You Pick.</span>
+          <span class="h-stack"><em>Connect Delivers</em>.</span>
+        </h1>
+        <p class="lede">Connect is a two-sided marketplace. Funders pick the intervention, the geography, and the amount. We deliver — fast, cost-effectively, verified at every step.</p>
+      </div>
+      <div class="video-frame">
+        <div class="video-meta">
+          <span class="vt">Connect by Dimagi · Field documentary</span>
+          <span class="vc">Watch</span>
+        </div>
+        <div class="video-wrap">
+          <iframe
+            src="https://www.youtube-nocookie.com/embed/eyDDRv-v1Bk?rel=0&modestbranding=1"
+            title="Connect by Dimagi — Field documentary"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            loading="lazy">
+          </iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-Sided Marketplace -->
+  <div class="section warm">
+    <div class="wrap">
+      <div class="sec-head" style="text-align: center; justify-content: center;">
+        <div class="label-group" style="margin: 0 auto;">
+          <span class="eyebrow" style="justify-content: center;">The model</span>
+          <h2>Connect: <em>The Two-Sided Marketplace for Impact</em>.</h2>
+          <p class="sub" style="margin-left: auto; margin-right: auto; max-width: 60ch; text-align: center;">Funders pick what to fund and where. We find the best way to deliver it.</p>
+        </div>
+      </div>
+
+      <div class="two-sided-market">
+        <!-- Funder side -->
+        <div class="market-side market-side-funder">
+          <div class="market-side-header">
+            <span class="role-tag">Funders</span>
+            <h3>You pick the <em>intervention</em>, <em>country</em>, &amp; <em>amount</em>.</h3>
+          </div>
+          <div class="picker-set">
+            <div class="picker-list">
+              <h6>Intervention</h6>
+              <div class="picker-scroll" data-cycle="1">
+                <button class="picker-item is-active">Child Health Campaign</button>
+                <button class="picker-item">Kangaroo Mother Care</button>
+                <button class="picker-item">Early Childhood Development</button>
+                <button class="picker-item">Reading Glasses</button>
+                <button class="picker-item">Mother-Baby Wellness</button>
+                <button class="picker-item">Chlorine Dispenser</button>
+                <button class="picker-item">Mental Health</button>
+                <button class="picker-item">Therapeutic Food</button>
+                <button class="picker-item">Survey &amp; Data Collection</button>
+                <button class="picker-item">Rooftop Sampling</button>
+                <button class="picker-item picker-item-new">+ A New Intervention</button>
+              </div>
+            </div>
+            <div class="picker-list">
+              <h6>Country</h6>
+              <div class="picker-scroll" data-cycle="1">
+                <button class="picker-item is-active">Nigeria</button>
+                <button class="picker-item">Democratic Republic of the Congo</button>
+                <button class="picker-item">Kenya</button>
+                <button class="picker-item">Sierra Leone</button>
+                <button class="picker-item">Uganda</button>
+                <button class="picker-item">Malawi</button>
+                <button class="picker-item">United Republic of Tanzania</button>
+                <button class="picker-item">India</button>
+                <button class="picker-item">Ethiopia</button>
+                <button class="picker-item">Mozambique</button>
+                <button class="picker-item">Liberia</button>
+                <button class="picker-item">Zambia</button>
+                <button class="picker-item">Central African Republic</button>
+                <button class="picker-item picker-item-new">+ New Country</button>
+              </div>
+            </div>
+            <div class="picker-list">
+              <h6>Amount</h6>
+              <div class="picker-scroll" data-cycle="1">
+                <button class="picker-item is-active">$10K</button>
+                <button class="picker-item">$20K</button>
+                <button class="picker-item">$50K</button>
+                <button class="picker-item">$100K</button>
+                <button class="picker-item">$200K</button>
+                <button class="picker-item">$500K</button>
+                <button class="picker-item">$1 Million</button>
+                <button class="picker-item picker-item-new">+ Other Amount</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Connect Platform side -->
+        <div class="market-side market-side-platform">
+          <div class="market-side-header">
+            <span class="role-tag">Connect Platform</span>
+            <h3>We find the best way to <em>deliver your impact</em>.</h3>
+          </div>
+          <div class="platform-promise">
+            <div class="promise-item">
+              <div class="promise-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  <path d="M9 12l2 2 4-4"/>
+                </svg>
+              </div>
+              <div class="promise-text">
+                <h4>High Quality Frontline Delivery</h4>
+                <p>Qualified frontline organizations on the ground, with four-layer verification on every visit.</p>
+                <div class="promise-stat">94% population coverage</div>
+              </div>
+            </div>
+            <div class="promise-item">
+              <div class="promise-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+                  <line x1="12" y1="2" x2="12" y2="22"/>
+                  <path d="M17 6h-7a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H7"/>
+                </svg>
+              </div>
+              <div class="promise-text">
+                <h4>Cost-effectively</h4>
+                <p>Performance-based contracts. Lean local partners. Cost falls as we scale.</p>
+                <div class="promise-stat">$1.70 per verified visit</div>
+              </div>
+            </div>
+            <div class="promise-item">
+              <div class="promise-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+              </div>
+              <div class="promise-text">
+                <h4>Fastest timeline</h4>
+                <p>From signed contract to frontline workers in the field — in days, not months.</p>
+                <div class="promise-stat">10 days to first deployment</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Four Steps to Verified Impact (cycle visual) -->
+  <div class="section">
+    <div class="wrap">
+      <div class="sec-head" style="text-align: center; justify-content: center;">
+        <div class="label-group" style="margin: 0 auto;">
+          <span class="eyebrow" style="justify-content: center;">The cycle</span>
+          <h2>How Frontline Workers Use <em>Connect in 4 Steps</em>.</h2>
+          <p class="sub" style="margin-left: auto; margin-right: auto; max-width: 64ch; text-align: center;">Once recruited for a job in a specific country, qualified frontline organizations move their workers through four clear steps — train, deliver every service, verify each visit, and get paid the moment work is confirmed.</p>
+        </div>
+      </div>
+      <div class="cycle-panel-combined">
+      <div class="cycle-svg-area">
+      <svg viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+        <defs>
+          <linearGradient id="grdHIW" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#16006D"/>
+            <stop offset="33%" stop-color="#5D70D2"/>
+            <stop offset="66%" stop-color="#FC5F36"/>
+            <stop offset="100%" stop-color="#1B998B"/>
+          </linearGradient>
+          <marker id="arrFwd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#1B998B"/>
+          </marker>
+          <marker id="arrBack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#C9CCE0"/>
+          </marker>
+        </defs>
+
+        <!-- Top-of-graphic captions -->
+        <text x="40" y="32" font-family="JetBrains Mono, monospace" font-size="11" fill="#3843D0" letter-spacing="1.5" font-weight="600">CLICK A STEP TO SEE ITS DETAIL →</text>
+        <text x="1160" y="32" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#6B7388" letter-spacing="1.5">VERIFIED OUTCOME ↻ NEXT CAMPAIGN</text>
+
+        <!-- Return arc curving over the top -->
+        <path d="M 1000 168 C 1000 90, 800 60, 600 60 C 400 60, 200 90, 200 168" fill="none" stroke="#C9CCE0" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrBack)"/>
+
+        <!-- Forward connecting flow through the circles -->
+        <path d="M 263 230 Q 333 195 405 230 L 528 230 Q 600 270 672 230 L 794 230 Q 866 195 937 230" fill="none" stroke="url(#grdHIW)" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#arrFwd)"/>
+
+        <!-- Number badges above each circle, colored to match step -->
+        <g font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" letter-spacing="0.05em">
+          <text x="200" y="185" text-anchor="middle" fill="#16006D">01</text>
+          <text x="466" y="185" text-anchor="middle" fill="#5D70D2">02</text>
+          <text x="734" y="185" text-anchor="middle" fill="#FC5F36">03</text>
+          <text x="1000" y="185" text-anchor="middle" fill="#1B998B">04</text>
+        </g>
+
+        <!-- Learn (active by default — filled) -->
+        <g class="cycle-node-group" data-step="learn">
+          <circle cx="200" cy="230" r="58" fill="#16006D" stroke="#16006D" stroke-width="2"/>
+          <g class="cycle-icon" transform="translate(200 230)" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+            <!-- Classroom whiteboard with text marks -->
+            <rect x="-22" y="-13" width="44" height="22" rx="2"/>
+            <line x1="-15" y1="-7" x2="2" y2="-7"/>
+            <line x1="-15" y1="-1" x2="13" y2="-1"/>
+            <line x1="-15" y1="5" x2="-2" y2="5"/>
+            <line x1="-12" y1="9" x2="-12" y2="14"/>
+            <line x1="12" y1="9" x2="12" y2="14"/>
+          </g>
+        </g>
+        <text x="200" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Learn</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="200" y="358" text-anchor="middle">Frontline workers train on their phones</text>
+          <text x="200" y="378" text-anchor="middle">and pass an in-app assessment.</text>
+        </g>
+
+        <!-- Deliver -->
+        <g class="cycle-node-group" data-step="deliver">
+          <circle cx="466" cy="230" r="58" fill="#FFFFFF" stroke="#5D70D2" stroke-width="2"/>
+          <g class="cycle-icon" transform="translate(466 230)" stroke="#5D70D2" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+            <!-- Heart with healthcare plus inside (care delivery) -->
+            <path d="M0 14 C -16 0, -16 -14, -8 -14 C -4 -14, 0 -10, 0 -6 C 0 -10, 4 -14, 8 -14 C 16 -14, 16 0, 0 14 Z"/>
+            <line x1="-4" y1="-3" x2="4" y2="-3" stroke-width="2.4"/>
+            <line x1="0" y1="-7" x2="0" y2="1" stroke-width="2.4"/>
+          </g>
+        </g>
+        <text x="466" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Deliver</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="466" y="358" text-anchor="middle">Locally-led organizations run every</text>
+          <text x="466" y="378" text-anchor="middle">visit, with the app guiding every step.</text>
+        </g>
+
+        <!-- Verify -->
+        <g class="cycle-node-group" data-step="verify">
+          <circle cx="734" cy="230" r="58" fill="#FFFFFF" stroke="#FC5F36" stroke-width="2"/>
+          <g class="cycle-icon" transform="translate(734 230)" stroke="#FC5F36" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+            <path d="M0 -22 L-20 -14 L-20 4 L0 22 L20 4 L20 -14 Z"/>
+            <path d="M-9 -1 L-3 5 L9 -7" stroke-width="2.5"/>
+          </g>
+        </g>
+        <text x="734" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Verify</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="734" y="358" text-anchor="middle">Four independent checks confirm each</text>
+          <text x="734" y="378" text-anchor="middle">visit — biometric, GPS, photo, model.</text>
+        </g>
+
+        <!-- Pay -->
+        <g class="cycle-node-group" data-step="pay">
+          <circle cx="1000" cy="230" r="58" fill="#FFFFFF" stroke="#1B998B" stroke-width="2"/>
+          <text class="cycle-icon" x="1000" y="246" text-anchor="middle" font-family="Work Sans" font-size="44" font-weight="700" fill="#1B998B">$</text>
+        </g>
+        <text x="1000" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Pay</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="1000" y="358" text-anchor="middle">Mobile money flows the moment</text>
+          <text x="1000" y="378" text-anchor="middle">a service is verified.</text>
+        </g>
+      </svg>
+      </div>
+      <!-- Step tabs + details inside the same combined panel -->
+      <div class="step-detail-wrap" id="step-detail-wrap">
+      <div class="step-tabs" id="step-tabs">
+        <button class="step-tab active" data-step="learn"><span class="step-bubble">1</span><span class="name">Learn</span></button>
+        <button class="step-tab" data-step="deliver"><span class="step-bubble">2</span><span class="name">Deliver</span></button>
+        <button class="step-tab" data-step="verify"><span class="step-bubble">3</span><span class="name">Verify</span></button>
+        <button class="step-tab" data-step="pay"><span class="step-bubble">4</span><span class="name">Pay</span></button>
+      </div>
+
+      <div class="step-detail active" data-step="learn">
+        <div class="left">
+          <h3>Workers train on a phone, then <em>prove it works</em>.</h3>
+          <p class="lede">Five layers instead of one — self-paced lessons, an in-app test, a daily AI coach, peer practice, and a supervised first visit. We added the layers because the test alone wasn't enough.</p>
+          <p class="pull">"We were picking people who could pass a test. Not people who could make a hesitant mother feel heard."</p>
+        </div>
+        <div class="right">
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">85%</div><div class="l">Move from training to delivery</div></div>
+            <div class="ps"><div class="n">88%</div><div class="l">Pass first observed visit</div></div>
+            <div class="ps"><div class="n">~400</div><div class="l">Workers in validation cohort</div></div>
+          </div>
+        </div>
+        <div class="step-insights">
+          <div class="step-insights-label">Insights from Learn</div>
+          <div class="step-insight-grid">
+            <div class="step-insight-card">
+              <div class="program-tag">Platform · Training</div>
+              <h5>Knowledge isn't the same as competence. We have ~400 frontline workers of evidence.</h5>
+              <p>Workers who passed our digital test still struggled with real visits. So we layered: self-paced lessons, an in-app test, a daily AI coach, peer practice, and a supervised first visit. 85% move from training to delivery.</p>
+              <div class="src">Source: Early Childhood Development Overview, Stage 2 Report</div>
+            </div>
+            <div class="step-insight-card">
+              <div class="program-tag">Early Childhood Development</div>
+              <h5>Caregivers' parenting attitudes were already correct. We moved knowledge +33% and observed teaching +21%.</h5>
+              <p>A 50-caregiver baseline showed nearly all caregivers already endorsed responsive caregiving. The intervention's actual job was knowledge and behavior — and that's what moved.</p>
+              <div class="src">Source: Malawi pilot, Feb 2026</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-detail" data-step="deliver">
+        <div class="left">
+          <h3>Local partners run delivery. <em>We provide the rails.</em></h3>
+          <p class="lede">Locally-led organizations know their communities best. We provide the app, the verification, and the payment system, and they bring the relationships, the supervisors, and the trust.</p>
+          <p class="pull">"5 of 7 partner organizations brought religious leaders into vaccine outreach before we asked. They already knew. The platform's job is to get out of the way."</p>
+        </div>
+        <div class="right">
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">880K+</div><div class="l">Visits in 14 months</div></div>
+            <div class="ps"><div class="n">44</div><div class="l">Partner organizations</div></div>
+            <div class="ps"><div class="n">65%</div><div class="l">Trial Run pass rate</div></div>
+          </div>
+        </div>
+        <div class="step-insights">
+          <div class="step-insights-label">Insights from Deliver</div>
+          <div class="step-insight-grid">
+            <div class="step-insight-card">
+              <div class="program-tag">Child Health Campaign · Partner model</div>
+              <h5>We invented the Trial Run because pre-vetting partners didn't predict performance.</h5>
+              <p>Past reputation, team size, references — none of it told us if a partner would actually deliver. So we contracted small first. Of 37 partners, 24 ran Trial Runs. 10 underperformed. 3 went straight to scale on prior evidence.</p>
+              <div class="src">Source: Founders Pledge Final Report</div>
+            </div>
+            <div class="step-insight-card">
+              <div class="program-tag">Child Health Campaign · Local knowledge</div>
+              <h5>5 of 7 partner organizations leveraged religious leaders for vaccine outreach before we asked.</h5>
+              <p>Partner organizations independently mobilized imams, pastors, village elders, and community-recommended workers. The platform didn't teach this — they already knew. Our job is to get out of their way.</p>
+              <div class="src">Source: Stage 2 Report (Feb 2026)</div>
+            </div>
+            <div class="step-insight-card">
+              <div class="program-tag">Kangaroo Mother Care · National scale</div>
+              <h5>Two partners and Uganda's Ministry of Health signed an agreement to scale to 50,000 vulnerable newborns over two years.</h5>
+              <p>The Ministry is participating in working groups, quarterly reviews, and contributing data to Uganda's national neonatal plan. Next step: government co-funding at $10–20 per case.</p>
+              <div class="src">Source: GiveWell-shared 2-page proposal (April 2026)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-detail" data-step="verify">
+        <div class="left">
+          <h3>Four checks per visit. <em>A fake has to beat all of them.</em></h3>
+          <p class="lede">Biometric ID, GPS at the right house at the right time, a photo, and a model that flags unusual patterns — each check uses different signal, so faking becomes harder than just doing the work.</p>
+          <p class="pull">"We paid people to fake records and offered bonuses for the most convincing fakes. The model still caught them, on three data fields alone."</p>
+        </div>
+        <div class="right">
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">94%</div><div class="l">Population coverage with map grids</div></div>
+            <div class="ps"><div class="n">3.5×</div><div class="l">More visits per child</div></div>
+            <div class="ps"><div class="n">97.5%</div><div class="l">Real workers cleaner than fakers</div></div>
+          </div>
+        </div>
+        <div class="step-insights">
+          <div class="step-insights-label">Insights from Verify</div>
+          <div class="step-insight-grid">
+            <div class="step-insight-card">
+              <div class="program-tag">Child Health Campaign</div>
+              <h5>97.5% of real workers scored cleaner than the lowest-scoring paid faker.</h5>
+              <p>We paid frontline workers to fake 100 visit records each across three rounds, with bonuses on the top 25%. A model trained on three data fields hit AUC 0.91 — only 2.5% of real workers looked as suspicious as the worst fabricator.</p>
+              <div class="src">Source: Founders Pledge Final Report (Feb 2026)</div>
+            </div>
+            <div class="step-insight-card">
+              <div class="program-tag">Child Health Campaign · Coverage</div>
+              <h5>Map grids tripled visits per child — 0.4 to 1.4 — and pushed coverage from 84% to 94%.</h5>
+              <p>Without a grid, frontline workers cherry-picked easy houses. With a grid forcing them to close every Delivery Unit before unlocking the next area, equity stopped being a slogan and became a number.</p>
+              <div class="src">Source: Founders Pledge Final Report</div>
+            </div>
+            <div class="step-insight-card">
+              <div class="program-tag">Kangaroo Mother Care · Honest data</div>
+              <h5>Kangaroo Mother Care 3-day target sits at 50% against a 70% goal. We publish the gap.</h5>
+              <p>If missing the 3-day window cost a worker money, they'd falsify dates and we'd see fake 100% compliance. So we treat it as a guardrail, not a payment criterion. We coach. We integrate hospital discharge notifications.</p>
+              <div class="src">Source: Conceptual Model (March 2026)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-detail" data-step="pay">
+        <div class="left">
+          <h3>Mobile money. <em>Funders see cost per outcome.</em></h3>
+          <p class="lede">Money flows the moment the work is verified — no middlemen, no delays. And as the program scaled, cost per visit fell 22%, when most programs go the other way.</p>
+          <p class="pull">"Most cost ceilings come from the way a program is built. To break the ceiling, you have to redesign the system, not the budget."</p>
+        </div>
+        <div class="right">
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">$1.70</div><div class="l">Per verified visit (was $2.20)</div></div>
+            <div class="ps"><div class="n">22%</div><div class="l">Cost reduction at scale</div></div>
+            <div class="ps"><div class="n">$2M+</div><div class="l">Paid direct to workers</div></div>
+          </div>
+        </div>
+        <div class="step-insights">
+          <div class="step-insights-label">Insights from Pay</div>
+          <div class="step-insight-grid">
+            <div class="step-insight-card">
+              <div class="program-tag">Child Health Campaign · Cost</div>
+              <h5>Cost per verified visit fell 22% — from $2.20 to $1.70 — as the program scaled.</h5>
+              <p>Most programs report cost-per-worker-trained because it's easier. We report cost-per-verified-outcome because the others hide the lever that matters. Nigeria with oral rehydration salts: $1.30. Outside Nigeria: $0.78.</p>
+              <div class="src">Source: Founders Pledge Final Report</div>
+            </div>
+            <div class="step-insight-card">
+              <div class="program-tag">Kangaroo Mother Care · Donor unit</div>
+              <h5>Connect Kangaroo Mother Care is $36 per newborn — small enough that one donor can fund one baby.</h5>
+              <p>Covers partner engagement, the Kangaroo wraps, scales, thermometers, pulse oximeters, training, payment per verified case, and supervision. The smallest unit at which one donor can fund a complete intervention with verified delivery.</p>
+              <div class="src">Source: Connect individual-giving blog (March-April 2026)</div>
+            </div>
+            <div class="step-insight-card">
+              <div class="program-tag">Reading Glasses · Hard finding</div>
+              <h5>Reading Glasses Q4 2025 Nigeria delivered 15,000 pairs at $1.50 — and only ~35 were first-time corrections.</h5>
+              <p>The cohort hit its target across two partners in 16 weeks. Photo audit: 92%. The harder finding: the door-to-door population was largely already aware of their presbyopia. Our model of who needs reading glasses was wrong.</p>
+              <div class="src">Source: Connect-Readers KPIs sheet (March 2026)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Photo gallery -->
+  <div class="section">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">From the field</span>
+          <h2>Stories <em>on the ground</em>.</h2>
+          <p class="sub">Frontline workers in their communities. Partner organizations running supervisions. Children getting screened, vaccinated, weighed.</p>
+        </div>
+      </div>
+      <div class="gallery-grid">
+        <div class="photo-block ph-field-1 gallery-tall">
+          <span class="photo-label">Photo · Vaccination day, Kano State</span>
+        </div>
+        <div class="photo-block ph-field-2">
+          <span class="photo-label">Photo · Newborn home visit</span>
+        </div>
+        <div class="photo-block ph-field-3">
+          <span class="photo-label">Photo · Worker training, Lagos</span>
+        </div>
+        <div class="photo-block ph-field-4">
+          <span class="photo-label">Photo · Microplan grid review</span>
+        </div>
+        <div class="photo-block ph-field-5">
+          <span class="photo-label">Photo · Parenting visit, Malawi</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Closing CTA -->
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">For Frontline Workers &amp; Organizations</span>
+      <h2>Deliver outcomes <em>with Connect</em>.</h2>
+      <p class="lead">See where Connect is live, read partner stories, download the app for paid opportunities, or sign up your organization to start delivering.</p>
+      <a href="#/sign-up" class="btn primary">Join the Connect network →</a>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================================ INSIGHTS (deprecated — content moved to How It Works LDVP tabs) ================================ -->
+<section class="page" data-page="/insights" style="display: none;" aria-hidden="true">
+
+  <div class="wrap">
+    <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span>Insights</div>
+
+    <div class="hero">
+      <span class="eyebrow">Public insights log</span>
+      <h1>Every claim, <em>scoped to its evidence</em>.</h1>
+      <p class="lede">Plain claims. Linked to a source. Each entry is a thing we are willing to put on the public record. The methodology note at the bottom explains what makes the cut.</p>
+    </div>
+
+    <div class="filter-block">
+      <span class="filter-label">Program Type</span>
+      <div class="filter-pills" data-filter-group="program">
+        <button class="pill active" data-filter-type="program" data-filter-value="all">All</button>
+        <button class="pill" data-filter-type="program" data-filter-value="chc">Child Health Campaign</button>
+        <button class="pill" data-filter-type="program" data-filter-value="kmc">Kangaroo Mother Care</button>
+        <button class="pill" data-filter-type="program" data-filter-value="ecd">Early Childhood Development</button>
+        <button class="pill" data-filter-type="program" data-filter-value="readers">Reading Glasses</button>
+      </div>
+    </div>
+    <div class="filter-block">
+      <span class="filter-label">LDVP Cycle</span>
+      <div class="filter-pills" data-filter-group="ldvp">
+        <button class="pill active" data-filter-type="ldvp" data-filter-value="all">All</button>
+        <button class="pill" data-filter-type="ldvp" data-filter-value="learn">Learn</button>
+        <button class="pill" data-filter-type="ldvp" data-filter-value="deliver">Deliver</button>
+        <button class="pill" data-filter-type="ldvp" data-filter-value="verify">Verify</button>
+        <button class="pill" data-filter-type="ldvp" data-filter-value="pay">Pay</button>
+      </div>
+    </div>
+
+    <div class="insight-list">
+
+      <article class="insight-row" data-programs="chc" data-ldvp="verify">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>LDVP Cycle</b>Verify
+        </div>
+        <div class="body">
+          <h4>97.5% of real workers scored cleaner than the lowest-scoring paid faker.</h4>
+          <p>We paid experienced frontline workers to fake 100 visit records each across three rounds, with a bonus on the top 25%. A model trained on three data fields hit AUC 0.91 — and only 2.5% of real workers looked as suspicious as the worst fabricator.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Founders Pledge Final Report (Feb 2026)</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="chc" data-ldvp="verify">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>LDVP Cycle</b>Verify
+        </div>
+        <div class="body">
+          <h4>Map grids tripled visits per child — 0.4 to 1.4 — and pushed coverage from 84% to 94%.</h4>
+          <p>Without a grid, frontline workers cherry-picked easy houses. With a grid forcing them to close every Delivery Unit before unlocking the next area, equity stopped being a slogan and became a number.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Founders Pledge Final Report</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="chc" data-ldvp="pay">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>LDVP Cycle</b>Pay
+        </div>
+        <div class="body">
+          <h4>Cost per verified visit fell 22% — from $2.20 to $1.70 — as the program scaled.</h4>
+          <p>Most programs report cost-per-worker-trained because it's easier. We report cost-per-verified-outcome because the others hide the lever that matters. Nigeria with oral rehydration salts: $1.30. Outside Nigeria with vitamin A and deworming only: $0.78.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Founders Pledge Final Report</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="chc platform" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>LDVP Cycle</b>Deliver
+        </div>
+        <div class="body">
+          <h4>We invented the Trial Run because pre-vetting partners didn't predict performance.</h4>
+          <p>Past reputation, team size, references — none of it told us if a partner organization would actually deliver. So we contracted small first. Of 37 partners, 24 ran Trial Runs. 10 underperformed. 3 went straight to scale on prior evidence.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Founders Pledge Final Report</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="platform" data-ldvp="learn">
+        <div class="meta-side">
+          <b>Program Type</b>Platform mechanism<br><br>
+          <b>LDVP Cycle</b>Learn
+        </div>
+        <div class="body">
+          <h4>Knowledge isn't the same as competence. We have ~400 frontline workers of evidence.</h4>
+          <p>Workers who passed our digital test still struggled with real visits. So we layered: self-paced lessons, an in-app test, a daily AI coach, peer practice, and a supervised first visit. 85% move from training to delivery. 88% score above 70% on their first observed visits.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Early Childhood Development Overview, Stage 2 Report</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="ecd" data-ldvp="learn">
+        <div class="meta-side">
+          <b>Program Type</b>Early Childhood Development<br><br>
+          <b>LDVP Cycle</b>Learn
+        </div>
+        <div class="body">
+          <h4>Caregivers' parenting attitudes were already correct. We moved knowledge +33% and observed teaching +21%.</h4>
+          <p>A 50-caregiver baseline showed nearly all caregivers already endorsed responsive caregiving. The intervention's actual job was knowledge and behavior — and that's what moved. We doubled the visit cadence in the next round.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Malawi pilot, Feb 2026</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="chc" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>LDVP Cycle</b>Deliver
+        </div>
+        <div class="body">
+          <h4>5 of 7 partner organizations leveraged religious leaders for vaccine outreach before we asked.</h4>
+          <p>Locally-Led Organizations independently mobilized imams, pastors, village elders, and community-recommended frontline workers. The platform didn't teach this — they already knew. Our job is to get out of their way.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Stage 2 Report (Feb 2026)</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="chc" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>LDVP Cycle</b>Deliver
+        </div>
+        <div class="body">
+          <h4>Both partners in the Central African Republic dropped out. We now flag fragile contexts as needing in-country presence.</h4>
+          <p>Remote coordination worked across Nigeria, Kenya, Uganda, Tanzania. It didn't hold in the Central African Republic. Staffing turnover and connectivity issues exited both contracted partners during setup. We publish the failure.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Founders Pledge Final Report</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="kmc" data-ldvp="verify">
+        <div class="meta-side">
+          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>LDVP Cycle</b>Verify
+        </div>
+        <div class="body">
+          <h4>Kangaroo Mother Care 3-day target sits at 50% against a 70% goal. We publish the gap.</h4>
+          <p>If missing the 3-day window cost a worker money, they'd falsify dates and we'd see fake 100% compliance. So we treat it as a guardrail, not a payment criterion. We coach. We integrate hospital discharge notifications. We publish the real number.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Conceptual Model (March 2026)</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="kmc" data-ldvp="verify">
+        <div class="meta-side">
+          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>LDVP Cycle</b>Verify
+        </div>
+        <div class="body">
+          <h4>Average time to first newborn visit is 6.05 days — twice our 3-day target. Only 34% reach families inside the window.</h4>
+          <p>The headline 50% number understates the gap. The true mean is 6.05 days. The bottleneck isn't worker effort — one of our delivery opportunities doesn't collect hospital discharge dates at all, so 100% of those records are blank on this metric. We publish all of it.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Conceptual Model V1 (March 2026)</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="kmc" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>LDVP Cycle</b>Deliver
+        </div>
+        <div class="body">
+          <h4>Two partner organizations and Uganda's Ministry of Health signed an agreement to scale to 50,000 vulnerable newborns over two years.</h4>
+          <p>The Ministry is participating in working groups, quarterly reviews, and site visits — and contributing data to Uganda's five-year national neonatal plan. The next step: government co-funding at $10–20 per case.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">GiveWell-shared 2-page proposal (April 2026)</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="kmc" data-ldvp="pay">
+        <div class="meta-side">
+          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>LDVP Cycle</b>Pay
+        </div>
+        <div class="body">
+          <h4>Connect Kangaroo Mother Care is $36 per newborn — small enough that one donor can fund one baby.</h4>
+          <p>That covers partner engagement, the Kangaroo wraps, scales, thermometers, pulse oximeters, training, payment per verified case, and supervision. We picked it for our first individual-giving experiment because $36 is the smallest unit at which one donor can fund a complete intervention with verified delivery.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Connect individual-giving blog (March-April 2026)</span>
+        </div>
+      </article>
+
+      <article class="insight-row" data-programs="readers" data-ldvp="pay">
+        <div class="meta-side">
+          <b>Program Type</b>Reading Glasses<br><br>
+          <b>LDVP Cycle</b>Pay
+        </div>
+        <div class="body">
+          <h4>Reading Glasses Q4 2025 Nigeria delivered 15,000 pairs at $1.50 — and only ~35 were first-time corrections.</h4>
+          <p>The cohort hit its target across two partner organizations in 16 weeks. Photo audit: 92%. Worker certification: 98%. The harder finding: the door-to-door population was largely already aware of their presbyopia. Our model of who needs reading glasses was wrong.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Connect-Readers KPIs sheet (March 2026)</span>
+        </div>
+      </article>
+
+    </div>
+
+    <div class="methodology">
+      <h4>A note on methodology</h4>
+      <p>Every entry above is a claim we have decided is honest, scoped, and worth putting on the public record. The cut is editorial. We keep what carries a number with a benchmark, what was published in a funder report or independent evaluation, and what comes with an open question we will name. We exclude headline scale numbers without context, marketing-friendly framings without source, and anything that hasn't survived a depth page yet.</p>
+      <p><b>Tier 1</b> entries are published in a funder report, an independent evaluation, or a public partner document. <b>Tier 2</b> entries are documented internally and cleared for public reference but haven't appeared in a third-party document yet.</p>
+    </div>
+  </div>
+
+  <div style="background: var(--ink); margin-top: 80px;">
+    <div class="final-cta">
+      <span class="eyebrow on-dark">For funders &amp; researchers</span>
+      <h2>The <em>numbers</em> behind every claim.</h2>
+      <p>Every insight links to its source. Email us if you'd like the underlying data.</p>
+      <a href="#/" class="btn primary">Request the data room</a>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================================ PROGRAMS ================================ -->
+<section class="page" data-page="/programs">
+
+  <div class="wrap">
+    <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span>Programs</div>
+
+    <div class="hero">
+      <span class="eyebrow">Ten programs · One platform</span>
+      <h1>Programs running on <em>Connect</em>.</h1>
+      <p class="lede">Each program is the same four-step cycle running a different intervention. Four are field-validated with case studies. Six are launching through 2026.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="wrap">
+      <div class="prog-jump-label">Jump to a program</div>
+      <div class="prog-jump" id="prog-jump-nav">
+        <button class="pill" data-target="prog-chc">Child Health Campaign</button>
+        <button class="pill" data-target="prog-kmc">Kangaroo Mother Care</button>
+        <button class="pill" data-target="prog-ecd">Early Childhood Development</button>
+        <button class="pill" data-target="prog-readers">Reading Glasses</button>
+        <button class="pill is-soon" data-target="prog-mbw">Mother-Baby Wellness</button>
+        <button class="pill is-soon" data-target="prog-chlorine">Chlorine Dispenser</button>
+        <button class="pill is-soon" data-target="prog-mental">Mental Health</button>
+        <button class="pill is-soon" data-target="prog-rutf">Therapeutic Food</button>
+        <button class="pill is-soon" data-target="prog-survey">Survey &amp; Data Collection</button>
+        <button class="pill is-soon" data-target="prog-rooftop">Rooftop Sampling</button>
+      </div>
+
+      <!-- Active programs (4) — 2 cols × 2 rows -->
+      <div class="all-programs-grid">
+
+        <a class="prog-card" id="prog-chc" href="#/programs">
+          <div class="photo-block ph-chc">
+            <span class="photo-label">Photo · Child Health field campaign, Nigeria</span>
+          </div>
+          <div class="body">
+            <span class="sector">Child Health</span>
+            <h3>Child Health Campaign</h3>
+            <p class="countries">Nigeria · DRC · Central African Republic · Kenya · Uganda · Tanzania · Zambia · Sierra Leone</p>
+            <p>Door-to-door vitamin A, deworming, oral rehydration salts, malnutrition screening, immunization promotion. Children under five.</p>
+            <div class="stat-strip">
+              <div class="ps"><div class="n">1M+</div><div class="l">Verified visits</div></div>
+              <div class="ps"><div class="n">8</div><div class="l">Countries</div></div>
+              <div class="ps"><div class="n">$1.70</div><div class="l">Per visit</div></div>
+            </div>
+            <div class="meta"><span>Funders: GiveWell · Founders Pledge · Gavi</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card" id="prog-kmc" href="#/programs">
+          <div class="photo-block ph-kmc">
+            <span class="photo-label">Photo · Newborn home visit, Uganda</span>
+          </div>
+          <div class="body">
+            <span class="sector">Newborn Care</span>
+            <h3>Kangaroo Mother Care</h3>
+            <p class="countries">Uganda · Kenya · India · Nigeria</p>
+            <p>Home visits for small and vulnerable newborns after they leave the hospital. 4 to 5 visits in the first 60 days. Closes the follow-up gap.</p>
+            <div class="stat-strip">
+              <div class="ps"><div class="n">$36</div><div class="l">Per newborn</div></div>
+              <div class="ps"><div class="n">50K</div><div class="l">Uganda 2-year target</div></div>
+              <div class="ps"><div class="n">4,005</div><div class="l">Cases tracked</div></div>
+            </div>
+            <div class="meta"><span>Uganda Ministry of Health agreement signed</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card" id="prog-ecd" href="#/programs">
+          <div class="photo-block ph-ecd">
+            <span class="photo-label">Photo · Parenting visit, Malawi</span>
+          </div>
+          <div class="body">
+            <span class="sector">Parenting</span>
+            <h3>Early Childhood Development</h3>
+            <p class="countries">Malawi · Mozambique · Nigeria</p>
+            <p>Parenting visits about responsive caregiving and talk-and-play. Validated with about 400 frontline workers. Expanded from 3 visits to 8-10 over 12 months.</p>
+            <div class="stat-strip">
+              <div class="ps"><div class="n">+33%</div><div class="l">Knowledge gain</div></div>
+              <div class="ps"><div class="n">+21%</div><div class="l">Observed teaching</div></div>
+              <div class="ps"><div class="n">~400</div><div class="l">Workers validated</div></div>
+            </div>
+            <div class="meta"><span>Parenting · responsive caregiving</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card" id="prog-readers" href="#/programs">
+          <div class="photo-block ph-readers">
+            <span class="photo-label">Photo · Vision screening, Bauchi State</span>
+          </div>
+          <div class="body">
+            <span class="sector">Vision</span>
+            <h3>Reading Glasses</h3>
+            <p class="countries">Bauchi · Adamawa · Jigawa, Nigeria</p>
+            <p>Door-to-door near-vision screening with two partner organizations in 16 weeks. 15,000 pairs at $1.50 each. Hard finding: only ~35 were first-time corrections.</p>
+            <div class="stat-strip">
+              <div class="ps"><div class="n">15K</div><div class="l">Pairs delivered</div></div>
+              <div class="ps"><div class="n">$1.50</div><div class="l">Per pair</div></div>
+              <div class="ps"><div class="n">92%</div><div class="l">Photo audit pass</div></div>
+            </div>
+            <div class="meta"><span>Partnership: RestoringVision</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+      </div>
+
+      <div class="programs-section-divider">
+        <span class="eyebrow">Coming soon</span>
+        <h3>Four programs <em>launching through 2026</em>.</h3>
+      </div>
+
+      <!-- Coming-soon programs (4) — 2 cols × 2 rows -->
+      <div class="all-programs-grid">
+
+        <a class="prog-card is-soon" id="prog-mbw" href="#/programs" style="position: relative;">
+          <span class="badge-soon">Coming soon</span>
+          <div class="photo-block ph-mbw">
+            <span class="photo-label">Photo · Maternal home visit</span>
+          </div>
+          <div class="body">
+            <span class="sector">Maternal Health</span>
+            <h3>Mother-Baby Wellness</h3>
+            <p class="countries">Multi-country</p>
+            <p>Maternal and early infant health visits across multiple geographies. Funded by GiveWell.</p>
+            <div class="meta"><span>Launching 2026</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card is-soon" id="prog-chlorine" href="#/programs" style="position: relative;">
+          <span class="badge-soon">Coming soon</span>
+          <div class="photo-block ph-chlorine">
+            <span class="photo-label">Photo · Water dispenser, Nigeria</span>
+          </div>
+          <div class="body">
+            <span class="sector">Water &amp; Sanitation</span>
+            <h3>Chlorine Dispenser</h3>
+            <p class="countries">Nigeria</p>
+            <p>Chlorine dispenser installation and household education. $1M grant from GiveWell, launching 2026.</p>
+            <div class="meta"><span>$1M grant · GiveWell</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card is-soon" id="prog-mental" href="#/programs" style="position: relative;">
+          <span class="badge-soon">Coming soon</span>
+          <div class="photo-block ph-mental">
+            <span class="photo-label">Photo · Community counseling session</span>
+          </div>
+          <div class="body">
+            <span class="sector">Mental Health</span>
+            <h3>Mental Health</h3>
+            <p class="countries">Uganda</p>
+            <p>Community-based mental health screening and support. Piloting in Uganda.</p>
+            <div class="meta"><span>Pilot launching 2026</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card is-soon" id="prog-survey" href="#/programs" style="position: relative;">
+          <span class="badge-soon">Coming soon</span>
+          <div class="photo-block ph-survey">
+            <span class="photo-label">Photo · Household interview</span>
+          </div>
+          <div class="body">
+            <span class="sector">Research</span>
+            <h3>Survey &amp; Data Collection</h3>
+            <p class="countries">Multi-country</p>
+            <p>Structured household surveys for development research. $225,000 contract with GiveWell.</p>
+            <div class="meta"><span>$225K · GiveWell</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+      </div>
+
+      <div class="programs-section-divider">
+        <span class="eyebrow">In Development</span>
+        <h3>Two programs <em>being built into the platform</em>.</h3>
+      </div>
+
+      <!-- In Development programs (2) — same card size, 2-column layout -->
+      <div class="all-programs-grid">
+
+        <a class="prog-card is-soon" id="prog-rutf" href="#/programs" style="position: relative;">
+          <span class="badge-soon" style="background: var(--indigo);">In development</span>
+          <div class="photo-block ph-nutrition">
+            <span class="photo-label">Photo · Therapeutic food distribution</span>
+          </div>
+          <div class="body">
+            <span class="sector">Nutrition</span>
+            <h3>Therapeutic Food</h3>
+            <p class="countries">Multi-country</p>
+            <p>Ready-to-use therapeutic food for children with severe acute malnutrition. $1M grant via the Children's Investment Fund Foundation.</p>
+            <div class="meta"><span>$1M · Children's Investment Fund Foundation</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card is-soon" id="prog-rooftop" href="#/programs" style="position: relative;">
+          <span class="badge-soon" style="background: var(--indigo);">In development</span>
+          <div class="photo-block ph-environment">
+            <span class="photo-label">Photo · Air quality sampling</span>
+          </div>
+          <div class="body">
+            <span class="sector">Environment</span>
+            <h3>Rooftop Sampling</h3>
+            <p class="countries">Multi-country</p>
+            <p>Air quality and rainwater runoff sampling for environmental health research.</p>
+            <div class="meta"><span>Research partnership</span><span class="more">Open case study →</span></div>
+          </div>
+        </a>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Closing CTA — for funders -->
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">For Funders</span>
+      <h2>Have a <em>new program</em> in mind?</h2>
+      <p class="lead">Connect composes best when the intervention is proven, verifiable, and appropriate for door-to-door or structured visit delivery. Let's talk through your vision.</p>
+      <a href="https://jjackson.github.io/connect-website/v11/index.html#contact" class="btn primary" target="_blank" rel="noopener">Let's chat</a>
+    </div>
+  </div>
+
+</section>
+
+<!-- ================================ SIGN UP FOR CONNECT (NEW PAGE) ================================ -->
+<section class="page" data-page="/sign-up">
+
+  <div class="wrap">
+    <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span>Sign Up for Connect</div>
+
+    <div class="hero">
+      <span class="eyebrow">Join the Connect network</span>
+      <h1>Join the Connect Network. <em>Get paid for verified work.</em></h1>
+      <p class="lede">Connect runs across 12 countries. Each dot is a country with active or launching programs.</p>
+    </div>
+  </div>
+
+  <!-- Map joined into top hero -->
+  <div class="wrap" style="margin-bottom: 32px;">
+      <div class="map-panel">
+        <div class="map-bar">
+          <span class="map-t">Connect deployment map · April 2026</span>
+          <span class="map-c">13 countries · 200+ partners · 10 programs</span>
+        </div>
+        <div class="map-canvas">
+          <svg viewBox="0 0 1100 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stylized map of Connect deployments across Africa and India">
+            <defs>
+              <radialGradient id="dotG" cx="0.5" cy="0.5">
+                <stop offset="0%" stop-color="#FC5F36" stop-opacity="0.7"/>
+                <stop offset="60%" stop-color="#FC5F36" stop-opacity="0.15"/>
+                <stop offset="100%" stop-color="#FC5F36" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="dotS" cx="0.5" cy="0.5">
+                <stop offset="0%" stop-color="#8EA1FF" stop-opacity="0.55"/>
+                <stop offset="60%" stop-color="#8EA1FF" stop-opacity="0.12"/>
+                <stop offset="100%" stop-color="#8EA1FF" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+
+            <!-- Region labels -->
+            <text x="60" y="50" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.4)" letter-spacing="2">WEST AFRICA</text>
+            <text x="380" y="50" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.4)" letter-spacing="2">EAST AFRICA</text>
+            <text x="700" y="50" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.4)" letter-spacing="2">SOUTHERN AFRICA</text>
+            <text x="970" y="50" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.4)" letter-spacing="2">SOUTH ASIA</text>
+
+            <!-- Subtle connection lines forming the network -->
+            <g stroke="rgba(142,161,255,0.12)" stroke-width="1" fill="none" stroke-dasharray="3 4">
+              <line x1="155" y1="180" x2="245" y2="180"/>
+              <line x1="155" y1="180" x2="245" y2="280"/>
+              <line x1="245" y1="180" x2="380" y2="280"/>
+              <line x1="245" y1="280" x2="380" y2="280"/>
+              <line x1="380" y1="280" x2="510" y2="220"/>
+              <line x1="380" y1="280" x2="510" y2="380"/>
+              <line x1="510" y1="220" x2="510" y2="380"/>
+              <line x1="510" y1="220" x2="640" y2="320"/>
+              <line x1="510" y1="380" x2="640" y2="320"/>
+              <line x1="640" y1="320" x2="780" y2="380"/>
+              <line x1="640" y1="320" x2="780" y2="260"/>
+              <line x1="780" y1="260" x2="980" y2="280"/>
+              <line x1="780" y1="380" x2="980" y2="280"/>
+            </g>
+
+            <!-- WEST AFRICA -->
+            <!-- Liberia (launching) -->
+            <g transform="translate(155 180)">
+              <circle r="34" fill="url(#dotS)"/>
+              <circle r="5" fill="#8EA1FF"/>
+              <text y="58" text-anchor="middle" font-family="Work Sans" font-size="12" fill="#FFFFFF" font-weight="500">Liberia</text>
+              <text y="72" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.6)">launching</text>
+            </g>
+            <!-- Sierra Leone -->
+            <g transform="translate(155 280)">
+              <circle r="34" fill="url(#dotG)"/>
+              <circle r="6" fill="#FC5F36"/>
+              <text y="58" text-anchor="middle" font-family="Work Sans" font-size="12" fill="#FFFFFF" font-weight="500">Sierra Leone</text>
+              <text y="72" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.7)">1 program</text>
+            </g>
+            <!-- Nigeria -->
+            <g transform="translate(245 180)">
+              <circle r="48" fill="url(#dotG)"/>
+              <circle r="8" fill="#FC5F36"/>
+              <text y="-26" text-anchor="middle" font-family="Work Sans" font-size="14" fill="#FFFFFF" font-weight="700">Nigeria</text>
+              <text y="-12" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.8)">7 programs</text>
+            </g>
+            <!-- Central African Republic (launching) -->
+            <g transform="translate(380 280)">
+              <circle r="32" fill="url(#dotS)"/>
+              <circle r="5" fill="#8EA1FF"/>
+              <text y="-18" text-anchor="middle" font-family="Work Sans" font-size="11" fill="#FFFFFF" font-weight="500">Central African Republic</text>
+              <text y="-4" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.6)">launching</text>
+            </g>
+
+            <!-- EAST AFRICA -->
+            <!-- Ethiopia (launching) -->
+            <g transform="translate(510 220)">
+              <circle r="34" fill="url(#dotS)"/>
+              <circle r="6" fill="#8EA1FF"/>
+              <text y="-26" text-anchor="middle" font-family="Work Sans" font-size="13" fill="#FFFFFF" font-weight="600">Ethiopia</text>
+              <text y="-12" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.6)">launching</text>
+            </g>
+            <!-- Uganda -->
+            <g transform="translate(510 380)">
+              <circle r="42" fill="url(#dotG)"/>
+              <circle r="7" fill="#FC5F36"/>
+              <text y="58" text-anchor="middle" font-family="Work Sans" font-size="13" fill="#FFFFFF" font-weight="700">Uganda</text>
+              <text y="72" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.8)">3 programs · Ministry of Health</text>
+            </g>
+            <!-- Kenya -->
+            <g transform="translate(640 320)">
+              <circle r="38" fill="url(#dotG)"/>
+              <circle r="6" fill="#FC5F36"/>
+              <text y="-22" text-anchor="middle" font-family="Work Sans" font-size="13" fill="#FFFFFF" font-weight="600">Kenya</text>
+              <text y="-8" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.75)">2 programs</text>
+            </g>
+            <!-- DRC -->
+            <g transform="translate(380 380)">
+              <circle r="32" fill="url(#dotG)"/>
+              <circle r="6" fill="#FC5F36"/>
+              <text y="-22" text-anchor="middle" font-family="Work Sans" font-size="11" fill="#FFFFFF" font-weight="500">DRC</text>
+              <text y="-8" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.7)">1 program</text>
+            </g>
+
+            <!-- SOUTHERN AFRICA -->
+            <!-- Tanzania -->
+            <g transform="translate(780 380)">
+              <circle r="30" fill="url(#dotG)"/>
+              <circle r="5" fill="#FC5F36"/>
+              <text y="50" text-anchor="middle" font-family="Work Sans" font-size="12" fill="#FFFFFF" font-weight="500">Tanzania</text>
+              <text y="64" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.7)">1 program</text>
+            </g>
+            <!-- Malawi -->
+            <g transform="translate(780 260)">
+              <circle r="30" fill="url(#dotG)"/>
+              <circle r="5" fill="#FC5F36"/>
+              <text y="-22" text-anchor="middle" font-family="Work Sans" font-size="12" fill="#FFFFFF" font-weight="500">Malawi</text>
+              <text y="-8" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.7)">1 program</text>
+            </g>
+            <!-- Zambia -->
+            <g transform="translate(870 460)">
+              <circle r="28" fill="url(#dotG)"/>
+              <circle r="5" fill="#FC5F36"/>
+              <text y="48" text-anchor="middle" font-family="Work Sans" font-size="12" fill="#FFFFFF" font-weight="500">Zambia</text>
+              <text y="62" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.7)">1 program</text>
+            </g>
+            <!-- Mozambique (launching) -->
+            <g transform="translate(750 460)">
+              <circle r="30" fill="url(#dotS)"/>
+              <circle r="5" fill="#8EA1FF"/>
+              <text y="48" text-anchor="middle" font-family="Work Sans" font-size="12" fill="#FFFFFF" font-weight="500">Mozambique</text>
+              <text y="62" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9.5" fill="rgba(255,255,255,0.6)">launching</text>
+            </g>
+
+            <!-- SOUTH ASIA -->
+            <!-- India -->
+            <g transform="translate(980 280)">
+              <circle r="40" fill="url(#dotG)"/>
+              <circle r="7" fill="#FC5F36"/>
+              <text y="-26" text-anchor="middle" font-family="Work Sans" font-size="13" fill="#FFFFFF" font-weight="600">India</text>
+              <text y="-12" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="rgba(255,255,255,0.75)">1 program</text>
+            </g>
+          </svg>
+        </div>
+        <div class="map-legend">
+          <div class="lg lg-active"><span class="dot"></span>Active programs (9 countries)</div>
+          <div class="lg lg-soon"><span class="dot"></span>Launching (4 countries)</div>
+          <div class="lg" style="margin-left: auto; color: var(--muted);">Map data updated April 2026</div>
+        </div>
+      </div>
+  </div>
+
+  <!-- Two role CTAs (moved above Partner stories) -->
+  <div class="section warm">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">Get started</span>
+          <h2>Two ways <em>to join</em>.</h2>
+          <p class="sub">Pick the path that fits — pick up paid opportunities as a frontline worker, or sign up your organization to deliver services.</p>
+        </div>
+      </div>
+
+      <div class="role-cta-grid">
+
+        <div class="role-card">
+          <div class="role-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <rect x="6" y="3" width="12" height="18" rx="2"/>
+              <path d="M10 19h4"/>
+              <path d="M9 7h6"/>
+            </svg>
+          </div>
+          <span class="role-tag">Frontline Workers</span>
+          <h3>Download Connect. <em>Get paid opportunities.</em></h3>
+          <p>Pick up real, verified work in your community. Train on your phone. Deliver visits. Get paid by mobile money the moment your work is verified.</p>
+          <ul>
+            <li>Self-paced training in your language</li>
+            <li>Paid per verified visit, no middlemen</li>
+            <li>See your earnings as you work</li>
+            <li>Available where Connect runs</li>
+          </ul>
+          <div class="role-action">
+            <a href="#" class="btn indigo">Download Connect →</a>
+          </div>
+        </div>
+
+        <div class="role-card warm">
+          <div class="role-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M3 21h18"/>
+              <path d="M5 21V8l7-5 7 5v13"/>
+              <path d="M9 13h6"/>
+              <path d="M9 17h6"/>
+            </svg>
+          </div>
+          <span class="role-tag">Frontline Organizations</span>
+          <h3>Join the Connect network. <em>Start delivering.</em></h3>
+          <p>Run programs with the verification, training, and payment infrastructure provided. Performance-based contracts. Scale up against actual demand.</p>
+          <ul>
+            <li>Trial Run: $3,000 for 3,000 verified visits</li>
+            <li>We provide the app, verification, payments</li>
+            <li>You bring local relationships and supervision</li>
+            <li>Grow into larger campaigns on performance</li>
+          </ul>
+          <div class="role-action">
+            <a href="#" class="btn primary">Sign up your organization →</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Partner stories (moved below Two ways to join) -->
+  <div class="section">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">Partner stories</span>
+          <h2>Hear from organizations <em>delivering with Connect</em>.</h2>
+        </div>
+      </div>
+
+      <div class="stories-grid">
+        <article class="story-card">
+          <div class="photo-block ph-field-2">
+            <span class="photo-label">Photo · Newborn home visit</span>
+          </div>
+          <div class="body">
+            <div class="org">PIPNU</div>
+            <div class="country">Uganda · Kangaroo Mother Care</div>
+            <blockquote>"We have been able to track 4,005 cases. Connect makes the data the case — not paperwork after the fact."</blockquote>
+            <div class="attrib"><b>PIPNU + NAWEC</b> are scaling to 50,000 newborns over two years under an agreement with Uganda's Ministry of Health.</div>
+          </div>
+        </article>
+
+        <article class="story-card">
+          <div class="photo-block ph-field-3">
+            <span class="photo-label">Photo · Vision screening</span>
+          </div>
+          <div class="body">
+            <div class="org">Two partners · Reading Glasses</div>
+            <div class="country">Bauchi · Adamawa, Nigeria</div>
+            <blockquote>"From contract signature to frontline workers in the field: 10 days at one organization, a 16-day median across two."</blockquote>
+            <div class="attrib"><b>Connect-Readers Q4 2025</b> delivered 15,000 pairs of glasses at $1.50 per pair — and surfaced a hard finding about who actually needs them.</div>
+          </div>
+        </article>
+
+        <article class="story-card">
+          <div class="photo-block ph-field-1">
+            <span class="photo-label">Photo · Vaccination day</span>
+          </div>
+          <div class="body">
+            <div class="org">28+ partner orgs</div>
+            <div class="country">Eight countries · Child Health Campaign</div>
+            <blockquote>"The Trial Run de-risked our partner activation. We could enter the network with a small contract, prove delivery, then scale."</blockquote>
+            <div class="attrib"><b>1M+ verified visits</b> across the Child Health Campaign network — the program where most of our methodology was first validated.</div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="foot-brand">
+      <div class="logo">Connect <span>by Dimagi</span></div>
+      <p>A Dimagi platform that links funding directly to verified service delivery at the frontline.</p>
+    </div>
+    <div class="foot-col">
+      <h5>Platform</h5>
+      <ul>
+        <li><a href="#/how-it-works">How It Works</a></li>
+        <li><a href="#/programs">Programs</a></li>
+      </ul>
+    </div>
+    <div class="foot-col">
+      <h5>Connect</h5>
+      <ul>
+        <li><a href="#/">Home</a></li>
+        <li><a href="#/sign-up">Sign Up for Connect</a></li>
+        <li><a href="#/">Request a Demo</a></li>
+        <li><a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi ↗</a></li>
+      </ul>
+    </div>
+    <div class="foot-col">
+      <h5>Programs</h5>
+      <ul>
+        <li><a href="#/programs">Child Health Campaign</a></li>
+        <li><a href="#/programs">Kangaroo Mother Care</a></li>
+        <li><a href="#/programs">Early Childhood Development</a></li>
+        <li><a href="#/programs">Reading Glasses</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot-bottom">
+    <span>© 2026 Dimagi, Inc. All rights reserved.</span>
+    <span>Mockup · v11 reshape · for design review only</span>
+  </div>
+</footer>
+
+<script>
+  // Hash router
+  function route() {
+    const hash = window.location.hash.replace(/^#/, '') || '/';
+    const path = hash.split('?')[0].split('#')[0] || '/';
+    const pages = document.querySelectorAll('.page');
+    let matched = false;
+    pages.forEach(p => {
+      const isMatch = p.dataset.page === path;
+      p.classList.toggle('active', isMatch);
+      if (isMatch) matched = true;
+    });
+    if (!matched) {
+      const home = document.querySelector('.page[data-page="/"]');
+      if (home) home.classList.add('active');
+    }
+    document.querySelectorAll('#primary-nav a[data-route]').forEach(a => {
+      a.classList.toggle('active', a.dataset.route === path);
+    });
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  }
+  window.addEventListener('hashchange', route);
+  window.addEventListener('DOMContentLoaded', route);
+
+  // Insights — two-axis filter (Program Type × LDVP Cycle)
+  let activeProgram = 'all';
+  let activeLDVP = 'all';
+
+  function applyInsightFilters() {
+    document.querySelectorAll('.insight-row').forEach(row => {
+      const programs = (row.dataset.programs || '').split(/\s+/).filter(Boolean);
+      const ldvps = (row.dataset.ldvp || '').split(/\s+/).filter(Boolean);
+      const programMatch = activeProgram === 'all' || programs.includes(activeProgram);
+      const ldvpMatch = activeLDVP === 'all' || ldvps.includes(activeLDVP);
+      row.classList.toggle('is-hidden', !(programMatch && ldvpMatch));
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const pill = e.target.closest('.filter-pills .pill');
+    if (!pill) return;
+    const type = pill.dataset.filterType;
+    const value = pill.dataset.filterValue;
+    if (!type || !value) return;
+    if (type === 'program') activeProgram = value;
+    if (type === 'ldvp') activeLDVP = value;
+    pill.parentElement.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    applyInsightFilters();
+  });
+
+  // Programs jump-nav: scroll to the chosen program
+  document.addEventListener('click', (e) => {
+    const pill = e.target.closest('.prog-jump .pill');
+    if (!pill) return;
+    const target = document.getElementById(pill.dataset.target);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // Picker lists: click selects, auto-cycles every 2.5s
+  document.addEventListener('click', (e) => {
+    const item = e.target.closest('.picker-scroll .picker-item');
+    if (!item) return;
+    const scroll = item.parentElement;
+    scroll.querySelectorAll('.picker-item').forEach(i => i.classList.remove('is-active'));
+    item.classList.add('is-active');
+    scrollPickerToActive(scroll);
+    // Pause auto-cycle for a moment after manual click
+    scroll.dataset.paused = String(Date.now() + 6000);
+  });
+
+  function scrollPickerToActive(scroll) {
+    const active = scroll.querySelector('.picker-item.is-active');
+    if (!active) return;
+    const targetTop = active.offsetTop - scroll.clientHeight / 2 + active.offsetHeight / 2;
+    scroll.scrollTo({ top: targetTop, behavior: 'smooth' });
+  }
+
+  function cyclePickers() {
+    document.querySelectorAll('.picker-scroll[data-cycle="1"]').forEach(scroll => {
+      // Skip if recently clicked
+      const paused = parseInt(scroll.dataset.paused || '0', 10);
+      if (paused && Date.now() < paused) return;
+      const items = Array.from(scroll.querySelectorAll('.picker-item'));
+      if (items.length <= 1) return;
+      const activeIdx = items.findIndex(i => i.classList.contains('is-active'));
+      const nextIdx = (activeIdx + 1) % items.length;
+      items.forEach((item, idx) => item.classList.toggle('is-active', idx === nextIdx));
+      scrollPickerToActive(scroll);
+    });
+  }
+  setInterval(cyclePickers, 2500);
+
+  // How It Works — interactive step swap
+  const stepColors = {
+    learn:   '#16006D',
+    deliver: '#5D70D2',
+    verify:  '#FC5F36',
+    pay:     '#1B998B'
+  };
+
+  function showStep(step) {
+    const tabs = document.querySelectorAll('#step-tabs .step-tab');
+    const details = document.querySelectorAll('.step-detail');
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.step === step));
+    details.forEach(d => d.classList.toggle('active', d.dataset.step === step));
+
+    // Update SVG cycle nodes — fill the active circle, white-out its icon
+    document.querySelectorAll('.cycle-node-group').forEach(g => {
+      const stepKey = g.dataset.step;
+      const color = stepColors[stepKey] || '#3843D0';
+      const isActive = stepKey === step;
+      const c = g.querySelector('circle');
+      const icon = g.querySelector('.cycle-icon');
+      if (c) {
+        c.setAttribute('fill', isActive ? color : '#FFFFFF');
+        c.setAttribute('stroke', color);
+      }
+      if (icon) {
+        if (icon.tagName === 'text') {
+          icon.setAttribute('fill', isActive ? '#FFFFFF' : color);
+        } else {
+          icon.setAttribute('stroke', isActive ? '#FFFFFF' : color);
+        }
+      }
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const tab = e.target.closest('#step-tabs .step-tab');
+    if (tab) {
+      showStep(tab.dataset.step);
+      return;
+    }
+    const node = e.target.closest('.cycle-node-group');
+    if (node && node.dataset.step) {
+      showStep(node.dataset.step);
+    }
+  });
+</script>
+
+</body>
+</html>
