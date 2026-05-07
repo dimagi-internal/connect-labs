@@ -10,7 +10,7 @@ from rest_framework.authtoken.views import obtain_auth_token
 from . import views
 
 urlpatterns = [
-    path("", RedirectView.as_view(url="/labs/overview/", permanent=False), name="home"),
+    path("", include("commcare_connect.prelogin_website.urls", namespace="prelogin_website")),
     # The ACE Web SPA is served by a separate nginx container; the ALB only
     # routes `/ace/*` to it. A bare `/ace` would fall through here and 404 —
     # catch it and redirect to the slash variant so typed URLs work.
