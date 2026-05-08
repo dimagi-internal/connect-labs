@@ -7,7 +7,7 @@ class HomeView(TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx["app_login_url"] = getattr(settings, "PRELOGIN_APP_LOGIN_URL", "/labs/overview/")
+        ctx["app_login_url"] = getattr(settings, "PRELOGIN_APP_LOGIN_URL", "/accounts/login/")
         return ctx
 
 
