@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 464 167" width="464" height="167">
+  <!-- pale indigo background -->
+  <rect width="464" height="167" fill="#d7d9f6"/>
+
+  <!-- soft ground -->
+  <path d="M 0 158 C 120 152, 344 152, 464 158 L 464 167 L 0 167 Z" fill="#afb4ec" opacity="0.6"/>
+
+  <!-- decorative dots -->
+  <g fill="#6069d9">
+    <circle cx="22"  cy="22"  r="2.2" opacity="0.5"/>
+    <circle cx="48"  cy="50"  r="1.6" opacity="0.4"/>
+    <circle cx="290" cy="18"  r="1.8" opacity="0.45"/>
+    <circle cx="382" cy="22"  r="2"   opacity="0.45"/>
+    <circle cx="448" cy="100" r="2"   opacity="0.4"/>
+    <circle cx="438" cy="58"  r="1.6" opacity="0.4"/>
+    <circle cx="40"  cy="125" r="1.5" opacity="0.4"/>
+  </g>
+
+  <!-- sun (3-tone for depth) -->
+  <g transform="translate(420,28)">
+    <circle r="14" fill="#FEAF31"/>
+    <circle r="10" fill="#FFC571"/>
+    <circle r="5"  fill="#FFE4B0"/>
+  </g>
+
+  <!-- ============ CHW FIGURE (left) ============ -->
+  <!-- shoes -->
+  <ellipse cx="116" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+  <ellipse cx="146" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+  <!-- shoe highlight -->
+  <ellipse cx="113" cy="159.5" rx="6" ry="1.2" fill="#3a3f5a" opacity="0.7"/>
+  <ellipse cx="143" cy="159.5" rx="6" ry="1.2" fill="#3a3f5a" opacity="0.7"/>
+
+  <!-- pants (two legs visible) -->
+  <path d="M 102 110
+           C 102 130, 100 152, 104 158
+           Q 116 162, 128 158
+           L 130 110 Z" fill="#252D54"/>
+  <path d="M 132 110
+           L 134 158
+           Q 146 162, 158 158
+           C 162 152, 160 130, 160 110 Z" fill="#252D54"/>
+  <!-- pant highlight (subtle) -->
+  <path d="M 105 114 L 108 156 Q 109 158 113 158 L 110 114 Z" fill="#1a1f3a" opacity="0.5"/>
+  <path d="M 137 114 L 138 158 Q 139 158 142 158 L 140 114 Z" fill="#1a1f3a" opacity="0.5"/>
+
+  <!-- belt -->
+  <rect x="100" y="106" width="62" height="5" rx="1.5" fill="#13162A"/>
+  <rect x="128" y="107" width="6" height="3" fill="#FEAF31"/>
+
+  <!-- shirt/torso -->
+  <path d="M 104 60
+           C 104 54, 112 50, 124 50
+           L 132 50
+           C 144 50, 152 54, 152 60
+           Q 158 80, 160 110
+           L 102 110
+           Q 104 80, 104 60 Z" fill="#3843D0"/>
+  <!-- shirt subtle shadow on left -->
+  <path d="M 104 60 C 104 54, 112 50, 122 50 L 122 110 L 102 110 Q 104 80, 104 60 Z"
+        fill="#252D54" opacity="0.25"/>
+
+  <!-- white V-neck -->
+  <path d="M 118 50 L 128 64 L 138 50 L 134 50 L 128 60 L 122 50 Z" fill="#fff"/>
+
+  <!-- left arm (hangs naturally at side) -->
+  <path d="M 100 62
+           C 92 80, 92 100, 96 110
+           L 108 110
+           Q 110 80, 108 62 Z" fill="#3843D0"/>
+  <!-- left arm shadow -->
+  <path d="M 100 62 C 92 80, 92 100, 96 110 L 100 110 Q 100 80, 102 62 Z" fill="#252D54" opacity="0.3"/>
+  <!-- left sleeve cuff -->
+  <ellipse cx="101" cy="111" rx="6" ry="3" fill="#252D54"/>
+  <!-- left hand -->
+  <circle cx="100" cy="116" r="5" fill="#B5825D"/>
+
+  <!-- right arm bent forward holding bottle (sleeve only) -->
+  <path d="M 152 62
+           C 162 70, 168 80, 162 92
+           Q 154 96, 150 92
+           C 152 80, 152 70, 148 64 Z" fill="#3843D0"/>
+  <!-- right sleeve cuff -->
+  <ellipse cx="158" cy="92" rx="7" ry="3.5" fill="#252D54" transform="rotate(20 158 92)"/>
+  <!-- right forearm + hand (skin) -->
+  <path d="M 154 92
+           Q 158 100, 168 102
+           Q 174 102, 174 96
+           Q 168 88, 158 88 Z" fill="#B5825D"/>
+  <circle cx="172" cy="100" r="6" fill="#B5825D"/>
+
+  <!-- neck -->
+  <rect x="123" y="48" width="10" height="8" fill="#B5825D"/>
+  <!-- neck shadow -->
+  <rect x="123" y="48" width="4" height="8" fill="#9c6b48" opacity="0.4"/>
+
+  <!-- head -->
+  <circle cx="128" cy="32" r="18" fill="#B5825D"/>
+  <!-- head shadow (subtle on left) -->
+  <path d="M 110 32 A 18 18 0 0 1 128 14 L 128 50 A 18 18 0 0 1 110 32 Z" fill="#9c6b48" opacity="0.3"/>
+
+  <!-- ear -->
+  <ellipse cx="111" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+  <ellipse cx="145" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+
+  <!-- hair -->
+  <path d="M 110 28
+           C 110 12, 118 8, 128 8
+           C 138 8, 146 12, 146 28
+           C 144 22, 138 20, 134 22
+           C 130 16, 122 16, 118 22
+           C 114 20, 112 22, 110 28 Z" fill="#2D2825"/>
+  <!-- hair highlight -->
+  <path d="M 116 16 C 122 12, 134 12, 140 16 C 134 14, 122 14, 116 16 Z" fill="#4d4541" opacity="0.7"/>
+
+  <!-- stethoscope -->
+  <path d="M 118 56 C 118 70, 138 70, 138 56" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+  <circle cx="138" cy="72" r="3" fill="#fff" stroke="#252D54" stroke-width="0.8"/>
+  <circle cx="138" cy="72" r="1.2" fill="#252D54"/>
+
+  <!-- shoulder strap (curve from shoulder to opposite hip) -->
+  <path d="M 108 60 Q 130 88, 168 130"
+        stroke="#13162A" stroke-width="2.2" fill="none"
+        stroke-linecap="round" opacity="0.85"/>
+
+  <!-- shoulder bag with white medical cross -->
+  <g transform="translate(176,138)">
+    <rect x="-14" y="-15" width="28" height="28" rx="6" fill="#FEAF31"/>
+    <rect x="-14" y="-15" width="6" height="28" rx="2" fill="#cb585d" opacity="0.25"/>
+    <rect x="-9" y="-2" width="18" height="4" rx="2" fill="#fff"/>
+    <rect x="-2" y="-9" width="4" height="18" rx="2" fill="#fff"/>
+  </g>
+
+  <!-- vaccine vial held in CHW's right hand (vertical, close to chest) -->
+  <g transform="translate(174,98) rotate(-12)">
+    <!-- cap -->
+    <rect x="-4.5" y="-15" width="9" height="5" rx="1.5" fill="#7a3538"/>
+    <!-- cap rim -->
+    <rect x="-5" y="-10" width="10" height="2" fill="#a2464a"/>
+    <!-- bottle body -->
+    <rect x="-5.5" y="-8" width="11" height="20" rx="2" fill="#fff" stroke="#252D54" stroke-width="0.7"/>
+    <!-- liquid -->
+    <rect x="-4.5" y="-2" width="9" height="13" rx="1.5" fill="#FEAF31"/>
+    <!-- liquid highlight -->
+    <rect x="-4" y="-1" width="2" height="11" rx="1" fill="#FFE4B0" opacity="0.7"/>
+    <!-- cross label -->
+    <rect x="-2.5" y="3" width="5" height="1.6" rx="0.8" fill="#fff"/>
+    <rect x="-0.8" y="1.2" width="1.6" height="5" rx="0.8" fill="#fff"/>
+  </g>
+
+  <!-- ============ CHILD FIGURE (close to CHW) ============ -->
+  <!-- shoes -->
+  <ellipse cx="222" cy="161" rx="9" ry="2.8" fill="#291213"/>
+  <ellipse cx="244" cy="161" rx="9" ry="2.8" fill="#291213"/>
+  <ellipse cx="220" cy="160" rx="4" ry="1" fill="#5c2d2d" opacity="0.7"/>
+  <ellipse cx="242" cy="160" rx="4" ry="1" fill="#5c2d2d" opacity="0.7"/>
+
+  <!-- pants -->
+  <path d="M 213 132
+           C 213 148, 213 158, 215 160
+           Q 222 162, 229 160
+           L 230 132 Z" fill="#7a3538"/>
+  <path d="M 232 132
+           L 233 160
+           Q 240 162, 247 160
+           C 249 158, 249 148, 249 132 Z" fill="#7a3538"/>
+  <path d="M 215 136 L 217 158 Q 218 159, 220 159 L 218 136 Z" fill="#512325" opacity="0.5"/>
+  <path d="M 235 136 L 236 158 Q 237 159, 239 159 L 238 136 Z" fill="#512325" opacity="0.5"/>
+
+  <!-- shirt -->
+  <path d="M 213 100
+           C 213 96, 220 94, 228 94
+           L 234 94
+           C 242 94, 249 96, 249 100
+           Q 252 116, 252 132
+           L 210 132
+           Q 210 116, 213 100 Z" fill="#cb585d"/>
+  <!-- shirt shadow -->
+  <path d="M 213 100 C 213 96, 220 94, 226 94 L 226 132 L 210 132 Q 210 116, 213 100 Z"
+        fill="#a2464a" opacity="0.3"/>
+  <!-- shirt collar -->
+  <path d="M 224 94 L 231 102 L 238 94 L 236 94 L 231 100 L 226 94 Z" fill="#7a3538" opacity="0.6"/>
+
+  <!-- arms at sides -->
+  <path d="M 209 102 Q 207 116, 209 132 L 213 132 Q 213 116, 213 102 Z" fill="#cb585d"/>
+  <path d="M 249 102 Q 251 116, 249 132 L 252 132 Q 255 116, 253 102 Z" fill="#cb585d"/>
+  <ellipse cx="210" cy="133" rx="4" ry="2" fill="#a2464a"/>
+  <ellipse cx="251" cy="133" rx="4" ry="2" fill="#a2464a"/>
+  <circle cx="210" cy="138" r="3.5" fill="#C99B7A"/>
+  <circle cx="251" cy="138" r="3.5" fill="#C99B7A"/>
+
+  <!-- neck -->
+  <rect x="227" y="92" width="8" height="6" fill="#C99B7A"/>
+  <rect x="227" y="92" width="3" height="6" fill="#9c6b48" opacity="0.4"/>
+
+  <!-- head -->
+  <circle cx="231" cy="80" r="13" fill="#C99B7A"/>
+  <!-- head shadow -->
+  <path d="M 218 80 A 13 13 0 0 1 231 67 L 231 93 A 13 13 0 0 1 218 80 Z" fill="#9c6b48" opacity="0.3"/>
+
+  <!-- ears -->
+  <ellipse cx="219" cy="81" rx="1.5" ry="2.2" fill="#9c6b48"/>
+  <ellipse cx="243" cy="81" rx="1.5" ry="2.2" fill="#9c6b48"/>
+
+  <!-- hair -->
+  <path d="M 220 77
+           C 220 65, 226 62, 231 62
+           C 236 62, 242 65, 242 77
+           C 240 73, 237 71, 234 72
+           C 232 68, 228 68, 226 72
+           C 224 71, 222 73, 220 77 Z" fill="#2D2825"/>
+</svg>

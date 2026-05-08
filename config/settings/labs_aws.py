@@ -85,6 +85,10 @@ DEPLOY_ENVIRONMENT = "labs"
 LABS_OAUTH_SCOPES = ["export", "openid"]
 LOGIN_URL = "/labs/login/"
 
+# Prelogin Login CTA target — labs sends authenticated users into the labs app,
+# whereas the prelogin view's default ("/accounts/login/") suits prod connect.
+PRELOGIN_APP_LOGIN_URL = "/labs/overview/"
+
 # Add labs app and custom_analysis
 INSTALLED_APPS.append("commcare_connect.labs")
 INSTALLED_APPS.append("commcare_connect.custom_analysis.chc_nutrition")

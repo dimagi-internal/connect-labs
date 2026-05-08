@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 464 167" width="464" height="167">
+  <!-- pale yellow background -->
+  <rect width="464" height="167" fill="#FCEFCC"/>
+
+  <!-- soft ground -->
+  <path d="M 0 158 C 120 152, 344 152, 464 158 L 464 167 L 0 167 Z" fill="#EEAE00" opacity="0.35"/>
+
+  <!-- decorative dots -->
+  <g fill="#cb585d">
+    <circle cx="22" cy="22" r="2.2" opacity="0.4"/>
+    <circle cx="48" cy="50" r="1.6" opacity="0.4"/>
+    <circle cx="70" cy="120" r="1.8" opacity="0.4"/>
+    <circle cx="380" cy="22" r="2" opacity="0.4"/>
+    <circle cx="448" cy="100" r="2" opacity="0.4"/>
+    <circle cx="438" cy="58" r="1.6" opacity="0.4"/>
+  </g>
+
+  <!-- soft circular halo behind figures (safe space) -->
+  <g transform="translate(232, 90)" opacity="0.4">
+    <circle r="100" fill="#FFC571"/>
+  </g>
+  <g transform="translate(232, 90)" opacity="0.3">
+    <circle r="80" fill="#FFE4B0"/>
+  </g>
+
+  <!-- ============ COUNSELOR (left) ============ -->
+  <ellipse cx="156" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+  <ellipse cx="186" cy="161" rx="13" ry="3.2" fill="#13162A"/>
+
+  <path d="M 142 110 C 142 130, 140 152, 144 158 Q 156 162, 168 158 L 170 110 Z" fill="#252D54"/>
+  <path d="M 172 110 L 174 158 Q 186 162, 198 158 C 202 152, 200 130, 200 110 Z" fill="#252D54"/>
+
+  <rect x="140" y="106" width="62" height="5" rx="1.5" fill="#13162A"/>
+
+  <!-- shirt (warm marigold/orange — counselor uniform) -->
+  <path d="M 144 60 C 144 54, 152 50, 164 50 L 172 50 C 184 50, 192 54, 192 60 Q 198 80, 200 110 L 142 110 Q 144 80, 144 60 Z" fill="#FEAF31"/>
+  <path d="M 144 60 C 144 54, 152 50, 162 50 L 162 110 L 142 110 Q 144 80, 144 60 Z" fill="#cb585d" opacity="0.3"/>
+  <path d="M 158 50 L 168 64 L 178 50 L 174 50 L 168 60 L 162 50 Z" fill="#fff" opacity="0.85"/>
+
+  <!-- left arm hanging at side -->
+  <path d="M 140 62 C 132 80, 132 100, 136 110 L 148 110 Q 150 80, 148 62 Z" fill="#FEAF31"/>
+  <ellipse cx="141" cy="111" rx="6" ry="3" fill="#cb585d" opacity="0.6"/>
+  <circle cx="140" cy="116" r="5" fill="#B5825D"/>
+
+  <!-- right arm extended forward to patient's shoulder -->
+  <path d="M 192 60 C 204 66, 218 72, 222 80 Q 224 86, 220 88 C 212 80, 200 70, 188 64 Z" fill="#FEAF31"/>
+  <ellipse cx="220" cy="86" rx="6" ry="3.5" fill="#cb585d" opacity="0.6" transform="rotate(20 220 86)"/>
+  <!-- bare forearm + hand resting on patient's shoulder -->
+  <path d="M 218 84 Q 222 90, 232 90 Q 238 88, 236 84 Q 230 78, 222 80 Z" fill="#B5825D"/>
+  <ellipse cx="234" cy="86" rx="7" ry="5" fill="#B5825D"/>
+  <!-- finger details -->
+  <path d="M 230 84 L 230 90 M 234 82 L 234 90 M 238 84 L 238 90" stroke="#9c6b48" stroke-width="0.6" opacity="0.5"/>
+
+  <!-- neck -->
+  <rect x="163" y="48" width="10" height="8" fill="#B5825D"/>
+  <rect x="163" y="48" width="4" height="8" fill="#9c6b48" opacity="0.4"/>
+
+  <!-- head -->
+  <circle cx="168" cy="32" r="18" fill="#B5825D"/>
+  <path d="M 150 32 A 18 18 0 0 1 168 14 L 168 50 A 18 18 0 0 1 150 32 Z" fill="#9c6b48" opacity="0.3"/>
+  <ellipse cx="151" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+  <ellipse cx="185" cy="33" rx="2" ry="3" fill="#9c6b48"/>
+
+  <!-- hair -->
+  <path d="M 150 28 C 150 12, 158 8, 168 8 C 178 8, 186 12, 186 28 C 184 22, 178 20, 174 22 C 170 16, 162 16, 158 22 C 154 20, 152 22, 150 28 Z" fill="#2D2825"/>
+
+  <!-- ============ PATIENT (right) ============ -->
+  <ellipse cx="278" cy="161" rx="13" ry="3.2" fill="#291213"/>
+  <ellipse cx="308" cy="161" rx="13" ry="3.2" fill="#291213"/>
+
+  <path d="M 264 110 C 264 130, 262 152, 266 158 Q 278 162, 290 158 L 292 110 Z" fill="#7a3538"/>
+  <path d="M 294 110 L 296 158 Q 308 162, 320 158 C 324 152, 322 130, 322 110 Z" fill="#7a3538"/>
+
+  <rect x="262" y="106" width="62" height="5" rx="1.5" fill="#291213"/>
+
+  <!-- shirt (salmon) -->
+  <path d="M 266 64 C 266 58, 274 54, 286 54 L 294 54 C 306 54, 314 58, 314 64 Q 320 84, 322 110 L 264 110 Q 266 84, 266 64 Z" fill="#cb585d"/>
+  <path d="M 266 64 C 266 58, 274 54, 284 54 L 284 110 L 264 110 Q 266 84, 266 64 Z" fill="#7a3538" opacity="0.3"/>
+  <path d="M 280 54 L 290 68 L 300 54 L 296 54 L 290 64 L 284 54 Z" fill="#fff" opacity="0.85"/>
+
+  <!-- arms at sides -->
+  <path d="M 262 66 C 254 84, 254 102, 258 110 L 270 110 Q 272 84, 270 66 Z" fill="#cb585d"/>
+  <ellipse cx="263" cy="111" rx="6" ry="3" fill="#7a3538"/>
+  <circle cx="262" cy="116" r="5" fill="#B5825D"/>
+
+  <path d="M 314 66 C 322 84, 322 102, 318 110 L 306 110 Q 304 84, 306 66 Z" fill="#cb585d"/>
+  <ellipse cx="317" cy="111" rx="6" ry="3" fill="#7a3538"/>
+  <circle cx="318" cy="116" r="5" fill="#B5825D"/>
+
+  <!-- neck -->
+  <rect x="285" y="52" width="10" height="8" fill="#B5825D"/>
+  <rect x="285" y="52" width="4" height="8" fill="#9c6b48" opacity="0.4"/>
+
+  <!-- head -->
+  <circle cx="290" cy="36" r="18" fill="#B5825D"/>
+  <path d="M 272 36 A 18 18 0 0 1 290 18 L 290 54 A 18 18 0 0 1 272 36 Z" fill="#9c6b48" opacity="0.3"/>
+  <ellipse cx="273" cy="37" rx="2" ry="3" fill="#9c6b48"/>
+  <ellipse cx="307" cy="37" rx="2" ry="3" fill="#9c6b48"/>
+
+  <!-- hair (slightly different style) -->
+  <path d="M 272 32 C 272 16, 280 12, 290 12 C 300 12, 308 16, 308 32 C 308 28, 304 26, 300 26 C 298 22, 290 20, 286 24 C 282 24, 274 28, 272 32 Z" fill="#2D2825"/>
+
+  <!-- ============ FLOATING ICONS (compassion, conversation) ============ -->
+  <!-- heart between/above them -->
+  <g transform="translate(232,55)">
+    <path d="M 0 5 C -8 -3 -16 -3 -16 4 C -16 11 0 20 0 20 C 0 20 16 11 16 4 C 16 -3 8 -3 0 5 Z" fill="#cb585d"/>
+    <path d="M 0 7 C -5 -1 -11 0 -11 5 C -11 10 -2 15 0 16 Z" fill="#7a3538" opacity="0.5"/>
+  </g>
+
+  <!-- speech-bubble dots -->
+  <g fill="#694aaa" opacity="0.6">
+    <circle cx="60" cy="32" r="4"/>
+    <circle cx="76" cy="28" r="3"/>
+    <circle cx="88" cy="24" r="2"/>
+  </g>
+  <g fill="#694aaa" opacity="0.6">
+    <circle cx="380" cy="32" r="4"/>
+    <circle cx="396" cy="28" r="3"/>
+    <circle cx="408" cy="24" r="2"/>
+  </g>
+</svg>

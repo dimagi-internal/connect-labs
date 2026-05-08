@@ -23,7 +23,7 @@ repos:
     hooks:
       - id: prettier
         args: ['--tab-width', '2', '--single-quote']
-        exclude: '(commcare_connect/templates/|commcare_connect/.*/templates/)'
+        exclude: '(commcare_connect/templates/|commcare_connect/static/prelogin/)'
 
   - repo: https://github.com/adamchainz/django-upgrade
     rev: '1.13.0'
