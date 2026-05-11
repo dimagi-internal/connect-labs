@@ -13,4 +13,7 @@ urlpatterns = [
     path("dump/stream/", views.DumpStreamView.as_view(), name="dump_stream"),
     path("refresh/", views.refresh_cache_view, name="refresh"),
     path("test-access/", views.test_access_view, name="test_access"),
+    path("self-service/generate/", views.self_service_generate_view, name="self_service_generate"),
+    path("self-service/clear/", views.self_service_clear_view, name="self_service_clear"),
+    path("self-service/status/", views.self_service_status_view, name="self_service_status"),
 ]

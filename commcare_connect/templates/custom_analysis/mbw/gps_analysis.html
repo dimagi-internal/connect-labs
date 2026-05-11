@@ -1,10 +1,11 @@
-{% extends "base.html" %}
+{% extends "custom_analysis/analysis_base.html" %}
 {% load static %}
 
 {% block title %}MBW GPS Analysis{% endblock %}
 
-{% block content %}
-<div class="container mx-auto p-6" x-data="mbwGPSAnalysis()">
+{% block x_data %}x-data="mbwGPSAnalysis()"{% endblock %}
+
+{% block analysis_header %}
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
@@ -19,7 +20,9 @@
             </button>
         </div>
     </div>
+{% endblock analysis_header %}
 
+{% block analysis_body %}
     {% if error %}
         <!-- Error Alert -->
         <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
@@ -319,8 +322,7 @@
     </div>
 
     {% endif %}
-</div>
-{% endblock %}
+{% endblock analysis_body %}
 
 {% block inline_javascript %}
 {{ block.super }}

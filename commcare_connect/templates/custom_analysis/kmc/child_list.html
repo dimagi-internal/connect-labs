@@ -1,10 +1,11 @@
-{% extends "base.html" %}
+{% extends "custom_analysis/analysis_base.html" %}
 {% load static %}
 
 {% block title %}KMC - Children{% endblock %}
 
-{% block content %}
-<div class="container mx-auto p-6" x-data="kmcChildList()">
+{% block x_data %}x-data="kmcChildList()"{% endblock %}
+
+{% block analysis_header %}
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
@@ -24,7 +25,9 @@
             </button>
         </div>
     </div>
+{% endblock analysis_header %}
 
+{% block analysis_body %}
     {% if not has_context %}
     <!-- No Context Warning -->
     <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
@@ -186,8 +189,7 @@
     </div>
 
     {% endif %}
-</div>
-{% endblock content %}
+{% endblock analysis_body %}
 
 {% block inline_javascript %}
 {% if has_context and has_oauth %}

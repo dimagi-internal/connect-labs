@@ -1,0 +1,176 @@
+{% comment %}
+Self-service synthetic data banner.
+Include on any analysis page that should support synthetic data generation.
+
+Usage:
+  {% include "labs/synthetic/self_service_banner.html" %}
+
+Always visible when an opportunity is selected. Adapts text based on whether
+real data exists. Synthetic data is only used when the user explicitly generates it.
+{% endcomment %}
+
+{% if has_context %}
+<div x-data="syntheticBanner()" x-init="init()" class="mb-4">
+
+  <!-- Active synthetic data banner -->
+  <template x-if="status.active">
+    <div class="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <i class="fa-solid fa-flask text-amber-600 text-lg"></i>
+        <div>
+          <p class="text-sm font-semibold text-amber-900">Showing synthetic data</p>
+          <p class="text-xs text-amber-700">
+            <span x-text="status.visit_count"></span> fake visits active for this opportunity.
+            Expires <span x-text="formatExpiry(status.expires_at)"></span>.
+          </p>
+        </div>
+      </div>
+      <button
+        @click="clearData()"
+        :disabled="loading"
+        class="button button-sm outline-style text-amber-800 border-amber-400 hover:bg-amber-100 flex-shrink-0"
+      >
+        <i class="fa-solid fa-trash mr-1.5"></i>
+        <span x-text="loading ? 'Clearing...' : 'Clear &amp; use real data'"></span>
+      </button>
+    </div>
+  </template>
+
+  <!-- Generate prompt (shown when no synthetic data is active) -->
+  <template x-if="!status.active">
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div class="flex items-start gap-3">
+        <i class="fa-solid fa-flask text-blue-500 mt-0.5"></i>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-blue-900 mb-0.5" x-text="promptTitle()"></p>
+          <p class="text-xs text-blue-700 mb-3" x-html="generateDescription()"></p>
+          <template x-if="canGenerate()">
+            <div class="flex items-center gap-3 flex-wrap">
+              <div class="flex items-center gap-2">
+                <label class="text-xs text-blue-800 font-medium">Visits:</label>
+                <input
+                  type="number"
+                  x-model="visitCount"
+                  min="10"
+                  max="2000"
+                  class="w-24 text-sm border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+              </div>
+              <button
+                @click="generate()"
+                :disabled="loading"
+                class="button button-sm primary-dark"
+              >
+                <i class="fa-solid fa-wand-magic-sparkles mr-1.5"></i>
+                <span x-text="loading ? 'Generating...' : 'Generate synthetic data'"></span>
+              </button>
+            </div>
+          </template>
+          <p x-show="errorMsg" x-text="errorMsg" class="text-xs text-red-600 mt-2"></p>
+        </div>
+      </div>
+    </div>
+  </template>
+
+</div>
+
+<script>
+function syntheticBanner() {
+  return {
+    status: { active: false },
+    visitCount: 200,
+    loading: false,
+    errorMsg: '',
+    realVisitCount: {{ request.labs_context.opportunity.visit_count|default:0 }},
+    minVisits: 5,
+
+    async init() {
+      try {
+        const resp = await fetch("{% url 'labs:synthetic:self_service_status' %}");
+        this.status = await resp.json();
+      } catch (e) {
+        // silently ignore — don't break the page if this fails
+      }
+    },
+
+    canGenerate() {
+      return this.realVisitCount >= this.minVisits;
+    },
+
+    promptTitle() {
+      if (!this.canGenerate()) {
+        return `Not enough real visits to generate synthetic data`;
+      } else if (this.realVisitCount < 1000) {
+        return `Only ${this.realVisitCount} real visit${this.realVisitCount === 1 ? '' : 's'} — preview with more data`;
+      } else {
+        return 'Preview this analysis with synthetic data';
+      }
+    },
+
+    generateDescription() {
+      if (!this.canGenerate()) {
+        return `Synthetic data requires at least <strong>${this.minVisits} real visits</strong> to generate realistic field values. This opportunity currently has ${this.realVisitCount}.`;
+      }
+      return 'Generate fake visits to preview this analysis with realistic data. Private to you, expires after 24 hours.';
+    },
+
+    async generate() {
+      this.loading = true;
+      this.errorMsg = '';
+      try {
+        const formData = new FormData();
+        formData.append('visit_count', this.visitCount);
+        formData.append('csrfmiddlewaretoken', this.getCsrf());
+        const resp = await fetch("{% url 'labs:synthetic:self_service_generate' %}", {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          this.status = { active: true, visit_count: data.visit_count, expires_at: data.expires_at };
+          window.location.reload();
+        } else {
+          this.errorMsg = data.error || 'Generation failed. Please try again.';
+        }
+      } catch (e) {
+        this.errorMsg = 'Network error. Please try again.';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async clearData() {
+      this.loading = true;
+      try {
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', this.getCsrf());
+        const resp = await fetch("{% url 'labs:synthetic:self_service_clear' %}", {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          this.status = { active: false };
+          window.location.reload();
+        }
+      } catch (e) {
+        // ignore
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    formatExpiry(isoString) {
+      if (!isoString) return '';
+      const d = new Date(isoString);
+      return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+    },
+
+    getCsrf() {
+      const el = document.querySelector('[name=csrfmiddlewaretoken]');
+      return el ? el.value : '';
+    },
+  };
+}
+</script>
+{% endif %}

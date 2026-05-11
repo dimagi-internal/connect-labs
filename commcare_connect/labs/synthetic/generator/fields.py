@@ -46,6 +46,23 @@ def _default_for_kind(spec: QuestionSpec, rng: random.Random) -> Any:
     return f"sample-{rng.randint(0, 999)}"
 
 
+def _set_nested(obj: dict, dotted_path: str, value: Any) -> None:
+    """Set a value in a nested dict using a dotted path.
+
+    "form.case.update.muac_cm" -> obj["form"]["case"]["update"]["muac_cm"] = value
+
+    If an intermediate node already holds a non-dict value (e.g. a string set by
+    a shallower question), it is replaced with a dict so the deeper path can be set.
+    """
+    parts = dotted_path.split(".")
+    for part in parts[:-1]:
+        existing = obj.get(part)
+        if not isinstance(existing, dict):
+            obj[part] = {}
+        obj = obj[part]
+    obj[parts[-1]] = value
+
+
 def fill_form_json(
     *,
     schema: FormSchema,
@@ -58,12 +75,12 @@ def fill_form_json(
     for spec in schema.questions:
         dist = cohort.field_distributions.get(spec.json_path)
         if dist is None:
-            out[spec.json_path] = _default_for_kind(spec, rng)
-            continue
-        value = _outlier(dist, rng) if spec.json_path in anomaly_paths else _draw(dist, rng)
-        if spec.kind == "int":
-            value = int(round(value))
+            value = _default_for_kind(spec, rng)
         else:
-            value = round(float(value), 3)
-        out[spec.json_path] = value
+            raw = _outlier(dist, rng) if spec.json_path in anomaly_paths else _draw(dist, rng)
+            if spec.kind == "int":
+                value = int(round(raw))
+            else:
+                value = round(float(raw), 3)
+        _set_nested(out, spec.json_path, value)
     return out

@@ -111,6 +111,7 @@ class SQLBackend:
         tolerance_pct: int = 100,
         include_images: bool = False,
         pipeline_id: int | None = None,
+        user=None,
     ) -> list[dict]:
         """
         Fetch raw visit data from SQL cache or API.
@@ -150,7 +151,7 @@ class SQLBackend:
 
         # Cache miss or force refresh - fetch from API
         logger.info(f"[SQL] Raw cache MISS for opp {opportunity_id}, fetching from API")
-        visit_dicts = self._fetch_from_api(opportunity_id, access_token, include_images=include_images)
+        visit_dicts = self._fetch_from_api(opportunity_id, access_token, include_images=include_images, user=user)
 
         # Store full data to SQL cache
         visit_count = len(visit_dicts)
@@ -178,6 +179,7 @@ class SQLBackend:
         force_refresh: bool = False,
         tolerance_pct: int = 100,
         pipeline_id: int | None = None,
+        user=None,
     ) -> Generator[tuple[str, Any], None, None]:
         """
         Stream raw visit data with progress events using v2 paginated JSON.
@@ -223,6 +225,7 @@ class SQLBackend:
                 opportunity_id=opportunity_id,
                 access_token=access_token,
                 timeout=180.0,
+                user=user,
             ) as client:
                 for page in client.paginate(endpoint):
                     # Convert v2 records to visit dicts (with form_json)
@@ -293,6 +296,7 @@ class SQLBackend:
         opportunity_id: int,
         access_token: str,
         include_images: bool = False,
+        user=None,
     ) -> list[dict]:
         """Fetch all user visits from Connect v2 export API as a list of visit dicts.
 
@@ -312,6 +316,7 @@ class SQLBackend:
                 opportunity_id=opportunity_id,
                 access_token=access_token,
                 timeout=180.0,
+                user=user,
             ) as client:
                 visits: list[dict] = []
                 for page in client.paginate(endpoint, params=params):

@@ -21,7 +21,8 @@ from commcare_connect.labs.synthetic import registry
 from commcare_connect.labs.synthetic.dump import dump_generator
 from commcare_connect.labs.synthetic.forms import SyntheticOpportunityForm
 from commcare_connect.labs.synthetic.gdrive import DriveAPIError, DriveAuthError, DriveClient
-from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+from commcare_connect.labs.synthetic.models import SyntheticOpportunity, UserSyntheticDataset
+from commcare_connect.labs.synthetic.self_service import SyntheticGenerationError, generate_and_save
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,102 @@ def test_access_view(request):
     except DriveAPIError as e:
         return JsonResponse({"ok": False, "error": f"Drive error: {e}"}, status=500)
     return JsonResponse({"ok": True, "files": sorted(files.keys())})
+
+
+@login_required
+@require_POST
+def self_service_generate_view(request):
+    """Generate synthetic data for the current user + opportunity."""
+    labs_context = getattr(request, "labs_context", None) or {}
+    opp_id = labs_context.get("opportunity_id")
+    if not opp_id:
+        return JsonResponse({"ok": False, "error": "No opportunity selected."}, status=400)
+
+    try:
+        visit_count = int(request.POST.get("visit_count", 200))
+        visit_count = max(10, min(visit_count, 2000))
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "Invalid visit count."}, status=400)
+
+    real_visit_count = (labs_context.get("opportunity") or {}).get("visit_count", 0) or 0
+    min_visits = 5
+    if real_visit_count < min_visits:
+        return JsonResponse(
+            {
+                "ok": False,
+                "error": (
+                    f"Synthetic data requires at least {min_visits} real visits."
+                    f" This opportunity has {real_visit_count}."
+                ),
+            },
+            status=400,
+        )
+
+    access_token = (request.session.get("labs_oauth") or {}).get("access_token")
+    if not access_token:
+        return JsonResponse({"ok": False, "error": "No OAuth token. Please log in again."}, status=403)
+
+    try:
+        dataset = generate_and_save(
+            user=request.user,
+            opportunity_id=opp_id,
+            visit_count=visit_count,
+            access_token=access_token,
+        )
+        # Clear the analysis SQL cache so the pipeline fetches fresh synthetic data
+        from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
+
+        SQLCacheManager.delete_all_cache(opp_id)
+        return JsonResponse(
+            {
+                "ok": True,
+                "visit_count": dataset.visit_count,
+                "expires_at": dataset.expires_at.isoformat(),
+            }
+        )
+    except SyntheticGenerationError as e:
+        logger.warning("Self-service synthetic generation failed: %s", e)
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+    except Exception:
+        logger.exception("Unexpected error during synthetic generation")
+        return JsonResponse({"ok": False, "error": "An unexpected error occurred."}, status=500)
+
+
+@login_required
+@require_POST
+def self_service_clear_view(request):
+    """Delete the user's synthetic dataset for the current opportunity."""
+    labs_context = getattr(request, "labs_context", None) or {}
+    opp_id = labs_context.get("opportunity_id")
+    if not opp_id:
+        return JsonResponse({"ok": False, "error": "No opportunity selected."}, status=400)
+
+    deleted, _ = UserSyntheticDataset.objects.filter(user=request.user, opportunity_id=opp_id).delete()
+    # Clear the analysis SQL cache so the pipeline re-fetches real data
+    from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
+
+    SQLCacheManager.delete_all_cache(opp_id)
+    return JsonResponse({"ok": True, "deleted": deleted > 0})
+
+
+@login_required
+def self_service_status_view(request):
+    """Return whether the user has active synthetic data for the current opportunity."""
+    labs_context = getattr(request, "labs_context", None) or {}
+    opp_id = labs_context.get("opportunity_id")
+    if not opp_id:
+        return JsonResponse({"active": False})
+
+    dataset = UserSyntheticDataset.for_user_and_opp(request.user, opp_id)
+    if dataset:
+        return JsonResponse(
+            {
+                "active": True,
+                "visit_count": dataset.visit_count,
+                "expires_at": dataset.expires_at.isoformat(),
+            }
+        )
+    return JsonResponse({"active": False})
 
 
 class DumpStreamView(BaseSSEStreamView):
