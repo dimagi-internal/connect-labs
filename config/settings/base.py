@@ -17,7 +17,16 @@ BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 GDAL_LIBRARY_PATH = None
 GEOS_LIBRARY_PATH = None
 
-if sys.platform == "win32":
+if sys.platform == "darwin":
+    # macOS: GDAL installed via Homebrew
+    homebrew_gdal = Path("/opt/homebrew/lib/libgdal.dylib")
+    if homebrew_gdal.exists():
+        GDAL_LIBRARY_PATH = str(homebrew_gdal)
+    homebrew_geos = Path("/opt/homebrew/lib/libgeos_c.dylib")
+    if homebrew_geos.exists():
+        GEOS_LIBRARY_PATH = str(homebrew_geos)
+
+elif sys.platform == "win32":
     # Common OSGeo4W installation paths
     osgeo4w_paths = [
         os.path.expandvars(r"%LOCALAPPDATA%\Programs\OSGeo4W\bin"),

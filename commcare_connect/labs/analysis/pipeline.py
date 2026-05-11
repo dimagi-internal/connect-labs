@@ -176,6 +176,7 @@ class AnalysisPipeline:
             skip_form_json=skip_form_json,
             filter_visit_ids=filter_visit_ids,
             include_images=include_images,
+            user=getattr(self.request, "user", None),
         )
 
     def has_valid_raw_cache(self, opportunity_id: int | None = None) -> bool:
@@ -331,6 +332,7 @@ class AnalysisPipeline:
             force_refresh=force_refresh,
             tolerance_pct=tolerance_pct,
             pipeline_id=pipeline_id,
+            user=getattr(self.request, "user", None),
         ):
             event_type = event[0]
             if event_type == "cached":

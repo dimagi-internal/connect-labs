@@ -275,8 +275,10 @@ class CHCNutritionStreamView(LoginRequiredMixin, View):
                 from_cache = from_cache or "Cache hit" in data["message"]
                 yield send_sse(data["message"])
             elif event_type == EVENT_DOWNLOAD:
-                pct = f" ({int(data['bytes'] / data['total'] * 100)}%)" if data["total"] else ""
-                yield send_sse(f"Downloading... {format_bytes(data['bytes'])}{pct}")
+                received = data.get("bytes", 0)
+                total = data.get("total", 0)
+                pct = f" ({int(received / total * 100)}%)" if total else ""
+                yield send_sse(f"Downloading... {format_bytes(received)}{pct}")
             elif event_type == EVENT_RESULT:
                 flw_result = data
 

@@ -85,10 +85,11 @@ def parse_form_schema_from_app_json(
           "deliver_app": {"modules": [...]} | null
         }
 
-    Picks the requested app's primary form (first form of the first module
-    that has any) and flattens its question tree, descending into ``children``
-    for grouped / repeated subforms. Returns an empty FormSchema if the app of
-    that type is missing or has no forms — callers degrade gracefully.
+    Collects questions from ALL forms in ALL modules so that multi-module apps
+    (e.g. registration + service delivery) are fully represented. Duplicate
+    json_path entries are deduplicated, keeping the first occurrence.
+    Returns an empty FormSchema if the app of that type is missing or has no
+    forms — callers degrade gracefully.
     """
     if not isinstance(app_json, dict):
         return FormSchema(questions=[])
@@ -96,14 +97,19 @@ def parse_form_schema_from_app_json(
     if not isinstance(app, dict):
         return FormSchema(questions=[])
 
+    seen: set[str] = set()
+    questions: list[QuestionSpec] = []
     for module in app.get("modules") or []:
         if not isinstance(module, dict):
             continue
         for form in module.get("forms") or []:
             if not isinstance(form, dict):
                 continue
-            return _hq_form_to_schema(form)
-    return FormSchema(questions=[])
+            for q in _hq_form_to_schema(form).questions:
+                if q.json_path not in seen:
+                    seen.add(q.json_path)
+                    questions.append(q)
+    return FormSchema(questions=questions)
 
 
 def _hq_form_to_schema(form: dict[str, Any]) -> FormSchema:

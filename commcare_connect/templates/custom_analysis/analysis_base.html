@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% load static %}
+{% comment %}
+Base template for all custom analysis dashboards.
+
+Usage:
+  {% extends "custom_analysis/analysis_base.html" %}
+
+  {# Alpine component name, e.g. x-data="myAnalysis()" #}
+  {% block x_data %}x-data="myAnalysis()"{% endblock %}
+
+  {# Title bar: heading + action buttons #}
+  {% block analysis_header %}...{% endblock %}
+
+  {# Main page body: warnings, loading indicator, data table, etc. #}
+  {% block analysis_body %}...{% endblock %}
+
+  {# Optional: append JavaScript #}
+  {% block inline_javascript %}{{ block.super }}<script>...</script>{% endblock %}
+
+The synthetic data banner is included automatically between the header and body.
+It is self-guarded (only renders when an opportunity is selected), so no
+conditional wrapper is needed in individual templates.
+{% endcomment %}
+
+{% block content %}
+<div class="container mx-auto p-6" {% block x_data %}{% endblock %}>
+    {% block analysis_header %}{% endblock %}
+
+    {% include "labs/synthetic/self_service_banner.html" %}
+
+    {% block analysis_body %}{% endblock %}
+</div>
+{% endblock %}

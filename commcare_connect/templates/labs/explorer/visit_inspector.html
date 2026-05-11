@@ -486,6 +486,7 @@
         this.loadingStep = 0;
         this.loadError = null;
         this.receivedEvents = false;
+        if (this._retryCount === undefined) this._retryCount = 0;
 
         this.eventSource = new EventSource(streamUrl);
 
@@ -527,11 +528,16 @@
           console.error('[VisitInspector] SSE error:', error);
           this.eventSource.close();
 
-          if (!this.receivedEvents) {
-            this.loadError = 'Connection failed. Please refresh the page.';
-            this.loading = false;
+          const maxRetries = 2;
+          if (this._retryCount < maxRetries) {
+            this._retryCount++;
+            console.log(`[VisitInspector] Retrying (${this._retryCount}/${maxRetries}) in 3s...`);
+            setTimeout(() => this.loadData(streamUrl), 3000);
           } else {
-            this.loadError = 'Connection lost. Please try again.';
+            this._retryCount = 0;
+            this.loadError = this.receivedEvents
+              ? 'Connection lost. Please try again.'
+              : 'Connection failed. Please refresh the page.';
             this.loading = false;
           }
         };

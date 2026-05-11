@@ -1,10 +1,11 @@
-{% extends "base.html" %}
+{% extends "custom_analysis/analysis_base.html" %}
 {% load static %}
 
 {% block title %}CHC Nutrition Analysis{% endblock %}
 
-{% block content %}
-<div class="container mx-auto p-6" x-data="chcNutritionAnalysis()">
+{% block x_data %}x-data="chcNutritionAnalysis()"{% endblock %}
+
+{% block analysis_header %}
     <!-- Header -->
     <div class="flex justify-between items-center mb-6">
         <div>
@@ -24,7 +25,9 @@
             </button>
         </div>
     </div>
+{% endblock analysis_header %}
 
+{% block analysis_body %}
     {% if error %}
         <!-- Error Alert (Django-side errors like no context) -->
         <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6">
@@ -404,8 +407,7 @@
     </div>
 
     {% endif %}
-</div>
-{% endblock %}
+{% endblock analysis_body %}
 
 {% block inline_javascript %}
 {{ block.super }}
