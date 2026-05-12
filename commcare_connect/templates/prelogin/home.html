@@ -2878,7 +2878,7 @@
     background-repeat: no-repeat;
   }
   .explore-panel.sky    {
-    background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-1.png' %}'), linear-gradient(135deg, var(--sky-deep) 0%, var(--sky) 100%);
+    background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-1.jpg' %}'), linear-gradient(135deg, var(--sky-deep) 0%, var(--sky) 100%);
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -4949,9 +4949,12 @@
           </div>
         </figure>
 
+        {# import-time edit: video testimonial omitted — 10MB MP4 not shipped as static; revisit when video hosting is decided. #}
+        {% comment %}
         <figure class="testimonial-card tc-video">
           <video src="{% static 'prelogin/videos/odera-1m-congrats.mp4' %}" controls playsinline></video>
         </figure>
+        {% endcomment %}
 
         <figure class="testimonial-card coming-soon with-photo">
           <div class="photo-block ph-field-5"><span class="photo-label">Photo coming soon</span></div>
