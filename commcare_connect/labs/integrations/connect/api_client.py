@@ -70,7 +70,7 @@ class LabsRecordAPIClient:
         self.base_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
         self.http_client = httpx.Client(
             headers={"Authorization": f"Bearer {self.access_token}"},
-            timeout=30.0,
+            timeout=120.0,
         )
 
     def close(self):

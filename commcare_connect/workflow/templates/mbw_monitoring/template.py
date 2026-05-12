@@ -3565,7 +3565,7 @@ RENDER_CODE = """function WorkflowUI({ definition, instance, workers, pipelines,
                                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"># FLWs</th>
                                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cases</th>
-                                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Eligible at Reg</th>
+                                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Eligible (incl. ANC)</th>
                                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Still Eligible</th>
                                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">% Still Eligible</th>
                                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider" title="Eligible cases with 0 or 1 missed visits / eligible cases">% &le;1 Missed</th>

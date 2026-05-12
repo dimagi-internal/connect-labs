@@ -1749,47 +1749,7 @@ class PipelineDataAccess(BaseDataAccess):
                 pipeline = AnalysisPipeline(access_token=self.access_token)
             result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
 
-            # Convert result to dict format
-            rows = []
-            if hasattr(result, "rows"):
-                for row in result.rows:
-                    # Format dates consistently
-                    def format_date(d):
-                        if d and hasattr(d, "isoformat"):
-                            return d.isoformat()
-                        return str(d) if d else None
-
-                    row_dict = {
-                        "id": getattr(row, "id", None),
-                        "username": getattr(row, "username", None),
-                        "visit_date": format_date(getattr(row, "visit_date", None)),
-                        # Built-in FLW aggregation fields (zero for entity/visit stages
-                        # via getattr defaults — entity rows don't carry status counters).
-                        "total_visits": getattr(row, "total_visits", 0),
-                        "approved_visits": getattr(row, "approved_visits", 0),
-                        "pending_visits": getattr(row, "pending_visits", 0),
-                        "rejected_visits": getattr(row, "rejected_visits", 0),
-                        "flagged_visits": getattr(row, "flagged_visits", 0),
-                        "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
-                        "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
-                        # Entity-stage / visit-level fields. None on FLW rows.
-                        "entity_id": getattr(row, "entity_id", None),
-                        "entity_name": getattr(row, "entity_name", None),
-                        # Per-visit status / flagged. Required by job handlers that
-                        # filter visit rows post-pipeline (e.g. MBW V2's
-                        # status_filter=["approved"]). Missing them used to drop
-                        # every visit because `(r.get("status") or "").lower()`
-                        # returned "" for every row.
-                        "status": getattr(row, "status", None),
-                        "flagged": getattr(row, "flagged", None),
-                    }
-                    # Add computed fields (custom fields from config)
-                    # FLWRow / EntityRow use custom_fields, VisitRow uses computed
-                    custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
-                    if custom:
-                        row_dict.update(custom)
-                    rows.append(row_dict)
-
+            rows = self._serialize_pipeline_rows(result)
             return {
                 "rows": rows,
                 "metadata": {
@@ -1813,6 +1773,74 @@ class PipelineDataAccess(BaseDataAccess):
                 error_meta["auth_error_domain"] = e.domain
                 error_meta["auth_authorize_url"] = "/labs/commcare/initiate/"
             return {"rows": [], "metadata": error_meta}
+
+    def execute_pipeline_from_schema(self, schema: dict, opportunity_id: int, alias: str = "pipeline") -> dict:
+        """Execute a pipeline directly from a schema dict (no DB lookup).
+
+        Used by server-side job handlers that import their own PIPELINE_SCHEMAS
+        and need to fetch data without going through the browser round-trip.
+
+        Args:
+            schema: raw schema dict (same format as PIPELINE_SCHEMAS[n]["schema"])
+            opportunity_id: opportunity to fetch data for
+            alias: used as the cache experiment name (use the pipeline alias for stable caching)
+        """
+        from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
+
+        if not self.request:
+            return {"rows": [], "metadata": {"error": "Request object required for pipeline execution"}}
+
+        try:
+            # Use a deterministic fake definition_id for cache experiment naming
+            fake_id = abs(hash(alias)) % 900000 + 100000
+            config = self._schema_to_config(schema, fake_id)
+            pipeline = AnalysisPipeline(self.request)
+            result = pipeline.stream_analysis_ignore_events(config, opportunity_id)
+            rows = self._serialize_pipeline_rows(result)
+            return {
+                "rows": rows,
+                "metadata": {
+                    "row_count": len(rows),
+                    "from_cache": getattr(result, "from_cache", False),
+                    "alias": alias,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Pipeline schema execution failed (alias={alias}): {e}", exc_info=True)
+            return {"rows": [], "metadata": {"error": str(e)}}
+
+    def _serialize_pipeline_rows(self, result) -> list:
+        """Convert pipeline result rows to serializable dicts."""
+
+        def format_date(d):
+            if d and hasattr(d, "isoformat"):
+                return d.isoformat()
+            return str(d) if d else None
+
+        rows = []
+        if hasattr(result, "rows"):
+            for row in result.rows:
+                row_dict = {
+                    "id": getattr(row, "id", None),
+                    "username": getattr(row, "username", None),
+                    "visit_date": format_date(getattr(row, "visit_date", None)),
+                    "total_visits": getattr(row, "total_visits", 0),
+                    "approved_visits": getattr(row, "approved_visits", 0),
+                    "pending_visits": getattr(row, "pending_visits", 0),
+                    "rejected_visits": getattr(row, "rejected_visits", 0),
+                    "flagged_visits": getattr(row, "flagged_visits", 0),
+                    "first_visit_date": format_date(getattr(row, "first_visit_date", None)),
+                    "last_visit_date": format_date(getattr(row, "last_visit_date", None)),
+                    "entity_id": getattr(row, "entity_id", None),
+                    "entity_name": getattr(row, "entity_name", None),
+                    "status": getattr(row, "status", None),
+                    "flagged": getattr(row, "flagged", None),
+                }
+                custom = getattr(row, "custom_fields", None) or getattr(row, "computed", None)
+                if custom:
+                    row_dict.update(custom)
+                rows.append(row_dict)
+        return rows
 
     def _schema_to_config(self, schema: dict, definition_id: int):
         """Convert JSON schema to AnalysisPipelineConfig."""

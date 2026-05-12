@@ -1148,7 +1148,14 @@ def compute_flw_performance_by_status(
             all_mothers.extend(flw_drilldown.get(username, []))
 
         total_cases = len(all_mothers)
-        eligible_mothers = [m for m in all_mothers if m.get("eligible")]
+        eligible_mothers = [
+            m for m in all_mothers
+            if m.get("eligible")
+            and any(
+                v["visit_type"] == "ANC" and v["status"].startswith("Completed")
+                for v in m.get("visits", [])
+            )
+        ]
         total_eligible = len(eligible_mothers)
 
         # --- still eligible: eligible AND (completed >= 5 OR missed <= 1) ---
