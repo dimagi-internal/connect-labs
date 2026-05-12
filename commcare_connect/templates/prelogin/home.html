@@ -1,8 +1,11 @@
 <!DOCTYPE html>
 {% load static %}
-{# Imported from dimagi-internal/connect-prelogin. Three import-time edits #}
+{# Imported from dimagi-internal/connect-prelogin. Four import-time edits #}
 {# (search "import-time edit"): .mockup-bar strip, login link template var, #}
-{# asset paths wrapped in static template tags. #}
+{# asset paths wrapped in static template tags, and referrerpolicy on YouTube #}
+{# iframes (Django sends Referrer-Policy: same-origin by default, which strips #}
+{# the Referer on cross-origin requests; YouTube needs at least the origin or #}
+{# its player surfaces error 153). #}
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -29,6 +32,7 @@
     --indigo-deep: #2832A0;
     --indigo-soft: #E7E9FB;
     --sky: #8EA1FF;
+    --sky-deep: #5C6FE8;
     --sky-tint: #F0F3FF;
     /* Mango, used sparingly: CTA buttons, single key stats */
     --mango: #FC5F36;
@@ -59,7 +63,6 @@
   a { color: inherit; text-decoration: none; }
   a:hover { color: var(--indigo); }
   img { max-width: 100%; display: block; }
-
   {# import-time edit: .mockup-bar CSS removed (preview-only banner) #}
 
   /* Header, flat solid nav, dark navy on light body */
@@ -954,8 +957,11 @@
     margin: 0 auto;
     padding: 0 32px;
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
     gap: 36px;
+  }
+  .foot-brand {
+    text-align: left;
   }
   .foot-brand .logo { font-size: 22px; color: var(--paper); display: inline-block; margin-bottom: 14px; }
   .foot-brand p { font-size: 13.5px; max-width: 38ch; line-height: 1.6; margin: 0; }
@@ -1011,8 +1017,26 @@
     z-index: 2;
     overflow: visible;
   }
+  /* Label above the horizontal arrow */
+  .market-arrow-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, calc(-50% - 32px));
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--indigo);
+    text-align: center;
+    line-height: 1.25;
+    pointer-events: none;
+    z-index: 2;
+  }
   @media (max-width: 980px) {
-    .market-arrow { display: none; }
+    .market-arrow,
+    .market-arrow-label { display: none; }
   }
   /* Legacy center-exchange element retained for backwards compatibility, hidden */
   .market-exchange { display: none; }
@@ -1685,6 +1709,26 @@
     margin-top: 8px;
     font-weight: 400;
   }
+  .numbers-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .numbers-header .step-block-label {
+    margin: 0;
+  }
+  .source-link {
+    font-size: 11px;
+    color: var(--ink-3);
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+    opacity: 0.55;
+    transition: opacity 0.15s;
+  }
+  .source-link:hover {
+    opacity: 1;
+  }
 
   /* Per-step Insights subsection (inside step-detail) */
   .step-detail .step-insights {
@@ -1773,6 +1817,36 @@
     grid-row: span 2;
     height: 496px;
   }
+  /* Video story block */
+  .story-video-block { background: #000; overflow: hidden; }
+  .story-video-block::before,
+  .story-video-block::after { display: none; }
+  .story-video-block .story-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Join page — video + tiles grid under testimonials */
+  .join-video-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 240px 240px;
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .join-video-section .story-video-block {
+    grid-row: span 2;
+    border-radius: var(--radius);
+    height: auto;
+  }
+  .join-video-section .photo-block {
+    border-radius: var(--radius);
+    height: auto;
+  }
+
   /* Yellow "Story coming soon" placeholders for the gallery */
   .gallery-grid .photo-block.placeholder-block {
     background: #FFF8D6;
@@ -2191,6 +2265,20 @@
     line-height: 1.7;
   }
   .testimonial-card .who b { color: var(--ink); font-weight: 600; }
+  .testimonial-card.tc-video {
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+    min-height: 240px;
+  }
+  .testimonial-card.tc-video video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
   .testimonial-card .illustrative {
     display: inline-block;
     font-family: var(--mono);
@@ -2237,7 +2325,7 @@
 
   .role-cta-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 18px;
   }
   .role-card {
@@ -2256,6 +2344,7 @@
     box-shadow: 0 16px 40px rgba(56,67,208,0.1);
   }
   .role-card.warm:hover { border-color: var(--mango); box-shadow: 0 16px 40px rgba(252,95,54,0.1); }
+  .role-card.funder:hover { border-color: #1B998B; box-shadow: 0 16px 40px rgba(27,153,139,0.1); }
   .role-card .role-icon {
     width: 56px;
     height: 56px;
@@ -2267,6 +2356,7 @@
     justify-content: center;
   }
   .role-card.warm .role-icon { background: rgba(252,95,54,0.12); color: var(--mango); }
+  .role-card.funder .role-icon { background: rgba(27,153,139,0.12); color: #1B998B; }
   .role-card .role-icon svg { width: 28px; height: 28px; }
   .role-card .role-tag {
     font-family: var(--mono);
@@ -2277,6 +2367,7 @@
     font-weight: 600;
   }
   .role-card.warm .role-tag { color: var(--mango); }
+  .role-card.funder .role-tag { color: #1B998B; }
   .role-card h3 { font-size: 28px; font-weight: 300; }
   .role-card h3 em { font-weight: 600; }
   .role-card p { font-size: 15px; color: var(--ink-3); line-height: 1.6; margin: 0; }
@@ -2296,8 +2387,12 @@
     font-weight: 600;
   }
   .role-card.warm li::before { color: var(--mango); }
+  .role-card.funder li::before { color: #1B998B; }
   .role-card .role-action {
     margin-top: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
   }
 
   /* Home hero, tagged stat rows (Scale + Impact) on dark bg */
@@ -2596,10 +2691,10 @@
     display: block;
   }
 
-  /* Home, "What's different" comparison table (Old way vs Connect) */
+  /* Home, "What's different" comparison table (Area | Old way | Connect way) */
   .compare-table {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(150px, 200px) 1fr 1fr;
     gap: 1px;
     background: var(--line);
     border: 1px solid var(--line);
@@ -2620,6 +2715,11 @@
     align-items: center;
     min-height: 84px;
   }
+  .compare-header.area {
+    color: var(--ink-2);
+    background: var(--paper-2);
+    border-bottom: 1px solid var(--line);
+  }
   .compare-header.old {
     color: var(--muted);
     background: var(--paper-warm);
@@ -2635,6 +2735,17 @@
     padding: 30px 32px;
     font-size: 15.5px;
     line-height: 1.6;
+  }
+  .compare-cell.area {
+    background: var(--paper-2);
+    color: var(--ink-2);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
   }
   .compare-cell.old {
     background: var(--paper-warm);
@@ -2761,33 +2872,17 @@
   }
   .explore-panel span { position: relative; z-index: 1; max-width: 22ch; }
   .explore-panel.indigo {
-    background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/CHC/chc-1.jpg' %}'), linear-gradient(135deg, var(--indigo-deep) 0%, var(--indigo) 100%);
+    background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/CHC/chc-3.jpg' %}'), linear-gradient(135deg, var(--indigo-deep) 0%, var(--indigo) 100%);
     background-size: cover;
     background-position: center 35%;
     background-repeat: no-repeat;
   }
   .explore-panel.sky    {
-    background: #FFF8D6;
-    border: 2px dashed #D9B82A;
-    color: #6B5800;
-  }
-  .explore-panel.sky::before,
-  .explore-panel.sky::after { display: none; }
-  .explore-panel.sky .placeholder-tag {
-    display: block;
-    font-family: var(--mono);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #8A6F00;
-    margin-bottom: 8px;
-  }
-  .explore-panel.sky .placeholder-name {
-    font-family: var(--sans);
-    font-size: 16px;
-    font-weight: 500;
-    color: #4F4100;
+    background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-1.png' %}'), linear-gradient(135deg, var(--sky-deep) 0%, var(--sky) 100%);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    color: #fff;
   }
   .explore-panel.ink    {
     background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/join-hero.jpg' %}'), linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 100%);
@@ -2811,6 +2906,26 @@
     font-weight: 600;
     margin-top: 26px;
   }
+  /* Small icon tile shown at the top of CHC service cards */
+  .service-icon {
+    margin: 26px 32px 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--indigo-soft);
+    color: var(--indigo);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .service-icon svg {
+    width: 22px;
+    height: 22px;
+    display: block;
+  }
+  /* When a service icon precedes the explore-tag, tighten the gap */
+  .service-icon + .explore-tag { margin-top: 14px; }
   .explore-card h4 {
     font-size: 18px;
     font-weight: 500;
@@ -3073,6 +3188,7 @@
     .impact-grid, .prog-grid, .findings-grid, .all-programs-grid, .stories-grid, .testimonial-grid, .role-cta-grid, .diff-grid { grid-template-columns: 1fr 1fr; }
     .explore-grid { grid-template-columns: 1fr; }
     .compare-table { grid-template-columns: 1fr; }
+    .compare-table .compare-header.area { display: none; }
     .impact-section-block .imp-row { grid-template-columns: 1fr; }
     .impact-section-block .imp-label { border-right: none; border-bottom: 1px solid var(--line); padding: 16px 22px; }
     .impact-section-block .imp-tiles.cols-3, .impact-section-block .imp-tiles.cols-4 { grid-template-columns: 1fr 1fr; }
@@ -3138,8 +3254,8 @@
 
 <header class="site-header">
   <div class="header-inner">
-    <a class="logo" href="#/" aria-label="Connect by Dimagi"><svg><use href="#connect-logo"/></svg></a>
-    <nav id="primary-nav">
+    <a class="logo" href="#/" aria-label="Connect by Dimagi"><svg viewBox="0 0 1526 431"><use href="#connect-logo"/></svg></a>
+     <nav id="primary-nav">
       <a href="#/" data-route="/">Home</a>
       <a href="#/how-it-works" data-route="/how-it-works">How It Works</a>
       <a href="#/programs" data-route="/programs">Programs</a>
@@ -3161,16 +3277,16 @@
     <div class="wrap">
       <span class="eyebrow on-dark">Connect by Dimagi</span>
       <h1>Pay for <em>verified service delivery</em>, not planned activity.</h1>
-      <p class="lede">Connect delivers high-impact interventions in the places where the need is strongest, through a marketplace of local, government-aligned organizations, with every service independently verified the moment it's done.</p>
+      <p class="lede">Connect delivers high-impact interventions in the places where the need is strongest. Through a marketplace of local, government-aligned organizations, every service is independently verified the moment it's done.</p>
       <div class="hero-actions">
-        <a href="#/" class="btn primary">Request a Demo</a>
+        <a href="mailto:connect-info@dimagi.com" class="btn primary">Request a Demo</a>
         <a href="#/how-it-works" class="btn ghost on-dark">See how it works →</a>
       </div>
       <div class="hero-stats">
         <div class="hero-stats-row">
           <span class="hero-stats-tag">Scale</span>
           <div class="hero-stats-items">
-            <div><div class="num">200+</div><div class="label">Frontline Organizations</div></div>
+            <div><div class="num">50+</div><div class="label">Frontline Organizations</div></div>
             <div><div class="num">5,000+</div><div class="label">Users trained</div></div>
             <div><div class="num">13</div><div class="label">Countries</div></div>
           </div>
@@ -3179,7 +3295,7 @@
           <span class="hero-stats-tag">Impact</span>
           <div class="hero-stats-items">
             <div><div class="num">1.5M+</div><div class="label">Verified services delivered</div></div>
-            <div><div class="num">$2M+</div><div class="label">Paid to frontline workers</div></div>
+            <div><div class="num">$1.5M+</div><div class="label">Paid to frontline workers</div></div>
             <div><div class="num">22%</div><div class="label">Cost reduction per visit</div></div>
             <div><div class="num">94%</div><div class="label">Population coverage</div></div>
           </div>
@@ -3194,26 +3310,39 @@
       <div class="sec-head">
         <div class="label-group">
           <span class="eyebrow">What's different</span>
-          <h2>Verified delivery, <em>service by service</em>.</h2>
+          <h2>Verified delivery, <em>one service at a time</em>.</h2>
           <p class="sub">For decades, funders have paid for planned activity and hoped it added up. Connect changes the model to pay for work delivered, not work promised.</p>
         </div>
       </div>
 
       <div class="compare-table">
-        <div class="compare-header old">The old way</div>
+        <div class="compare-header area">Area</div>
         <div class="compare-header new">The Connect way</div>
+        <div class="compare-header old">The old way</div>
 
-        <div class="compare-cell old"><strong>Pay for activity</strong>, workshops held, plans filed, reports submitted.</div>
-        <div class="compare-cell new"><strong>Pay for delivery</strong>, every service rendered to a real person, verified before payment.</div>
-
-        <div class="compare-cell old"><strong>Trust the implementer to report</strong> on whether the work happened.</div>
-        <div class="compare-cell new">The platform <strong>independently verifies every service</strong>, not the provider being paid.</div>
-
+        <div class="compare-cell area">Sourcing</div>
+        <div class="compare-cell new">A <strong>marketplace of vetted local organizations</strong> bid on each program. Competition drives price down. Resilience replaces dependency.</div>
         <div class="compare-cell old"><strong>Bet on a single organization</strong> per program. Fixed price, no competition.</div>
-        <div class="compare-cell new">A <strong>marketplace of vetted local organizations</strong> bids on each program. Competition drives price down. Resilience replaces dependency.</div>
 
-        <div class="compare-cell old"><strong>Wait until the program ends</strong> to see what was delivered.</div>
+        <div class="compare-cell area">Cost</div>
+        <div class="compare-cell new">Access a <strong>competitive network of frontline organizations</strong> in a targeted geography, lowering overhead and maximizing impact per dollar.</div>
+        <div class="compare-cell old">Pay <strong>high overhead</strong> for limited provider choice, travel-heavy implementation, and fixed pricing.</div>
+
+        <div class="compare-cell area">Location</div>
+        <div class="compare-cell new">Leverage existing local organizations to deliver services to the <strong>hard-to-reach populations that need it most</strong>.</div>
+        <div class="compare-cell old"><strong>Limit where to work</strong> based on travel and operating logistics for implementer organizations.</div>
+
+        <div class="compare-cell area">Verification</div>
+        <div class="compare-cell new">The platform <strong>independently verifies every service</strong>, not the provider being paid.</div>
+        <div class="compare-cell old"><strong>Trust the implementer to report</strong> on whether the work happened.</div>
+
+        <div class="compare-cell area">Progress Tracking</div>
         <div class="compare-cell new">See <strong>every service as it's delivered</strong>. Service-level data from day one.</div>
+        <div class="compare-cell old"><strong>Wait until the program ends</strong> to see what was delivered.</div>
+
+        <div class="compare-cell area">Payment</div>
+        <div class="compare-cell new"><strong>Pay for delivery</strong>. Every service rendered to a real person, verified before payment.</div>
+        <div class="compare-cell old"><strong>Pay for activity</strong>, workshops held, plans filed, reports submitted.</div>
       </div>
     </div>
   </div>
@@ -3234,26 +3363,21 @@
           <div class="explore-panel indigo" aria-hidden="true"></div>
           <span class="explore-tag">How it works</span>
           <h4>Connect: A New Model for Development.</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">A two-sided marketplace where funders pick the intervention, country, and amount, and Connect delivers through a network of local frontline organizations, with four-layer verification on every visit and payment moving the moment work is confirmed.</p>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">A two-sided marketplace where funders pick the intervention, country, and amount.  Connect delivers through a network of local frontline organizations with verification on every visit and payments tracked the moment work is confirmed.</p>
           <span class="explore-link">See how it works →</span>
         </a>
         <a class="explore-card" href="#/programs">
-          <div class="explore-panel sky">
-            <div>
-              <span class="placeholder-tag">Incoming Image</span>
-              <span class="placeholder-name">Better photo coming soon</span>
-            </div>
-          </div>
+          <div class="explore-panel sky" aria-hidden="true"></div>
           <span class="explore-tag">Programs</span>
           <h4>A Growing Portfolio of Programs &amp; Geographies.</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">From kangaroo mother care to child health campaigns to wasting treatment, explore the high-impact interventions running on Connect today.</p>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">From Kangaroo Care to Child Health Campaigns to Wasting Treatment, explore the high-impact interventions running on Connect today.</p>
           <span class="explore-link">See the programs →</span>
         </a>
         <a class="explore-card" href="#/join">
           <div class="explore-panel ink" aria-hidden="true"></div>
           <span class="explore-tag">Frontline Organizations</span>
           <h4>Join the Connect Network.</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Local, government-aligned organizations deliver every Connect program, running supervision, recruiting and managing frontline workers, and growing performance-based revenue as their delivery is verified. Frontline workers get paid directly when their work is confirmed.</p>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Local, government-aligned organizations deliver every Connect program, running supervision, recruiting, and managing frontline workers. They are eligible for performance-based revenue growth as their service delivery is validated. Frontline workers get paid directly when their work is confirmed.</p>
           <span class="explore-link">Join the network →</span>
         </a>
       </div>
@@ -3366,7 +3490,7 @@
             <span class="h-stack">Pick a program.</span>
             <span class="h-stack"><em>Pick a place.</em></span>
           </h2>
-          <p class="sub">Ten programs across thirteen countries, with 200+ partner organizations on the ground. Same four-step cycle behind all of it.</p>
+          <p class="sub">Ten programs across thirteen countries, with 50+ partner organizations on the ground. Same four-step cycle behind all of it.</p>
         </div>
       </div>
 
@@ -3380,7 +3504,7 @@
             </a>
             <a class="prog-mini" href="#/programs">
               <span class="sector">Mothers &amp; Children</span>
-              <h4>Kangaroo Mother Care</h4>
+              <h4>Kangaroo Care</h4>
             </a>
             <a class="prog-mini" href="#/programs">
               <span class="sector">Mothers &amp; Children</span>
@@ -3494,7 +3618,7 @@
       <span class="eyebrow on-dark">Learn More</span>
       <h2>Learn more about <em>Connect</em>.</h2>
       <p class="lead">Whether you're funding a new campaign, designing a program, or running services on the ground, let's see if Connect fits.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Talk to us</a>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Talk to us</a>
     </div>
   </div>
 
@@ -3510,7 +3634,7 @@
       <div>
         <span class="eyebrow">How Connect works</span>
         <h1>
-          <span class="h-stack">You Pick.</span>
+          <span class="h-stack">You choose.</span>
           <span class="h-stack"><em>Connect Delivers</em>.</span>
         </h1>
         <p class="lede">Connect is a two-sided service delivery marketplace. Funders pick a programmatic intervention, the geography, and the amount. Connect enrolls Frontline Workers to deliver and be paid for verified services, rapidly and cost-effectively. Funders then see their results.</p>
@@ -3527,7 +3651,7 @@
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowfullscreen
             loading="lazy"
-            referrerpolicy="strict-origin-when-cross-origin">{# labs-only edit: SECURE_REFERRER_POLICY=same-origin would otherwise break YouTube embeds #}
+            referrerpolicy="strict-origin-when-cross-origin">{# import-time edit: see provenance comment at top of file #}
           </iframe>
         </div>
       </div>
@@ -3551,7 +3675,7 @@
         <div class="market-side market-side-funder">
           <div class="market-side-header">
             <span class="role-tag">Funders</span>
-            <h3>Funders pick the <em>program intervention</em>, <em>country</em>, &amp; <em>amount</em>.</h3>
+            <h3>Funders pick the <em>program</em>, <em>country</em>, and <em>amount</em>.</h3>
             <a class="market-side-cta" href="#/programs">Learn more about Connect programs →</a>
           </div>
           <div class="picker-set">
@@ -3559,11 +3683,11 @@
               <h6>Program</h6>
               <div class="picker-scroll" data-cycle="1">
                 <button class="picker-item is-active">Child Health Campaign</button>
-                <button class="picker-item">Kangaroo Mother Care</button>
+                <button class="picker-item">Kangaroo Care</button>
                 <button class="picker-item">Early Childhood Development</button>
                 <button class="picker-item">Reading Glasses</button>
                 <button class="picker-item">Mother-Baby Wellness</button>
-                <button class="picker-item">Chlorine Dispenser</button>
+                <button class="picker-item">Chlorine Dispensers</button>
                 <button class="picker-item">Mental Health</button>
                 <button class="picker-item">Therapeutic Food</button>
                 <button class="picker-item">Survey &amp; Data Collection</button>
@@ -3606,12 +3730,12 @@
           </div>
         </div>
 
-        <!-- Connect Platform side -->
+        <!-- Frontline Organizations side -->
         <div class="market-side market-side-platform">
           <div class="market-side-header">
-            <span class="role-tag">Connect Platform</span>
-            <h3>Connect finds the best way to <em>deliver your impact</em>.</h3>
-            <a class="market-side-cta" href="#/join">See how Frontline Organizations deliver →</a>
+            <span class="role-tag">Frontline Organizations</span>
+            <h3>Well-qualified Frontline Organizations deliver <em>verified services</em>.</h3>
+            <a class="market-side-cta" href="#/insights">See how Frontline Organizations deliver →</a>
           </div>
           <div class="platform-promise">
             <div class="promise-item">
@@ -3623,7 +3747,7 @@
               </div>
               <div class="promise-text">
                 <h4>High Quality Frontline Delivery</h4>
-                <p>Connect leverages a network of hundreds of frontline organizations, reaching all corners of the world.</p>
+                <p>Connect leverages a fast growing network of Frontline Organizations and vets them for subsequent contracts.</p>
                 <div class="promise-stat">94% Coverage in Defined Population</div>
               </div>
             </div>
@@ -3635,7 +3759,7 @@
               </div>
               <div class="promise-text">
                 <h4>Rapid Deployment</h4>
-                <p>Qualified Frontline Organizations go from signed contract to workers delivering services in the field, in days, not months.</p>
+                <p>Qualified Frontline Organizations go from signed contract to workers delivering services in the field in days, not months.</p>
                 <div class="promise-stat">10 days to first deployment</div>
               </div>
             </div>
@@ -3648,34 +3772,247 @@
               </div>
               <div class="promise-text">
                 <h4>Paid for Verified Services</h4>
-                <p>Frontline Organizations are only paid for services that have been digitally verified through GPS, biometrics, and other mechanisms.</p>
+                <p>Frontline Organizations are only paid for services that have been digitally verified through GPS, photos, and other mechanisms.</p>
                 <div class="promise-stat">$1.70 Verified Visit (Child Health Campaign)</div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Single horizontal arrow: Funders → Connect Platform, anchored at the vertical centre of each box -->
+        <!-- Single horizontal arrow: Funders → Frontline Organizations (via Connect Platform), anchored at the vertical centre of each box -->
         <svg class="market-arrow" viewBox="0 0 80 16" aria-hidden="true" preserveAspectRatio="none">
           <line x1="0" y1="8" x2="66" y2="8" stroke="currentColor" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>
           <polygon points="80,8 64,1 64,15" fill="currentColor"/>
         </svg>
+        <span class="market-arrow-label" aria-hidden="true">Connect<br>Platform</span>
        </div><!-- /.market-pair -->
 
         <!-- Loop arrow: flows from the Connect Platform side back to Funders -->
         <div class="market-loop">
           <div class="market-loop-arrow" aria-hidden="true"></div>
           <div class="market-loop-content">
-            <h4 class="market-loop-title">Funders see verified results</h4>
+            <h4 class="market-loop-title">Both Funders and Frontline Organizations see verified results</h4>
             <p class="market-loop-text">Funders only pay for verified services, and can decide to renew or select a new program area.</p>
-            <div class="market-loop-placeholder" role="img" aria-label="Placeholder for upcoming verification screenshot.">
-              <span class="placeholder-tag">Incoming Image</span>
-              <span class="placeholder-name">Verification Screenshot</span>
-            </div>
           </div>
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- The Cycle (moved from How It Works) -->
+  <div class="section">
+    <div class="wrap">
+      <div class="sec-head" style="text-align: center; justify-content: center;">
+        <div class="label-group" style="margin: 0 auto;">
+          <span class="eyebrow" style="justify-content: center;">The cycle</span>
+          <h2>How Frontline Workers Use <em>Connect in 4 Steps</em>.</h2>
+          <p class="sub" style="margin-left: auto; margin-right: auto; max-width: 64ch; text-align: center;">Once recruited for a job in a specific country, qualified frontline organizations move their workers through four clear steps: <em>Learn</em> the content, <em>Deliver</em> each service, get every visit <em>Verified</em>, and track <em>Pay</em> for every service approved.</p>
+        </div>
+      </div>
+      <div class="cycle-panel-combined">
+      <div class="cycle-svg-area">
+      <svg viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+        <defs>
+          <linearGradient id="grdHIW" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#16006D"/>
+            <stop offset="33%" stop-color="#5D70D2"/>
+            <stop offset="66%" stop-color="#FC5F36"/>
+            <stop offset="100%" stop-color="#1B998B"/>
+          </linearGradient>
+          <marker id="arrFwd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#1B998B"/>
+          </marker>
+          <marker id="arrBack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#C9CCE0"/>
+          </marker>
+        </defs>
+
+        <text x="40" y="32" font-family="JetBrains Mono, monospace" font-size="11" fill="#3843D0" letter-spacing="1.5" font-weight="600">CLICK A STEP TO SEE ITS DETAIL →</text>
+        <text x="1160" y="32" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#6B7388" letter-spacing="1.5">VERIFIED SERVICES ↻ NEXT CAMPAIGN</text>
+
+        <path d="M 1000 168 C 1000 90, 800 60, 600 60 C 400 60, 200 90, 200 168" fill="none" stroke="#C9CCE0" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrBack)"/>
+
+        <path d="M 263 230 Q 333 195 405 230 L 528 230 Q 600 270 672 230 L 794 230 Q 866 195 937 230" fill="none" stroke="url(#grdHIW)" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#arrFwd)"/>
+
+        <g font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" letter-spacing="0.05em">
+          <text x="200" y="185" text-anchor="middle" fill="#16006D">01</text>
+          <text x="466" y="185" text-anchor="middle" fill="#5D70D2">02</text>
+          <text x="734" y="185" text-anchor="middle" fill="#FC5F36">03</text>
+          <text x="1000" y="185" text-anchor="middle" fill="#1B998B">04</text>
+        </g>
+
+        <g class="cycle-node-group" data-step="learn">
+          <circle cx="200" cy="230" r="58" fill="#16006D" stroke="#16006D" stroke-width="2"/>
+          <g class="cycle-icon" transform="translate(200 230)" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+            <rect x="-22" y="-13" width="44" height="22" rx="2"/>
+            <line x1="-15" y1="-7" x2="2" y2="-7"/>
+            <line x1="-15" y1="-1" x2="13" y2="-1"/>
+            <line x1="-15" y1="5" x2="-2" y2="5"/>
+            <line x1="-12" y1="9" x2="-12" y2="14"/>
+            <line x1="12" y1="9" x2="12" y2="14"/>
+          </g>
+        </g>
+        <text x="200" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Learn</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="200" y="358" text-anchor="middle">Frontline Workers train on their phones</text>
+          <text x="200" y="378" text-anchor="middle">and pass an in-app assessment.</text>
+        </g>
+
+        <g class="cycle-node-group" data-step="deliver">
+          <circle cx="466" cy="230" r="58" fill="#FFFFFF" stroke="#5D70D2" stroke-width="2"/>
+          <g class="cycle-icon" transform="translate(466 230)" stroke="#5D70D2" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+            <path d="M0 14 C -16 0, -16 -14, -8 -14 C -4 -14, 0 -10, 0 -6 C 0 -10, 4 -14, 8 -14 C 16 -14, 16 0, 0 14 Z"/>
+            <line x1="-4" y1="-3" x2="4" y2="-3" stroke-width="2.4"/>
+            <line x1="0" y1="-7" x2="0" y2="1" stroke-width="2.4"/>
+          </g>
+        </g>
+        <text x="466" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Deliver</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="466" y="358" text-anchor="middle">Frontline Workers conduct every visit,</text>
+          <text x="466" y="378" text-anchor="middle">with the app guiding every step.</text>
+        </g>
+
+        <g class="cycle-node-group" data-step="verify">
+          <circle cx="734" cy="230" r="58" fill="#FFFFFF" stroke="#FC5F36" stroke-width="2"/>
+          <g class="cycle-icon" transform="translate(734 230)" stroke="#FC5F36" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
+            <path d="M0 -22 L-20 -14 L-20 4 L0 22 L20 4 L20 -14 Z"/>
+            <path d="M-9 -1 L-3 5 L9 -7" stroke-width="2.5"/>
+          </g>
+        </g>
+        <text x="734" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Verify</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="734" y="358" text-anchor="middle">Each visit is verified against</text>
+          <text x="734" y="378" text-anchor="middle">objective criteria for GPS, photos, etc.</text>
+        </g>
+
+        <g class="cycle-node-group" data-step="pay">
+          <circle cx="1000" cy="230" r="58" fill="#FFFFFF" stroke="#1B998B" stroke-width="2"/>
+          <text class="cycle-icon" x="1000" y="246" text-anchor="middle" font-family="Work Sans" font-size="44" font-weight="700" fill="#1B998B">$</text>
+        </g>
+        <text x="1000" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Pay</text>
+        <g font-family="Work Sans" font-size="13" fill="#4A5468">
+          <text x="1000" y="358" text-anchor="middle">The amount owed is tracked the</text>
+          <text x="1000" y="378" text-anchor="middle">moment a service is verified.</text>
+        </g>
+      </svg>
+      </div>
+      <div class="step-detail-wrap" id="step-detail-wrap">
+      <div class="step-tabs" id="step-tabs">
+        <button class="step-tab active" data-step="learn"><span class="step-bubble">1</span><span class="name">Learn</span></button>
+        <button class="step-tab" data-step="deliver"><span class="step-bubble">2</span><span class="name">Deliver</span></button>
+        <button class="step-tab" data-step="verify"><span class="step-bubble">3</span><span class="name">Verify</span></button>
+        <button class="step-tab" data-step="pay"><span class="step-bubble">4</span><span class="name">Pay</span></button>
+      </div>
+
+      <div class="step-detail active" data-step="learn">
+        <div class="step-media">
+          <img src="{% static 'prelogin/gifs/learn.gif' %}" alt="Frontline Worker training on a phone" loading="lazy" />
+        </div>
+        <div class="left">
+          <h3>Frontline Workers are trained to <em>safely &amp; confidently provide services</em>.</h3>
+          <p class="lede">Frontline Workers move through comprehensive digital training.  They must pass a certification test before they're cleared to deliver services in the field.</p>
+        </div>
+        <div class="features">
+          <div class="step-block-label">Primary Features</div>
+          <ul class="feature-list">
+            <li>Self-paced lessons</li>
+            <li>In-app assessment</li>
+            <li>AI coach</li>
+            <li>Peer practice</li>
+            <li>Supervised visits</li>
+          </ul>
+        </div>
+        <div class="right">
+          <div class="numbers-header">
+            <div class="step-block-label">The Numbers</div>
+            <a href="docs/ai-coach-for-ecd.pdf" target="_blank" class="source-link">View Source</a>
+          </div>
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">85%</div><div class="l">of Frontline Workers moved from training to delivery</div></div>
+            <div class="ps"><div class="n">88%</div><div class="l">of Frontline Workers passed their first observed visit</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-detail" data-step="deliver">
+        <div class="step-media">
+          <img src="{% static 'prelogin/gifs/deliver.gif' %}" alt="Frontline Worker delivering services" loading="lazy" />
+        </div>
+        <div class="left">
+          <h3>Frontline Workers deliver services <em>supported by Connect</em>.</h3>
+          <p class="lede">Locally Led Organizations know their communities best. Connect provides the app, the verification, and the payment system, while organizations bring the relationships, supervisors, and trust.</p>
+        </div>
+        <div class="features">
+          <div class="step-block-label">Primary Features</div>
+          <ul class="feature-list">
+            <li>Locally-led delivery</li>
+            <li>App-guided service visits</li>
+            <li>Local supervisor oversight</li>
+            <li>Performance-based contracts</li>
+          </ul>
+        </div>
+        <div class="right">
+          <div class="step-block-label">The Numbers</div>
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">1M+</div><div class="l">Visits in 2025</div></div>
+            <div class="ps"><div class="n">50+</div><div class="l">Frontline Organizations in the Connect Network</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-detail" data-step="verify">
+        <div class="step-media" style="background: #FEAF31; display: flex; align-items: center; justify-content: center; color: #1f1500; font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+          GIF INCOMING
+        </div>
+        <div class="left">
+          <h3>Services are <em>digitally verified</em> by the Connect platform.</h3>
+          <p class="lede">Every visit runs through independent checks, each using a different signal, so faking a record becomes harder than just doing the work.</p>
+        </div>
+        <div class="features">
+          <div class="step-block-label">Primary Features</div>
+          <ul class="feature-list">
+            <li>Biometric ID</li>
+            <li>GPS at the right house, at the right time</li>
+            <li>Photo capture</li>
+            <li>AI model flagging unusual patterns</li>
+          </ul>
+        </div>
+        <div class="right">
+          <div class="step-block-label">The Numbers</div>
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">94%</div><div class="l">Population coverage with map grids</div></div>
+            <div class="ps"><div class="n">3.5x</div><div class="l">More visits per child</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-detail" data-step="pay">
+        <div class="step-media">
+          <img src="{% static 'prelogin/gifs/pay.gif' %}" alt="Frontline Worker receiving mobile-money payment" loading="lazy" />
+        </div>
+        <div class="left">
+          <h3>Frontline Workers are <em>paid</em> for services that are verified.</h3>
+          <p class="lede">Payments are tracked the moment a visit is verified. Funders see cost per outcome rather than cost per worker trained.</p>
+        </div>
+        <div class="features">
+          <div class="step-block-label">Primary Features</div>
+          <ul class="feature-list">
+            <li>Pay per verified service</li>
+            <li>Cost-per-delivery reporting</li>
+            <li>Direct to the frontline</li>
+          </ul>
+        </div>
+        <div class="right">
+          <div class="step-block-label">The Numbers</div>
+          <div class="pillar-stats">
+            <div class="ps"><div class="n">$1.70</div><div class="l">Paid for every Child Health Campaign visit (example)</div></div>
+            <div class="ps"><div class="n">$1.5M+</div><div class="l">Paid direct to workers</div></div>
+          </div>
+        </div>
+      </div>
+      </div>
+      </div>
     </div>
   </div>
 
@@ -3743,7 +4080,7 @@
       <div class="filter-pills" data-filter-group="program">
         <button class="pill active" data-filter-type="program" data-filter-value="all">All</button>
         <button class="pill" data-filter-type="program" data-filter-value="chc">Child Health Campaign</button>
-        <button class="pill" data-filter-type="program" data-filter-value="kmc">Kangaroo Mother Care</button>
+        <button class="pill" data-filter-type="program" data-filter-value="kmc">Kangaroo Care</button>
         <button class="pill" data-filter-type="program" data-filter-value="ecd">Early Childhood Development</button>
         <button class="pill" data-filter-type="program" data-filter-value="readers">Reading Glasses</button>
       </div>
@@ -3883,11 +4220,11 @@
 
       <article class="insight-row" data-programs="kmc" data-ldvp="verify">
         <div class="meta-side">
-          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>Program Type</b>Kangaroo Care<br><br>
           <b>Frontline Activity</b>Verify
         </div>
         <div class="body">
-          <h4>Kangaroo Mother Care 3-day target sits at 50% against a 70% goal. We publish the gap.</h4>
+          <h4>Kangaroo Care 3-day target sits at 50% against a 70% goal. We publish the gap.</h4>
           <p>If missing the 3-day window cost a worker money, they'd falsify dates and we'd see fake 100% compliance. So we treat it as a guardrail, not a payment criterion. We coach. We integrate hospital discharge notifications. We publish the real number.</p>
         </div>
         <div class="meta-side">
@@ -3898,7 +4235,7 @@
 
       <article class="insight-row" data-programs="kmc" data-ldvp="verify">
         <div class="meta-side">
-          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>Program Type</b>Kangaroo Care<br><br>
           <b>Frontline Activity</b>Verify
         </div>
         <div class="body">
@@ -3913,7 +4250,7 @@
 
       <article class="insight-row" data-programs="kmc" data-ldvp="deliver">
         <div class="meta-side">
-          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>Program Type</b>Kangaroo Care<br><br>
           <b>Frontline Activity</b>Deliver
         </div>
         <div class="body">
@@ -3928,11 +4265,11 @@
 
       <article class="insight-row" data-programs="kmc" data-ldvp="pay">
         <div class="meta-side">
-          <b>Program Type</b>Kangaroo Mother Care<br><br>
+          <b>Program Type</b>Kangaroo Care<br><br>
           <b>Frontline Activity</b>Pay
         </div>
         <div class="body">
-          <h4>Connect Kangaroo Mother Care is $36 per newborn, small enough that one donor can fund one baby.</h4>
+          <h4>Connect Kangaroo Care is $36 per newborn, small enough that one donor can fund one baby.</h4>
           <p>That covers partner engagement, the Kangaroo wraps, scales, thermometers, pulse oximeters, training, payment per verified case, and supervision. We picked it for our first individual-giving experiment because $36 is the smallest unit at which one donor can fund a complete intervention with verified delivery.</p>
         </div>
         <div class="meta-side">
@@ -3970,7 +4307,7 @@
       <span class="eyebrow on-dark">For funders &amp; researchers</span>
       <h2>Interested in seeing <em>the numbers</em>?</h2>
       <p>We'd be happy to share the underlying data with you. Just reach out.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Let's connect</a>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Let's connect</a>
     </div>
   </div>
 
@@ -4000,7 +4337,7 @@
             <button class="pill is-soon" data-filter-type="prog" data-filter-cat="mc" data-filter-value="rutf">Therapeutic Food</button>
             <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="mbw">Mother-Baby Wellness</button>
             <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="ecd">Early Childhood Development</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="kmc">Kangaroo Mother Care</button>
+            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="kmc">Kangaroo Care</button>
           </div>
         </div>
 
@@ -4051,7 +4388,7 @@
           </div>
           <div class="body">
             <span class="sector">Mothers &amp; Children</span>
-            <h3>Kangaroo Mother Care</h3>
+            <h3>Kangaroo Care</h3>
             <p class="countries">Uganda · Kenya · India · Nigeria</p>
             <p>Home visits for small and vulnerable newborns after they leave the hospital. 4 to 5 visits in the first 60 days. Closes the follow-up gap.</p>
             <div class="stat-strip">
@@ -4232,26 +4569,61 @@
 
       <div class="explore-grid">
         <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="9" width="20" height="6" rx="3"/>
+              <line x1="12" y1="9" x2="12" y2="15"/>
+            </svg>
+          </span>
           <span class="explore-tag">Service 1</span>
           <h4>Vitamin A supplementation</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">A single oral dose of vitamin A reduces under-five mortality by an estimated 12–24%. Connect campaigns reach children in the homes their families couldn't bring them out of.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="8"/>
+              <line x1="6" y1="12" x2="18" y2="12"/>
+            </svg>
+          </span>
           <span class="explore-tag">Service 2</span>
           <h4>Deworming</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Albendazole or mebendazole for children with soil-transmitted helminth exposure. Routine deworming improves nutritional status, school attendance, and growth in high-prevalence areas.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3 C 7 10, 5 13, 5 16 a 7 7 0 0 0 14 0 C 19 13, 17 10, 12 3 z"/>
+            </svg>
+          </span>
           <span class="explore-tag">Service 3</span>
           <h4>Oral rehydration salts (ORS)</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Distribution and caregiver coaching on ORS, the highest-impact, lowest-cost diarrhea response in low-resource settings. Currently delivered as part of the Nigeria bundle.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="9" width="18" height="6" rx="2"/>
+              <line x1="7" y1="9" x2="7" y2="11"/>
+              <line x1="11" y1="9" x2="11" y2="11"/>
+              <line x1="15" y1="9" x2="15" y2="11"/>
+              <line x1="19" y1="9" x2="19" y2="11"/>
+            </svg>
+          </span>
           <span class="explore-tag">Service 4</span>
           <h4>Malnutrition screening</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">MUAC measurement and visual assessment for wasting. Children with red or yellow readings are referred into the local treatment pathway. Data flows back to inform the next campaign cycle.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="21" x2="6" y2="18"/>
+              <path d="M6 18 l-2 -2 l9 -9 l4 4 l-9 9 z"/>
+              <line x1="11" y1="11" x2="14" y2="14"/>
+              <line x1="14" y1="6" x2="18" y2="10"/>
+              <line x1="17" y1="3" x2="21" y2="7"/>
+            </svg>
+          </span>
           <span class="explore-tag">Service 5</span>
           <h4>Immunization promotion</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Caregiver counseling on routine immunization, with referral to the nearest catch-up site. Several partners independently mobilized faith and community leaders to drive coverage.</p>
@@ -4265,7 +4637,7 @@
     <div class="wrap">
       <div class="sec-head">
         <div class="label-group">
-          <h2>Child Health Campaigns: <em>At A Glance</em></h2>
+          <h2>Child Health Campaigns:<br><em>At A Glance</em></h2>
         </div>
       </div>
       <div class="hero-stats">
@@ -4317,7 +4689,7 @@
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowfullscreen
                 loading="lazy"
-                referrerpolicy="strict-origin-when-cross-origin">{# labs-only edit: SECURE_REFERRER_POLICY=same-origin would otherwise break YouTube embeds #}
+            referrerpolicy="strict-origin-when-cross-origin">{# import-time edit: see provenance comment at top of file #}
               </iframe>
             </div>
           </div>
@@ -4378,7 +4750,7 @@
       <span class="eyebrow on-dark">Run a Child Health Campaign</span>
       <h2>Interested in supporting <em>Child Health Campaigns</em>?</h2>
       <p class="lead">Let's build one together, starting with your desired geography and budget. We'll come back with a delivery plan, a cost-per-verified-visit estimate, and a list of frontline organizations to run with.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Let's Design Your Program</a>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Let's Design Your Program</a>
     </div>
   </div>
 
@@ -4411,7 +4783,7 @@
         <div class="label-group">
           <span class="eyebrow">A New Frontline Marketplace</span>
           <h2>A Whole New Opportunity for <em>Frontline Organizations</em>.</h2>
-          <p class="sub">200+ frontline organizations are getting new opportunities from Connect, gaining new skills, delivering services, and being paid for their work. The network expands their portfolio, their reach, and what they can take on next. <a href="#two-ways">Learn more here.</a></p>
+          <p class="sub">50+ frontline organizations are getting new opportunities from Connect, gaining new skills, delivering services, and being paid for their work. The network expands their portfolio, their reach, and what they can take on next. <a href="#two-ways">Learn more here.</a></p>
         </div>
       </div>
 
@@ -4517,8 +4889,7 @@
             </g>
             <text x="410" y="200" font-family="Work Sans, system-ui, sans-serif" font-size="22" font-weight="400" fill="#FFFFFF" letter-spacing="-0.01em">Deliver services,</text>
             <text x="410" y="224" font-family="Work Sans, system-ui, sans-serif" font-size="22" font-weight="400" fill="#FFFFFF" letter-spacing="-0.01em">supported by Connect.</text>
-            <text x="410" y="258" font-family="Work Sans, system-ui, sans-serif" font-size="13" fill="rgba(255,255,255,0.85)">Train, deliver, verify, get paid —</text>
-            <text x="410" y="276" font-family="Work Sans, system-ui, sans-serif" font-size="13" fill="rgba(255,255,255,0.85)">explained step-by-step below.</text>
+            <text x="410" y="258" font-family="Work Sans, system-ui, sans-serif" font-size="13" fill="rgba(255,255,255,0.85)">Train, deliver, verify, get paid.</text>
           </g>
 
           <!-- ===== Connector 2 → 3 ===== -->
@@ -4546,230 +4917,7 @@
             <text x="760" y="258" font-family="Work Sans, system-ui, sans-serif" font-size="13" fill="rgba(255,255,255,0.62)">Track records and trust unlock</text>
             <text x="760" y="276" font-family="Work Sans, system-ui, sans-serif" font-size="13" fill="rgba(255,255,255,0.62)">new contracts on the network.</text>
           </g>
-
-          <!-- ===== "See Below" pill ===== -->
-          <g transform="translate(540,338)">
-            <rect x="-78" y="-18" width="156" height="34" rx="17" fill="rgba(56,67,208,0.22)" stroke="rgba(141,161,255,0.55)" stroke-width="1.2"/>
-            <text x="-12" y="3" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-size="11" font-weight="700" letter-spacing="2.4" fill="#C9D2FF">SEE BELOW</text>
-            <path d="M 38 -4 L 46 4 L 54 -4" stroke="#C9D2FF" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-              <animateTransform attributeName="transform" type="translate" values="0 0; 0 4; 0 0" dur="1.6s" repeatCount="indefinite"/>
-            </path>
-          </g>
         </svg>
-      </div>
-    </div>
-  </div>
-
-  <!-- The Cycle (moved from How It Works) -->
-  <div class="section">
-    <div class="wrap">
-      <div class="sec-head" style="text-align: center; justify-content: center;">
-        <div class="label-group" style="margin: 0 auto;">
-          <span class="eyebrow" style="justify-content: center;">The cycle</span>
-          <h2>How Frontline Workers Use <em>Connect in 4 Steps</em>.</h2>
-          <p class="sub" style="margin-left: auto; margin-right: auto; max-width: 64ch; text-align: center;">Once recruited for a job in a specific country, qualified frontline organizations move their workers through four clear steps, train, deliver every service, verify each visit, and get paid for verified work.</p>
-        </div>
-      </div>
-      <div class="cycle-panel-combined">
-      <div class="cycle-svg-area">
-      <svg viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
-        <defs>
-          <linearGradient id="grdHIW" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#16006D"/>
-            <stop offset="33%" stop-color="#5D70D2"/>
-            <stop offset="66%" stop-color="#FC5F36"/>
-            <stop offset="100%" stop-color="#1B998B"/>
-          </linearGradient>
-          <marker id="arrFwd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
-            <path d="M0,0 L10,5 L0,10 z" fill="#1B998B"/>
-          </marker>
-          <marker id="arrBack" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
-            <path d="M0,0 L10,5 L0,10 z" fill="#C9CCE0"/>
-          </marker>
-        </defs>
-
-        <text x="40" y="32" font-family="JetBrains Mono, monospace" font-size="11" fill="#3843D0" letter-spacing="1.5" font-weight="600">CLICK A STEP TO SEE ITS DETAIL →</text>
-        <text x="1160" y="32" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="11" fill="#6B7388" letter-spacing="1.5">VERIFIED OUTCOME ↻ NEXT CAMPAIGN</text>
-
-        <path d="M 1000 168 C 1000 90, 800 60, 600 60 C 400 60, 200 90, 200 168" fill="none" stroke="#C9CCE0" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrBack)"/>
-
-        <path d="M 263 230 Q 333 195 405 230 L 528 230 Q 600 270 672 230 L 794 230 Q 866 195 937 230" fill="none" stroke="url(#grdHIW)" stroke-width="2.5" stroke-dasharray="6 5" marker-end="url(#arrFwd)"/>
-
-        <g font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" letter-spacing="0.05em">
-          <text x="200" y="185" text-anchor="middle" fill="#16006D">01</text>
-          <text x="466" y="185" text-anchor="middle" fill="#5D70D2">02</text>
-          <text x="734" y="185" text-anchor="middle" fill="#FC5F36">03</text>
-          <text x="1000" y="185" text-anchor="middle" fill="#1B998B">04</text>
-        </g>
-
-        <g class="cycle-node-group" data-step="learn">
-          <circle cx="200" cy="230" r="58" fill="#16006D" stroke="#16006D" stroke-width="2"/>
-          <g class="cycle-icon" transform="translate(200 230)" stroke="#FFFFFF" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
-            <rect x="-22" y="-13" width="44" height="22" rx="2"/>
-            <line x1="-15" y1="-7" x2="2" y2="-7"/>
-            <line x1="-15" y1="-1" x2="13" y2="-1"/>
-            <line x1="-15" y1="5" x2="-2" y2="5"/>
-            <line x1="-12" y1="9" x2="-12" y2="14"/>
-            <line x1="12" y1="9" x2="12" y2="14"/>
-          </g>
-        </g>
-        <text x="200" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Learn</text>
-        <g font-family="Work Sans" font-size="13" fill="#4A5468">
-          <text x="200" y="358" text-anchor="middle">Frontline workers train on their phones</text>
-          <text x="200" y="378" text-anchor="middle">and pass an in-app assessment.</text>
-        </g>
-
-        <g class="cycle-node-group" data-step="deliver">
-          <circle cx="466" cy="230" r="58" fill="#FFFFFF" stroke="#5D70D2" stroke-width="2"/>
-          <g class="cycle-icon" transform="translate(466 230)" stroke="#5D70D2" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
-            <path d="M0 14 C -16 0, -16 -14, -8 -14 C -4 -14, 0 -10, 0 -6 C 0 -10, 4 -14, 8 -14 C 16 -14, 16 0, 0 14 Z"/>
-            <line x1="-4" y1="-3" x2="4" y2="-3" stroke-width="2.4"/>
-            <line x1="0" y1="-7" x2="0" y2="1" stroke-width="2.4"/>
-          </g>
-        </g>
-        <text x="466" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Deliver</text>
-        <g font-family="Work Sans" font-size="13" fill="#4A5468">
-          <text x="466" y="358" text-anchor="middle">Locally-led organizations run every</text>
-          <text x="466" y="378" text-anchor="middle">visit, with the app guiding every step.</text>
-        </g>
-
-        <g class="cycle-node-group" data-step="verify">
-          <circle cx="734" cy="230" r="58" fill="#FFFFFF" stroke="#FC5F36" stroke-width="2"/>
-          <g class="cycle-icon" transform="translate(734 230)" stroke="#FC5F36" stroke-width="2" fill="none" stroke-linejoin="round" stroke-linecap="round">
-            <path d="M0 -22 L-20 -14 L-20 4 L0 22 L20 4 L20 -14 Z"/>
-            <path d="M-9 -1 L-3 5 L9 -7" stroke-width="2.5"/>
-          </g>
-        </g>
-        <text x="734" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Verify</text>
-        <g font-family="Work Sans" font-size="13" fill="#4A5468">
-          <text x="734" y="358" text-anchor="middle">Four independent checks confirm each</text>
-          <text x="734" y="378" text-anchor="middle">visit, biometric, GPS, photo, model.</text>
-        </g>
-
-        <g class="cycle-node-group" data-step="pay">
-          <circle cx="1000" cy="230" r="58" fill="#FFFFFF" stroke="#1B998B" stroke-width="2"/>
-          <text class="cycle-icon" x="1000" y="246" text-anchor="middle" font-family="Work Sans" font-size="44" font-weight="700" fill="#1B998B">$</text>
-        </g>
-        <text x="1000" y="328" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="600" fill="#0A0620">Pay</text>
-        <g font-family="Work Sans" font-size="13" fill="#4A5468">
-          <text x="1000" y="358" text-anchor="middle">Mobile money flows the moment</text>
-          <text x="1000" y="378" text-anchor="middle">a service is verified.</text>
-        </g>
-      </svg>
-      </div>
-      <div class="step-detail-wrap" id="step-detail-wrap">
-      <div class="step-tabs" id="step-tabs">
-        <button class="step-tab active" data-step="learn"><span class="step-bubble">1</span><span class="name">Learn</span></button>
-        <button class="step-tab" data-step="deliver"><span class="step-bubble">2</span><span class="name">Deliver</span></button>
-        <button class="step-tab" data-step="verify"><span class="step-bubble">3</span><span class="name">Verify</span></button>
-        <button class="step-tab" data-step="pay"><span class="step-bubble">4</span><span class="name">Pay</span></button>
-      </div>
-
-      <div class="step-detail active" data-step="learn">
-        <div class="step-media">
-          <img src="{% static 'prelogin/gifs/learn.gif' %}" alt="Frontline Worker training on a phone" loading="lazy" />
-        </div>
-        <div class="left">
-          <h3>Frontline Workers are trained to <em>safely &amp; confidently provide services</em>.</h3>
-          <p class="lede">Frontline Workers move through comprehensive digital training, then must pass a certification test before they're cleared to deliver services in the field.</p>
-        </div>
-        <div class="features">
-          <div class="step-block-label">Primary Features</div>
-          <ul class="feature-list">
-            <li>Self-paced lessons</li>
-            <li>In-app assessment</li>
-            <li>Daily AI coach</li>
-            <li>Peer practice</li>
-            <li>Supervised first visit</li>
-          </ul>
-        </div>
-        <div class="right">
-          <div class="step-block-label">The Numbers</div>
-          <div class="pillar-stats">
-            <div class="ps"><div class="n">85%</div><div class="l">of Frontline Workers moved from training to delivery</div></div>
-            <div class="ps"><div class="n">88%</div><div class="l">of Frontline Workers passed their first observed visit</div></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="step-detail" data-step="deliver">
-        <div class="step-media">
-          <img src="{% static 'prelogin/gifs/deliver.gif' %}" alt="Frontline Worker delivering services" loading="lazy" />
-        </div>
-        <div class="left">
-          <h3>Frontline Workers deliver services, <em>supported by Connect</em>.</h3>
-          <p class="lede">Locally-led organizations know their communities best. Connect provides the app, the verification, and the payment system, while organizations bring the relationships, supervisors, and trust.</p>
-        </div>
-        <div class="features">
-          <div class="step-block-label">Primary Features</div>
-          <ul class="feature-list">
-            <li>Locally-led delivery</li>
-            <li>App-guided service visits</li>
-            <li>Local supervisor oversight</li>
-            <li>Performance-based contracts</li>
-          </ul>
-        </div>
-        <div class="right">
-          <div class="step-block-label">The Numbers</div>
-          <div class="pillar-stats">
-            <div class="ps"><div class="n">880K+</div><div class="l">Visits in 14 months</div></div>
-            <div class="ps"><div class="n">200</div><div class="l">Frontline Organizations in Connect Network</div></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="step-detail" data-step="verify">
-        <div class="step-media" style="background: #FEAF31; display: flex; align-items: center; justify-content: center; color: #1f1500; font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
-          GIF INCOMING
-        </div>
-        <div class="left">
-          <h3>Services are <em>digitally verified</em> by the Connect platform.</h3>
-          <p class="lede">Every visit runs through four independent checks, each using a different signal, so faking a record becomes harder than just doing the work.</p>
-        </div>
-        <div class="features">
-          <div class="step-block-label">Primary Features</div>
-          <ul class="feature-list">
-            <li>Biometric ID</li>
-            <li>GPS at the right house, at the right time</li>
-            <li>Photo capture</li>
-            <li>AI model flagging unusual patterns</li>
-          </ul>
-        </div>
-        <div class="right">
-          <div class="step-block-label">The Numbers</div>
-          <div class="pillar-stats">
-            <div class="ps"><div class="n">94%</div><div class="l">Population coverage with map grids</div></div>
-            <div class="ps"><div class="n">3.5×</div><div class="l">More visits per child</div></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="step-detail" data-step="pay">
-        <div class="step-media">
-          <img src="{% static 'prelogin/gifs/pay.gif' %}" alt="Frontline Worker receiving mobile-money payment" loading="lazy" />
-        </div>
-        <div class="left">
-          <h3>Frontline Workers are <em>paid</em> for services that are verified.</h3>
-          <p class="lede">Mobile money flows the moment a visit is verified, no middlemen, no delays. Funders see cost per outcome rather than cost per worker trained.</p>
-        </div>
-        <div class="features">
-          <div class="step-block-label">Primary Features</div>
-          <ul class="feature-list">
-            <li>Mobile money payments</li>
-            <li>Pay per verified visit</li>
-            <li>Direct to the worker</li>
-            <li>Cost-per-outcome reporting</li>
-          </ul>
-        </div>
-        <div class="right">
-          <div class="step-block-label">The Numbers</div>
-          <div class="pillar-stats">
-            <div class="ps"><div class="n">$1.70</div><div class="l">Paid for every Child Health Campaign visit (example)</div></div>
-            <div class="ps"><div class="n">$2M+</div><div class="l">Paid direct to workers</div></div>
-          </div>
-        </div>
-      </div>
-      </div>
       </div>
     </div>
   </div>
@@ -4789,7 +4937,7 @@
         <figure class="testimonial-card">
           <div class="mark">&ldquo;</div>
           <blockquote>We have been able to track 4,005 cases. Connect makes the data the case, not paperwork after the fact.</blockquote>
-          <figcaption class="who"><b>PIPNU</b><br>Uganda · Kangaroo Mother Care</figcaption>
+          <figcaption class="who"><b>PIPNU</b><br>Uganda · Kangaroo Care</figcaption>
         </figure>
 
         <figure class="testimonial-card coming-soon with-photo">
@@ -4801,10 +4949,8 @@
           </div>
         </figure>
 
-        <figure class="testimonial-card coming-soon">
-          <div class="mark">&ldquo;</div>
-          <blockquote>Testimonial coming soon.</blockquote>
-          <figcaption class="who"><b>Coming soon</b><br>New voice from the network</figcaption>
+        <figure class="testimonial-card tc-video">
+          <video src="{% static 'prelogin/videos/odera-1m-congrats.mp4' %}" controls playsinline></video>
         </figure>
 
         <figure class="testimonial-card coming-soon with-photo">
@@ -4831,21 +4977,44 @@
           </div>
         </figure>
       </div>
+
     </div>
   </div>
 
-  <!-- Two ways to join (Frontline Organizations first, then Workers) -->
+  <!-- Three ways to join (Funders, Frontline Organizations, Workers) -->
   <div class="section dark" id="two-ways">
     <div class="wrap">
       <div class="sec-head">
         <div class="label-group">
           <span class="eyebrow">Get started</span>
-          <h2>Two ways <em>to join</em>.</h2>
-          <p class="sub">Pick the path that fits, sign up your organization to deliver services, or pick up paid opportunities as a frontline worker.</p>
+          <h2>Three ways <em>to join</em>.</h2>
+          <p class="sub">Fund a proven intervention, run delivery as a frontline organization, or pick up paid opportunities as a frontline worker.</p>
         </div>
       </div>
 
       <div class="role-cta-grid">
+
+        <div class="role-card funder">
+          <div class="role-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 6v2m0 8v2"/>
+              <path d="M9 9.5A2.5 2.5 0 0 1 14.5 10c0 2-5 2.5-5 5a2.5 2.5 0 0 0 5 0"/>
+            </svg>
+          </div>
+          <span class="role-tag">Funders</span>
+          <h3>Invest in outcomes.<br><em>Pay for results.</em></h3>
+          <p>Fund specific, verified service deliveries — a child vaccinated, a mother coached, a newborn attended to. Every dollar linked to a confirmed service delivery.</p>
+          <ul>
+            <li>Pay only for verified service delivery</li>
+            <li>Select the intervention, country, and budget</li>
+            <li>See real-time impact maps and statistics</li>
+            <li>Multi-layer verification confirms authenticity</li>
+          </ul>
+          <div class="role-action">
+            <a href="mailto:connect-info@dimagi.com" class="btn primary">Fund an intervention →</a>
+          </div>
+        </div>
 
         <div class="role-card warm">
           <div class="role-icon">
@@ -4857,16 +5026,15 @@
             </svg>
           </div>
           <span class="role-tag">Frontline Organizations</span>
-          <h3>Join the Connect network. <em>Start delivering.</em></h3>
+          <h3>Join the network.<br><em>Start delivering.</em></h3>
           <p>Run programs with the verification, training, and payment infrastructure provided. Performance-based contracts. Scale up against actual demand.</p>
           <ul>
-            <li>Trial Run: $3,000 for 3,000 verified visits</li>
             <li>We provide the app, verification, payments</li>
             <li>You bring local relationships and supervision</li>
             <li>Grow into larger campaigns on performance</li>
           </ul>
           <div class="role-action">
-            <a href="#" class="btn primary">Sign up your organization →</a>
+            <a href="mailto:connect-info@dimagi.com" class="btn primary">Contact Connect →</a>
           </div>
         </div>
 
@@ -4879,16 +5047,16 @@
             </svg>
           </div>
           <span class="role-tag">Frontline Workers</span>
-          <h3>Download Connect. <em>Get paid opportunities.</em></h3>
+          <h3>Download Connect.<br><em>Get paid opportunities.</em></h3>
           <p>Pick up real, verified work in your community. Train on your phone. Deliver visits. Get paid by mobile money the moment your work is verified.</p>
           <ul>
             <li>Self-paced training in your language</li>
             <li>Paid per verified visit, no middlemen</li>
             <li>See your earnings as you work</li>
-            <li>Available where Connect runs</li>
+            <li>Available where Connect programs are running</li>
           </ul>
           <div class="role-action">
-            <a href="#" class="btn indigo">Download Connect →</a>
+            <a href="https://play.google.com/store/apps/details?id=org.commcare.dalvik&hl=en_US" class="btn indigo">Download Connect →</a>
           </div>
         </div>
 
@@ -4903,8 +5071,8 @@
 <footer class="site-footer">
   <div class="footer-inner">
     <div class="foot-brand">
-      <div class="logo" aria-label="Connect by Dimagi"><svg><use href="#connect-logo"/></svg></div>
-      <p>High-impact interventions, delivered and verified.</p>
+      <div class="logo" aria-label="Connect by Dimagi"><svg viewBox="0 0 1526 431"><use href="#connect-logo"/></svg></div>
+       <p>Powering the Frontline.<br>Paying for Results.</p>
     </div>
     <div class="foot-col">
       <h5>About Connect</h5>
@@ -4916,17 +5084,17 @@
       </ul>
     </div>
     <div class="foot-col">
-      <h5>Funders</h5>
+      <h5>Frontline Organizations</h5>
       <ul>
-        <li><a href="mailto:info@dimagi.com">Request a Demo</a></li>
-        <li><a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi ↗</a></li>
+        <li><a href="#/join">Join the Connect Network</a></li>
+        <li><a href="https://connect.dimagi.com/accounts/signup/">Sign up for Connect</a></li>
       </ul>
     </div>
     <div class="foot-col">
-      <h5>Frontline Organizations</h5>
+      <h5>Funders</h5>
       <ul>
-        <li><a href="#/join">Join the Network</a></li>
-        <li><a href="#">Sign up for Connect</a></li>
+        <li><a href="mailto:connect-info@dimagi.com">Request a Demo</a></li>
+        <li><a href="https://www.dimagi.com" target="_blank" rel="noopener">About Dimagi ↗</a></li>
       </ul>
     </div>
   </div>
