@@ -143,6 +143,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     bf_count_by_flw: dict[str, int] = {}
     mother_sets_by_flw: dict[str, set] = {}  # only populated when not use_agg_counts
     num_mothers_by_flw: dict[str, int] = {}  # only populated when use_agg_counts
+    anc_ok_mothers: set[str] = set()  # mothers with antenatal_visit_completion == "ok"
 
     if use_agg_counts:
         for row in visits_agg_rows:
@@ -184,6 +185,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                 mother_sets_by_flw.setdefault(username, set()).add(mid)
             if form_name and vdt:
                 visits_by_mother.setdefault(mid, {})[form_name] = vdt
+            if (row.get("antenatal_visit_completion") or "").strip() == "ok":
+                anc_ok_mothers.add(mid)
 
         dist = row.get("distance_from_prev_case_visit_m")
         if dist is not None:
@@ -254,7 +257,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         if not flw or (active_usernames and flw not in active_usernames):
             continue
 
-        is_eligible = mother_eligibility.get(mid, False)
+        is_eligible = mother_eligibility.get(mid, False) and mid in anc_ok_mothers
         mother_visits = visits_by_mother.get(mid, {})
 
         bucket = flw_fu.setdefault(flw, {
