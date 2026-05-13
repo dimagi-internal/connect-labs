@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 {% load static %}
 {# Imported from dimagi-internal/connect-prelogin. Four import-time edits #}
 {# (search "import-time edit"): .mockup-bar strip, login link template var, #}
@@ -1817,36 +1817,6 @@
     grid-row: span 2;
     height: 496px;
   }
-  /* Video story block */
-  .story-video-block { background: #000; overflow: hidden; }
-  .story-video-block::before,
-  .story-video-block::after { display: none; }
-  .story-video-block .story-video {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  /* Join page — video + tiles grid under testimonials */
-  .join-video-section {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 240px 240px;
-    gap: 16px;
-    margin-top: 32px;
-  }
-  .join-video-section .story-video-block {
-    grid-row: span 2;
-    border-radius: var(--radius);
-    height: auto;
-  }
-  .join-video-section .photo-block {
-    border-radius: var(--radius);
-    height: auto;
-  }
-
   /* Yellow "Story coming soon" placeholders for the gallery */
   .gallery-grid .photo-block.placeholder-block {
     background: #FFF8D6;
@@ -2265,20 +2235,1814 @@
     line-height: 1.7;
   }
   .testimonial-card .who b { color: var(--ink); font-weight: 600; }
-  .testimonial-card.tc-video {
-    padding: 0;
-    position: relative;
-    overflow: hidden;
-    min-height: 240px;
-  }
-  .testimonial-card.tc-video video {
+  .video-wrap iframe {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: contain;
-    background: #000;
+    border: 0;
   }
+
+  /* Light hero */
+  .hero { padding: 64px 0 80px; }
+  .hero h1 {
+    font-size: clamp(40px, 5.6vw, 72px);
+    margin: 18px 0 22px;
+    max-width: 18ch;
+    font-weight: 200;
+  }
+  .hero .lede {
+    font-size: 18px;
+    color: var(--ink-3);
+    max-width: 60ch;
+    line-height: 1.6;
+    font-weight: 300;
+  }
+
+  .section { padding: 88px 0; border-top: 1px solid var(--line); }
+  .section.warm { background: var(--paper-warm); }
+  .section.cool { background: var(--paper-cool); }
+  .section.no-border { border-top: none; }
+  /* Dark CTA-style section background, matches the closing-cta treatment */
+  .section.dark {
+    background: var(--ink);
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+    border-top: none;
+  }
+  .section.dark::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 55% 45% at 100% 100%, rgba(56,67,208,0.26), transparent 65%);
+    pointer-events: none;
+  }
+  .section.dark::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.85), transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.85), transparent 75%);
+    pointer-events: none;
+  }
+  .section.dark > .wrap { position: relative; z-index: 1; }
+  .section.dark .eyebrow { color: rgba(255,255,255,0.7); }
+  .section.dark .eyebrow::before { background: rgba(142,161,255,0.7); }
+  .section.dark .sec-head h2 { color: #fff; }
+  .section.dark .sec-head h2 em {
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .section.dark .sec-head .sub,
+  .section.dark .sec-head p { color: rgba(255,255,255,0.78); }
+
+  .sec-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-bottom: 44px;
+  }
+  .sec-head .label-group { max-width: 60ch; }
+  .sec-head h2 {
+    font-size: clamp(30px, 4.2vw, 50px);
+    margin: 6px 0 0;
+    font-weight: 300;
+  }
+  .sec-head .sub {
+    color: var(--ink-3);
+    margin-top: 16px;
+    font-size: 17px;
+    line-height: 1.55;
+    font-weight: 300;
+  }
+
+  /* Holistic visual on home */
+  .holistic-visual {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px 24px 40px;
+    overflow: hidden;
+  }
+  .holistic-visual svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  /* Impact tiles, 3 columns × 2 rows */
+  .impact-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .impact-tile {
+    padding: 32px 24px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .impact-tile:nth-child(3n) { border-right: none; }
+  .impact-tile:nth-last-child(-n+3) { border-bottom: none; }
+  .impact-tile .n {
+    font-size: clamp(34px, 3.4vw, 44px);
+    line-height: 1;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .impact-tile .l {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 12px;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+
+  /* Tagged Impact rows (Scale + Impact) on home */
+  .impact-section-block {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .impact-section-block .imp-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+  }
+  .impact-section-block .imp-row + .imp-row {
+    border-top: 1px solid var(--line);
+  }
+  .impact-section-block .imp-label {
+    background: var(--paper-cool);
+    padding: 28px 22px;
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--line);
+  }
+  .impact-section-block .imp-label .row-tag {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--indigo);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .impact-section-block .imp-tiles {
+    display: grid;
+  }
+  .impact-section-block .imp-tiles.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .impact-section-block .imp-tiles.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .impact-section-block .imp-tile {
+    padding: 30px 24px;
+    border-right: 1px solid var(--line);
+  }
+  .impact-section-block .imp-tile:last-child { border-right: none; }
+  .impact-section-block .imp-tile .n {
+    font-size: clamp(34px, 3.4vw, 46px);
+    line-height: 1;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .impact-section-block .imp-tile .l {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 12px;
+    line-height: 1.4;
+    font-weight: 400;
+  }
+
+  /* Findings (3 boxes on home) */
+  .findings-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .finding {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 30px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    color: var(--ink);
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  }
+  .finding:hover {
+    border-color: var(--indigo);
+    color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(56,67,208,0.1);
+  }
+  .finding .sector {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .finding .big-stat {
+    font-size: 60px;
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -0.025em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 4px 0 0;
+  }
+  .finding .big-stat.warm {
+    background: linear-gradient(90deg, var(--mango-deep) 0%, var(--mango) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .finding h4 {
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.3;
+    margin: 0;
+    max-width: 32ch;
+  }
+  .finding p {
+    font-size: 14px;
+    color: var(--ink-3);
+    line-height: 1.6;
+    margin: 0;
+    flex-grow: 1;
+    font-weight: 400;
+  }
+  .finding .more {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    border-top: 1px dashed var(--line);
+    padding-top: 16px;
+    margin-top: auto;
+  }
+
+  /* Programs cards (home) */
+  .prog-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .prog-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    color: var(--ink);
+    display: block;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
+  }
+  .prog-card:hover {
+    border-color: var(--indigo);
+    color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(56,67,208,0.1);
+  }
+  .prog-card .body { padding: 28px 30px 30px; }
+  .prog-card .sector {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--indigo);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .prog-card h3 { font-size: 24px; margin: 8px 0 12px; font-weight: 400; }
+  .prog-card .countries { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+  .prog-card p { color: var(--ink-3); font-size: 14.5px; line-height: 1.6; margin: 0 0 18px; font-weight: 400; }
+  .prog-card .meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-top: 1px dashed var(--line);
+    padding-top: 16px;
+  }
+  .prog-card .meta .more { color: var(--indigo); font-weight: 600; }
+
+  /* Photo placeholder blocks (used on Programs and How It Works) */
+  .photo-block {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+  }
+  .photo-block::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,0.12) 0%, transparent 32%),
+      radial-gradient(circle at 80% 70%, rgba(255,255,255,0.08) 0%, transparent 36%),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .photo-block::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+  .photo-block .photo-label {
+    position: relative;
+    z-index: 1;
+    margin: 0 0 14px 18px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.85);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: rgba(10,6,32,0.4);
+    padding: 5px 9px;
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
+  }
+  /* Program card illustrations (SVG, distinct per program) */
+  .ph-chc        { background: #d7d9f6 url('{% static 'prelogin/images/Program%20Area%20Graphics/child-health-campaigns.svg' %}')      center/contain no-repeat; }
+  .ph-kmc        { background: #f5dedf url('{% static 'prelogin/images/Program%20Area%20Graphics/kangaroo-mother-care.svg' %}')        center/contain no-repeat; }
+  .ph-ecd        { background: #e1dbee url('{% static 'prelogin/images/Program%20Area%20Graphics/early-childhood-development.svg' %}') center/contain no-repeat; }
+  .ph-readers    { background: #ebdce6 url('{% static 'prelogin/images/Program%20Area%20Graphics/reading-glasses.svg' %}')             center/contain no-repeat; }
+  .ph-mbw        { background: #DFE2F6 url('{% static 'prelogin/images/Program%20Area%20Graphics/mother-baby-wellness.svg' %}')        center/contain no-repeat; }
+  .ph-chlorine   { background: #CCECEE url('{% static 'prelogin/images/Program%20Area%20Graphics/chlorine-dispenser.svg' %}')          center/contain no-repeat; }
+  .ph-mental     { background: #FCEFCC url('{% static 'prelogin/images/Program%20Area%20Graphics/mental-health.svg' %}')               center/contain no-repeat; }
+  .ph-nutrition  { background: #D9ECD4 url('{% static 'prelogin/images/Program%20Area%20Graphics/therapeutic-food.svg' %}')            center/contain no-repeat; }
+  .ph-survey     { background: #e9ecef url('{% static 'prelogin/images/Program%20Area%20Graphics/survey-data-collection.svg' %}')      center/contain no-repeat; }
+  .ph-environment{ background: #DCE6F0 url('{% static 'prelogin/images/Program%20Area%20Graphics/rooftop-sampling.svg' %}')            center/contain no-repeat; }
+  /* Suppress placeholder overlays + photo labels on program-card illustrations */
+  .all-programs-grid .photo-block::before,
+  .all-programs-grid .photo-block::after { display: none; }
+  .all-programs-grid .photo-block .photo-label { display: none; }
+  /* Field photos for How It Works */
+  .ph-field-1 { background: linear-gradient(135deg, #14103A 0%, #3843D0 50%, #FC5F36 100%); }
+  .ph-field-2 { background: linear-gradient(135deg, #2832A0 0%, #5C6FE8 100%); }
+  .ph-field-3 { background: linear-gradient(135deg, #1D254E 0%, #3843D0 70%, #FEAF31 100%); }
+  .ph-field-4 { background: linear-gradient(135deg, #14103A 0%, #2D3580 100%); }
+  .ph-field-5 { background: linear-gradient(135deg, #2832A0 0%, #6878E5 100%); }
+  .ph-field-6 { background: linear-gradient(135deg, #1B2168 0%, #3843D0 50%, #FC5F36 100%); }
+
+  /* All-programs grid (Programs page) */
+  .all-programs-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+  }
+  .all-programs-grid .prog-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .all-programs-grid .prog-card.is-soon { opacity: 0.85; }
+  .all-programs-grid .prog-card.is-soon .body { background: var(--paper-cool); }
+  .all-programs-grid .prog-card .body { flex-grow: 1; display: flex; flex-direction: column; }
+  .all-programs-grid .prog-card .stat-strip {
+    display: flex;
+    gap: 22px;
+    padding: 14px 0;
+    border-top: 1px dashed var(--line);
+    border-bottom: 1px dashed var(--line);
+    margin: 8px 0 16px;
+  }
+  .all-programs-grid .prog-card .stat-strip .ps { flex: 1; }
+  .all-programs-grid .prog-card .stat-strip .n {
+    font-size: 22px;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .all-programs-grid .prog-card .stat-strip .l {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+    font-weight: 600;
+  }
+  .all-programs-grid .badge-soon {
+    display: inline-block;
+    background: var(--mango);
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 2;
+  }
+
+  /* Final CTA, original (Insights only) */
+  .final-cta {
+    text-align: center;
+    padding: 96px 24px;
+    color: #fff;
+  }
+  .final-cta .eyebrow { color: rgba(255,255,255,0.6); justify-content: center; margin-bottom: 24px; }
+  .final-cta .eyebrow::before { background: rgba(255,255,255,0.4); }
+  .final-cta h2 { color: #fff; font-size: clamp(36px, 4.4vw, 56px); max-width: 22ch; margin: 0 auto 22px; font-weight: 300; }
+  .final-cta h2 em {
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .final-cta p { color: rgba(255,255,255,0.72); max-width: 56ch; margin: 0 auto 32px; font-size: 17px; font-weight: 300; }
+
+  /* Shared closing CTA, simplified, single button */
+  .closing-cta {
+    position: relative;
+    background: var(--ink);
+    color: #fff;
+    overflow: hidden;
+  }
+  .closing-cta::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 55% 45% at 100% 100%, rgba(56,67,208,0.26), transparent 65%);
+    pointer-events: none;
+  }
+  .closing-cta::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.85), transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.85), transparent 75%);
+    pointer-events: none;
+  }
+  .closing-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 96px 32px;
+    text-align: center;
+  }
+  .closing-cta .eyebrow { color: rgba(255,255,255,0.7); justify-content: center; margin-bottom: 24px; }
+  .closing-cta .eyebrow::before { background: rgba(142,161,255,0.7); }
+  .closing-cta h2 {
+    color: #fff;
+    font-size: clamp(36px, 4.6vw, 60px);
+    max-width: 22ch;
+    margin: 0 auto 22px;
+    font-weight: 300;
+  }
+  .closing-cta h2 em {
+    background: var(--grad-text-on-dark);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 600;
+  }
+  .closing-cta .lead {
+    color: rgba(255,255,255,0.78);
+    max-width: 60ch;
+    margin: 0 auto 36px;
+    font-size: 17px;
+    font-weight: 300;
+    line-height: 1.6;
+  }
+
+  /* Footer */
+  footer.site-footer {
+    background: var(--ink);
+    color: rgba(255,255,255,0.7);
+    padding: 64px 0 32px;
+  }
+  .footer-inner {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 36px;
+  }
+  .foot-brand {
+    text-align: left;
+  }
+  .foot-brand .logo { font-size: 22px; color: var(--paper); display: inline-block; margin-bottom: 14px; }
+  .foot-brand p { font-size: 13.5px; max-width: 38ch; line-height: 1.6; margin: 0; }
+  .foot-col h5 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: rgba(255,255,255,0.5);
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
+  .foot-col ul { list-style: none; padding: 0; margin: 0; }
+  .foot-col li { margin-bottom: 10px; font-size: 13.5px; }
+  .foot-col a { color: rgba(255,255,255,0.78); }
+  .foot-col a:hover { color: var(--sky); }
+  .foot-bottom {
+    max-width: 1240px;
+    margin: 48px auto 0;
+    padding: 24px 32px 0;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    font-size: 12px;
+    color: rgba(255,255,255,0.45);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  /* HOW IT WORKS, Two-Sided Marketplace (stacked, horizontal internal) */
+  .two-sided-market {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-bottom: 32px;
+    position: relative;
+  }
+  .market-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 96px;
+    position: relative;
+  }
+  /* Horizontal arrow between the two boxes, anchored at the vertical centre of each */
+  .market-arrow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80px;
+    height: 18px;
+    color: var(--indigo);
+    pointer-events: none;
+    z-index: 2;
+    overflow: visible;
+  }
+  /* Label above the horizontal arrow */
+  .market-arrow-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, calc(-50% - 32px));
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--indigo);
+    text-align: center;
+    line-height: 1.25;
+    pointer-events: none;
+    z-index: 2;
+  }
+  @media (max-width: 980px) {
+    .market-arrow,
+    .market-arrow-label { display: none; }
+  }
+  /* Legacy center-exchange element retained for backwards compatibility, hidden */
+  .market-exchange { display: none; }
+  /* Small CTA inside each market-side-header */
+  .market-side-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--indigo);
+    border-bottom: 1px dashed currentColor;
+    padding-bottom: 2px;
+    width: fit-content;
+    transition: color 0.2s, border-color 0.2s, transform 0.2s;
+  }
+  .market-side-cta:hover {
+    color: var(--indigo-deep);
+    border-bottom-color: var(--indigo-deep);
+    transform: translateX(2px);
+  }
+  .market-side-platform .market-side-cta { color: #1B998B; }
+  .market-side-platform .market-side-cta:hover {
+    color: #117A6F;
+    border-bottom-color: #117A6F;
+  }
+  /* Legacy loop-back arrow, replaced by the new .market-loop element */
+  .market-cycle-arrow { display: none; }
+  /* Loop arrow: visualises the cycle returning from Connect Platform back to Funders */
+  .market-loop {
+    position: relative;
+    margin-top: 4px;
+    padding-top: 56px;
+  }
+  .market-loop-arrow {
+    position: absolute;
+    top: 0;
+    left: 8px;
+    right: 8px;
+    height: 44px;
+    border: 2px dashed var(--indigo);
+    border-top: none;
+    border-radius: 0 0 24px 24px;
+    pointer-events: none;
+  }
+  .market-loop-arrow::before {
+    /* Arrowhead at top-LEFT of the U, pointing UP into the Funders (purple) box */
+    content: '';
+    position: absolute;
+    left: -1px;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-bottom: 10px solid var(--indigo);
+    transform: translate(-50%, -100%);
+  }
+  .market-loop-arrow::after {
+    /* Origin dot at top-RIGHT of the U, exiting the Connect Platform (teal) box */
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #1B998B;
+    transform: translate(50%, -50%);
+  }
+  .market-loop-content {
+    text-align: center;
+    padding: 0 16px;
+  }
+  .market-loop-title {
+    margin: 0 0 14px;
+    font-family: var(--sans);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .market-loop-text {
+    margin: 0 auto 8px;
+    max-width: 76ch;
+    text-align: center;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-2);
+  }
+  .market-loop-text:last-of-type { margin-bottom: 0; }
+  .market-loop-placeholder {
+    margin: 24px auto 0;
+    max-width: 520px;
+    padding: 26px 24px;
+    background: #FFF8D6;
+    border: 2px dashed #D9B82A;
+    border-radius: 12px;
+    color: #6B5800;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+  }
+  .market-loop-placeholder .placeholder-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8A6F00;
+  }
+  .market-loop-placeholder .placeholder-name {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    color: #4F4100;
+  }
+  @media (max-width: 980px) {
+    .market-loop { padding-top: 16px; }
+    .market-loop-arrow { display: none; }
+  }
+  .market-cycle-arrow-legacy {
+    position: absolute;
+    top: 36px;
+    bottom: 36px;
+    right: 12px;
+    width: 40px;
+    border: 2px dashed var(--indigo);
+    border-left: none;
+    border-radius: 0 20px 20px 0;
+    pointer-events: none;
+  }
+  .market-cycle-arrow::before {
+    /* arrowhead at top-left of the bracket, pointing left toward the top funder box */
+    content: '';
+    position: absolute;
+    left: 0;
+    top: -1px;
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-right: 9px solid var(--indigo);
+    transform: translate(-100%, -50%);
+  }
+  .market-cycle-arrow::after {
+    /* origin dot at bottom-left of the bracket, exiting the bottom funder box */
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--indigo);
+    transform: translate(-50%, 50%);
+  }
+  .market-cycle-arrow-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    background: var(--paper-2);
+    padding: 4px 10px;
+    white-space: nowrap;
+  }
+  @media (max-width: 1080px) {
+    .two-sided-market { padding-right: 0; }
+    .market-cycle-arrow { display: none; }
+  }
+  .market-side {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 36px 32px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 28px;
+    align-items: start;
+    position: relative;
+  }
+  .market-side-funder { border-top: 4px solid var(--indigo); }
+  .market-side-platform { border-top: 4px solid #1B998B; }
+  .market-side-header .role-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 600;
+    color: var(--indigo);
+  }
+  .market-side-platform .market-side-header .role-tag { color: #1B998B; }
+  .market-side-header h3 {
+    margin: 10px 0 0;
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1.2;
+  }
+  .market-side-header h3 em {
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600;
+    font-style: normal;
+  }
+  .market-side-platform .market-side-header h3 em {
+    background: linear-gradient(90deg, #117A6F 0%, #1B998B 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .picker-set {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr;
+    gap: 12px;
+  }
+  .picker-list h6 {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin: 0 0 10px;
+  }
+  .picker-scroll {
+    height: 336px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--paper);
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule) transparent;
+  }
+  .picker-scroll::-webkit-scrollbar { width: 6px; }
+  .picker-scroll::-webkit-scrollbar-track { background: transparent; }
+  .picker-scroll::-webkit-scrollbar-thumb {
+    background: var(--rule);
+    border-radius: 3px;
+  }
+  .picker-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 11px 14px;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--ink);
+    transition: background 0.2s, color 0.2s;
+  }
+  .picker-item:last-child { border-bottom: none; }
+  .picker-item:hover {
+    background: var(--paper-cool);
+    color: var(--indigo);
+  }
+  .picker-item.is-active {
+    background: var(--indigo-soft);
+    color: var(--indigo);
+    font-weight: 600;
+  }
+  .picker-item-new {
+    color: var(--mango);
+    font-weight: 600;
+  }
+  .picker-item-new:hover { color: var(--mango-deep); }
+  .picker-item-new.is-active { background: rgba(252,95,54,0.1); color: var(--mango); }
+
+  .platform-promise {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .promise-item {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 18px;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--line);
+    border-right: none;
+  }
+  .promise-item:first-child { padding-top: 0; padding-left: 0; }
+  .promise-item:last-child { border-bottom: none; padding-bottom: 0; padding-right: 0; }
+  .promise-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-xs);
+    background: rgba(27,153,139,0.14);
+    color: #1B998B;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .promise-icon svg { width: 22px; height: 22px; }
+  /* Indigo variant for the funder feedback-loop box */
+  .market-side-funder .promise-icon {
+    background: var(--indigo-soft);
+    color: var(--indigo);
+  }
+  .market-side-funder .promise-stat {
+    color: var(--indigo);
+  }
+  .promise-text h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+  .promise-text p {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    line-height: 1.55;
+    margin: 0 0 10px;
+  }
+  .promise-stat {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #1B998B;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .market-conclusion {
+    text-align: center;
+    margin-top: 24px;
+  }
+  .market-conclusion p {
+    font-size: clamp(22px, 2.6vw, 32px);
+    font-weight: 300;
+    margin: 0;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .market-conclusion p em {
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 600;
+    font-style: normal;
+  }
+
+  /* HOW IT WORKS, combined cycle + step tabs panel */
+  .cycle-panel-combined {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 56px;
+  }
+  .cycle-panel-combined .cycle-svg-area {
+    padding: 28px 36px 8px;
+  }
+  .cycle-panel-combined svg .cycle-node-group { cursor: pointer; transition: transform 0.2s; }
+  .cycle-panel-combined svg .cycle-node-group:hover { transform: translateY(-3px) scale(1.03); transform-origin: center; transform-box: fill-box; }
+
+  /* legacy classes kept for backwards-compatibility, unused after combine */
+  .interactive-cycle-panel {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 36px;
+    margin-bottom: 28px;
+  }
+  .step-detail-wrap {
+    background: var(--paper-2);
+    overflow: hidden;
+  }
+  .step-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .step-tab {
+    padding: 20px 22px;
+    font-family: var(--sans);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    border-right: 1px solid var(--line);
+    color: var(--ink-3);
+    transition: background 0.15s, color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .step-tab:last-child { border-right: none; }
+  .step-bubble {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--paper-cool);
+    color: var(--indigo);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.2s, color 0.2s, transform 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+  }
+  .step-tab .name {
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--ink);
+  }
+  .step-tab:hover { background: var(--paper-2); }
+  .step-tab:hover .step-bubble { background: var(--indigo-soft); }
+  .step-tab.active {
+    background: var(--paper-2);
+    border-bottom: 2px solid var(--indigo);
+    margin-bottom: -1px;
+  }
+  .step-tab.active .step-bubble {
+    background: var(--indigo);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(56,67,208,0.25);
+  }
+  .step-tab.active .name { font-weight: 600; color: var(--indigo); }
+
+  /* Per-step colors, Learn / Deliver / Verify / Pay */
+  .step-tab[data-step="learn"] .step-bubble { color: #16006D; }
+  .step-tab[data-step="learn"]:hover .step-bubble { background: rgba(22,0,109,0.1); }
+  .step-tab[data-step="learn"].active .step-bubble { background: #16006D; color: #fff; box-shadow: 0 4px 12px rgba(22,0,109,0.3); }
+  .step-tab[data-step="learn"].active .name { color: #16006D; }
+  .step-tab[data-step="learn"].active { border-bottom-color: #16006D; }
+
+  .step-tab[data-step="deliver"] .step-bubble { color: #5D70D2; }
+  .step-tab[data-step="deliver"]:hover .step-bubble { background: rgba(93,112,210,0.12); }
+  .step-tab[data-step="deliver"].active .step-bubble { background: #5D70D2; color: #fff; box-shadow: 0 4px 12px rgba(93,112,210,0.3); }
+  .step-tab[data-step="deliver"].active .name { color: #5D70D2; }
+  .step-tab[data-step="deliver"].active { border-bottom-color: #5D70D2; }
+
+  .step-tab[data-step="verify"] .step-bubble { color: #FC5F36; }
+  .step-tab[data-step="verify"]:hover .step-bubble { background: rgba(252,95,54,0.12); }
+  .step-tab[data-step="verify"].active .step-bubble { background: #FC5F36; color: #fff; box-shadow: 0 4px 12px rgba(252,95,54,0.3); }
+  .step-tab[data-step="verify"].active .name { color: #FC5F36; }
+  .step-tab[data-step="verify"].active { border-bottom-color: #FC5F36; }
+
+  .step-tab[data-step="pay"] .step-bubble { color: #1B998B; }
+  .step-tab[data-step="pay"]:hover .step-bubble { background: rgba(27,153,139,0.12); }
+  .step-tab[data-step="pay"].active .step-bubble { background: #1B998B; color: #fff; box-shadow: 0 4px 12px rgba(27,153,139,0.3); }
+  .step-tab[data-step="pay"].active .name { color: #1B998B; }
+  .step-tab[data-step="pay"].active { border-bottom-color: #1B998B; }
+
+  /* Step detail accent colors per step */
+  .step-detail[data-step="learn"] .left h3 em,
+  .step-detail[data-step="learn"] .right .ps .n {
+    background: linear-gradient(90deg, #0E0050 0%, #16006D 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="learn"] .left .pull { border-left-color: #16006D; }
+  .step-detail[data-step="learn"] .left .deeper { color: #16006D; border-bottom-color: #16006D; }
+  .step-detail[data-step="learn"] .right .ps { border-left-color: #16006D; }
+
+  .step-detail[data-step="deliver"] .left h3 em,
+  .step-detail[data-step="deliver"] .right .ps .n {
+    background: linear-gradient(90deg, #4258B8 0%, #5D70D2 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="deliver"] .left .pull { border-left-color: #5D70D2; }
+  .step-detail[data-step="deliver"] .left .deeper { color: #5D70D2; border-bottom-color: #5D70D2; }
+  .step-detail[data-step="deliver"] .right .ps { border-left-color: #5D70D2; }
+
+  .step-detail[data-step="verify"] .left h3 em,
+  .step-detail[data-step="verify"] .right .ps .n {
+    background: linear-gradient(90deg, #E04A22 0%, #FC5F36 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="verify"] .left .pull { border-left-color: #FC5F36; }
+  .step-detail[data-step="verify"] .left .deeper { color: #FC5F36; border-bottom-color: #FC5F36; }
+  .step-detail[data-step="verify"] .right .ps { border-left-color: #FC5F36; }
+
+  .step-detail[data-step="pay"] .left h3 em,
+  .step-detail[data-step="pay"] .right .ps .n {
+    background: linear-gradient(90deg, #117A6F 0%, #1B998B 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .step-detail[data-step="pay"] .left .pull { border-left-color: #1B998B; }
+  .step-detail[data-step="pay"] .left .deeper { color: #1B998B; border-bottom-color: #1B998B; }
+  .step-detail[data-step="pay"] .right .ps { border-left-color: #1B998B; }
+
+  .step-detail {
+    display: none;
+    padding: 44px 48px;
+    background: var(--paper);
+  }
+  .step-detail.active { display: grid; }
+  .step-detail {
+    grid-template-columns: 240px 1fr 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 44px;
+    row-gap: 32px;
+    align-items: start;
+  }
+  .step-detail .step-media {
+    width: 100%;
+    aspect-ratio: 320 / 606;
+    border-radius: 18px;
+    overflow: hidden;
+    background: var(--paper-cool);
+    border: 1px solid var(--line);
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+  /* Verify uses a laptop-shaped (square-ish) dashboard gif, not a phone — give it a wider media column so the whole dashboard reads */
+  .step-detail[data-step="verify"] {
+    grid-template-columns: 400px 1fr 1fr;
+  }
+  .step-detail[data-step="verify"] .step-media {
+    aspect-ratio: 480 / 380;
+  }
+  .step-detail .step-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .step-detail .left     { grid-column: 2 / span 2; grid-row: 1; }
+  .step-detail .features { grid-column: 2;          grid-row: 2; }
+  .step-detail .right    { grid-column: 3;          grid-row: 2; align-self: stretch; }
+  @media (max-width: 980px) {
+    .step-detail {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto auto auto;
+      gap: 24px;
+    }
+    .step-detail .step-media {
+      grid-row: auto;
+      grid-column: 1;
+      max-width: 240px;
+      margin: 0 auto;
+    }
+    .step-detail[data-step="verify"] .step-media { max-width: 360px; }
+    .step-detail .left, .step-detail .features, .step-detail .right { grid-column: 1; grid-row: auto; }
+  }
+  .step-detail .left h3 {
+    font-size: 32px;
+    margin: 0 0 18px;
+    font-weight: 300;
+    max-width: 30ch;
+  }
+  .step-detail .left h3 em { font-weight: 600; }
+  .step-detail .left .lede {
+    color: var(--ink-3);
+    font-size: 16px;
+    line-height: 1.65;
+    margin: 0 0 28px;
+    font-weight: 300;
+    max-width: 60ch;
+  }
+  .step-block-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    margin: 0 0 14px;
+  }
+  .step-detail .feature-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 28px;
+    row-gap: 10px;
+  }
+  .step-detail .feature-list li {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    font-weight: 400;
+    position: relative;
+    padding-left: 20px;
+  }
+  .step-detail .feature-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--indigo);
+  }
+  @media (max-width: 600px) {
+    .step-detail .feature-list { grid-template-columns: 1fr; }
+  }
+  .step-detail[data-step="learn"]   .step-block-label { color: #16006D; }
+  .step-detail[data-step="deliver"] .step-block-label { color: #5D70D2; }
+  .step-detail[data-step="verify"]  .step-block-label { color: #FC5F36; }
+  .step-detail[data-step="pay"]     .step-block-label { color: #1B998B; }
+  .step-detail[data-step="learn"]   .feature-list li::before { background: #16006D; }
+  .step-detail[data-step="deliver"] .feature-list li::before { background: #5D70D2; }
+  .step-detail[data-step="verify"]  .feature-list li::before { background: #FC5F36; }
+  .step-detail[data-step="pay"]     .feature-list li::before { background: #1B998B; }
+  .step-detail .left .pull {
+    font-weight: 300;
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    border-left: 2px solid var(--indigo);
+    padding: 4px 0 4px 18px;
+    margin: 0 0 22px;
+    max-width: 60ch;
+  }
+  .step-detail .left .deeper {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--indigo);
+    border-bottom: 1px solid var(--indigo);
+    padding-bottom: 2px;
+    font-weight: 600;
+  }
+  .step-detail .right .pillar-stats {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .step-detail .right .ps {
+    background: var(--paper-cool);
+    border-left: 3px solid var(--indigo);
+    padding: 18px 22px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .step-detail .right .ps .n {
+    font-size: 36px;
+    font-weight: 200;
+    letter-spacing: -0.02em;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .step-detail .right .ps .l {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 8px;
+    font-weight: 400;
+  }
+  .numbers-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .numbers-header .step-block-label {
+    margin: 0;
+  }
+  .source-link {
+    font-size: 11px;
+    color: var(--ink-3);
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+    opacity: 0.55;
+    transition: opacity 0.15s;
+  }
+  .source-link:hover {
+    opacity: 1;
+  }
+
+  /* Per-step Insights subsection (inside step-detail) */
+  .step-detail .step-insights {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+  }
+  .step-insights-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--indigo);
+    margin-bottom: 18px;
+  }
+  .step-insight-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+  }
+  .step-insight-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .step-insight-card .program-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--indigo);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .step-insight-card h5 {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--ink);
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+  .step-insight-card p {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .step-insight-card .src {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px dashed var(--line);
+    text-transform: none;
+  }
+
+  /* Per-step accent on insights label and program tag */
+  .step-detail[data-step="learn"] .step-insights-label,
+  .step-detail[data-step="learn"] .step-insight-card .program-tag { color: #16006D; }
+  .step-detail[data-step="deliver"] .step-insights-label,
+  .step-detail[data-step="deliver"] .step-insight-card .program-tag { color: #5D70D2; }
+  .step-detail[data-step="verify"] .step-insights-label,
+  .step-detail[data-step="verify"] .step-insight-card .program-tag { color: #FC5F36; }
+  .step-detail[data-step="pay"] .step-insights-label,
+  .step-detail[data-step="pay"] .step-insight-card .program-tag { color: #1B998B; }
+
+  /* Photo gallery on How It Works */
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .gallery-grid .photo-block {
+    height: 240px;
+    border-radius: var(--radius);
+  }
+  .gallery-grid .gallery-tall {
+    grid-row: span 2;
+    height: 496px;
+  }
+  /* Yellow "Story coming soon" placeholders for the gallery */
+  .gallery-grid .photo-block.placeholder-block {
+    background: #FFF8D6;
+    border: 2px dashed #D9B82A;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px;
+    text-align: center;
+  }
+  .gallery-grid .photo-block.placeholder-block .placeholder-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8A6F00;
+  }
+  .gallery-grid .photo-block.placeholder-block .placeholder-name {
+    font-family: var(--sans);
+    font-size: 14.5px;
+    font-weight: 500;
+    color: #4F4100;
+    max-width: 22ch;
+    line-height: 1.4;
+  }
+
+  /* INSIGHTS, two-axis filtering (Program × LDVP) */
+  .filter-block {
+    display: flex;
+    align-items: flex-start;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .filter-block:last-of-type { margin-bottom: 44px; }
+  .filter-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-weight: 600;
+    flex-shrink: 0;
+    width: 130px;
+    padding-top: 9px;
+  }
+  .filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1 1 auto;
+  }
+  .filter-pills .pill {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink-3);
+    cursor: pointer;
+    background: var(--paper-2);
+    transition: all 0.15s;
+  }
+  .filter-pills .pill:hover { border-color: var(--indigo); color: var(--indigo); }
+  .filter-pills .pill.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .insight-row.is-hidden { display: none; }
+  .prog-card.is-hidden { display: none; }
+  .programs-section-divider.is-hidden { display: none; }
+
+  /* Programs page filter pills, in-development programs */
+  #prog-filters .filter-pills .pill.is-soon {
+    background: var(--paper-cool);
+    color: var(--muted);
+  }
+  #prog-filters .filter-pills .pill.is-soon:hover {
+    border-color: var(--mango);
+    color: var(--mango);
+  }
+
+  /* (Legacy single-row filter, kept for fallback styling) */
+  .insight-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 36px;
+  }
+  .insight-filter .pill {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink-3);
+    cursor: pointer;
+    background: var(--paper-2);
+    transition: all 0.15s;
+  }
+  .insight-filter .pill:hover { border-color: var(--indigo); color: var(--indigo); }
+  .insight-filter .pill.active {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .insight-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+    border-top: 1px solid var(--line);
+  }
+  .insight-row {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr) 170px;
+    gap: 32px;
+    padding: 32px 0;
+    border-bottom: 1px solid var(--line);
+    align-items: start;
+    transition: background 0.15s;
+  }
+  /* Swap columns 1 and 3, Tier+Source go left, Program+LDVP go right.
+     grid-row: 1 is required so the explicit grid-column placements all share
+     a single row instead of cascading into 3 separate rows. */
+  .insight-row > .meta-side:first-of-type { grid-column: 1; grid-row: 1; }
+  .insight-row > .meta-side:last-of-type { grid-column: 3; grid-row: 1; }
+  .insight-row > .body { grid-column: 2; grid-row: 1; }
+  /* Align all three columns' first line of text on the same baseline */
+  .insight-row > .body { padding-top: 0; }
+  .insight-row > .body h4 { margin-top: 0; }
+  .insight-row .meta-side .src-name {
+    display: block;
+    margin-top: 6px;
+    text-transform: none;
+    letter-spacing: 0;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--ink-3);
+    line-height: 1.5;
+    font-weight: 400;
+  }
+  .insight-row:hover { background: var(--paper-2); }
+  .insight-row .num {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--indigo);
+    letter-spacing: 0.04em;
+  }
+  .insight-row .num .new {
+    display: block;
+    margin-top: 8px;
+    font-size: 9.5px;
+    color: var(--paper);
+    background: var(--mango);
+    padding: 2px 8px;
+    border-radius: 4px;
+    width: fit-content;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+  }
+  .insight-row .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--indigo);
+    padding-top: 4px;
+    font-weight: 600;
+  }
+  .insight-row .body h4 { font-size: 20px; margin: 0 0 10px; line-height: 1.3; font-weight: 500; }
+  .insight-row .body p { color: var(--ink-3); font-size: 14.5px; line-height: 1.65; margin: 0 0 12px; font-weight: 400; }
+  .insight-row .body .source {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .insight-row .meta-side {
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--ink-2);
+    text-transform: none;
+    letter-spacing: 0;
+    line-height: 1.5;
+    border-left: none;
+    padding-left: 0;
+    padding-top: 0;
+  }
+  .insight-row .meta-side b {
+    color: var(--muted);
+    display: block;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 10.5px;
+    margin: 18px 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .insight-row .meta-side b:first-child {
+    margin-top: 0;
+  }
+  .insight-row .meta-side br { display: none; }
+  .insight-row .meta-side .tier-1 { color: var(--indigo); font-weight: 600; }
+  .insight-row .meta-side .tier-2 { color: var(--sky); font-weight: 600; }
+
+  .methodology {
+    margin-top: 56px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px 36px;
+  }
+  .methodology h4 { font-size: 18px; margin: 0 0 14px; font-weight: 500; }
+  .methodology p { font-size: 14.5px; color: var(--ink-3); line-height: 1.65; margin: 0 0 12px; max-width: 70ch; }
+
+  /* Sub-heading inside Impact so far */
+  .findings-head {
+    margin-top: 64px;
+    margin-bottom: 28px;
+  }
+  .findings-head .eyebrow { margin-bottom: 12px; }
+  .findings-head h3 {
+    font-size: clamp(24px, 2.6vw, 32px);
+    font-weight: 300;
+    max-width: 30ch;
+  }
+  .findings-head h3 em {
+    font-style: normal;
+    background: var(--grad-text);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 600;
+  }
+
+  /* SIGN UP page */
+  .map-panel {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 0;
+    overflow: hidden;
+  }
+  .map-panel .map-bar {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .map-panel .map-bar .map-t { font-size: 14px; font-weight: 500; }
+  .map-panel .map-bar .map-c {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .map-canvas {
+    background: linear-gradient(135deg, #14103A 0%, #1B2168 50%, #2832A0 100%);
+    position: relative;
+    overflow: hidden;
+    padding: 32px;
+    min-height: 500px;
+  }
+  .map-canvas::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(142,161,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(142,161,255,0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  .map-canvas svg {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .map-legend {
+    padding: 18px 24px;
+    background: var(--paper-cool);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+  }
+  .map-legend .lg { display: inline-flex; align-items: center; gap: 8px; }
+  .map-legend .lg .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .map-legend .lg-active .dot { background: var(--mango); }
+  .map-legend .lg-soon .dot { background: var(--sky); }
+
+  .stories-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .story-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .story-card .photo-block { height: 180px; }
+  .story-card .body { padding: 24px 26px; flex-grow: 1; display: flex; flex-direction: column; }
+  .story-card .org {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--indigo);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .story-card .country {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .story-card blockquote {
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    color: var(--ink);
+    margin: 0 0 14px;
+    font-weight: 300;
+    font-style: italic;
+  }
+  .story-card .attrib {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    margin-top: auto;
+  }
+  .story-card .attrib b { color: var(--ink); font-weight: 600; }
+
+  /* Opportunity loop diagram (replaces story photo cards) */
+  .opp-loop-wrap {
+    padding: 0;
+  }
+  .opp-loop {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 1080px;
+    margin: 0 auto;
+    border-radius: 28px;
+    box-shadow: 0 30px 60px -25px rgba(20, 16, 58, 0.45),
+                0 12px 24px -12px rgba(252, 95, 54, 0.25);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .opp-loop animate,
+    .opp-loop animateMotion,
+    .opp-loop animateTransform { display: none; }
+  }
+
+  /* Testimonial quote grid (What Connect users are saying) */
+  .testimonial-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .testimonial-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 28px 26px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 0;
+  }
+  .testimonial-card .mark {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 56px;
+    line-height: 0.4;
+    color: var(--indigo);
+    height: 22px;
+  }
+  .testimonial-card blockquote {
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink);
+    margin: 0;
+    font-weight: 300;
+    font-style: italic;
+  }
+  .testimonial-card .who {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    margin-top: auto;
+    line-height: 1.7;
+  }
+  .testimonial-card .who b { color: var(--ink); font-weight: 600; }
   .testimonial-card .illustrative {
     display: inline-block;
     font-family: var(--mono);
@@ -3223,6 +4987,56 @@
     .gallery-grid { grid-template-columns: 1fr; }
     .footer-inner { grid-template-columns: 1fr; }
   }
+
+  /* Program detail — sticky program-to-program pill navigation */
+  :root { --header-h: 62px; }
+  .program-pill-nav {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 49;
+    background: var(--ink-2);
+    border-bottom: 1px solid rgba(142, 161, 255, 0.14);
+    height: 40px;
+    display: flex;
+    align-items: center;
+  }
+  .prog-pill-inner {
+    max-width: 1240px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: flex;
+    gap: 0;
+    overflow-x: scroll;
+    scrollbar-width: none;
+    height: 100%;
+    align-items: center;
+  }
+  .prog-pill-inner::-webkit-scrollbar { display: none; }
+  .prog-pill {
+    flex-shrink: 0;
+    display: inline-block;
+    padding: 10px 15px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: rgba(250, 251, 255, 0.48);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .prog-pill:hover { color: rgba(250, 251, 255, 0.86); }
+  .prog-pill.active {
+    color: var(--sky);
+    border-bottom-color: var(--sky);
+  }
+  @media (max-width: 980px) {
+    .prog-pill-inner { padding: 0 20px; }
+    .prog-pill { padding: 10px 12px; font-size: 10px; }
+  }
 </style>
 </head>
 <body>
@@ -3267,6 +5081,19 @@
   </div>
 </header>
 
+<nav id="program-pill-nav" class="program-pill-nav" hidden>
+  <div class="prog-pill-inner">
+    <a class="prog-pill" href="#/programs/child-health-campaign"     data-prog-route="/programs/child-health-campaign">Child Health</a>
+    <a class="prog-pill" href="#/programs/kangaroo-mother-care"      data-prog-route="/programs/kangaroo-mother-care">Kangaroo Care</a>
+    <a class="prog-pill" href="#/programs/mother-baby-wellness"      data-prog-route="/programs/mother-baby-wellness">Mother-Baby</a>
+    <a class="prog-pill" href="#/programs/early-childhood-development" data-prog-route="/programs/early-childhood-development">Early Childhood</a>
+    <a class="prog-pill" href="#/programs/reading-glasses"           data-prog-route="/programs/reading-glasses">Reading Glasses</a>
+    <a class="prog-pill" href="#/programs/chlorine-dispenser"        data-prog-route="/programs/chlorine-dispenser">Chlorine</a>
+    <a class="prog-pill" href="#/programs/mental-health"             data-prog-route="/programs/mental-health">Mental Health</a>
+    <a class="prog-pill" href="#/programs/survey-data-collection"    data-prog-route="/programs/survey-data-collection">Survey</a>
+    <a class="prog-pill" href="#/programs/rooftop-sampling"          data-prog-route="/programs/rooftop-sampling">Rooftop</a>
+  </div>
+</nav>
 <main>
 
 <!-- ================================ HOME ================================ -->
@@ -3733,7 +5560,7 @@
           <div class="market-side-header">
             <span class="role-tag">Frontline Organizations</span>
             <h3>Well-qualified Frontline Organizations deliver <em>verified services</em>.</h3>
-            <a class="market-side-cta" href="#/insights">See how Frontline Organizations deliver →</a>
+            <a class="market-side-cta" href="#/insights">See what Frontline Organizations can deliver →</a>
           </div>
           <div class="platform-promise">
             <div class="promise-item">
@@ -4025,10 +5852,18 @@
         </div>
       </div>
       <div class="gallery-grid">
-        <div class="photo-block placeholder-block gallery-tall">
-          <span class="placeholder-tag">Story Coming Soon</span>
-          <span class="placeholder-name">Vaccination day, Kano State</span>
-        </div>
+        <a class="photo-block gallery-tall"
+           href="https://dimagi.com/closing-post-discharge-gap-kangaroo-mother-care/"
+           target="_blank" rel="noopener"
+           style="background: #111 url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-3.jpg' %}') center/cover no-repeat; text-decoration: none;">
+          <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.36) 55%, transparent 100%);"></div>
+          <div style="position: relative; z-index: 1; padding: 28px 24px;">
+            <span style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sky); display: block; margin-bottom: 10px;">Field Story · Kangaroo Mother Care</span>
+            <h3 style="font-family: var(--sans); font-size: 20px; font-weight: 700; line-height: 1.25; color: #fff; margin: 0 0 10px;">Closing the Post-Discharge Gap</h3>
+            <p style="font-family: var(--sans); font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.8); margin: 0 0 16px;">KMC can reduce neonatal mortality by up to 40% — yet coverage remains below 5% for eligible infants. Connect closes that gap with app-guided home visits, verified outcomes, and fair pay for frontline workers.</p>
+            <span style="font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: rgba(255,255,255,0.55);">Read on Dimagi.com →</span>
+          </div>
+        </a>
         <div class="photo-block placeholder-block">
           <span class="placeholder-tag">Story Coming Soon</span>
           <span class="placeholder-name">Newborn home visit</span>
@@ -4320,7 +6155,7 @@
     <div class="hero">
       <span class="eyebrow">Connect Programs</span>
       <h1>High-impact programs powered by <em>Connect</em>.</h1>
-      <p class="lede">Each program is the same four-step cycle running a different intervention. Four are field-validated with published case studies; the rest are running on funder commitments or actively in development on the platform.</p>
+      <p class="lede">Each program follows the same four-step cycle: Learn, Verify, Deliver, Pay.  Programs range from field-validated with published case studies to under development on the platform based on funder commitments.</p>
     </div>
   </div>
 
@@ -4332,10 +6167,10 @@
           <div class="filter-pills">
             <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="all">All</button>
             <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="chc">Child Health Campaign</button>
-            <button class="pill is-soon" data-filter-type="prog" data-filter-cat="mc" data-filter-value="rutf">Therapeutic Food</button>
+            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="kmc">Kangaroo Care</button>
             <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="mbw">Mother-Baby Wellness</button>
             <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="ecd">Early Childhood Development</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="kmc">Kangaroo Care</button>
+            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="rutf">Therapeutic Food</button>
           </div>
         </div>
 
@@ -4343,9 +6178,9 @@
           <span class="filter-label">General Wellbeing</span>
           <div class="filter-pills">
             <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="all">All</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="mental">Mental Health</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="chlorine">Chlorine Dispenser</button>
             <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="readers">Reading Glasses</button>
+            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="chlorine">Chlorine Dispensers</button>
+            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="mental">Mental Health</button>
           </div>
         </div>
 
@@ -4353,8 +6188,8 @@
           <span class="filter-label">Field Research</span>
           <div class="filter-pills">
             <button class="pill" data-filter-type="prog" data-filter-cat="fr" data-filter-value="all">All</button>
-            <button class="pill is-soon" data-filter-type="prog" data-filter-cat="fr" data-filter-value="rooftop">Rooftop Sampling</button>
             <button class="pill" data-filter-type="prog" data-filter-cat="fr" data-filter-value="survey">Survey &amp; Data Collection</button>
+            <button class="pill" data-filter-type="prog" data-filter-cat="fr" data-filter-value="rooftop">Rooftop Sampling</button>
           </div>
         </div>
       </div>
@@ -4369,11 +6204,11 @@
           <div class="body">
             <span class="sector">Mothers &amp; Children</span>
             <h3>Child Health Campaign</h3>
-            <p class="countries">Nigeria · DRC · Central African Republic · Kenya · Uganda · Tanzania · Zambia · Sierra Leone</p>
-            <p>Door-to-door vitamin A, deworming, oral rehydration salts, malnutrition screening, immunization promotion. Children under five.</p>
+            <p class="countries">Central African Republic · DRC · Kenya · Liberia · Nigeria · Sierra Leone · Tanzania · Uganda · Zambia</p>
+            <p>Door-to-door vitamin A, deworming, oral rehydration salts, malnutrition screening, immunization promotion for children under five.</p>
             <div class="stat-strip">
               <div class="ps"><div class="n">1M+</div><div class="l">Verified visits</div></div>
-              <div class="ps"><div class="n">8</div><div class="l">Countries</div></div>
+              <div class="ps"><div class="n">9</div><div class="l">Countries</div></div>
               <div class="ps"><div class="n">$1.70</div><div class="l">Per visit</div></div>
             </div>
             <div class="meta"><span>Funders: GiveWell · Founders Pledge · Gavi</span><span class="more">Learn More →</span></div>
@@ -4387,14 +6222,50 @@
           <div class="body">
             <span class="sector">Mothers &amp; Children</span>
             <h3>Kangaroo Care</h3>
-            <p class="countries">Uganda · Kenya · India · Nigeria</p>
-            <p>Home visits for small and vulnerable newborns after they leave the hospital. 4 to 5 visits in the first 60 days. Closes the follow-up gap.</p>
+            <p class="countries">India · Kenya · Nigeria · Uganda<br</p>
+            <p>Home visits for small and vulnerable newborns after they leave the hospital. Closes the follow-up gap with 4 to 5 visits in the first 60 days of life.</p>
             <div class="stat-strip">
-              <div class="ps"><div class="n">$36</div><div class="l">Per newborn</div></div>
+              <div class="ps"><div class="n">$55</div><div class="l">Per newborn</div></div>
               <div class="ps"><div class="n">50K</div><div class="l">Uganda 2-year target</div></div>
-              <div class="ps"><div class="n">4,005</div><div class="l">Cases tracked</div></div>
+              <div class="ps"><div class="n">5k+</div><div class="l">Cases tracked</div></div>
             </div>
             <div class="meta"><span>Uganda Ministry of Health agreement signed</span><span class="more">Learn More →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card" id="prog-mbw" data-program="mbw" data-category="mc" href="#/programs/mother-baby-wellness">
+          <div class="photo-block ph-mbw">
+            <span class="photo-label">Photo · Maternal home visit</span>
+          </div>
+          <div class="body">
+            <span class="sector">Mothers &amp; Children</span>
+            <h3>Mother-Baby Wellness</h3>
+            <p class="countries">Malawi · Nigeria</p>
+            <p>Breastfeeding promotion (6 visits, antenatal through complementary feeding) plus maternal mental health coaching via WHO's Problem Management Plus protocol.</p>
+            <div class="stat-strip">
+              <div class="ps"><div class="n">$8></div><div class="l">Per Mother</div></div>
+              <div class="ps"><div class="n">25k+</div><div class="l">Mothers Registered</div></div>
+              <div class="ps"><div class="n">28%</div><div class="l">First Time Mothers</div></div>
+            </div>
+            <div class="meta"><span>Funder: GiveWell</span><span class="more">Learn More →</span></div>
+          </div>
+        </a>
+
+        <a class="prog-card" id="prog-readers" data-program="readers" data-category="gw" href="#/programs/reading-glasses">
+          <div class="photo-block ph-readers">
+            <span class="photo-label">Photo · Vision screening, Bauchi State</span>
+          </div>
+          <div class="body">
+            <span class="sector">General Wellbeing</span>
+            <h3>Reading Glasses</h3>
+            <p class="countries">Kenya · Nigeria</p>
+            <p>Door-to-door near-vision screening and distribution of reading glasses. Scalable, self-paced, digital training to efficitly upskill Frontline Workers.</p>
+            <div class="stat-strip">
+              <div class="ps"><div class="n">100%</div><div class="l">Pass Rate after Supervision</div></div>
+              <div class="ps"><div class="n">$1.50</div><div class="l">Per pair</div></div>
+              <div class="ps"><div class="n">15k+</div><div class="l">Readers Distributed</div></div>
+            </div>
+            <div class="meta"><span>Partnership: RestoringVision</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
@@ -4406,49 +6277,13 @@
             <span class="sector">Mothers &amp; Children</span>
             <h3>Early Childhood Development</h3>
             <p class="countries">Malawi · Mozambique · Nigeria</p>
-            <p>Parenting visits about responsive caregiving and talk-and-play. Validated with about 400 frontline workers. Expanded from 3 visits to 8-10 over 12 months.</p>
+            <p>Three parenting visits over three weeks to coach core concepts of responsive caregiving and positive parenting within the nurturing care framework.</p>
             <div class="stat-strip">
-              <div class="ps"><div class="n">+33%</div><div class="l">Knowledge gain</div></div>
-              <div class="ps"><div class="n">+21%</div><div class="l">Observed teaching</div></div>
-              <div class="ps"><div class="n">~400</div><div class="l">Workers validated</div></div>
+              <div class="ps"><div class="n">4.2</div><div class="l">Average Attempts to Pass Test</div></div>
+              <div class="ps"><div class="n">+18%</div><div class="l">Score improvement through Supervision</div></div>
+              <div class="ps"><div class="n">400+</div><div class="l">Workers validated</div></div>
             </div>
             <div class="meta"><span>Parenting · responsive caregiving</span><span class="more">Learn More →</span></div>
-          </div>
-        </a>
-
-        <a class="prog-card" id="prog-readers" data-program="readers" data-category="gw" href="#/programs/reading-glasses">
-          <div class="photo-block ph-readers">
-            <span class="photo-label">Photo · Vision screening, Bauchi State</span>
-          </div>
-          <div class="body">
-            <span class="sector">General Wellbeing</span>
-            <h3>Reading Glasses</h3>
-            <p class="countries">Bauchi · Adamawa · Jigawa, Nigeria</p>
-            <p>Door-to-door near-vision screening with two partner organizations in 16 weeks. 15,000 pairs at $1.50 each. Hard finding: only ~35 were first-time corrections.</p>
-            <div class="stat-strip">
-              <div class="ps"><div class="n">15K</div><div class="l">Pairs delivered</div></div>
-              <div class="ps"><div class="n">$1.50</div><div class="l">Per pair</div></div>
-              <div class="ps"><div class="n">92%</div><div class="l">Photo audit pass</div></div>
-            </div>
-            <div class="meta"><span>Partnership: RestoringVision</span><span class="more">Learn More →</span></div>
-          </div>
-        </a>
-
-        <a class="prog-card" id="prog-mbw" data-program="mbw" data-category="mc" href="#/programs/mother-baby-wellness">
-          <div class="photo-block ph-mbw">
-            <span class="photo-label">Photo · Maternal home visit</span>
-          </div>
-          <div class="body">
-            <span class="sector">Mothers &amp; Children</span>
-            <h3>Mother-Baby Wellness</h3>
-            <p class="countries">Nigeria · Piloting 2026</p>
-            <p>Breastfeeding promotion (6 visits, antenatal through complementary feeding) plus maternal mental health coaching via WHO's Problem Management Plus protocol.</p>
-            <div class="stat-strip">
-              <div class="ps"><div class="n">$320K</div><div class="l">GiveWell grant</div></div>
-              <div class="ps"><div class="n">+48%</div><div class="l">BF rate (evidence)</div></div>
-              <div class="ps"><div class="n">2,000</div><div class="l">Pilot pairs</div></div>
-            </div>
-            <div class="meta"><span>Funder: GiveWell · Design phase</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
@@ -4457,8 +6292,9 @@
             <span class="photo-label">Graphic · Chlorine dispenser at water point</span>
           </div>
           <div class="body">
+            <span class="badge-soon" style="background: var(--marigold); color: var(--ink);">Program In Development</span>
             <span class="sector">General Wellbeing</span>
-            <h3>Chlorine Dispenser</h3>
+            <h3>Chlorine Dispensers</h3>
             <p class="countries">Nigeria · Launching 2026</p>
             <p>Dispensers installed at communal water points, paired with door-to-door household education on safe water treatment. Chlorination reduces childhood diarrhea by ~40%.</p>
             <div class="stat-strip">
@@ -4466,7 +6302,7 @@
               <div class="ps"><div class="n">~40%</div><div class="l">Diarrhea reduction</div></div>
               <div class="ps"><div class="n">2026</div><div class="l">Launch year</div></div>
             </div>
-            <div class="meta"><span>Funder: GiveWell · Safe Water portfolio</span><span class="more">Learn More →</span></div>
+            <div class="meta"><span>Funder: GiveWell</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
@@ -4477,9 +6313,9 @@
           <div class="body">
             <span class="sector">General Wellbeing</span>
             <h3>Mental Health</h3>
-            <p class="countries">Uganda</p>
+            <p class="countries">India · Uganda</p>
             <p>Community-based mental health screening and support.</p>
-            <div class="meta"><span>Pilot in Uganda</span><span class="more">Learn More →</span></div>
+            <div class="meta"><span>Group Therapy · WellMe</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
@@ -4492,7 +6328,7 @@
             <h3>Survey &amp; Data Collection</h3>
             <p class="countries">Multi-country</p>
             <p>Structured household surveys for development research.</p>
-            <div class="meta"><span>$225K · GiveWell</span><span class="more">Learn More →</span></div>
+            <div class="meta"><span>Funder: GiveWell</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
@@ -4506,7 +6342,7 @@
             <h3>Therapeutic Food</h3>
             <p class="countries">Multi-country</p>
             <p>Ready-to-use therapeutic food for children with severe acute malnutrition. $1M grant via the Children's Investment Fund Foundation.</p>
-            <div class="meta"><span>$1M · Children's Investment Fund Foundation</span><span class="more">Learn More →</span></div>
+            <div class="meta"><span>Funder: Children's Investment Fund Foundation</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
@@ -4533,8 +6369,8 @@
     <div class="closing-inner">
       <span class="eyebrow on-dark">For Funders</span>
       <h2>Have a <em>new program</em> in mind?</h2>
-      <p class="lead">Connect composes best when the intervention is proven, verifiable, and appropriate for door-to-door or structured visit delivery. Let's talk through your vision.</p>
-      <a href="https://jjackson.github.io/connect-website/v11/index.html#contact" class="btn primary" target="_blank" rel="noopener">Let's chat</a>
+      <p class="lead">Connect works best when the intervention is proven, verifiable, and appropriate for door-to-door or structured visit delivery. Let's talk through your vision.</p>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary" target="_blank" rel="noopener">Let's chat</a>
     </div>
   </div>
 
@@ -4781,7 +6617,7 @@
           </div>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle" style="background: #f5dedf url('{% static 'prelogin/images/Program%20Area%20Graphics/kangaroo-mother-care.svg' %}') center/auto 50% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Kangaroo Mother Care — home visits for small and vulnerable newborns."></div>
+          <div class="photo-circle" style="background: #2b2b2b url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-1.jpg' %}') center/cover no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Kangaroo Mother Care — home visits for small and vulnerable newborns."></div>
         </div>
       </div>
     </div>
@@ -4987,7 +6823,7 @@
           </div>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle" style="background: #e1dbee url('{% static 'prelogin/images/Program%20Area%20Graphics/early-childhood-development.svg' %}') center/auto 50% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Early Childhood Development — responsive caregiving and talk-and-play home visits."></div>
+          <div class="photo-circle" style="background: #2b2b2b url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-5.jpg' %}') center/cover no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Early Childhood Development — responsive caregiving and talk-and-play home visits."></div>
         </div>
       </div>
     </div>
@@ -5343,7 +7179,7 @@
           </div>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle" style="background: #DFE2F6 url('{% static 'prelogin/images/Program%20Area%20Graphics/mother-baby-wellness.svg' %}') center/auto 50% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Mother Baby Wellness — postnatal visits for mothers and newborns."></div>
+          <div class="photo-circle" style="background: #2b2b2b url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-4.jpg' %}') center/cover no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Mother Baby Wellness — postnatal visits for mothers and newborns."></div>
         </div>
       </div>
     </div>
@@ -6076,6 +7912,23 @@
     </div>
   </div>
 
+  <!-- Where We Work -->
+  <div class="section">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">Where We Work</span>
+          <h2>A Growing <em>Global Footprint</em>.</h2>
+          <p class="sub">Connect is live across Sub-Saharan Africa and South Asia, with frontline organizations delivering verified services in every country on the map.</p>
+        </div>
+      </div>
+
+      <div style="border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 24px 60px -12px rgba(0,0,0,0.12); border: 1px solid var(--line); max-width: 1024px; margin: 0 auto;">
+        <img src="{% static 'prelogin/images/Program%20Area%20Graphics/where-we-work-map.jpg' %}" alt="Map showing where CommCare Connect operates across Sub-Saharan Africa and South Asia" style="display: block; width: 100%; height: auto;" loading="lazy" />
+      </div>
+    </div>
+  </div>
+
   <!-- What Connect Users are Saying -->
   <div class="section">
     <div class="wrap">
@@ -6103,14 +7956,7 @@
           </div>
         </figure>
 
-        {# import-time edit: video testimonial omitted — 10MB MP4 not shipped as static; revisit when video hosting is decided. #}
-        {% comment %}
-        <figure class="testimonial-card tc-video">
-          <video src="{% static 'prelogin/videos/odera-1m-congrats.mp4' %}" controls playsinline></video>
-        </figure>
-        {% endcomment %}
-
-        <figure class="testimonial-card coming-soon with-photo">
+<figure class="testimonial-card coming-soon with-photo">
           <div class="photo-block ph-field-5"><span class="photo-label">Photo coming soon</span></div>
           <div class="tc-body">
             <div class="mark">&ldquo;</div>
@@ -6279,6 +8125,15 @@
     document.querySelectorAll('#primary-nav a[data-route]').forEach(a => {
       a.classList.toggle('active', a.dataset.route === path);
     });
+    // Program pill nav: show/hide and mark active pill
+    const progNav = document.getElementById('program-pill-nav');
+    if (progNav) {
+      const isDetail = path.startsWith('/programs/') && path.length > '/programs/'.length;
+      progNav.hidden = !isDetail;
+      progNav.querySelectorAll('[data-prog-route]').forEach(a => {
+        a.classList.toggle('active', a.dataset.progRoute === path);
+      });
+    }
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
   window.addEventListener('hashchange', route);
