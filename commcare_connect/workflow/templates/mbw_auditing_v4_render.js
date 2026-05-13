@@ -219,6 +219,17 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                         flw_summaries: flwSummaries,
                         prev_categories: results.prev_categories || {},
                     });
+                    var fetchedTasks = results.open_tasks || {};
+                    if (Object.keys(fetchedTasks).length > 0) {
+                        setTaskStates(function(prev) {
+                            var merged = Object.assign({}, prev);
+                            Object.keys(fetchedTasks).forEach(function(u) {
+                                var t = fetchedTasks[u];
+                                merged[u] = { status: t.status, triggered_at: t.triggered_at, task_id: t.task_id, title: t.title };
+                            });
+                            return merged;
+                        });
+                    }
                     setStep('ready');
                     onUpdateState({ analysis_complete: true, analysis_ts: new Date().toISOString() })
                         .catch(function(e) { console.warn('state save failed:', e); });

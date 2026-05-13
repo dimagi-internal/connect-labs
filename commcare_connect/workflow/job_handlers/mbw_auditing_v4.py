@@ -27,6 +27,45 @@ logger = logging.getLogger(__name__)
 _GRACE_PERIOD_DAYS = 5  # v1's IS_DUE_PAST_GRACE: visit is due if scheduled >= 5d ago
 
 
+def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
+    """Return the most recent non-closed task per FLW for this opportunity."""
+    try:
+        from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+        from commcare_connect.tasks.models import TaskRecord
+
+        with LabsRecordAPIClient(access_token=access_token, opportunity_id=opportunity_id) as client:
+            tasks = client.get_records(experiment="tasks", type="Task", model_class=TaskRecord)
+
+        open_tasks = [
+            t for t in tasks
+            if t.data.get("status") != "closed"
+            and str(t.data.get("opportunity_id") or "") == str(opportunity_id)
+        ]
+
+        by_username: dict[str, dict] = {}
+        for task in open_tasks:
+            username = (task.data.get("username") or "").lower()
+            if not username:
+                continue
+            created_at = ""
+            for event in task.data.get("events", []):
+                if event.get("event_type") == "created":
+                    created_at = event.get("timestamp") or ""
+                    break
+            existing = by_username.get(username)
+            if not existing or created_at > existing.get("triggered_at", ""):
+                by_username[username] = {
+                    "task_id": task.id,
+                    "status": task.data.get("status", "investigating"),
+                    "triggered_at": created_at,
+                    "title": task.data.get("title", ""),
+                }
+        return by_username
+    except Exception:
+        logger.exception("Failed to fetch open tasks")
+        return {}
+
+
 def _get_prev_categories(access_token: str, opportunity_id: int, workflow_definition_id: int) -> dict:
     """Fetch worker_results from the most recent completed run for this workflow."""
     try:
@@ -261,6 +300,12 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     if workflow_definition_id and opportunity_id and access_token:
         prev_categories = _get_prev_categories(access_token, opportunity_id, workflow_definition_id)
 
+    # ── Open tasks across all runs ──
+    progress_callback("Loading open tasks…")
+    open_tasks: dict = {}
+    if opportunity_id and access_token:
+        open_tasks = _get_open_tasks(access_token, opportunity_id)
+
     # ── Build FLW summaries ──
     progress_callback("Building FLW summaries…")
 
@@ -323,4 +368,5 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     return {
         "flw_summaries": flw_summaries,
         "prev_categories": prev_categories,
+        "open_tasks": open_tasks,
     }
