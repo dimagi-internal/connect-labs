@@ -66,6 +66,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     var _savingNotes = React.useState(false); var savingNotes = _savingNotes[0]; var setSavingNotes = _savingNotes[1];
     var _tab2Step = React.useState('idle'); var tab2Step = _tab2Step[0]; var setTab2Step = _tab2Step[1];
     var _tab2Data = React.useState(null); var tab2Data = _tab2Data[0]; var setTab2Data = _tab2Data[1];
+    var _perfData = React.useState(null); var perfData = _perfData[0]; var setPerfData = _perfData[1];
 
     var jobCleanupRef = React.useRef(null);
     var tab2CleanupRef = React.useRef(null);
@@ -961,8 +962,6 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     // =========================================================================
     // Tab 3: Summary by Performance Band
     // =========================================================================
-    var _perfData = React.useState(null); var perfData = _perfData[0]; var setPerfData = _perfData[1];
-
     var Tab3 = function() {
         var bands = perfData || computePerfBands();
         var bandColor = { green: 'border-green-400', yellow: 'border-yellow-400', red: 'border-red-400', gray: 'border-gray-300' };
