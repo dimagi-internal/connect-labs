@@ -125,6 +125,19 @@ The tab also shows the percentage of workers who missed one visit or fewer (_pct
 
 ---
 
+## MBW Auditing V4 Dashboard
+
+### % Still Eligible
+
+The **% Still Eligible** figure counts only mothers who meet both of the following conditions:
+
+1. They qualify for the full intervention bonus.
+2. Their antenatal visit completion is recorded as complete on their visit form.
+
+Both conditions must be true for a mother to be included in the denominator. If you see this figure change compared to an earlier version of the dashboard, it is because the calculation now correctly applies both filters together.
+
+---
+
 ## Common Questions
 
 **Why is a worker's data missing or outdated?**
@@ -141,3 +154,6 @@ Workflow dashboards are actively developed. Check the [weekly changelog](https:/
 
 **The MBW Monitoring numbers look different from what I saw before — is something wrong?**
 Several calculations in the MBW Monitoring dashboard were updated to match the original MBW v1 definitions more precisely. In particular, eligible mother counts, completion rates, performance categories, and GPS figures may shift slightly compared to earlier versions of the dashboard. The new numbers are more accurate. If a figure still looks unexpected, check the "Last refreshed" timestamp and contact your program administrator if the discrepancy persists.
+
+**The MBW Auditing V4 dashboard was showing an error on load — is that fixed?**
+Yes. A loading error that caused the dashboard to crash before displaying any data has been resolved. If you continue to see an error, try refreshing the page. If the problem persists, contact your program administrator.
