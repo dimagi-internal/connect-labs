@@ -4,104 +4,68 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     // Constants
     // =========================================================================
     var THRESHOLDS = {
-        gs_red: 50,                 // GS Score below this → red flag
-        fu_red: 50,                 // Follow-up rate below this → red flag
-        fu_yellow: 80,              // Follow-up rate below this (but >= fu_red) → yellow flag
-        pct_still_elig_red: 50,     // % Still Eligible below this → red flag
-        pct_still_elig_yellow: 85,  // % Still Eligible below this (but >= red) → yellow flag
-        ebf_low: 30,                // EBF at/below this → yellow flag (green range is 31-89%)
-        ebf_high: 89,               // EBF above this → yellow flag
-        dist_ratio_low: 1.0,        // Dist ratio below this → GPS clustering yellow flag
-        worsened_pct: 10,           // Metric worsened by this % vs last run → yellow flag
+        gs_red: 50,
+        fu_red: 50,
+        fu_yellow: 80,
+        pct_still_elig_red: 50,
+        pct_still_elig_yellow: 85,
+        ebf_low: 30,
+        ebf_high: 89,
+        dist_ratio_low: 1.0,
+        worsened_pct: 10,
     };
 
     var PERF_CATEGORIES = [
-        { id: 'eligible_for_renewal', label: 'Eligible for Renewal', color: 'green' },
-        { id: 'requires_improvement', label: 'Requires Improvement', color: 'yellow' },
-        { id: 'suspended', label: 'Suspension', color: 'red' },
+        { id: 'eligible_for_renewal', label: 'Eligible for Renewal', icon: 'fa-circle-check',
+          active: 'bg-green-600 text-white border-green-600',
+          inactive: 'bg-green-50 text-green-800 border-green-300 hover:bg-green-100' },
+        { id: 'requires_improvement', label: 'Requires Improvement', icon: 'fa-triangle-exclamation',
+          active: 'bg-amber-600 text-white border-amber-600',
+          inactive: 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' },
+        { id: 'suspended', label: 'Suspension', icon: 'fa-ban',
+          active: 'bg-red-600 text-white border-red-600',
+          inactive: 'bg-red-50 text-red-800 border-red-300 hover:bg-red-100' },
     ];
 
     var METRIC_COLS = [
-        { key: 'gs_score',           label: 'GS Score',        fmt: 'pct',  higherBetter: true  },
-        { key: 'followup_rate',      label: 'Follow-up Rate',  fmt: 'pct',  higherBetter: true  },
-        { key: 'pct_still_eligible', label: '% Still Eligible',fmt: 'pct',  higherBetter: true  },
-        { key: 'ebf_pct',            label: 'EBF %',           fmt: 'pct',  higherBetter: true  },
-        { key: 'revisit_dist',       label: 'Revisit Dist (km)',fmt: 'dec', higherBetter: false  },
-        { key: 'meter_per_visit',    label: 'Meter/Visit',     fmt: 'int',  higherBetter: null  },
-        { key: 'dist_ratio',         label: 'Dist Ratio',      fmt: 'dec',  higherBetter: true  },
-        { key: 'minute_per_visit',   label: 'Minute/Visit',    fmt: 'int',  higherBetter: null  },
+        { key: 'gs_score',           label: 'GS Score',         fmt: 'pct',  higherBetter: true  },
+        { key: 'followup_rate',      label: 'Follow-up Rate',   fmt: 'pct',  higherBetter: true  },
+        { key: 'pct_still_eligible', label: '% Still Eligible', fmt: 'pct',  higherBetter: true  },
+        { key: 'ebf_pct',            label: 'EBF %',            fmt: 'pct',  higherBetter: true  },
+        { key: 'revisit_dist',       label: 'Revisit Dist (m)', fmt: 'int',  higherBetter: false  },
+        { key: 'meter_per_visit',    label: 'Meter/Visit',      fmt: 'int',  higherBetter: null  },
+        { key: 'dist_ratio',         label: 'Dist Ratio',       fmt: 'dec',  higherBetter: true  },
+        { key: 'minute_per_visit',   label: 'Min/Visit',        fmt: 'int',  higherBetter: null  },
     ];
 
     // =========================================================================
     // State
     // =========================================================================
-    var savedResults = instance.state && instance.state.worker_results ? instance.state.worker_results : {};
-    var savedTaskStates = instance.state && instance.state.task_states ? instance.state.task_states : {};
-    var prevMetrics = instance.state && instance.state.previous_metrics ? instance.state.previous_metrics : {};
+    var savedResults = (instance.state && instance.state.worker_results) || {};
+    var savedTaskStates = (instance.state && instance.state.task_states) || {};
+    var prevMetrics = (instance.state && instance.state.previous_metrics) || {};
 
-    var _step = React.useState('idle');
-    var step = _step[0]; var setStep = _step[1];
-
-    var _dashData = React.useState(null);
-    var dashData = _dashData[0]; var setDashData = _dashData[1];
-
-    var _jobMessages = React.useState([]);
-    var jobMessages = _jobMessages[0]; var setJobMessages = _jobMessages[1];
-
-    var _jobError = React.useState(null);
-    var jobError = _jobError[0]; var setJobError = _jobError[1];
-
-    var _activeTab = React.useState('audit');
-    var activeTab = _activeTab[0]; var setActiveTab = _activeTab[1];
-
-    var _workerResults = React.useState(savedResults);
-    var workerResults = _workerResults[0]; var setWorkerResults = _workerResults[1];
-
-    var _taskStates = React.useState(savedTaskStates);
-    var taskStates = _taskStates[0]; var setTaskStates = _taskStates[1];
-
-    var _sortCol = React.useState('flags');
-    var sortCol = _sortCol[0]; var setSortCol = _sortCol[1];
-
-    var _sortAsc = React.useState(false);
-    var sortAsc = _sortAsc[0]; var setSortAsc = _sortAsc[1];
-
-    var _search = React.useState('');
-    var search = _search[0]; var setSearch = _search[1];
-
-    var _filterFlag = React.useState('all');
-    var filterFlag = _filterFlag[0]; var setFilterFlag = _filterFlag[1];
-
-    var _savingUser = React.useState(null);
-    var savingUser = _savingUser[0]; var setSavingUser = _savingUser[1];
-
-    var _perfData = React.useState(null);
-    var perfData = _perfData[0]; var setPerfData = _perfData[1];
-
-    var _concludeModal = React.useState(false);
-    var concludeModal = _concludeModal[0]; var setConcludeModal = _concludeModal[1];
-
-    var _concluding = React.useState(false);
-    var concluding = _concluding[0]; var setConcluding = _concluding[1];
-
-    var _notesModal = React.useState(null);
-    var notesModal = _notesModal[0]; var setNotesModal = _notesModal[1];
-
-    var _notesDraft = React.useState('');
-    var notesDraft = _notesDraft[0]; var setNotesDraft = _notesDraft[1];
-
-    var _savingNotes = React.useState(false);
-    var savingNotes = _savingNotes[0]; var setSavingNotes = _savingNotes[1];
-
-    var _tab2Step = React.useState('idle');
-    var tab2Step = _tab2Step[0]; var setTab2Step = _tab2Step[1];
-
-    var _tab2Data = React.useState(null);
-    var tab2Data = _tab2Data[0]; var setTab2Data = _tab2Data[1];
-
-    var _refreshingTasks = React.useState(false);
-    var refreshingTasks = _refreshingTasks[0]; var setRefreshingTasks = _refreshingTasks[1];
-
+    var _step = React.useState('idle'); var step = _step[0]; var setStep = _step[1];
+    var _dashData = React.useState(null); var dashData = _dashData[0]; var setDashData = _dashData[1];
+    var _jobMessages = React.useState([]); var jobMessages = _jobMessages[0]; var setJobMessages = _jobMessages[1];
+    var _jobError = React.useState(null); var jobError = _jobError[0]; var setJobError = _jobError[1];
+    var _activeTab = React.useState('audit'); var activeTab = _activeTab[0]; var setActiveTab = _activeTab[1];
+    var _workerResults = React.useState(savedResults); var workerResults = _workerResults[0]; var setWorkerResults = _workerResults[1];
+    var _taskStates = React.useState(savedTaskStates); var taskStates = _taskStates[0]; var setTaskStates = _taskStates[1];
+    var _sortCol = React.useState('flags'); var sortCol = _sortCol[0]; var setSortCol = _sortCol[1];
+    var _sortAsc = React.useState(false); var sortAsc = _sortAsc[0]; var setSortAsc = _sortAsc[1];
+    var _search = React.useState(''); var search = _search[0]; var setSearch = _search[1];
+    var _filterFlag = React.useState('all'); var filterFlag = _filterFlag[0]; var setFilterFlag = _filterFlag[1];
+    var _tab2FilterFlag = React.useState('all'); var tab2FilterFlag = _tab2FilterFlag[0]; var setTab2FilterFlag = _tab2FilterFlag[1];
+    var _savingUser = React.useState(null); var savingUser = _savingUser[0]; var setSavingUser = _savingUser[1];
+    var _concludeModal = React.useState(false); var concludeModal = _concludeModal[0]; var setConcludeModal = _concludeModal[1];
+    var _concluding = React.useState(false); var concluding = _concluding[0]; var setConcluding = _concluding[1];
+    var _notesModal = React.useState(null); var notesModal = _notesModal[0]; var setNotesModal = _notesModal[1];
+    var _notesDraft = React.useState(''); var notesDraft = _notesDraft[0]; var setNotesDraft = _notesDraft[1];
+    var _notesModalResult = React.useState(null); var notesModalResult = _notesModalResult[0]; var setNotesModalResult = _notesModalResult[1];
+    var _savingNotes = React.useState(false); var savingNotes = _savingNotes[0]; var setSavingNotes = _savingNotes[1];
+    var _tab2Step = React.useState('idle'); var tab2Step = _tab2Step[0]; var setTab2Step = _tab2Step[1];
+    var _tab2Data = React.useState(null); var tab2Data = _tab2Data[0]; var setTab2Data = _tab2Data[1];
 
     var jobCleanupRef = React.useRef(null);
     var tab2CleanupRef = React.useRef(null);
@@ -117,222 +81,21 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         return m;
     }, [workers]);
 
-    // =========================================================================
-    // Job runner — server fetches all pipeline data (no browser round-trip)
-    // =========================================================================
-    var runAnalysis = React.useCallback(function() {
-        if (!actions || !actions.startJob) return;
-        if (step === 'running') return;
-
-        setStep('running');
-        setJobError(null);
-        setJobMessages(['Starting analysis...']);
-        setDashData(null);
-
-        var allUsernames = (workers || []).map(function(w) { return w.username; });
-
-        actions.startJob(instance.id, {
-            job_type: 'mbw_auditing_v4',
-            active_usernames: allUsernames,
-            flw_names: flwNameMap,
-            flw_statuses: workerResults,
-            opportunity_id: instance.opportunity_id,
-        }).then(function(resp) {
-            if (!resp || !resp.success) {
-                setStep('error');
-                setJobError((resp && resp.error) || 'Failed to start analysis job');
-                return;
-            }
-            var taskId = resp.task_id;
-            if (!taskId) {
-                setStep('error');
-                setJobError('No task ID returned');
-                return;
-            }
-
-            var cleanup = actions.streamJobProgress(
-                taskId,
-                function(data) {
-                    if (data.message) setJobMessages(function(p) { return p.concat([data.message]); });
-                },
-                null,
-                function(results) {
-                    // Server computed all metrics — merge last_active from workers prop
-                    var workerMap = {};
-                    (workers || []).forEach(function(w) {
-                        workerMap[(w.username || '').toLowerCase()] = w;
-                    });
-                    var flwSummaries = (results.flw_summaries || []).map(function(s) {
-                        var w = workerMap[s.username] || {};
-                        return Object.assign({}, s, {
-                            last_active: w.last_active || s.last_active || '',
-                            display_name: s.display_name || w.name || s.username,
-                        });
-                    });
-                    setDashData({ flw_summaries: flwSummaries });
-                    setStep('ready');
-                    onUpdateState({ analysis_complete: true, analysis_ts: new Date().toISOString() })
-                        .catch(function(e) { console.warn('state save failed:', e); });
-                },
-                function(error) { setStep('error'); setJobError(error || 'Analysis failed'); },
-                function() { setStep('error'); setJobError('Analysis was cancelled'); }
-            );
-            jobCleanupRef.current = cleanup;
-        }).catch(function(err) {
-            setStep('error');
-            setJobError((err && err.message) || 'Failed to start job');
-        });
-    }, [step, workers, flwNameMap, workerResults, instance.id, instance.opportunity_id, actions, onUpdateState]);
-
-    React.useEffect(function() {
-        if (!dashData) {
-            runAnalysis();
-        }
-    }, []);
-
-    React.useEffect(function() {
-        return function() { if (jobCleanupRef.current) jobCleanupRef.current(); };
-    }, []);
-
-    React.useEffect(function() {
-        return function() { if (tab2CleanupRef.current) tab2CleanupRef.current(); };
-    }, []);
+    var prevCategories = (dashData && dashData.prev_categories) || {};
 
     // =========================================================================
-    // Tab 2 job runner — passes task_filters to server; server fetches pipeline
-    // data and restricts visit rows to post-trigger-date per FLW.
-    // No browser-side pipeline data needed.
+    // Helpers
     // =========================================================================
-    var runTab2Analysis = React.useCallback(function() {
-        if (!dashData || tab2Step === 'running') return;
-        if (tab2CleanupRef.current) tab2CleanupRef.current();
-
-        setTab2Step('running');
-
-        // FLWs that have an open task with a recorded trigger date
-        var flaggedWithTask = enrichedData.filter(function(f) {
-            return f.hasTask && taskStates[f.username] && taskStates[f.username].triggered_at;
-        });
-
-        if (flaggedWithTask.length === 0) {
-            setTab2Step('idle');
-            return;
-        }
-
-        var flaggedUsernames = flaggedWithTask.map(function(f) { return f.username; });
-        var taskFilters = {};
-        flaggedWithTask.forEach(function(f) {
-            taskFilters[f.username] = taskStates[f.username].triggered_at;
-        });
-
-        actions.startJob(instance.id, {
-            job_type: 'mbw_auditing_v4',
-            active_usernames: flaggedUsernames,
-            task_filters: taskFilters,
-            flw_names: flwNameMap,
-            flw_statuses: workerResults,
-            opportunity_id: instance.opportunity_id,
-        }).then(function(resp) {
-            if (!resp || !resp.success) {
-                setTab2Step('error');
-                return;
-            }
-            var cleanup = actions.streamJobProgress(
-                resp.task_id, null, null,
-                function(results) {
-                    var byUser = {};
-                    (results.flw_summaries || []).forEach(function(s) {
-                        byUser[s.username] = s;
-                    });
-                    setTab2Data(byUser);
-                    setTab2Step('ready');
-                },
-                function() { setTab2Step('error'); },
-                function() { setTab2Step('error'); }
-            );
-            tab2CleanupRef.current = cleanup;
-        }).catch(function() { setTab2Step('error'); });
-    }, [dashData, enrichedData, taskStates, flwNameMap, workerResults, instance.id, instance.opportunity_id, actions, tab2Step]);
-
-    // =========================================================================
-    // Flag computation
-    // =========================================================================
-    var computeFlags = function(flw) {
-        var reasons = [];
-        var type = null;
-
-        // GS Score: red below 50%
-        if (flw.gs_score != null && flw.gs_score < THRESHOLDS.gs_red) {
-            reasons.push('GS Score: ' + flw.gs_score + '% (below 50%)');
-            type = 'red';
-        }
-        // Follow-up rate: red below 50%, yellow 50–79%
-        if (flw.followup_rate != null && flw.followup_rate < THRESHOLDS.fu_red) {
-            reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (below 50%)');
-            type = 'red';
-        } else if (flw.followup_rate != null && flw.followup_rate < THRESHOLDS.fu_yellow) {
-            reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (50–79%)');
-            if (!type) type = 'yellow';
-        }
-        // % Still Eligible: red below 50%, yellow below 85%
-        if (flw.pct_still_eligible != null && flw.pct_still_eligible < THRESHOLDS.pct_still_elig_red) {
-            reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '% (below 50%)');
-            if (type !== 'red') type = 'red';
-        } else if (flw.pct_still_eligible != null && flw.pct_still_eligible < THRESHOLDS.pct_still_elig_yellow) {
-            reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '% (below 85%)');
-            if (!type) type = 'yellow';
-        }
-        // EBF: yellow if outside green range (31–89%)
-        if (flw.ebf_pct != null && (flw.ebf_pct <= THRESHOLDS.ebf_low || flw.ebf_pct > THRESHOLDS.ebf_high)) {
-            reasons.push('EBF: ' + flw.ebf_pct + '%');
-            if (!type) type = 'yellow';
-        }
-        // GPS clustering: yellow if dist_ratio < 1.0
-        if (flw.dist_ratio != null && flw.dist_ratio < THRESHOLDS.dist_ratio_low) {
-            reasons.push('GPS Clustering (Dist Ratio: ' + flw.dist_ratio + ')');
-            if (!type) type = 'yellow';
-        }
-        // Worsened vs last run: yellow if any metric worsened >10%
-        var prev = prevMetrics[flw.username];
-        if (prev) {
-            METRIC_COLS.forEach(function(col) {
-                var curr = flw[col.key];
-                var prevVal = prev[col.key];
-                if (curr == null || prevVal == null || prevVal === 0) return;
-                if (col.higherBetter === null) return; // neutral metrics skip
-                var lowerIsBetter = !col.higherBetter;
-                var worsened = lowerIsBetter ? (curr > prevVal) : (curr < prevVal);
-                if (!worsened) return;
-                var changePct = Math.abs(curr - prevVal) / Math.abs(prevVal) * 100;
-                if (changePct > THRESHOLDS.worsened_pct) {
-                    reasons.push(col.label + ' worsened (' + Math.round(changePct) + '%)');
-                    if (!type) type = 'yellow';
-                }
-            });
-        }
-
-        return { type: type, reasons: reasons };
+    var daysAgo = function(dt) {
+        if (!dt) return '—';
+        var ms = Date.parse(dt);
+        if (isNaN(ms)) return dt;
+        var days = Math.floor((Date.now() - ms) / 86400000);
+        if (days === 0) return 'today';
+        if (days === 1) return '1d ago';
+        return days + 'd ago';
     };
 
-    var getChangeDir = function(curr, prev, higherBetter) {
-        if (curr == null || prev == null || higherBetter === null) return null;
-        var diff = curr - prev;
-        var threshold = Math.abs(prev) * 0.02;
-        if (Math.abs(diff) <= threshold) return 'same';
-        return (higherBetter ? diff > 0 : diff < 0) ? 'up' : 'down';
-    };
-
-    var ChangeIcon = function(props) {
-        var dir = props.dir;
-        if (!dir) return null;
-        if (dir === 'up') return React.createElement('span', { className: 'text-green-600 ml-1 text-xs', title: 'Improved since last run' }, '▲');
-        if (dir === 'same') return React.createElement('span', { className: 'text-yellow-500 ml-1 text-xs', title: 'No significant change' }, '≈');
-        return React.createElement('span', { className: 'text-red-500 ml-1 text-xs', title: 'Worsened since last run' }, '▼');
-    };
-
-    // =========================================================================
-    // Formatted value + per-metric value colour
-    // =========================================================================
     var fmtVal = function(val, fmt) {
         if (val == null) return '—';
         if (fmt === 'pct') return val + '%';
@@ -341,13 +104,9 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         return String(val);
     };
 
-    // Returns a Tailwind text colour class for a metric value based on its
-    // red/yellow/green thresholds (display colour only — does not affect flags).
     var getMetricValueColor = function(key, val) {
         if (val == null) return '';
-        if (key === 'gs_score') {
-            return val < 50 ? 'text-red-600' : 'text-green-600';
-        }
+        if (key === 'gs_score') return val < 50 ? 'text-red-600' : 'text-green-600';
         if (key === 'followup_rate') {
             if (val < 50) return 'text-red-600';
             if (val < 80) return 'text-yellow-600';
@@ -363,7 +122,228 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             if (val <= 30 || val >= 90) return 'text-yellow-600';
             return 'text-green-600';
         }
+        if (key === 'revisit_dist') {
+            if (val < 30) return 'text-green-600';
+            if (val <= 50) return 'text-yellow-600';
+            return 'text-red-600';
+        }
+        if (key === 'meter_per_visit') {
+            if (val > 50) return 'text-green-600';
+            if (val >= 20) return 'text-yellow-600';
+            return 'text-red-600';
+        }
+        if (key === 'minute_per_visit') {
+            if (val > 20) return 'text-green-600';
+            if (val >= 10) return 'text-yellow-600';
+            return 'text-red-600';
+        }
         return '';
+    };
+
+    var getChangeDir = function(curr, prev, higherBetter) {
+        if (curr == null || prev == null || higherBetter === null) return null;
+        var diff = curr - prev;
+        var threshold = Math.abs(prev) * 0.02;
+        if (Math.abs(diff) <= threshold) return 'same';
+        return (higherBetter ? diff > 0 : diff < 0) ? 'up' : 'down';
+    };
+
+    var ChangeIcon = function(props) {
+        var dir = props.dir;
+        if (!dir) return null;
+        if (dir === 'up') return React.createElement('span', { className: 'text-green-600 ml-1 text-xs', title: 'Improved' }, '▲');
+        if (dir === 'same') return React.createElement('span', { className: 'text-yellow-500 ml-1 text-xs', title: 'No significant change' }, '≈');
+        return React.createElement('span', { className: 'text-red-500 ml-1 text-xs', title: 'Worsened' }, '▼');
+    };
+
+    var resultBadge = function(result) {
+        if (!result) return null;
+        var styles = {
+            eligible_for_renewal: 'bg-green-100 text-green-800',
+            requires_improvement: 'bg-amber-100 text-amber-800',
+            suspended: 'bg-red-100 text-red-800',
+        };
+        return React.createElement('span', {
+            className: 'px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ' + (styles[result] || 'bg-gray-100 text-gray-700'),
+        }, result.replace(/_/g, ' '));
+    };
+
+    // =========================================================================
+    // Job runner
+    // =========================================================================
+    var runAnalysis = React.useCallback(function() {
+        if (!actions || !actions.startJob) return;
+        if (step === 'running') return;
+
+        setStep('running');
+        setJobError(null);
+        setJobMessages(['Starting analysis…']);
+        setDashData(null);
+
+        var allUsernames = (workers || []).map(function(w) { return w.username; });
+
+        actions.startJob(instance.id, {
+            job_type: 'mbw_auditing_v4',
+            server_fetch_pipelines: true,
+            active_usernames: allUsernames,
+            flw_names: flwNameMap,
+            flw_statuses: workerResults,
+            opportunity_id: instance.opportunity_id,
+            workflow_definition_id: instance.definition_id,
+        }).then(function(resp) {
+            if (!resp || !resp.success) {
+                setStep('error');
+                setJobError((resp && resp.error) || 'Failed to start analysis job');
+                return;
+            }
+            var taskId = resp.task_id;
+            if (!taskId) { setStep('error'); setJobError('No task ID returned'); return; }
+
+            var cleanup = actions.streamJobProgress(
+                taskId,
+                function(data) { if (data.message) setJobMessages(function(p) { return p.concat([data.message]); }); },
+                null,
+                function(results) {
+                    var workerMap = {};
+                    (workers || []).forEach(function(w) {
+                        workerMap[(w.username || '').toLowerCase()] = w;
+                    });
+                    var flwSummaries = (results.flw_summaries || []).map(function(s) {
+                        var w = workerMap[s.username] || {};
+                        return Object.assign({}, s, {
+                            last_active: w.last_active || s.last_active || '',
+                            display_name: s.display_name || w.name || s.username,
+                        });
+                    });
+                    setDashData({
+                        flw_summaries: flwSummaries,
+                        prev_categories: results.prev_categories || {},
+                    });
+                    var fetchedTasks = results.open_tasks || {};
+                    if (Object.keys(fetchedTasks).length > 0) {
+                        setTaskStates(function(prev) {
+                            var merged = Object.assign({}, prev);
+                            Object.keys(fetchedTasks).forEach(function(u) {
+                                var t = fetchedTasks[u];
+                                merged[u] = { status: t.status, triggered_at: t.triggered_at, task_id: t.task_id, title: t.title };
+                            });
+                            return merged;
+                        });
+                    }
+                    setStep('ready');
+                    onUpdateState({ analysis_complete: true, analysis_ts: new Date().toISOString() })
+                        .catch(function(e) { console.warn('state save failed:', e); });
+                },
+                function(error) { setStep('error'); setJobError(error || 'Analysis failed'); },
+                function() { setStep('error'); setJobError('Analysis was cancelled'); }
+            );
+            jobCleanupRef.current = cleanup;
+        }).catch(function(err) {
+            setStep('error');
+            setJobError((err && err.message) || 'Failed to start job');
+        });
+    }, [step, workers, flwNameMap, workerResults, instance.id, instance.opportunity_id, instance.definition_id, actions, onUpdateState]);
+
+    React.useEffect(function() { if (!dashData) { runAnalysis(); } }, []);
+    React.useEffect(function() { return function() { if (jobCleanupRef.current) jobCleanupRef.current(); }; }, []);
+    React.useEffect(function() { return function() { if (tab2CleanupRef.current) tab2CleanupRef.current(); }; }, []);
+
+    // =========================================================================
+    // Tab 2 job runner
+    // =========================================================================
+    var runTab2Analysis = React.useCallback(function() {
+        if (!dashData || tab2Step === 'running') return;
+        if (tab2CleanupRef.current) tab2CleanupRef.current();
+
+        setTab2Step('running');
+
+        var flaggedWithTask = enrichedData.filter(function(f) {
+            return f.hasTask && taskStates[f.username] && taskStates[f.username].triggered_at;
+        });
+
+        if (flaggedWithTask.length === 0) { setTab2Step('idle'); return; }
+
+        var flaggedUsernames = flaggedWithTask.map(function(f) { return f.username; });
+        var taskFilters = {};
+        flaggedWithTask.forEach(function(f) {
+            taskFilters[f.username] = taskStates[f.username].triggered_at;
+        });
+
+        actions.startJob(instance.id, {
+            job_type: 'mbw_auditing_v4',
+            server_fetch_pipelines: true,
+            active_usernames: flaggedUsernames,
+            task_filters: taskFilters,
+            flw_names: flwNameMap,
+            flw_statuses: workerResults,
+            opportunity_id: instance.opportunity_id,
+            workflow_definition_id: instance.definition_id,
+        }).then(function(resp) {
+            if (!resp || !resp.success) { setTab2Step('error'); return; }
+            var cleanup = actions.streamJobProgress(
+                resp.task_id, null, null,
+                function(results) {
+                    var byUser = {};
+                    (results.flw_summaries || []).forEach(function(s) { byUser[s.username] = s; });
+                    setTab2Data(byUser);
+                    setTab2Step('ready');
+                },
+                function() { setTab2Step('error'); },
+                function() { setTab2Step('error'); }
+            );
+            tab2CleanupRef.current = cleanup;
+        }).catch(function() { setTab2Step('error'); });
+    }, [dashData, enrichedData, taskStates, flwNameMap, workerResults, instance.id, instance.opportunity_id, instance.definition_id, actions, tab2Step]);
+
+    // =========================================================================
+    // Flag computation
+    // =========================================================================
+    var computeFlags = function(flw) {
+        var reasons = [];
+        var type = null;
+
+        if (flw.gs_score != null && flw.gs_score < THRESHOLDS.gs_red) {
+            reasons.push('GS Score: ' + flw.gs_score + '% (below 50%)');
+            type = 'red';
+        }
+        if (flw.followup_rate != null && flw.followup_rate < THRESHOLDS.fu_red) {
+            reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (below 50%)');
+            type = 'red';
+        } else if (flw.followup_rate != null && flw.followup_rate < THRESHOLDS.fu_yellow) {
+            reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (50–79%)');
+            if (!type) type = 'yellow';
+        }
+        if (flw.pct_still_eligible != null && flw.pct_still_eligible < THRESHOLDS.pct_still_elig_red) {
+            reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '% (below 50%)');
+            if (type !== 'red') type = 'red';
+        } else if (flw.pct_still_eligible != null && flw.pct_still_eligible < THRESHOLDS.pct_still_elig_yellow) {
+            reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '%');
+            if (!type) type = 'yellow';
+        }
+        if (flw.ebf_pct != null && (flw.ebf_pct <= THRESHOLDS.ebf_low || flw.ebf_pct > THRESHOLDS.ebf_high)) {
+            reasons.push('EBF: ' + flw.ebf_pct + '%');
+            if (!type) type = 'yellow';
+        }
+        if (flw.dist_ratio != null && flw.dist_ratio < THRESHOLDS.dist_ratio_low) {
+            reasons.push('GPS Clustering (Dist Ratio: ' + flw.dist_ratio + ')');
+            if (!type) type = 'yellow';
+        }
+        var prev = prevMetrics[flw.username];
+        if (prev) {
+            METRIC_COLS.forEach(function(col) {
+                var curr = flw[col.key];
+                var prevVal = prev[col.key];
+                if (curr == null || prevVal == null || prevVal === 0 || col.higherBetter === null) return;
+                var worsened = col.higherBetter ? (curr < prevVal) : (curr > prevVal);
+                if (!worsened) return;
+                var changePct = Math.abs(curr - prevVal) / Math.abs(prevVal) * 100;
+                if (changePct > THRESHOLDS.worsened_pct) {
+                    reasons.push(col.label + ' worsened (' + Math.round(changePct) + '%)');
+                    if (!type) type = 'yellow';
+                }
+            });
+        }
+        return { type: type, reasons: reasons };
     };
 
     // =========================================================================
@@ -388,7 +368,6 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 
     var filteredData = React.useMemo(function() {
         var data = enrichedData;
-
         if (search.trim()) {
             var q = search.toLowerCase();
             data = data.filter(function(f) {
@@ -396,7 +375,6 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                        (f.username && f.username.toLowerCase().indexOf(q) >= 0);
             });
         }
-
         if (filterFlag === 'red') data = data.filter(function(f) { return f.flags.type === 'red'; });
         else if (filterFlag === 'flagged') data = data.filter(function(f) { return f.flags.type !== null; });
         else if (filterFlag === 'tasks') data = data.filter(function(f) { return f.hasTask; });
@@ -415,16 +393,25 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             var vb = b[sortCol] != null ? b[sortCol] : -Infinity;
             return sortAsc ? va - vb : vb - va;
         });
-
         return data;
     }, [enrichedData, search, filterFlag, sortCol, sortAsc]);
 
     var tab2FlaggedRows = React.useMemo(function() {
-        return enrichedData.filter(function(f) { return f.flags.type !== null || f.hasTask; });
+        return enrichedData.filter(function(f) {
+            return f.hasTask && f.taskStatus !== 'closed' && f.taskStatus !== 'completed';
+        });
     }, [enrichedData]);
 
+    var tab2FilteredRows = React.useMemo(function() {
+        var data = tab2FlaggedRows;
+        if (tab2FilterFlag === 'red') data = data.filter(function(f) { return f.flags.type === 'red'; });
+        else if (tab2FilterFlag === 'flagged') data = data.filter(function(f) { return f.flags.type !== null; });
+        else if (tab2FilterFlag === 'tasks') data = data.filter(function(f) { return f.hasTask; });
+        return data;
+    }, [tab2FlaggedRows, tab2FilterFlag]);
+
     // =========================================================================
-    // Performance band summary (Tab 3) — computed from current workerResults
+    // Performance band summary (Tab 3)
     // =========================================================================
     var computePerfBands = function() {
         var bands = [
@@ -435,22 +422,26 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         ];
         return bands.map(function(band) {
             var catFlws = enrichedData.filter(function(f) { return f.result === band.id; });
-            var avgFu = null;
             var fuFlws = catFlws.filter(function(f) { return f.followup_rate != null; });
-            if (fuFlws.length > 0) {
-                avgFu = Math.round(fuFlws.reduce(function(s, f) { return s + f.followup_rate; }, 0) / fuFlws.length);
-            }
-            var avgGs = null;
+            var avgFu = fuFlws.length > 0
+                ? Math.round(fuFlws.reduce(function(s, f) { return s + f.followup_rate; }, 0) / fuFlws.length)
+                : null;
             var gsFlws = catFlws.filter(function(f) { return f.gs_score != null; });
-            if (gsFlws.length > 0) {
-                avgGs = Math.round(gsFlws.reduce(function(s, f) { return s + f.gs_score; }, 0) / gsFlws.length);
-            }
-            var totalMothers = catFlws.reduce(function(s, f) { return s + (f.num_mothers || 0); }, 0);
-            var totalEligible = catFlws.reduce(function(s, f) { return s + (f.num_mothers_eligible || 0); }, 0);
+            var avgGs = gsFlws.length > 0
+                ? Math.round(gsFlws.reduce(function(s, f) { return s + f.gs_score; }, 0) / gsFlws.length)
+                : null;
+            var totalElig = catFlws.reduce(function(s, f) { return s + (f.num_mothers_eligible || 0); }, 0);
+            var totalStillElig = catFlws.reduce(function(s, f) {
+                if (f.pct_still_eligible == null || !f.num_mothers_eligible) return s;
+                return s + Math.round(f.pct_still_eligible / 100 * f.num_mothers_eligible);
+            }, 0);
+            var pctStillElig = totalElig > 0 ? Math.round(totalStillElig / totalElig * 100) : null;
             return Object.assign({}, band, {
                 num_flws: catFlws.length,
-                total_mothers: totalMothers,
-                total_eligible: totalEligible,
+                total_mothers: catFlws.reduce(function(s, f) { return s + (f.num_mothers || 0); }, 0),
+                total_eligible: totalElig,
+                total_still_eligible: totalStillElig,
+                pct_still_eligible: pctStillElig,
                 avg_fu: avgFu,
                 avg_gs: avgGs,
             });
@@ -466,19 +457,17 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     };
 
     var handleSetCategory = function(username, category) {
+        // Toggle: clicking the active category clears it
+        var current = (workerResults[username] || {}).result;
+        var newCategory = current === category ? null : category;
         setSavingUser(username);
         var wr = workerResults[username] || {};
-        var notes = wr.notes || '';
-        actions.saveWorkerResult(instance.id, { username: username, result: category, notes: notes })
+        actions.saveWorkerResult(instance.id, { username: username, result: newCategory, notes: wr.notes || '' })
             .then(function(resp) {
                 if (resp.success) {
                     var updated = Object.assign({}, workerResults);
-                    updated[username] = Object.assign({}, wr, { result: category });
-                    if (resp.worker_results) {
-                        setWorkerResults(resp.worker_results);
-                    } else {
-                        setWorkerResults(updated);
-                    }
+                    updated[username] = Object.assign({}, wr, { result: newCategory });
+                    setWorkerResults(resp.worker_results || updated);
                 } else {
                     alert('Failed to save: ' + (resp.error || 'unknown error'));
                 }
@@ -488,8 +477,10 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     };
 
     var handleOpenNotes = function(flw) {
+        var wr = workerResults[flw.username] || {};
         setNotesModal(flw.username);
         setNotesDraft(flw.notes || '');
+        setNotesModalResult(wr.result || null);
     };
 
     var handleSaveNotes = function() {
@@ -497,14 +488,15 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         setSavingNotes(true);
         var username = notesModal;
         var wr = workerResults[username] || {};
-        actions.saveWorkerResult(instance.id, { username: username, result: wr.result || null, notes: notesDraft })
+        actions.saveWorkerResult(instance.id, { username: username, result: notesModalResult, notes: notesDraft })
             .then(function(resp) {
                 if (resp.success) {
                     var updated = Object.assign({}, workerResults);
-                    updated[username] = Object.assign({}, wr, { notes: notesDraft });
-                    if (resp.worker_results) setWorkerResults(resp.worker_results);
-                    else setWorkerResults(updated);
+                    updated[username] = Object.assign({}, wr, { result: notesModalResult, notes: notesDraft });
+                    setWorkerResults(resp.worker_results || updated);
                     setNotesModal(null);
+                } else {
+                    alert('Failed to save notes: ' + (resp.error || 'unknown error'));
                 }
             })
             .catch(function(e) { alert('Error: ' + ((e && e.message) || e)); })
@@ -520,7 +512,6 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             priority: flw.flags.type === 'red' ? 'high' : 'medium',
             workflow_instance_id: instance.id,
         });
-        // Record trigger date in state so Tab 2 can filter post-task data
         var updated = Object.assign({}, taskStates);
         updated[flw.username] = { status: 'open', triggered_at: new Date().toISOString() };
         setTaskStates(updated);
@@ -543,21 +534,23 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             METRIC_COLS.forEach(function(col) { snap[col.key] = f[col.key]; });
             currentMetrics[f.username] = snap;
         });
-        actions.completeRun(instance.id, { overall_result: 'completed', notes: 'Audit run concluded' })
-            .then(function(resp) {
-                if (resp.success) {
-                    onUpdateState({ previous_metrics: currentMetrics })
-                        .catch(function(e) { console.warn('metrics save failed:', e); });
-                    setConcludeModal(false);
-                } else {
-                    alert('Failed to conclude: ' + (resp.error || 'unknown'));
-                }
-            })
-            .catch(function(e) { alert('Error: ' + ((e && e.message) || e)); })
-            .finally(function() { setConcluding(false); });
+        // Save previous_metrics and previous_categories BEFORE completing (run becomes immutable after)
+        onUpdateState({
+            previous_metrics: currentMetrics,
+            previous_categories: workerResults,
+        }).then(function() {
+            return actions.completeRun(instance.id, { overall_result: 'completed', notes: 'Audit run concluded' });
+        }).then(function(resp) {
+            if (resp && resp.success) {
+                setConcludeModal(false);
+                window.location.reload();
+            } else {
+                alert('Failed to conclude: ' + ((resp && resp.error) || 'unknown'));
+            }
+        }).catch(function(e) { alert('Error: ' + ((e && e.message) || e)); })
+          .finally(function() { setConcluding(false); });
     };
 
-    // Can only conclude when all triggered tasks are resolved
     var canConclude = React.useMemo(function() {
         return Object.values(taskStates).every(function(t) {
             return !t.triggered_at || t.status === 'closed' || t.status === 'completed';
@@ -568,42 +561,40 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     // Sub-components
     // =========================================================================
     var SortTh = function(props) {
-        var col = props.col;
-        var label = props.label;
-        var active = sortCol === col;
+        var active = sortCol === props.col;
         return React.createElement('th', {
             className: 'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 whitespace-nowrap select-none',
-            onClick: function() { handleSort(col); },
+            onClick: function() { handleSort(props.col); },
             title: props.title || '',
-        }, label, active ? (sortAsc ? ' ▲' : ' ▼') : '');
+        }, props.label, active ? (sortAsc ? ' ▲' : ' ▼') : ' ⇅');
     };
 
     var FlagBadge = function(props) {
         var flags = props.flags;
         if (!flags.type) return React.createElement('span', { className: 'text-gray-300 text-xs' }, '—');
         var isRed = flags.type === 'red';
-        var tooltip = flags.reasons.join('\n');
         return React.createElement('span', {
             className: 'inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs font-bold cursor-help ' +
                 (isRed ? 'bg-red-500' : 'bg-yellow-400'),
-            title: tooltip,
+            title: flags.reasons.join('\n'),
         }, isRed ? '!' : '?');
     };
 
-    var CategorySelect = function(props) {
+    // Button-based category toggle (mirrors mbw_monitoring_v2 assessment buttons)
+    var CategoryButtons = function(props) {
         var flw = props.flw;
         var saving = savingUser === flw.username;
-        var colorMap = { eligible_for_renewal: 'text-green-700 bg-green-50 border-green-300', requires_improvement: 'text-yellow-700 bg-yellow-50 border-yellow-300', suspended: 'text-red-700 bg-red-50 border-red-300' };
-        var cls = 'text-xs border rounded px-1 py-0.5 ' + (colorMap[flw.result] || 'text-gray-600 bg-white border-gray-300');
         if (saving) return React.createElement('span', { className: 'text-xs text-gray-400 italic' }, 'Saving…');
-        return React.createElement('select', {
-            className: cls,
-            value: flw.result || '',
-            onChange: function(e) { handleSetCategory(flw.username, e.target.value || null); },
-        },
-            React.createElement('option', { value: '' }, '— Set category —'),
-            PERF_CATEGORIES.map(function(c) {
-                return React.createElement('option', { key: c.id, value: c.id }, c.label);
+        return React.createElement('div', { className: 'inline-flex items-center gap-1' },
+            PERF_CATEGORIES.map(function(cat) {
+                var active = flw.result === cat.id;
+                return React.createElement('button', {
+                    key: cat.id,
+                    onClick: function() { handleSetCategory(flw.username, cat.id); },
+                    className: 'px-2 py-1 rounded text-xs font-medium border transition-colors ' +
+                        (active ? cat.active : cat.inactive),
+                    title: cat.label,
+                }, React.createElement('i', { className: 'fa-solid ' + cat.icon }));
             })
         );
     };
@@ -616,29 +607,32 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                 React.createElement('span', {
                     className: 'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded ' +
                         (isClosed ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'),
-                }, React.createElement('i', { className: 'fa-solid ' + (isClosed ? 'fa-circle-check' : 'fa-clock') }),
-                flw.taskStatus || 'open'),
+                },
+                    React.createElement('i', { className: 'fa-solid ' + (isClosed ? 'fa-circle-check' : 'fa-clock') }),
+                    flw.taskStatus || 'open'
+                ),
                 !isClosed && React.createElement('button', {
                     className: 'text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200',
                     onClick: function() { handleMarkTaskResolved(flw.username); },
-                    title: 'Mark this task as resolved',
-                }, 'Mark Resolved')
+                    title: 'Mark as resolved',
+                }, 'Resolve')
             );
         }
         return React.createElement('button', {
             className: 'text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200',
             onClick: function() { handleTriggerTask(flw); },
             title: 'Open task creator for this FLW',
-        }, React.createElement('i', { className: 'fa-solid fa-plus mr-1' }), 'Trigger Task');
+        }, React.createElement('i', { className: 'fa-solid fa-plus mr-1' }), 'Task');
     };
 
     // =========================================================================
-    // Metric table row (used in both Tab 1 and Tab 2)
+    // Metric table row (Tab 1 and Tab 2)
     // =========================================================================
     var MetricRow = function(props) {
         var flw = props.flw;
         var showChange = props.showChange;
         var prev = props.prevOverride !== undefined ? props.prevOverride : (prevMetrics[flw.username] || null);
+        var prevCat = prevCategories[flw.username] || null;
 
         var cells = METRIC_COLS.map(function(col) {
             var val = flw[col.key];
@@ -646,7 +640,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             var valColor = getMetricValueColor(col.key, val);
             return React.createElement('td', {
                 key: col.key,
-                className: 'px-3 py-3 text-sm text-center whitespace-nowrap',
+                className: 'px-3 py-2 text-sm text-center whitespace-nowrap',
             },
                 React.createElement('span', { className: valColor || undefined }, fmtVal(val, col.fmt)),
                 dir ? React.createElement(ChangeIcon, { dir: dir }) : null
@@ -657,35 +651,45 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             key: flw.username,
             className: 'hover:bg-gray-50 ' + (flw.flags.type === 'red' ? 'border-l-4 border-red-400' : flw.flags.type === 'yellow' ? 'border-l-4 border-yellow-400' : ''),
         },
-            React.createElement('td', { className: 'px-3 py-3 text-sm' },
+            React.createElement('td', { className: 'px-3 py-2 text-sm' },
                 React.createElement('div', { className: 'font-medium text-gray-900' }, flw.display_name),
                 React.createElement('div', { className: 'text-xs text-gray-400 font-mono' }, flw.username)
             ),
-            React.createElement('td', { className: 'px-3 py-3 text-xs text-gray-500' },
-                flw.last_active || '—'
+            React.createElement('td', { className: 'px-3 py-2 text-xs text-gray-500 whitespace-nowrap' },
+                daysAgo(flw.last_active)
             ),
-            React.createElement('td', { className: 'px-3 py-3 text-sm text-center' },
+            React.createElement('td', { className: 'px-3 py-2 text-sm text-center' },
                 flw.num_mothers,
-                flw.num_mothers_eligible != null ? React.createElement('span', { className: 'text-gray-400 ml-1 text-xs' }, '(' + flw.num_mothers_eligible + ')') : null
+                flw.num_mothers_eligible != null
+                    ? React.createElement('span', { className: 'text-gray-400 ml-1 text-xs' }, '(' + flw.num_mothers_eligible + ')')
+                    : null
             ),
             cells,
-            React.createElement('td', { className: 'px-3 py-3 text-center' },
+            React.createElement('td', { className: 'px-3 py-2 text-center' },
                 React.createElement(FlagBadge, { flags: flw.flags })
             ),
-            React.createElement('td', { className: 'px-3 py-3 text-center' },
-                React.createElement(CategorySelect, { flw: flw })
+            // Previous run category badge
+            React.createElement('td', { className: 'px-3 py-2 text-center' },
+                prevCat
+                    ? resultBadge((prevCat.result || prevCat))
+                    : React.createElement('span', { className: 'text-gray-300 text-xs' }, '—')
             ),
-            React.createElement('td', { className: 'px-3 py-3 text-center' },
+            // Current category buttons
+            React.createElement('td', { className: 'px-3 py-2 text-center' },
+                React.createElement(CategoryButtons, { flw: flw })
+            ),
+            React.createElement('td', { className: 'px-3 py-2 text-center' },
                 React.createElement('button', {
                     className: 'text-xs text-gray-500 hover:text-gray-800 px-1',
                     onClick: function() { handleOpenNotes(flw); },
                     title: flw.notes ? 'Notes: ' + flw.notes : 'Add notes',
-                }, flw.notes
-                    ? React.createElement('i', { className: 'fa-solid fa-note-sticky text-blue-400' })
-                    : React.createElement('i', { className: 'fa-regular fa-note-sticky text-gray-300' })
+                },
+                    flw.notes
+                        ? React.createElement('i', { className: 'fa-solid fa-note-sticky text-blue-400' })
+                        : React.createElement('i', { className: 'fa-regular fa-note-sticky text-gray-300' })
                 )
             ),
-            React.createElement('td', { className: 'px-3 py-3 text-center' },
+            React.createElement('td', { className: 'px-3 py-2 text-center' },
                 React.createElement(TaskCell, { flw: flw })
             )
         );
@@ -699,11 +703,12 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             React.createElement('tr', null,
                 React.createElement(SortTh, { col: 'name', label: 'FLW' }),
                 React.createElement('th', { className: 'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Last Active'),
-                React.createElement(SortTh, { col: 'num_mothers', label: '# Mothers', title: 'Total (eligible in brackets)' }),
+                React.createElement(SortTh, { col: 'num_mothers', label: '# Mothers', title: 'Total (eligible)' }),
                 METRIC_COLS.map(function(col) {
                     return React.createElement(SortTh, { key: col.key, col: col.key, label: col.label });
                 }),
                 React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Flag'),
+                React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Prev'),
                 React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Category'),
                 React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase w-10' }, 'Notes'),
                 React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Task')
@@ -712,7 +717,37 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     };
 
     // =========================================================================
-    // Loading / error screens
+    // Filter buttons bar (reusable for Tab 1 and Tab 2)
+    // =========================================================================
+    var FilterBar = function(props) {
+        var total = props.total;
+        var redCount = props.redCount;
+        var yellowCount = props.yellowCount;
+        var taskedCount = props.taskedCount;
+        var current = props.current;
+        var onChange = props.onChange;
+        var options = [
+            { id: 'all', label: 'All (' + total + ')' },
+            { id: 'red', label: 'Red Flags (' + redCount + ')' },
+            { id: 'flagged', label: 'All Flagged (' + (redCount + yellowCount) + ')' },
+            { id: 'tasks', label: 'Has Task (' + taskedCount + ')' },
+        ];
+        return React.createElement('div', { className: 'flex gap-2 flex-wrap' },
+            options.map(function(f) {
+                return React.createElement('button', {
+                    key: f.id,
+                    onClick: function() { onChange(f.id); },
+                    className: 'px-3 py-1.5 text-sm rounded-full border transition-colors ' +
+                        (current === f.id
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'),
+                }, f.label);
+            })
+        );
+    };
+
+    // =========================================================================
+    // Loading / error states
     // =========================================================================
     if (step === 'idle' || step === 'running') {
         return React.createElement('div', { className: 'space-y-4' },
@@ -728,9 +763,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                     )
                 ),
                 jobMessages.length > 0 && React.createElement('div', { className: 'text-sm text-blue-700 space-y-0.5' },
-                    jobMessages.slice(-5).map(function(m, i) {
-                        return React.createElement('div', { key: i }, m);
-                    })
+                    jobMessages.slice(-5).map(function(m, i) { return React.createElement('div', { key: i }, m); })
                 )
             )
         );
@@ -749,20 +782,41 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                 React.createElement('p', { className: 'text-red-700 text-sm' }, jobError || 'An unknown error occurred.'),
                 React.createElement('button', {
                     className: 'mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-medium',
-                    onClick: function() { setStep('idle'); },
+                    onClick: function() { setStep('idle'); runAnalysis(); },
                 }, 'Retry')
             )
         );
     }
 
     // =========================================================================
-    // KPI summary bar
+    // KPI summary (compact single row)
     // =========================================================================
     var totalFlws = enrichedData.length;
     var redCount = enrichedData.filter(function(f) { return f.flags.type === 'red'; }).length;
     var yellowCount = enrichedData.filter(function(f) { return f.flags.type === 'yellow'; }).length;
     var taskedCount = enrichedData.filter(function(f) { return f.hasTask; }).length;
     var categorizedCount = enrichedData.filter(function(f) { return f.result; }).length;
+
+    var KpiBar = function() {
+        var kpis = [
+            { label: 'FLWs', value: totalFlws, bg: 'bg-blue-50 border-blue-300 text-blue-700' },
+            { label: 'Red ⚑', value: redCount, bg: 'bg-red-50 border-red-300 text-red-700' },
+            { label: 'Yellow ⚑', value: yellowCount, bg: 'bg-yellow-50 border-yellow-300 text-yellow-700' },
+            { label: 'Tasks', value: taskedCount, bg: 'bg-orange-50 border-orange-300 text-orange-700' },
+            { label: 'Categorized', value: categorizedCount + '/' + totalFlws, bg: 'bg-green-50 border-green-300 text-green-700' },
+        ];
+        return React.createElement('div', { className: 'flex items-center gap-2 flex-wrap' },
+            kpis.map(function(kpi, i) {
+                return React.createElement('div', {
+                    key: i,
+                    className: 'flex flex-col items-center justify-center w-20 h-14 rounded-lg border text-center ' + kpi.bg,
+                },
+                    React.createElement('div', { className: 'text-lg font-bold leading-tight' }, kpi.value),
+                    React.createElement('div', { className: 'text-xs leading-tight mt-0.5' }, kpi.label)
+                );
+            })
+        );
+    };
 
     // =========================================================================
     // Tab 1: Per FLW Audit Report
@@ -771,35 +825,26 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         return React.createElement('div', { className: 'space-y-4' },
             React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-4' },
                 React.createElement('div', { className: 'flex flex-wrap items-center gap-3' },
-                    React.createElement('div', { className: 'flex gap-2' },
-                        [
-                            { id: 'all', label: 'All (' + totalFlws + ')' },
-                            { id: 'red', label: 'Red Flags (' + redCount + ')' },
-                            { id: 'flagged', label: 'All Flagged (' + (redCount + yellowCount) + ')' },
-                            { id: 'tasks', label: 'Has Task (' + taskedCount + ')' },
-                        ].map(function(f) {
-                            return React.createElement('button', {
-                                key: f.id,
-                                onClick: function() { setFilterFlag(f.id); },
-                                className: 'px-3 py-1.5 text-sm rounded-full border transition-colors ' +
-                                    (filterFlag === f.id
-                                        ? 'bg-blue-600 text-white border-blue-600'
-                                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'),
-                            }, f.label);
-                        })
-                    ),
+                    React.createElement(FilterBar, {
+                        total: enrichedData.length,
+                        redCount: redCount,
+                        yellowCount: yellowCount,
+                        taskedCount: taskedCount,
+                        current: filterFlag,
+                        onChange: setFilterFlag,
+                    }),
                     React.createElement('input', {
                         type: 'text',
                         placeholder: 'Search FLWs…',
                         value: search,
                         onChange: function(e) { setSearch(e.target.value); },
-                        className: 'flex-1 min-w-40 border border-gray-300 rounded-lg px-3 py-1.5 text-sm',
+                        className: 'flex-1 min-w-36 border border-gray-300 rounded-lg px-3 py-1.5 text-sm',
                     }),
                     React.createElement('button', {
                         className: 'ml-auto px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
                         onClick: runAnalysis,
-                        title: 'Re-run analysis with latest data',
-                    }, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Refresh Data')
+                        title: 'Refresh data',
+                    }, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Refresh')
                 )
             ),
             React.createElement('div', { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
@@ -810,13 +855,15 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                             return React.createElement(MetricRow, { key: flw.username, flw: flw, showChange: true });
                         }),
                         filteredData.length === 0 && React.createElement('tr', null,
-                            React.createElement('td', { colSpan: 14, className: 'px-4 py-8 text-center text-gray-400' }, 'No FLWs match current filters.')
+                            React.createElement('td', { colSpan: 15, className: 'px-4 py-8 text-center text-gray-400' },
+                                'No FLWs match current filters.'
+                            )
                         )
                     )
                 )
             ),
-            prevMetrics && Object.keys(prevMetrics).length > 0 && React.createElement('p', { className: 'text-xs text-gray-400 px-1' },
-                '▲▼ arrows show change vs. previous concluded run. ≈ = no significant change.'
+            Object.keys(prevMetrics).length > 0 && React.createElement('p', { className: 'text-xs text-gray-400 px-1' },
+                '▲▼ arrows show change vs. previous concluded run. "Prev" column shows last run\'s category.'
             )
         );
     };
@@ -828,46 +875,53 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         if (tab2FlaggedRows.length === 0) {
             return React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-8 text-center' },
                 React.createElement('i', { className: 'fa-solid fa-check-circle text-green-400 text-3xl mb-3' }),
-                React.createElement('p', { className: 'text-gray-600' }, 'No flagged FLWs or open tasks in this run.')
+                React.createElement('p', { className: 'text-gray-600' }, 'No FLWs with open tasks in this run.')
             );
         }
 
-        // Determine which FLWs have post-task data available
         var taskedWithDate = tab2FlaggedRows.filter(function(f) {
-            return f.hasTask && taskStates[f.username] && taskStates[f.username].triggered_at;
+            return taskStates[f.username] && taskStates[f.username].triggered_at;
         });
 
         return React.createElement('div', { className: 'space-y-4' },
+            // Filter bar
+            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-4' },
+                React.createElement(FilterBar, {
+                    total: tab2FlaggedRows.length,
+                    redCount: tab2FlaggedRows.filter(function(f) { return f.flags.type === 'red'; }).length,
+                    yellowCount: tab2FlaggedRows.filter(function(f) { return f.flags.type === 'yellow'; }).length,
+                    taskedCount: tab2FlaggedRows.filter(function(f) { return f.hasTask; }).length,
+                    current: tab2FilterFlag,
+                    onChange: setTab2FilterFlag,
+                })
+            ),
             // Info + compute button
             React.createElement('div', { className: 'bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start justify-between gap-3' },
                 React.createElement('div', { className: 'text-sm text-blue-700' },
                     React.createElement('i', { className: 'fa-solid fa-circle-info mr-1' }),
                     tab2Step === 'ready'
-                        ? 'Post-task metrics: only data submitted after each FLW\'s task was triggered. Change arrows compare post-task vs. current run values.'
-                        : 'Showing FLWs with red/yellow flags or open tasks. Click "Compute Post-Task Metrics" to load data submitted after each task was triggered.'
+                        ? 'Post-task metrics: only data submitted after each FLW\'s task was triggered.'
+                        : 'Showing FLWs with open tasks. Click "Compute Post-Task Metrics" to load data submitted after each task was triggered.'
                 ),
-                taskedWithDate.length > 0 && React.createElement('button', {
+                React.createElement('button', {
                     className: 'shrink-0 px-3 py-1.5 text-sm rounded border font-medium transition-colors ' +
-                        (tab2Step === 'running'
+                        (tab2Step === 'running' || taskedWithDate.length === 0
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'),
                     onClick: runTab2Analysis,
-                    disabled: tab2Step === 'running',
-                    title: 'Re-run analysis using only data submitted after each task was triggered',
+                    disabled: tab2Step === 'running' || taskedWithDate.length === 0,
+                    title: taskedWithDate.length === 0 ? 'No task trigger dates found — create tasks for FLWs first' : '',
                 },
                     tab2Step === 'running'
                         ? React.createElement('span', null, React.createElement('i', { className: 'fa-solid fa-spinner fa-spin mr-1' }), 'Computing…')
                         : React.createElement('span', null, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Compute Post-Task Metrics')
                 )
             ),
-
-            // Table: post-task data if ready, otherwise current-run data
             React.createElement('div', { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
                 React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
                     React.createElement(TableHeader, null),
                     React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
-                        tab2FlaggedRows.map(function(flw) {
-                            // If post-task data is ready, merge it into the row for display
+                        tab2FilteredRows.map(function(flw) {
                             var postTask = tab2Data && tab2Data[flw.username];
                             var displayFlw = postTask
                                 ? Object.assign({}, flw, {
@@ -881,20 +935,23 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                                     minute_per_visit: postTask.minute_per_visit,
                                 })
                                 : flw;
-                            // Change arrows for Tab 2 compare post-task to current full-run values
-                            var tab2PrevOverride = postTask ? {} : null;
+                            var tab2PrevOverride = null;
                             if (postTask) {
-                                METRIC_COLS.forEach(function(col) {
-                                    tab2PrevOverride[col.key] = flw[col.key];
-                                });
+                                tab2PrevOverride = {};
+                                METRIC_COLS.forEach(function(col) { tab2PrevOverride[col.key] = flw[col.key]; });
                             }
                             return React.createElement(MetricRow, {
                                 key: flw.username,
                                 flw: displayFlw,
                                 showChange: !!(postTask),
-                                prevOverride: postTask ? tab2PrevOverride : null,
+                                prevOverride: tab2PrevOverride,
                             });
-                        })
+                        }),
+                        tab2FilteredRows.length === 0 && React.createElement('tr', null,
+                            React.createElement('td', { colSpan: 15, className: 'px-4 py-8 text-center text-gray-400' },
+                                'No FLWs match current filter.'
+                            )
+                        )
                     )
                 )
             )
@@ -904,69 +961,59 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     // =========================================================================
     // Tab 3: Summary by Performance Band
     // =========================================================================
+    var _perfData = React.useState(null); var perfData = _perfData[0]; var setPerfData = _perfData[1];
+
     var Tab3 = function() {
         var bands = perfData || computePerfBands();
-
-        var bandColor = { green: 'border-green-400 bg-green-50', yellow: 'border-yellow-400 bg-yellow-50', red: 'border-red-400 bg-red-50', gray: 'border-gray-300 bg-gray-50' };
+        var bandColor = { green: 'border-green-400', yellow: 'border-yellow-400', red: 'border-red-400', gray: 'border-gray-300' };
 
         return React.createElement('div', { className: 'space-y-4' },
             React.createElement('div', { className: 'flex items-center justify-between' },
                 React.createElement('p', { className: 'text-sm text-gray-500' },
-                    'Based on latest performance categories set for each FLW, including current run.'
+                    'Based on latest performance categories set for each FLW.'
                 ),
                 React.createElement('button', {
                     className: 'px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
                     onClick: function() { setPerfData(computePerfBands()); },
-                }, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Refresh Summary')
+                }, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Refresh')
             ),
-
-            React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4' },
-                bands.map(function(band) {
-                    return React.createElement('div', {
-                        key: band.id || 'none',
-                        className: 'bg-white rounded-lg shadow-sm p-5 border-l-4 ' + (bandColor[band.color] || bandColor.gray),
-                    },
-                        React.createElement('div', { className: 'text-lg font-bold text-gray-900' }, band.label),
-                        React.createElement('div', { className: 'text-3xl font-bold mt-1' }, band.num_flws),
-                        React.createElement('div', { className: 'text-sm text-gray-500 mt-1' }, 'FLWs'),
-                        React.createElement('div', { className: 'mt-3 space-y-1 text-sm text-gray-600' },
-                            React.createElement('div', null, '# Mothers: ', React.createElement('strong', null, band.total_mothers)),
-                            React.createElement('div', null, 'Eligible Mothers: ', React.createElement('strong', null, band.total_eligible)),
-                            band.avg_fu != null && React.createElement('div', null, 'Avg Follow-up: ', React.createElement('strong', null, band.avg_fu + '%')),
-                            band.avg_gs != null && React.createElement('div', null, 'Avg GS Score: ', React.createElement('strong', null, band.avg_gs + '%'))
+            React.createElement('div', { className: 'overflow-x-auto bg-white rounded-lg shadow-sm' },
+                React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
+                    React.createElement('thead', { className: 'bg-gray-50' },
+                        React.createElement('tr', null,
+                            React.createElement('th', { className: 'px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase' }, 'Status'),
+                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, '# FLWs'),
+                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Total Mothers'),
+                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Eligible at Reg'),
+                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Still Eligible'),
+                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, '% Still Eligible'),
+                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Avg Follow-up %'),
+                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Avg GS Score')
                         )
-                    );
-                })
-            ),
-
-            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm overflow-hidden' },
-                React.createElement('div', { className: 'px-4 py-3 border-b border-gray-200' },
-                    React.createElement('h3', { className: 'font-semibold text-gray-900' }, 'FLW Performance by Assessment Status')
-                ),
-                React.createElement('div', { className: 'overflow-x-auto' },
-                    React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
-                        React.createElement('thead', { className: 'bg-gray-50' },
-                            React.createElement('tr', null,
-                                React.createElement('th', { className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Status'),
-                                React.createElement('th', { className: 'px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase' }, 'FLWs'),
-                                React.createElement('th', { className: 'px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase' }, 'Mothers'),
-                                React.createElement('th', { className: 'px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase' }, 'Eligible'),
-                                React.createElement('th', { className: 'px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase' }, 'Avg Follow-up'),
-                                React.createElement('th', { className: 'px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase' }, 'Avg GS Score')
-                            )
-                        ),
-                        React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
-                            bands.map(function(band) {
-                                return React.createElement('tr', { key: band.id || 'none', className: 'hover:bg-gray-50' },
-                                    React.createElement('td', { className: 'px-4 py-3 font-medium text-sm text-gray-900' }, band.label),
-                                    React.createElement('td', { className: 'px-4 py-3 text-center text-sm' }, band.num_flws),
-                                    React.createElement('td', { className: 'px-4 py-3 text-center text-sm' }, band.total_mothers),
-                                    React.createElement('td', { className: 'px-4 py-3 text-center text-sm' }, band.total_eligible),
-                                    React.createElement('td', { className: 'px-4 py-3 text-center text-sm' }, band.avg_fu != null ? band.avg_fu + '%' : '—'),
-                                    React.createElement('td', { className: 'px-4 py-3 text-center text-sm' }, band.avg_gs != null ? band.avg_gs + '%' : '—')
-                                );
-                            })
-                        )
+                    ),
+                    React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
+                        bands.map(function(band) {
+                            var pctColor = band.pct_still_eligible != null
+                                ? (band.pct_still_eligible >= 85 ? '#22c55e' : band.pct_still_eligible >= 50 ? '#eab308' : '#ef4444')
+                                : undefined;
+                            return React.createElement('tr', { key: band.id || 'none', className: 'hover:bg-gray-50 border-l-4 ' + (bandColor[band.color] || bandColor.gray) },
+                                React.createElement('td', { className: 'px-3 py-2 font-medium text-sm text-gray-900 whitespace-nowrap' },
+                                    React.createElement('span', { className: 'inline-flex items-center gap-1.5' },
+                                        React.createElement('span', { style: { width: 10, height: 10, borderRadius: '50%', backgroundColor: { green: '#22c55e', yellow: '#eab308', red: '#ef4444', gray: '#9ca3af' }[band.color], display: 'inline-block' } }),
+                                        band.label
+                                    )
+                                ),
+                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm font-bold text-gray-800' }, band.num_flws),
+                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.total_mothers),
+                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.total_eligible),
+                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.total_still_eligible),
+                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm font-medium', style: pctColor ? { color: pctColor } : undefined },
+                                    band.pct_still_eligible != null ? band.pct_still_eligible + '%' : '—'
+                                ),
+                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.avg_fu != null ? band.avg_fu + '%' : '—'),
+                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.avg_gs != null ? band.avg_gs + '%' : '—')
+                            );
+                        })
                     )
                 )
             )
@@ -978,41 +1025,26 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     // =========================================================================
     var Tab4 = function() {
         var sections = [
-            {
-                title: 'Workflow Overview',
-                body: 'Every two weeks, the PM triggers a new audit run. The dashboard loads data for all active FLWs (~98). The PM reviews flags, triggers OCS Audit Bot tasks for red-flagged FLWs (mandatory) and yellow-flagged FLWs (optional with a note), monitors improvement over 7 days, then sets final performance categories and concludes the run.'
-            },
-            {
-                title: 'Flag Types',
-                body: '🔴 Red flag = task required. Triggered by: Follow-up Rate below 50%, % Still Eligible below 50%, or GS Score below 50%.\n🟡 Yellow flag = task optional (note required if skipped). Triggered by: Follow-up Rate 50–79%, % Still Eligible below 85%, EBF% ≤30% or >95%, GPS Dist Ratio < 1.0, or any metric worsening >10% since the last concluded run.'
-            },
-            {
-                title: 'Metric Definitions',
-                items: [
-                    { name: 'GS Score', def: 'Gold Standard visit checklist score. Based on highest value recorded for this FLW. Red flag if below 50%.' },
-                    { name: 'Follow-up Rate', def: 'Of visits due more than 5 days ago (among mothers with eligible_full_intervention_bonus=1), % completed. Red if below 50%, yellow if 50–79%, green if 80%+.' },
-                    { name: '% Still Eligible', def: 'Of mothers with eligible_full_intervention_bonus=1 AND anc_completion_date set, % who have missed fewer than 2 visits. Green ≥85%, yellow 50–84%, red <50%.' },
-                    { name: 'EBF %', def: 'Percentage of visits where current breastfeeding status is exclusive. Yellow flag if ≤30% or >95%.' },
-                    { name: 'Revisit Dist (km)', def: 'Average GPS distance between visits to the same mother case.' },
-                    { name: 'Meter/Visit', def: 'Median GPS distance traveled per visit (meters).' },
-                    { name: 'Dist Ratio', def: 'Revisit distance (m) ÷ Meter/Visit. Values below 1.0 suggest GPS clustering (yellow flag).' },
-                    { name: 'Minute/Visit', def: 'Median visit duration in minutes.' },
-                ]
-            },
-            {
-                title: 'Performance Categories',
-                items: [
-                    { name: 'Eligible for Renewal', def: 'FLW met performance standards and is eligible for program renewal.' },
-                    { name: 'Requires Improvement', def: 'FLW showed improvement but needs continued monitoring before renewal.' },
-                    { name: 'Suspension', def: 'FLW did not improve sufficiently and is recommended for suspension.' },
-                ]
-            },
-            {
-                title: 'Concluding a Run',
-                body: 'The run can only be concluded once all open tasks are closed. When concluded, the current metrics are saved as the baseline for change indicators in the next run. Use Tab 3 to review the performance band breakdown before concluding.'
-            },
+            { title: 'Workflow Overview', body: 'Every two weeks, the PM triggers a new audit run. The dashboard loads data for all active FLWs. The PM reviews flags, triggers tasks for red-flagged FLWs (mandatory) and yellow-flagged FLWs (optional with a note), monitors improvement over 7 days, then sets final performance categories and concludes the run.' },
+            { title: 'Flag Types', body: '🔴 Red flag = task required. Triggered by: Follow-up Rate below 50%, % Still Eligible below 50%, or GS Score below 50%.\n🟡 Yellow flag = task optional. Triggered by: Follow-up Rate 50–79%, % Still Eligible below 85%, EBF% ≤30% or >89%, GPS Dist Ratio < 1.0, or any metric worsening >10% since the last concluded run.' },
+            { title: 'Metric Definitions', items: [
+                { name: 'GS Score', def: 'Gold Standard visit checklist score. Max score recorded for this FLW. Red flag if below 50%.' },
+                { name: 'Follow-up Rate', def: 'Of visits due more than 5 days ago (across all mothers), % completed. Red if below 50%, yellow if 50–79%.' },
+                { name: '% Still Eligible', def: 'Of eligible mothers, % who have missed fewer than 2 visits. Green ≥85%, yellow 50–84%, red <50%.' },
+                { name: 'EBF %', def: 'Percentage of visits where current breastfeeding status is exclusive. Yellow flag if ≤30% or >89%.' },
+                { name: 'Revisit Dist (m)', def: 'Mean GPS distance between visits to the same mother case (meters). Green < 30m, yellow 30–50m, red > 50m.' },
+                { name: 'Meter/Visit', def: 'Median GPS distance per revisit (meters). Green > 50m, yellow 20–50m, red < 20m.' },
+                { name: 'Min/Visit', def: 'Median duration per visit in minutes (requires visit timeStart). Green > 20 min, yellow 10–20 min, red < 10 min.' },
+                { name: 'Dist Ratio', def: 'Mean revisit distance ÷ Median. Values below 1.0 suggest GPS clustering (yellow flag).' },
+                { name: 'Prev', def: 'Category assigned in the previous concluded run (Eligible / Requires Improvement / Suspension).' },
+            ]},
+            { title: 'Performance Categories', items: [
+                { name: 'Eligible for Renewal ✓', def: 'FLW met performance standards and is eligible for program renewal.' },
+                { name: 'Requires Improvement ⚠', def: 'FLW showed improvement but needs continued monitoring.' },
+                { name: 'Suspension ✗', def: 'FLW did not improve sufficiently and is recommended for suspension.' },
+            ]},
+            { title: 'Concluding a Run', body: 'The run can only be concluded once all open tasks are resolved. When concluded, current metrics and categories are saved as the baseline for the next run. Use Tab 3 to review the performance band breakdown before concluding.' },
         ];
-
         return React.createElement('div', { className: 'space-y-6 max-w-3xl' },
             sections.map(function(s, i) {
                 return React.createElement('div', { key: i, className: 'bg-white rounded-lg shadow-sm p-6' },
@@ -1041,43 +1073,31 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
         { id: 'guide',       label: 'Guide',                 icon: 'fa-book' },
     ];
 
-    return React.createElement('div', { className: 'space-y-4 pb-8' },
+    var notesFlwName = notesModal ? (flwNameMap[notesModal] || notesModal) : '';
+
+    return React.createElement('div', { className: 'space-y-3 pb-8' },
 
         // Header
-        React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-6 flex items-start justify-between' },
+        React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-4 flex items-center justify-between gap-4' },
             React.createElement('div', null,
-                React.createElement('h1', { className: 'text-2xl font-bold text-gray-900' }, definition.name),
-                React.createElement('p', { className: 'text-gray-600 mt-1 text-sm' }, definition.description)
+                React.createElement('h1', { className: 'text-xl font-bold text-gray-900' }, definition.name),
+                React.createElement('p', { className: 'text-gray-600 text-sm mt-0.5' }, definition.description)
             ),
             React.createElement('button', {
-                className: 'px-4 py-2 text-sm rounded-lg font-medium transition-colors ' +
+                className: 'px-4 py-2 text-sm rounded-lg font-medium transition-colors shrink-0 ' +
                     (!canConclude ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'),
                 onClick: function() { if (canConclude) setConcludeModal(true); },
                 disabled: !canConclude,
-                title: canConclude ? 'Conclude this audit run' : 'Close all tasks before concluding',
+                title: canConclude ? 'Conclude this audit run' : 'Resolve all tasks first',
             }, React.createElement('i', { className: 'fa-solid fa-flag-checkered mr-2' }), 'Conclude Run')
         ),
 
-        // KPI bar
-        React.createElement('div', { className: 'grid grid-cols-2 sm:grid-cols-5 gap-3' },
-            [
-                { label: 'Total FLWs', value: totalFlws, color: 'border-blue-400' },
-                { label: 'Red Flags', value: redCount, color: 'border-red-400' },
-                { label: 'Yellow Flags', value: yellowCount, color: 'border-yellow-400' },
-                { label: 'Tasks Open', value: taskedCount, color: 'border-orange-400' },
-                { label: 'Categorized', value: categorizedCount + ' / ' + totalFlws, color: 'border-green-400' },
-            ].map(function(kpi, i) {
-                return React.createElement('div', {
-                    key: i,
-                    className: 'bg-white rounded-lg shadow-sm p-4 border-l-4 ' + kpi.color,
-                },
-                    React.createElement('div', { className: 'text-2xl font-bold text-gray-900' }, kpi.value),
-                    React.createElement('div', { className: 'text-xs text-gray-500 mt-0.5' }, kpi.label)
-                );
-            })
+        // KPI bar (compact single row)
+        React.createElement('div', { className: 'bg-white rounded-lg shadow-sm px-4 py-3' },
+            React.createElement(KpiBar, null)
         ),
 
-        // Tab bar
+        // Tab bar + content
         React.createElement('div', { className: 'bg-white rounded-lg shadow-sm' },
             React.createElement('div', { className: 'flex border-b border-gray-200 overflow-x-auto' },
                 tabs.map(function(tab) {
@@ -1102,23 +1122,42 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
             )
         ),
 
-        // Notes modal
+        // Notes modal (with inline category result buttons, like mbw_monitoring_v2)
         notesModal && React.createElement('div', {
             className: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40',
             onClick: function(e) { if (e.target === e.currentTarget) setNotesModal(null); },
         },
             React.createElement('div', { className: 'bg-white rounded-xl shadow-2xl w-full max-w-md mx-4' },
                 React.createElement('div', { className: 'px-6 py-4 border-b border-gray-200 font-semibold text-gray-900' },
-                    'Notes for ' + notesModal
+                    'Notes for ' + notesFlwName
                 ),
-                React.createElement('div', { className: 'px-6 py-4' },
+                React.createElement('div', { className: 'px-6 py-4 space-y-3' },
                     React.createElement('textarea', {
                         className: 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm',
                         rows: 4,
                         value: notesDraft,
                         onChange: function(e) { setNotesDraft(e.target.value); },
                         placeholder: 'Add notes about this FLW…',
-                    })
+                    }),
+                    React.createElement('div', { className: 'flex items-center gap-2 flex-wrap' },
+                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Category:'),
+                        PERF_CATEGORIES.map(function(cat) {
+                            var active = notesModalResult === cat.id;
+                            return React.createElement('button', {
+                                key: cat.id,
+                                onClick: function() { setNotesModalResult(active ? null : cat.id); },
+                                className: 'px-3 py-1 rounded text-xs font-medium border transition-colors ' +
+                                    (active ? cat.active : cat.inactive),
+                            },
+                                React.createElement('i', { className: 'fa-solid ' + cat.icon + ' mr-1' }),
+                                cat.label
+                            );
+                        }),
+                        notesModalResult && React.createElement('button', {
+                            onClick: function() { setNotesModalResult(null); },
+                            className: 'px-2 py-1 text-xs rounded border border-gray-300 text-gray-500 hover:bg-gray-100',
+                        }, 'Clear')
+                    )
                 ),
                 React.createElement('div', { className: 'px-6 py-4 border-t border-gray-200 flex justify-end gap-3' },
                     React.createElement('button', {
@@ -1148,14 +1187,11 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
                 ),
                 React.createElement('div', { className: 'px-6 py-5 text-sm text-gray-700 space-y-3' },
                     React.createElement('p', null,
-                        'This will mark the run as ', React.createElement('strong', null, 'Completed'), ' and save current metrics as the baseline for change indicators in the next run.'
+                        'This will mark the run as ', React.createElement('strong', null, 'Completed'),
+                        ' and save current metrics and categories as the baseline for the next run.'
                     ),
-                    React.createElement('p', null,
-                        categorizedCount + ' of ' + totalFlws + ' FLWs have been categorized.'
-                    ),
-                    React.createElement('p', { className: 'text-orange-700 font-medium' },
-                        'This action cannot be undone.'
-                    )
+                    React.createElement('p', null, categorizedCount + ' of ' + totalFlws + ' FLWs have been categorized.'),
+                    React.createElement('p', { className: 'text-orange-700 font-medium' }, 'This action cannot be undone.')
                 ),
                 React.createElement('div', { className: 'px-6 py-4 border-t border-gray-200 flex justify-end gap-3' },
                     React.createElement('button', {
