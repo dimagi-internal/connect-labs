@@ -59,6 +59,7 @@ VISITS_GPS_SCHEMA = {
         {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
         {"name": "form_name", "path": "form.@name", "aggregation": "first"},
         {"name": "bf_status", "paths": _BF_STATUS_PATHS, "aggregation": "first"},
+        {"name": "antenatal_visit_completion", "path": "form.visit_completion.antenatal_visit_completion", "aggregation": "first"},
         # GPS — .#text fallback covers both XML text and direct string
         {
             "name": "latitude",
