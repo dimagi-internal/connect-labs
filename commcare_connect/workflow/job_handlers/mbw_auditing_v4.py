@@ -1,133 +1,96 @@
 """
 MBW Auditing V4 job handler.
 
-Fetches all three pipeline datasets server-side (no browser round-trip), runs
-the standard MBW analysis, and returns per-FLW metric summaries ready for direct
-display in the render code. No 73MB POST body — the browser sends only a minimal
-job config.
+Pipeline-native: reads from 3 SQL-computed pipelines (GPS/visit-level visits,
+registrations with schedules extractor, GS forms). No form_json reads.
 
-Supports a `task_filters` parameter for Tab 2: when provided, visit rows are
-filtered to post-trigger-date rows for each FLW, enabling "improvement since
-task triggered" metrics without a separate browser-side filtering step.
+Pipeline aliases (matching the workflow's pipeline_sources):
+  - visits:        visit-level rows with GPS coords, form_name, bf_status,
+                   and distance_from_prev_case_visit_m from lag_haversine
+  - registrations: per-mother rows with schedules list (mbw_visit_schedules
+                   extractor) and eligible_full_intervention_bonus
+  - gs_forms:      per-GS-visit rows with gs_score and user_connect_id
+
+All metrics are computed in Python from these rows. The server_fetch_pipelines
+flag in the startJob call causes the task framework to auto-fetch pipeline data
+server-side — no browser round-trip of large row sets.
 """
 
 import logging
 import math
-import statistics
-from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
-from commcare_connect.workflow.tasks import _create_mock_request, register_job_handler
-
-
-def _compute_gps_metrics_from_rows(
-    visit_rows: list[dict], active_usernames: set[str]
-) -> tuple[dict, dict, dict]:
-    """Compute GPS metrics directly from pipeline rows.
-
-    The visits pipeline now delivers latitude, longitude (parsed floats) and
-    distance_from_prev_case_visit_m (haversine distance to previous same-mother
-    visit, computed by a SQL window function). This replaces the old approach of
-    shipping raw gps_location strings and computing distances in Python.
-
-    Returns:
-        avg_case_dist_by_flw  — {username: meters | None}  (for revisit_dist)
-        median_meters_by_flw  — {username: meters | None}  (for meter_per_visit)
-        median_minutes_by_flw — {username: minutes | None} (for minute_per_visit)
-    """
-
-    def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        r = 6_371_000
-        phi1, phi2 = math.radians(lat1), math.radians(lat2)
-        dphi = math.radians(lat2 - lat1)
-        dlam = math.radians(lon2 - lon1)
-        a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
-        return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    def _parse_dt(s: str | None) -> datetime | None:
-        if not s:
-            return None
-        try:
-            return datetime.fromisoformat(str(s).replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return None
-
-    rows_by_flw: dict[str, list[dict]] = defaultdict(list)
-    for row in visit_rows:
-        u = (row.get("username") or "").lower()
-        if u in active_usernames:
-            rows_by_flw[u].append(row)
-
-    avg_case_dist: dict[str, float | None] = {}
-    median_meters: dict[str, float | None] = {}
-    median_minutes: dict[str, float | None] = {}
-
-    for username, rows in rows_by_flw.items():
-        # revisit_dist: mean of SQL-pre-computed same-mother distances
-        case_dists = []
-        for r in rows:
-            raw = r.get("distance_from_prev_case_visit_m")
-            if raw is not None:
-                try:
-                    case_dists.append(float(raw))
-                except (ValueError, TypeError):
-                    pass
-        avg_case_dist[username] = sum(case_dists) / len(case_dists) if case_dists else None
-
-        # meter_per_visit and minute_per_visit: median over consecutive
-        # between-mother pairs within each day (same logic as V3 gps_analysis).
-        valid = []
-        for r in rows:
-            lat = r.get("latitude")
-            lon = r.get("longitude")
-            dt = _parse_dt(r.get("visit_datetime"))
-            mid = r.get("mother_case_id")
-            if lat is None or lon is None or dt is None or not mid:
-                continue
-            try:
-                valid.append(
-                    {
-                        "lat": float(lat),
-                        "lon": float(lon),
-                        "dt": dt,
-                        "mother_id": mid,
-                        "app_v": r.get("app_build_version"),
-                    }
-                )
-            except (ValueError, TypeError):
-                pass
-
-        by_day: dict = defaultdict(list)
-        for r in valid:
-            by_day[r["dt"].date()].append(r)
-
-        meter_dists: list[float] = []
-        minute_diffs: list[float] = []
-
-        for day_rows in by_day.values():
-            day_rows.sort(key=lambda r: r["dt"])
-            seen: set[str] = set()
-            unique = []
-            for r in day_rows:
-                if r["mother_id"] not in seen:
-                    seen.add(r["mother_id"])
-                    unique.append(r)
-            if len(unique) < 2:
-                continue
-            for i in range(len(unique) - 1):
-                a, b = unique[i], unique[i + 1]
-                if a["app_v"] is not None and b["app_v"] is not None:
-                    meter_dists.append(_haversine_m(a["lat"], a["lon"], b["lat"], b["lon"]))
-                diff = (b["dt"] - a["dt"]).total_seconds() / 60
-                if diff >= 0:
-                    minute_diffs.append(diff)
-
-        median_meters[username] = round(statistics.median(meter_dists)) if meter_dists else None
-        median_minutes[username] = round(statistics.median(minute_diffs)) if minute_diffs else None
-
-    return avg_case_dist, median_meters, median_minutes
+from commcare_connect.workflow.tasks import register_job_handler
 
 logger = logging.getLogger(__name__)
+
+_GRACE_PERIOD_DAYS = 5  # v1's IS_DUE_PAST_GRACE: visit is due if scheduled >= 5d ago
+
+
+def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
+    """Return the most recent non-closed task per FLW for this opportunity."""
+    try:
+        from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+        from commcare_connect.tasks.models import TaskRecord
+
+        with LabsRecordAPIClient(access_token=access_token, opportunity_id=opportunity_id) as client:
+            # Filter by data.opportunity_id server-side; without this the query returns
+            # all tasks across every opportunity (tasks use data FK, not record FK).
+            tasks = client.get_records(
+                experiment="tasks",
+                type="Task",
+                model_class=TaskRecord,
+                opportunity_id=opportunity_id,  # → data__opportunity_id server-side filter
+            )
+
+        open_tasks = [t for t in tasks if t.data.get("status") != "closed"]
+
+        by_username: dict[str, dict] = {}
+        for task in open_tasks:
+            username = (task.data.get("username") or "").lower()
+            if not username:
+                continue
+            created_at = ""
+            for event in task.data.get("events", []):
+                if event.get("event_type") == "created":
+                    created_at = event.get("timestamp") or ""
+                    break
+            existing = by_username.get(username)
+            if not existing or created_at > existing.get("triggered_at", ""):
+                by_username[username] = {
+                    "task_id": task.id,
+                    "status": task.data.get("status", "investigating"),
+                    "triggered_at": created_at,
+                    "title": task.data.get("title", ""),
+                }
+        return by_username
+    except Exception:
+        logger.exception("Failed to fetch open tasks")
+        return {}
+
+
+def _get_prev_categories(access_token: str, opportunity_id: int, workflow_definition_id: int) -> dict:
+    """Fetch worker_results from the most recent completed run for this workflow."""
+    try:
+        from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+        from commcare_connect.workflow.data_access import WorkflowRunRecord
+
+        with LabsRecordAPIClient(access_token=access_token, opportunity_id=opportunity_id) as client:
+            runs = client.get_records(
+                experiment="workflow",
+                type="workflow_run",
+                model_class=WorkflowRunRecord,
+                status="completed",
+            )
+        completed = [r for r in runs if r.data.get("definition_id") == workflow_definition_id]
+        if not completed:
+            return {}
+        completed.sort(key=lambda r: r.data.get("created_at") or "", reverse=True)
+        state = completed[0].data.get("state") or {}
+        return state.get("worker_results") or {}
+    except Exception:
+        logger.exception("Failed to fetch previous run categories")
+        return {}
 
 
 @register_job_handler("mbw_auditing_v4")
@@ -135,298 +98,281 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     """
     Handle MBW Auditing V4 job.
 
-    Fetches pipeline data server-side, runs analysis, returns flw_summaries.
+    Receives pipeline_data auto-fetched via server_fetch_pipelines=True:
+      - visits:        visit-level rows (form_name, mother_case_id, visit_datetime,
+                       bf_status, latitude, longitude, distance_from_prev_case_visit_m)
+      - registrations: per-mother rows (mother_case_id, eligible_full_intervention_bonus,
+                       schedules list from mbw_visit_schedules extractor)
+      - gs_forms:      GS visit rows (user_connect_id, gs_score)
 
-    job_config keys:
-      - active_usernames: list of FLW usernames to include
-      - flw_names: {username → display_name}
-      - flw_statuses: {username → result}
-      - opportunity_id: int (injected by run_workflow_job)
-      - task_filters: {username → triggered_at_iso} (optional, for Tab 2)
+    Optional job_config keys:
+      - task_filters: {username: triggered_at_isostr} — when set, only visits
+        submitted AFTER the trigger date are included (Tab 2 improvement analysis)
+      - workflow_definition_id: int — used to fetch previous run categories
 
     Returns:
-      - flw_summaries: list of per-FLW metric dicts
-      - successful, failed, errors
+        {"flw_summaries": [...], "prev_categories": {...}}
     """
-    from commcare_connect.workflow.data_access import PipelineDataAccess
-    from commcare_connect.workflow.job_handlers.mbw_monitoring import (
-        _adapt_rows,
-        _compute_ebf_by_flw,
-        _extract_per_mother_fields,
-    )
-    from commcare_connect.workflow.templates.mbw_auditing_v4 import PIPELINE_SCHEMAS
-    from commcare_connect.workflow.templates.mbw_monitoring.followup_analysis import (
-        aggregate_flw_followup,
-        aggregate_mother_metrics,
-        build_followup_from_pipeline,
-        count_mothers_from_pipeline,
-        extract_mother_metadata_from_forms,
-    )
-
-    active_usernames_list = job_config.get("active_usernames", [])
-    active_usernames = {u.lower() for u in active_usernames_list}
+    pipeline_data = job_config.get("pipeline_data", {})
+    active_usernames = {u.lower() for u in job_config.get("active_usernames", [])}
     flw_names = job_config.get("flw_names", {})
-    flw_statuses = job_config.get("flw_statuses", {})
-    task_filters = job_config.get("task_filters", {})  # {username: triggered_at_iso}
-    opportunity_id = job_config.get("opportunity_id")
+    task_filters: dict = job_config.get("task_filters") or {}
+    opportunity_id: int | None = job_config.get("opportunity_id")
+    workflow_definition_id: int | None = job_config.get("workflow_definition_id")
 
-    current_date = date.today()
-    results: dict = {"successful": 0, "failed": 0, "errors": []}
+    visits_rows: list[dict] = pipeline_data.get("visits", {}).get("rows", [])
+    visits_agg_rows: list[dict] = pipeline_data.get("visits_agg", {}).get("rows", [])
+    reg_rows: list[dict] = pipeline_data.get("registrations", {}).get("rows", [])
+    gs_rows: list[dict] = pipeline_data.get("gs_forms", {}).get("rows", [])
 
-    # =========================================================================
-    # Stage 0: Fetch pipeline data server-side (uses SQL cache)
-    # =========================================================================
-    progress_callback("Fetching pipeline data...", processed=0, total=6)
+    progress_callback("Processing visit data…")
 
-    try:
-        mock_request = _create_mock_request(access_token, opportunity_id)
-        pipeline_access = PipelineDataAccess(
-            request=mock_request,
-            access_token=access_token,
-            opportunity_id=opportunity_id,
-        )
+    # ── Single pass over visits: attribution, GPS distances, EBF%, mother sets ──
+    # Sort chronologically once so last-write-wins attribution is correct.
+    visits_sorted = sorted(visits_rows, key=lambda r: r.get("visit_datetime") or "")
 
-        schema_map = {entry["alias"]: entry["schema"] for entry in PIPELINE_SCHEMAS}
+    # When visits_agg rows are available and no per-visit date filter is active
+    # (Tab 1), use pre-aggregated SQL counts for num_mothers/bf_count/ebf_count
+    # instead of building Python sets and scanning bf_status on every row.
+    use_agg_counts = bool(visits_agg_rows) and not task_filters
 
-        visits_result = pipeline_access.execute_pipeline_from_schema(
-            schema_map["visits"], opportunity_id, alias="v4_visits"
-        )
-        registrations_result = pipeline_access.execute_pipeline_from_schema(
-            schema_map["registrations"], opportunity_id, alias="v4_registrations"
-        )
-        gs_forms_result = pipeline_access.execute_pipeline_from_schema(
-            schema_map["gs_forms"], opportunity_id, alias="v4_gs_forms"
-        )
-        pipeline_access.close()
+    mother_to_flw: dict[str, str] = {}
+    visits_by_mother: dict[str, dict[str, str]] = {}  # mid → {form_name → date}
+    gps_distances: dict[str, list[float]] = {}
+    ebf_count_by_flw: dict[str, int] = {}
+    bf_count_by_flw: dict[str, int] = {}
+    mother_sets_by_flw: dict[str, set] = {}  # only populated when not use_agg_counts
+    num_mothers_by_flw: dict[str, int] = {}  # only populated when use_agg_counts
 
-    except Exception as e:
-        logger.error("[MBW V4 Job] Pipeline fetch failed: %s", e, exc_info=True)
-        return {
-            "successful": 0,
-            "failed": 1,
-            "errors": [{"step": "pipeline_fetch", "error": str(e)}],
-            "flw_summaries": [],
-        }
-
-    visit_rows = visits_result.get("rows", [])
-    registration_rows = registrations_result.get("rows", [])
-    gs_form_rows = gs_forms_result.get("rows", [])
-
-    # Apply task_filters: Tab 2 — keep only post-trigger-date visit rows per FLW
-    if task_filters:
-        filtered_visits = []
-        for row in visit_rows:
-            username = (row.get("username") or "").lower()
-            triggered_at = task_filters.get(username)
-            if not triggered_at:
+    if use_agg_counts:
+        for row in visits_agg_rows:
+            u = (row.get("username") or row.get("_username") or "").lower()
+            if not u:
                 continue
-            visit_dt = row.get("visit_datetime") or row.get("timeEnd") or ""
-            if str(visit_dt) >= str(triggered_at):
-                filtered_visits.append(row)
-        visit_rows = filtered_visits
-        # Restrict analysis to FLWs that have a task filter
-        active_usernames = active_usernames & {u.lower() for u in task_filters}
+            try:
+                num_mothers_by_flw[u] = int(float(row.get("num_mothers") or 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                bf_count_by_flw[u] = int(float(row.get("bf_count") or 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                ebf_count_by_flw[u] = int(float(row.get("ebf_count") or 0))
+            except (TypeError, ValueError):
+                pass
 
-    logger.info(
-        "[MBW V4 Job] Pipeline loaded: %d visits, %d registrations, %d gs_forms, %d active FLWs",
-        len(visit_rows),
-        len(registration_rows),
-        len(gs_form_rows),
-        len(active_usernames),
-    )
+    for row in visits_sorted:
+        username = (row.get("username") or row.get("_username") or "").lower()
+        if not username:
+            continue
 
-    progress_callback(
-        f"Fetched {len(visit_rows)} visit rows for {len(active_usernames)} FLWs",
-        processed=1,
-        total=6,
-    )
+        vdt = (row.get("visit_datetime") or "")[:10]
 
-    # =========================================================================
-    # Step 1: GPS Analysis
-    # Pipeline now delivers latitude, longitude, and distance_from_prev_case_visit_m
-    # (haversine distance to the previous same-mother visit, computed by a SQL
-    # window function). No Python-side GPS string parsing needed.
-    # =========================================================================
-    avg_case_dist_by_flw: dict[str, float | None] = {}
-    median_meters_by_flw: dict[str, float | None] = {}
-    median_minutes_by_flw: dict[str, float | None] = {}
-    try:
-        progress_callback("Running GPS analysis...", processed=1, total=6)
-        avg_case_dist_by_flw, median_meters_by_flw, median_minutes_by_flw = (
-            _compute_gps_metrics_from_rows(visit_rows, active_usernames)
-        )
-        results["successful"] += 1
-        logger.info("[MBW V4 Job] GPS analysis complete")
-    except Exception as e:
-        logger.error("[MBW V4 Job] GPS analysis failed: %s", e, exc_info=True)
-        results["errors"].append({"step": "gps_analysis", "error": str(e)})
-        results["failed"] += 1
+        # For Tab 2: skip visits submitted before the task trigger date
+        if task_filters and username in task_filters:
+            trigger = (task_filters[username] or "")[:10]
+            if vdt and trigger and vdt < trigger:
+                continue
 
-    # =========================================================================
-    # Step 2: Follow-up Rate + Drilldown
-    # =========================================================================
-    followup_data: dict | None = None
-    flw_drilldown: dict = {}
-    visit_cases_by_flw: dict = {}
-    mother_metadata: dict = {}
-    anc_date_by_mother: dict = {}
-    pnc_date_by_mother: dict = {}
-    baby_dob_by_mother: dict = {}
-    adapted_visit_rows = None
+        mid = (row.get("mother_case_id") or "").lower()
+        form_name = row.get("form_name") or ""
 
-    try:
-        progress_callback("Computing follow-up rates...", processed=2, total=6)
-        adapted_visit_rows = _adapt_rows(visit_rows)
+        if mid:
+            mother_to_flw[mid] = username
+            if not use_agg_counts:
+                mother_sets_by_flw.setdefault(username, set()).add(mid)
+            if form_name and vdt:
+                visits_by_mother.setdefault(mid, {})[form_name] = vdt
 
-        visit_cases_by_flw = build_followup_from_pipeline(
-            adapted_visit_rows, active_usernames, registration_forms=registration_rows
-        )
-        mother_metadata = extract_mother_metadata_from_forms(registration_rows, current_date=current_date)
-        flw_followup = aggregate_flw_followup(
-            visit_cases_by_flw, current_date, flw_names, mother_cases_map=mother_metadata
-        )
+        dist = row.get("distance_from_prev_case_visit_m")
+        if dist is not None:
+            try:
+                dist_f = float(dist)
+                if not math.isnan(dist_f):
+                    gps_distances.setdefault(username, []).append(dist_f)
+            except (TypeError, ValueError):
+                pass
 
-        per_mother = _extract_per_mother_fields(adapted_visit_rows)
-        anc_date_by_mother = per_mother["anc_date_by_mother"]
-        pnc_date_by_mother = per_mother["pnc_date_by_mother"]
-        baby_dob_by_mother = per_mother["baby_dob_by_mother"]
+        if not use_agg_counts:
+            bf_status = (row.get("bf_status") or "").strip()
+            if bf_status:
+                bf_count_by_flw[username] = bf_count_by_flw.get(username, 0) + 1
+                if "ebf" in bf_status.split():
+                    ebf_count_by_flw[username] = ebf_count_by_flw.get(username, 0) + 1
 
-        for flw_username, flw_cases in visit_cases_by_flw.items():
-            flw_drilldown[flw_username] = aggregate_mother_metrics(
-                flw_cases,
-                current_date,
-                mother_cases_map=mother_metadata,
-                anc_date_by_mother=anc_date_by_mother,
-                pnc_date_by_mother=pnc_date_by_mother,
-                baby_dob_by_mother=baby_dob_by_mother,
-            )
+    # ── Registrations: schedules + eligibility per mother ──
+    progress_callback("Processing registration data…")
 
-        followup_data = {"flw_summaries": flw_followup}
-        results["successful"] += 1
-        logger.info("[MBW V4 Job] Follow-up analysis complete: %d FLWs", len(visit_cases_by_flw))
-    except Exception as e:
-        logger.error("[MBW V4 Job] Follow-up analysis failed: %s", e, exc_info=True)
-        results["errors"].append({"step": "followup_analysis", "error": str(e)})
-        results["failed"] += 1
-        if not adapted_visit_rows:
-            adapted_visit_rows = _adapt_rows(visit_rows)
+    mother_schedules: dict[str, list] = {}
+    mother_eligibility: dict[str, bool] = {}
 
-    # =========================================================================
-    # Step 3: Overview (mother counts + EBF)
-    # =========================================================================
-    mother_counts: dict = {}
-    ebf_pct_by_flw: dict = {}
-    try:
-        progress_callback("Computing overview metrics...", processed=3, total=6)
-        rows_for_overview = adapted_visit_rows or _adapt_rows(visit_rows)
-        mother_counts = count_mothers_from_pipeline(
-            rows_for_overview, active_usernames, registration_forms=registration_rows
-        )
-        ebf_pct_by_flw = _compute_ebf_by_flw(rows_for_overview)
-        results["successful"] += 1
-    except Exception as e:
-        logger.error("[MBW V4 Job] Overview failed: %s", e, exc_info=True)
-        results["errors"].append({"step": "overview", "error": str(e)})
-        results["failed"] += 1
+    for row in reg_rows:
+        schedules = row.get("schedules") or []
+        if not schedules or not isinstance(schedules, list):
+            continue
+        # Extract mother_case_id from first schedule entry (set by extractor)
+        mid = ""
+        for s in schedules:
+            if isinstance(s, dict):
+                mid = (s.get("mother_case_id") or "").lower()
+                if mid:
+                    break
+        if not mid:
+            mid = (row.get("mother_case_id") or "").lower()
+        if not mid:
+            continue
+        mother_schedules[mid] = schedules
+        elig = str(row.get("eligible_full_intervention_bonus") or "").strip()
+        mother_eligibility[mid] = elig == "1"
 
-    # =========================================================================
-    # Step 4: GS Score — max score per FLW from gs_forms pipeline
-    # =========================================================================
-    gs_by_flw: dict[str, float] = {}
-    try:
-        progress_callback("Processing GS scores...", processed=4, total=6)
-        for row in gs_form_rows:
-            uid = ((row.get("user_connect_id") or row.get("username")) or "").lower()
-            raw_score = row.get("gs_score")
-            if raw_score is not None:
+    # ── GS scores: max score per user (keyed by user_connect_id) ──
+    gs_by_user: dict[str, float] = {}
+    for row in gs_rows:
+        cid = (row.get("user_connect_id") or row.get("username") or "").lower()
+        raw = row.get("gs_score")
+        if not cid or raw is None:
+            continue
+        try:
+            score = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if cid not in gs_by_user or score > gs_by_user[cid]:
+            gs_by_user[cid] = score
+
+    # ── Follow-up rate and eligibility computation ──
+    progress_callback("Computing follow-up metrics…")
+
+    now = datetime.now(tz=timezone.utc).date()
+    grace_cutoff = now - timedelta(days=_GRACE_PERIOD_DAYS)
+
+    # flw_fu[username] = {total_eligible, filtered_completed, filtered_denominator, still_eligible}
+    flw_fu: dict[str, dict] = {}
+
+    for mid, schedules in mother_schedules.items():
+        flw = mother_to_flw.get(mid)
+        if not flw or (active_usernames and flw not in active_usernames):
+            continue
+
+        is_eligible = mother_eligibility.get(mid, False)
+        mother_visits = visits_by_mother.get(mid, {})
+
+        bucket = flw_fu.setdefault(flw, {
+            "total_eligible": 0,
+            "filtered_completed": 0,
+            "filtered_denominator": 0,
+            "still_eligible": 0,
+        })
+
+        if is_eligible:
+            bucket["total_eligible"] += 1
+
+        missed_count = 0
+        for s in schedules:
+            if not isinstance(s, dict):
+                continue
+            visit_type = s.get("visit_type", "")
+            scheduled_str = (s.get("visit_date_scheduled") or "")
+            expiry_str = (s.get("visit_expiry_date") or "")
+            is_completed = bool(mother_visits.get(visit_type))
+
+            past_grace = False
+            if scheduled_str:
                 try:
-                    score = float(raw_score)
-                    if score > 0:
-                        gs_by_flw[uid] = max(gs_by_flw.get(uid, 0.0), score)
+                    sched = date.fromisoformat(scheduled_str[:10])
+                    past_grace = sched <= grace_cutoff
                 except (ValueError, TypeError):
                     pass
-        results["successful"] += 1
-        logger.info("[MBW V4 Job] GS scores computed for %d FLWs", len(gs_by_flw))
-    except Exception as e:
-        logger.error("[MBW V4 Job] GS score computation failed: %s", e, exc_info=True)
-        results["errors"].append({"step": "gs_scores", "error": str(e)})
-        results["failed"] += 1
 
-    # =========================================================================
-    # Step 5: Assemble per-FLW summaries
-    # =========================================================================
-    progress_callback("Assembling FLW summaries...", processed=5, total=6)
+            if not is_completed and expiry_str:
+                try:
+                    expiry = date.fromisoformat(expiry_str[:10])
+                    if expiry < now:
+                        missed_count += 1
+                except (ValueError, TypeError):
+                    pass
 
-    fu_by_username: dict = {}
-    if followup_data:
-        for f in followup_data["flw_summaries"]:
-            fu_by_username[(f.get("username") or "").lower()] = f
+            if past_grace:
+                bucket["filtered_denominator"] += 1
+                if is_completed:
+                    bucket["filtered_completed"] += 1
 
+        if is_eligible and missed_count < 2:
+            bucket["still_eligible"] += 1
+
+    # ── Previous run categories ──
+    progress_callback("Loading previous run data…")
+    prev_categories: dict = {}
+    if workflow_definition_id and opportunity_id and access_token:
+        prev_categories = _get_prev_categories(access_token, opportunity_id, workflow_definition_id)
+
+    # ── Open tasks across all runs ──
+    progress_callback("Loading open tasks…")
+    open_tasks: dict = {}
+    if opportunity_id and access_token:
+        open_tasks = _get_open_tasks(access_token, opportunity_id)
+
+    # ── Build FLW summaries ──
+    progress_callback("Building FLW summaries…")
+
+    target_usernames = active_usernames or set(mother_to_flw.values())
     flw_summaries = []
-    for flw_username in sorted(active_usernames):
-        u = flw_username.lower()
 
-        fu_flw = fu_by_username.get(u, {})
-        drilldown = flw_drilldown.get(u, [])
+    for username in sorted(target_usernames):
+        u = username.lower()
+        fu = flw_fu.get(u, {})
+        dists = gps_distances.get(u, [])
 
-        # % still eligible: mothers where eligible=True AND anc_completion_date is set
-        elig_mothers = [m for m in drilldown if m.get("eligible") and m.get("anc_completion_date")]
-        still_on_track = 0
-        for m in elig_mothers:
-            missed = sum(1 for v in (m.get("visits") or []) if (v.get("status") or "") == "Missed")
-            if missed <= 1:
-                still_on_track += 1
-        pct_still_eligible = round(still_on_track / len(elig_mothers) * 100) if elig_mothers else None
+        # Mother counts
+        num_mothers = num_mothers_by_flw.get(u, 0) if use_agg_counts else len(mother_sets_by_flw.get(u, set()))
+        total_eligible = fu.get("total_eligible", 0)
 
-        # GPS metrics — sourced directly from pipeline-computed fields
-        avg_dist_m = avg_case_dist_by_flw.get(u)
-        revisit_km = round(avg_dist_m / 1000 * 100) / 100 if avg_dist_m is not None else None
-        median_m = median_meters_by_flw.get(u)
-        median_min = median_minutes_by_flw.get(u)
-        dist_ratio = None
-        if revisit_km is not None and median_m is not None and median_m > 0:
-            dist_ratio = round(revisit_km * 1000 / median_m * 10) / 10
+        # EBF%
+        bf_count = bf_count_by_flw.get(u, 0)
+        ebf_count = ebf_count_by_flw.get(u, 0)
+        ebf_pct = round(ebf_count / bf_count * 100) if bf_count > 0 else None
 
-        gs_score = gs_by_flw.get(u)
-        if gs_score is not None:
-            gs_score = round(gs_score)
+        # Follow-up rate
+        denom = fu.get("filtered_denominator", 0)
+        completed_fu = fu.get("filtered_completed", 0)
+        followup_rate = round(completed_fu / denom * 100) if denom > 0 else None
 
-        followup_rate = fu_flw.get("completion_rate")
-        ebf_pct = ebf_pct_by_flw.get(u)
+        # % still eligible
+        still_elig = fu.get("still_eligible", 0)
+        pct_still_eligible = round(still_elig / total_eligible * 100) if total_eligible > 0 else None
 
-        display_name = flw_names.get(u) or flw_names.get(flw_username) or flw_username
+        # GPS metrics
+        if dists:
+            mean_m = sum(dists) / len(dists)
+            sorted_d = sorted(dists)
+            median_m = float(sorted_d[len(sorted_d) // 2])
+            revisit_m = round(mean_m)
+            meter_per_visit = round(median_m)
+            dist_ratio = round(mean_m / median_m, 2) if median_m > 0 else None
+        else:
+            revisit_m = meter_per_visit = dist_ratio = None
 
-        flw_summaries.append(
-            {
-                "username": u,
-                "display_name": display_name,
-                # last_active is not available server-side; render code merges from workers prop
-                "num_mothers": mother_counts.get(u, 0),
-                "num_mothers_eligible": len(elig_mothers),
-                "gs_score": gs_score,
-                "followup_rate": followup_rate,
-                "pct_still_eligible": pct_still_eligible,
-                "ebf_pct": ebf_pct,
-                "revisit_dist": revisit_km,
-                "meter_per_visit": median_m,
-                "dist_ratio": dist_ratio,
-                "minute_per_visit": median_min,
-            }
-        )
+        # GS score (user_connect_id matches username in MBW context)
+        gs_raw = gs_by_user.get(u)
+        gs_score = round(gs_raw) if gs_raw is not None else None
 
-    results["flw_summaries"] = flw_summaries
+        flw_summaries.append({
+            "username": u,
+            "display_name": flw_names.get(u) or flw_names.get(username) or u,
+            "num_mothers": num_mothers,
+            "num_mothers_eligible": total_eligible,
+            "gs_score": gs_score,
+            "followup_rate": followup_rate,
+            "pct_still_eligible": pct_still_eligible,
+            "ebf_pct": ebf_pct,
+            "revisit_dist": revisit_m,
+            "meter_per_visit": meter_per_visit,
+            "dist_ratio": dist_ratio,
+            "minute_per_visit": None,  # requires visit timeStart — not in current pipeline
+        })
 
-    progress_callback(
-        f"Complete: {results['successful']} steps OK, {results['failed']} failed",
-        processed=6,
-        total=6,
-    )
-
-    logger.info(
-        "[MBW V4 Job] Finished: %d FLW summaries, %d successful, %d failed",
-        len(flw_summaries),
-        results["successful"],
-        results["failed"],
-    )
-
-    return results
+    return {
+        "flw_summaries": flw_summaries,
+        "prev_categories": prev_categories,
+        "open_tasks": open_tasks,
+    }
