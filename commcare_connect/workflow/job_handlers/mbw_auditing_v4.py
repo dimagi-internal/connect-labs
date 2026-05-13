@@ -34,13 +34,16 @@ def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
         from commcare_connect.tasks.models import TaskRecord
 
         with LabsRecordAPIClient(access_token=access_token, opportunity_id=opportunity_id) as client:
-            tasks = client.get_records(experiment="tasks", type="Task", model_class=TaskRecord)
+            # Filter by data.opportunity_id server-side; without this the query returns
+            # all tasks across every opportunity (tasks use data FK, not record FK).
+            tasks = client.get_records(
+                experiment="tasks",
+                type="Task",
+                model_class=TaskRecord,
+                opportunity_id=opportunity_id,  # → data__opportunity_id server-side filter
+            )
 
-        open_tasks = [
-            t for t in tasks
-            if t.data.get("status") != "closed"
-            and str(t.data.get("opportunity_id") or "") == str(opportunity_id)
-        ]
+        open_tasks = [t for t in tasks if t.data.get("status") != "closed"]
 
         by_username: dict[str, dict] = {}
         for task in open_tasks:
