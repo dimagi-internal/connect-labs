@@ -121,6 +121,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     workflow_definition_id: int | None = job_config.get("workflow_definition_id")
 
     visits_rows: list[dict] = pipeline_data.get("visits", {}).get("rows", [])
+    visits_agg_rows: list[dict] = pipeline_data.get("visits_agg", {}).get("rows", [])
     reg_rows: list[dict] = pipeline_data.get("registrations", {}).get("rows", [])
     gs_rows: list[dict] = pipeline_data.get("gs_forms", {}).get("rows", [])
 
@@ -130,12 +131,36 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     # Sort chronologically once so last-write-wins attribution is correct.
     visits_sorted = sorted(visits_rows, key=lambda r: r.get("visit_datetime") or "")
 
+    # When visits_agg rows are available and no per-visit date filter is active
+    # (Tab 1), use pre-aggregated SQL counts for num_mothers/bf_count/ebf_count
+    # instead of building Python sets and scanning bf_status on every row.
+    use_agg_counts = bool(visits_agg_rows) and not task_filters
+
     mother_to_flw: dict[str, str] = {}
     visits_by_mother: dict[str, dict[str, str]] = {}  # mid → {form_name → date}
     gps_distances: dict[str, list[float]] = {}
     ebf_count_by_flw: dict[str, int] = {}
     bf_count_by_flw: dict[str, int] = {}
-    mother_sets_by_flw: dict[str, set] = {}
+    mother_sets_by_flw: dict[str, set] = {}  # only populated when not use_agg_counts
+    num_mothers_by_flw: dict[str, int] = {}  # only populated when use_agg_counts
+
+    if use_agg_counts:
+        for row in visits_agg_rows:
+            u = (row.get("username") or row.get("_username") or "").lower()
+            if not u:
+                continue
+            try:
+                num_mothers_by_flw[u] = int(float(row.get("num_mothers") or 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                bf_count_by_flw[u] = int(float(row.get("bf_count") or 0))
+            except (TypeError, ValueError):
+                pass
+            try:
+                ebf_count_by_flw[u] = int(float(row.get("ebf_count") or 0))
+            except (TypeError, ValueError):
+                pass
 
     for row in visits_sorted:
         username = (row.get("username") or row.get("_username") or "").lower()
@@ -155,7 +180,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
 
         if mid:
             mother_to_flw[mid] = username
-            mother_sets_by_flw.setdefault(username, set()).add(mid)
+            if not use_agg_counts:
+                mother_sets_by_flw.setdefault(username, set()).add(mid)
             if form_name and vdt:
                 visits_by_mother.setdefault(mid, {})[form_name] = vdt
 
@@ -168,11 +194,12 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             except (TypeError, ValueError):
                 pass
 
-        bf_status = (row.get("bf_status") or "").strip()
-        if bf_status:
-            bf_count_by_flw[username] = bf_count_by_flw.get(username, 0) + 1
-            if "ebf" in bf_status.split():
-                ebf_count_by_flw[username] = ebf_count_by_flw.get(username, 0) + 1
+        if not use_agg_counts:
+            bf_status = (row.get("bf_status") or "").strip()
+            if bf_status:
+                bf_count_by_flw[username] = bf_count_by_flw.get(username, 0) + 1
+                if "ebf" in bf_status.split():
+                    ebf_count_by_flw[username] = ebf_count_by_flw.get(username, 0) + 1
 
     # ── Registrations: schedules + eligibility per mother ──
     progress_callback("Processing registration data…")
@@ -297,7 +324,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         dists = gps_distances.get(u, [])
 
         # Mother counts
-        num_mothers = len(mother_sets_by_flw.get(u, set()))
+        num_mothers = num_mothers_by_flw.get(u, 0) if use_agg_counts else len(mother_sets_by_flw.get(u, set()))
         total_eligible = fu.get("total_eligible", 0)
 
         # EBF%

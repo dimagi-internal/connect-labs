@@ -1,11 +1,12 @@
 """MBW Auditing V4 — pipeline-native audit workflow.
 
-Three pipelines feed a Python job handler that computes all audit metrics.
+Four pipelines feed a Python job handler that computes all audit metrics.
 No form_json reads — all data comes from SQL-computed pipeline rows.
 
 Pipeline aliases (must match pipeline_sources in DEFINITION):
   visits        — per-visit rows with GPS coords, bf_status, form_name,
                   and lag_haversine distance_from_prev_case_visit_m
+  visits_agg    — per-FLW aggregated counts: num_mothers, bf_count, ebf_count
   registrations — per-mother rows with mbw_visit_schedules extractor
                   and eligible_full_intervention_bonus
   gs_forms      — per-GS-visit rows with gs_score and user_connect_id
@@ -36,6 +37,14 @@ DEFINITION = {
 # Pipeline schemas
 # ---------------------------------------------------------------------------
 
+_BF_STATUS_PATHS = [
+    "form.feeding_history.pnc_current_bf_status",
+    "form.feeding_history.oneweek_current_bf_status",
+    "form.feeding_history.onemonth_current_bf_status",
+    "form.feeding_history.threemonth_current_bf_status",
+    "form.feeding_history.sixmonth_current_bf_status",
+]
+
 VISITS_GPS_SCHEMA = {
     # visit_level required for lag_haversine window function.
     # Lean schema: only fields consumed by the job handler.
@@ -49,17 +58,7 @@ VISITS_GPS_SCHEMA = {
         {"name": "mother_case_id", "path": "form.parents.parent.case.@case_id", "aggregation": "first"},
         {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
         {"name": "form_name", "path": "form.@name", "aggregation": "first"},
-        {
-            "name": "bf_status",
-            "paths": [
-                "form.feeding_history.pnc_current_bf_status",
-                "form.feeding_history.oneweek_current_bf_status",
-                "form.feeding_history.onemonth_current_bf_status",
-                "form.feeding_history.threemonth_current_bf_status",
-                "form.feeding_history.sixmonth_current_bf_status",
-            ],
-            "aggregation": "first",
-        },
+        {"name": "bf_status", "paths": _BF_STATUS_PATHS, "aggregation": "first"},
         # GPS — .#text fallback covers both XML text and direct string
         {
             "name": "latitude",
@@ -119,6 +118,37 @@ REGISTRATIONS_SCHEMA = {
     ],
 }
 
+VISITS_AGG_SCHEMA = {
+    # aggregated stage: one row per FLW — pre-computes counts that the
+    # job handler would otherwise compute in Python from visit_level rows.
+    # Used for Tab 1 (no task_filters); Tab 2 falls back to visit_level rows.
+    "data_source": {"type": "connect_csv"},
+    "grouping_key": "username",
+    "terminal_stage": "aggregated",
+    "fields": [
+        {
+            "name": "num_mothers",
+            "path": "form.parents.parent.case.@case_id",
+            "aggregation": "count_distinct",
+        },
+        {
+            "name": "bf_count",
+            "paths": _BF_STATUS_PATHS,
+            "aggregation": "count",
+        },
+        {
+            # contains_word matches "ebf" as a whitespace-separated token,
+            # mirroring v1: `if "ebf" in bf_status.split()`
+            "name": "ebf_count",
+            "paths": _BF_STATUS_PATHS,
+            "aggregation": "count",
+            "filter_paths": _BF_STATUS_PATHS,
+            "filter_value": "ebf",
+            "filter_op": "contains_word",
+        },
+    ],
+}
+
 GS_FORMS_SCHEMA = {
     # aggregated stage: one row per FLW with max gs_score — avoids returning
     # one row per GS assessment visit and pre-computes the max at SQL level.
@@ -150,6 +180,12 @@ PIPELINE_SCHEMAS = [
         "name": "MBW Visit Forms (V4)",
         "description": "Per-visit rows with GPS coords, bf_status, and lag_haversine distance to previous mother visit",
         "schema": VISITS_GPS_SCHEMA,
+    },
+    {
+        "alias": "visits_agg",
+        "name": "MBW Visit Forms — Aggregated (V4)",
+        "description": "Per-FLW aggregated counts: distinct mothers, BF visits, EBF visits",
+        "schema": VISITS_AGG_SCHEMA,
     },
     {
         "alias": "registrations",
