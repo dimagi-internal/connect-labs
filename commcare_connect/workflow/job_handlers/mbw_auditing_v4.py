@@ -126,21 +126,23 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
 
     progress_callback("Processing visit data…")
 
-    # ── Build mother→FLW attribution + completed-visit map from visit rows ──
-    # Sort chronologically so last-write-wins attribution matches v1.
+    # ── Single pass over visits: attribution, GPS distances, EBF%, mother sets ──
+    # Sort chronologically once so last-write-wins attribution is correct.
     visits_sorted = sorted(visits_rows, key=lambda r: r.get("visit_datetime") or "")
 
     mother_to_flw: dict[str, str] = {}
     visits_by_mother: dict[str, dict[str, str]] = {}  # mid → {form_name → date}
+    gps_distances: dict[str, list[float]] = {}
+    ebf_count_by_flw: dict[str, int] = {}
+    bf_count_by_flw: dict[str, int] = {}
+    mother_sets_by_flw: dict[str, set] = {}
 
     for row in visits_sorted:
         username = (row.get("username") or row.get("_username") or "").lower()
-        mid = (row.get("mother_case_id") or "").lower()
-        form_name = row.get("form_name") or ""
-        vdt = (row.get("visit_datetime") or "")[:10]
-
-        if not mid or not username:
+        if not username:
             continue
+
+        vdt = (row.get("visit_datetime") or "")[:10]
 
         # For Tab 2: skip visits submitted before the task trigger date
         if task_filters and username in task_filters:
@@ -148,50 +150,24 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             if vdt and trigger and vdt < trigger:
                 continue
 
-        mother_to_flw[mid] = username
-        if form_name and vdt:
-            visits_by_mother.setdefault(mid, {})[form_name] = vdt
-
-    # ── GPS distances per FLW (for revisit_dist, meter_per_visit, dist_ratio) ──
-    gps_distances: dict[str, list[float]] = {}
-
-    for row in visits_rows:
-        username = (row.get("username") or row.get("_username") or "").lower()
-        dist = row.get("distance_from_prev_case_visit_m")
-        if not username or dist is None:
-            continue
-        try:
-            dist_f = float(dist)
-        except (TypeError, ValueError):
-            continue
-        if math.isnan(dist_f):
-            continue
-        # For Tab 2: skip pre-task GPS rows
-        if task_filters and username in task_filters:
-            vdt = (row.get("visit_datetime") or "")[:10]
-            trigger = (task_filters[username] or "")[:10]
-            if vdt and trigger and vdt < trigger:
-                continue
-        gps_distances.setdefault(username, []).append(dist_f)
-
-    # ── EBF% and mother count from visit rows (aggregated in Python) ──
-    ebf_count_by_flw: dict[str, int] = {}
-    bf_count_by_flw: dict[str, int] = {}
-    mother_sets_by_flw: dict[str, set] = {}
-
-    for row in visits_rows:
-        username = (row.get("username") or row.get("_username") or "").lower()
-        if not username:
-            continue
-        # For Tab 2, skip pre-task visits
-        if task_filters and username in task_filters:
-            vdt = (row.get("visit_datetime") or "")[:10]
-            trigger = (task_filters[username] or "")[:10]
-            if vdt and trigger and vdt < trigger:
-                continue
         mid = (row.get("mother_case_id") or "").lower()
+        form_name = row.get("form_name") or ""
+
         if mid:
+            mother_to_flw[mid] = username
             mother_sets_by_flw.setdefault(username, set()).add(mid)
+            if form_name and vdt:
+                visits_by_mother.setdefault(mid, {})[form_name] = vdt
+
+        dist = row.get("distance_from_prev_case_visit_m")
+        if dist is not None:
+            try:
+                dist_f = float(dist)
+                if not math.isnan(dist_f):
+                    gps_distances.setdefault(username, []).append(dist_f)
+            except (TypeError, ValueError):
+                pass
+
         bf_status = (row.get("bf_status") or "").strip()
         if bf_status:
             bf_count_by_flw[username] = bf_count_by_flw.get(username, 0) + 1

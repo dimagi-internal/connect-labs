@@ -37,8 +37,11 @@ DEFINITION = {
 # ---------------------------------------------------------------------------
 
 VISITS_GPS_SCHEMA = {
-    # visit_level is required so window_fields (lag_haversine) runs.
-    # The job handler aggregates per-FLW in Python from the per-visit rows.
+    # visit_level required for lag_haversine window function.
+    # Lean schema: only fields consumed by the job handler.
+    # Eight fields that existed in the original pipeline (entity_id_deliver,
+    # entity_name, parity, anc_completion_date, pnc_completion_date, baby_dob,
+    # app_build_version, case_id) were removed — none are read by the handler.
     "data_source": {"type": "connect_csv"},
     "grouping_key": "username",
     "terminal_stage": "visit_level",
@@ -46,7 +49,6 @@ VISITS_GPS_SCHEMA = {
         {"name": "mother_case_id", "path": "form.parents.parent.case.@case_id", "aggregation": "first"},
         {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
         {"name": "form_name", "path": "form.@name", "aggregation": "first"},
-        # bf_status: coalesce the per-visit-type bf_status paths
         {
             "name": "bf_status",
             "paths": [
@@ -118,26 +120,27 @@ REGISTRATIONS_SCHEMA = {
 }
 
 GS_FORMS_SCHEMA = {
+    # aggregated stage: one row per FLW with max gs_score — avoids returning
+    # one row per GS assessment visit and pre-computes the max at SQL level.
     "data_source": {
         "type": "cchq_forms",
         "form_name": "Gold Standard Visit Checklist",
         "app_id_source": "opportunity",
         "gs_app_id": DEFAULT_GS_APP_ID,
     },
-    "grouping_key": "case_id",
-    "terminal_stage": "visit_level",
+    "grouping_key": "username",
+    "terminal_stage": "aggregated",
     "fields": [
         {
             "name": "gs_score",
             "paths": ["form.gs_score", "form.checklist_percentage"],
-            "aggregation": "first",
+            "aggregation": "max",
         },
         {
             "name": "user_connect_id",
             "paths": ["form.user_connect_id", "form.load_flw_connect_id"],
             "aggregation": "first",
         },
-        {"name": "assessment_date", "path": "form.meta.timeEnd", "aggregation": "first"},
     ],
 }
 
