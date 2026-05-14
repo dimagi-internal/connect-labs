@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 {% load static %}
 {# Imported from dimagi-internal/connect-prelogin. Four import-time edits #}
 {# (search "import-time edit"): .mockup-bar strip, login link template var, #}
@@ -800,7 +800,7 @@
   .ph-mental     { background: #FCEFCC url('{% static 'prelogin/images/Program%20Area%20Graphics/mental-health.svg' %}')               center/contain no-repeat; }
   .ph-nutrition  { background: #D9ECD4 url('{% static 'prelogin/images/Program%20Area%20Graphics/therapeutic-food.svg' %}')            center/contain no-repeat; }
   .ph-survey     { background: #e9ecef url('{% static 'prelogin/images/Program%20Area%20Graphics/survey-data-collection.svg' %}')      center/contain no-repeat; }
-  .ph-environment{ background: #DCE6F0 url('{% static 'prelogin/images/Program%20Area%20Graphics/rooftop-sampling.svg' %}')            center/contain no-repeat; }
+  .ph-environment{ background: #DCE6F0 url('{% static 'prelogin/images/Program%20Area%20Graphics/building-sampling.svg' %}')            center/contain no-repeat; }
   /* Suppress placeholder overlays + photo labels on program-card illustrations */
   .all-programs-grid .photo-block::before,
   .all-programs-grid .photo-block::after { display: none; }
@@ -1568,7 +1568,7 @@
   }
   /* Verify uses a laptop-shaped (square-ish) dashboard gif, not a phone — give it a wider media column so the whole dashboard reads */
   .step-detail[data-step="verify"] {
-    grid-template-columns: 400px 1fr 1fr;
+    grid-template-columns: 520px 1fr 1fr;
   }
   .step-detail[data-step="verify"] .step-media {
     aspect-ratio: 480 / 380;
@@ -1817,34 +1817,6 @@
     grid-row: span 2;
     height: 496px;
   }
-  /* Yellow "Story coming soon" placeholders for the gallery */
-  .gallery-grid .photo-block.placeholder-block {
-    background: #FFF8D6;
-    border: 2px dashed #D9B82A;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 24px;
-    text-align: center;
-  }
-  .gallery-grid .photo-block.placeholder-block .placeholder-tag {
-    font-family: var(--mono);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #8A6F00;
-  }
-  .gallery-grid .photo-block.placeholder-block .placeholder-name {
-    font-family: var(--sans);
-    font-size: 14.5px;
-    font-weight: 500;
-    color: #4F4100;
-    max-width: 22ch;
-    line-height: 1.4;
-  }
 
   /* INSIGHTS, two-axis filtering (Program × LDVP) */
   .filter-block {
@@ -1893,6 +1865,16 @@
   .insight-row.is-hidden { display: none; }
   .prog-card.is-hidden { display: none; }
   .programs-section-divider.is-hidden { display: none; }
+
+  [data-page="/programs"] .section { padding-top: 50px; }
+  #prog-filters {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 44px;
+    padding-bottom: 50px;
+    border-bottom: 1px solid var(--line);
+  }
 
   /* Programs page filter pills, in-development programs */
   #prog-filters .filter-pills .pill.is-soon {
@@ -2608,7 +2590,7 @@
   .ph-mental     { background: #FCEFCC url('{% static 'prelogin/images/Program%20Area%20Graphics/mental-health.svg' %}')               center/contain no-repeat; }
   .ph-nutrition  { background: #D9ECD4 url('{% static 'prelogin/images/Program%20Area%20Graphics/therapeutic-food.svg' %}')            center/contain no-repeat; }
   .ph-survey     { background: #e9ecef url('{% static 'prelogin/images/Program%20Area%20Graphics/survey-data-collection.svg' %}')      center/contain no-repeat; }
-  .ph-environment{ background: #DCE6F0 url('{% static 'prelogin/images/Program%20Area%20Graphics/rooftop-sampling.svg' %}')            center/contain no-repeat; }
+  .ph-environment{ background: #DCE6F0 url('{% static 'prelogin/images/Program%20Area%20Graphics/building-sampling.svg' %}')            center/contain no-repeat; }
   /* Suppress placeholder overlays + photo labels on program-card illustrations */
   .all-programs-grid .photo-block::before,
   .all-programs-grid .photo-block::after { display: none; }
@@ -3376,7 +3358,7 @@
   }
   /* Verify uses a laptop-shaped (square-ish) dashboard gif, not a phone — give it a wider media column so the whole dashboard reads */
   .step-detail[data-step="verify"] {
-    grid-template-columns: 400px 1fr 1fr;
+    grid-template-columns: 520px 1fr 1fr;
   }
   .step-detail[data-step="verify"] .step-media {
     aspect-ratio: 480 / 380;
@@ -3625,34 +3607,6 @@
     grid-row: span 2;
     height: 496px;
   }
-  /* Yellow "Story coming soon" placeholders for the gallery */
-  .gallery-grid .photo-block.placeholder-block {
-    background: #FFF8D6;
-    border: 2px dashed #D9B82A;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 24px;
-    text-align: center;
-  }
-  .gallery-grid .photo-block.placeholder-block .placeholder-tag {
-    font-family: var(--mono);
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #8A6F00;
-  }
-  .gallery-grid .photo-block.placeholder-block .placeholder-name {
-    font-family: var(--sans);
-    font-size: 14.5px;
-    font-weight: 500;
-    color: #4F4100;
-    max-width: 22ch;
-    line-height: 1.4;
-  }
 
   /* INSIGHTS, two-axis filtering (Program × LDVP) */
   .filter-block {
@@ -3701,6 +3655,16 @@
   .insight-row.is-hidden { display: none; }
   .prog-card.is-hidden { display: none; }
   .programs-section-divider.is-hidden { display: none; }
+
+  [data-page="/programs"] .section { padding-top: 50px; }
+  #prog-filters {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 44px;
+    padding-bottom: 50px;
+    border-bottom: 1px solid var(--line);
+  }
 
   /* Programs page filter pills, in-development programs */
   #prog-filters .filter-pills .pill.is-soon {
@@ -4269,7 +4233,7 @@
     aspect-ratio: 1 / 1;
     border-radius: 50%;
     /* Layered: actual image (if present) over a gradient placeholder */
-    background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/CHC/chc-1.jpg' %}'), linear-gradient(135deg, #5D70D2 0%, #16006D 60%, #FC5F36 100%);
+    background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/CHC/chc-3.jpg' %}'), linear-gradient(135deg, #5D70D2 0%, #16006D 60%, #FC5F36 100%);
     background-size: cover, cover;
     background-position: center, center;
     background-repeat: no-repeat;
@@ -4594,7 +4558,7 @@
     transition: border-color 0.15s, transform 0.15s, box-shadow 0.2s;
     overflow: hidden;
   }
-  .explore-card:hover {
+  a.explore-card:hover {
     border-color: var(--indigo);
     color: var(--ink);
     transform: translateY(-2px);
@@ -4988,55 +4952,6 @@
     .footer-inner { grid-template-columns: 1fr; }
   }
 
-  /* Program detail — sticky program-to-program pill navigation */
-  :root { --header-h: 62px; }
-  .program-pill-nav {
-    position: sticky;
-    top: var(--header-h);
-    z-index: 49;
-    background: var(--ink-2);
-    border-bottom: 1px solid rgba(142, 161, 255, 0.14);
-    height: 40px;
-    display: flex;
-    align-items: center;
-  }
-  .prog-pill-inner {
-    max-width: 1240px;
-    width: 100%;
-    margin: 0 auto;
-    padding: 0 32px;
-    display: flex;
-    gap: 0;
-    overflow-x: scroll;
-    scrollbar-width: none;
-    height: 100%;
-    align-items: center;
-  }
-  .prog-pill-inner::-webkit-scrollbar { display: none; }
-  .prog-pill {
-    flex-shrink: 0;
-    display: inline-block;
-    padding: 10px 15px;
-    font-family: var(--mono);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: rgba(250, 251, 255, 0.48);
-    text-decoration: none;
-    border-bottom: 2px solid transparent;
-    transition: color 0.15s, border-color 0.15s;
-    white-space: nowrap;
-  }
-  .prog-pill:hover { color: rgba(250, 251, 255, 0.86); }
-  .prog-pill.active {
-    color: var(--sky);
-    border-bottom-color: var(--sky);
-  }
-  @media (max-width: 980px) {
-    .prog-pill-inner { padding: 0 20px; }
-    .prog-pill { padding: 10px 12px; font-size: 10px; }
-  }
 </style>
 </head>
 <body>
@@ -5080,23 +4995,6 @@
     </nav>
   </div>
 </header>
-
-{# import-time edit: program-pill-nav stripped on labs (Gillian's b8509538 addition). Revisit if/when product wants the in-page program tab strip on detail pages. #}
-{% comment %}
-<nav id="program-pill-nav" class="program-pill-nav" hidden>
-  <div class="prog-pill-inner">
-    <a class="prog-pill" href="#/programs/child-health-campaign"     data-prog-route="/programs/child-health-campaign">Child Health</a>
-    <a class="prog-pill" href="#/programs/kangaroo-mother-care"      data-prog-route="/programs/kangaroo-mother-care">Kangaroo Care</a>
-    <a class="prog-pill" href="#/programs/mother-baby-wellness"      data-prog-route="/programs/mother-baby-wellness">Mother-Baby</a>
-    <a class="prog-pill" href="#/programs/early-childhood-development" data-prog-route="/programs/early-childhood-development">Early Childhood</a>
-    <a class="prog-pill" href="#/programs/reading-glasses"           data-prog-route="/programs/reading-glasses">Reading Glasses</a>
-    <a class="prog-pill" href="#/programs/chlorine-dispenser"        data-prog-route="/programs/chlorine-dispenser">Chlorine</a>
-    <a class="prog-pill" href="#/programs/mental-health"             data-prog-route="/programs/mental-health">Mental Health</a>
-    <a class="prog-pill" href="#/programs/survey-data-collection"    data-prog-route="/programs/survey-data-collection">Survey</a>
-    <a class="prog-pill" href="#/programs/rooftop-sampling"          data-prog-route="/programs/rooftop-sampling">Rooftop</a>
-  </div>
-</nav>
-{% endcomment %}
 <main>
 
 <!-- ================================ HOME ================================ -->
@@ -5125,9 +5023,9 @@
           <span class="hero-stats-tag">Impact</span>
           <div class="hero-stats-items">
             <div><div class="num">1.5M+</div><div class="label">Verified services delivered</div></div>
-            <div><div class="num">$1.5M+</div><div class="label">Paid to frontline workers</div></div>
+            <div><div class="num">$2M+</div><div class="label">Paid to Frontline Workers</div></div>
             <div><div class="num">22%</div><div class="label">Cost reduction per visit</div></div>
-            <div><div class="num">94%</div><div class="label">Population coverage</div></div>
+            <div><div class="num">94%</div><div class="label">Coverage in target areas</div></div>
           </div>
         </div>
       </div>
@@ -5207,7 +5105,7 @@
           <div class="explore-panel ink" aria-hidden="true"></div>
           <span class="explore-tag">Frontline Organizations</span>
           <h4>Join the Connect Network.</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Local, government-aligned organizations deliver every Connect program, running supervision, recruiting, and managing frontline workers. They are eligible for performance-based revenue growth as their service delivery is validated. Frontline workers get paid directly when their work is confirmed.</p>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Local, government-aligned organizations deliver every Connect program, running supervision, recruiting, and managing Frontline Workers. They are eligible for performance-based revenue growth as their service delivery is validated. Frontline Workers get paid directly when their work is confirmed.</p>
           <span class="explore-link">Join the network →</span>
         </a>
       </div>
@@ -5296,7 +5194,7 @@
           </g>
           <text x="734" y="382" text-anchor="middle" font-family="Work Sans" font-size="22" font-weight="500" fill="#0A0620">Verify</text>
           <text x="734" y="408" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="400" fill="#4A5468">Four checks per visit</text>
-          <text x="734" y="442" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="600" fill="#3843D0">97.5% beat fakers</text>
+          <text x="734" y="442" text-anchor="middle" font-family="Work Sans" font-size="13" font-weight="600" fill="#3843D0">97.5% beat paid fakers</text>
 
           <g transform="translate(1000 280)" filter="url(#softShadow)">
             <circle r="62" fill="#3843D0" stroke="#3843D0" stroke-width="2"/>
@@ -5364,7 +5262,7 @@
             </a>
             <a class="prog-mini is-soon" href="#/programs">
               <span class="sector">Field Research</span>
-              <h4>Survey &amp; Data Collection</h4>
+              <h4>Interview</h4>
               <span class="badge-soon">Coming soon</span>
             </a>
             <a class="prog-mini is-soon" href="#/programs">
@@ -5383,7 +5281,7 @@
               <span class="count is-multi">7 programs</span>
             </div>
             <div class="location-row">
-              <span class="country">Democratic Republic of the Congo</span>
+              <span class="country">DRC</span>
               <span class="count">1 program</span>
             </div>
             <div class="location-row">
@@ -5427,7 +5325,7 @@
               <span class="count">1 program</span>
             </div>
             <div class="location-row">
-              <span class="country">Central African Republic <span class="sub">launching</span></span>
+              <span class="country">CAR<span class="sub">launching</span></span>
               <span class="count">1 program</span>
             </div>
           </div>
@@ -5469,7 +5367,7 @@
       </div>
       <div class="video-frame">
         <div class="video-meta">
-          <span class="vt">Connect by Dimagi · Field documentary</span>
+          <span class="vt">Connect by Dimagi · Demo Video</span>
           <span class="vc">Watch</span>
         </div>
         <div class="video-wrap">
@@ -5518,7 +5416,7 @@
                 <button class="picker-item">Chlorine Dispensers</button>
                 <button class="picker-item">Mental Health</button>
                 <button class="picker-item">Therapeutic Food</button>
-                <button class="picker-item">Survey &amp; Data Collection</button>
+                <button class="picker-item">Interview</button>
                 <button class="picker-item">Rooftop Sampling</button>
                 <button class="picker-item picker-item-new">+ New Program</button>
               </div>
@@ -5527,7 +5425,7 @@
               <h6>Country</h6>
               <div class="picker-scroll" data-cycle="1">
                 <button class="picker-item is-active">Nigeria</button>
-                <button class="picker-item">Democratic Republic of the Congo</button>
+                <button class="picker-item">DRC</button>
                 <button class="picker-item">Kenya</button>
                 <button class="picker-item">Sierra Leone</button>
                 <button class="picker-item">Uganda</button>
@@ -5538,7 +5436,7 @@
                 <button class="picker-item">Mozambique</button>
                 <button class="picker-item">Liberia</button>
                 <button class="picker-item">Zambia</button>
-                <button class="picker-item">Central African Republic</button>
+                <button class="picker-item">CAR</button>
                 <button class="picker-item picker-item-new">+ New Country</button>
               </div>
             </div>
@@ -5576,7 +5474,7 @@
               <div class="promise-text">
                 <h4>High Quality Frontline Delivery</h4>
                 <p>Connect leverages a fast growing network of Frontline Organizations and vets them for subsequent contracts.</p>
-                <div class="promise-stat">94% Coverage in Defined Population</div>
+                <div class="promise-stat">94% Population Coverage with Map Grids</div>
               </div>
             </div>
             <div class="promise-item">
@@ -5588,7 +5486,7 @@
               <div class="promise-text">
                 <h4>Rapid Deployment</h4>
                 <p>Qualified Frontline Organizations go from signed contract to workers delivering services in the field in days, not months.</p>
-                <div class="promise-stat">10 days to first deployment</div>
+                <div class="promise-stat">10 Days to First Deployment Demonstrated</div>
               </div>
             </div>
             <div class="promise-item">
@@ -5601,7 +5499,7 @@
               <div class="promise-text">
                 <h4>Paid for Verified Services</h4>
                 <p>Frontline Organizations are only paid for services that have been digitally verified through GPS, photos, and other mechanisms.</p>
-                <div class="promise-stat">$1.70 Verified Visit (Child Health Campaign)</div>
+                <div class="promise-stat">$1.70 Per Visit at Scale (Child Health Campaign)</div>
               </div>
             </div>
           </div>
@@ -5754,7 +5652,6 @@
         <div class="right">
           <div class="numbers-header">
             <div class="step-block-label">The Numbers</div>
-            <a href="docs/ai-coach-for-ecd.pdf" target="_blank" class="source-link">View Source</a>
           </div>
           <div class="pillar-stats">
             <div class="ps"><div class="n">85%</div><div class="l">of Frontline Workers moved from training to delivery</div></div>
@@ -5774,7 +5671,7 @@
         <div class="features">
           <div class="step-block-label">Primary Features</div>
           <ul class="feature-list">
-            <li>Locally-led delivery</li>
+            <li>Locally Led delivery</li>
             <li>App-guided service visits</li>
             <li>Local supervisor oversight</li>
             <li>Performance-based contracts</li>
@@ -5790,8 +5687,8 @@
       </div>
 
       <div class="step-detail" data-step="verify">
-        <div class="step-media" style="background: #FEAF31; display: flex; align-items: center; justify-content: center; color: #1f1500; font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
-          GIF INCOMING
+        <div class="step-media">
+          <img src="{% static 'prelogin/gifs/verify.gif' %}" alt="Frontline Worker verifying a service delivery" loading="lazy" />
         </div>
         <div class="left">
           <h3>Services are <em>digitally verified</em> by the Connect platform.</h3>
@@ -5801,16 +5698,16 @@
           <div class="step-block-label">Primary Features</div>
           <ul class="feature-list">
             <li>Biometric ID</li>
-            <li>GPS at the right house, at the right time</li>
-            <li>Photo capture</li>
-            <li>AI model flagging unusual patterns</li>
+            <li>GPS</li>
+            <li>Photo Capture</li>
+            <li>Data Audits</li>
           </ul>
         </div>
         <div class="right">
           <div class="step-block-label">The Numbers</div>
           <div class="pillar-stats">
             <div class="ps"><div class="n">94%</div><div class="l">Population coverage with map grids</div></div>
-            <div class="ps"><div class="n">3.5x</div><div class="l">More visits per child</div></div>
+            <div class="ps"><div class="n">100%</div><div class="l">Fakers found in adversarial testing</div></div>
           </div>
         </div>
       </div>
@@ -5844,46 +5741,28 @@
     </div>
   </div>
 
-  <!-- Photo gallery (placeholders — stories coming soon) -->
+  <!-- Field stories -->
   <div class="section">
     <div class="wrap">
       <div class="sec-head">
         <div class="label-group">
           <span class="eyebrow">From the field</span>
-          <h2>Stories <em>coming soon</em>.</h2>
-          <p class="sub">Across our network, frontline workers serve their own communities while partner organizations run supervision in the background, so children get screened, vaccinated, and weighed at the doorstep where they live.</p>
+          <h2>Field <em>Stories</em>.</h2>
+          <p class="sub">Stories from Frontline Workers and partner organizations delivering verified services across the Connect network.</p>
         </div>
       </div>
-      <div class="gallery-grid">
-        <a class="photo-block gallery-tall"
-           href="https://dimagi.com/closing-post-discharge-gap-kangaroo-mother-care/"
-           target="_blank" rel="noopener"
-           style="background: #111 url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-3.jpg' %}') center/cover no-repeat; text-decoration: none;">
-          <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.36) 55%, transparent 100%);"></div>
-          <div style="position: relative; z-index: 1; padding: 28px 24px;">
-            <span style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sky); display: block; margin-bottom: 10px;">Field Story · Kangaroo Mother Care</span>
-            <h3 style="font-family: var(--sans); font-size: 20px; font-weight: 700; line-height: 1.25; color: #fff; margin: 0 0 10px;">Closing the Post-Discharge Gap</h3>
-            <p style="font-family: var(--sans); font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.8); margin: 0 0 16px;">KMC can reduce neonatal mortality by up to 40% — yet coverage remains below 5% for eligible infants. Connect closes that gap with app-guided home visits, verified outcomes, and fair pay for frontline workers.</p>
-            <span style="font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: rgba(255,255,255,0.55);">Read on Dimagi.com →</span>
-          </div>
-        </a>
-        <div class="photo-block placeholder-block">
-          <span class="placeholder-tag">Story Coming Soon</span>
-          <span class="placeholder-name">Newborn home visit</span>
+      <a class="photo-block"
+         href="https://dimagi.com/closing-post-discharge-gap-kangaroo-mother-care/"
+         target="_blank" rel="noopener"
+         style="height: 420px; border-radius: var(--radius-lg); background: #111 url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-3.jpg' %}') center/cover no-repeat; text-decoration: none;">
+        <div style="position: absolute; inset: 0; border-radius: var(--radius-lg); background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.32) 55%, transparent 100%);"></div>
+        <div style="position: relative; z-index: 1; padding: 40px 44px;">
+          <span style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sky); display: block; margin-bottom: 12px;">Field Story · Kangaroo Care</span>
+          <h3 style="font-family: var(--sans); font-size: 26px; font-weight: 700; line-height: 1.2; color: #fff; margin: 0 0 14px;">Closing the Post-Discharge Gap</h3>
+          <p style="font-family: var(--sans); font-size: 15px; line-height: 1.65; color: rgba(255,255,255,0.82); margin: 0 0 22px; max-width: 52ch;">KMC can reduce neonatal mortality by up to 40% — yet coverage remains below 5% for eligible infants. Connect closes that gap with app-guided home visits, verified outcomes, and fair pay for Frontline Workers.</p>
+          <span style="font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: rgba(255,255,255,0.5);">Read on Dimagi.com →</span>
         </div>
-        <div class="photo-block placeholder-block">
-          <span class="placeholder-tag">Story Coming Soon</span>
-          <span class="placeholder-name">Worker training, Lagos</span>
-        </div>
-        <div class="photo-block placeholder-block">
-          <span class="placeholder-tag">Story Coming Soon</span>
-          <span class="placeholder-name">Microplan grid review</span>
-        </div>
-        <div class="photo-block placeholder-block">
-          <span class="placeholder-tag">Story Coming Soon</span>
-          <span class="placeholder-name">Parenting visit, Malawi</span>
-        </div>
-      </div>
+      </a>
     </div>
   </div>
 
@@ -5918,7 +5797,6 @@
         <button class="pill" data-filter-type="program" data-filter-value="chc">Child Health Campaign</button>
         <button class="pill" data-filter-type="program" data-filter-value="kmc">Kangaroo Care</button>
         <button class="pill" data-filter-type="program" data-filter-value="ecd">Early Childhood Development</button>
-        <button class="pill" data-filter-type="program" data-filter-value="readers">Reading Glasses</button>
       </div>
     </div>
     <div class="filter-block">
@@ -5940,8 +5818,8 @@
           <b>Frontline Activity</b>Verify
         </div>
         <div class="body">
-          <h4>97.5% of real workers scored cleaner than the lowest-scoring paid faker.</h4>
-          <p>We paid experienced frontline workers to fake 100 visit records each across three rounds, with a bonus on the top 25%. A model trained on three data fields hit AUC 0.91, and only 2.5% of real workers looked as suspicious as the worst fabricator.</p>
+          <h4>97.5% of real workers scored cleaner than paid fakers in adversarial testing.</h4>
+          <p>In adversarial testing we paid FLWs to generate fake data with financial rewards for those who did best. A model trained on three data fields hit AUC 0.91, detecting 100% of fake FLWs while only flagging 2.5% of real FLWs as suspicious. </p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -5956,7 +5834,7 @@
         </div>
         <div class="body">
           <h4>Map grids tripled visits per child, 0.4 to 1.4, and pushed coverage from 84% to 94%.</h4>
-          <p>Without a grid, frontline workers cherry-picked easy houses. With a grid forcing them to close every Delivery Unit before unlocking the next area, equity stopped being a slogan and became a number.</p>
+          <p>Without a grid, Frontline Workers cherry-picked easy houses. With a grid forcing them to go door-to-door, the hardest-to-reach children stopped being the ones who got missed.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -5970,8 +5848,8 @@
           <b>Frontline Activity</b>Pay
         </div>
         <div class="body">
-          <h4>Cost per verified visit fell 22%, from $2.20 to $1.70, as the program scaled.</h4>
-          <p>Most programs report cost-per-worker-trained because it's easier. We report cost-per-verified-outcome because the others hide the lever that matters. Nigeria with oral rehydration salts: $1.30. Outside Nigeria with vitamin A and deworming only: $0.78.</p>
+          <h4>Total cost per verified visit fell 22%, from $2.20 to $1.70, as the program scaled.</h4>
+          <p>That figure is Connect's all-in cost per visit, including commodities, LLO payments, setup, and product cost. The biggest driver of the drop was setup costs falling from ~$0.40 to ~$0.10 per visit as we moved past early-stage inefficiencies. We report cost-per-verified-outcome rather than cost-per-worker-trained because it's the number that actually matters.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -5985,45 +5863,14 @@
           <b>Frontline Activity</b>Deliver
         </div>
         <div class="body">
-          <h4>We invented the Trial Run because pre-vetting partners didn't predict performance.</h4>
-          <p>Past reputation, team size, references, none of it told us if a partner organization would actually deliver. So we contracted small first. Of 37 partners, 24 ran Trial Runs. 10 underperformed. 3 went straight to scale on prior evidence.</p>
+          <h4>Pre-vetting didn't predict performance. So we started contracting small.</h4>
+          <p>Past reputation, team size, references, none of it told us if a partner organization would actually deliver. So we contracted small first. Of 37 partners, 24 ran trial runs. 10 underperformed. 3 were selected to scale based on their performance.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
           <b>Source</b><span class="src-name">Founders Pledge Final Report</span>
         </div>
       </article>
-
-      <article class="insight-row" data-programs="platform" data-ldvp="learn">
-        <div class="meta-side">
-          <b>Program Type</b>Platform mechanism<br><br>
-          <b>Frontline Activity</b>Learn
-        </div>
-        <div class="body">
-          <h4>Knowledge isn't the same as competence. We have ~400 frontline workers of evidence.</h4>
-          <p>Workers who passed our digital test still struggled with real visits. So we layered: self-paced lessons, an in-app test, a daily AI coach, peer practice, and a supervised first visit. 85% move from training to delivery. 88% score above 70% on their first observed visits.</p>
-        </div>
-        <div class="meta-side">
-          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
-          <b>Source</b><span class="src-name">Early Childhood Development Overview, Stage 2 Report</span>
-        </div>
-      </article>
-
-      <article class="insight-row" data-programs="ecd" data-ldvp="learn">
-        <div class="meta-side">
-          <b>Program Type</b>Early Childhood Development<br><br>
-          <b>Frontline Activity</b>Learn
-        </div>
-        <div class="body">
-          <h4>Caregivers' parenting attitudes were already correct. We moved knowledge +33% and observed teaching +21%.</h4>
-          <p>A 50-caregiver baseline showed nearly all caregivers already endorsed responsive caregiving. The intervention's actual job was knowledge and behavior, and that's what moved. We doubled the visit cadence in the next round.</p>
-        </div>
-        <div class="meta-side">
-          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
-          <b>Source</b><span class="src-name">Malawi pilot, Feb 2026</span>
-        </div>
-      </article>
-
       <article class="insight-row" data-programs="chc" data-ldvp="deliver">
         <div class="meta-side">
           <b>Program Type</b>Child Health Campaign<br><br>
@@ -6031,7 +5878,7 @@
         </div>
         <div class="body">
           <h4>5 of 7 partner organizations leveraged religious leaders for vaccine outreach before we asked.</h4>
-          <p>Locally-Led Organizations independently mobilized imams, pastors, village elders, and community-recommended frontline workers. The platform didn't teach this, they already knew. Our job is to get out of their way.</p>
+          <p>Locally Led Organizations independently mobilized imams, pastors, village elders, and community-recommended Frontline Workers. The platform didn't teach this, they already knew.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -6045,8 +5892,8 @@
           <b>Frontline Activity</b>Deliver
         </div>
         <div class="body">
-          <h4>Both partners in the Central African Republic dropped out. We now flag fragile contexts as needing in-country presence.</h4>
-          <p>Remote coordination worked across Nigeria, Kenya, Uganda, Tanzania. It didn't hold in the Central African Republic. Staffing turnover and connectivity issues exited both contracted partners during setup. We publish the failure.</p>
+          <h4>Both partners in the Central African Republic dropped out. We now flag fragile contexts as needing in-country presence rather than remote coordination alone.</h4>
+          <p>Remote coordination worked across Nigeria, Kenya, Uganda, Tanzania. It didn't hold in the Central African Republic. Staffing turnover and connectivity issues exited both contracted partners.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -6060,8 +5907,8 @@
           <b>Frontline Activity</b>Verify
         </div>
         <div class="body">
-          <h4>Kangaroo Care 3-day target sits at 50% against a 70% goal. We publish the gap.</h4>
-          <p>If missing the 3-day window cost a worker money, they'd falsify dates and we'd see fake 100% compliance. So we treat it as a guardrail, not a payment criterion. We coach. We integrate hospital discharge notifications. We publish the real number.</p>
+          <h4>Kangaroo Care 3-day visits hit 50% against a 70% goal.</h4>
+          <p>If missing the window cost a worker money, we'd see suspiciously perfect compliance instead. So we treat it as a guardrail, not a payment criterion — we coach and integrate hospital discharge notifications to close the gap.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -6076,7 +5923,7 @@
         </div>
         <div class="body">
           <h4>Average time to first newborn visit is 6.05 days, twice our 3-day target. Only 34% reach families inside the window.</h4>
-          <p>The headline 50% number understates the gap. The true mean is 6.05 days. The bottleneck isn't worker effort, one of our delivery opportunities doesn't collect hospital discharge dates at all, so 100% of those records are blank on this metric. We publish all of it.</p>
+          <p>The headline 50% number understates the gap. The mean is 6.05 days. One delivery opportunity doesn't collect hospital discharge dates at all, so 100% of those records are blank on this metric — which means the real-world bottleneck is data plumbing, not worker effort.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -6091,7 +5938,7 @@
         </div>
         <div class="body">
           <h4>Two partner organizations and Uganda's Ministry of Health signed an agreement to scale to 50,000 vulnerable newborns over two years.</h4>
-          <p>The Ministry is participating in working groups, quarterly reviews, and site visits, and contributing data to Uganda's five-year national neonatal plan. The next step: government co-funding at $10–20 per case.</p>
+          <p>The Ministry is participating in working groups, quarterly reviews, and site visits, and contributing data to Uganda's five-year national neonatal plan. The next step: government co-funding at $10-20 per case.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
@@ -6105,7 +5952,7 @@
           <b>Frontline Activity</b>Pay
         </div>
         <div class="body">
-          <h4>Connect Kangaroo Care is $36 per newborn, small enough that one donor can fund one baby.</h4>
+          <h4>$36 delivers one newborn through the Kangaroo Care program.</h4>
           <p>That covers partner engagement, the Kangaroo wraps, scales, thermometers, pulse oximeters, training, payment per verified case, and supervision. We picked it for our first individual-giving experiment because $36 is the smallest unit at which one donor can fund a complete intervention with verified delivery.</p>
         </div>
         <div class="meta-side">
@@ -6113,22 +5960,44 @@
           <b>Source</b><span class="src-name">Connect individual-giving blog (March-April 2026)</span>
         </div>
       </article>
-
-      <article class="insight-row" data-programs="readers" data-ldvp="pay">
+      <article class="insight-row" data-programs="ecd" data-ldvp="learn">
         <div class="meta-side">
-          <b>Program Type</b>Reading Glasses<br><br>
-          <b>Frontline Activity</b>Pay
+          <b>Program Type</b>Early Childhood Development<br><br>
+          <b>Frontline Activity</b>Learn
+        </div>
+          <div class="body">
+            <h4>Passing the digital test didn't mean passing the first real visit.  So we layered supervised visits.</h4>
+            <p>Workers who passed our digital test still struggled with nuanced in-home counseling. No single layer of training was sufficient. This improved with 78% of workers scoring above 80% during their first observed visits.  Average performance increased from 85% to 91% in the second observed visit.</p>
+          </div>
+          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">ECD Overview, Stage 2 Report</span></div>
+      </article>
+
+      <article class="insight-row" data-programs="ecd" data-ldvp="learn">
+        <div class="meta-side">
+          <b>Program Type</b>Early Childhood Development<br><br>
+          <b>Frontline Activity</b>Learn
         </div>
         <div class="body">
-          <h4>Reading Glasses Q4 2025 Nigeria delivered 15,000 pairs at $1.50, and only ~35 were first-time corrections.</h4>
-          <p>The cohort hit its target across two partner organizations in 16 weeks. Photo audit: 92%. Worker certification: 98%. The harder finding: the door-to-door population was largely already aware of their presbyopia. Our model of who needs reading glasses was wrong.</p>
+          <h4>Caregivers' parenting attitudes were already correct. We moved knowledge +33% and observed teaching +21%.</h4>
+          <p>A 50-caregiver baseline showed near-universal endorsement of responsive caregiving — attitudes weren't the gap. Knowledge and observed teaching practice were, and that's where we saw movement. We doubled the visit cadence in the next round.</p>
         </div>
         <div class="meta-side">
           <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
-          <b>Source</b><span class="src-name">Connect-Readers KPIs sheet (March 2026)</span>
+          <b>Source</b><span class="src-name">Malawi pilot, Feb 2026</span>
         </div>
       </article>
-
+      <article class="insight-row" data-programs="ecd" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Early Childhood Development<br><br>
+          <b>Frontline Activity</b>Deliver
+        </div>
+          <div class="body">
+            <h4>Encouraging child autonomy is the hardest domain to move. 47% endline rate. We're still working on it.</h4>
+            <p>Autonomy encouragement requires consistent behavior change across many interactions — not a single coaching session. It's the sub-domain least moved by the current visit structure. We aim to expand from 3 to 8-10 visits per child specifically to give this target more runway. We don't know yet if it will be enough.</p>
+          </div>
+          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br><b>Source</b><span class="src-name">ECD Overview, Stage 2 Report</span></div>
+        </article>
     </div>
 
     <div class="methodology">
@@ -6165,35 +6034,11 @@
   <div class="section">
     <div class="wrap">
       <div id="prog-filters">
-        <div class="filter-block">
-          <span class="filter-label">Mothers &amp; Children</span>
-          <div class="filter-pills">
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="all">All</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="chc">Child Health Campaign</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="kmc">Kangaroo Care</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="mbw">Mother-Baby Wellness</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="ecd">Early Childhood Development</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="mc" data-filter-value="rutf">Therapeutic Food</button>
-          </div>
-        </div>
-
-        <div class="filter-block">
-          <span class="filter-label">General Wellbeing</span>
-          <div class="filter-pills">
-            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="all">All</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="readers">Reading Glasses</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="chlorine">Chlorine Dispensers</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="gw" data-filter-value="mental">Mental Health</button>
-          </div>
-        </div>
-
-        <div class="filter-block">
-          <span class="filter-label">Field Research</span>
-          <div class="filter-pills">
-            <button class="pill" data-filter-type="prog" data-filter-cat="fr" data-filter-value="all">All</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="fr" data-filter-value="survey">Survey &amp; Data Collection</button>
-            <button class="pill" data-filter-type="prog" data-filter-cat="fr" data-filter-value="rooftop">Rooftop Sampling</button>
-          </div>
+        <div class="filter-pills">
+          <button class="pill active" data-filter-type="prog" data-filter-value="all">All</button>
+          <button class="pill" data-filter-type="prog" data-filter-value="mc">Mothers &amp; Children</button>
+          <button class="pill" data-filter-type="prog" data-filter-value="gw">General Wellbeing</button>
+          <button class="pill" data-filter-type="prog" data-filter-value="fr">Field Research</button>
         </div>
       </div>
 
@@ -6207,8 +6052,8 @@
           <div class="body">
             <span class="sector">Mothers &amp; Children</span>
             <h3>Child Health Campaign</h3>
-            <p class="countries">Central African Republic · DRC · Kenya · Liberia · Nigeria · Sierra Leone · Tanzania · Uganda · Zambia</p>
-            <p>Door-to-door vitamin A, deworming, oral rehydration salts, malnutrition screening, immunization promotion for children under five.</p>
+            <p class="countries">CAR · DRC · Kenya · Liberia · Nigeria · Sierra Leone · Tanzania · Uganda · Zambia</p>
+            <p>Door-to-door vitamin A, deworming, oral rehydration salts, malnutrition screening, immunization promotion for children under five.<br><br></p>
             <div class="stat-strip">
               <div class="ps"><div class="n">1M+</div><div class="l">Verified visits</div></div>
               <div class="ps"><div class="n">9</div><div class="l">Countries</div></div>
@@ -6228,7 +6073,7 @@
             <p class="countries">India · Kenya · Nigeria · Uganda<br</p>
             <p>Home visits for small and vulnerable newborns after they leave the hospital. Closes the follow-up gap with 4 to 5 visits in the first 60 days of life.</p>
             <div class="stat-strip">
-              <div class="ps"><div class="n">$55</div><div class="l">Per newborn</div></div>
+              <div class="ps"><div class="n">$36</div><div class="l">Per newborn</div></div>
               <div class="ps"><div class="n">50K</div><div class="l">Uganda 2-year target</div></div>
               <div class="ps"><div class="n">5k+</div><div class="l">Cases tracked</div></div>
             </div>
@@ -6246,7 +6091,7 @@
             <p class="countries">Malawi · Nigeria</p>
             <p>Breastfeeding promotion (6 visits, antenatal through complementary feeding) plus maternal mental health coaching via WHO's Problem Management Plus protocol.</p>
             <div class="stat-strip">
-              <div class="ps"><div class="n">$8></div><div class="l">Per Mother</div></div>
+              <div class="ps"><div class="n"><$8</div><div class="l">Per Mother<br><br></div></div>
               <div class="ps"><div class="n">25k+</div><div class="l">Mothers Registered</div></div>
               <div class="ps"><div class="n">28%</div><div class="l">First Time Mothers</div></div>
             </div>
@@ -6262,7 +6107,7 @@
             <span class="sector">General Wellbeing</span>
             <h3>Reading Glasses</h3>
             <p class="countries">Kenya · Nigeria</p>
-            <p>Door-to-door near-vision screening and distribution of reading glasses. Scalable, self-paced, digital training to efficitly upskill Frontline Workers.</p>
+            <p>Door-to-door near-vision screening and distribution of reading glasses. Scalable, self-paced, digital training to efficitly upskill Frontline Workers.<br><br></p>
             <div class="stat-strip">
               <div class="ps"><div class="n">100%</div><div class="l">Pass Rate after Supervision</div></div>
               <div class="ps"><div class="n">$1.50</div><div class="l">Per pair</div></div>
@@ -6290,12 +6135,12 @@
           </div>
         </a>
 
-        <a class="prog-card" id="prog-chlorine" data-program="chlorine" data-category="gw" href="#/programs/chlorine-dispenser">
+        <a class="prog-card" id="prog-chlorine" data-program="chlorine" data-category="gw" href="#/programs/chlorine-dispenser" style="position: relative;">
+          <span class="badge-soon" style="background: var(--marigold); color: var(--ink);">Program In Development</span>
           <div class="photo-block ph-chlorine">
             <span class="photo-label">Graphic · Chlorine dispenser at water point</span>
           </div>
           <div class="body">
-            <span class="badge-soon" style="background: var(--marigold); color: var(--ink);">Program In Development</span>
             <span class="sector">General Wellbeing</span>
             <h3>Chlorine Dispensers</h3>
             <p class="countries">Nigeria · Launching 2026</p>
@@ -6303,7 +6148,7 @@
             <div class="stat-strip">
               <div class="ps"><div class="n">$1M</div><div class="l">GiveWell grant</div></div>
               <div class="ps"><div class="n">~40%</div><div class="l">Diarrhea reduction</div></div>
-              <div class="ps"><div class="n">2026</div><div class="l">Launch year</div></div>
+              <div class="ps"><div class="n">2026</div><div class="l">Launch year<br><br></div></div>
             </div>
             <div class="meta"><span>Funder: GiveWell</span><span class="more">Learn More →</span></div>
           </div>
@@ -6316,26 +6161,27 @@
           <div class="body">
             <span class="sector">General Wellbeing</span>
             <h3>Mental Health</h3>
-            <p class="countries">India · Uganda</p>
-            <p>Community-based mental health screening and support.</p>
-            <div class="meta"><span>Group Therapy · WellMe</span><span class="more">Learn More →</span></div>
+            <p class="countries">Uganda · Ethiopia</p>
+            <p>Locally Led Organizations deploy Frontline Workers to facilitate evidence-based group therapy for depression.</p>
+            <div class="meta"><span>Partners: Nama Wellness, World Vision</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
-        <a class="prog-card" id="prog-survey" data-program="survey" data-category="fr" href="#/programs/survey-data-collection">
+        <a class="prog-card" id="prog-survey" data-program="survey" data-category="fr" href="#/programs/survey-data-collection" style="position: relative;">
+          <span class="badge-soon" style="background: var(--marigold); color: var(--ink);">Program In Development</span>
           <div class="photo-block ph-survey">
             <span class="photo-label">Photo · Household interview</span>
           </div>
           <div class="body">
             <span class="sector">Field Research</span>
-            <h3>Survey &amp; Data Collection</h3>
-            <p class="countries">Multi-country</p>
-            <p>Structured household surveys for development research.</p>
+            <h3>Interview</h3>
+            <p class="countries">Nigeria · Launching 2026</p>
+            <p>Frontline Workers answer stakeholder questions via AI chatbot. 5,000 interviews targeted across 1,500+ workers.</p>
             <div class="meta"><span>Funder: GiveWell</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
-        <a class="prog-card is-soon" id="prog-rutf" data-program="rutf" data-category="mc" href="#/programs" style="position: relative;">
+        <a class="prog-card" id="prog-rutf" data-program="rutf" data-category="mc" href="#/programs/therapeutic-food" style="position: relative;">
           <span class="badge-soon" style="background: var(--marigold); color: var(--ink);">Program In Development</span>
           <div class="photo-block ph-nutrition">
             <span class="photo-label">Photo · Therapeutic food distribution</span>
@@ -6343,26 +6189,25 @@
           <div class="body">
             <span class="sector">Mothers &amp; Children</span>
             <h3>Therapeutic Food</h3>
-            <p class="countries">Multi-country</p>
-            <p>Ready-to-use therapeutic food for children with severe acute malnutrition. $1M grant via the Children's Investment Fund Foundation.</p>
+            <p class="countries">Nigeria · Piloting 2025</p>
+            <p>Frontline Workers digitally trained to deliver home-based RUTF treatment for children with Severe Acute Malnutrition (SAM). Nurse-led LLO teams, verified visit-by-visit. Targeting $30/case. 18-month pilot in northern Nigeria.</p>
             <div class="meta"><span>Funder: Children's Investment Fund Foundation</span><span class="more">Learn More →</span></div>
           </div>
         </a>
 
-        <a class="prog-card is-soon" id="prog-rooftop" data-program="rooftop" data-category="fr" href="#/programs" style="position: relative;">
+        <a class="prog-card" id="prog-rooftop" data-program="rooftop" data-category="fr" href="#/programs/rooftop-sampling" style="position: relative;">
           <span class="badge-soon" style="background: var(--marigold); color: var(--ink);">Program In Development</span>
           <div class="photo-block ph-environment">
-            <span class="photo-label">Photo · Air quality sampling</span>
+            <span class="photo-label">Method · Satellite building data</span>
           </div>
           <div class="body">
             <span class="sector">Field Research</span>
             <h3>Rooftop Sampling</h3>
-            <p class="countries">Multi-country</p>
-            <p>Air quality and rainwater runoff sampling for environmental health research.</p>
-            <div class="meta"><span>Research partnership</span><span class="more">Learn More →</span></div>
+            <p class="countries">Nigeria · Sokoto, Gombe, Borno</p>
+            <p>GPS-navigated household surveys using satellite building footprints as a sampling frame. Frontline Workers as enumerators — no prior survey experience required. Piloted across 996 households in 3 states.<br><br></p>
+            <div class="meta"><span>Field Tested in 2025</span><span class="more">Learn More →</span></div>
           </div>
         </a>
-
       </div>
     </div>
   </div>
@@ -6390,27 +6235,27 @@
         <div class="chc-hero-text">
           <span class="eyebrow on-dark">Connect Program Area</span>
           <h1>Child Health <em>Campaigns</em></h1>
-          <p class="lede">Door-to-door delivery of high-impact child health services, vitamin A, deworming, oral rehydration salts, malnutrition screening, and immunization promotion, to children under five. Verified visit by visit, paid only for what's confirmed.</p>
+          <p class="lede">Door-to-door delivery of high-impact child health services, Vitamin A, deworming, oral rehydration salts, malnutrition screening, and immunization promotion, to children under five. Verified visit by visit, paid only for what's confirmed.</p>
           <div class="hero-actions">
             <a href="#/join" class="btn primary">Run a campaign</a>
             <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
           </div>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle" role="img" aria-label="Frontline worker performing MUAC malnutrition screening on a child during a Child Health Campaign visit."></div>
+          <div class="photo-circle" role="img" aria-label="Frontline Worker performing MUAC malnutrition screening on a child during a Child Health Campaign visit."></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- What is involved in a Child Health Campaign — services bundle (moved up) -->
+  <!-- What is involved in a Child Health Campaign — services bundle -->
   <div class="section warm">
     <div class="wrap">
       <div class="sec-head">
         <div class="label-group">
           <span class="eyebrow">Inside a Child Health Campaign</span>
           <h2>What is involved in a <em>Child Health Campaign</em>?</h2>
-          <p class="sub">A Child Health Campaign is a coordinated push where frontline workers move household-to-household across a defined area, delivering a bundle of high-impact services to every child under five they reach. Every service is logged, photographed, and independently verified before payment.</p>
+          <p class="sub">A Child Health Campaign is a coordinated push where Frontline Workers move household-to-household across a defined area, delivering a bundle of high-impact services to every child under five they reach. Every service is logged, photographed, and independently verified before payment.</p>
         </div>
       </div>
 
@@ -6423,8 +6268,9 @@
             </svg>
           </span>
           <span class="explore-tag">Service 1</span>
-          <h4>Vitamin A supplementation</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">A single oral dose of vitamin A reduces under-five mortality by an estimated 12–24%. Connect campaigns reach children in the homes their families couldn't bring them out of.</p>
+          <h4>Vitamin A Supplementation</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Vitamin A is one of the cheapest ways to save a child's life: roughly $1 per capsule, with an estimated 4-12% reduction in under-five mortality. The hard part isn't the capsule — it's reaching the children. That's what Connect campaigns are built to do.</p>
+          <a href="http://givewell.org/international/technical/programs/vitamin-A" target="_blank" rel="noopener" style="display: block; text-align: right; margin: 10px 32px 0; font-size: 11px; font-family: var(--mono); color: var(--muted); text-decoration: none; white-space: nowrap;">Source: GiveWell ↗</a>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -6435,7 +6281,7 @@
           </span>
           <span class="explore-tag">Service 2</span>
           <h4>Deworming</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Albendazole or mebendazole for children with soil-transmitted helminth exposure. Routine deworming improves nutritional status, school attendance, and growth in high-prevalence areas.</p>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Albendazole or Mebendazole for children with soil-transmitted helminth exposure. Routine deworming improves nutritional status, school attendance, and growth in high-prevalence areas.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -6444,8 +6290,8 @@
             </svg>
           </span>
           <span class="explore-tag">Service 3</span>
-          <h4>Oral rehydration salts (ORS)</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Distribution and caregiver coaching on ORS, the highest-impact, lowest-cost diarrhea response in low-resource settings. Currently delivered as part of the Nigeria bundle.</p>
+          <h4>Oral Rehydration Salts (ORS)</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Distribution and caregiver coaching on ORS, the highest-impact, lowest-cost diarrhea response in low-resource settings.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -6458,8 +6304,8 @@
             </svg>
           </span>
           <span class="explore-tag">Service 4</span>
-          <h4>Malnutrition screening</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">MUAC measurement and visual assessment for wasting. Children with red or yellow readings are referred into the local treatment pathway. Data flows back to inform the next campaign cycle.</p>
+          <h4>Malnutrition Screening</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Mid-Upper Arm Circumference (MUAC) measurement and visual assessment for wasting. Children with red or yellow readings are referred into the local treatment pathway. Data flows back to inform the next campaign cycle.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -6472,7 +6318,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 5</span>
-          <h4>Immunization promotion</h4>
+          <h4>Immunization Promotion</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Caregiver counseling on routine immunization, with referral to the nearest catch-up site. Several partners independently mobilized faith and community leaders to drive coverage.</p>
         </div>
       </div>
@@ -6492,21 +6338,22 @@
           <span class="hero-stats-tag">Stats</span>
           <div class="hero-stats-items">
             <div><div class="num">1M+</div><div class="label">Verified visits</div></div>
-            <div><div class="num">8</div><div class="label">Countries</div></div>
+            <div><div class="num">9</div><div class="label">Countries</div></div>
             <div><div class="num">$1.70</div><div class="label">Per verified visit</div></div>
           </div>
         </div>
         <div class="hero-stats-row">
           <span class="hero-stats-tag">Current Countries</span>
           <div class="hero-stats-countries">
-            <span>Sierra Leone</span>
-            <span>Nigeria</span>
-            <span>Democratic Republic of the Congo</span>
-            <span>Uganda</span>
+            <span>CAR</span>
+            <span>DRC</span>
             <span>Kenya</span>
+            <span>Liberia</span>
+            <span>Nigeria</span>
+            <span>Sierra Leone</span>
             <span>Tanzania</span>
+            <span>Uganda</span>
             <span>Zambia</span>
-            <span class="paused">Central African Republic <em>paused</em></span>
           </div>
         </div>
       </div>
@@ -6520,7 +6367,7 @@
         <div class="chc-kenya-text">
           <span class="eyebrow">Program Area in Action</span>
           <h2>Delivering Child Health Services <em>in Kenya</em>.</h2>
-          <p class="sub">Frontline Workers from Kikapu Gardens, a locally-led organization in Kenya, walk through their day delivering Child Health Campaign services with Connect. Trained workers visit households door-to-door, providing vitamin A, deworming, and malnutrition screening to children under five.</p>
+          <p class="sub">Frontline Workers from Kikapu Gardens, a Locally Led Organization in Kenya, walk through their day delivering Child Health Campaign services with Connect. Trained workers visit households door-to-door, providing vitamin A, deworming, and malnutrition screening to children under five.</p>
           <p class="sub">Hear from the organization's staff, the workers themselves, and the families whose children received care.</p>
         </div>
         <div class="chc-kenya-video">
@@ -6557,36 +6404,54 @@
       </div>
 
       <div class="insight-list" style="margin-top: 28px;">
-        <article class="insight-row">
-          <div class="meta-side"><b>Cost</b>Pay cycle</div>
-          <div class="body">
-            <h4>Cost per verified visit fell 22%, from $2.20 to $1.70, as the program scaled.</h4>
-            <p>Nigeria with the ORS bundle: $1.30. Outside Nigeria with vitamin A and deworming only: $0.78. We report cost-per-verified-outcome, not cost-per-worker-trained, because the others hide the lever that matters.</p>
-          </div>
-          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span></div>
+        <article class="insight-row" data-programs="chc" data-ldvp="pay">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>Frontline Activity</b>Pay
+        </div>
+        <div class="body">
+          <h4>Total cost per verified visit fell 22%, from $2.20 to $1.70, as the program scaled.</h4>
+          <p>That figure is Connect's all-in cost per visit, including commodities, LLO payments, setup, and product cost. The biggest driver of the drop was setup costs falling from ~$0.40 to ~$0.10 per visit as we moved past early-stage inefficiencies. We report cost-per-verified-outcome rather than cost-per-worker-trained because it's the number that actually matters.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Founders Pledge Final Report</span>
+        </div>
         </article>
 
-        <article class="insight-row">
-          <div class="meta-side"><b>Partners</b>Deliver cycle</div>
-          <div class="body">
-            <h4>We invented the Trial Run because pre-vetting partners didn't predict performance.</h4>
-            <p>Past reputation, team size, references, none of it told us if a partner organization would actually deliver. So we contracted small first. Of 37 partners, 24 ran Trial Runs. 10 underperformed. 3 went straight to scale on prior evidence.</p>
-          </div>
-          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span></div>
+        <article class="insight-row" data-programs="chc platform" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>Frontline Activity</b>Deliver
+        </div>
+        <div class="body">
+          <h4>Pre-vetting didn't predict performance. So we started contracting small.</h4>
+          <p>Past reputation, team size, references, none of it told us if a partner organization would actually deliver. So we contracted small first. Of 37 partners, 24 ran trial runs. 10 underperformed. 3 were selected to scale based on their performance.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Founders Pledge Final Report</span>
+        </div>
         </article>
 
-        <article class="insight-row">
-          <div class="meta-side"><b>Mobilization</b>Deliver cycle</div>
-          <div class="body">
-            <h4>5 of 7 partner organizations leveraged religious leaders for vaccine outreach before we asked.</h4>
-            <p>Locally-Led Organizations independently mobilized imams, pastors, village elders, and community-recommended frontline workers. The platform didn't teach this, they already knew. Our job is to get out of their way.</p>
-          </div>
-          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span></div>
-        </article>
+        <article class="insight-row" data-programs="chc" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Child Health Campaign<br><br>
+          <b>Frontline Activity</b>Deliver
+        </div>
+        <div class="body">
+          <h4>5 of 7 partner organizations leveraged religious leaders for vaccine outreach before we asked.</h4>
+          <p>Locally Led Organizations independently mobilized imams, pastors, village elders, and community-recommended Frontline Workers. The platform didn't teach this, they already knew.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Stage 2 Report (Feb 2026)</span>
+        </div>
+      </article>
       </div>
 
       <div style="text-align: center; margin-top: 36px;">
-        <a href="#/insights" class="btn ghost">See all Child Health Campaign insights →</a>
+        <a href="#/insights" class="btn ghost">See all Campaign insights →</a>
       </div>
     </div>
   </div>
@@ -6603,12 +6468,12 @@
 
 </section>
 
-<!-- ================================ KANGAROO MOTHER CARE, PROGRAM DETAIL ================================ -->
+<!-- ================================ Kangaroo Care, PROGRAM DETAIL ================================ -->
 <section class="page" data-page="/programs/kangaroo-mother-care">
 
   <div class="hero-dark hero-dark-chc">
     <div class="wrap">
-      <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span><a href="#/programs">Programs</a><span class="sep">/</span>Kangaroo Mother Care</div>
+      <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span><a href="#/programs">Programs</a><span class="sep">/</span>Kangaroo Care</div>
       <div class="chc-hero-grid">
         <div class="chc-hero-text">
           <span class="eyebrow on-dark">Connect Program Area</span>
@@ -6620,7 +6485,7 @@
           </div>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle" style="background: #2b2b2b url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-1.jpg' %}') center/cover no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Kangaroo Mother Care — home visits for small and vulnerable newborns."></div>
+          <div class="photo-circle" style="background: #2b2b2b url('{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-1.jpg' %}') center/cover no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Kangaroo Care — home visits for small and vulnerable newborns."></div>
         </div>
       </div>
     </div>
@@ -6631,8 +6496,8 @@
       <div class="sec-head">
         <div class="label-group">
           <span class="eyebrow">Inside a KMC Visit</span>
-          <h2>What is involved in a <em>Kangaroo Mother Care</em> visit?</h2>
-          <p class="sub">Each home visit is a structured clinical encounter. Frontline workers arrive with a scale, thermometer, pulse oximeter, and measuring tape. They assess weight, axillary temperature, respiratory rate, oxygen saturation, head circumference, and feeding. Danger signs trigger an automated referral before the worker leaves.</p>
+          <h2>What is involved in a <em>Kangaroo Care</em> visit?</h2>
+          <p class="sub">Each home visit is a structured clinical encounter. Frontline Workers arrive with a scale, thermometer, pulse oximeter, and measuring tape. They assess weight, axillary temperature, respiratory rate, oxygen saturation, head circumference, and feeding. Danger signs trigger an automated referral before the worker leaves.</p>
         </div>
       </div>
       <div class="explore-grid">
@@ -6646,7 +6511,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 1</span>
-          <h4>Weight monitoring</h4>
+          <h4>Weight Monitoring</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Calibrated scale used at every visit. Weight-for-age tracking identifies faltering growth before it becomes acute malnutrition. Workers log the reading directly into the app and flag any drop from the prior visit.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -6658,7 +6523,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 2</span>
-          <h4>Temperature assessment</h4>
+          <h4>Temperature Assessment</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Axillary temperature measured at every visit. Hypothermia is the leading preventable danger sign in small and vulnerable newborns. Any reading outside the normal range triggers an immediate referral pathway in the app.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -6669,7 +6534,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 3</span>
-          <h4>Oxygen saturation</h4>
+          <h4>Oxygen Saturation</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Pulse oximeter reading captures respiratory status at each visit. Low saturation is an early indicator of distress before visible symptoms appear. The reading is logged alongside respiratory rate and breathing observation.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -6679,7 +6544,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 4</span>
-          <h4>KMC coaching and feeding support</h4>
+          <h4>KMC Coaching and Feeding Support</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Workers coach caregivers on skin-to-skin positioning using Kangaroo wraps, observe a breastfeed, and support exclusive breastfeeding. Feeding difficulty is one of the earliest signals of clinical deterioration in small newborns. Mothers also receive emotional support — many face stigma and isolation after a high-risk birth.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -6691,8 +6556,8 @@
             </svg>
           </span>
           <span class="explore-tag">Service 5</span>
-          <h4>Danger sign screening and referral</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Structured checklist covering convulsions, jaundice, difficulty breathing, poor feeding, hypothermia, and abnormal skin color — with automatic referral generation when any is flagged. Workers do not leave until a referral plan is confirmed with the family. Facility linkages are pre-established by the LLO.</p>
+          <h4>Danger Sign Screening and Referral</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Structured checklist covering convulsions, jaundice, difficulty breathing, poor feeding, hypothermia, and abnormal skin color — with automatic referral generation when any is flagged. Workers do not leave until a referral plan is confirmed with the family. Facility linkages are pre-established.</p>
         </div>
       </div>
     </div>
@@ -6702,22 +6567,22 @@
     <div class="wrap">
       <div class="sec-head">
         <div class="label-group">
-          <h2>Kangaroo Mother Care:<br><em>At A Glance</em></h2>
+          <h2>Kangaroo Care:<br><em>At A Glance</em></h2>
         </div>
       </div>
       <div class="hero-stats">
         <div class="hero-stats-row">
           <span class="hero-stats-tag">Program Stats</span>
           <div class="hero-stats-items">
-            <div><div class="num">4,005</div><div class="label">Cases tracked</div></div>
-            <div><div class="num">$36</div><div class="label">Per newborn, all-in</div></div>
-            <div><div class="num">50K</div><div class="label">Uganda 2-yr target</div></div>
+            <div><div class="num">5k+</div><div class="label">Cases tracked</div></div>
+            <div><div class="num">$36</div><div class="label">Per newborn</div></div>
+            <div><div class="num">50K</div><div class="label">Uganda 2-yr case target</div></div>
           </div>
         </div>
         <div class="hero-stats-row">
           <span class="hero-stats-tag">Global Context</span>
           <div class="hero-stats-items">
-            <div><div class="num">40%</div><div class="label">Mortality reduction possible with KMC (WHO)</div></div>
+            <div><div class="num">40%</div><div class="label">Mortality reduction possible with KMC</div></div>
             <div><div class="num">&lt;5%</div><div class="label">Current global KMC coverage</div></div>
             <div><div class="num">2.3M</div><div class="label">Neonatal deaths per year</div></div>
           </div>
@@ -6725,10 +6590,10 @@
         <div class="hero-stats-row">
           <span class="hero-stats-tag">Active Countries</span>
           <div class="hero-stats-countries">
-            <span>Uganda</span>
-            <span>Nigeria</span>
             <span>India</span>
-            <span class="paused">Kenya <em>pilot</em></span>
+            <span>Kenya</span>
+            <span>Nigeria</span>
+            <span>Uganda</span>
           </div>
         </div>
       </div>
@@ -6741,13 +6606,13 @@
         <div class="chc-kenya-text">
           <span class="eyebrow">Partner Story · NAWEC, Uganda</span>
           <h2>Nantume Madrine's baby <em>came home early</em>.</h2>
-          <p class="sub">When Nantume Madrine's premature baby was discharged from a hospital in Mukono District, Uganda, she had almost no support. A NAWEC frontline worker enrolled her in Connect KMC within days. The baby thrived.</p>
+          <p class="sub">When Nantume Madrine's premature baby was discharged from a hospital in Mukono District, Uganda, she had almost no support. A NAWEC Frontline Worker enrolled her in Connect KMC within days. The baby thrived.</p>
           <p class="sub">NAWEC trained 10 community health workers and reached 64 mother-baby pairs in Mukono in the first weeks of launch. Their post reads: <em>"This is more than data — it is life, dignity, and second chances."</em></p>
-          <p class="sub">Two Ugandan partner organizations have now committed to delivering Connect KMC to an additional 5,000 SVNs over the next year, expanding from Central Uganda into Eastern Uganda — with Uganda's Ministry of Health signing an MoU targeting 50,000 SVNs nationally over two years.</p>
+          <p class="sub">Two Ugandan partner organizations have now committed to delivering Connect KMC to an additional 5,000 Severely Vulnerable Newborns over the next year, expanding from Central Uganda into Eastern Uganda — with Uganda's Ministry of Health signing an MoU targeting 50,000 Severely Vulnerable Newborns nationally over two years.</p>
         </div>
         <div class="chc-kenya-video">
           <div style="border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 24px 60px -12px rgba(0,0,0,0.18);">
-            <img src="{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-3.jpg' %}" alt="NAWEC frontline worker conducting a Kangaroo Mother Care home visit with a mother and newborn in Mukono District, Uganda" style="width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover;">
+            <img src="{% static 'prelogin/images/Program%20Field%20Photos/KMC/kmc-3.jpg' %}" alt="NAWEC Frontline Worker conducting a Kangaroo Care home visit with a mother and newborn in Mukono District, Uganda" style="width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover;">
           </div>
         </div>
       </div>
@@ -6759,45 +6624,63 @@
       <div class="sec-head">
         <div class="label-group">
           <span class="eyebrow">What we've learned</span>
-          <h2>The numbers behind <em>Kangaroo Mother Care</em></h2>
+          <h2>The numbers behind <em>Kangaroo Care</em></h2>
           <p class="sub">KMC is the program where Connect first applied outcome-based payment to newborn health. A few of the published findings:</p>
         </div>
       </div>
       <div class="insight-list" style="margin-top: 28px;">
-        <article class="insight-row">
-          <div class="meta-side"><b>Enrollment timing</b>Verify</div>
-          <div class="body">
-            <h4>KMC 3-day enrollment target sits at 50% against a 70% goal. We publish the gap.</h4>
-            <p>If missing the 3-day window cost a worker money, they'd falsify dates and we'd see fake 100% compliance. So we treat it as a guardrail, not a payment criterion. We coach. We integrate hospital discharge notifications. We publish the real number — 50.2%, with a true mean of 6.05 days from discharge to first visit.</p>
-          </div>
-          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span></div>
+        <article class="insight-row" data-programs="kmc" data-ldvp="verify">
+        <div class="meta-side">
+          <b>Program Type</b>Kangaroo Care<br><br>
+          <b>Frontline Activity</b>Verify
+        </div>
+        <div class="body">
+          <h4>Kangaroo Care 3-day visits hit 50% against a 70% goal.</h4>
+          <p>If missing the window cost a worker money, we'd see suspiciously perfect compliance instead. So we treat it as a guardrail, not a payment criterion — we coach and integrate hospital discharge notifications to close the gap.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Conceptual Model (March 2026)</span>
+        </div>
         </article>
-        <article class="insight-row">
-          <div class="meta-side"><b>Data quality</b>Verify</div>
-          <div class="body">
-            <h4>One delivery opportunity has 100% null hospital discharge dates. We named it and are fixing it.</h4>
-            <p>Opportunity 524 predates our discharge-date guardrail. Every record from that opportunity is blank on the timeliness metric. Rather than hide the gap or backfill with estimates, we flag it in reporting, are working on a chart-review retrofit, and have formalized the guardrail for all future opportunities.</p>
-          </div>
-          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span></div>
+        <article class="insight-row" data-programs="kmc" data-ldvp="verify">
+        <div class="meta-side">
+          <b>Program Type</b>Kangaroo Care<br><br>
+          <b>Frontline Activity</b>Verify
+        </div>
+        <div class="body">
+          <h4>Average time to first newborn visit is 6.05 days, twice our 3-day target. Only 34% reach families inside the window.</h4>
+          <p>The headline 50% number understates the gap. The mean is 6.05 days. One delivery opportunity doesn't collect hospital discharge dates at all, so 100% of those records are blank on this metric — which means the real-world bottleneck is data plumbing, not worker effort.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Conceptual Model V1 (March 2026)</span>
+        </div>
         </article>
-        <article class="insight-row">
-          <div class="meta-side"><b>Cost</b>Pay</div>
-          <div class="body">
-            <h4>Connect KMC is $36 per newborn — small enough that one donor can fund one baby.</h4>
-            <p>That covers partner engagement, Kangaroo wraps, scales, thermometers, pulse oximeters, training, payment per verified case, and supervision. We chose KMC for our first individual-giving experiment because $36 is the smallest unit at which one donor can fund a complete intervention with verified delivery — and follow the outcome themselves.</p>
-          </div>
-          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span></div>
-        </article>
+        <article class="insight-row" data-programs="kmc" data-ldvp="pay">
+        <div class="meta-side">
+          <b>Program Type</b>Kangaroo Care<br><br>
+          <b>Frontline Activity</b>Pay
+        </div>
+        <div class="body">
+          <h4>$36 delivers one newborn through the Kangaroo Care program.</h4>
+          <p>That covers partner engagement, the Kangaroo wraps, scales, thermometers, pulse oximeters, training, payment per verified case, and supervision. We picked it for our first individual-giving experiment because $36 is the smallest unit at which one donor can fund a complete intervention with verified delivery.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Connect individual-giving blog (March-April 2026)</span>
+        </div>
+      </article>
       </div>
       <div style="text-align: center; margin-top: 36px;">
-        <a href="#/insights" class="btn ghost">See all KMC insights →</a>
+        <a href="#/insights" class="btn ghost">See all Campaign Insights →</a>
       </div>
     </div>
   </div>
 
   <div class="closing-cta">
     <div class="closing-inner">
-      <span class="eyebrow on-dark">Support Kangaroo Mother Care</span>
+      <span class="eyebrow on-dark">Support Kangaroo Care</span>
       <h2>$36 funds one newborn. <em>Verified delivery.</em></h2>
       <p class="lead">$36 covers the full Connect KMC cycle for one small and vulnerable newborn — Kangaroo wraps, scales, thermometers, pulse oximeters, FLW training, payment for visits, and supervision. Every dollar is tied to a verified outcome. Individual donors, foundations, and program funders all welcome.</p>
       <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-top: 8px;">
@@ -6819,7 +6702,7 @@
         <div class="chc-hero-text">
           <span class="eyebrow on-dark">Connect Program Area</span>
           <h1>Early Childhood <em>Development</em></h1>
-          <p class="lede">Home visits supporting responsive caregiving and early child development. Eight to ten structured visits over twelve months — building caregiver knowledge, observable teaching behavior, and child autonomy. Validated with 400 frontline workers across three countries.</p>
+          <p class="lede">Home visits supporting responsive caregiving and early child development. Multiple structured visits building caregiver knowledge, observable teaching behavior, and child autonomy. Validated with 400 Frontline Workers across three countries.</p>
           <div class="hero-actions">
             <a href="#/join" class="btn primary">Run a program</a>
             <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
@@ -6838,7 +6721,7 @@
         <div class="label-group">
           <span class="eyebrow">Inside an ECD Visit</span>
           <h2>What is involved in an <em>Early Childhood Development</em> visit?</h2>
-          <p class="sub">Each visit is a structured caregiver coaching session. Frontline workers guide parents through responsive interaction, model talk-and-play activities, discuss developmental milestones, and practice teaching behaviors with the caregiver. The intervention targets knowledge and observable behavior — not attitudes, which were already at ceiling before the program started.</p>
+          <p class="sub">Each visit is a structured caregiver coaching session. Frontline Workers guide parents through responsive interaction, model talk-and-play activities, discuss developmental milestones, and practice teaching behaviors with the caregiver. The intervention targets knowledge and observable behavior.</p>
         </div>
       </div>
       <div class="explore-grid">
@@ -6852,7 +6735,7 @@
             </svg>
           </span>
           <span class="explore-tag">Domain 1</span>
-          <h4>Responsive caregiving coaching</h4>
+          <h4>Responsive Caregiving Coaching</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Structured guidance on noticing and responding warmly to a child's cues. Workers use scenario-based coaching to build the habit of responsiveness across feeding, play, and daily routines — not just during the visit itself.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -6862,7 +6745,7 @@
             </svg>
           </span>
           <span class="explore-tag">Domain 2</span>
-          <h4>Talk-and-play facilitation</h4>
+          <h4>Talk-and-Play Facilitation</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Language-rich interaction and age-appropriate play activities for cognitive and language development. Workers model activities with available household materials — no kit required — and coach caregivers to continue between visits.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -6873,8 +6756,8 @@
             </svg>
           </span>
           <span class="explore-tag">Domain 3</span>
-          <h4>Developmental milestone education</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Knowledge building on what children are developmentally capable of at each age — and what caregiver behavior supports progression. Caregiver knowledge of rapid development timing improved +33% in the Malawi pilot.</p>
+          <h4>Developmental Milestone Education</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Knowledge building on what children are developmentally capable of at each age — and what caregiver behavior supports progression. Caregiver knowledge of rapid development timing improved 33% in the Malawi pilot.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -6883,8 +6766,8 @@
             </svg>
           </span>
           <span class="explore-tag">Domain 4</span>
-          <h4>Teaching behavior practice</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Observed teaching behavior improved +21% in the Malawi pilot. Workers do not just explain — they watch caregivers practice, give feedback, and code the quality of what they see using a structured visit checklist.</p>
+          <h4>Teaching Behavior Practice</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Observed teaching behavior improved 21% in the Malawi pilot. Workers do not just explain — they watch caregivers practice, give feedback, and code the quality of what they see using a structured visit checklist.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -6896,8 +6779,20 @@
             </svg>
           </span>
           <span class="explore-tag">Domain 5</span>
-          <h4>Encouragement of child autonomy</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Supporting children's exploration and independent problem-solving. The hardest sub-domain — 47% endline rate in Malawi — because it requires pattern-based behavior change across multiple interactions, not a single coaching session.</p>
+          <h4>Encouragement of Child Autonomy</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Supporting children's exploration and independent problem-solving. This is the hardest sub-domain because it requires pattern-based behavior change across multiple interactions, not a single coaching session.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              <line x1="9" y1="10" x2="15" y2="10"/>
+              <line x1="12" y1="7" x2="12" y2="13"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Domain 6</span>
+          <h4>AI-Powered Coach Bot</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">An in-app AI coach built on Dimagi's Open Chat Studio platform reinforces learning between visits. The coach runs daily — presenting practice scenarios, identifying knowledge gaps, and drilling motivational interviewing techniques like open-ended questions and reflective listening. At the end of each day it asks about how visits went and provides tailored feedback grounded in real experiences.</p>
         </div>
       </div>
     </div>
@@ -6914,9 +6809,9 @@
         <div class="hero-stats-row">
           <span class="hero-stats-tag">Stats</span>
           <div class="hero-stats-items">
-            <div><div class="num">27K+</div><div class="label">Visits delivered</div></div>
+            <div><div class="num">150K+</div><div class="label">Visits delivered</div></div>
             <div><div class="num">+33%</div><div class="label">Knowledge gain</div></div>
-            <div><div class="num">$7–18</div><div class="label">Per child</div></div>
+            <div><div class="num">85%</div><div class="label">Workers passed digital learning</div></div>
           </div>
         </div>
         <div class="hero-stats-row">
@@ -6941,33 +6836,45 @@
         </div>
       </div>
       <div class="insight-list" style="margin-top: 28px;">
-        <article class="insight-row">
-          <div class="meta-side"><b>Attitudes</b>Learn</div>
+        <article class="insight-row" data-programs="ecd" data-ldvp="learn">
+        <div class="meta-side">
+          <b>Program Type</b>Early Childhood Development<br><br>
+          <b>Frontline Activity</b>Learn
+        </div>
+        <div class="body">
+          <h4>Caregivers' parenting attitudes were already correct. We moved knowledge +33% and observed teaching +21%.</h4>
+          <p>A 50-caregiver baseline showed near-universal endorsement of responsive caregiving — attitudes weren't the gap. Knowledge and observed teaching practice were, and that's where we saw movement. We doubled the visit cadence in the next round.</p>
+        </div>
+        <div class="meta-side">
+          <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
+          <b>Source</b><span class="src-name">Malawi pilot, Feb 2026</span>
+        </div>
+      </article>
+        <article class="insight-row" data-programs="ecd" data-ldvp="learn">
+        <div class="meta-side">
+          <b>Program Type</b>Early Childhood Development<br><br>
+          <b>Frontline Activity</b>Learn
+        </div>
           <div class="body">
-            <h4>Caregivers' attitudes were already correct. We moved knowledge +33% and observed teaching +21%.</h4>
-            <p>A 50-caregiver baseline showed nearly all caregivers already endorsed responsive caregiving. The attitude gap we designed for wasn't there. The real gaps were knowledge and observable behavior — what caregivers knew to do, and what we could watch them doing in a visit. We redesigned around those targets and doubled the visit cadence in the next round.</p>
-          </div>
-          <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br><b>Source</b><span class="src-name">Malawi pilot, Feb 2026</span></div>
-        </article>
-        <article class="insight-row">
-          <div class="meta-side"><b>FLW competence</b>Learn</div>
-          <div class="body">
-            <h4>Knowledge isn't the same as competence. We have ~400 frontline workers of evidence.</h4>
-            <p>Workers who passed our digital test still struggled with nuanced in-home counseling. No single layer of training was sufficient. The five-layer model moved 85% of workers from training to active delivery, with 88% scoring above 70% on their first observed visit.</p>
+            <h4>Passing the digital test didn't mean passing the first real visit.  So we layered supervised visits.</h4>
+            <p>Workers who passed our digital test still struggled with nuanced in-home counseling. No single layer of training was sufficient. This improved with 78% of workers scoring above 80% during their first observed visits.  Average performance increased from 85% to 91% in the second observed visit.</p>
           </div>
           <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br><b>Source</b><span class="src-name">ECD Overview, Stage 2 Report</span></div>
         </article>
-        <article class="insight-row">
-          <div class="meta-side"><b>Autonomy</b>Deliver</div>
+        <article class="insight-row" data-programs="ecd" data-ldvp="deliver">
+        <div class="meta-side">
+          <b>Program Type</b>Early Childhood Development<br><br>
+          <b>Frontline Activity</b>Deliver
+        </div>
           <div class="body">
             <h4>Encouraging child autonomy is the hardest domain to move. 47% endline rate. We're still working on it.</h4>
-            <p>Autonomy encouragement requires consistent behavior change across many interactions — not a single coaching session. It's the sub-domain least moved by the current visit structure. We expanded from 3 to 8–10 visits per child specifically to give this target more runway. We don't know yet if it will be enough.</p>
+            <p>Autonomy encouragement requires consistent behavior change across many interactions — not a single coaching session. It's the sub-domain least moved by the current visit structure. We aim to expand from 3 to 8-10 visits per child specifically to give this target more runway. We don't know yet if it will be enough.</p>
           </div>
           <div class="meta-side"><b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br><b>Source</b><span class="src-name">ECD Overview, Stage 2 Report</span></div>
         </article>
       </div>
       <div style="text-align: center; margin-top: 36px;">
-        <a href="#/insights" class="btn ghost">See all ECD insights →</a>
+        <a href="#/insights" class="btn ghost">See all Campaign Insights →</a>
       </div>
     </div>
   </div>
@@ -6977,7 +6884,7 @@
       <span class="eyebrow on-dark">Run an Early Childhood Development program</span>
       <h2>Interested in supporting <em>early childhood development</em>?</h2>
       <p class="lead">Let's build a program together — starting with your target geography, age group, and budget. We'll come back with a delivery plan, a cost-per-child estimate, and a partner list.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Let's Design Your Program</a>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Let's Design Your Program</a>
     </div>
   </div>
 
@@ -6993,14 +6900,14 @@
         <div class="chc-hero-text">
           <span class="eyebrow on-dark">Connect Program Area</span>
           <h1>Reading <em>Glasses</em></h1>
-          <p class="lede">Door-to-door near-vision screening and presbyopia correction across northeast Nigeria. 15,000 pairs at $1.50 each. Two partner organizations, 32 frontline workers, 16 weeks. Ninety-two percent photo-verified.</p>
+          <p class="lede">Door-to-door near-vision screening and presbyopia correction across northeast Nigeria.</p>
           <div class="hero-actions">
             <a href="#/join" class="btn primary">Run a program</a>
             <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
           </div>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle" style="background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/Readers/readers-1.jpg' %}'), linear-gradient(135deg, #6B3060 0%, #3D1A50 60%, #FC5F36 100%); background-size: cover, cover; background-position: center, center;" role="img" aria-label="Frontline worker performing a near-vision screening with a beneficiary during the Reading Glasses program in northeast Nigeria."></div>
+          <div class="photo-circle" style="background-image: url('{% static 'prelogin/images/Program%20Field%20Photos/Readers/readers-1.jpg' %}'), linear-gradient(135deg, #6B3060 0%, #3D1A50 60%, #FC5F36 100%); background-size: cover, cover; background-position: center, center;" role="img" aria-label="Frontline Worker performing a near-vision screening with a beneficiary during the Reading Glasses program in northeast Nigeria."></div>
         </div>
       </div>
     </div>
@@ -7012,7 +6919,7 @@
         <div class="label-group">
           <span class="eyebrow">Inside a Reading Glasses Visit</span>
           <h2>What is involved in a <em>Reading Glasses</em> visit?</h2>
-          <p class="sub">A Reading Glasses visit is a two-part encounter: near-vision screening first, then distribution. Frontline workers screen adults 35 and older with a paper E-chart, identify the correct correction strength from five dioptre options, dispense the pair, and photograph the completed distribution for independent audit.</p>
+          <p class="sub">A Reading Glasses visit is a two-part encounter: near-vision screening first, then distribution. Frontline Workers screen adults aged 35 and older with a paper E-chart, identify the appropriate correction strength from five dioptre options, dispense the pair, and photograph the completed distribution for independent audit.</p>
         </div>
       </div>
       <div class="explore-grid">
@@ -7023,9 +6930,9 @@
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </span>
-          <span class="explore-tag">Service 1</span>
-          <h4>Near-vision screening</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Paper E-chart test administered door-to-door to identify presbyopia in adults 35 and older. Standardized distance and lighting conditions are part of the FLW certification protocol. Pre-training test averaged 36/100; post-training averaged 93.5/100.</p>
+          <span class="explore-tag">Component 1</span>
+          <h4>Near-Vision Screening</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Paper E-chart test administered door-to-door to identify presbyopia in adults aged 35 and older. Standardized distance and lighting conditions are part of the certification protocol. Pre-training test averaged 36/100; post-training averaged 93.5/100.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -7035,8 +6942,8 @@
               <line x1="8" y1="12" x2="16" y2="12"/>
             </svg>
           </span>
-          <span class="explore-tag">Service 2</span>
-          <h4>Dioptre selection</h4>
+          <span class="explore-tag">Component 2</span>
+          <h4>Dioptre Selection</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Five correction strengths available: +1.0, +1.5, +2.0, +2.5, and +3.0 dioptres. Workers test each beneficiary with the E-chart at the appropriate reading distance to identify the correct strength before dispensing.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -7047,8 +6954,8 @@
               <path d="M12 8v8"/>
             </svg>
           </span>
-          <span class="explore-tag">Service 3</span>
-          <h4>Reading glasses dispensing</h4>
+          <span class="explore-tag">Component 3</span>
+          <h4>Reading Glasses Dispensing</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Off-the-shelf reading glasses in the matched dioptre strength, handed directly to the beneficiary. Vision correction has been shown to increase work productivity up to 22% and income up to 33% for adults in visually-intensive occupations.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -7058,9 +6965,9 @@
               <circle cx="12" cy="13" r="4"/>
             </svg>
           </span>
-          <span class="explore-tag">Service 4</span>
-          <h4>Photo verification</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Every completed distribution is photographed live in the app — not from the gallery. A 10% random sample is manually audited by Network Managers. Q4 2025 Nigeria photo-verification pass rate: 92%.</p>
+          <span class="explore-tag">Component 4</span>
+          <h4>Photo Verification</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Every completed distribution is photographed live in the app. Photos are compared against specified criteria to ensure appropriate distribution.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -7069,37 +6976,9 @@
               <polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
           </span>
-          <span class="explore-tag">Service 5</span>
-          <h4>Dual-stage FLW certification</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Four self-paced digital modules, an 80%-threshold in-app test, then a two-day in-person practical evaluation supervised by the LLO. 98% of workers who passed the digital test also passed in-person certification.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="stats-cool">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="label-group">
-          <h2>Reading Glasses:<br><em>At A Glance</em></h2>
-        </div>
-      </div>
-      <div class="hero-stats">
-        <div class="hero-stats-row">
-          <span class="hero-stats-tag">Stats</span>
-          <div class="hero-stats-items">
-            <div><div class="num">15K</div><div class="label">Pairs delivered</div></div>
-            <div><div class="num">$1.50</div><div class="label">Per pair</div></div>
-            <div><div class="num">92%</div><div class="label">Photo audit pass</div></div>
-          </div>
-        </div>
-        <div class="hero-stats-row">
-          <span class="hero-stats-tag">Active Regions</span>
-          <div class="hero-stats-countries">
-            <span>Bauchi, Nigeria</span>
-            <span>Adamawa, Nigeria</span>
-            <span>Jigawa, Nigeria</span>
-          </div>
+          <span class="explore-tag">Component 5</span>
+          <h4>Dual-Stage Certification</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Four self-paced digital modules, an 80%-threshold in-app test, then a two-day in-person practical evaluation.</p>
         </div>
       </div>
     </div>
@@ -7109,47 +6988,16 @@
     <div class="wrap">
       <div class="chc-kenya-grid">
         <div class="chc-kenya-text">
-          <span class="eyebrow">Program Area in Action</span>
-          <h2>Two LLOs, <em>16 weeks</em>, northeast Nigeria.</h2>
-          <p class="sub">The Q4 2025 Nigeria cohort deployed two local organizations across Bauchi, Adamawa, and Jigawa. Thirty-two frontline workers completed dual-stage certification and began field delivery within 16 days of contract signing — one LLO activated in just 10 days.</p>
-          <p class="sub">54% of beneficiaries were women, higher than typical clinic-based programs in the region. The harder finding: only ~35 of 15,000 distributions were first-time presbyopia corrections. The door-to-door population already knew they had the condition. The next cohort is redesigned around that finding.</p>
+          <span class="eyebrow">Program in Action · Kenya Pilot</span>
+          <h2>Siaya County, Kenya — <em>1,239 Verified Distributions</em>.</h2>
+          <p class="sub">GlobCom — endorsed by the Siaya County Ministry of Health — deployed Community Health Promoters (CHPs) across their existing catchment areas in November–December 2024. 25 of 32 enrolled CHPs completed self-paced digital training and in-person certification before delivering services. A daily cap of 5 distributions kept incentives aligned with CHPs' existing core health duties.</p>
+          <p class="sub">1,387 household visits. 1,239 verified distributions. The platform flagged 26 duplicate registrations and rejected 30 shortened visits before payment was processed. Workers were paid 17–32 days after service delivery. Two months post-distribution: 12 of 19 recipients confirmed they were using their glasses — for bible study, reading, and phone use.</p>
         </div>
         <div class="chc-kenya-video">
           <div style="border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 24px 60px -12px rgba(0,0,0,0.18);">
-            <img src="{% static 'prelogin/images/Program%20Field%20Photos/Readers/readers-2.jpg' %}" alt="Frontline worker dispensing reading glasses to a beneficiary during door-to-door distribution in northeast Nigeria" style="width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover;">
+            <img src="{% static 'prelogin/images/Program%20Field%20Photos/Readers/readers-2.jpg' %}" alt="Frontline Worker dispensing reading glasses to a beneficiary during a door-to-door distribution visit in Siaya County, Kenya" style="width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover;">
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="label-group">
-          <span class="eyebrow">What we've learned</span>
-          <h2>The numbers behind <em>Reading Glasses</em></h2>
-          <p class="sub">Reading Glasses is Connect's first vision-care program and the first outside maternal and child health. It validated the platform across a clinical-screening encounter — and surfaced a hard finding about population targeting.</p>
-        </div>
-      </div>
-      <div class="insight-list" style="margin-top: 28px;">
-        <article class="insight-row" data-programs="readers" data-ldvp="pay">
-          <div class="meta-side">
-            <b>Program Type</b>Reading Glasses<br><br>
-            <b>Frontline Activity</b>Pay
-          </div>
-          <div class="body">
-            <h4>Reading Glasses Q4 2025 Nigeria delivered 15,000 pairs at $1.50, and only ~35 were first-time corrections.</h4>
-            <p>The cohort hit its target across two partner organizations in 16 weeks. Photo audit: 92%. Worker certification: 98%. The harder finding: the door-to-door population was largely already aware of their presbyopia. Our model of who needs reading glasses was wrong.</p>
-          </div>
-          <div class="meta-side">
-            <b>Tier</b><span class="tier-1">Tier 1 · Published</span><br><br>
-            <b>Source</b><span class="src-name">Connect-Readers KPIs sheet (March 2026)</span>
-          </div>
-        </article>
-      </div>
-      <div style="text-align: center; margin-top: 36px;">
-        <a href="#/insights" class="btn ghost">See all Reading Glasses insights →</a>
       </div>
     </div>
   </div>
@@ -7159,7 +7007,7 @@
       <span class="eyebrow on-dark">Run a Reading Glasses program</span>
       <h2>Interested in scaling <em>vision correction</em>?</h2>
       <p class="lead">Let's build a program together — starting with your target geography and scale. We'll come back with a delivery plan, a cost-per-pair estimate, and a list of organizations ready to run with.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Let's Design Your Program</a>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Let's Design Your Program</a>
     </div>
   </div>
 
@@ -7175,9 +7023,9 @@
         <div class="chc-hero-text">
           <span class="eyebrow on-dark">Connect Program Area</span>
           <h1>Mother Baby <em>Wellness</em></h1>
-          <p class="lede">Frontline-delivered coaching across two evidence-based interventions: breastfeeding promotion from antenatal through the first six months, and maternal mental health support using WHO's Problem Management Plus. Six structured home visits, verified through the Connect platform and paid per confirmed outcome. Funded by a GiveWell design grant. Piloting in Nigeria 2026.</p>
+          <p class="lede">Frontline delivered coaching across two evidence-based interventions: breastfeeding promotion from antenatal through the first six months, and maternal mental health support using WHO's Problem Management Plus. Six structured home visits, verified through the Connect platform and paid per confirmed outcome.</p>
           <div class="hero-actions">
-            <a href="mailto:info@dimagi.com" class="btn primary">Get in touch</a>
+            <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in touch</a>
             <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
           </div>
         </div>
@@ -7194,7 +7042,7 @@
         <div class="label-group">
           <span class="eyebrow">Two Components · Six Visits</span>
           <h2>What is involved in <em>Mother Baby Wellness</em>?</h2>
-          <p class="sub">The program delivers two evidence-based interventions through six structured home visits: breastfeeding promotion from the antenatal period through complementary feeding introduction, and maternal mental health coaching using Problem Management Plus (PM+). Both are delivered by trained frontline workers, verified through the Connect platform, and paid per confirmed visit.</p>
+          <p class="sub">The program delivers two evidence-based interventions through six structured home visits: breastfeeding promotion from the antenatal period through complementary feeding introduction, and maternal mental health coaching using Problem Management Plus (PM+). Both are delivered by trained Frontline Workers, verified through the Connect platform, and paid per confirmed visit.</p>
         </div>
       </div>
 
@@ -7209,22 +7057,18 @@
               <path d="M12 6v6l4 2"/>
             </svg>
           </span>
-          <span class="explore-tag">Visits 1–2 · Antenatal</span>
-          <h4>Breastfeeding preparation</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Counseling before birth on the importance of exclusive breastfeeding, what to expect in the first days, and how to prepare for early latch. Frontline workers address misconceptions and build household support before the baby arrives.</p>
+          <span class="explore-tag">Visits 1-2 · Antenatal</span>
+          <h4>Breastfeeding Preparation</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Counseling before birth on the importance of exclusive breastfeeding, what to expect in the first days, and how to prepare for early latch. Frontline Workers address misconceptions and build household support before the baby arrives.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
-              <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
-              <line x1="6" y1="1" x2="6" y2="4"/>
-              <line x1="10" y1="1" x2="10" y2="4"/>
-              <line x1="14" y1="1" x2="14" y2="4"/>
+              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
             </svg>
           </span>
-          <span class="explore-tag">Visits 3–4 · 0–6 Weeks</span>
-          <h4>Early breastfeeding establishment</h4>
+          <span class="explore-tag">Visits 3-4 · 0-6 Weeks</span>
+          <h4>Early Breastfeeding Establishment</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Workers observe a breastfeed, assess latch and positioning, and address the most common barriers to exclusive breastfeeding in the first weeks — pain, perceived low supply, and family pressure to supplement. Evidence suggests programs like this can increase exclusive breastfeeding rates by up to 48%.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -7233,8 +7077,8 @@
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
             </svg>
           </span>
-          <span class="explore-tag">Visits 5–6 · 6 Weeks–6 Months</span>
-          <h4>Sustained feeding and complementary transition</h4>
+          <span class="explore-tag">Visits 5-6 · 6 Weeks-6 Months</span>
+          <h4>Sustained Feeding and Complementary Transition</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Support to maintain exclusive breastfeeding through six months, followed by counseling on the safe introduction of complementary foods. Workers reinforce feeding cues, responsive feeding, and appropriate meal frequency and diversity.</p>
         </div>
       </div>
@@ -7250,8 +7094,8 @@
             </svg>
           </span>
           <span class="explore-tag">Mental Health · PM+</span>
-          <h4>Problem Management Plus coaching</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">WHO's Problem Management Plus (PM+) is a 5-session brief psychological intervention — transdiagnostic, meaning no formal diagnosis is required. It targets depression, anxiety, and stress using strategies including problem management, behavioral activation, social support strengthening, and psychoeducation. Designed specifically for delivery by trained non-professional community health volunteers, it has been validated in RCTs including with women affected by gender-based violence in Kenya.</p>
+          <h4>Problem Management Plus Coaching</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">WHO's Problem Management Plus (PM+) is a 5-session brief psychological intervention — transdiagnostic, meaning no formal diagnosis is required. It targets depression, anxiety, and stress using strategies including problem management, behavioral activation, social support strengthening, and psychoeducation. Designed specifically for delivery by trained non-professional community health volunteers, it has been validated in Randomized Controlled Trials including with women affected by gender-based violence in Kenya.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -7263,8 +7107,8 @@
             </svg>
           </span>
           <span class="explore-tag">Mental Health · Wellbeing</span>
-          <h4>Resilience and emotional support</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Structured check-ins on maternal wellbeing, practical problem-solving techniques, and stress management strategies — each session using motivational interviewing and relapse prevention to build lasting change. Workers are trained to identify postpartum depression symptoms and refer when clinical support is needed, with referral pathways pre-established by the LLO before first delivery.</p>
+          <h4>Resilience and Emotional Support</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Structured check-ins on maternal wellbeing, practical problem-solving techniques, and stress management strategies — each session using motivational interviewing and relapse prevention to build lasting change. Workers are trained to identify postpartum depression symptoms and refer when clinical support is needed, with referral pathways pre-established before first delivery.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -7277,8 +7121,8 @@
             </svg>
           </span>
           <span class="explore-tag">Digital · AI Coach</span>
-          <h4>AI chatbot reinforcement</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Between visits, frontline workers access an AI chatbot for content reinforcement, troubleshooting, and post-session debriefs using motivational interviewing. The system also identifies workers lacking content mastery and flags them for supervisor follow-up. A potential client-facing layer for direct breastfeeding guidance is in design. This AI coaching architecture is novel — no existing effectiveness evidence yet, and that's a known open question.</p>
+          <h4>AI Chatbot Reinforcement</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Between visits, Frontline Workers access an AI chatbot for content reinforcement, troubleshooting, and post-session debriefs using motivational interviewing. The system also identifies workers lacking content mastery and flags them for supervisor follow-up. A potential client-facing layer for direct breastfeeding guidance is in design.</p>
         </div>
       </div>
     </div>
@@ -7289,7 +7133,7 @@
       <div class="sec-head">
         <div class="label-group">
           <h2>Mother Baby Wellness:<br><em>Piloting 2026</em></h2>
-          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">GiveWell awarded $320,356 in November 2024 to design and test the Mother Baby Wellness program on CommCare Connect. A 15-month design-and-pilot phase is underway, targeting approximately 2,000 mother-baby pairs across Nigeria. Data and results will be published as the pilot completes.</p>
+          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">GiveWell awarded $320,356 in November 2024 to design and test the Mother Baby Wellness program on Connect. A 15-month design-and-pilot phase is underway, targeting approximately 2,000 mother-baby pairs across Nigeria. Data and results will be published as the pilot completes.</p>
           <a href="https://www.givewell.org/research/grants/dimagi-mother-baby-wellness-coaching-comm-care-connect-ccc-mbw-program-design-november-2024" target="_blank" rel="noopener" style="display: inline-block; margin-top: 12px; color: var(--mango); font-size: 14px; font-weight: 600; text-decoration: none; letter-spacing: 0.01em;">See the Grant →</a>
         </div>
       </div>
@@ -7299,7 +7143,7 @@
           <div class="hero-stats-items">
             <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">$320K</div><div class="label">GiveWell design grant</div></div>
             <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">2,000</div><div class="label">Target pilot pairs, Nigeria</div></div>
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">+48%</div><div class="label">Potential BF rate increase (evidence)</div></div>
+            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">+48%</div><div class="label">Potential BF rate increase</div></div>
           </div>
         </div>
       </div>
@@ -7313,8 +7157,7 @@
           <span class="eyebrow">The gap we're closing</span>
           <h2>Nearly half of all under-five deaths happen <em>in the first month</em>.</h2>
           <p class="sub">Neonatal mortality is declining more slowly than post-neonatal mortality. The window immediately after birth — when most families have returned home but before postnatal clinic follow-up begins — is the single most under-supported period in the maternal and child health continuum.</p>
-          <p class="sub" style="margin-top: 16px;">The evidence for the two interventions is strong: structured breastfeeding promotion programs can increase exclusive breastfeeding rates by up to 48%. Problem Management Plus (PM+) is a WHO-endorsed brief psychological intervention shown to reduce depression and improve wellbeing in low-resource settings. Neither has been consistently delivered at scale through verified, performance-paid frontline workers. That is the gap MBW is designed to close.</p>
-          <p class="sub" style="margin-top: 16px;">GiveWell forecasts 95% confidence that Dimagi will successfully design a deployable MBW module by April 2026, with a follow-on operational pilot — projected at approximately $710,000 to reach 35,000 mother-baby pairs over 18 months — contingent on pilot results.</p>
+          <p class="sub" style="margin-top: 16px;">The evidence for the two interventions is strong: structured breastfeeding promotion programs can increase exclusive breastfeeding rates by up to 48%. Problem Management Plus (PM+) is a WHO-endorsed brief psychological intervention shown to reduce depression and improve wellbeing in low-resource settings. Neither has been consistently delivered at scale through verified, performance-paid Frontline Workers. That is the gap MBW is designed to close.</p>
         </div>
       </div>
     </div>
@@ -7325,7 +7168,7 @@
       <span class="eyebrow on-dark">Support Mother Baby Wellness</span>
       <h2>Interested in <em>postnatal care</em> at scale?</h2>
       <p class="lead">We're actively designing the Mother Baby Wellness program. If you're interested in co-designing, funding, or piloting, reach out. We'd like to build it with you.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Get in Touch</a>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in Touch</a>
     </div>
   </div>
 
@@ -7372,7 +7215,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 1</span>
-          <h4>Dispenser installation</h4>
+          <h4>Dispenser Installation</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Chlorine dispensers are mounted directly at communal water points — boreholes, hand pumps, and collection taps — so households can self-dispense chlorine into their containers as they collect water. Installation is coordinated with local health authorities and water point operators.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -7383,8 +7226,8 @@
             </svg>
           </span>
           <span class="explore-tag">Service 2</span>
-          <h4>Household education</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Door-to-door visits to every household in the program area. Frontline workers demonstrate correct chlorine dosing, explain how chlorinated water prevents diarrhea, and address common household-level barriers to adoption — including taste concerns, confusion about dosage, and beliefs about water safety.</p>
+          <h4>Household Education</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Door-to-door visits to every household in the program area. Frontline Workers demonstrate correct chlorine dosing, explain how chlorinated water prevents diarrhea, and address common household-level barriers to adoption — including taste concerns, confusion about dosage, and beliefs about water safety.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -7393,7 +7236,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 3</span>
-          <h4>Safe water storage counseling</h4>
+          <h4>Safe Water Storage Counseling</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Guidance on storing treated water safely at home — covered containers, dedicated water vessels, hand-washing at water collection — to prevent recontamination after chlorination. Chlorinated water remains safe for up to 72 hours when stored correctly.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
@@ -7406,8 +7249,8 @@
             </svg>
           </span>
           <span class="explore-tag">Service 4</span>
-          <h4>Community mobilization</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Engaging community leaders, water point operators, and faith networks to drive adoption. Local organizations with existing community relationships recruit the frontline workers who deliver household education — the same locally-led model used across every Connect program.</p>
+          <h4>Community Mobilization</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Engaging community leaders, water point operators, and faith networks to drive adoption. Local organizations with existing community relationships recruit the Frontline Workers who deliver household education — the same locally led model used across every Connect program.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -7416,7 +7259,7 @@
             </svg>
           </span>
           <span class="explore-tag">Service 5</span>
-          <h4>Usage monitoring and refill</h4>
+          <h4>Usage Monitoring and Refill</h4>
           <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Regular checks on dispenser stock levels and usage rates. Empty dispensers are refilled; broken units are reported for repair. Monitoring data is captured in the Connect app, giving program managers real-time visibility on coverage and adoption across the deployment area.</p>
         </div>
       </div>
@@ -7428,8 +7271,8 @@
       <div class="sec-head">
         <div class="label-group">
           <h2>Chlorine Dispenser:<br><em>Launching 2026</em></h2>
-          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">GiveWell awarded a $1M grant in January 2026 to launch chlorine dispenser installation and household education across Nigeria. The program is part of GiveWell's $19.7M Safe Water portfolio — 18 grants to 12+ organizations delivering safe water across West and East Africa. Field data will be published as the program launches.</p>
-          <a href="https://blog.givewell.org/2025/10/29/safe-water-projects-saving-lives-and-improving-our-grantmaking/" target="_blank" rel="noopener" style="display: inline-block; margin-top: 12px; color: var(--mango); font-size: 14px; font-weight: 600; text-decoration: none; letter-spacing: 0.01em;">See the GiveWell Blog →</a>
+          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">GiveWell awarded a $1M grant in January 2026 to launch chlorine dispenser installation and household education across Nigeria. The program is part of GiveWell's $19.7M Safe Water portfolio — 18 grants to 12+ organizations delivering safe water across West and East Africa. Data and findings will be published as the program launches.</p>
+          <a href="https://blog.givewell.org/2025/10/29/safe-water-projects-saving-lives-and-improving-our-grantmaking/" target="_blank" rel="noopener" style="display: inline-block; margin-top: 12px; color: rgba(255,255,255,0.72); font-size: 14px; font-weight: 600; text-decoration: none; letter-spacing: 0.01em;">See the GiveWell Blog →</a>
         </div>
       </div>
       <div class="hero-stats">
@@ -7437,7 +7280,6 @@
           <span class="hero-stats-tag">Program Details</span>
           <div class="hero-stats-items">
             <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">$1M</div><div class="label">GiveWell grant</div></div>
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">~40%</div><div class="label">Diarrhea reduction (chlorination evidence)</div></div>
             <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">2026</div><div class="label">Launch year · Nigeria</div></div>
           </div>
         </div>
@@ -7461,7 +7303,7 @@
           <h2>Why chlorine? Because it <em>works at scale</em>.</h2>
           <p class="sub">Chlorination is one of the most robustly evidenced low-cost water interventions in global health. Point-of-collection dispensers — liquid chlorine mounted directly at hand pumps and communal water points — consistently outperform household-level filters and sachets on adoption, because the behavior change is smaller: chlorinate at the tap, not at home.</p>
           <p class="sub" style="margin-top: 16px;">Evidence Action's Dispensers for Safe Water program, the model Dimagi's program is informed by, has reached over 5 million people across Kenya, Uganda, and Malawi. GiveWell's Safe Water portfolio — which now includes Dimagi — projects 2,000+ deaths averted across 18 active grants, mostly in children under five. The Connect platform adds verified household education delivery on top of the physical dispenser infrastructure.</p>
-          <p class="sub" style="margin-top: 16px;">Technical assistance for Dimagi's program is provided by Evidence Action. Baseline and endline surveys are conducted by independent external firms. Chlorine has limited effectiveness against Cryptosporidium — the program targets bacterial and viral pathogens, which account for the majority of diarrheal disease burden in the target geographies.</p>
+          <p class="sub" style="margin-top: 16px;">Technical assistance for Connect's program is provided by Evidence Action. Baseline and endline surveys are conducted by independent external firms. Chlorine has limited effectiveness against Cryptosporidium — the program targets bacterial and viral pathogens, which account for the majority of diarrheal disease burden in the target geographies.</p>
         </div>
       </div>
     </div>
@@ -7472,7 +7314,7 @@
       <span class="eyebrow on-dark">Support Chlorine Dispenser</span>
       <h2>Interested in <em>safe water</em> at scale?</h2>
       <p class="lead">We're launching the Chlorine Dispenser program in Nigeria in 2026. If you're interested in co-funding, designing, or expanding to additional geographies, reach out.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Get in Touch</a>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in Touch</a>
     </div>
   </div>
 
@@ -7487,15 +7329,15 @@
       <div class="chc-hero-grid">
         <div class="chc-hero-text">
           <span class="eyebrow on-dark">Connect Program Area</span>
-          <h1>Mental <em>Health</em></h1>
-          <p class="lede">More than 75% of people with mental health conditions in low-income countries receive no treatment. Connect's Mental Health program closes that gap — community-based screening and brief psychological support delivered by trained frontline workers, using WHO's Problem Management Plus. Piloting in Uganda.</p>
+          <h1>Group Therapy for <em>Depression</em></h1>
+          <p class="lede">Depression affects over 280 million people globally — and fewer than 25% in low- and middle-income countries ever receive care. Connect's Mental Health program deploys Locally Led Organizations to facilitate structured group therapy using WHO's evidence-based IPT-G (Interpersonal Group Therapy) and gPM+ (Group Problem Management Plus) protocols. Trained Frontline Worker facilitators run weekly sessions with groups of 6–8 participants. Every session is app-guided, digitally verified, and paid only when confirmed.</p>
           <div class="hero-actions">
-            <a href="mailto:info@dimagi.com" class="btn primary">Get in touch</a>
+            <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in touch</a>
             <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
           </div>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle" style="background: #FCEFCC url('{% static 'prelogin/images/Program%20Area%20Graphics/mental-health.svg' %}') center/auto 50% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Mental Health — community-based screening and support."></div>
+          <div class="photo-circle" style="background: #FCEFCC url('{% static 'prelogin/images/Program%20Area%20Graphics/mental-health.svg' %}') center/auto 50% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Mental Health — community group therapy for depression and anxiety."></div>
         </div>
       </div>
     </div>
@@ -7505,187 +7347,22 @@
     <div class="wrap">
       <div class="sec-head">
         <div class="label-group">
-          <span class="eyebrow">Inside the Program</span>
-          <h2>What is involved in a <em>Mental Health</em> visit?</h2>
-          <p class="sub">Each visit is a structured screening and support encounter. Frontline workers use validated tools to identify individuals at risk, deliver brief psychological interventions, and refer those requiring clinical care. The program targets common mental disorders — depression, anxiety, and stress — using approaches designed for delivery by trained non-professional community health workers.</p>
+          <span class="eyebrow">How It Works</span>
+          <h2>From facilitator training to <em>verified group session</em>.</h2>
+          <p class="sub">Connect applies its Learn-Deliver-Verify-Pay model to group therapy. Locally Led Organizations recruit and manage facilitators, who receive digital training and then run structured weekly group sessions — tracked session by session, paid per verified completion.</p>
         </div>
       </div>
       <div class="explore-grid">
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 11l3 3L22 4"/>
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
             </svg>
           </span>
-          <span class="explore-tag">Service 1</span>
-          <h4>Mental health screening</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Validated screening tools — including the PHQ-9 and GAD-7 — administered by trained frontline workers to identify individuals experiencing depression, anxiety, or significant psychological distress. Screening is structured within the Connect app, which flags scores above clinical thresholds for immediate follow-up action.</p>
-        </div>
-        <div class="explore-card" style="cursor: default;">
-          <span class="service-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-          </span>
-          <span class="explore-tag">Service 2</span>
-          <h4>Problem Management Plus (PM+) coaching</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">WHO's Problem Management Plus is a 5-session brief psychological intervention validated for delivery by non-professional community health workers. Transdiagnostic and low-resource in design, it targets depression, anxiety, and stress using problem management, behavioural activation, social support strengthening, and psychoeducation — no clinical diagnosis required.</p>
-        </div>
-        <div class="explore-card" style="cursor: default;">
-          <span class="service-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
-              <line x1="9" y1="9" x2="9.01" y2="9"/>
-              <line x1="15" y1="9" x2="15.01" y2="9"/>
-            </svg>
-          </span>
-          <span class="explore-tag">Service 3</span>
-          <h4>Resilience and coping support</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Structured check-ins on wellbeing between PM+ sessions, reinforcing coping strategies and building lasting behaviour change through motivational interviewing. Workers track progress against emotional wellbeing indicators across visits — providing continuity of care within the community rather than requiring clinic attendance.</p>
-        </div>
-        <div class="explore-card" style="cursor: default;">
-          <span class="service-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-          </span>
-          <span class="explore-tag">Service 4</span>
-          <h4>Referral and clinical linkage</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Automated referral pathways for individuals with severe symptoms or safety concerns. Frontline workers do not leave without confirming a referral plan for flagged cases. Facility linkages are pre-established with local health authorities before program launch — the same pre-registered referral model used across all Connect programs.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="stats-cool">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="label-group">
-          <h2>Mental Health:<br><em>Piloting in Uganda</em></h2>
-          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">The Connect Mental Health program applies the same verified, performance-paid delivery model to community-based psychological support. A pilot is underway in Uganda, targeting individuals in communities already served by Connect frontline worker networks.</p>
-        </div>
-      </div>
-      <div class="hero-stats">
-        <div class="hero-stats-row">
-          <span class="hero-stats-tag">Program Details</span>
-          <div class="hero-stats-items">
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">5</div><div class="label">PM+ sessions per participant</div></div>
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">Uganda</div><div class="label">Pilot country</div></div>
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">1 in 4</div><div class="label">People globally affected by mental disorder</div></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="label-group">
-          <span class="eyebrow">The gap we're closing</span>
-          <h2>Most mental health need in LMICs goes <em>completely unmet</em>.</h2>
-          <p class="sub">In low- and middle-income countries, more than 75% of people with mental health conditions receive no treatment. Specialist services are scarce, expensive, and concentrated in urban centres. Community health workers — already trusted, already deployed, already reaching the last mile — are the only workforce with the footprint to close that gap.</p>
-          <p class="sub" style="margin-top: 16px;">Problem Management Plus was developed by the WHO specifically because of this reality: an evidence-based brief psychological intervention simple enough for non-professionals to deliver with training, and robust enough to show clinically meaningful reductions in depression and anxiety in RCTs conducted in conflict-affected and low-resource settings. Connect adds verified delivery and performance-based payment on top — ensuring the intervention is actually reaching the people it is designed to serve.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="closing-cta">
-    <div class="closing-inner">
-      <span class="eyebrow on-dark">Support Mental Health</span>
-      <h2>Interested in <em>community mental health</em> at scale?</h2>
-      <p class="lead">We're piloting the Connect Mental Health program in Uganda. If you're interested in funding, co-designing, or expanding this work, reach out.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Get in Touch</a>
-    </div>
-  </div>
-
-</section>
-
-<!-- ================================ SURVEY & DATA COLLECTION, PROGRAM DETAIL ================================ -->
-<section class="page" data-page="/programs/survey-data-collection">
-
-  <div class="hero-dark hero-dark-chc">
-    <div class="wrap">
-      <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span><a href="#/programs">Programs</a><span class="sep">/</span>Survey &amp; Data Collection</div>
-      <div class="chc-hero-grid">
-        <div class="chc-hero-text">
-          <span class="eyebrow on-dark">Connect Program Area</span>
-          <h1>Survey &amp; Data <em>Collection</em></h1>
-          <p class="lede">Structured household surveys for development research and program evaluation, delivered by trained frontline workers using CommCare on Android. High-quality data collection at scale — with verified enumerator visits, real-time quality checks, and a $225K GiveWell grant backing the platform.</p>
-          <div class="hero-actions">
-            <a href="mailto:info@dimagi.com" class="btn primary">Get in touch</a>
-            <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
-          </div>
-        </div>
-        <div class="chc-hero-photo">
-          <div class="photo-circle" style="background: #e9ecef url('{% static 'prelogin/images/Program%20Area%20Graphics/survey-data-collection.svg' %}') center/auto 50% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Survey and Data Collection — household surveys for development research."></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="section warm">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="label-group">
-          <span class="eyebrow">Inside the Program</span>
-          <h2>What is involved in a <em>Survey &amp; Data Collection</em> program?</h2>
-          <p class="sub">Frontline workers conduct structured household interviews using CommCare on Android devices. Every visit is GPS-stamped, time-logged, and verified through the Connect platform. Real-time validation rules flag data quality issues before the enumerator leaves the household — eliminating the back-office cleaning that degrades research timelines and budgets.</p>
-        </div>
-      </div>
-      <div class="explore-grid">
-        <div class="explore-card" style="cursor: default;">
-          <span class="service-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
-              <line x1="16" y1="13" x2="8" y2="13"/>
-              <line x1="16" y1="17" x2="8" y2="17"/>
-              <polyline points="10 9 9 9 8 9"/>
-            </svg>
-          </span>
-          <span class="explore-tag">Service 1</span>
-          <h4>Structured household interviews</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Frontline workers administer structured questionnaires at the household level using CommCare. Forms are built with skip logic, constraint validation, and multimedia prompts — reducing enumerator error and improving interview consistency across large teams and geographies.</p>
-        </div>
-        <div class="explore-card" style="cursor: default;">
-          <span class="service-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.07 4.93A10 10 0 0 1 21 12a10 10 0 0 1-2.93 7.07"/>
-              <path d="M4.93 4.93A10 10 0 0 0 3 12a10 10 0 0 0 1.93 5.93"/>
-            </svg>
-          </span>
-          <span class="explore-tag">Service 2</span>
-          <h4>GPS and time verification</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Every interview is logged with GPS coordinates and visit timestamps. Location and duration checks identify outlier records — unusually fast completions, duplicate visits, or implausible location clusters — before they enter the dataset. Visit verification is built into the payment flow, not bolted on afterward.</p>
-        </div>
-        <div class="explore-card" style="cursor: default;">
-          <span class="service-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-            </svg>
-          </span>
-          <span class="explore-tag">Service 3</span>
-          <h4>Real-time data quality checks</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Inline validation rules catch range errors, missing values, and logical inconsistencies at point of capture. Supervisors see data quality dashboards in real time — identifying enumerators with high error rates, geographic gaps in coverage, and incomplete sampling frames before fieldwork closes.</p>
-        </div>
-        <div class="explore-card" style="cursor: default;">
-          <span class="service-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-              <line x1="8" y1="21" x2="16" y2="21"/>
-              <line x1="12" y1="17" x2="12" y2="21"/>
-            </svg>
-          </span>
-          <span class="explore-tag">Service 4</span>
-          <h4>Offline-first data collection</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">CommCare operates fully offline — forms are completed on Android devices and synced when connectivity is available. No data loss from dropped connections. Suitable for rural and peri-urban geographies where reliable internet access during interviews cannot be assumed.</p>
+          <span class="explore-tag">Learn</span>
+          <h4>Facilitator Training &amp; Certification</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Frontline Worker facilitators complete digital training on their assigned protocol — IPT-G or gPM+. The IPT-G curriculum runs approximately 35 hours; facilitators must pass in-app certification before being assigned groups. Training covers how to run sessions, track participant wellbeing using validated tools like the PHQ-9, and manage safety referrals.</p>
         </div>
         <div class="explore-card" style="cursor: default;">
           <span class="service-icon" aria-hidden="true">
@@ -7696,9 +7373,31 @@
               <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
             </svg>
           </span>
-          <span class="explore-tag">Service 5</span>
-          <h4>Enumerator management and payment</h4>
-          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Frontline workers are paid per verified completed interview through the Connect platform. Supervisor approval workflows, performance dashboards, and mobile money disbursement are built in — removing the administrative overhead that makes high-quality field research expensive and slow to scale.</p>
+          <span class="explore-tag">Deliver</span>
+          <h4>Weekly Group Sessions</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Facilitators run structured weekly sessions with groups of 6-8 participants. IPT-G runs 8 sessions per intervention; gPM+ runs 5 weekly sessions. The Connect app guides the facilitator through each session — providing step-by-step prompts, counselling scripts, and structured activities. Each facilitator manages up to 4 concurrent groups. Locally Led Organizations assign cases, manage rosters, and supervise facilitators.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 11 12 14 22 4"/>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Verify</span>
+          <h4>Session-by-Session Verification</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Dimagi runs verification algorithms on each submitted session: GPS-based location checks, session duration (flagging sessions that are too short), and real-time data entry requirements. Claims that fail verification are rejected — and the partner organization is told why.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23"/>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Pay</span>
+          <h4>Pay per Verified Session</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Facilitators are paid per confirmed, verified session — not per training completed or group enrolled. Locally Led Organizations receive payment after Dimagi's verification algorithms clear each session's data. Scores are tracked at midline and endline to monitor participant outcomes alongside delivery metrics.</p>
         </div>
       </div>
     </div>
@@ -7708,17 +7407,173 @@
     <div class="wrap">
       <div class="sec-head">
         <div class="label-group">
-          <h2>Survey &amp; Data Collection:<br><em>At A Glance</em></h2>
-          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">GiveWell awarded $225,000 to support the CommCare Connect platform's application to development research and field data collection. The program is active across multiple countries, enabling research organisations to deploy high-quality enumerator teams with verified visit data.</p>
+          <h2>Group Therapy at <em>$25 per person treated</em>.</h2>
+          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">Three self-funded validation pilots achieved $50 per person treated. Connect is now working with existing LLO partners to drive that cost below $25 — unlocking 40,000 people treated for every $1M of funding.</p>
         </div>
       </div>
       <div class="hero-stats">
         <div class="hero-stats-row">
-          <span class="hero-stats-tag">Program Details</span>
+          <span class="hero-stats-tag">Program Model</span>
           <div class="hero-stats-items">
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">$225K</div><div class="label">GiveWell grant</div></div>
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">Multi-country</div><div class="label">Active geographies</div></div>
-            <div><div class="num" style="font-size: clamp(18px, 2.2vw, 26px); letter-spacing: -0.01em;">100%</div><div class="label">Offline-capable data collection</div></div>
+            <div><div class="num">$25</div><div class="label">Target cost per person treated</div></div>
+            <div><div class="num">40k</div><div class="label">People treated per $1M</div></div>
+            <div><div class="num">655+</div><div class="label">Women and girls treated — Nama pilot</div></div>
+            <div><div class="num">3+</div><div class="label">Validation pilots completed</div></div>
+          </div>
+        </div>
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Countries</span>
+          <div class="hero-stats-countries">
+            <span>Uganda</span>
+            <span>Ethiopia</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">Program in Action</span>
+          <h2>Pilot partners delivering <em>group therapy at scale</em>.</h2>
+          <p class="sub">Three Locally Led Organizations have piloted group therapy and validated the model. Each brings local trust, clinical backing, and a pathway to government integration.</p>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 32px;">
+        <div style="background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px 32px;">
+          <span style="font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Uganda · IPT-G</span>
+          <h4 style="font-size: 17px; font-weight: 700; margin: 10px 0 10px; color: var(--ink);">Nama Wellness Center</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.65;">Introduced IPT-G in 2021, treating depression and anxiety in 655 women and girls to date. Connect's IPT-G app supported the initial pilot of 50 clients. Nama, in collaboration with Uganda's Ministry of Health, is scaling to three districts — targeting 1,200 women and girls.</p>
+        </div>
+        <div style="background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px 32px;">
+          <span style="font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Uganda · IPT-G</span>
+          <h4 style="font-size: 17px; font-weight: 700; margin: 10px 0 10px; color: var(--ink);">Komo Learning Centres</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.65;">Worked with locally hired facilitators to deliver school-based IPT-G sessions for over 50 children under the age of 18. Backed by Uganda's Ministry of Education — demonstrating the model's adaptability beyond adult clinical populations.</p>
+        </div>
+        <div style="background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px 32px;">
+          <span style="font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;">Ethiopia · gPM+</span>
+          <h4 style="font-size: 17px; font-weight: 700; margin: 10px 0 10px; color: var(--ink);">World Vision Ethiopia</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.65;">Building on the USAID-funded SPIR II program in Tigray — where the target population exceeds 80,000 — WVE deployed 120 Frontline Workers across a 5-week gPM+ pilot, running 3–4 groups each and supporting over 2,000 individuals. Backed by Ethiopia's Ministry of Health.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">Fund Group Therapy</span>
+      <h2>The <em>most cost-effective</em>mental health program we know of.</h2>
+      <p class="lead">If you're interested in funding sessions, co-designing the program, or bringing it to a new context, reach out.</p>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in Touch</a>
+    </div>
+  </div>
+
+</section>
+<!-- ================================ INTERVIEW, PROGRAM DETAIL ================================ -->
+<section class="page" data-page="/programs/survey-data-collection">
+
+  <div class="hero-dark hero-dark-chc">
+    <div class="wrap">
+      <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span><a href="#/programs">Programs</a><span class="sep">/</span>Interview</div>
+      <div class="chc-hero-grid">
+        <div class="chc-hero-text">
+          <span class="eyebrow on-dark">Connect Program Area</span>
+          <h1>Connect <em>Interview</em></h1>
+          <p class="lede">Turns Frontline Workers into a rapid research network. Stakeholders submit questions, an AI chatbot interviews workers via in-app messaging, and Dimagi delivers transcripts, translations, and AI-generated summaries within two weeks. Workers opt in and are paid per quality interview. Piloting in Nigeria 2026.</p>
+          <div class="hero-actions">
+            <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in touch</a>
+            <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
+          </div>
+        </div>
+        <div class="chc-hero-photo">
+          <div class="photo-circle" style="background: #e9ecef url('{% static 'prelogin/images/Program%20Area%20Graphics/survey-data-collection.svg' %}') center/auto 50% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program area graphic for Survey and Data Collection — AI-powered field interviews with Frontline Workers."></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section warm">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">How Connect Interview Works</span>
+          <h2>Four steps from <em>question to insight</em>.</h2>
+          <p class="sub">Each interview round takes approximately two weeks, end to end, from question development to completed analysis. Stakeholders get transcripts, English translations where needed, and AI-generated summaries. Workers are paid per quality response — and only the best continue to be offered interviews.</p>
+        </div>
+      </div>
+      <div class="explore-grid">
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 1</span>
+          <h4>Stakeholder Submits Questions</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">A stakeholder provides a set of questions to Dimagi. Questions are programmed into the AI chatbot — along with probing follow-ups.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 2</span>
+          <h4>AI Chatbot Interviews Frontline Workers</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Workers opt in through Connect's WhatsApp-like in-app messaging. The AI chatbot — built on Dimagi's Open Chat Studio — conducts the interview, probes for clarity, and follows up on incomplete answers. Operates in Hausa and other low-resource languages.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 3</span>
+          <h4>Quality Rating and Payment</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Responses are rated by AI and human labeling for clarity and completeness. Workers who deliver higher-quality responses continue to be offered paid interviews.
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 4</span>
+          <h4>Transcripts, Translations, and Summaries Delivered</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Dimagi delivers full interview transcripts, English translations where needed, and AI-generated summaries to the stakeholder — within two weeks of question submission. Faster and cheaper than in-person qualitative research at comparable scale.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-cool">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <h2>Connect Interview:<br><em>Piloting in Nigeria 2026</em></h2>
+          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">GiveWell awarded grant to develop and pilot Connect Interview over 6 months in Nigeria. The program will run 20 interview rounds, targeting 5,000 quality interviews from at least 1,500 Frontline Workers — averaging 250 participating workers per round.</p>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Program Scale</span>
+          <div class="hero-stats-items">
+            <div><div class="num">5,000</div><div class="label">Target quality interviews</div></div>
+            <div><div class="num">1,500+</div><div class="label">Target Frontline Workers</div></div>
+            <div><div class="num">20</div><div class="label">Interview rounds over 12 months</div></div>
+          </div>
+        </div>
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Countries</span>
+          <div class="hero-stats-countries">
+            <span>Nigeria</span>
           </div>
         </div>
       </div>
@@ -7730,9 +7585,9 @@
       <div class="sec-head">
         <div class="label-group">
           <span class="eyebrow">Why it matters</span>
-          <h2>Better data means <em>better programs</em>.</h2>
-          <p class="sub">Development research and program evaluation depend on high-quality field data — but most household survey data is collected with low verification, high error rates, and long lags between fieldwork and analysis. Enumerators are paid regardless of whether interviews were genuinely conducted. Supervision happens after the fact, when errors are already baked in.</p>
-          <p class="sub" style="margin-top: 16px;">Connect applies the same verified delivery model to data collection that it applies to health and nutrition programs. Enumerators are paid per verified completed interview. GPS and time checks happen at the point of submission. Data quality dashboards are live during fieldwork — not reviewed weeks later. The result is a field research dataset that researchers can trust, and a cost-per-interview that reflects actual work performed.</p>
+          <h2>Frontline Workers are the closest thing to <em>ground truth</em>.</h2>
+          <p class="sub">Frontline Workers are embedded in the communities where development programs operate. They see what program data misses: what caregivers actually believe, what barriers look like at the household level, what's changing and what isn't. Getting that signal has historically required expensive in-person qualitative research — slow, hard to repeat, and difficult to scale.</p>
+          <p class="sub" style="margin-top: 16px;">Connect Interview makes that signal accessible on demand. Stakeholders can query a standing network of verified Frontline Workers in two weeks, in low-resource languages, at a fraction of the cost of traditional qualitative fieldwork. And because workers are paid for quality — not just participation — the answers are worth something.</p>
         </div>
       </div>
     </div>
@@ -7740,15 +7595,290 @@
 
   <div class="closing-cta">
     <div class="closing-inner">
-      <span class="eyebrow on-dark">Use Connect for Field Research</span>
-      <h2>Need high-quality <em>survey data</em> at scale?</h2>
-      <p class="lead">Connect supports household survey programs across multiple countries. If you're designing a baseline survey, endline evaluation, or large-scale data collection program, reach out.</p>
-      <a href="mailto:info@dimagi.com" class="btn primary">Get in Touch</a>
+      <span class="eyebrow on-dark">Run an interview round</span>
+      <h2>Questions you need <em>answered from the field</em>?</h2>
+      <p class="lead">Connect Interview is piloting in Nigeria in 2026. If you're interested in running an interview round or co-designing the program, reach out.</p>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in Touch</a>
     </div>
   </div>
 
 </section>
 
+<!-- ================================ THERAPEUTIC FOOD, PROGRAM DETAIL ================================ -->
+<section class="page" data-page="/programs/therapeutic-food">
+
+  <div class="hero-dark hero-dark-chc">
+    <div class="wrap">
+      <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span><a href="#/programs">Programs</a><span class="sep">/</span>Therapeutic Food</div>
+      <div class="chc-hero-grid">
+        <div class="chc-hero-text">
+          <span class="eyebrow on-dark">Connect Program Area</span>
+          <h1>Therapeutic <em>Food</em></h1>
+          <p class="lede">Frontline Workers digitally trained to deliver home-based treatment for children with Severe Acute Malnutrition (SAM) using Ready-to-Use Therapeutic Food (RUTF). Each visit guided by the Connect app — decision support, RUTF dosing, counselling prompts, danger-sign checks — and verified with GPS, timestamps, and photos. Targeting $30 per case. Piloting in northern Nigeria, funded by the Children's Investment Fund Foundation.</p>
+          <div class="hero-actions">
+            <a href="#/join" class="btn primary">Run a program</a>
+            <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
+          </div>
+        </div>
+        <div class="chc-hero-photo">
+          <div class="photo-circle" style="background: #D9ECD4 url('{% static 'prelogin/images/Program%20Area%20Graphics/therapeutic-food.svg' %}') center/auto 55% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Program graphic for Therapeutic Food — RUTF home treatment for children with severe acute malnutrition."></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section warm">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">How It Works</span>
+          <h2>From MUAC screening to <em>recovery at home</em>.</h2>
+          <p class="sub">Connect builds on WHO's updated 2023 guidelines, which recognize that community health workers can deliver high-quality SAM treatment when properly trained and supervised. Every step is digitally guided, verified, and paid only when completed correctly.</p>
+        </div>
+      </div>
+      <div class="explore-grid">
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 1</span>
+          <h4>Digital Training &amp; Certification</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Frontline Workers complete self-paced, offline digital training on WHO SAM guidelines before delivering any care — covering MUAC screening, SAM diagnosis, RUTF dosing, counselling, and danger-sign recognition. Workers must pass in-app certification before they are assigned cases.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 2</span>
+          <h4>MUAC Screening &amp; Case Identification</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Workers use mid-upper arm circumference (MUAC) to screen children aged 6–59 months in the community. Cases of uncomplicated SAM are identified and assigned to a Frontline Worker by a supervising nurse. Children with danger signs or complicated SAM are referred to a health facility.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 3</span>
+          <h4>Guided Home Visits</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">At each home visit, the Connect app guides the worker through the full protocol: RUTF dosing calculation, counselling on feeding and hygiene, weight recording, and danger-sign checks. Decision support is built in — workers are prompted when dosing adjustments or referrals are needed.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 4</span>
+          <h4>Nurse-Led LLO Oversight</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Locally Led Organizations (LLOs) employ trained nurses who assign cases, supervise Frontline Workers, manage RUTF supply chains, and coordinate referrals. LLOs receive start-up funding and pay-per-verified-service contracts — aligning incentives with quality delivery and minimising leakage.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 5</span>
+          <h4>Digital Verification &amp; Payment</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Every visit is verified with GPS, timestamps, and photos before triggering payment. Workers are paid only for confirmed, quality visits. The platform collects continuous data on service delivery, child outcomes, and costs, enabling rigorous monitoring and rapid course correction.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-cool">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <h2>18-Month Pilot in <br><em>Northern Nigeria</em></h2>
+          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">The Children's Investment Fund Foundation (CIFF) is funding an 18-month pilot to develop and validate a scalable, low-cost model for community-based SAM treatment in northern Nigeria — with a target cost of $30 per case, excluding RUTF.</p>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Program Model</span>
+          <div class="hero-stats-items">
+            <div><div class="num">$30</div><div class="label">Target cost per case (excl. RUTF)</div></div>
+            <div><div class="num">18 mo.</div><div class="label">Pilot duration</div></div>
+            <div><div class="num">6–59</div><div class="label">Months — target age range</div></div>
+          </div>
+        </div>
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Countries</span>
+          <div class="hero-stats-countries">
+            <span>Nigeria</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">Why it matters</span>
+          <h2><em>Distance and cost</em> shouldn't decide who gets treated.</h2>
+          <p class="sub">Severe Acute Malnutrition affects tens of millions of children globally and is a leading cause of child mortality — yet most treatment requires repeated trips to a health facility, which many families cannot manage. WHO's updated 2023 guidelines recognize that community health workers can correctly screen, diagnose, and treat uncomplicated SAM when given adequate training, supervision, and motivation.</p>
+          <p class="sub" style="margin-top: 16px;">Connect brings together digital certification, guided delivery, nurse-led oversight, and pay-per-verified-visit to make that possible at scale. The 18-month CIFF-funded pilot in northern Nigeria will test whether this model can deliver high-quality care at $30 per case — and demonstrate a replicable blueprint for expanding SAM treatment beyond health facilities.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">Funder: Children's Investment Fund Foundation</span>
+      <h2>Bring <em>SAM treatment home</em>.</h2>
+      <p class="lead">If you're interested in running a therapeutic food program or co-funding the model, reach out.</p>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in Touch</a>
+    </div>
+  </div>
+
+</section>
+<!-- ================================ ROOFTOP SAMPLING, PROGRAM DETAIL ================================ -->
+<section class="page" data-page="/programs/rooftop-sampling">
+
+  <div class="hero-dark hero-dark-chc">
+    <div class="wrap">
+      <div class="breadcrumb"><a href="#/">Connect</a><span class="sep">/</span><a href="#/programs">Programs</a><span class="sep">/</span>Rooftop Sampling</div>
+      <div class="chc-hero-grid">
+        <div class="chc-hero-text">
+          <span class="eyebrow on-dark">Connect Research Method</span>
+          <h1>Rooftop <em>Sampling</em></h1>
+          <p class="lede">A GPS-navigated household survey method that uses satellite building footprints as a sampling frame — no household list required. Developed by IDinsight, piloted by Connect across 996 households in three Nigerian states with Frontline Workers as enumerators. Operationally feasible, statistically rigorous, and replicable across Connect programs.</p>
+          <div class="hero-actions">
+            <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in touch</a>
+            <a href="#/programs" class="btn ghost on-dark">← Back to all programs</a>
+          </div>
+        </div>
+        <div class="chc-hero-photo">
+          <div class="photo-circle" style="background: #DCE6F0 url('{% static 'prelogin/images/Program%20Area%20Graphics/building-sampling.svg' %}') center/auto 60% no-repeat; border: 3px solid rgba(255,255,255,0.18); box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);" role="img" aria-label="Rooftop sampling method graphic — GPS-navigated household survey using satellite building data."></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section warm">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <span class="eyebrow">How It Works</span>
+          <h2>Five steps from <em>satellite to doorstep</em>.</h2>
+          <p class="sub">Rooftop Sampling uses Google Open Buildings (1.8 billion structures) or Microsoft Building Footprints as a sampling frame — replacing the household lists that traditional surveys require. Enumerators navigate directly to GPS coordinates on their phone, no paper maps needed.</p>
+        </div>
+      </div>
+      <div class="explore-grid">
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M3 9h18M9 21V9"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 1</span>
+          <h4>Download Building Data</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Building footprints are downloaded from Google Open Buildings or Microsoft Building Footprints for the target geography. These satellite-derived datasets cover over 1.8 billion structures globally and require no in-country household list or census frame.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 2</span>
+          <h4>Filter Buildings</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Buildings are filtered by confidence score and minimum roof size to eliminate small structures unlikely to be residential. The result is a clean sampling frame of plausible households — without a single field visit.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 3</span>
+          <h4>Sample Buildings</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">A random or systematic sample is drawn from the filtered frame. In the Nigeria pilot, each enumerator received 40 GPS points organized into 5 clusters of 8 buildings — clustered to minimize travel time while maintaining geographic spread.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 4</span>
+          <h4>Navigate to GPS Coordinates</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">Enumerators navigate to sampled GPS points using their phone. In the Nigeria pilot, 80% arrived within 15m of the target building, and 98% of pins led to inhabited homes.</p>
+        </div>
+        <div class="explore-card" style="cursor: default;">
+          <span class="service-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </span>
+          <span class="explore-tag">Step 5</span>
+          <h4>Survey the Household</h4>
+          <p style="font-size: 14.5px; color: var(--ink-3); line-height: 1.6; flex-grow: 1;">At the doorstep, enumerators conduct the household survey. In the pilot, Frontline Workers with no prior survey experience served as enumerators — receiving GPS navigation training and supervision. The survey captured vaccination coverage, child health status, and other program indicators.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-cool">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="label-group">
+          <h2>Nigeria Pilot:<br><em>3 States, 996 Households</em></h2>
+          <p style="color: rgba(255,255,255,0.72); font-size: 16px; margin-top: 16px; max-width: 56ch; line-height: 1.65;">The pilot covered 5 wards across Sokoto, Gombe, and Borno states — approximately 200 households per ward, 1,846 children under five enumerated. Frontline Workers handled all fieldwork as enumerators with no prior survey experience.</p>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Pilot Scale</span>
+          <div class="hero-stats-items">
+            <div><div class="num">996</div><div class="label">Households surveyed</div></div>
+            <div><div class="num">1,846</div><div class="label">Children under five</div></div>
+            <div><div class="num">5</div><div class="label">Wards across 3 states</div></div>
+            <div><div class="num">98%</div><div class="label">Of GPS pins led to inhabited homes</div></div>
+          </div>
+        </div>
+        <div class="hero-stats-row">
+          <span class="hero-stats-tag">Countries</span>
+          <div class="hero-stats-countries">
+            <span>Nigeria</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="closing-cta">
+    <div class="closing-inner">
+      <span class="eyebrow on-dark">Independent Coverage Measurement</span>
+      <h2>Need to know what <em>actually happened</em> in the field?</h2>
+      <p class="lead">Rooftop Sampling provides a satellite-derived, GPS-navigated alternative to traditional household surveys — no household list required, Frontline Workers as enumerators. Reach out to explore a coverage validation study.</p>
+      <a href="mailto:connect-info@dimagi.com" class="btn primary">Get in Touch</a>
+    </div>
+  </div>
+
+</section>
 <!-- ================================ SIGN UP FOR CONNECT (NEW PAGE) ================================ -->
 <section class="page" data-page="/join">
 
@@ -7763,7 +7893,7 @@
           <p class="lede">Frontline organizations and workers run every Connect program. Here's how to plug in, and what changes when you do.</p>
         </div>
         <div class="chc-hero-photo">
-          <div class="photo-circle photo-join" role="img" aria-label="Frontline worker wearing a Kangaroo Care Ambassador vest, using the Connect app on a phone in Uganda."></div>
+          <div class="photo-circle photo-join" role="img" aria-label="Frontline Worker wearing a Kangaroo Care Ambassador vest, using the Connect app on a phone in Uganda."></div>
         </div>
       </div>
     </div>
@@ -7927,66 +8057,8 @@
       </div>
 
       <div style="border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 24px 60px -12px rgba(0,0,0,0.12); border: 1px solid var(--line); max-width: 1024px; margin: 0 auto;">
-        <img src="{% static 'prelogin/images/Program%20Area%20Graphics/where-we-work-map.jpg' %}" alt="Map showing where CommCare Connect operates across Sub-Saharan Africa and South Asia" style="display: block; width: 100%; height: auto;" loading="lazy" />
+        <img src="{% static 'prelogin/images/Program%20Area%20Graphics/where-we-work-map.svg' %}" alt="Map showing where CommCare Connect operates across Sub-Saharan Africa and South Asia" style="display: block; width: 100%; height: auto;" loading="lazy" />
       </div>
-    </div>
-  </div>
-
-  <!-- What Connect Users are Saying -->
-  <div class="section">
-    <div class="wrap">
-      <div class="sec-head">
-        <div class="label-group">
-          <span class="eyebrow">Testimonials</span>
-          <h2>Why Frontline Workers <em>love Connect</em>.</h2>
-          <p class="sub">Voices from across the network — frontline workers in the field and frontline organizations running the contracts.</p>
-        </div>
-      </div>
-
-      <div class="testimonial-grid">
-        <figure class="testimonial-card">
-          <div class="mark">&ldquo;</div>
-          <blockquote>We have been able to track 4,005 cases. Connect makes the data the case, not paperwork after the fact.</blockquote>
-          <figcaption class="who"><b>PIPNU</b><br>Uganda · Kangaroo Care</figcaption>
-        </figure>
-
-        {# import-time edit: 4 "coming soon" placeholder testimonial cards stripped on labs. Revisit when real testimonials replace them. #}
-        {% comment %}
-        <figure class="testimonial-card coming-soon with-photo">
-          <div class="photo-block ph-field-2"><span class="photo-label">Photo coming soon</span></div>
-          <div class="tc-body">
-            <div class="mark">&ldquo;</div>
-            <blockquote>Testimonial coming soon.</blockquote>
-            <figcaption class="who"><b>Coming soon</b><br>New voice from the network</figcaption>
-          </div>
-        </figure>
-
-<figure class="testimonial-card coming-soon with-photo">
-          <div class="photo-block ph-field-5"><span class="photo-label">Photo coming soon</span></div>
-          <div class="tc-body">
-            <div class="mark">&ldquo;</div>
-            <blockquote>Testimonial coming soon.</blockquote>
-            <figcaption class="who"><b>Coming soon</b><br>New voice from the network</figcaption>
-          </div>
-        </figure>
-
-        <figure class="testimonial-card coming-soon">
-          <div class="mark">&ldquo;</div>
-          <blockquote>Testimonial coming soon.</blockquote>
-          <figcaption class="who"><b>Coming soon</b><br>New voice from the network</figcaption>
-        </figure>
-
-        <figure class="testimonial-card coming-soon with-photo">
-          <div class="photo-block ph-field-3"><span class="photo-label">Photo coming soon</span></div>
-          <div class="tc-body">
-            <div class="mark">&ldquo;</div>
-            <blockquote>Testimonial coming soon.</blockquote>
-            <figcaption class="who"><b>Coming soon</b><br>New voice from the network</figcaption>
-          </div>
-        </figure>
-        {% endcomment %}
-      </div>
-
     </div>
   </div>
 
@@ -7997,7 +8069,7 @@
         <div class="label-group">
           <span class="eyebrow">Get started</span>
           <h2>Three ways <em>to join</em>.</h2>
-          <p class="sub">Fund a proven intervention, run delivery as a frontline organization, or pick up paid opportunities as a frontline worker.</p>
+          <p class="sub">Fund a proven intervention, run delivery as a frontline organization, or pick up paid opportunities as a Frontline Worker.</p>
         </div>
       </div>
 
@@ -8021,7 +8093,7 @@
             <li>Multi-layer verification confirms authenticity</li>
           </ul>
           <div class="role-action">
-            <a href="mailto:connect-info@dimagi.com" class="btn primary">Fund an intervention →</a>
+            <a href="mailto:connect-info@dimagi.com" class="btn primary" style="background: #1B998B; border-color: #1B998B;">Fund an intervention →</a>
           </div>
         </div>
 
@@ -8131,15 +8203,6 @@
     document.querySelectorAll('#primary-nav a[data-route]').forEach(a => {
       a.classList.toggle('active', a.dataset.route === path);
     });
-    // Program pill nav: show/hide and mark active pill
-    const progNav = document.getElementById('program-pill-nav');
-    if (progNav) {
-      const isDetail = path.startsWith('/programs/') && path.length > '/programs/'.length;
-      progNav.hidden = !isDetail;
-      progNav.querySelectorAll('[data-prog-route]').forEach(a => {
-        a.classList.toggle('active', a.dataset.progRoute === path);
-      });
-    }
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
   window.addEventListener('hashchange', route);
@@ -8150,7 +8213,7 @@
   let activeLDVP = 'all';
 
   function applyInsightFilters() {
-    document.querySelectorAll('.insight-row').forEach(row => {
+    document.querySelectorAll('[data-page="/insights"] .insight-row').forEach(row => {
       const programs = (row.dataset.programs || '').split(/\s+/).filter(Boolean);
       const ldvps = (row.dataset.ldvp || '').split(/\s+/).filter(Boolean);
       const programMatch = activeProgram === 'all' || programs.includes(activeProgram);
@@ -8174,37 +8237,17 @@
     applyInsightFilters();
   });
 
-  // Programs page, filter program cards by category or specific program
+  // Programs page — filter program cards by category
   document.addEventListener('click', (e) => {
     const pill = e.target.closest('#prog-filters .filter-pills .pill[data-filter-type="prog"]');
     if (!pill) return;
-
-    const wasActive = pill.classList.contains('active');
-    // Clear active across all 3 rows (single-selection across the whole filter group)
     document.querySelectorAll('#prog-filters .filter-pills .pill').forEach(p => p.classList.remove('active'));
-
-    if (wasActive) {
-      // Toggle off, show all programs and divider
-      document.querySelectorAll('.prog-card[data-program]').forEach(card => {
-        card.classList.remove('is-hidden');
-      });
-      const divider = document.querySelector('.programs-section-divider');
-      if (divider) divider.classList.remove('is-hidden');
-      return;
-    }
-
     pill.classList.add('active');
     const value = pill.dataset.filterValue;
-    const cat = pill.dataset.filterCat;
-
     document.querySelectorAll('.prog-card[data-program]').forEach(card => {
-      const match = (value === 'all')
-        ? card.dataset.category === cat
-        : card.dataset.program === value;
+      const match = (value === 'all') || (card.dataset.category === value);
       card.classList.toggle('is-hidden', !match);
     });
-
-    // Hide the "In Development" divider if no in-development cards remain visible
     const divider = document.querySelector('.programs-section-divider');
     if (divider) {
       const hasVisibleSoon = !!document.querySelector('.prog-card.is-soon:not(.is-hidden)');
