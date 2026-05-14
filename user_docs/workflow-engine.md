@@ -144,6 +144,10 @@ If you see this figure change compared to an earlier version of the dashboard, i
 
 Each field worker row shows two mother counts: a **total** and an **eligible** figure (shown in parentheses). Both numbers are drawn from the same source — the set of mothers linked to that worker through visit records. This means the eligible count will always be equal to or less than the total, and you should never see the eligible figure exceed the total.
 
+### Prev column
+
+The **Prev** column shows the performance category assigned to each field worker in the most recent previous run. This lets you compare a worker's current category against where they stood last time. If the column was showing "—" for all workers even when previous runs existed, that display issue has been corrected — the column now correctly loads categories from the most recent run where categories were set.
+
 ---
 
 ## Common Questions
@@ -174,5 +178,8 @@ This was caused by a background processing issue where open tasks were silently 
 
 **In MBW Auditing V4, the eligible mother count shown in parentheses was higher than the total mother count — is that fixed?**
 Yes. This was a display bug caused by the two figures drawing from different data sources. Both the total and eligible mother counts now come from the same source — mothers attributed to each field worker through visit records — so the eligible figure will always be equal to or less than the total. If you still see the eligible count exceed the total after a refresh, contact your program administrator.
+
+**In MBW Auditing V4, the Prev column was always showing "—" even for workers with previous categories — is that fixed?**
+Yes. The Prev column now correctly loads performance categories from the most recent run where categories were set. If the column still appears blank after a data refresh, contact your program administrator.
 
 ---
