@@ -2642,6 +2642,37 @@ def open_tasks_api(request):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+@login_required
+@require_GET
+def prev_categories_api(request):
+    """
+    Return worker_results from the most recent run (any workflow version) that
+    has at least one category assigned for this opportunity.
+
+    Scoped by opportunity via labs_context — intentionally ignores definition_id
+    so categories from prior workflow versions are visible.
+    """
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        runs = wf_access.list_runs()
+        wf_access.close()
+
+        candidates = [
+            r for r in runs
+            if (r.data.get("state") or {}).get("worker_results")
+        ]
+        if not candidates:
+            return JsonResponse({"prev_categories": {}, "source_run_id": None})
+
+        candidates.sort(key=lambda r: r.data.get("created_at") or "", reverse=True)
+        best = candidates[0]
+        worker_results = (best.data.get("state") or {}).get("worker_results") or {}
+        return JsonResponse({"prev_categories": worker_results, "source_run_id": best.id})
+    except Exception:
+        logger.exception("Failed to fetch prev categories for opportunity")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
 class PipelineDataStreamView(BaseSSEStreamView):
     """
     SSE endpoint for streaming pipeline data loading progress.
