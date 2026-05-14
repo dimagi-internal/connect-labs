@@ -26,6 +26,13 @@ logger = logging.getLogger(__name__)
 
 _GRACE_PERIOD_DAYS = 5  # v1's IS_DUE_PAST_GRACE: visit is due if scheduled >= 5d ago
 
+# Maps form.@name values (as they appear in connect_csv) to the visit_type keys
+# produced by the mbw_visit_schedules extractor. Handles trailing spaces and
+# naming differences between the CCHQ form name and the registration schedule.
+_FORM_NAME_ALIASES: dict[str, str] = {
+    "Post delivery visit": "Postnatal Delivery Visit",
+}
+
 
 def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
     """Return the most recent non-closed task per FLW for this opportunity."""
@@ -177,7 +184,9 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                 continue
 
         mid = (row.get("mother_case_id") or "").lower()
-        form_name = row.get("form_name") or ""
+        # Normalize form name to match visit_type keys produced by mbw_visit_schedules extractor
+        raw_form_name = (row.get("form_name") or "").strip()
+        form_name = _FORM_NAME_ALIASES.get(raw_form_name, raw_form_name)
 
         if mid:
             mother_to_flw[mid] = username
@@ -275,6 +284,9 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             if not isinstance(s, dict):
                 continue
             visit_type = s.get("visit_type", "")
+            # ANC visit is already a denominator condition — skip it here
+            if visit_type == "ANC Visit":
+                continue
             scheduled_str = (s.get("visit_date_scheduled") or "")
             expiry_str = (s.get("visit_expiry_date") or "")
             is_completed = bool(mother_visits.get(visit_type))
