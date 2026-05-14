@@ -34,8 +34,8 @@ _FORM_NAME_ALIASES: dict[str, str] = {
 }
 
 
-def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=None) -> dict:
-    """Return the most recent non-closed task per FLW for this opportunity."""
+def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=None) -> tuple[dict, str]:
+    """Return (tasks_by_username, debug_str) for the opportunity."""
     def _progress(msg):
         if progress_callback:
             progress_callback(msg)
@@ -45,16 +45,13 @@ def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=No
         from commcare_connect.tasks.models import TaskRecord
 
         with LabsRecordAPIClient(access_token=access_token, opportunity_id=opportunity_id) as client:
-            # The client's self.opportunity_id=opportunity_id already adds opportunity_id
-            # to the GET params, which the server applies as an FK filter. Using a
-            # data__opportunity_id kwarg would become a JSONField string comparison
-            # ("765" != integer 765 in JSONB) and silently excludes all tasks.
             tasks = client.get_records(
                 experiment="tasks",
                 type="Task",
                 model_class=TaskRecord,
             )
 
+        debug = f"fetched {len(tasks)} total; first data.opportunity_id: {tasks[0].data.get('opportunity_id') if tasks else 'n/a'}"
         _progress(f"Fetched {len(tasks)} task record(s) for opportunity {opportunity_id}.")
         open_tasks = [t for t in tasks if t.data.get("status") != "closed"]
 
@@ -76,11 +73,11 @@ def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=No
                     "triggered_at": created_at,
                     "title": task.data.get("title", ""),
                 }
-        return by_username
+        return by_username, debug
     except Exception as e:
         logger.exception("Failed to fetch open tasks: %s", e)
         _progress(f"Warning: failed to load open tasks — {e}")
-        return {}
+        return {}, f"error: {e}"
 
 
 def _get_prev_categories(access_token: str, opportunity_id: int, workflow_definition_id: int) -> dict:
@@ -331,8 +328,9 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     # ── Open tasks across all runs ──
     progress_callback("Loading open tasks…")
     open_tasks: dict = {}
+    open_tasks_debug = "skipped (no opportunity_id or access_token)"
     if opportunity_id and access_token:
-        open_tasks = _get_open_tasks(access_token, opportunity_id, progress_callback)
+        open_tasks, open_tasks_debug = _get_open_tasks(access_token, opportunity_id, progress_callback)
         progress_callback(f"Found {len(open_tasks)} open task(s) across {len(open_tasks)} FLW(s).")
 
     # ── Build FLW summaries ──
@@ -398,4 +396,5 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         "flw_summaries": flw_summaries,
         "prev_categories": prev_categories,
         "open_tasks": open_tasks,
+        "open_tasks_debug": open_tasks_debug,
     }
