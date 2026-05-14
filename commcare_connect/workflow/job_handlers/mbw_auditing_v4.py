@@ -81,7 +81,7 @@ def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=No
 
 
 def _get_prev_categories(access_token: str, opportunity_id: int, workflow_definition_id: int) -> dict:
-    """Fetch worker_results from the most recent completed run for this workflow."""
+    """Fetch worker_results from the most recent run that has categories assigned."""
     try:
         from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
         from commcare_connect.workflow.data_access import WorkflowRunRecord
@@ -91,13 +91,18 @@ def _get_prev_categories(access_token: str, opportunity_id: int, workflow_defini
                 experiment="workflow",
                 type="workflow_run",
                 model_class=WorkflowRunRecord,
-                status="completed",
             )
-        completed = [r for r in runs if r.data.get("definition_id") == workflow_definition_id]
-        if not completed:
+        # Keep runs for this definition that have at least one category assigned.
+        # Excludes the current run (which has no worker_results yet).
+        candidates = [
+            r for r in runs
+            if r.data.get("definition_id") == workflow_definition_id
+            and (r.data.get("state") or {}).get("worker_results")
+        ]
+        if not candidates:
             return {}
-        completed.sort(key=lambda r: r.data.get("created_at") or "", reverse=True)
-        state = completed[0].data.get("state") or {}
+        candidates.sort(key=lambda r: r.data.get("created_at") or "", reverse=True)
+        state = candidates[0].data.get("state") or {}
         return state.get("worker_results") or {}
     except Exception:
         logger.exception("Failed to fetch previous run categories")
