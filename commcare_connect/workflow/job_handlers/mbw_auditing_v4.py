@@ -41,13 +41,14 @@ def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
         from commcare_connect.tasks.models import TaskRecord
 
         with LabsRecordAPIClient(access_token=access_token, opportunity_id=opportunity_id) as client:
-            # Filter by data.opportunity_id server-side; without this the query returns
-            # all tasks across every opportunity (tasks use data FK, not record FK).
+            # The client's self.opportunity_id=opportunity_id already adds opportunity_id
+            # to the GET params, which the server applies as an FK filter. Using a
+            # data__opportunity_id kwarg would become a JSONField string comparison
+            # ("765" != integer 765 in JSONB) and silently excludes all tasks.
             tasks = client.get_records(
                 experiment="tasks",
                 type="Task",
                 model_class=TaskRecord,
-                opportunity_id=opportunity_id,  # → data__opportunity_id server-side filter
             )
 
         open_tasks = [t for t in tasks if t.data.get("status") != "closed"]
