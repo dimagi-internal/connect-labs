@@ -2599,6 +2599,49 @@ def cancel_job_api(request, task_id):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+@login_required
+@require_GET
+def open_tasks_api(request):
+    """
+    Return open tasks for the current opportunity, keyed by lowercase username.
+
+    Used by render code to fetch task state independently of the background job,
+    so task display works reliably regardless of Celery worker deployment state.
+    """
+    from commcare_connect.tasks.data_access import TaskDataAccess
+
+    try:
+        task_access = TaskDataAccess(request=request)
+        all_tasks = task_access.get_tasks()
+        task_access.close()
+
+        by_username: dict = {}
+        for task in all_tasks:
+            if task.data.get("status") == "closed":
+                continue
+            username = (task.data.get("username") or "").lower()
+            if not username:
+                continue
+            created_at = ""
+            for event in task.data.get("events", []):
+                if event.get("event_type") == "created":
+                    created_at = event.get("timestamp") or ""
+                    break
+            existing = by_username.get(username)
+            if not existing or created_at > existing.get("triggered_at", ""):
+                by_username[username] = {
+                    "task_id": task.id,
+                    "status": task.data.get("status", "investigating"),
+                    "triggered_at": created_at,
+                    "title": task.data.get("title", ""),
+                }
+
+        return JsonResponse({"open_tasks": by_username, "total_fetched": len(all_tasks)})
+    except Exception:
+        logger.exception("Failed to fetch open tasks for opportunity")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
 class PipelineDataStreamView(BaseSSEStreamView):
     """
     SSE endpoint for streaming pipeline data loading progress.
