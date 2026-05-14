@@ -5081,6 +5081,8 @@
   </div>
 </header>
 
+{# import-time edit: program-pill-nav stripped on labs (Gillian's b8509538 addition). Revisit if/when product wants the in-page program tab strip on detail pages. #}
+{% comment %}
 <nav id="program-pill-nav" class="program-pill-nav" hidden>
   <div class="prog-pill-inner">
     <a class="prog-pill" href="#/programs/child-health-campaign"     data-prog-route="/programs/child-health-campaign">Child Health</a>
@@ -5094,6 +5096,7 @@
     <a class="prog-pill" href="#/programs/rooftop-sampling"          data-prog-route="/programs/rooftop-sampling">Rooftop</a>
   </div>
 </nav>
+{% endcomment %}
 <main>
 
 <!-- ================================ HOME ================================ -->
@@ -7947,6 +7950,8 @@
           <figcaption class="who"><b>PIPNU</b><br>Uganda · Kangaroo Care</figcaption>
         </figure>
 
+        {# import-time edit: 4 "coming soon" placeholder testimonial cards stripped on labs. Revisit when real testimonials replace them. #}
+        {% comment %}
         <figure class="testimonial-card coming-soon with-photo">
           <div class="photo-block ph-field-2"><span class="photo-label">Photo coming soon</span></div>
           <div class="tc-body">
@@ -7979,6 +7984,7 @@
             <figcaption class="who"><b>Coming soon</b><br>New voice from the network</figcaption>
           </div>
         </figure>
+        {% endcomment %}
       </div>
 
     </div>
