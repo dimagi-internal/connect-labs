@@ -166,6 +166,6 @@ Yes. A loading error that caused the dashboard to crash before displaying any da
 This figure was previously undercounting eligible mothers due to two issues: certain visit types were not being matched correctly to their scheduled entries, and the ANC visit was being included in the missed-visit check even though it is already a requirement for entering the denominator. Both issues have been corrected. If the number still looks unexpected after a data refresh, contact your program administrator.
 
 **The MBW Auditing V4 data looks incomplete or like it isn't accounting for all cases — is something wrong?**
-This was caused by a background processing issue where open tasks were silently not being loaded, resulting in the auditing job running against an incomplete set of records. The issue has been fixed and the job now correctly processes all open tasks for the opportunity. If your data still looks incomplete after a refresh, check the "Last refreshed" timestamp and contact your program administrator if the problem continues.
+This was caused by a background processing issue where open tasks were silently not being loaded, resulting in the auditing job running against an incomplete set of records. The issue has been fixed — open tasks now load through a dedicated pathway that is more reliable, so task indicators should appear correctly on the dashboard. If your data still looks incomplete after a refresh, check the "Last refreshed" timestamp and contact your program administrator if the problem continues.
 
 ---
