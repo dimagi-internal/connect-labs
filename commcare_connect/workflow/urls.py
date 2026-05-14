@@ -111,6 +111,7 @@ urlpatterns = [
     path("api/job/<str:task_id>/cancel/", views.cancel_job_api, name="api_cancel_job"),
     path("api/run/<int:run_id>/delete/", views.delete_run_api, name="api_delete_run"),
     path("api/open-tasks/", views.open_tasks_api, name="api_open_tasks"),
+    path("api/prev-categories/", views.prev_categories_api, name="api_prev_categories"),
     # Image proxy and visit images API
     path("api/image/<int:opp_id>/<str:blob_id>/", views.WorkflowImageProxyView.as_view(), name="api_image_proxy"),
     path("api/<int:opp_id>/visit-images/", views.visit_images_api, name="api_visit_images"),
