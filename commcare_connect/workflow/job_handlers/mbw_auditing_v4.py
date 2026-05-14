@@ -34,8 +34,12 @@ _FORM_NAME_ALIASES: dict[str, str] = {
 }
 
 
-def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
+def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=None) -> dict:
     """Return the most recent non-closed task per FLW for this opportunity."""
+    def _progress(msg):
+        if progress_callback:
+            progress_callback(msg)
+
     try:
         from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
         from commcare_connect.tasks.models import TaskRecord
@@ -51,6 +55,7 @@ def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
                 model_class=TaskRecord,
             )
 
+        _progress(f"Fetched {len(tasks)} task record(s) for opportunity {opportunity_id}.")
         open_tasks = [t for t in tasks if t.data.get("status") != "closed"]
 
         by_username: dict[str, dict] = {}
@@ -72,8 +77,9 @@ def _get_open_tasks(access_token: str, opportunity_id: int) -> dict:
                     "title": task.data.get("title", ""),
                 }
         return by_username
-    except Exception:
-        logger.exception("Failed to fetch open tasks")
+    except Exception as e:
+        logger.exception("Failed to fetch open tasks: %s", e)
+        _progress(f"Warning: failed to load open tasks — {e}")
         return {}
 
 
@@ -326,7 +332,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     progress_callback("Loading open tasks…")
     open_tasks: dict = {}
     if opportunity_id and access_token:
-        open_tasks = _get_open_tasks(access_token, opportunity_id)
+        open_tasks = _get_open_tasks(access_token, opportunity_id, progress_callback)
+        progress_callback(f"Found {len(open_tasks)} open task(s) across {len(open_tasks)} FLW(s).")
 
     # ── Build FLW summaries ──
     progress_callback("Building FLW summaries…")
