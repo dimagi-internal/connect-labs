@@ -129,12 +129,16 @@ The tab also shows the percentage of workers who missed one visit or fewer (_pct
 
 ### % Still Eligible
 
-The **% Still Eligible** figure counts only mothers who meet both of the following conditions:
+The **% Still Eligible** figure answers the question: of mothers who are bonus-eligible AND have a completed ANC visit, how many have missed at most 1 of their post-ANC visits within their expiry window?
 
-1. They qualify for the full intervention bonus.
-2. Their antenatal visit completion is recorded as complete on their visit form.
+A mother is included in the denominator only if she meets both of the following conditions:
 
-Both conditions must be true for a mother to be included in the denominator. If you see this figure change compared to an earlier version of the dashboard, it is because the calculation now correctly applies both filters together.
+1. She qualifies for the full intervention bonus.
+2. Her antenatal visit completion is recorded as complete on her visit form.
+
+The missed-visit check then looks only at the five post-ANC visit types — **Postnatal Delivery, 1 Week, 1 Month, 3 Month, and 6 Month** — within the mother's expiry window. The ANC visit itself is not counted in this check, because it is already required just to be included in the denominator.
+
+If you see this figure change compared to an earlier version of the dashboard, it is because the calculation now correctly matches visit records to their scheduled visit types and applies both eligibility filters together before checking for missed visits.
 
 ---
 
@@ -157,3 +161,8 @@ Several calculations in the MBW Monitoring dashboard were updated to match the o
 
 **The MBW Auditing V4 dashboard was showing an error on load — is that fixed?**
 Yes. A loading error that caused the dashboard to crash before displaying any data has been resolved. If you continue to see an error, try refreshing the page. If the problem persists, contact your program administrator.
+
+**The % Still Eligible figure in MBW Auditing V4 looks much lower than expected — is something wrong?**
+This figure was previously undercounting eligible mothers due to two issues: certain visit types were not being matched correctly to their scheduled entries, and the ANC visit was being included in the missed-visit check even though it is already a requirement for entering the denominator. Both issues have been corrected. If the number still looks unexpected after a data refresh, contact your program administrator.
+
+---
