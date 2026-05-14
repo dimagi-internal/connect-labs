@@ -140,6 +140,10 @@ The missed-visit check then looks only at the five post-ANC visit types — **Po
 
 If you see this figure change compared to an earlier version of the dashboard, it is because the calculation now correctly matches visit records to their scheduled visit types and applies both eligibility filters together before checking for missed visits.
 
+### Mother counts per field worker
+
+Each field worker row shows two mother counts: a **total** and an **eligible** figure (shown in parentheses). Both numbers are drawn from the same source — the set of mothers linked to that worker through visit records. This means the eligible count will always be equal to or less than the total, and you should never see the eligible figure exceed the total.
+
 ---
 
 ## Common Questions
@@ -167,5 +171,8 @@ This figure was previously undercounting eligible mothers due to two issues: cer
 
 **The MBW Auditing V4 data looks incomplete or like it isn't accounting for all cases — is something wrong?**
 This was caused by a background processing issue where open tasks were silently not being loaded, resulting in the auditing job running against an incomplete set of records. The issue has been fixed — open tasks now load through a dedicated pathway that is more reliable, so task indicators should appear correctly on the dashboard. If your data still looks incomplete after a refresh, check the "Last refreshed" timestamp and contact your program administrator if the problem continues.
+
+**In MBW Auditing V4, the eligible mother count shown in parentheses was higher than the total mother count — is that fixed?**
+Yes. This was a display bug caused by the two figures drawing from different data sources. Both the total and eligible mother counts now come from the same source — mothers attributed to each field worker through visit records — so the eligible figure will always be equal to or less than the total. If you still see the eligible count exceed the total after a refresh, contact your program administrator.
 
 ---
