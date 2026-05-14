@@ -194,8 +194,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
 
         if mid:
             mother_to_flw[mid] = username
-            if not use_agg_counts:
-                mother_sets_by_flw.setdefault(username, set()).add(mid)
+            mother_sets_by_flw.setdefault(username, set()).add(mid)
             if form_name and vdt:
                 visits_by_mother.setdefault(mid, {})[form_name] = vdt
             if (row.get("antenatal_visit_completion") or "").strip() == "ok":
@@ -345,7 +344,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         dists = gps_distances.get(u, [])
 
         # Mother counts
-        num_mothers = num_mothers_by_flw.get(u, 0) if use_agg_counts else len(mother_sets_by_flw.get(u, set()))
+        num_mothers = len(mother_sets_by_flw.get(u, set()))
         total_eligible = fu.get("total_eligible", 0)
 
         # EBF%
