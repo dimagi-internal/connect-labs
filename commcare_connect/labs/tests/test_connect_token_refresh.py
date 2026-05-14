@@ -32,7 +32,7 @@ def test_raises_when_no_token():
 def test_refreshes_when_expired(mock_post, settings):
     settings.CONNECT_OAUTH_CLIENT_ID = "test-client"
     mock_post.return_value = MagicMock(
-        ok=True,
+        is_success=True,
         json=lambda: {
             "access_token": "new-access",
             "refresh_token": "new-refresh",
@@ -70,7 +70,7 @@ def test_raises_when_expired_and_no_refresh_token():
 @patch("commcare_connect.labs.connect_tokens.httpx.post")
 def test_raises_when_refresh_exchange_fails(mock_post, settings):
     settings.CONNECT_OAUTH_CLIENT_ID = "test-client"
-    mock_post.return_value = MagicMock(ok=False, status_code=400, text="bad")
+    mock_post.return_value = MagicMock(is_success=False, status_code=400, text="bad")
     user = User.objects.create(username="erin")
     UserConnectToken.objects.create(
         user=user,
