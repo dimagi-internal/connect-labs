@@ -71,6 +71,6 @@ def _exchange_refresh_token(refresh_token: str) -> dict:
         },
         timeout=10.0,
     )
-    if not response.ok:
+    if not response.is_success:
         raise ConnectTokenError(f"Connect refresh-token exchange failed: {response.status_code} {response.text[:200]}")
     return response.json()
