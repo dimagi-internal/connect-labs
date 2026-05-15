@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 {% load static %}
-{# Imported from dimagi-internal/connect-prelogin. Four import-time edits #}
-{# (search "import-time edit"): .mockup-bar strip, login link template var, #}
-{# asset paths wrapped in static template tags, and referrerpolicy on YouTube #}
-{# iframes (Django sends Referrer-Policy: same-origin by default, which strips #}
-{# the Referer on cross-origin requests; YouTube needs at least the origin or #}
-{# its player surfaces error 153). #}
+{# Imported from dimagi-internal/connect-prelogin. Three import-time edits #}
+{# (search "import-time edit"): login link template var, asset paths wrapped #}
+{# in static template tags, and referrerpolicy on YouTube iframes (Django #}
+{# sends Referrer-Policy: same-origin by default, which strips the Referer #}
+{# on cross-origin requests; YouTube needs at least the origin or its player #}
+{# surfaces error 153). #}
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -40,8 +40,6 @@
     <path d="M216.693 1.25915C201.165 3.91704 176.265 16.9267 151.645 35.3921C100.026 74.1413 57.4994 132.615 45.8886 180.737C38.6144 211.372 46.0285 237.252 66.1725 251.101C73.5866 256.137 91.7722 262.432 93.4509 260.474C94.1503 259.774 95.4093 254.179 96.3885 248.023C97.3678 242.008 99.8858 229.558 102.124 220.605C124.506 128.698 175.006 51.899 239.495 11.7508C251.665 4.19682 251.665 3.63726 238.516 1.25915C229.143 -0.419521 227.465 -0.419521 216.693 1.25915Z" fill="currentColor"/>
   </symbol>
 </svg>
-
-{# import-time edit: .mockup-bar element removed #}
 
 <header class="site-header">
   <div class="header-inner">
