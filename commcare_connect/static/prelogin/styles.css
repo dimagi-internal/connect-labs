@@ -173,6 +173,93 @@ img {
   box-shadow: none;
 }
 
+/* Mobile hamburger toggle (hidden on desktop; shown at <=980px via media query). */
+.nav-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+.nav-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+}
+.nav-toggle-bar {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  height: 2px;
+  background: var(--paper);
+  border-radius: 2px;
+  transition:
+    transform 0.2s ease,
+    opacity 0.15s ease,
+    top 0.2s ease;
+}
+.nav-toggle-bar:nth-child(1) {
+  top: 12px;
+}
+.nav-toggle-bar:nth-child(2) {
+  top: 19px;
+}
+.nav-toggle-bar:nth-child(3) {
+  top: 26px;
+}
+body.nav-open .nav-toggle-bar:nth-child(1) {
+  top: 19px;
+  transform: rotate(45deg);
+}
+body.nav-open .nav-toggle-bar:nth-child(2) {
+  opacity: 0;
+}
+body.nav-open .nav-toggle-bar:nth-child(3) {
+  top: 19px;
+  transform: rotate(-45deg);
+}
+
+/* Mobile slide-down panel (hidden on desktop entirely; styles use higher
+   specificity than `.site-header nav` so they win over the desktop nav rules). */
+.site-header .mobile-nav {
+  display: none;
+}
+.site-header .mobile-nav a {
+  color: var(--paper);
+  padding: 16px 24px;
+  font-size: 16px;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(142, 161, 255, 0.1);
+  text-align: left;
+}
+.site-header .mobile-nav a:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--paper);
+}
+.site-header .mobile-nav a.mobile-nav-cta,
+.site-header .mobile-nav a.mobile-nav-cta-secondary {
+  margin: 12px 20px;
+  border-radius: 999px;
+  text-align: center;
+  border-bottom: none;
+  padding: 12px 18px;
+  font-weight: 600;
+}
+.site-header .mobile-nav a.mobile-nav-cta {
+  background: var(--mango);
+  color: #fff;
+}
+.site-header .mobile-nav a.mobile-nav-cta-secondary {
+  background: transparent;
+  color: var(--paper);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  margin-bottom: 0;
+}
+
 .page {
   display: none;
   animation: fade 0.3s ease-out;
@@ -6140,11 +6227,27 @@ a.explore-card:hover {
     gap: 14px;
     font-size: 13px;
   }
-  .site-header nav a:not(.cta) {
+  /* On mobile the desktop nav is hidden entirely and replaced by the hamburger + slide-down panel. */
+  .site-header nav#primary-nav {
     display: none;
   }
-  .site-header nav a.cta.cta-ghost {
+  .nav-toggle {
+    display: inline-block;
+  }
+  .site-header .mobile-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    background: var(--ink);
+    border-top: 1px solid rgba(142, 161, 255, 0.08);
+    padding: 8px 0 16px;
+  }
+  .site-header .mobile-nav[hidden] {
     display: none;
+  }
+  body.nav-open {
+    overflow: hidden;
   }
   .wrap {
     padding: 0 20px;
