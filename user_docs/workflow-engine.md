@@ -181,5 +181,3 @@ Yes. This was a display bug caused by the two figures drawing from different dat
 
 **In MBW Auditing V4, the Prev column was always showing "—" even for workers with previous categories — is that fixed?**
 Yes. The Prev column now correctly loads performance categories from the most recent run where categories were set, including categories recorded under previous versions of the workflow. If the column still appears blank after a data refresh, contact your program administrator.
-
----
