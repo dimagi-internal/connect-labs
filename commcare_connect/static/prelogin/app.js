@@ -24,6 +24,48 @@ function route() {
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', route);
 
+// Mobile hamburger menu (visible at <=980px viewport — see media query in styles.css)
+function setupNavToggle() {
+  const btn = document.getElementById('nav-toggle');
+  const panel = document.getElementById('mobile-nav');
+  if (!btn || !panel) return;
+
+  const close = () => {
+    document.body.classList.remove('nav-open');
+    panel.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', 'Open menu');
+  };
+  const open = () => {
+    document.body.classList.add('nav-open');
+    panel.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    btn.setAttribute('aria-label', 'Close menu');
+  };
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (document.body.classList.contains('nav-open')) close();
+    else open();
+  });
+  // Tap a link in the panel -> close before navigation
+  panel
+    .querySelectorAll('a')
+    .forEach((a) => a.addEventListener('click', close));
+  // Tap outside the header -> close
+  document.addEventListener('click', (e) => {
+    if (!document.body.classList.contains('nav-open')) return;
+    if (!e.target.closest('.site-header')) close();
+  });
+  // Escape -> close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+  // Closing on hashchange catches in-page same-link taps and browser back/forward
+  window.addEventListener('hashchange', close);
+}
+window.addEventListener('DOMContentLoaded', setupNavToggle);
+
 // Insights, two-axis filter (Program Type × Frontline Activity)
 let activeProgram = 'all';
 let activeLDVP = 'all';
