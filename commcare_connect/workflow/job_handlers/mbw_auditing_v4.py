@@ -36,6 +36,7 @@ _FORM_NAME_ALIASES: dict[str, str] = {
 
 def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=None) -> tuple[dict, str]:
     """Return (tasks_by_username, debug_str) for the opportunity."""
+
     def _progress(msg):
         if progress_callback:
             progress_callback(msg)
@@ -51,7 +52,8 @@ def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=No
                 model_class=TaskRecord,
             )
 
-        debug = f"fetched {len(tasks)} total; first data.opportunity_id: {tasks[0].data.get('opportunity_id') if tasks else 'n/a'}"
+        first_opp = tasks[0].data.get("opportunity_id") if tasks else "n/a"
+        debug = f"fetched {len(tasks)} total; first data.opportunity_id: {first_opp}"
         _progress(f"Fetched {len(tasks)} task record(s) for opportunity {opportunity_id}.")
         open_tasks = [t for t in tasks if t.data.get("status") != "closed"]
 
@@ -95,7 +97,8 @@ def _get_prev_categories(access_token: str, opportunity_id: int, workflow_defini
         # Keep runs for this definition that have at least one category assigned.
         # Excludes the current run (which has no worker_results yet).
         candidates = [
-            r for r in runs
+            r
+            for r in runs
             if r.data.get("definition_id") == workflow_definition_id
             and (r.data.get("state") or {}).get("worker_results")
         ]
@@ -277,12 +280,15 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         is_eligible = mother_eligibility.get(mid, False) and mid in anc_ok_mothers
         mother_visits = visits_by_mother.get(mid, {})
 
-        bucket = flw_fu.setdefault(flw, {
-            "total_eligible": 0,
-            "filtered_completed": 0,
-            "filtered_denominator": 0,
-            "still_eligible": 0,
-        })
+        bucket = flw_fu.setdefault(
+            flw,
+            {
+                "total_eligible": 0,
+                "filtered_completed": 0,
+                "filtered_denominator": 0,
+                "still_eligible": 0,
+            },
+        )
 
         if is_eligible:
             bucket["total_eligible"] += 1
@@ -295,8 +301,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             # ANC visit is already a denominator condition — skip it here
             if visit_type == "ANC Visit":
                 continue
-            scheduled_str = (s.get("visit_date_scheduled") or "")
-            expiry_str = (s.get("visit_expiry_date") or "")
+            scheduled_str = s.get("visit_date_scheduled") or ""
+            expiry_str = s.get("visit_expiry_date") or ""
             is_completed = bool(mother_visits.get(visit_type))
 
             past_grace = False
@@ -381,20 +387,22 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         gs_raw = gs_by_user.get(u)
         gs_score = round(gs_raw) if gs_raw is not None else None
 
-        flw_summaries.append({
-            "username": u,
-            "display_name": flw_names.get(u) or flw_names.get(username) or u,
-            "num_mothers": num_mothers,
-            "num_mothers_eligible": total_eligible,
-            "gs_score": gs_score,
-            "followup_rate": followup_rate,
-            "pct_still_eligible": pct_still_eligible,
-            "ebf_pct": ebf_pct,
-            "revisit_dist": revisit_m,
-            "meter_per_visit": meter_per_visit,
-            "dist_ratio": dist_ratio,
-            "minute_per_visit": None,  # requires visit timeStart — not in current pipeline
-        })
+        flw_summaries.append(
+            {
+                "username": u,
+                "display_name": flw_names.get(u) or flw_names.get(username) or u,
+                "num_mothers": num_mothers,
+                "num_mothers_eligible": total_eligible,
+                "gs_score": gs_score,
+                "followup_rate": followup_rate,
+                "pct_still_eligible": pct_still_eligible,
+                "ebf_pct": ebf_pct,
+                "revisit_dist": revisit_m,
+                "meter_per_visit": meter_per_visit,
+                "dist_ratio": dist_ratio,
+                "minute_per_visit": None,  # requires visit timeStart — not in current pipeline
+            }
+        )
 
     return {
         "flw_summaries": flw_summaries,
