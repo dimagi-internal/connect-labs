@@ -411,24 +411,15 @@ def update_solicitation(
         client.close()
 
 
-# Statuses that have downstream commitments. A solicitation in one of these
-# states has either invited LLOs to respond (active) or already granted a
-# response (awarded), so destroying it would break audit trails or funded
-# commitments. Anything else (draft, closed, missing) is considered safe to
-# clean up — it covers ACE's orphan-draft dogfood case plus closed-without-
-# award cleanup.
-DELETE_REFUSED_STATUSES = frozenset({"active", "awarded"})
-
-
 @register(
     name="delete_solicitation",
     description=(
         "Delete a solicitation and cascade-delete its associated responses and "
-        "reviews. Refuses to delete solicitations in 'active' or 'awarded' "
-        "status (those have downstream commitments — invited respondents or a "
-        "funded award). Allowed for 'draft' and 'closed' status. Returns the "
-        "count of records deleted at each level. IRREVERSIBLE — used by "
-        "ACE sweep to clean up orphan dogfood solicitations."
+        "reviews. Refuses to delete solicitations with non-zero responses or "
+        "reviews unless force=true. Cascade count is reported in the response. "
+        "Status field is not consulted — the gate is the actual cascade, not "
+        "a status proxy. IRREVERSIBLE — used by ACE sweep to clean up orphan "
+        "dogfood solicitations."
     ),
     input_schema={
         "type": "object",
@@ -451,6 +442,14 @@ DELETE_REFUSED_STATUSES = frozenset({"active", "awarded"})
                     "org-scoped rather than program-scoped."
                 ),
             },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Override the cascade guard. When false (default), the tool refuses "
+                    "to delete a solicitation with any responses or reviews. When true, "
+                    "all child records are destroyed alongside the parent."
+                ),
+            },
         },
         "required": ["solicitation_id"],
         "additionalProperties": False,
@@ -462,12 +461,15 @@ def delete_solicitation(
     solicitation_id: int,
     program_id: str | None = None,
     organization_id: str | None = None,
+    force: bool = False,
 ) -> dict:
     """Delete a solicitation plus its child responses and reviews.
 
-    Lifecycle guard: refuses 'active' and 'awarded' solicitations. Cascade is
-    not optional — deleting a parent without its children would leave orphan
-    audit rows that point to a missing solicitation.
+    Cascade guard: refuses when responses or reviews exist unless ``force=True``.
+    The status field is intentionally not consulted — a freshly-published
+    solicitation lands in 'active' with an empty cascade, and an admin can
+    flip a populated solicitation to 'closed', so status is not a reliable
+    proxy for whether destroying the record would lose engagement data.
     """
     token = require_connect_token(user)
     client = LabsRecordAPIClient(
@@ -480,20 +482,8 @@ def delete_solicitation(
         if solicitation is None:
             raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
 
-        status = (solicitation.data or {}).get("status")
-        if status in DELETE_REFUSED_STATUSES:
-            raise MCPToolError(
-                "FAILED_PRECONDITION",
-                (
-                    f"Cannot delete solicitation {solicitation_id} in status "
-                    f"'{status}': solicitations with downstream commitments "
-                    f"(active, awarded) must be cancelled out of band. "
-                    f"Allowed statuses: draft, closed."
-                ),
-            )
-
-        # Cascade: collect responses, then reviews per response, then delete
-        # bottom-up so a partial failure never leaves dangling parents.
+        # Collect cascade first so the gate can compare against actual engagement
+        # data rather than the status proxy.
         responses = client.get_records(
             type="solicitation_response",
             labs_record_id=solicitation_id,
@@ -508,6 +498,17 @@ def delete_solicitation(
             )
             review_ids.extend(r.id for r in reviews)
 
+        if (response_ids or review_ids) and not force:
+            raise MCPToolError(
+                "FAILED_PRECONDITION",
+                (
+                    f"Cannot delete solicitation {solicitation_id}: "
+                    f"{len(response_ids)} responses + {len(review_ids)} reviews "
+                    f"would be destroyed. Pass force=true to override."
+                ),
+            )
+
+        # Bottom-up delete so a partial failure never leaves dangling parents.
         if review_ids:
             client.delete_records(review_ids)
         if response_ids:
