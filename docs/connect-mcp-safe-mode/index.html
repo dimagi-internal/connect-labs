@@ -766,6 +766,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Editing Workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#iteration-loop-and-deployment-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iteration loop and deployment bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -935,6 +952,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Editing Workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#iteration-loop-and-deployment-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iteration loop and deployment bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -995,7 +1029,8 @@
 <p>This feature is for program administrators and technical staff who are comfortable working in a terminal. If you just want to use the AI assistant inside the Labs browser app, see <a href="../ai-features/">AI Features</a> instead.</p>
 <hr />
 <h2 id="what-is-this-for">What Is This For?<a class="headerlink" href="#what-is-this-for" title="Permanent link">&para;</a></h2>
-<p>Normally, editing a workflow's display logic or data fields requires a developer to modify code. With the Connect MCP (Model Context Protocol), you can describe changes in plain English and Claude Code makes the edits for you:</p>
+<p>Normally, editing a workflow's display logic or data fields requires a developer to modify code. With the Connect MCP (Model Context Protocol), you can describe changes in plain English and Claude Code makes the edits for you.</p>
+<p><strong>Claude Code</strong> is the AI assistant CLI you run in your terminal. <strong>MCP</strong> (Model Context Protocol) is the server it connects to — hosted inside Connect Labs — that gives Claude Code the tools to read and update workflows. You use Claude Code; it uses the MCP behind the scenes.</p>
 <!-- prettier-ignore -->
 <blockquote>
 <p><em>"Add a column showing how many weeks since the last visit"</em>
@@ -1043,6 +1078,10 @@
 <li>Access to the connect-labs GitHub repository</li>
 </ul>
 <p>Ask in <strong>#engineering-connect</strong> if you're unsure about any of these.</p>
+<div class="admonition note">
+<p class="admonition-title">You don't need to run Labs locally</p>
+</div>
+<p>For workflow editing, cloning the repository is enough — you do <strong>not</strong> need to run the Django app locally. Even a local instance fetches all data from Connect prod, so there is no isolation benefit. Claude Code pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.</p>
 <hr />
 <h2 id="first-time-setup">First-Time Setup<a class="headerlink" href="#first-time-setup" title="Permanent link">&para;</a></h2>
 <h3 id="1-install-1password-cli-and-sign-in">1. Install 1Password CLI and sign in<a class="headerlink" href="#1-install-1password-cli-and-sign-in" title="Permanent link">&para;</a></h3>
@@ -1098,6 +1137,10 @@ inv<span class="w"> </span>safe-claude<span class="w"> </span>--auth<span class=
 <li>Confirm the update was successful</li>
 </ol>
 <p>To verify your change: open the workflow in your browser at <a href="https://labs.connect.dimagi.com">labs.connect.dimagi.com</a>.</p>
+<h3 id="iteration-loop-and-deployment-bar">Iteration loop and deployment bar<a class="headerlink" href="#iteration-loop-and-deployment-bar" title="Permanent link">&para;</a></h3>
+<p>Workflow definitions are user-generated content stored in Connect prod — updating them requires no pull request and no code review. Keep a low bar for pushing changes: if something looks wrong, describe the fix and let Claude push again. To revert, tell Claude what to undo and it will push a corrected version. If you can't resolve an issue after a few iterations, ask in <strong>#connect-labs</strong>.</p>
+<p>The power of this loop is: describe change → Claude pushes → reload browser → verify → repeat. Get comfortable with that cadence rather than doing a lot of intermediate work to validate locally first.</p>
+<p><strong>Note:</strong> changes to the MCP server itself (the Labs code that powers these tools) <em>do</em> require a code deploy. But for all workflow edits, the MCP push is sufficient.</p>
 <hr />
 <h2 id="safe-mode-what-it-protects-against">Safe Mode: What It Protects Against<a class="headerlink" href="#safe-mode-what-it-protects-against" title="Permanent link">&para;</a></h2>
 <p>Safe Mode prevents accidental exposure of patient data when an AI assistant has access to real program information.</p>
