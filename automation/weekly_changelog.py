@@ -65,6 +65,7 @@ def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
         text=True,
     )
     if result.returncode != 0:
+        print(f"  [warn] gh api failed for PR #{pr_number}: {result.stderr.strip()}", file=sys.stderr)
         return []
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
@@ -115,6 +116,7 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
     for pr in prs:
         desc = extract_product_description(pr.get("body") or "")
         if desc:
+            # Skip file fetching in local dev (no GITHUB_REPOSITORY set)
             files = fetch_pr_files(pr["number"], repo) if repo else []
             result.append(
                 {
