@@ -1,10 +1,28 @@
+import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from weekly_changelog import classify_pr, fetch_pr_files  # noqa: E402
+from weekly_changelog import classify_pr, fetch_pr_files, generate_weekly_summary, load_user_visible_prs  # noqa: E402
+
+PR_TEMPLATE = {
+    "number": 1,
+    "title": "feat: something",
+    "html_url": "https://github.com/jjackson/connect-labs/pull/1",
+    "merged_at": "2026-05-19T10:00:00Z",
+    "body": "## Product Description\nThis changes the UI.",
+}
+
+
+def _write_prs_file(prs):
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(prs, f)
+    f.close()
+    return f.name
 
 
 def test_classify_pr_all_marketing():
@@ -68,28 +86,6 @@ def test_fetch_pr_files_strips_blank_lines():
     assert files == ["commcare_connect/prelogin/home.html"]
 
 
-import json
-import os
-import tempfile
-
-from weekly_changelog import load_user_visible_prs
-
-PR_TEMPLATE = {
-    "number": 1,
-    "title": "feat: something",
-    "html_url": "https://github.com/jjackson/connect-labs/pull/1",
-    "merged_at": "2026-05-19T10:00:00Z",
-    "body": "## Product Description\nThis changes the UI.",
-}
-
-
-def _write_prs_file(prs):
-    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-    json.dump(prs, f)
-    f.close()
-    return f.name
-
-
 def test_load_user_visible_prs_adds_marketing_category():
     pr = dict(PR_TEMPLATE, number=10)
     prs_file = _write_prs_file([pr])
@@ -132,7 +128,18 @@ def test_load_user_visible_prs_skips_empty_product_description():
     assert result == []
 
 
-from weekly_changelog import generate_weekly_summary
+def test_load_user_visible_prs_defaults_to_app_when_no_repo():
+    pr = dict(PR_TEMPLATE, number=13)
+    prs_file = _write_prs_file([pr])
+    try:
+        with patch("weekly_changelog.fetch_pr_files") as mock_fetch, patch.dict(os.environ, {}, clear=True):
+            # Remove GITHUB_REPOSITORY from env if present
+            os.environ.pop("GITHUB_REPOSITORY", None)
+            result = load_user_visible_prs(prs_file)
+    finally:
+        os.unlink(prs_file)
+    mock_fetch.assert_not_called()
+    assert result[0]["category"] == "app"
 
 
 def test_generate_weekly_summary_includes_category_annotation():
