@@ -158,6 +158,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     mother_to_flw: dict[str, str] = {}
     visits_by_mother: dict[str, dict[str, str]] = {}  # mid → {form_name → date}
     gps_distances: dict[str, list[float]] = {}
+    visit_durations: dict[str, list[float]] = {}
+    visit_times: dict[str, list[tuple]] = {}  # username → [(time_start, time_end)] sorted chronologically
     ebf_count_by_flw: dict[str, int] = {}
     bf_count_by_flw: dict[str, int] = {}
     mother_sets_by_flw: dict[str, set] = {}  # only populated when not use_agg_counts
@@ -217,12 +219,42 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             except (TypeError, ValueError):
                 pass
 
+        ts_start = row.get("time_start") or ""
+        ts_end = row.get("visit_datetime") or ""
+        if ts_start and ts_end:
+            try:
+                t0 = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+                t1 = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+                mins = (t1 - t0).total_seconds() / 60
+                if 0 < mins < 300:  # sanity: 0–5 hours
+                    visit_durations.setdefault(username, []).append(mins)
+            except (ValueError, TypeError):
+                pass
+            # Collect (time_start, time_end) pairs in order for inter-visit gap calculation.
+            # visits_sorted is chronological so appending here is already ordered per FLW.
+            visit_times.setdefault(username, []).append((ts_start, ts_end))
+
         if not use_agg_counts:
             bf_status = (row.get("bf_status") or "").strip()
             if bf_status:
                 bf_count_by_flw[username] = bf_count_by_flw.get(username, 0) + 1
                 if "ebf" in bf_status.split():
                     ebf_count_by_flw[username] = ebf_count_by_flw.get(username, 0) + 1
+
+    # ── Inter-visit travel time (median gap between consecutive visits per FLW) ──
+    inter_visit_gaps: dict[str, list[float]] = {}
+    for u, vt_list in visit_times.items():
+        for i in range(1, len(vt_list)):
+            prev_end = vt_list[i - 1][1]
+            curr_start = vt_list[i][0]
+            try:
+                t0 = datetime.fromisoformat(prev_end.replace("Z", "+00:00"))
+                t1 = datetime.fromisoformat(curr_start.replace("Z", "+00:00"))
+                gap_mins = (t1 - t0).total_seconds() / 60
+                if 0 < gap_mins < 480:  # sanity: 0–8 hours (cross-day gaps excluded)
+                    inter_visit_gaps.setdefault(u, []).append(gap_mins)
+            except (ValueError, TypeError):
+                pass
 
     # ── Registrations: schedules + eligibility per mother ──
     progress_callback("Processing registration data…")
@@ -387,6 +419,22 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         gs_raw = gs_by_user.get(u)
         gs_score = round(gs_raw) if gs_raw is not None else None
 
+        # Visit duration (median minutes per visit)
+        durations = visit_durations.get(u, [])
+        if durations:
+            sorted_dur = sorted(durations)
+            minute_per_visit = round(sorted_dur[len(sorted_dur) // 2])
+        else:
+            minute_per_visit = None
+
+        # Inter-visit travel time (median minutes between end of one visit and start of next)
+        gaps = inter_visit_gaps.get(u, [])
+        if gaps:
+            sorted_gaps = sorted(gaps)
+            travel_time = round(sorted_gaps[len(sorted_gaps) // 2])
+        else:
+            travel_time = None
+
         flw_summaries.append(
             {
                 "username": u,
@@ -400,7 +448,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                 "revisit_dist": revisit_m,
                 "meter_per_visit": meter_per_visit,
                 "dist_ratio": dist_ratio,
-                "minute_per_visit": None,  # requires visit timeStart — not in current pipeline
+                "minute_per_visit": minute_per_visit,
+                "travel_time": travel_time,
             }
         )
 
