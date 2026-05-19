@@ -36,6 +36,25 @@ from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 CHANGELOG_PAGE_ID = "3918528513"  # Connect Labs Changelog
 
+MARKETING_PATHS = (
+    "commcare_connect/prelogin/",
+    "commcare_connect/templates/prelogin/",
+    "commcare_connect/static/prelogin/",
+)
+
+
+def classify_pr(files: list[str]) -> str:
+    """Return 'marketing', 'app', or 'mixed' based on which paths a PR touched."""
+    if not files:
+        return "app"
+    marketing = [f for f in files if any(f.startswith(p) for p in MARKETING_PATHS)]
+    app = [f for f in files if not any(f.startswith(p) for p in MARKETING_PATHS)]
+    if marketing and not app:
+        return "marketing"
+    if app and not marketing:
+        return "app"
+    return "mixed"
+
 WEEKLY_SYSTEM_PROMPT = """\
 You write weekly product updates for the Connect Labs web application.
 Audience: non-developer program staff who use the app regularly.
