@@ -106,10 +106,12 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
     """Load merged PRs, returning only those with a non-empty Product Description."""
     with open(prs_file) as f:
         prs = json.load(f)
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
     result = []
     for pr in prs:
         desc = extract_product_description(pr.get("body") or "")
         if desc:
+            files = fetch_pr_files(pr["number"], repo) if repo else []
             result.append(
                 {
                     "number": pr["number"],
@@ -117,6 +119,7 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
                     "url": pr.get("html_url", ""),
                     "merged_at": pr.get("merged_at", ""),
                     "description": desc,
+                    "category": classify_pr(files),
                 }
             )
     return result

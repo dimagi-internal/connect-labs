@@ -66,3 +66,66 @@ def test_fetch_pr_files_strips_blank_lines():
     with patch("weekly_changelog.subprocess.run", return_value=mock_result):
         files = fetch_pr_files(1, "jjackson/connect-labs")
     assert files == ["commcare_connect/prelogin/home.html"]
+
+
+import json
+import os
+import tempfile
+from weekly_changelog import load_user_visible_prs
+
+PR_TEMPLATE = {
+    "number": 1,
+    "title": "feat: something",
+    "html_url": "https://github.com/jjackson/connect-labs/pull/1",
+    "merged_at": "2026-05-19T10:00:00Z",
+    "body": "## Product Description\nThis changes the UI.",
+}
+
+
+def _write_prs_file(prs):
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(prs, f)
+    f.close()
+    return f.name
+
+
+def test_load_user_visible_prs_adds_marketing_category():
+    pr = dict(PR_TEMPLATE, number=10)
+    prs_file = _write_prs_file([pr])
+    marketing_files = ["commcare_connect/prelogin/views.py"]
+    try:
+        with patch("weekly_changelog.fetch_pr_files", return_value=marketing_files), patch.dict(
+            os.environ, {"GITHUB_REPOSITORY": "jjackson/connect-labs"}
+        ):
+            result = load_user_visible_prs(prs_file)
+    finally:
+        os.unlink(prs_file)
+    assert len(result) == 1
+    assert result[0]["category"] == "marketing"
+
+
+def test_load_user_visible_prs_adds_app_category():
+    pr = dict(PR_TEMPLATE, number=11)
+    prs_file = _write_prs_file([pr])
+    app_files = ["commcare_connect/workflow/views.py"]
+    try:
+        with patch("weekly_changelog.fetch_pr_files", return_value=app_files), patch.dict(
+            os.environ, {"GITHUB_REPOSITORY": "jjackson/connect-labs"}
+        ):
+            result = load_user_visible_prs(prs_file)
+    finally:
+        os.unlink(prs_file)
+    assert result[0]["category"] == "app"
+
+
+def test_load_user_visible_prs_skips_empty_product_description():
+    pr = dict(PR_TEMPLATE, number=12, body="## Product Description\n\n")
+    prs_file = _write_prs_file([pr])
+    try:
+        with patch("weekly_changelog.fetch_pr_files", return_value=[]), patch.dict(
+            os.environ, {"GITHUB_REPOSITORY": "jjackson/connect-labs"}
+        ):
+            result = load_user_visible_prs(prs_file)
+    finally:
+        os.unlink(prs_file)
+    assert result == []
