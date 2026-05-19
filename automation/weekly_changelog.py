@@ -24,6 +24,7 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -54,6 +55,19 @@ def classify_pr(files: list[str]) -> str:
     if app and not marketing:
         return "app"
     return "mixed"
+
+
+def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
+    """Return list of filenames changed in a PR, via the gh CLI."""
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repo}/pulls/{pr_number}/files", "--jq", ".[].filename"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
 
 WEEKLY_SYSTEM_PROMPT = """\
 You write weekly product updates for the Connect Labs web application.
