@@ -83,6 +83,10 @@ Format rules:
 - Omit infra, refactoring, and developer-tooling changes entirely
 - Do NOT include PR numbers or links in the body text (added separately)
 - Return only the summary text — no preamble, no trailing notes
+- PRs marked [category: marketing]: prefix every bullet from that PR with "[Marketing] "
+- PRs marked [category: mixed]: split the description into separate bullets for the app \
+changes and the marketing/website changes; prefix only the marketing bullets with "[Marketing] "
+- PRs marked [category: app]: no prefix on bullets
 """
 
 
@@ -127,7 +131,9 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
 
 def generate_weekly_summary(client: anthropic.Anthropic, prs: list[dict]) -> str:
     """Ask Claude for a user-friendly weekly summary."""
-    pr_text = "\n\n".join(f"PR #{p['number']}: {p['title']}\n{p['description']}" for p in prs)
+    pr_text = "\n\n".join(
+        f"PR #{p['number']} [category: {p.get('category', 'app')}]: {p['title']}\n{p['description']}" for p in prs
+    )
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=800,

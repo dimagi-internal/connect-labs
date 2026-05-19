@@ -71,6 +71,7 @@ def test_fetch_pr_files_strips_blank_lines():
 import json
 import os
 import tempfile
+
 from weekly_changelog import load_user_visible_prs
 
 PR_TEMPLATE = {
@@ -129,3 +130,43 @@ def test_load_user_visible_prs_skips_empty_product_description():
     finally:
         os.unlink(prs_file)
     assert result == []
+
+
+from weekly_changelog import generate_weekly_summary
+
+
+def test_generate_weekly_summary_includes_category_annotation():
+    """Verify the PR text block sent to Claude includes [category: X] annotation."""
+    captured_messages = []
+
+    class FakeResponse:
+        content = [MagicMock(text="- **Some fix** — [Marketing] Details here.")]
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            captured_messages.append(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    prs = [
+        {
+            "number": 5,
+            "title": "feat(prelogin): nav fix",
+            "description": "Hamburger menu added.",
+            "category": "marketing",
+        },
+        {
+            "number": 6,
+            "title": "fix(workflow): dashboard crash",
+            "description": "Fixed React crash.",
+            "category": "app",
+        },
+    ]
+    generate_weekly_summary(FakeClient(), prs)
+
+    assert len(captured_messages) == 1
+    user_content = captured_messages[0]["messages"][0]["content"]
+    assert "PR #5 [category: marketing]" in user_content
+    assert "PR #6 [category: app]" in user_content
