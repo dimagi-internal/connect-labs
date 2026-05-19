@@ -160,6 +160,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     gps_distances: dict[str, list[float]] = {}
     visit_durations: dict[str, list[float]] = {}
     visit_times: dict[str, list[tuple]] = {}  # username → [(time_start, time_end)] sorted chronologically
+    visits_completed_by_flw: dict[str, int] = {}
     ebf_count_by_flw: dict[str, int] = {}
     bf_count_by_flw: dict[str, int] = {}
     mother_sets_by_flw: dict[str, set] = {}  # only populated when not use_agg_counts
@@ -196,6 +197,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             trigger = (task_filters[username] or "")[:10]
             if vdt and trigger and vdt < trigger:
                 continue
+
+        visits_completed_by_flw[username] = visits_completed_by_flw.get(username, 0) + 1
 
         mid = (row.get("mother_case_id") or "").lower()
         # Normalize form name to match visit_type keys produced by mbw_visit_schedules extractor
@@ -387,8 +390,11 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
         dists = gps_distances.get(u, [])
 
         # Mother counts
-        num_mothers = len(mother_sets_by_flw.get(u, set()))
+        mothers_visited = mother_sets_by_flw.get(u, set())
+        num_mothers = len(mothers_visited)
         total_eligible = fu.get("total_eligible", 0)
+        eligible_mothers_visited = sum(1 for mid in mothers_visited if mother_eligibility.get(mid, False))
+        visits_completed = visits_completed_by_flw.get(u, 0)
 
         # EBF%
         bf_count = bf_count_by_flw.get(u, 0)
@@ -441,15 +447,22 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                 "display_name": flw_names.get(u) or flw_names.get(username) or u,
                 "num_mothers": num_mothers,
                 "num_mothers_eligible": total_eligible,
+                "num_eligible_mothers_visited": eligible_mothers_visited,
+                "visits_completed": visits_completed,
                 "gs_score": gs_score,
                 "followup_rate": followup_rate,
+                "followup_rate_denom": denom,
                 "pct_still_eligible": pct_still_eligible,
                 "ebf_pct": ebf_pct,
+                "ebf_denom": bf_count,
                 "revisit_dist": revisit_m,
+                "gps_denom": len(dists),
                 "meter_per_visit": meter_per_visit,
                 "dist_ratio": dist_ratio,
                 "minute_per_visit": minute_per_visit,
+                "duration_denom": len(durations),
                 "travel_time": travel_time,
+                "travel_time_denom": len(gaps),
             }
         )
 
