@@ -40,6 +40,9 @@ You'll also need:
 
 Ask in **#engineering-connect** if you're unsure about any of these.
 
+!!! note "You don't need to run Labs locally"
+    For workflow editing, cloning the repository is enough — you do **not** need to run the Django app locally. Even a local instance fetches all data from Connect prod, so there is no isolation benefit. Claude Code pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.
+
 ---
 
 ## First-Time Setup
@@ -116,6 +119,14 @@ Then describe what you want in plain English. Claude will:
 4. Confirm the update was successful
 
 To verify your change: open the workflow in your browser at [labs.connect.dimagi.com](https://labs.connect.dimagi.com).
+
+### Iteration loop and deployment bar
+
+Workflow definitions are user-generated content stored in Connect prod — updating them requires no pull request and no code review. Keep a low bar for pushing changes: if something looks wrong, describe the fix and let Claude push again. If a change breaks the workflow, it is easy to revert.
+
+The power of this loop is: describe change → Claude pushes → reload browser → verify → repeat. Get comfortable with that cadence rather than doing a lot of intermediate work to validate locally first.
+
+**Note:** changes to the MCP server itself (the Labs code that powers these tools) _do_ require a code deploy. But for all workflow edits, the MCP push is sufficient.
 
 ---
 
