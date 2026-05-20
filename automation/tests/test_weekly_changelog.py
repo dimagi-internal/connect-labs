@@ -64,6 +64,7 @@ def test_fetch_pr_files_returns_filenames():
         ["gh", "api", "repos/jjackson/connect-labs/pulls/42/files", "--jq", ".[].filename"],
         capture_output=True,
         text=True,
+        timeout=15,
     )
     assert files == ["commcare_connect/prelogin/views.py", "commcare_connect/workflow/views.py"]
 
@@ -74,6 +75,12 @@ def test_fetch_pr_files_returns_empty_on_error():
     mock_result.stdout = ""
     with patch("weekly_changelog.subprocess.run", return_value=mock_result):
         files = fetch_pr_files(99, "jjackson/connect-labs")
+    assert files == []
+
+
+def test_fetch_pr_files_returns_empty_on_timeout():
+    with patch("weekly_changelog.subprocess.run", side_effect=subprocess.TimeoutExpired("gh", 15)):
+        files = fetch_pr_files(7, "jjackson/connect-labs")
     assert files == []
 
 

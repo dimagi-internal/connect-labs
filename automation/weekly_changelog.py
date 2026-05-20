@@ -59,11 +59,16 @@ def classify_pr(files: list[str]) -> str:
 
 def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
     """Return list of filenames changed in a PR, via the gh CLI."""
-    result = subprocess.run(
-        ["gh", "api", f"repos/{repo}/pulls/{pr_number}/files", "--jq", ".[].filename"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pulls/{pr_number}/files", "--jq", ".[].filename"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"  [warn] gh api timed out for PR #{pr_number}", file=sys.stderr)
+        return []
     if result.returncode != 0:
         print(f"  [warn] gh api failed for PR #{pr_number}: {result.stderr.strip()}", file=sys.stderr)
         return []
