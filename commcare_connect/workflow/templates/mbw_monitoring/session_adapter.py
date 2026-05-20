@@ -13,7 +13,7 @@ from commcare_connect.workflow.data_access import WorkflowDataAccess, WorkflowRu
 
 logger = logging.getLogger(__name__)
 
-VALID_FLW_RESULTS = ("eligible_for_renewal", "probation", "suspended")
+VALID_FLW_RESULTS = ("eligible_for_renewal", "probation", "requires_improvement", "suspended")
 
 
 class WorkflowMonitoringSession:

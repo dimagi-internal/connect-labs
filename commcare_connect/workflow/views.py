@@ -957,11 +957,11 @@ def save_worker_result_api(request, run_id):
     Request body:
         {
             "username": "worker@example.com",
-            "result": "eligible_for_renewal" | "probation" | "suspended" | null,
+            "result": "eligible_for_renewal" | "probation" | "requires_improvement" | "suspended" | null,
             "notes": "Optional notes"
         }
     """
-    VALID_RESULTS = ("eligible_for_renewal", "probation", "suspended")
+    VALID_RESULTS = ("eligible_for_renewal", "probation", "requires_improvement", "suspended")
 
     data_access = None
     try:
