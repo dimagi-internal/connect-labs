@@ -167,6 +167,9 @@ function WorkflowUI({
   var _flwHistory = React.useState({});
   var flwHistory = _flwHistory[0];
   var setFlwHistory = _flwHistory[1];
+  var _prevCatsForSelect = React.useState({});
+  var prevCatsForSelect = _prevCatsForSelect[0];
+  var setPrevCatsForSelect = _prevCatsForSelect[1];
   var _historyLoading = React.useState(false);
   var historyLoading = _historyLoading[0];
   var setHistoryLoading = _historyLoading[1];
@@ -499,20 +502,24 @@ function WorkflowUI({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch FLW audit history for the selection step
+  // Fetch data for the FLW selection step (history + prev categories)
   React.useEffect(
     function () {
       if (!instance.opportunity_id) return;
       if (savedSelectedWorkers.length > 0) return;
       setHistoryLoading(true);
-      fetch('/custom_analysis/mbw_monitoring/api/opportunity-flws/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCSRF(),
+
+      var historyPromise = fetch(
+        '/custom_analysis/mbw_monitoring/api/opportunity-flws/',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRF(),
+          },
+          body: JSON.stringify({ opportunities: [instance.opportunity_id] }),
         },
-        body: JSON.stringify({ opportunities: [instance.opportunity_id] }),
-      })
+      )
         .then(function (r) {
           return r.json();
         })
@@ -527,10 +534,26 @@ function WorkflowUI({
         })
         .catch(function (err) {
           console.error('Failed to fetch FLW history:', err);
-        })
-        .finally(function () {
-          setHistoryLoading(false);
         });
+
+      var prevCatPromise = fetch('/labs/workflow/api/prev-categories/', {
+        credentials: 'same-origin',
+      })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (data.prev_categories) {
+            setPrevCatsForSelect(data.prev_categories);
+          }
+        })
+        .catch(function (err) {
+          console.error('Failed to fetch prev categories:', err);
+        });
+
+      Promise.all([historyPromise, prevCatPromise]).finally(function () {
+        setHistoryLoading(false);
+      });
     },
     [instance.opportunity_id], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -1433,8 +1456,10 @@ function WorkflowUI({
         va = ha.last_audit_date || '';
         vb = hb.last_audit_date || '';
       } else if (selSort.col === 'last_audit_result') {
-        va = ha.last_audit_result || '';
-        vb = hb.last_audit_result || '';
+        var pa = prevCatsForSelect[a.username] || {};
+        var pb = prevCatsForSelect[b.username] || {};
+        va = (pa.result || pa || '');
+        vb = (pb.result || pb || '');
       } else {
         va = '';
         vb = '';
@@ -1471,17 +1496,11 @@ function WorkflowUI({
       );
     };
 
-    var lastResultBadge = function (result) {
+    var prevCatBadge = function (catEntry) {
+      // catEntry may be {result: "...", notes: "..."} or a bare string
+      var result = catEntry && (catEntry.result || catEntry);
       if (!result) return React.createElement('span', { className: 'text-gray-300' }, '—');
-      var cls =
-        result === 'eligible_for_renewal'
-          ? 'text-green-700 bg-green-50 px-2 py-0.5 rounded text-xs'
-          : result === 'requires_improvement'
-          ? 'text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-xs'
-          : result === 'suspended'
-          ? 'text-red-700 bg-red-50 px-2 py-0.5 rounded text-xs'
-          : 'text-gray-600 text-xs';
-      return React.createElement('span', { className: cls }, result.replace(/_/g, ' '));
+      return resultBadge(result);
     };
 
     return React.createElement(
@@ -1623,7 +1642,7 @@ function WorkflowUI({
                   React.createElement(
                     'td',
                     { className: 'px-4 py-2 text-sm' },
-                    lastResultBadge(h.last_audit_result),
+                    prevCatBadge(prevCatsForSelect[w.username]),
                   ),
                 );
               }),
