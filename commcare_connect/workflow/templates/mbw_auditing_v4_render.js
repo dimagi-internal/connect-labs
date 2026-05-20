@@ -252,7 +252,6 @@ function WorkflowUI({
     selectedForRunRef.current = selected;
     onUpdateState({
       selected_workers: selected,
-      worker_results: {},
     })
       .then(function () {
         setLaunching(false);
