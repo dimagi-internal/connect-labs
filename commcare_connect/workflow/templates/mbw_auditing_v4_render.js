@@ -90,8 +90,10 @@ function WorkflowUI({
   var savedResults = (instance.state && instance.state.worker_results) || {};
   var savedTaskStates = (instance.state && instance.state.task_states) || {};
   var prevMetrics = (instance.state && instance.state.previous_metrics) || {};
+  var savedSelectedWorkers =
+    (instance.state && instance.state.selected_workers) || [];
 
-  var _step = React.useState('idle');
+  var _step = React.useState(savedSelectedWorkers.length > 0 ? 'idle' : 'select');
   var step = _step[0];
   var setStep = _step[1];
   var _dashData = React.useState(null);
@@ -158,8 +160,33 @@ function WorkflowUI({
   var perfData = _perfData[0];
   var setPerfData = _perfData[1];
 
+  // FLW selection step state
+  var _selectedFlws = React.useState({});
+  var selectedFlws = _selectedFlws[0];
+  var setSelectedFlws = _selectedFlws[1];
+  var _flwHistory = React.useState({});
+  var flwHistory = _flwHistory[0];
+  var setFlwHistory = _flwHistory[1];
+  var _historyLoading = React.useState(false);
+  var historyLoading = _historyLoading[0];
+  var setHistoryLoading = _historyLoading[1];
+  var _selSearch = React.useState('');
+  var selSearch = _selSearch[0];
+  var setSelSearch = _selSearch[1];
+  var _selSort = React.useState({ col: 'name', dir: 'asc' });
+  var selSort = _selSort[0];
+  var setSelSort = _selSort[1];
+  var _launching = React.useState(false);
+  var launching = _launching[0];
+  var setLaunching = _launching[1];
+
   var jobCleanupRef = React.useRef(null);
   var tab2CleanupRef = React.useRef(null);
+  // Holds selected usernames for the current run so runAnalysis can read them
+  // even before onUpdateState resolves (instance.state not yet updated)
+  var selectedForRunRef = React.useRef(
+    savedSelectedWorkers.length > 0 ? savedSelectedWorkers : null,
+  );
 
   // =========================================================================
   // Derived helpers
@@ -180,6 +207,60 @@ function WorkflowUI({
   // =========================================================================
   // Helpers
   // =========================================================================
+  var getCSRF = React.useCallback(function () {
+    return (
+      (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value ||
+      ((document.cookie.match(/csrftoken=([^;]+)/) || [])[1]) ||
+      ''
+    );
+  }, []);
+
+  var toggleFlw = function (username) {
+    setSelectedFlws(function (prev) {
+      var next = Object.assign({}, prev);
+      next[username] = !next[username];
+      return next;
+    });
+  };
+
+  var toggleAll = function () {
+    var allSel =
+      workers.length > 0 &&
+      workers.every(function (w) {
+        return selectedFlws[w.username];
+      });
+    var updated = {};
+    workers.forEach(function (w) {
+      updated[w.username] = !allSel;
+    });
+    setSelectedFlws(updated);
+  };
+
+  var handleLaunch = function () {
+    var selected = Object.entries(selectedFlws)
+      .filter(function (e) {
+        return e[1];
+      })
+      .map(function (e) {
+        return e[0];
+      });
+    if (selected.length === 0) return;
+    setLaunching(true);
+    selectedForRunRef.current = selected;
+    onUpdateState({
+      selected_workers: selected,
+      worker_results: {},
+    })
+      .then(function () {
+        setLaunching(false);
+        setStep('idle');
+        runAnalysis();
+      })
+      .catch(function () {
+        setLaunching(false);
+      });
+  };
+
   var daysAgo = function (dt) {
     if (!dt) return '—';
     var ms = Date.parse(dt);
@@ -298,9 +379,13 @@ function WorkflowUI({
       setJobMessages(['Starting analysis…']);
       setDashData(null);
 
-      var allUsernames = (workers || []).map(function (w) {
-        return w.username;
-      });
+      var selRef = selectedForRunRef.current;
+      var allUsernames =
+        selRef && selRef.length > 0
+          ? selRef
+          : (workers || []).map(function (w) {
+              return w.username;
+            });
 
       actions
         .startJob(instance.id, {
@@ -405,11 +490,50 @@ function WorkflowUI({
     ],
   );
 
+  // Auto-run on mount only when reopening an existing run (saved workers present)
   React.useEffect(function () {
-    if (!dashData) {
+    var hasSaved =
+      selectedForRunRef.current && selectedForRunRef.current.length > 0;
+    if (!dashData && hasSaved) {
       runAnalysis();
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch FLW audit history for the selection step
+  React.useEffect(
+    function () {
+      if (!instance.opportunity_id) return;
+      if (savedSelectedWorkers.length > 0) return;
+      setHistoryLoading(true);
+      fetch('/custom_analysis/mbw_monitoring/api/opportunity-flws/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCSRF(),
+        },
+        body: JSON.stringify({ opportunities: [instance.opportunity_id] }),
+      })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (data.success) {
+            var hm = {};
+            (data.flws || []).forEach(function (f) {
+              hm[f.username] = f.history || {};
+            });
+            setFlwHistory(hm);
+          }
+        })
+        .catch(function (err) {
+          console.error('Failed to fetch FLW history:', err);
+        })
+        .finally(function () {
+          setHistoryLoading(false);
+        });
+    },
+    [instance.opportunity_id], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   React.useEffect(function () {
     return function () {
       if (jobCleanupRef.current) jobCleanupRef.current();
@@ -1282,6 +1406,250 @@ function WorkflowUI({
       }),
     );
   };
+
+  // =========================================================================
+  // FLW selection step
+  // =========================================================================
+  if (step === 'select') {
+    var filteredWorkers = (workers || []).filter(function (w) {
+      if (!selSearch) return true;
+      var q = selSearch.toLowerCase();
+      return (
+        (w.name || '').toLowerCase().indexOf(q) >= 0 ||
+        (w.username || '').toLowerCase().indexOf(q) >= 0
+      );
+    });
+    filteredWorkers = filteredWorkers.slice().sort(function (a, b) {
+      var ha = flwHistory[a.username] || {};
+      var hb = flwHistory[b.username] || {};
+      var va, vb;
+      if (selSort.col === 'name') {
+        va = (a.name || a.username || '').toLowerCase();
+        vb = (b.name || b.username || '').toLowerCase();
+      } else if (selSort.col === 'audit_count') {
+        va = ha.audit_count || 0;
+        vb = hb.audit_count || 0;
+      } else if (selSort.col === 'last_audit_date') {
+        va = ha.last_audit_date || '';
+        vb = hb.last_audit_date || '';
+      } else if (selSort.col === 'last_audit_result') {
+        va = ha.last_audit_result || '';
+        vb = hb.last_audit_result || '';
+      } else {
+        va = '';
+        vb = '';
+      }
+      var cmp =
+        typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb));
+      return selSort.dir === 'asc' ? cmp : -cmp;
+    });
+
+    var selectedCount = Object.values(selectedFlws).filter(Boolean).length;
+    var allSel =
+      (workers || []).length > 0 &&
+      (workers || []).every(function (w) {
+        return selectedFlws[w.username];
+      });
+
+    var selHeader = function (col, label, align) {
+      var active = selSort.col === col;
+      return React.createElement(
+        'th',
+        {
+          key: col,
+          className:
+            'px-4 py-2 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none' +
+            (align === 'center' ? ' text-center' : ' text-left'),
+          onClick: function () {
+            setSelSort({
+              col: col,
+              dir: active && selSort.dir === 'asc' ? 'desc' : 'asc',
+            });
+          },
+        },
+        label + (active ? (selSort.dir === 'asc' ? ' ▲' : ' ▼') : ''),
+      );
+    };
+
+    var lastResultBadge = function (result) {
+      if (!result) return React.createElement('span', { className: 'text-gray-300' }, '—');
+      var cls =
+        result === 'eligible_for_renewal'
+          ? 'text-green-700 bg-green-50 px-2 py-0.5 rounded text-xs'
+          : result === 'requires_improvement'
+          ? 'text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-xs'
+          : result === 'suspended'
+          ? 'text-red-700 bg-red-50 px-2 py-0.5 rounded text-xs'
+          : 'text-gray-600 text-xs';
+      return React.createElement('span', { className: cls }, result.replace(/_/g, ' '));
+    };
+
+    return React.createElement(
+      'div',
+      { className: 'space-y-6' },
+      // Header
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm p-6' },
+        React.createElement(
+          'h2',
+          { className: 'text-xl font-bold text-gray-900' },
+          'Select FLWs for Audit',
+        ),
+        React.createElement(
+          'p',
+          { className: 'text-gray-600 mt-1' },
+          'Choose which frontline workers to include in this audit run.',
+        ),
+      ),
+      // Table
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm overflow-hidden' },
+        historyLoading &&
+          React.createElement(
+            'div',
+            { className: 'px-4 py-2 text-xs text-gray-400 bg-gray-50 border-b' },
+            'Loading audit history…',
+          ),
+        // Toolbar
+        React.createElement(
+          'div',
+          { className: 'px-4 py-2 bg-gray-50 border-b flex items-center gap-2' },
+          React.createElement('input', {
+            type: 'text',
+            value: selSearch,
+            onChange: function (e) {
+              setSelSearch(e.target.value);
+            },
+            placeholder: 'Search FLWs…',
+            className: 'border rounded px-2 py-1 text-sm flex-1',
+          }),
+          React.createElement(
+            'span',
+            { className: 'text-sm text-gray-500' },
+            selectedCount + ' selected',
+          ),
+        ),
+        // Table body
+        React.createElement(
+          'div',
+          { className: 'max-h-96 overflow-y-auto' },
+          React.createElement(
+            'table',
+            { className: 'min-w-full divide-y divide-gray-200' },
+            React.createElement(
+              'thead',
+              { className: 'bg-gray-50 sticky top-0' },
+              React.createElement(
+                'tr',
+                null,
+                React.createElement(
+                  'th',
+                  { className: 'px-4 py-2 text-left w-10' },
+                  React.createElement('input', {
+                    type: 'checkbox',
+                    checked: allSel,
+                    onChange: toggleAll,
+                  }),
+                ),
+                selHeader('name', 'FLW (' + (workers || []).length + ')'),
+                selHeader('username', 'Connect ID'),
+                selHeader('audit_count', 'Past Audits', 'center'),
+                selHeader('last_audit_date', 'Last Audit Date'),
+                selHeader('last_audit_result', 'Last Performance Category'),
+              ),
+            ),
+            React.createElement(
+              'tbody',
+              { className: 'divide-y divide-gray-200' },
+              filteredWorkers.map(function (w) {
+                var h = flwHistory[w.username] || {};
+                return React.createElement(
+                  'tr',
+                  {
+                    key: w.username,
+                    className: 'hover:bg-gray-50 cursor-pointer',
+                    onClick: function () {
+                      toggleFlw(w.username);
+                    },
+                  },
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2' },
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: !!selectedFlws[w.username],
+                      onChange: function () {
+                        toggleFlw(w.username);
+                      },
+                      onClick: function (e) {
+                        e.stopPropagation();
+                      },
+                    }),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2' },
+                    React.createElement(
+                      'div',
+                      { className: 'font-medium text-sm' },
+                      w.name || w.username,
+                    ),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-xs text-gray-500 font-mono' },
+                    w.username,
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-center text-sm text-gray-600' },
+                    h.audit_count > 0
+                      ? h.audit_count
+                      : React.createElement('span', { className: 'text-gray-300' }, '—'),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-sm text-gray-600' },
+                    h.last_audit_date
+                      ? new Date(h.last_audit_date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : React.createElement('span', { className: 'text-gray-300' }, '—'),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-sm' },
+                    lastResultBadge(h.last_audit_result),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      ),
+      // Launch button
+      React.createElement(
+        'div',
+        { className: 'flex justify-end' },
+        React.createElement(
+          'button',
+          {
+            onClick: handleLaunch,
+            disabled: selectedCount === 0 || launching,
+            className:
+              'px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50',
+          },
+          launching
+            ? 'Launching…'
+            : 'Run Audit (' + selectedCount + ' FLWs)',
+        ),
+      ),
+    );
+  }
 
   // =========================================================================
   // Loading / error states
