@@ -61,7 +61,7 @@ def _evaluate(node: ast.AST, names: dict, sidecar_files: dict[str, str]) -> obje
         return node.value
     if isinstance(node, ast.Name):
         if node.id not in names:
-            raise TemplateParseError(f"undefined name '{node.id}' at line {getattr(node, 'lineno', '?')}")
+            raise TemplateParseError(f"unknown name {node.id} at line {getattr(node, 'lineno', '?')}")
         return names[node.id]
     if isinstance(node, ast.List):
         return [_evaluate(elt, names, sidecar_files) for elt in node.elts]
@@ -72,4 +72,11 @@ def _evaluate(node: ast.AST, names: dict, sidecar_files: dict[str, str]) -> obje
                 raise TemplateParseError(f"dict unpacking (**) not supported at line {getattr(node, 'lineno', '?')}")
             result[_evaluate(k, names, sidecar_files)] = _evaluate(v, names, sidecar_files)
         return result
+    if isinstance(node, ast.Tuple):
+        return tuple(_evaluate(elt, names, sidecar_files) for elt in node.elts)
+    if isinstance(node, ast.Set):
+        return {_evaluate(elt, names, sidecar_files) for elt in node.elts}
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant):
+        # `-1` parses as UnaryOp(USub, Constant(1)) in Python's AST.
+        return -node.operand.value
     raise TemplateParseError(f"unsupported expression at line {getattr(node, 'lineno', '?')}: " f"{ast.dump(node)}")
