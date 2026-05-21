@@ -49,7 +49,7 @@ function WorkflowUI({
   ];
 
   var METRIC_COLS = [
-    { key: 'gs_score', label: 'GS Score', fmt: 'pct', higherBetter: true, denomKey: 'gps_denom' },
+    { key: 'gs_score', label: 'GS Score', fmt: 'pct', higherBetter: true },
     { key: 'followup_rate', label: 'Follow-up Rate', fmt: 'pct', higherBetter: true, denomKey: 'followup_rate_denom' },
     { key: 'pct_still_eligible', label: '% Still Eligible', fmt: 'pct', higherBetter: true },
     { key: 'ebf_pct', label: 'EBF %', fmt: 'pct', higherBetter: true, denomKey: 'ebf_denom' },
