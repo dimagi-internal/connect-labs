@@ -249,9 +249,13 @@ def test_writes_happen_when_dry_run_false(mock_wda, client, auth_user):
     current_render.version = 11
     current_render.component_code = "function WorkflowUI() { return 'old'; }"
 
+    new_render = MagicMock()
+    new_render.version = 12
+
     instance = MagicMock()
     instance.get_definition.return_value = current_def
     instance.get_render_code.return_value = current_render
+    instance.save_render_code.return_value = new_render
     mock_wda.return_value = instance
 
     data = _call_tool(
@@ -274,17 +278,19 @@ def test_writes_happen_when_dry_run_false(mock_wda, client, auth_user):
     assert payload["render_code"]["version_after"] == 12
     assert payload["definition"]["version_after"] == 8
 
-    # Verify both updates were called with correct versions
+    # update_definition takes (definition_id=, data=); version is inside the data dict.
     instance.update_definition.assert_called_once()
-    call_args = instance.update_definition.call_args
-    assert call_args[0][0] == 42  # workflow_id
-    assert call_args[1]["expected_version"] == 7
+    update_kwargs = instance.update_definition.call_args.kwargs
+    assert update_kwargs["definition_id"] == 42
+    assert update_kwargs["data"]["name"] == "X"
+    assert update_kwargs["data"]["version"] == 8
 
+    # save_render_code takes (definition_id=, component_code=, version=) — version is the new value.
     instance.save_render_code.assert_called_once()
-    call_args = instance.save_render_code.call_args
-    assert call_args[0][0] == 42  # workflow_id
-    assert call_args[0][1] == "function WorkflowUI() { return null; }"  # new render code
-    assert call_args[1]["expected_version"] == 11
+    save_kwargs = instance.save_render_code.call_args.kwargs
+    assert save_kwargs["definition_id"] == 42
+    assert save_kwargs["component_code"] == "function WorkflowUI() { return null; }"
+    assert save_kwargs["version"] == 12
 
 
 @pytest.mark.django_db
