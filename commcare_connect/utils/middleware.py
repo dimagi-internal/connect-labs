@@ -26,6 +26,16 @@ class CustomErrorHandlingMiddleware:
             return HttpResponseRedirect(request.headers["referer"])
 
 
+class NoIndexMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+        return response
+
+
 class CurrentVersionMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
