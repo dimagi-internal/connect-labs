@@ -1,1209 +1,2969 @@
-function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState }) {
-
-    // =========================================================================
-    // Constants
-    // =========================================================================
-    var THRESHOLDS = {
-        gs_red: 50,
-        fu_red: 50,
-        fu_yellow: 80,
-        pct_still_elig_red: 50,
-        pct_still_elig_yellow: 85,
-        ebf_low: 30,
-        ebf_high: 89,
-        dist_ratio_low: 1.0,
-        worsened_pct: 10,
-    };
-
-    var PERF_CATEGORIES = [
-        { id: 'eligible_for_renewal', label: 'Eligible for Renewal', icon: 'fa-circle-check',
-          active: 'bg-green-600 text-white border-green-600',
-          inactive: 'bg-green-50 text-green-800 border-green-300 hover:bg-green-100' },
-        { id: 'requires_improvement', label: 'Requires Improvement', icon: 'fa-triangle-exclamation',
-          active: 'bg-amber-600 text-white border-amber-600',
-          inactive: 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' },
-        { id: 'suspended', label: 'Suspension', icon: 'fa-ban',
-          active: 'bg-red-600 text-white border-red-600',
-          inactive: 'bg-red-50 text-red-800 border-red-300 hover:bg-red-100' },
-    ];
-
-    var METRIC_COLS = [
-        { key: 'gs_score',           label: 'GS Score',         fmt: 'pct',  higherBetter: true  },
-        { key: 'followup_rate',      label: 'Follow-up Rate',   fmt: 'pct',  higherBetter: true  },
-        { key: 'pct_still_eligible', label: '% Still Eligible', fmt: 'pct',  higherBetter: true  },
-        { key: 'ebf_pct',            label: 'EBF %',            fmt: 'pct',  higherBetter: true  },
-        { key: 'revisit_dist',       label: 'Revisit Dist (m)', fmt: 'int',  higherBetter: false  },
-        { key: 'meter_per_visit',    label: 'Meter/Visit',      fmt: 'int',  higherBetter: null  },
-        { key: 'dist_ratio',         label: 'Dist Ratio',       fmt: 'dec',  higherBetter: true  },
-        { key: 'minute_per_visit',   label: 'Min/Visit',        fmt: 'int',  higherBetter: null  },
-    ];
-
-    // =========================================================================
-    // State
-    // =========================================================================
-    var savedResults = (instance.state && instance.state.worker_results) || {};
-    var savedTaskStates = (instance.state && instance.state.task_states) || {};
-    var prevMetrics = (instance.state && instance.state.previous_metrics) || {};
-
-    var _step = React.useState('idle'); var step = _step[0]; var setStep = _step[1];
-    var _dashData = React.useState(null); var dashData = _dashData[0]; var setDashData = _dashData[1];
-    var _jobMessages = React.useState([]); var jobMessages = _jobMessages[0]; var setJobMessages = _jobMessages[1];
-    var _jobError = React.useState(null); var jobError = _jobError[0]; var setJobError = _jobError[1];
-    var _activeTab = React.useState('audit'); var activeTab = _activeTab[0]; var setActiveTab = _activeTab[1];
-    var _workerResults = React.useState(savedResults); var workerResults = _workerResults[0]; var setWorkerResults = _workerResults[1];
-    var _taskStates = React.useState(savedTaskStates); var taskStates = _taskStates[0]; var setTaskStates = _taskStates[1];
-    var _sortCol = React.useState('flags'); var sortCol = _sortCol[0]; var setSortCol = _sortCol[1];
-    var _sortAsc = React.useState(false); var sortAsc = _sortAsc[0]; var setSortAsc = _sortAsc[1];
-    var _search = React.useState(''); var search = _search[0]; var setSearch = _search[1];
-    var _filterFlag = React.useState('all'); var filterFlag = _filterFlag[0]; var setFilterFlag = _filterFlag[1];
-    var _tab2FilterFlag = React.useState('all'); var tab2FilterFlag = _tab2FilterFlag[0]; var setTab2FilterFlag = _tab2FilterFlag[1];
-    var _savingUser = React.useState(null); var savingUser = _savingUser[0]; var setSavingUser = _savingUser[1];
-    var _concludeModal = React.useState(false); var concludeModal = _concludeModal[0]; var setConcludeModal = _concludeModal[1];
-    var _concluding = React.useState(false); var concluding = _concluding[0]; var setConcluding = _concluding[1];
-    var _notesModal = React.useState(null); var notesModal = _notesModal[0]; var setNotesModal = _notesModal[1];
-    var _notesDraft = React.useState(''); var notesDraft = _notesDraft[0]; var setNotesDraft = _notesDraft[1];
-    var _notesModalResult = React.useState(null); var notesModalResult = _notesModalResult[0]; var setNotesModalResult = _notesModalResult[1];
-    var _savingNotes = React.useState(false); var savingNotes = _savingNotes[0]; var setSavingNotes = _savingNotes[1];
-    var _tab2Step = React.useState('idle'); var tab2Step = _tab2Step[0]; var setTab2Step = _tab2Step[1];
-    var _tab2Data = React.useState(null); var tab2Data = _tab2Data[0]; var setTab2Data = _tab2Data[1];
-    var _perfData = React.useState(null); var perfData = _perfData[0]; var setPerfData = _perfData[1];
-
-    var jobCleanupRef = React.useRef(null);
-    var tab2CleanupRef = React.useRef(null);
-
-    // =========================================================================
-    // Derived helpers
-    // =========================================================================
-    var flwNameMap = React.useMemo(function() {
-        var m = {};
-        (workers || []).forEach(function(w) {
-            if (w.username) m[w.username.toLowerCase()] = w.name || w.username;
-        });
-        return m;
-    }, [workers]);
-
-    var prevCategories = (dashData && dashData.prev_categories) || {};
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
-    var daysAgo = function(dt) {
-        if (!dt) return '—';
-        var ms = Date.parse(dt);
-        if (isNaN(ms)) return dt;
-        var days = Math.floor((Date.now() - ms) / 86400000);
-        if (days === 0) return 'today';
-        if (days === 1) return '1d ago';
-        return days + 'd ago';
-    };
-
-    var fmtVal = function(val, fmt) {
-        if (val == null) return '—';
-        if (fmt === 'pct') return val + '%';
-        if (fmt === 'dec') return val.toFixed(1);
-        if (fmt === 'int') return Math.round(val).toString();
-        return String(val);
-    };
-
-    var getMetricValueColor = function(key, val) {
-        if (val == null) return '';
-        if (key === 'gs_score') return val < 50 ? 'text-red-600' : 'text-green-600';
-        if (key === 'followup_rate') {
-            if (val < 50) return 'text-red-600';
-            if (val < 80) return 'text-yellow-600';
-            return 'text-green-600';
-        }
-        if (key === 'pct_still_eligible') {
-            if (val < 50) return 'text-red-600';
-            if (val < 85) return 'text-yellow-600';
-            return 'text-green-600';
-        }
-        if (key === 'ebf_pct') {
-            if (val < 10 || val >= 99) return 'text-red-600';
-            if (val <= 30 || val >= 90) return 'text-yellow-600';
-            return 'text-green-600';
-        }
-        if (key === 'revisit_dist') {
-            if (val < 30) return 'text-green-600';
-            if (val <= 50) return 'text-yellow-600';
-            return 'text-red-600';
-        }
-        if (key === 'meter_per_visit') {
-            if (val > 50) return 'text-green-600';
-            if (val >= 20) return 'text-yellow-600';
-            return 'text-red-600';
-        }
-        if (key === 'minute_per_visit') {
-            if (val > 20) return 'text-green-600';
-            if (val >= 10) return 'text-yellow-600';
-            return 'text-red-600';
-        }
-        return '';
-    };
-
-    var getChangeDir = function(curr, prev, higherBetter) {
-        if (curr == null || prev == null || higherBetter === null) return null;
-        var diff = curr - prev;
-        var threshold = Math.abs(prev) * 0.02;
-        if (Math.abs(diff) <= threshold) return 'same';
-        return (higherBetter ? diff > 0 : diff < 0) ? 'up' : 'down';
-    };
-
-    var ChangeIcon = function(props) {
-        var dir = props.dir;
-        if (!dir) return null;
-        if (dir === 'up') return React.createElement('span', { className: 'text-green-600 ml-1 text-xs', title: 'Improved' }, '▲');
-        if (dir === 'same') return React.createElement('span', { className: 'text-yellow-500 ml-1 text-xs', title: 'No significant change' }, '≈');
-        return React.createElement('span', { className: 'text-red-500 ml-1 text-xs', title: 'Worsened' }, '▼');
-    };
-
-    var resultBadge = function(result) {
-        if (!result) return null;
-        var styles = {
-            eligible_for_renewal: 'bg-green-100 text-green-800',
-            requires_improvement: 'bg-amber-100 text-amber-800',
-            suspended: 'bg-red-100 text-red-800',
-        };
-        return React.createElement('span', {
-            className: 'px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ' + (styles[result] || 'bg-gray-100 text-gray-700'),
-        }, result.replace(/_/g, ' '));
-    };
-
-    // =========================================================================
-    // Job runner
-    // =========================================================================
-    var runAnalysis = React.useCallback(function() {
-        if (!actions || !actions.startJob) return;
-        if (step === 'running') return;
-
-        setStep('running');
-        setJobError(null);
-        setJobMessages(['Starting analysis…']);
-        setDashData(null);
-
-        var allUsernames = (workers || []).map(function(w) { return w.username; });
-
-        actions.startJob(instance.id, {
-            job_type: 'mbw_auditing_v4',
-            server_fetch_pipelines: true,
-            active_usernames: allUsernames,
-            flw_names: flwNameMap,
-            flw_statuses: workerResults,
-            opportunity_id: instance.opportunity_id,
-            workflow_definition_id: instance.definition_id,
-        }).then(function(resp) {
-            if (!resp || !resp.success) {
-                setStep('error');
-                setJobError((resp && resp.error) || 'Failed to start analysis job');
-                return;
-            }
-            var taskId = resp.task_id;
-            if (!taskId) { setStep('error'); setJobError('No task ID returned'); return; }
-
-            var cleanup = actions.streamJobProgress(
-                taskId,
-                function(data) { if (data.message) setJobMessages(function(p) { return p.concat([data.message]); }); },
-                null,
-                function(results) {
-                    var workerMap = {};
-                    (workers || []).forEach(function(w) {
-                        workerMap[(w.username || '').toLowerCase()] = w;
-                    });
-                    var flwSummaries = (results.flw_summaries || []).map(function(s) {
-                        var w = workerMap[s.username] || {};
-                        return Object.assign({}, s, {
-                            last_active: w.last_active || s.last_active || '',
-                            display_name: s.display_name || w.name || s.username,
-                        });
-                    });
-                    setDashData({
-                        flw_summaries: flwSummaries,
-                        prev_categories: results.prev_categories || {},
-                    });
-                    var fetchedTasks = results.open_tasks || {};
-                    if (Object.keys(fetchedTasks).length > 0) {
-                        setTaskStates(function(prev) {
-                            var merged = Object.assign({}, prev);
-                            Object.keys(fetchedTasks).forEach(function(u) {
-                                var t = fetchedTasks[u];
-                                merged[u] = { status: t.status, triggered_at: t.triggered_at, task_id: t.task_id, title: t.title };
-                            });
-                            return merged;
-                        });
-                    }
-                    setStep('ready');
-                    onUpdateState({ analysis_complete: true, analysis_ts: new Date().toISOString() })
-                        .catch(function(e) { console.warn('state save failed:', e); });
-                },
-                function(error) { setStep('error'); setJobError(error || 'Analysis failed'); },
-                function() { setStep('error'); setJobError('Analysis was cancelled'); }
-            );
-            jobCleanupRef.current = cleanup;
-        }).catch(function(err) {
-            setStep('error');
-            setJobError((err && err.message) || 'Failed to start job');
-        });
-    }, [step, workers, flwNameMap, workerResults, instance.id, instance.opportunity_id, instance.definition_id, actions, onUpdateState]);
-
-    React.useEffect(function() { if (!dashData) { runAnalysis(); } }, []);
-    React.useEffect(function() { return function() { if (jobCleanupRef.current) jobCleanupRef.current(); }; }, []);
-    React.useEffect(function() { return function() { if (tab2CleanupRef.current) tab2CleanupRef.current(); }; }, []);
-
-    // =========================================================================
-    // Tab 2 job runner
-    // =========================================================================
-    var runTab2Analysis = React.useCallback(function() {
-        if (!dashData || tab2Step === 'running') return;
-        if (tab2CleanupRef.current) tab2CleanupRef.current();
-
-        setTab2Step('running');
-
-        var flaggedWithTask = enrichedData.filter(function(f) {
-            return f.hasTask && taskStates[f.username] && taskStates[f.username].triggered_at;
-        });
-
-        if (flaggedWithTask.length === 0) { setTab2Step('idle'); return; }
-
-        var flaggedUsernames = flaggedWithTask.map(function(f) { return f.username; });
-        var taskFilters = {};
-        flaggedWithTask.forEach(function(f) {
-            taskFilters[f.username] = taskStates[f.username].triggered_at;
-        });
-
-        actions.startJob(instance.id, {
-            job_type: 'mbw_auditing_v4',
-            server_fetch_pipelines: true,
-            active_usernames: flaggedUsernames,
-            task_filters: taskFilters,
-            flw_names: flwNameMap,
-            flw_statuses: workerResults,
-            opportunity_id: instance.opportunity_id,
-            workflow_definition_id: instance.definition_id,
-        }).then(function(resp) {
-            if (!resp || !resp.success) { setTab2Step('error'); return; }
-            var cleanup = actions.streamJobProgress(
-                resp.task_id, null, null,
-                function(results) {
-                    var byUser = {};
-                    (results.flw_summaries || []).forEach(function(s) { byUser[s.username] = s; });
-                    setTab2Data(byUser);
-                    setTab2Step('ready');
-                },
-                function() { setTab2Step('error'); },
-                function() { setTab2Step('error'); }
-            );
-            tab2CleanupRef.current = cleanup;
-        }).catch(function() { setTab2Step('error'); });
-    }, [dashData, enrichedData, taskStates, flwNameMap, workerResults, instance.id, instance.opportunity_id, instance.definition_id, actions, tab2Step]);
-
-    // =========================================================================
-    // Flag computation
-    // =========================================================================
-    var computeFlags = function(flw) {
-        var reasons = [];
-        var type = null;
-
-        if (flw.gs_score != null && flw.gs_score < THRESHOLDS.gs_red) {
-            reasons.push('GS Score: ' + flw.gs_score + '% (below 50%)');
-            type = 'red';
-        }
-        if (flw.followup_rate != null && flw.followup_rate < THRESHOLDS.fu_red) {
-            reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (below 50%)');
-            type = 'red';
-        } else if (flw.followup_rate != null && flw.followup_rate < THRESHOLDS.fu_yellow) {
-            reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (50–79%)');
-            if (!type) type = 'yellow';
-        }
-        if (flw.pct_still_eligible != null && flw.pct_still_eligible < THRESHOLDS.pct_still_elig_red) {
-            reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '% (below 50%)');
-            if (type !== 'red') type = 'red';
-        } else if (flw.pct_still_eligible != null && flw.pct_still_eligible < THRESHOLDS.pct_still_elig_yellow) {
-            reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '%');
-            if (!type) type = 'yellow';
-        }
-        if (flw.ebf_pct != null && (flw.ebf_pct <= THRESHOLDS.ebf_low || flw.ebf_pct > THRESHOLDS.ebf_high)) {
-            reasons.push('EBF: ' + flw.ebf_pct + '%');
-            if (!type) type = 'yellow';
-        }
-        if (flw.dist_ratio != null && flw.dist_ratio < THRESHOLDS.dist_ratio_low) {
-            reasons.push('GPS Clustering (Dist Ratio: ' + flw.dist_ratio + ')');
-            if (!type) type = 'yellow';
-        }
-        var prev = prevMetrics[flw.username];
-        if (prev) {
-            METRIC_COLS.forEach(function(col) {
-                var curr = flw[col.key];
-                var prevVal = prev[col.key];
-                if (curr == null || prevVal == null || prevVal === 0 || col.higherBetter === null) return;
-                var worsened = col.higherBetter ? (curr < prevVal) : (curr > prevVal);
-                if (!worsened) return;
-                var changePct = Math.abs(curr - prevVal) / Math.abs(prevVal) * 100;
-                if (changePct > THRESHOLDS.worsened_pct) {
-                    reasons.push(col.label + ' worsened (' + Math.round(changePct) + '%)');
-                    if (!type) type = 'yellow';
-                }
-            });
-        }
-        return { type: type, reasons: reasons };
-    };
-
-    // =========================================================================
-    // Enriched data
-    // =========================================================================
-    var enrichedData = React.useMemo(function() {
-        if (!dashData) return [];
-        return dashData.flw_summaries.map(function(flw) {
-            var flags = computeFlags(flw);
-            var wr = workerResults[flw.username] || {};
-            var ts = taskStates[flw.username] || {};
-            return Object.assign({}, flw, {
-                flags: flags,
-                result: wr.result || null,
-                notes: wr.notes || '',
-                hasTask: !!(ts.triggered_at),
-                taskStatus: ts.status || null,
-                taskTriggeredAt: ts.triggered_at || null,
-            });
-        });
-    }, [dashData, workerResults, taskStates]);
-
-    var filteredData = React.useMemo(function() {
-        var data = enrichedData;
-        if (search.trim()) {
-            var q = search.toLowerCase();
-            data = data.filter(function(f) {
-                return (f.display_name && f.display_name.toLowerCase().indexOf(q) >= 0) ||
-                       (f.username && f.username.toLowerCase().indexOf(q) >= 0);
-            });
-        }
-        if (filterFlag === 'red') data = data.filter(function(f) { return f.flags.type === 'red'; });
-        else if (filterFlag === 'flagged') data = data.filter(function(f) { return f.flags.type !== null; });
-        else if (filterFlag === 'tasks') data = data.filter(function(f) { return f.hasTask; });
-
-        data = data.slice().sort(function(a, b) {
-            if (sortCol === 'name') {
-                var va = a.display_name || ''; var vb = b.display_name || '';
-                return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-            }
-            if (sortCol === 'flags') {
-                var order = { red: 2, yellow: 1 };
-                var va = order[a.flags.type] || 0; var vb = order[b.flags.type] || 0;
-                return sortAsc ? va - vb : vb - va;
-            }
-            var va = a[sortCol] != null ? a[sortCol] : -Infinity;
-            var vb = b[sortCol] != null ? b[sortCol] : -Infinity;
-            return sortAsc ? va - vb : vb - va;
-        });
-        return data;
-    }, [enrichedData, search, filterFlag, sortCol, sortAsc]);
-
-    var tab2FlaggedRows = React.useMemo(function() {
-        return enrichedData.filter(function(f) {
-            return f.hasTask && f.taskStatus !== 'closed' && f.taskStatus !== 'completed';
-        });
-    }, [enrichedData]);
-
-    var tab2FilteredRows = React.useMemo(function() {
-        var data = tab2FlaggedRows;
-        if (tab2FilterFlag === 'red') data = data.filter(function(f) { return f.flags.type === 'red'; });
-        else if (tab2FilterFlag === 'flagged') data = data.filter(function(f) { return f.flags.type !== null; });
-        else if (tab2FilterFlag === 'tasks') data = data.filter(function(f) { return f.hasTask; });
-        return data;
-    }, [tab2FlaggedRows, tab2FilterFlag]);
-
-    // =========================================================================
-    // Performance band summary (Tab 3)
-    // =========================================================================
-    var computePerfBands = function() {
-        var bands = [
-            { id: 'eligible_for_renewal', label: 'Eligible for Renewal', color: 'green' },
-            { id: 'requires_improvement', label: 'Requires Improvement', color: 'yellow' },
-            { id: 'suspended', label: 'Suspension', color: 'red' },
-            { id: null, label: 'Uncategorized', color: 'gray' },
-        ];
-        return bands.map(function(band) {
-            var catFlws = enrichedData.filter(function(f) { return f.result === band.id; });
-            var fuFlws = catFlws.filter(function(f) { return f.followup_rate != null; });
-            var avgFu = fuFlws.length > 0
-                ? Math.round(fuFlws.reduce(function(s, f) { return s + f.followup_rate; }, 0) / fuFlws.length)
-                : null;
-            var gsFlws = catFlws.filter(function(f) { return f.gs_score != null; });
-            var avgGs = gsFlws.length > 0
-                ? Math.round(gsFlws.reduce(function(s, f) { return s + f.gs_score; }, 0) / gsFlws.length)
-                : null;
-            var totalElig = catFlws.reduce(function(s, f) { return s + (f.num_mothers_eligible || 0); }, 0);
-            var totalStillElig = catFlws.reduce(function(s, f) {
-                if (f.pct_still_eligible == null || !f.num_mothers_eligible) return s;
-                return s + Math.round(f.pct_still_eligible / 100 * f.num_mothers_eligible);
-            }, 0);
-            var pctStillElig = totalElig > 0 ? Math.round(totalStillElig / totalElig * 100) : null;
-            return Object.assign({}, band, {
-                num_flws: catFlws.length,
-                total_mothers: catFlws.reduce(function(s, f) { return s + (f.num_mothers || 0); }, 0),
-                total_eligible: totalElig,
-                total_still_eligible: totalStillElig,
-                pct_still_eligible: pctStillElig,
-                avg_fu: avgFu,
-                avg_gs: avgGs,
-            });
-        });
-    };
-
-    // =========================================================================
-    // Handlers
-    // =========================================================================
-    var handleSort = function(col) {
-        if (sortCol === col) setSortAsc(!sortAsc);
-        else { setSortCol(col); setSortAsc(col === 'name'); }
-    };
-
-    var handleSetCategory = function(username, category) {
-        // Toggle: clicking the active category clears it
-        var current = (workerResults[username] || {}).result;
-        var newCategory = current === category ? null : category;
-        setSavingUser(username);
-        var wr = workerResults[username] || {};
-        actions.saveWorkerResult(instance.id, { username: username, result: newCategory, notes: wr.notes || '' })
-            .then(function(resp) {
-                if (resp.success) {
-                    var updated = Object.assign({}, workerResults);
-                    updated[username] = Object.assign({}, wr, { result: newCategory });
-                    setWorkerResults(resp.worker_results || updated);
-                } else {
-                    alert('Failed to save: ' + (resp.error || 'unknown error'));
-                }
-            })
-            .catch(function(e) { alert('Error: ' + ((e && e.message) || e)); })
-            .finally(function() { setSavingUser(null); });
-    };
-
-    var handleOpenNotes = function(flw) {
-        var wr = workerResults[flw.username] || {};
-        setNotesModal(flw.username);
-        setNotesDraft(flw.notes || '');
-        setNotesModalResult(wr.result || null);
-    };
-
-    var handleSaveNotes = function() {
-        if (!notesModal) return;
-        setSavingNotes(true);
-        var username = notesModal;
-        var wr = workerResults[username] || {};
-        actions.saveWorkerResult(instance.id, { username: username, result: notesModalResult, notes: notesDraft })
-            .then(function(resp) {
-                if (resp.success) {
-                    var updated = Object.assign({}, workerResults);
-                    updated[username] = Object.assign({}, wr, { result: notesModalResult, notes: notesDraft });
-                    setWorkerResults(resp.worker_results || updated);
-                    setNotesModal(null);
-                } else {
-                    alert('Failed to save notes: ' + (resp.error || 'unknown error'));
-                }
-            })
-            .catch(function(e) { alert('Error: ' + ((e && e.message) || e)); })
-            .finally(function() { setSavingNotes(false); });
-    };
-
-    var handleTriggerTask = function(flw) {
-        var flagDesc = flw.flags.reasons.join('; ') || 'Performance review required';
-        actions.openTaskCreator({
-            username: flw.username,
-            title: 'MBW Audit: ' + flw.display_name,
-            description: flagDesc,
-            priority: flw.flags.type === 'red' ? 'high' : 'medium',
-            workflow_instance_id: instance.id,
-        });
-        var updated = Object.assign({}, taskStates);
-        updated[flw.username] = { status: 'open', triggered_at: new Date().toISOString() };
-        setTaskStates(updated);
-        onUpdateState({ task_states: updated }).catch(function(e) { console.warn('task state save failed:', e); });
-    };
-
-    var handleMarkTaskResolved = function(username) {
-        var updated = Object.assign({}, taskStates);
-        updated[username] = Object.assign({}, updated[username], { status: 'closed' });
-        setTaskStates(updated);
-        onUpdateState({ task_states: updated }).catch(function(e) { console.warn('task state save failed:', e); });
-    };
-
-    var handleConclude = function() {
-        if (concluding) return;
-        setConcluding(true);
-        var currentMetrics = {};
-        enrichedData.forEach(function(f) {
-            var snap = {};
-            METRIC_COLS.forEach(function(col) { snap[col.key] = f[col.key]; });
-            currentMetrics[f.username] = snap;
-        });
-        // Save previous_metrics and previous_categories BEFORE completing (run becomes immutable after)
-        onUpdateState({
-            previous_metrics: currentMetrics,
-            previous_categories: workerResults,
-        }).then(function() {
-            return actions.completeRun(instance.id, { overall_result: 'completed', notes: 'Audit run concluded' });
-        }).then(function(resp) {
-            if (resp && resp.success) {
-                setConcludeModal(false);
-                window.location.reload();
-            } else {
-                alert('Failed to conclude: ' + ((resp && resp.error) || 'unknown'));
-            }
-        }).catch(function(e) { alert('Error: ' + ((e && e.message) || e)); })
-          .finally(function() { setConcluding(false); });
-    };
-
-    var canConclude = React.useMemo(function() {
-        return Object.values(taskStates).every(function(t) {
-            return !t.triggered_at || t.status === 'closed' || t.status === 'completed';
-        });
-    }, [taskStates]);
-
-    // =========================================================================
-    // Sub-components
-    // =========================================================================
-    var SortTh = function(props) {
-        var active = sortCol === props.col;
-        return React.createElement('th', {
-            className: 'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 whitespace-nowrap select-none',
-            onClick: function() { handleSort(props.col); },
-            title: props.title || '',
-        }, props.label, active ? (sortAsc ? ' ▲' : ' ▼') : ' ⇅');
-    };
-
-    var FlagBadge = function(props) {
-        var flags = props.flags;
-        if (!flags.type) return React.createElement('span', { className: 'text-gray-300 text-xs' }, '—');
-        var isRed = flags.type === 'red';
-        return React.createElement('span', {
-            className: 'inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs font-bold cursor-help ' +
-                (isRed ? 'bg-red-500' : 'bg-yellow-400'),
-            title: flags.reasons.join('\n'),
-        }, isRed ? '!' : '?');
-    };
-
-    // Button-based category toggle (mirrors mbw_monitoring_v2 assessment buttons)
-    var CategoryButtons = function(props) {
-        var flw = props.flw;
-        var saving = savingUser === flw.username;
-        if (saving) return React.createElement('span', { className: 'text-xs text-gray-400 italic' }, 'Saving…');
-        return React.createElement('div', { className: 'inline-flex items-center gap-1' },
-            PERF_CATEGORIES.map(function(cat) {
-                var active = flw.result === cat.id;
-                return React.createElement('button', {
-                    key: cat.id,
-                    onClick: function() { handleSetCategory(flw.username, cat.id); },
-                    className: 'px-2 py-1 rounded text-xs font-medium border transition-colors ' +
-                        (active ? cat.active : cat.inactive),
-                    title: cat.label,
-                }, React.createElement('i', { className: 'fa-solid ' + cat.icon }));
-            })
-        );
-    };
-
-    var TaskCell = function(props) {
-        var flw = props.flw;
-        if (flw.hasTask) {
-            var isClosed = flw.taskStatus === 'closed' || flw.taskStatus === 'completed';
-            return React.createElement('div', { className: 'flex flex-col gap-1 items-center' },
-                React.createElement('span', {
-                    className: 'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded ' +
-                        (isClosed ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'),
-                },
-                    React.createElement('i', { className: 'fa-solid ' + (isClosed ? 'fa-circle-check' : 'fa-clock') }),
-                    flw.taskStatus || 'open'
-                ),
-                !isClosed && React.createElement('button', {
-                    className: 'text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200',
-                    onClick: function() { handleMarkTaskResolved(flw.username); },
-                    title: 'Mark as resolved',
-                }, 'Resolve')
-            );
-        }
-        return React.createElement('button', {
-            className: 'text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200',
-            onClick: function() { handleTriggerTask(flw); },
-            title: 'Open task creator for this FLW',
-        }, React.createElement('i', { className: 'fa-solid fa-plus mr-1' }), 'Task');
-    };
-
-    // =========================================================================
-    // Metric table row (Tab 1 and Tab 2)
-    // =========================================================================
-    var MetricRow = function(props) {
-        var flw = props.flw;
-        var showChange = props.showChange;
-        var prev = props.prevOverride !== undefined ? props.prevOverride : (prevMetrics[flw.username] || null);
-        var prevCat = prevCategories[flw.username] || null;
-
-        var cells = METRIC_COLS.map(function(col) {
-            var val = flw[col.key];
-            var dir = (showChange && prev) ? getChangeDir(val, prev[col.key], col.higherBetter) : null;
-            var valColor = getMetricValueColor(col.key, val);
-            return React.createElement('td', {
-                key: col.key,
-                className: 'px-3 py-2 text-sm text-center whitespace-nowrap',
-            },
-                React.createElement('span', { className: valColor || undefined }, fmtVal(val, col.fmt)),
-                dir ? React.createElement(ChangeIcon, { dir: dir }) : null
-            );
-        });
-
-        return React.createElement('tr', {
-            key: flw.username,
-            className: 'hover:bg-gray-50 ' + (flw.flags.type === 'red' ? 'border-l-4 border-red-400' : flw.flags.type === 'yellow' ? 'border-l-4 border-yellow-400' : ''),
-        },
-            React.createElement('td', { className: 'px-3 py-2 text-sm' },
-                React.createElement('div', { className: 'font-medium text-gray-900' }, flw.display_name),
-                React.createElement('div', { className: 'text-xs text-gray-400 font-mono' }, flw.username)
-            ),
-            React.createElement('td', { className: 'px-3 py-2 text-xs text-gray-500 whitespace-nowrap' },
-                daysAgo(flw.last_active)
-            ),
-            React.createElement('td', { className: 'px-3 py-2 text-sm text-center' },
-                flw.num_mothers,
-                flw.num_mothers_eligible != null
-                    ? React.createElement('span', { className: 'text-gray-400 ml-1 text-xs' }, '(' + flw.num_mothers_eligible + ')')
-                    : null
-            ),
-            cells,
-            React.createElement('td', { className: 'px-3 py-2 text-center' },
-                React.createElement(FlagBadge, { flags: flw.flags })
-            ),
-            // Previous run category badge
-            React.createElement('td', { className: 'px-3 py-2 text-center' },
-                prevCat
-                    ? resultBadge((prevCat.result || prevCat))
-                    : React.createElement('span', { className: 'text-gray-300 text-xs' }, '—')
-            ),
-            // Current category buttons
-            React.createElement('td', { className: 'px-3 py-2 text-center' },
-                React.createElement(CategoryButtons, { flw: flw })
-            ),
-            React.createElement('td', { className: 'px-3 py-2 text-center' },
-                React.createElement('button', {
-                    className: 'text-xs text-gray-500 hover:text-gray-800 px-1',
-                    onClick: function() { handleOpenNotes(flw); },
-                    title: flw.notes ? 'Notes: ' + flw.notes : 'Add notes',
-                },
-                    flw.notes
-                        ? React.createElement('i', { className: 'fa-solid fa-note-sticky text-blue-400' })
-                        : React.createElement('i', { className: 'fa-regular fa-note-sticky text-gray-300' })
-                )
-            ),
-            React.createElement('td', { className: 'px-3 py-2 text-center' },
-                React.createElement(TaskCell, { flw: flw })
-            )
-        );
-    };
-
-    // =========================================================================
-    // Table header (shared Tab 1 and Tab 2)
-    // =========================================================================
-    var TableHeader = function() {
-        return React.createElement('thead', { className: 'bg-gray-50 sticky top-0 z-10' },
-            React.createElement('tr', null,
-                React.createElement(SortTh, { col: 'name', label: 'FLW' }),
-                React.createElement('th', { className: 'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Last Active'),
-                React.createElement(SortTh, { col: 'num_mothers', label: '# Mothers', title: 'Total (eligible)' }),
-                METRIC_COLS.map(function(col) {
-                    return React.createElement(SortTh, { key: col.key, col: col.key, label: col.label });
-                }),
-                React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Flag'),
-                React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Prev'),
-                React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Category'),
-                React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase w-10' }, 'Notes'),
-                React.createElement('th', { className: 'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap' }, 'Task')
-            )
-        );
-    };
-
-    // =========================================================================
-    // Filter buttons bar (reusable for Tab 1 and Tab 2)
-    // =========================================================================
-    var FilterBar = function(props) {
-        var total = props.total;
-        var redCount = props.redCount;
-        var yellowCount = props.yellowCount;
-        var taskedCount = props.taskedCount;
-        var current = props.current;
-        var onChange = props.onChange;
-        var options = [
-            { id: 'all', label: 'All (' + total + ')' },
-            { id: 'red', label: 'Red Flags (' + redCount + ')' },
-            { id: 'flagged', label: 'All Flagged (' + (redCount + yellowCount) + ')' },
-            { id: 'tasks', label: 'Has Task (' + taskedCount + ')' },
-        ];
-        return React.createElement('div', { className: 'flex gap-2 flex-wrap' },
-            options.map(function(f) {
-                return React.createElement('button', {
-                    key: f.id,
-                    onClick: function() { onChange(f.id); },
-                    className: 'px-3 py-1.5 text-sm rounded-full border transition-colors ' +
-                        (current === f.id
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'),
-                }, f.label);
-            })
-        );
-    };
-
-    // =========================================================================
-    // Loading / error states
-    // =========================================================================
-    if (step === 'idle' || step === 'running') {
-        return React.createElement('div', { className: 'space-y-4' },
-            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-6' },
-                React.createElement('h1', { className: 'text-2xl font-bold text-gray-900' }, definition.name),
-                React.createElement('p', { className: 'text-gray-600 mt-1' }, definition.description)
-            ),
-            React.createElement('div', { className: 'bg-blue-50 border border-blue-200 rounded-lg p-6' },
-                React.createElement('div', { className: 'flex items-center gap-3 mb-3' },
-                    React.createElement('i', { className: 'fa-solid fa-spinner fa-spin text-blue-600 text-xl' }),
-                    React.createElement('span', { className: 'font-medium text-blue-800' },
-                        step === 'idle' ? 'Preparing analysis…' : 'Running analysis…'
-                    )
-                ),
-                jobMessages.length > 0 && React.createElement('div', { className: 'text-sm text-blue-700 space-y-0.5' },
-                    jobMessages.slice(-5).map(function(m, i) { return React.createElement('div', { key: i }, m); })
-                )
-            )
-        );
-    }
-
-    if (step === 'error') {
-        return React.createElement('div', { className: 'space-y-4' },
-            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-6' },
-                React.createElement('h1', { className: 'text-2xl font-bold text-gray-900' }, definition.name)
-            ),
-            React.createElement('div', { className: 'bg-red-50 border border-red-200 rounded-lg p-6' },
-                React.createElement('div', { className: 'flex items-center gap-2 text-red-800 font-medium mb-2' },
-                    React.createElement('i', { className: 'fa-solid fa-circle-exclamation' }),
-                    'Analysis Error'
-                ),
-                React.createElement('p', { className: 'text-red-700 text-sm' }, jobError || 'An unknown error occurred.'),
-                React.createElement('button', {
-                    className: 'mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-medium',
-                    onClick: function() { setStep('idle'); runAnalysis(); },
-                }, 'Retry')
-            )
-        );
-    }
-
-    // =========================================================================
-    // KPI summary (compact single row)
-    // =========================================================================
-    var totalFlws = enrichedData.length;
-    var redCount = enrichedData.filter(function(f) { return f.flags.type === 'red'; }).length;
-    var yellowCount = enrichedData.filter(function(f) { return f.flags.type === 'yellow'; }).length;
-    var taskedCount = enrichedData.filter(function(f) { return f.hasTask; }).length;
-    var categorizedCount = enrichedData.filter(function(f) { return f.result; }).length;
-
-    var KpiBar = function() {
-        var kpis = [
-            { label: 'FLWs', value: totalFlws, bg: 'bg-blue-50 border-blue-300 text-blue-700' },
-            { label: 'Red ⚑', value: redCount, bg: 'bg-red-50 border-red-300 text-red-700' },
-            { label: 'Yellow ⚑', value: yellowCount, bg: 'bg-yellow-50 border-yellow-300 text-yellow-700' },
-            { label: 'Tasks', value: taskedCount, bg: 'bg-orange-50 border-orange-300 text-orange-700' },
-            { label: 'Categorized', value: categorizedCount + '/' + totalFlws, bg: 'bg-green-50 border-green-300 text-green-700' },
-        ];
-        return React.createElement('div', { className: 'flex items-center gap-2 flex-wrap' },
-            kpis.map(function(kpi, i) {
-                return React.createElement('div', {
-                    key: i,
-                    className: 'flex flex-col items-center justify-center w-20 h-14 rounded-lg border text-center ' + kpi.bg,
-                },
-                    React.createElement('div', { className: 'text-lg font-bold leading-tight' }, kpi.value),
-                    React.createElement('div', { className: 'text-xs leading-tight mt-0.5' }, kpi.label)
-                );
-            })
-        );
-    };
-
-    // =========================================================================
-    // Tab 1: Per FLW Audit Report
-    // =========================================================================
-    var Tab1 = function() {
-        return React.createElement('div', { className: 'space-y-4' },
-            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-4' },
-                React.createElement('div', { className: 'flex flex-wrap items-center gap-3' },
-                    React.createElement(FilterBar, {
-                        total: enrichedData.length,
-                        redCount: redCount,
-                        yellowCount: yellowCount,
-                        taskedCount: taskedCount,
-                        current: filterFlag,
-                        onChange: setFilterFlag,
-                    }),
-                    React.createElement('input', {
-                        type: 'text',
-                        placeholder: 'Search FLWs…',
-                        value: search,
-                        onChange: function(e) { setSearch(e.target.value); },
-                        className: 'flex-1 min-w-36 border border-gray-300 rounded-lg px-3 py-1.5 text-sm',
-                    }),
-                    React.createElement('button', {
-                        className: 'ml-auto px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-                        onClick: runAnalysis,
-                        title: 'Refresh data',
-                    }, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Refresh')
-                )
-            ),
-            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
-                React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
-                    React.createElement(TableHeader, null),
-                    React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
-                        filteredData.map(function(flw) {
-                            return React.createElement(MetricRow, { key: flw.username, flw: flw, showChange: true });
-                        }),
-                        filteredData.length === 0 && React.createElement('tr', null,
-                            React.createElement('td', { colSpan: 15, className: 'px-4 py-8 text-center text-gray-400' },
-                                'No FLWs match current filters.'
-                            )
-                        )
-                    )
-                )
-            ),
-            Object.keys(prevMetrics).length > 0 && React.createElement('p', { className: 'text-xs text-gray-400 px-1' },
-                '▲▼ arrows show change vs. previous concluded run. "Prev" column shows last run\'s category.'
-            )
-        );
-    };
-
-    // =========================================================================
-    // Tab 2: Improvement Within Audit
-    // =========================================================================
-    var Tab2 = function() {
-        if (tab2FlaggedRows.length === 0) {
-            return React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-8 text-center' },
-                React.createElement('i', { className: 'fa-solid fa-check-circle text-green-400 text-3xl mb-3' }),
-                React.createElement('p', { className: 'text-gray-600' }, 'No FLWs with open tasks in this run.')
-            );
-        }
-
-        var taskedWithDate = tab2FlaggedRows.filter(function(f) {
-            return taskStates[f.username] && taskStates[f.username].triggered_at;
-        });
-
-        return React.createElement('div', { className: 'space-y-4' },
-            // Filter bar
-            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-4' },
-                React.createElement(FilterBar, {
-                    total: tab2FlaggedRows.length,
-                    redCount: tab2FlaggedRows.filter(function(f) { return f.flags.type === 'red'; }).length,
-                    yellowCount: tab2FlaggedRows.filter(function(f) { return f.flags.type === 'yellow'; }).length,
-                    taskedCount: tab2FlaggedRows.filter(function(f) { return f.hasTask; }).length,
-                    current: tab2FilterFlag,
-                    onChange: setTab2FilterFlag,
-                })
-            ),
-            // Info + compute button
-            React.createElement('div', { className: 'bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start justify-between gap-3' },
-                React.createElement('div', { className: 'text-sm text-blue-700' },
-                    React.createElement('i', { className: 'fa-solid fa-circle-info mr-1' }),
-                    tab2Step === 'ready'
-                        ? 'Post-task metrics: only data submitted after each FLW\'s task was triggered.'
-                        : 'Showing FLWs with open tasks. Click "Compute Post-Task Metrics" to load data submitted after each task was triggered.'
-                ),
-                React.createElement('button', {
-                    className: 'shrink-0 px-3 py-1.5 text-sm rounded border font-medium transition-colors ' +
-                        (tab2Step === 'running' || taskedWithDate.length === 0
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'),
-                    onClick: runTab2Analysis,
-                    disabled: tab2Step === 'running' || taskedWithDate.length === 0,
-                    title: taskedWithDate.length === 0 ? 'No task trigger dates found — create tasks for FLWs first' : '',
-                },
-                    tab2Step === 'running'
-                        ? React.createElement('span', null, React.createElement('i', { className: 'fa-solid fa-spinner fa-spin mr-1' }), 'Computing…')
-                        : React.createElement('span', null, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Compute Post-Task Metrics')
-                )
-            ),
-            React.createElement('div', { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
-                React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
-                    React.createElement(TableHeader, null),
-                    React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
-                        tab2FilteredRows.map(function(flw) {
-                            var postTask = tab2Data && tab2Data[flw.username];
-                            var displayFlw = postTask
-                                ? Object.assign({}, flw, {
-                                    gs_score: postTask.gs_score,
-                                    followup_rate: postTask.followup_rate,
-                                    pct_still_eligible: postTask.pct_still_eligible,
-                                    ebf_pct: postTask.ebf_pct,
-                                    revisit_dist: postTask.revisit_dist,
-                                    meter_per_visit: postTask.meter_per_visit,
-                                    dist_ratio: postTask.dist_ratio,
-                                    minute_per_visit: postTask.minute_per_visit,
-                                })
-                                : flw;
-                            var tab2PrevOverride = null;
-                            if (postTask) {
-                                tab2PrevOverride = {};
-                                METRIC_COLS.forEach(function(col) { tab2PrevOverride[col.key] = flw[col.key]; });
-                            }
-                            return React.createElement(MetricRow, {
-                                key: flw.username,
-                                flw: displayFlw,
-                                showChange: !!(postTask),
-                                prevOverride: tab2PrevOverride,
-                            });
-                        }),
-                        tab2FilteredRows.length === 0 && React.createElement('tr', null,
-                            React.createElement('td', { colSpan: 15, className: 'px-4 py-8 text-center text-gray-400' },
-                                'No FLWs match current filter.'
-                            )
-                        )
-                    )
-                )
-            )
-        );
-    };
-
-    // =========================================================================
-    // Tab 3: Summary by Performance Band
-    // =========================================================================
-    var Tab3 = function() {
-        var bands = perfData || computePerfBands();
-        var bandColor = { green: 'border-green-400', yellow: 'border-yellow-400', red: 'border-red-400', gray: 'border-gray-300' };
-
-        return React.createElement('div', { className: 'space-y-4' },
-            React.createElement('div', { className: 'flex items-center justify-between' },
-                React.createElement('p', { className: 'text-sm text-gray-500' },
-                    'Based on latest performance categories set for each FLW.'
-                ),
-                React.createElement('button', {
-                    className: 'px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-                    onClick: function() { setPerfData(computePerfBands()); },
-                }, React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }), 'Refresh')
-            ),
-            React.createElement('div', { className: 'overflow-x-auto bg-white rounded-lg shadow-sm' },
-                React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
-                    React.createElement('thead', { className: 'bg-gray-50' },
-                        React.createElement('tr', null,
-                            React.createElement('th', { className: 'px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase' }, 'Status'),
-                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, '# FLWs'),
-                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Total Mothers'),
-                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Eligible at Reg'),
-                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Still Eligible'),
-                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, '% Still Eligible'),
-                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Avg Follow-up %'),
-                            React.createElement('th', { className: 'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase' }, 'Avg GS Score')
-                        )
-                    ),
-                    React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
-                        bands.map(function(band) {
-                            var pctColor = band.pct_still_eligible != null
-                                ? (band.pct_still_eligible >= 85 ? '#22c55e' : band.pct_still_eligible >= 50 ? '#eab308' : '#ef4444')
-                                : undefined;
-                            return React.createElement('tr', { key: band.id || 'none', className: 'hover:bg-gray-50 border-l-4 ' + (bandColor[band.color] || bandColor.gray) },
-                                React.createElement('td', { className: 'px-3 py-2 font-medium text-sm text-gray-900 whitespace-nowrap' },
-                                    React.createElement('span', { className: 'inline-flex items-center gap-1.5' },
-                                        React.createElement('span', { style: { width: 10, height: 10, borderRadius: '50%', backgroundColor: { green: '#22c55e', yellow: '#eab308', red: '#ef4444', gray: '#9ca3af' }[band.color], display: 'inline-block' } }),
-                                        band.label
-                                    )
-                                ),
-                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm font-bold text-gray-800' }, band.num_flws),
-                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.total_mothers),
-                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.total_eligible),
-                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.total_still_eligible),
-                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm font-medium', style: pctColor ? { color: pctColor } : undefined },
-                                    band.pct_still_eligible != null ? band.pct_still_eligible + '%' : '—'
-                                ),
-                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.avg_fu != null ? band.avg_fu + '%' : '—'),
-                                React.createElement('td', { className: 'px-3 py-2 text-right text-sm text-gray-700' }, band.avg_gs != null ? band.avg_gs + '%' : '—')
-                            );
-                        })
-                    )
-                )
-            )
-        );
-    };
-
-    // =========================================================================
-    // Tab 4: Guide
-    // =========================================================================
-    var Tab4 = function() {
-        var sections = [
-            { title: 'Workflow Overview', body: 'Every two weeks, the PM triggers a new audit run. The dashboard loads data for all active FLWs. The PM reviews flags, triggers tasks for red-flagged FLWs (mandatory) and yellow-flagged FLWs (optional with a note), monitors improvement over 7 days, then sets final performance categories and concludes the run.' },
-            { title: 'Flag Types', body: '🔴 Red flag = task required. Triggered by: Follow-up Rate below 50%, % Still Eligible below 50%, or GS Score below 50%.\n🟡 Yellow flag = task optional. Triggered by: Follow-up Rate 50–79%, % Still Eligible below 85%, EBF% ≤30% or >89%, GPS Dist Ratio < 1.0, or any metric worsening >10% since the last concluded run.' },
-            { title: 'Metric Definitions', items: [
-                { name: 'GS Score', def: 'Gold Standard visit checklist score. Max score recorded for this FLW. Red flag if below 50%.' },
-                { name: 'Follow-up Rate', def: 'Of visits due more than 5 days ago (across all mothers), % completed. Red if below 50%, yellow if 50–79%.' },
-                { name: '% Still Eligible', def: 'Of eligible mothers, % who have missed fewer than 2 visits. Green ≥85%, yellow 50–84%, red <50%.' },
-                { name: 'EBF %', def: 'Percentage of visits where current breastfeeding status is exclusive. Yellow flag if ≤30% or >89%.' },
-                { name: 'Revisit Dist (m)', def: 'Mean GPS distance between visits to the same mother case (meters). Green < 30m, yellow 30–50m, red > 50m.' },
-                { name: 'Meter/Visit', def: 'Median GPS distance per revisit (meters). Green > 50m, yellow 20–50m, red < 20m.' },
-                { name: 'Min/Visit', def: 'Median duration per visit in minutes (requires visit timeStart). Green > 20 min, yellow 10–20 min, red < 10 min.' },
-                { name: 'Dist Ratio', def: 'Mean revisit distance ÷ Median. Values below 1.0 suggest GPS clustering (yellow flag).' },
-                { name: 'Prev', def: 'Category assigned in the previous concluded run (Eligible / Requires Improvement / Suspension).' },
-            ]},
-            { title: 'Performance Categories', items: [
-                { name: 'Eligible for Renewal ✓', def: 'FLW met performance standards and is eligible for program renewal.' },
-                { name: 'Requires Improvement ⚠', def: 'FLW showed improvement but needs continued monitoring.' },
-                { name: 'Suspension ✗', def: 'FLW did not improve sufficiently and is recommended for suspension.' },
-            ]},
-            { title: 'Concluding a Run', body: 'The run can only be concluded once all open tasks are resolved. When concluded, current metrics and categories are saved as the baseline for the next run. Use Tab 3 to review the performance band breakdown before concluding.' },
-        ];
-        return React.createElement('div', { className: 'space-y-6 max-w-3xl' },
-            sections.map(function(s, i) {
-                return React.createElement('div', { key: i, className: 'bg-white rounded-lg shadow-sm p-6' },
-                    React.createElement('h3', { className: 'text-lg font-semibold text-gray-900 mb-3' }, s.title),
-                    s.body && React.createElement('p', { className: 'text-sm text-gray-700 whitespace-pre-line' }, s.body),
-                    s.items && React.createElement('dl', { className: 'space-y-2' },
-                        s.items.map(function(item, j) {
-                            return React.createElement('div', { key: j },
-                                React.createElement('dt', { className: 'text-sm font-medium text-gray-900' }, item.name),
-                                React.createElement('dd', { className: 'text-sm text-gray-600 ml-4' }, item.def)
-                            );
-                        })
-                    )
-                );
-            })
-        );
-    };
-
-    // =========================================================================
-    // Main render
-    // =========================================================================
-    var tabs = [
-        { id: 'audit',       label: 'Audit Report',         icon: 'fa-table' },
-        { id: 'improvement', label: 'Improvement in Audit', icon: 'fa-chart-line' },
-        { id: 'summary',     label: 'Summary by Band',      icon: 'fa-layer-group' },
-        { id: 'guide',       label: 'Guide',                 icon: 'fa-book' },
-    ];
-
-    var notesFlwName = notesModal ? (flwNameMap[notesModal] || notesModal) : '';
-
-    return React.createElement('div', { className: 'space-y-3 pb-8' },
-
-        // Header
-        React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-4 flex items-center justify-between gap-4' },
-            React.createElement('div', null,
-                React.createElement('h1', { className: 'text-xl font-bold text-gray-900' }, definition.name),
-                React.createElement('p', { className: 'text-gray-600 text-sm mt-0.5' }, definition.description)
-            ),
-            React.createElement('button', {
-                className: 'px-4 py-2 text-sm rounded-lg font-medium transition-colors shrink-0 ' +
-                    (!canConclude ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'),
-                onClick: function() { if (canConclude) setConcludeModal(true); },
-                disabled: !canConclude,
-                title: canConclude ? 'Conclude this audit run' : 'Resolve all tasks first',
-            }, React.createElement('i', { className: 'fa-solid fa-flag-checkered mr-2' }), 'Conclude Run')
-        ),
-
-        // KPI bar (compact single row)
-        React.createElement('div', { className: 'bg-white rounded-lg shadow-sm px-4 py-3' },
-            React.createElement(KpiBar, null)
-        ),
-
-        // Tab bar + content
-        React.createElement('div', { className: 'bg-white rounded-lg shadow-sm' },
-            React.createElement('div', { className: 'flex border-b border-gray-200 overflow-x-auto' },
-                tabs.map(function(tab) {
-                    return React.createElement('button', {
-                        key: tab.id,
-                        onClick: function() { setActiveTab(tab.id); },
-                        className: 'flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ' +
-                            (activeTab === tab.id
-                                ? 'border-blue-600 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'),
-                    },
-                        React.createElement('i', { className: 'fa-solid ' + tab.icon }),
-                        tab.label
-                    );
-                })
-            ),
-            React.createElement('div', { className: 'p-4' },
-                activeTab === 'audit'       ? React.createElement(Tab1, null) :
-                activeTab === 'improvement' ? React.createElement(Tab2, null) :
-                activeTab === 'summary'     ? React.createElement(Tab3, null) :
-                                              React.createElement(Tab4, null)
-            )
-        ),
-
-        // Notes modal (with inline category result buttons, like mbw_monitoring_v2)
-        notesModal && React.createElement('div', {
-            className: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40',
-            onClick: function(e) { if (e.target === e.currentTarget) setNotesModal(null); },
-        },
-            React.createElement('div', { className: 'bg-white rounded-xl shadow-2xl w-full max-w-md mx-4' },
-                React.createElement('div', { className: 'px-6 py-4 border-b border-gray-200 font-semibold text-gray-900' },
-                    'Notes for ' + notesFlwName
-                ),
-                React.createElement('div', { className: 'px-6 py-4 space-y-3' },
-                    React.createElement('textarea', {
-                        className: 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm',
-                        rows: 4,
-                        value: notesDraft,
-                        onChange: function(e) { setNotesDraft(e.target.value); },
-                        placeholder: 'Add notes about this FLW…',
-                    }),
-                    React.createElement('div', { className: 'flex items-center gap-2 flex-wrap' },
-                        React.createElement('span', { className: 'text-xs text-gray-600' }, 'Category:'),
-                        PERF_CATEGORIES.map(function(cat) {
-                            var active = notesModalResult === cat.id;
-                            return React.createElement('button', {
-                                key: cat.id,
-                                onClick: function() { setNotesModalResult(active ? null : cat.id); },
-                                className: 'px-3 py-1 rounded text-xs font-medium border transition-colors ' +
-                                    (active ? cat.active : cat.inactive),
-                            },
-                                React.createElement('i', { className: 'fa-solid ' + cat.icon + ' mr-1' }),
-                                cat.label
-                            );
-                        }),
-                        notesModalResult && React.createElement('button', {
-                            onClick: function() { setNotesModalResult(null); },
-                            className: 'px-2 py-1 text-xs rounded border border-gray-300 text-gray-500 hover:bg-gray-100',
-                        }, 'Clear')
-                    )
-                ),
-                React.createElement('div', { className: 'px-6 py-4 border-t border-gray-200 flex justify-end gap-3' },
-                    React.createElement('button', {
-                        className: 'px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50',
-                        onClick: function() { setNotesModal(null); },
-                    }, 'Cancel'),
-                    React.createElement('button', {
-                        className: 'px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400',
-                        onClick: handleSaveNotes,
-                        disabled: savingNotes,
-                    }, savingNotes ? 'Saving…' : 'Save Notes')
-                )
-            )
-        ),
-
-        // Conclude run modal
-        concludeModal && React.createElement('div', {
-            className: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40',
-            onClick: function(e) { if (e.target === e.currentTarget) setConcludeModal(false); },
-        },
-            React.createElement('div', { className: 'bg-white rounded-xl shadow-2xl w-full max-w-md mx-4' },
-                React.createElement('div', { className: 'px-6 py-4 bg-green-50 border-b border-green-200' },
-                    React.createElement('h3', { className: 'text-lg font-semibold text-green-900' },
-                        React.createElement('i', { className: 'fa-solid fa-flag-checkered mr-2' }),
-                        'Conclude Audit Run'
-                    )
-                ),
-                React.createElement('div', { className: 'px-6 py-5 text-sm text-gray-700 space-y-3' },
-                    React.createElement('p', null,
-                        'This will mark the run as ', React.createElement('strong', null, 'Completed'),
-                        ' and save current metrics and categories as the baseline for the next run.'
-                    ),
-                    React.createElement('p', null, categorizedCount + ' of ' + totalFlws + ' FLWs have been categorized.'),
-                    React.createElement('p', { className: 'text-orange-700 font-medium' }, 'This action cannot be undone.')
-                ),
-                React.createElement('div', { className: 'px-6 py-4 border-t border-gray-200 flex justify-end gap-3' },
-                    React.createElement('button', {
-                        className: 'px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50',
-                        onClick: function() { setConcludeModal(false); },
-                    }, 'Cancel'),
-                    React.createElement('button', {
-                        className: 'px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 font-medium',
-                        onClick: handleConclude,
-                        disabled: concluding,
-                    }, concluding ? 'Concluding…' : 'Conclude Run')
-                )
-            )
-        )
+function WorkflowUI({
+  definition,
+  instance,
+  workers,
+  pipelines,
+  links,
+  actions,
+  onUpdateState,
+}) {
+  // =========================================================================
+  // Constants
+  // =========================================================================
+  var THRESHOLDS = {
+    gs_red: 50,
+    fu_red: 50,
+    fu_yellow: 80,
+    pct_still_elig_red: 50,
+    pct_still_elig_yellow: 85,
+    ebf_low: 30,
+    ebf_high: 89,
+    dist_ratio_low: 1.0,
+    worsened_pct: 10,
+  };
+
+  var PERF_CATEGORIES = [
+    {
+      id: 'eligible_for_renewal',
+      label: 'Eligible for Renewal',
+      icon: 'fa-circle-check',
+      active: 'bg-green-600 text-white border-green-600',
+      inactive:
+        'bg-green-50 text-green-800 border-green-300 hover:bg-green-100',
+    },
+    {
+      id: 'requires_improvement',
+      label: 'Requires Improvement',
+      icon: 'fa-triangle-exclamation',
+      active: 'bg-amber-600 text-white border-amber-600',
+      inactive:
+        'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100',
+    },
+    {
+      id: 'suspended',
+      label: 'Suspension',
+      icon: 'fa-ban',
+      active: 'bg-red-600 text-white border-red-600',
+      inactive: 'bg-red-50 text-red-800 border-red-300 hover:bg-red-100',
+    },
+  ];
+
+  var METRIC_COLS = [
+    { key: 'gs_score', label: 'GS Score', fmt: 'pct', higherBetter: true, denomKey: 'gps_denom' },
+    { key: 'followup_rate', label: 'Follow-up Rate', fmt: 'pct', higherBetter: true, denomKey: 'followup_rate_denom' },
+    { key: 'pct_still_eligible', label: '% Still Eligible', fmt: 'pct', higherBetter: true },
+    { key: 'ebf_pct', label: 'EBF %', fmt: 'pct', higherBetter: true, denomKey: 'ebf_denom' },
+    { key: 'revisit_dist', label: 'Revisit Dist (m)', fmt: 'int', higherBetter: false, denomKey: 'gps_denom' },
+    { key: 'meter_per_visit', label: 'Meter/Visit', fmt: 'int', higherBetter: null, denomKey: 'gps_denom' },
+    { key: 'dist_ratio', label: 'Dist Ratio', fmt: 'dec', higherBetter: true, denomKey: 'gps_denom' },
+    { key: 'minute_per_visit', label: 'Min/Visit', fmt: 'int', higherBetter: null, denomKey: 'duration_denom' },
+  ];
+  var MIN_DENOM = 3;
+
+  // =========================================================================
+  // State
+  // =========================================================================
+  var savedResults = (instance.state && instance.state.worker_results) || {};
+  var savedTaskStates = (instance.state && instance.state.task_states) || {};
+  var prevMetrics = (instance.state && instance.state.previous_metrics) || {};
+  var savedSelectedWorkers =
+    (instance.state && instance.state.selected_workers) || [];
+
+  var _step = React.useState(savedSelectedWorkers.length > 0 ? 'idle' : 'select');
+  var step = _step[0];
+  var setStep = _step[1];
+  var _dashData = React.useState(null);
+  var dashData = _dashData[0];
+  var setDashData = _dashData[1];
+  var _jobMessages = React.useState([]);
+  var jobMessages = _jobMessages[0];
+  var setJobMessages = _jobMessages[1];
+  var _jobError = React.useState(null);
+  var jobError = _jobError[0];
+  var setJobError = _jobError[1];
+  var _activeTab = React.useState('audit');
+  var activeTab = _activeTab[0];
+  var setActiveTab = _activeTab[1];
+  var _workerResults = React.useState(savedResults);
+  var workerResults = _workerResults[0];
+  var setWorkerResults = _workerResults[1];
+  var _taskStates = React.useState(savedTaskStates);
+  var taskStates = _taskStates[0];
+  var setTaskStates = _taskStates[1];
+  var _sortCol = React.useState('flags');
+  var sortCol = _sortCol[0];
+  var setSortCol = _sortCol[1];
+  var _sortAsc = React.useState(false);
+  var sortAsc = _sortAsc[0];
+  var setSortAsc = _sortAsc[1];
+  var _search = React.useState('');
+  var search = _search[0];
+  var setSearch = _search[1];
+  var _filterFlag = React.useState('all');
+  var filterFlag = _filterFlag[0];
+  var setFilterFlag = _filterFlag[1];
+  var _tab2FilterFlag = React.useState('all');
+  var tab2FilterFlag = _tab2FilterFlag[0];
+  var setTab2FilterFlag = _tab2FilterFlag[1];
+  var _savingUser = React.useState(null);
+  var savingUser = _savingUser[0];
+  var setSavingUser = _savingUser[1];
+  var _concludeModal = React.useState(false);
+  var concludeModal = _concludeModal[0];
+  var setConcludeModal = _concludeModal[1];
+  var _concluding = React.useState(false);
+  var concluding = _concluding[0];
+  var setConcluding = _concluding[1];
+  var _notesModal = React.useState(null);
+  var notesModal = _notesModal[0];
+  var setNotesModal = _notesModal[1];
+  var _notesDraft = React.useState('');
+  var notesDraft = _notesDraft[0];
+  var setNotesDraft = _notesDraft[1];
+  var _notesModalResult = React.useState(null);
+  var notesModalResult = _notesModalResult[0];
+  var setNotesModalResult = _notesModalResult[1];
+  var _savingNotes = React.useState(false);
+  var savingNotes = _savingNotes[0];
+  var setSavingNotes = _savingNotes[1];
+  var _tab2Step = React.useState('idle');
+  var tab2Step = _tab2Step[0];
+  var setTab2Step = _tab2Step[1];
+  var _tab2Data = React.useState(null);
+  var tab2Data = _tab2Data[0];
+  var setTab2Data = _tab2Data[1];
+  var _perfData = React.useState(null);
+  var perfData = _perfData[0];
+  var setPerfData = _perfData[1];
+
+  // FLW selection step state
+  var _selectedFlws = React.useState({});
+  var selectedFlws = _selectedFlws[0];
+  var setSelectedFlws = _selectedFlws[1];
+  var _flwHistory = React.useState({});
+  var flwHistory = _flwHistory[0];
+  var setFlwHistory = _flwHistory[1];
+  var _prevCatsForSelect = React.useState({});
+  var prevCatsForSelect = _prevCatsForSelect[0];
+  var setPrevCatsForSelect = _prevCatsForSelect[1];
+  var _historyLoading = React.useState(false);
+  var historyLoading = _historyLoading[0];
+  var setHistoryLoading = _historyLoading[1];
+  var _selSearch = React.useState('');
+  var selSearch = _selSearch[0];
+  var setSelSearch = _selSearch[1];
+  var _selSort = React.useState({ col: 'name', dir: 'asc' });
+  var selSort = _selSort[0];
+  var setSelSort = _selSort[1];
+  var _launching = React.useState(false);
+  var launching = _launching[0];
+  var setLaunching = _launching[1];
+
+  var savedAuditStatuses = (instance.state && instance.state.audit_statuses) || {};
+  var _auditStatuses = React.useState(savedAuditStatuses);
+  var auditStatuses = _auditStatuses[0];
+  var setAuditStatuses = _auditStatuses[1];
+  var _auditStatusModal = React.useState(null);
+  var auditStatusModal = _auditStatusModal[0];
+  var setAuditStatusModal = _auditStatusModal[1];
+  var _auditStatusDraft = React.useState('');
+  var auditStatusDraft = _auditStatusDraft[0];
+  var setAuditStatusDraft = _auditStatusDraft[1];
+
+  var jobCleanupRef = React.useRef(null);
+  var tab2CleanupRef = React.useRef(null);
+  // Holds selected usernames for the current run so runAnalysis can read them
+  // even before onUpdateState resolves (instance.state not yet updated)
+  var selectedForRunRef = React.useRef(
+    savedSelectedWorkers.length > 0 ? savedSelectedWorkers : null,
+  );
+
+  // =========================================================================
+  // Derived helpers
+  // =========================================================================
+  var flwNameMap = React.useMemo(
+    function () {
+      var m = {};
+      (workers || []).forEach(function (w) {
+        if (w.username) m[w.username.toLowerCase()] = w.name || w.username;
+      });
+      return m;
+    },
+    [workers],
+  );
+
+  var prevCategories = (dashData && dashData.prev_categories) || {};
+
+  // =========================================================================
+  // Helpers
+  // =========================================================================
+  var getCSRF = React.useCallback(function () {
+    return (
+      (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value ||
+      ((document.cookie.match(/csrftoken=([^;]+)/) || [])[1]) ||
+      ''
     );
+  }, []);
+
+  var toggleFlw = function (username) {
+    setSelectedFlws(function (prev) {
+      var next = Object.assign({}, prev);
+      next[username] = !next[username];
+      return next;
+    });
+  };
+
+  var toggleAll = function () {
+    var allSel =
+      workers.length > 0 &&
+      workers.every(function (w) {
+        return selectedFlws[w.username];
+      });
+    var updated = {};
+    workers.forEach(function (w) {
+      updated[w.username] = !allSel;
+    });
+    setSelectedFlws(updated);
+  };
+
+  var handleLaunch = function () {
+    var selected = Object.entries(selectedFlws)
+      .filter(function (e) {
+        return e[1];
+      })
+      .map(function (e) {
+        return e[0];
+      });
+    if (selected.length === 0) return;
+    setLaunching(true);
+    selectedForRunRef.current = selected;
+    onUpdateState({
+      selected_workers: selected,
+    })
+      .then(function () {
+        setLaunching(false);
+        setStep('idle');
+        runAnalysis();
+      })
+      .catch(function () {
+        setLaunching(false);
+      });
+  };
+
+  var daysAgo = function (dt) {
+    if (!dt) return '—';
+    var ms = Date.parse(dt);
+    if (isNaN(ms)) return dt;
+    var days = Math.floor((Date.now() - ms) / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return '1d ago';
+    return days + 'd ago';
+  };
+
+  var fmtVal = function (val, fmt) {
+    if (val == null) return '—';
+    if (fmt === 'pct') return val + '%';
+    if (fmt === 'dec') return val.toFixed(1);
+    if (fmt === 'int') return Math.round(val).toString();
+    return String(val);
+  };
+
+  var getMetricValueColor = function (key, val) {
+    if (val == null) return '';
+    if (key === 'gs_score') return val < 50 ? 'text-red-600' : 'text-green-600';
+    if (key === 'followup_rate') {
+      if (val < 50) return 'text-red-600';
+      if (val < 80) return 'text-yellow-600';
+      return 'text-green-600';
+    }
+    if (key === 'pct_still_eligible') {
+      if (val < 50) return 'text-red-600';
+      if (val < 85) return 'text-yellow-600';
+      return 'text-green-600';
+    }
+    if (key === 'ebf_pct') {
+      if (val < 10 || val >= 99) return 'text-red-600';
+      if (val <= 30 || val >= 90) return 'text-yellow-600';
+      return 'text-green-600';
+    }
+    if (key === 'revisit_dist') {
+      if (val < 30) return 'text-green-600';
+      if (val <= 50) return 'text-yellow-600';
+      return 'text-red-600';
+    }
+    if (key === 'meter_per_visit') {
+      if (val > 50) return 'text-green-600';
+      if (val >= 20) return 'text-yellow-600';
+      return 'text-red-600';
+    }
+    if (key === 'minute_per_visit') {
+      if (val > 20) return 'text-green-600';
+      if (val >= 10) return 'text-yellow-600';
+      return 'text-red-600';
+    }
+    return '';
+  };
+
+  var getChangeDir = function (curr, prev, higherBetter) {
+    if (curr == null || prev == null || higherBetter === null) return null;
+    var diff = curr - prev;
+    var threshold = Math.abs(prev) * 0.02;
+    if (Math.abs(diff) <= threshold) return 'same';
+    return (higherBetter ? diff > 0 : diff < 0) ? 'up' : 'down';
+  };
+
+  var ChangeIcon = function (props) {
+    var dir = props.dir;
+    if (!dir) return null;
+    if (dir === 'up')
+      return React.createElement(
+        'span',
+        { className: 'text-green-600 ml-1 text-xs', title: 'Improved' },
+        '▲',
+      );
+    if (dir === 'same')
+      return React.createElement(
+        'span',
+        {
+          className: 'text-yellow-500 ml-1 text-xs',
+          title: 'No significant change',
+        },
+        '≈',
+      );
+    return React.createElement(
+      'span',
+      { className: 'text-red-500 ml-1 text-xs', title: 'Worsened' },
+      '▼',
+    );
+  };
+
+  var resultBadge = function (result) {
+    if (!result) return null;
+    var styles = {
+      eligible_for_renewal: 'bg-green-100 text-green-800',
+      requires_improvement: 'bg-amber-100 text-amber-800',
+      suspended: 'bg-red-100 text-red-800',
+    };
+    return React.createElement(
+      'span',
+      {
+        className:
+          'px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ' +
+          (styles[result] || 'bg-gray-100 text-gray-700'),
+      },
+      result.replace(/_/g, ' '),
+    );
+  };
+
+  // =========================================================================
+  // Job runner
+  // =========================================================================
+  var runAnalysis = React.useCallback(
+    function () {
+      if (!actions || !actions.startJob) return;
+      if (step === 'running') return;
+
+      setStep('running');
+      setJobError(null);
+      setJobMessages(['Starting analysis…']);
+      setDashData(null);
+
+      var selRef = selectedForRunRef.current;
+      var allUsernames =
+        selRef && selRef.length > 0
+          ? selRef
+          : (workers || []).map(function (w) {
+              return w.username;
+            });
+
+      actions
+        .startJob(instance.id, {
+          job_type: 'mbw_auditing_v4',
+          server_fetch_pipelines: true,
+          active_usernames: allUsernames,
+          flw_names: flwNameMap,
+          flw_statuses: workerResults,
+          opportunity_id: instance.opportunity_id,
+          workflow_definition_id: instance.definition_id,
+        })
+        .then(function (resp) {
+          if (!resp || !resp.success) {
+            setStep('error');
+            setJobError((resp && resp.error) || 'Failed to start analysis job');
+            return;
+          }
+          var taskId = resp.task_id;
+          if (!taskId) {
+            setStep('error');
+            setJobError('No task ID returned');
+            return;
+          }
+
+          var cleanup = actions.streamJobProgress(
+            taskId,
+            function (data) {
+              if (data.message)
+                setJobMessages(function (p) {
+                  return p.concat([data.message]);
+                });
+            },
+            null,
+            function (results) {
+              var workerMap = {};
+              (workers || []).forEach(function (w) {
+                workerMap[(w.username || '').toLowerCase()] = w;
+              });
+              var flwSummaries = (results.flw_summaries || []).map(
+                function (s) {
+                  var w = workerMap[s.username] || {};
+                  return Object.assign({}, s, {
+                    last_active: w.last_active || s.last_active || '',
+                    display_name: s.display_name || w.name || s.username,
+                  });
+                },
+              );
+              setDashData({
+                flw_summaries: flwSummaries,
+                prev_categories: results.prev_categories || {},
+              });
+              var fetchedTasks = results.open_tasks || {};
+              if (Object.keys(fetchedTasks).length > 0) {
+                setTaskStates(function (prev) {
+                  var merged = Object.assign({}, prev);
+                  Object.keys(fetchedTasks).forEach(function (u) {
+                    var t = fetchedTasks[u];
+                    merged[u] = {
+                      status: t.status,
+                      triggered_at: t.triggered_at,
+                      task_id: t.task_id,
+                      title: t.title,
+                    };
+                  });
+                  return merged;
+                });
+              }
+              setStep('ready');
+              onUpdateState({
+                analysis_complete: true,
+                analysis_ts: new Date().toISOString(),
+              }).catch(function (e) {
+                console.warn('state save failed:', e);
+              });
+            },
+            function (error) {
+              setStep('error');
+              setJobError(error || 'Analysis failed');
+            },
+            function () {
+              setStep('error');
+              setJobError('Analysis was cancelled');
+            },
+          );
+          jobCleanupRef.current = cleanup;
+        })
+        .catch(function (err) {
+          setStep('error');
+          setJobError((err && err.message) || 'Failed to start job');
+        });
+    },
+    [
+      step,
+      workers,
+      flwNameMap,
+      workerResults,
+      instance.id,
+      instance.opportunity_id,
+      instance.definition_id,
+      actions,
+      onUpdateState,
+    ],
+  );
+
+  // Auto-run on mount only when reopening an existing run (saved workers present)
+  React.useEffect(function () {
+    var hasSaved =
+      selectedForRunRef.current && selectedForRunRef.current.length > 0;
+    if (!dashData && hasSaved) {
+      runAnalysis();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch data for the FLW selection step (history + prev categories)
+  React.useEffect(
+    function () {
+      if (!instance.opportunity_id) return;
+      if (savedSelectedWorkers.length > 0) return;
+      setHistoryLoading(true);
+
+      var historyPromise = fetch(
+        '/custom_analysis/mbw_monitoring/api/opportunity-flws/',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRF(),
+          },
+          body: JSON.stringify({ opportunities: [instance.opportunity_id] }),
+        },
+      )
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (data.success) {
+            var hm = {};
+            (data.flws || []).forEach(function (f) {
+              hm[f.username] = f.history || {};
+            });
+            setFlwHistory(hm);
+          }
+        })
+        .catch(function (err) {
+          console.error('Failed to fetch FLW history:', err);
+        });
+
+      var prevCatPromise = fetch('/labs/workflow/api/prev-categories/', {
+        credentials: 'same-origin',
+      })
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          if (data.prev_categories) {
+            setPrevCatsForSelect(data.prev_categories);
+          }
+        })
+        .catch(function (err) {
+          console.error('Failed to fetch prev categories:', err);
+        });
+
+      Promise.all([historyPromise, prevCatPromise]).finally(function () {
+        setHistoryLoading(false);
+      });
+    },
+    [instance.opportunity_id], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  React.useEffect(function () {
+    return function () {
+      if (jobCleanupRef.current) jobCleanupRef.current();
+    };
+  }, []);
+  React.useEffect(function () {
+    return function () {
+      if (tab2CleanupRef.current) tab2CleanupRef.current();
+    };
+  }, []);
+
+  // =========================================================================
+  // Tab 2 job runner
+  // =========================================================================
+  var runTab2Analysis = React.useCallback(
+    function () {
+      if (!dashData || tab2Step === 'running') return;
+      if (tab2CleanupRef.current) tab2CleanupRef.current();
+
+      setTab2Step('running');
+
+      var flaggedWithTask = enrichedData.filter(function (f) {
+        return (
+          f.hasTask &&
+          taskStates[f.username] &&
+          taskStates[f.username].triggered_at
+        );
+      });
+
+      if (flaggedWithTask.length === 0) {
+        setTab2Step('idle');
+        return;
+      }
+
+      var flaggedUsernames = flaggedWithTask.map(function (f) {
+        return f.username;
+      });
+      var taskFilters = {};
+      flaggedWithTask.forEach(function (f) {
+        taskFilters[f.username] = taskStates[f.username].triggered_at;
+      });
+
+      actions
+        .startJob(instance.id, {
+          job_type: 'mbw_auditing_v4',
+          server_fetch_pipelines: true,
+          active_usernames: flaggedUsernames,
+          task_filters: taskFilters,
+          flw_names: flwNameMap,
+          flw_statuses: workerResults,
+          opportunity_id: instance.opportunity_id,
+          workflow_definition_id: instance.definition_id,
+        })
+        .then(function (resp) {
+          if (!resp || !resp.success) {
+            setTab2Step('error');
+            return;
+          }
+          var cleanup = actions.streamJobProgress(
+            resp.task_id,
+            null,
+            null,
+            function (results) {
+              var byUser = {};
+              (results.flw_summaries || []).forEach(function (s) {
+                byUser[s.username] = s;
+              });
+              setTab2Data(byUser);
+              setTab2Step('ready');
+            },
+            function () {
+              setTab2Step('error');
+            },
+            function () {
+              setTab2Step('error');
+            },
+          );
+          tab2CleanupRef.current = cleanup;
+        })
+        .catch(function () {
+          setTab2Step('error');
+        });
+    },
+    [
+      dashData,
+      enrichedData,
+      taskStates,
+      flwNameMap,
+      workerResults,
+      instance.id,
+      instance.opportunity_id,
+      instance.definition_id,
+      actions,
+      tab2Step,
+    ],
+  );
+
+  // =========================================================================
+  // Flag computation
+  // =========================================================================
+  var computeFlags = function (flw) {
+    var reasons = [];
+    var type = null;
+
+    if (flw.gs_score != null && flw.gs_score < THRESHOLDS.gs_red) {
+      reasons.push('GS Score: ' + flw.gs_score + '% (below 50%)');
+      type = 'red';
+    }
+    if (flw.followup_rate != null && flw.followup_rate < THRESHOLDS.fu_red) {
+      reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (below 50%)');
+      type = 'red';
+    } else if (
+      flw.followup_rate != null &&
+      flw.followup_rate < THRESHOLDS.fu_yellow
+    ) {
+      reasons.push('Follow-up Rate: ' + flw.followup_rate + '% (50–79%)');
+      if (!type) type = 'yellow';
+    }
+    if (
+      flw.pct_still_eligible != null &&
+      flw.pct_still_eligible < THRESHOLDS.pct_still_elig_red
+    ) {
+      reasons.push(
+        '% Still Eligible: ' + flw.pct_still_eligible + '% (below 50%)',
+      );
+      if (type !== 'red') type = 'red';
+    } else if (
+      flw.pct_still_eligible != null &&
+      flw.pct_still_eligible < THRESHOLDS.pct_still_elig_yellow
+    ) {
+      reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '%');
+      if (!type) type = 'yellow';
+    }
+    if (
+      flw.ebf_pct != null &&
+      (flw.ebf_pct <= THRESHOLDS.ebf_low || flw.ebf_pct > THRESHOLDS.ebf_high)
+    ) {
+      reasons.push('EBF: ' + flw.ebf_pct + '%');
+      if (!type) type = 'yellow';
+    }
+    if (flw.dist_ratio != null && flw.dist_ratio < THRESHOLDS.dist_ratio_low) {
+      reasons.push('GPS Clustering (Dist Ratio: ' + flw.dist_ratio + ')');
+      if (!type) type = 'yellow';
+    }
+    var prev = prevMetrics[flw.username];
+    if (prev) {
+      METRIC_COLS.forEach(function (col) {
+        var curr = flw[col.key];
+        var prevVal = prev[col.key];
+        if (
+          curr == null ||
+          prevVal == null ||
+          prevVal === 0 ||
+          col.higherBetter === null
+        )
+          return;
+        var worsened = col.higherBetter ? curr < prevVal : curr > prevVal;
+        if (!worsened) return;
+        var changePct = (Math.abs(curr - prevVal) / Math.abs(prevVal)) * 100;
+        if (changePct > THRESHOLDS.worsened_pct) {
+          reasons.push(
+            col.label + ' worsened (' + Math.round(changePct) + '%)',
+          );
+          if (!type) type = 'yellow';
+        }
+      });
+    }
+    return { type: type, reasons: reasons };
+  };
+
+  // =========================================================================
+  // Enriched data
+  // =========================================================================
+  var enrichedData = React.useMemo(
+    function () {
+      if (!dashData) return [];
+      return dashData.flw_summaries.map(function (flw) {
+        var flags = computeFlags(flw);
+        var wr = workerResults[flw.username] || {};
+        var ts = taskStates[flw.username] || {};
+        return Object.assign({}, flw, {
+          flags: flags,
+          result: wr.result || null,
+          notes: wr.notes || '',
+          hasTask: !!ts.triggered_at,
+          taskStatus: ts.status || null,
+          taskTriggeredAt: ts.triggered_at || null,
+        });
+      });
+    },
+    [dashData, workerResults, taskStates],
+  );
+
+  var filteredData = React.useMemo(
+    function () {
+      var data = enrichedData;
+      if (search.trim()) {
+        var q = search.toLowerCase();
+        data = data.filter(function (f) {
+          return (
+            (f.display_name && f.display_name.toLowerCase().indexOf(q) >= 0) ||
+            (f.username && f.username.toLowerCase().indexOf(q) >= 0)
+          );
+        });
+      }
+      if (filterFlag === 'red')
+        data = data.filter(function (f) {
+          return f.flags.type === 'red';
+        });
+      else if (filterFlag === 'flagged')
+        data = data.filter(function (f) {
+          return f.flags.type !== null;
+        });
+      else if (filterFlag === 'tasks')
+        data = data.filter(function (f) {
+          return f.hasTask;
+        });
+
+      data = data.slice().sort(function (a, b) {
+        if (sortCol === 'name') {
+          var va = a.display_name || '';
+          var vb = b.display_name || '';
+          return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        if (sortCol === 'flags') {
+          var order = { red: 2, yellow: 1 };
+          var va = order[a.flags.type] || 0;
+          var vb = order[b.flags.type] || 0;
+          return sortAsc ? va - vb : vb - va;
+        }
+        var va = a[sortCol] != null ? a[sortCol] : -Infinity;
+        var vb = b[sortCol] != null ? b[sortCol] : -Infinity;
+        return sortAsc ? va - vb : vb - va;
+      });
+      return data;
+    },
+    [enrichedData, search, filterFlag, sortCol, sortAsc],
+  );
+
+  var tab2FlaggedRows = React.useMemo(
+    function () {
+      return enrichedData.filter(function (f) {
+        return (
+          f.hasTask && f.taskStatus !== 'closed' && f.taskStatus !== 'completed'
+        );
+      });
+    },
+    [enrichedData],
+  );
+
+  var tab2FilteredRows = React.useMemo(
+    function () {
+      var data = tab2FlaggedRows;
+      if (tab2FilterFlag === 'red')
+        data = data.filter(function (f) {
+          return f.flags.type === 'red';
+        });
+      else if (tab2FilterFlag === 'flagged')
+        data = data.filter(function (f) {
+          return f.flags.type !== null;
+        });
+      else if (tab2FilterFlag === 'tasks')
+        data = data.filter(function (f) {
+          return f.hasTask;
+        });
+      return data;
+    },
+    [tab2FlaggedRows, tab2FilterFlag],
+  );
+
+  // =========================================================================
+  // Performance band summary (Tab 3)
+  // =========================================================================
+  var computePerfBands = function () {
+    var bands = [
+      {
+        id: 'eligible_for_renewal',
+        label: 'Eligible for Renewal',
+        color: 'green',
+      },
+      {
+        id: 'requires_improvement',
+        label: 'Requires Improvement',
+        color: 'yellow',
+      },
+      { id: 'suspended', label: 'Suspension', color: 'red' },
+      { id: null, label: 'Uncategorized', color: 'gray' },
+    ];
+    return bands.map(function (band) {
+      var catFlws = enrichedData.filter(function (f) {
+        return f.result === band.id;
+      });
+      var fuFlws = catFlws.filter(function (f) {
+        return f.followup_rate != null;
+      });
+      var avgFu =
+        fuFlws.length > 0
+          ? Math.round(
+              fuFlws.reduce(function (s, f) {
+                return s + f.followup_rate;
+              }, 0) / fuFlws.length,
+            )
+          : null;
+      var gsFlws = catFlws.filter(function (f) {
+        return f.gs_score != null;
+      });
+      var avgGs =
+        gsFlws.length > 0
+          ? Math.round(
+              gsFlws.reduce(function (s, f) {
+                return s + f.gs_score;
+              }, 0) / gsFlws.length,
+            )
+          : null;
+      var totalElig = catFlws.reduce(function (s, f) {
+        return s + (f.num_mothers_eligible || 0);
+      }, 0);
+      var totalStillElig = catFlws.reduce(function (s, f) {
+        if (f.pct_still_eligible == null || !f.num_mothers_eligible) return s;
+        return (
+          s + Math.round((f.pct_still_eligible / 100) * f.num_mothers_eligible)
+        );
+      }, 0);
+      var pctStillElig =
+        totalElig > 0 ? Math.round((totalStillElig / totalElig) * 100) : null;
+      return Object.assign({}, band, {
+        num_flws: catFlws.length,
+        total_mothers: catFlws.reduce(function (s, f) {
+          return s + (f.num_mothers || 0);
+        }, 0),
+        total_eligible: totalElig,
+        total_still_eligible: totalStillElig,
+        pct_still_eligible: pctStillElig,
+        avg_fu: avgFu,
+        avg_gs: avgGs,
+      });
+    });
+  };
+
+  // =========================================================================
+  // Handlers
+  // =========================================================================
+  var handleSort = function (col) {
+    if (sortCol === col) setSortAsc(!sortAsc);
+    else {
+      setSortCol(col);
+      setSortAsc(col === 'name');
+    }
+  };
+
+  var handleSetCategory = function (username, category) {
+    // Toggle: clicking the active category clears it
+    var current = (workerResults[username] || {}).result;
+    var newCategory = current === category ? null : category;
+    setSavingUser(username);
+    var wr = workerResults[username] || {};
+    actions
+      .saveWorkerResult(instance.id, {
+        username: username,
+        result: newCategory,
+        notes: wr.notes || '',
+      })
+      .then(function (resp) {
+        if (resp.success) {
+          var updated = Object.assign({}, workerResults);
+          updated[username] = Object.assign({}, wr, { result: newCategory });
+          setWorkerResults(resp.worker_results || updated);
+        } else {
+          alert('Failed to save: ' + (resp.error || 'unknown error'));
+        }
+      })
+      .catch(function (e) {
+        alert('Error: ' + ((e && e.message) || e));
+      })
+      .finally(function () {
+        setSavingUser(null);
+      });
+  };
+
+  var handleOpenNotes = function (flw) {
+    var wr = workerResults[flw.username] || {};
+    setNotesModal(flw.username);
+    setNotesDraft(flw.notes || '');
+    setNotesModalResult(wr.result || null);
+  };
+
+  var handleSaveNotes = function () {
+    if (!notesModal) return;
+    setSavingNotes(true);
+    var username = notesModal;
+    var wr = workerResults[username] || {};
+    actions
+      .saveWorkerResult(instance.id, {
+        username: username,
+        result: notesModalResult,
+        notes: notesDraft,
+      })
+      .then(function (resp) {
+        if (resp.success) {
+          var updated = Object.assign({}, workerResults);
+          updated[username] = Object.assign({}, wr, {
+            result: notesModalResult,
+            notes: notesDraft,
+          });
+          setWorkerResults(resp.worker_results || updated);
+          setNotesModal(null);
+        } else {
+          alert('Failed to save notes: ' + (resp.error || 'unknown error'));
+        }
+      })
+      .catch(function (e) {
+        alert('Error: ' + ((e && e.message) || e));
+      })
+      .finally(function () {
+        setSavingNotes(false);
+      });
+  };
+
+  var handleTriggerTask = function (flw) {
+    var flagDesc =
+      flw.flags.reasons.join('; ') || 'Performance review required';
+    actions.openTaskCreator({
+      username: flw.username,
+      title: 'MBW Audit: ' + flw.display_name,
+      description: flagDesc,
+      priority: flw.flags.type === 'red' ? 'high' : 'medium',
+      workflow_instance_id: instance.id,
+    });
+    var updated = Object.assign({}, taskStates);
+    updated[flw.username] = {
+      status: 'open',
+      triggered_at: new Date().toISOString(),
+    };
+    setTaskStates(updated);
+    onUpdateState({ task_states: updated }).catch(function (e) {
+      console.warn('task state save failed:', e);
+    });
+  };
+
+  var handleMarkTaskResolved = function (username) {
+    var updated = Object.assign({}, taskStates);
+    updated[username] = Object.assign({}, updated[username], {
+      status: 'closed',
+    });
+    setTaskStates(updated);
+    onUpdateState({ task_states: updated }).catch(function (e) {
+      console.warn('task state save failed:', e);
+    });
+  };
+
+  var handleSetAuditStatus = function (username, status, reason) {
+    var updated = Object.assign({}, auditStatuses);
+    updated[username] = { status: status, reason: reason || '', set_at: new Date().toISOString() };
+    setAuditStatuses(updated);
+    onUpdateState({ audit_statuses: updated }).catch(function (e) {
+      console.warn('audit status save failed:', e);
+    });
+  };
+
+  var handleClearAuditStatus = function (username) {
+    var updated = Object.assign({}, auditStatuses);
+    delete updated[username];
+    setAuditStatuses(updated);
+    onUpdateState({ audit_statuses: updated }).catch(function (e) {
+      console.warn('audit status save failed:', e);
+    });
+  };
+
+  var handleSaveAuditNotRequired = function () {
+    if (!auditStatusModal) return;
+    if (!auditStatusDraft.trim()) {
+      alert('Please enter a reason why no audit is required.');
+      return;
+    }
+    handleSetAuditStatus(auditStatusModal, 'audit_not_required', auditStatusDraft.trim());
+    setAuditStatusModal(null);
+    setAuditStatusDraft('');
+  };
+
+  var handleConclude = function () {
+    if (concluding) return;
+    setConcluding(true);
+    var currentMetrics = {};
+    enrichedData.forEach(function (f) {
+      var snap = {};
+      METRIC_COLS.forEach(function (col) {
+        snap[col.key] = f[col.key];
+      });
+      currentMetrics[f.username] = snap;
+    });
+    // Save previous_metrics and previous_categories BEFORE completing (run becomes immutable after)
+    onUpdateState({
+      previous_metrics: currentMetrics,
+      previous_categories: workerResults,
+    })
+      .then(function () {
+        return actions.completeRun(instance.id, {
+          overall_result: 'completed',
+          notes: 'Audit run concluded',
+        });
+      })
+      .then(function (resp) {
+        if (resp && resp.success) {
+          setConcludeModal(false);
+          window.location.reload();
+        } else {
+          alert('Failed to conclude: ' + ((resp && resp.error) || 'unknown'));
+        }
+      })
+      .catch(function (e) {
+        alert('Error: ' + ((e && e.message) || e));
+      })
+      .finally(function () {
+        setConcluding(false);
+      });
+  };
+
+  var canConclude = React.useMemo(
+    function () {
+      if (!Object.values(taskStates).every(function (t) {
+        return !t.triggered_at || t.status === 'closed' || t.status === 'completed';
+      })) return false;
+      if (enrichedData.length > 0) {
+        if (!enrichedData.filter(function (f) { return f.flags.type === 'red'; }).every(function (f) {
+          return taskStates[f.username] && taskStates[f.username].triggered_at;
+        })) return false;
+        if (!enrichedData.filter(function (f) { return f.flags.type === 'yellow'; }).every(function (f) {
+          var as = auditStatuses[f.username] || {};
+          if (!as.status) return false;
+          if (as.status === 'audit_not_required') return !!as.reason;
+          if (as.status === 'audit_required') return !!(taskStates[f.username] && taskStates[f.username].triggered_at);
+          return false;
+        })) return false;
+      }
+      return true;
+    },
+    [taskStates, enrichedData, auditStatuses],
+  );
+
+  // =========================================================================
+  // Sub-components
+  // =========================================================================
+  var SortTh = function (props) {
+    var active = sortCol === props.col;
+    return React.createElement(
+      'th',
+      {
+        className:
+          'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 whitespace-nowrap select-none',
+        onClick: function () {
+          handleSort(props.col);
+        },
+        title: props.title || '',
+      },
+      props.label,
+      active ? (sortAsc ? ' ▲' : ' ▼') : ' ⇅',
+    );
+  };
+
+  var FlagBadge = function (props) {
+    var flags = props.flags;
+    if (!flags.type)
+      return React.createElement(
+        'span',
+        { className: 'text-gray-300 text-xs' },
+        '—',
+      );
+    var isRed = flags.type === 'red';
+    return React.createElement(
+      'span',
+      {
+        className:
+          'inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs font-bold cursor-help ' +
+          (isRed ? 'bg-red-500' : 'bg-yellow-400'),
+        title: flags.reasons.join('\n'),
+      },
+      isRed ? '!' : '?',
+    );
+  };
+
+  // Button-based category toggle (mirrors mbw_monitoring_v2 assessment buttons)
+  var CategoryButtons = function (props) {
+    var flw = props.flw;
+    var saving = savingUser === flw.username;
+    if (saving)
+      return React.createElement(
+        'span',
+        { className: 'text-xs text-gray-400 italic' },
+        'Saving…',
+      );
+    return React.createElement(
+      'div',
+      { className: 'inline-flex items-center gap-1' },
+      PERF_CATEGORIES.map(function (cat) {
+        var active = flw.result === cat.id;
+        return React.createElement(
+          'button',
+          {
+            key: cat.id,
+            onClick: function () {
+              handleSetCategory(flw.username, cat.id);
+            },
+            className:
+              'px-2 py-1 rounded text-xs font-medium border transition-colors ' +
+              (active ? cat.active : cat.inactive),
+            title: cat.label,
+          },
+          React.createElement('i', { className: 'fa-solid ' + cat.icon }),
+        );
+      }),
+    );
+  };
+
+  var TaskCell = function (props) {
+    var flw = props.flw;
+    if (flw.hasTask) {
+      var isClosed =
+        flw.taskStatus === 'closed' || flw.taskStatus === 'completed';
+      return React.createElement(
+        'div',
+        { className: 'flex flex-col gap-1 items-center' },
+        React.createElement(
+          'span',
+          {
+            className:
+              'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded ' +
+              (isClosed
+                ? 'bg-green-100 text-green-700'
+                : 'bg-blue-100 text-blue-700'),
+          },
+          React.createElement('i', {
+            className:
+              'fa-solid ' + (isClosed ? 'fa-circle-check' : 'fa-clock'),
+          }),
+          flw.taskStatus || 'open',
+        ),
+        !isClosed &&
+          React.createElement(
+            'button',
+            {
+              className:
+                'text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200',
+              onClick: function () {
+                handleMarkTaskResolved(flw.username);
+              },
+              title: 'Mark as resolved',
+            },
+            'Resolve',
+          ),
+      );
+    }
+    return React.createElement(
+      'button',
+      {
+        className:
+          'text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200',
+        onClick: function () {
+          handleTriggerTask(flw);
+        },
+        title: 'Open task creator for this FLW',
+      },
+      React.createElement('i', { className: 'fa-solid fa-plus mr-1' }),
+      'Task',
+    );
+  };
+
+  var AuditStatusCell = function (props) {
+    var flw = props.flw;
+    if (!flw.flags.type) {
+      return React.createElement('span', { className: 'text-gray-200 text-xs' }, '—');
+    }
+    if (flw.flags.type === 'red') {
+      return React.createElement(
+        'span',
+        { className: 'inline-block text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium whitespace-nowrap' },
+        'Audit Required',
+      );
+    }
+    // Yellow flag
+    var as = auditStatuses[flw.username] || {};
+    var status = as.status;
+    var hasTask = !!(taskStates[flw.username] && taskStates[flw.username].triggered_at);
+    if (!status) {
+      return React.createElement(
+        'div',
+        { className: 'flex flex-col gap-1 items-start' },
+        React.createElement(
+          'button',
+          {
+            className: 'text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 whitespace-nowrap',
+            onClick: function () { handleSetAuditStatus(flw.username, 'audit_required'); },
+          },
+          'Audit Required',
+        ),
+        React.createElement(
+          'button',
+          {
+            className: 'text-xs px-2 py-0.5 rounded bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200 whitespace-nowrap',
+            onClick: function () {
+              setAuditStatusModal(flw.username);
+              setAuditStatusDraft('');
+            },
+          },
+          'Not Required',
+        ),
+      );
+    }
+    if (status === 'audit_required') {
+      return React.createElement(
+        'div',
+        { className: 'flex flex-col gap-1 items-start' },
+        React.createElement(
+          'span',
+          { className: 'text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap' },
+          '✓ Audit Required',
+        ),
+        !hasTask && React.createElement(
+          'span',
+          { className: 'text-xs text-red-500 whitespace-nowrap' },
+          'Task required →',
+        ),
+        React.createElement(
+          'button',
+          {
+            className: 'text-xs text-gray-400 hover:text-gray-600',
+            onClick: function () { handleClearAuditStatus(flw.username); },
+          },
+          'Change',
+        ),
+      );
+    }
+    if (status === 'audit_not_required') {
+      return React.createElement(
+        'div',
+        { className: 'flex flex-col gap-1 items-start' },
+        React.createElement(
+          'button',
+          {
+            className: 'text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-300 font-medium whitespace-nowrap',
+            title: 'Reason: ' + as.reason,
+            onClick: function () {
+              setAuditStatusModal(flw.username);
+              setAuditStatusDraft(as.reason || '');
+            },
+          },
+          '✓ Not Required',
+        ),
+        React.createElement(
+          'button',
+          {
+            className: 'text-xs text-gray-400 hover:text-gray-600',
+            onClick: function () { handleClearAuditStatus(flw.username); },
+          },
+          'Change',
+        ),
+      );
+    }
+    return null;
+  };
+
+  // =========================================================================
+  // Metric table row (Tab 1 and Tab 2)
+  // =========================================================================
+  var MetricRow = function (props) {
+    var flw = props.flw;
+    var showChange = props.showChange;
+    var prev =
+      props.prevOverride !== undefined
+        ? props.prevOverride
+        : prevMetrics[flw.username] || null;
+    var prevCat = prevCategories[flw.username] || null;
+
+    var followupRateDelta = props.followupRateDelta !== undefined ? props.followupRateDelta : null;
+
+    var cells = METRIC_COLS.map(function (col) {
+      var val = flw[col.key];
+      var denom = col.denomKey != null ? flw[col.denomKey] : null;
+      if (denom != null && denom < MIN_DENOM) {
+        return React.createElement(
+          'td',
+          { key: col.key, className: 'px-3 py-2 text-sm text-center whitespace-nowrap' },
+          React.createElement('span', { className: 'text-gray-400 text-xs italic' }, 'not enough data'),
+        );
+      }
+      var dir =
+        showChange && prev
+          ? getChangeDir(val, prev[col.key], col.higherBetter)
+          : null;
+      var valColor = getMetricValueColor(col.key, val);
+      var deltaEl = null;
+      if (col.key === 'followup_rate' && followupRateDelta != null) {
+        var deltaSign = followupRateDelta >= 0 ? '+' : '';
+        var deltaColor = followupRateDelta > 0 ? 'text-green-600' : followupRateDelta < 0 ? 'text-red-500' : 'text-yellow-500';
+        deltaEl = React.createElement('span', { className: deltaColor + ' ml-1 text-xs' }, '(' + deltaSign + Math.round(followupRateDelta) + '%)');
+      }
+      return React.createElement(
+        'td',
+        {
+          key: col.key,
+          className: 'px-3 py-2 text-sm text-center whitespace-nowrap',
+        },
+        React.createElement(
+          'span',
+          { className: valColor || undefined },
+          fmtVal(val, col.fmt),
+        ),
+        deltaEl || (dir ? React.createElement(ChangeIcon, { dir: dir }) : null),
+      );
+    });
+
+    return React.createElement(
+      'tr',
+      {
+        key: flw.username,
+        className:
+          'hover:bg-gray-50 ' +
+          (flw.flags.type === 'red'
+            ? 'border-l-4 border-red-400'
+            : flw.flags.type === 'yellow'
+            ? 'border-l-4 border-yellow-400'
+            : ''),
+      },
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-sm' },
+        React.createElement(
+          'div',
+          { className: 'font-medium text-gray-900' },
+          flw.display_name,
+        ),
+        React.createElement(
+          'div',
+          { className: 'text-xs text-gray-400 font-mono' },
+          flw.username,
+        ),
+      ),
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-xs text-gray-500 whitespace-nowrap' },
+        daysAgo(flw.last_active),
+      ),
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-sm text-center' },
+        flw.num_mothers,
+        flw.num_mothers_eligible != null
+          ? React.createElement(
+              'span',
+              { className: 'text-gray-400 ml-1 text-xs' },
+              '(' + flw.num_mothers_eligible + ')',
+            )
+          : null,
+      ),
+      cells,
+      // Previous run category badge
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-center' },
+        prevCat
+          ? resultBadge(prevCat.result || prevCat)
+          : React.createElement(
+              'span',
+              { className: 'text-gray-300 text-xs' },
+              '—',
+            ),
+      ),
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-center' },
+        React.createElement(FlagBadge, { flags: flw.flags }),
+      ),
+      // Audit Status (Tab 1 only)
+      props.showAuditStatus
+        ? React.createElement(
+            'td',
+            { className: 'px-3 py-2 text-center' },
+            React.createElement(AuditStatusCell, { flw: flw }),
+          )
+        : null,
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-center' },
+        React.createElement(TaskCell, { flw: flw }),
+      ),
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-center' },
+        React.createElement(
+          'button',
+          {
+            className: 'text-xs text-gray-500 hover:text-gray-800 px-1',
+            onClick: function () {
+              handleOpenNotes(flw);
+            },
+            title: flw.notes ? 'Notes: ' + flw.notes : 'Add notes',
+          },
+          flw.notes
+            ? React.createElement('i', {
+                className: 'fa-solid fa-note-sticky text-blue-400',
+              })
+            : React.createElement('i', {
+                className: 'fa-regular fa-note-sticky text-gray-300',
+              }),
+        ),
+      ),
+      // Current category buttons
+      React.createElement(
+        'td',
+        { className: 'px-3 py-2 text-center' },
+        React.createElement(CategoryButtons, { flw: flw }),
+      ),
+    );
+  };
+
+  // =========================================================================
+  // Table header (shared Tab 1 and Tab 2)
+  // =========================================================================
+  var TableHeader = function (props) {
+    return React.createElement(
+      'thead',
+      { className: 'bg-gray-50 sticky top-0 z-10' },
+      React.createElement(
+        'tr',
+        null,
+        React.createElement(SortTh, { col: 'name', label: 'FLW' }),
+        React.createElement(
+          'th',
+          {
+            className:
+              'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
+          },
+          'Last Active',
+        ),
+        React.createElement(SortTh, {
+          col: 'num_mothers',
+          label: '# Mothers',
+          title: 'Total (eligible)',
+        }),
+        METRIC_COLS.map(function (col) {
+          return React.createElement(SortTh, {
+            key: col.key,
+            col: col.key,
+            label: col.label,
+          });
+        }),
+        React.createElement(
+          'th',
+          {
+            className:
+              'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
+          },
+          'Prev',
+        ),
+        React.createElement(
+          'th',
+          {
+            className:
+              'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
+          },
+          'Flag',
+        ),
+        props.showAuditStatus
+          ? React.createElement(
+              'th',
+              {
+                className:
+                  'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
+              },
+              'Audit Status',
+            )
+          : null,
+        React.createElement(
+          'th',
+          {
+            className:
+              'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
+          },
+          'Task',
+        ),
+        React.createElement(
+          'th',
+          {
+            className:
+              'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase w-10',
+          },
+          'Notes',
+        ),
+        React.createElement(
+          'th',
+          {
+            className:
+              'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
+          },
+          'Category',
+        ),
+      ),
+    );
+  };
+
+  // =========================================================================
+  // Filter buttons bar (reusable for Tab 1 and Tab 2)
+  // =========================================================================
+  var FilterBar = function (props) {
+    var total = props.total;
+    var redCount = props.redCount;
+    var yellowCount = props.yellowCount;
+    var taskedCount = props.taskedCount;
+    var current = props.current;
+    var onChange = props.onChange;
+    var options = [
+      { id: 'all', label: 'All (' + total + ')' },
+      { id: 'red', label: 'Red Flags (' + redCount + ')' },
+      {
+        id: 'flagged',
+        label: 'All Flagged (' + (redCount + yellowCount) + ')',
+      },
+      { id: 'tasks', label: 'Has Task (' + taskedCount + ')' },
+    ];
+    return React.createElement(
+      'div',
+      { className: 'flex gap-2 flex-wrap' },
+      options.map(function (f) {
+        return React.createElement(
+          'button',
+          {
+            key: f.id,
+            onClick: function () {
+              onChange(f.id);
+            },
+            className:
+              'px-3 py-1.5 text-sm rounded-full border transition-colors ' +
+              (current === f.id
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'),
+          },
+          f.label,
+        );
+      }),
+    );
+  };
+
+  // =========================================================================
+  // FLW selection step
+  // =========================================================================
+  if (step === 'select') {
+    var filteredWorkers = (workers || []).filter(function (w) {
+      if (!selSearch) return true;
+      var q = selSearch.toLowerCase();
+      return (
+        (w.name || '').toLowerCase().indexOf(q) >= 0 ||
+        (w.username || '').toLowerCase().indexOf(q) >= 0
+      );
+    });
+    filteredWorkers = filteredWorkers.slice().sort(function (a, b) {
+      var ha = flwHistory[a.username] || {};
+      var hb = flwHistory[b.username] || {};
+      var va, vb;
+      if (selSort.col === 'name') {
+        va = (a.name || a.username || '').toLowerCase();
+        vb = (b.name || b.username || '').toLowerCase();
+      } else if (selSort.col === 'audit_count') {
+        va = ha.audit_count || 0;
+        vb = hb.audit_count || 0;
+      } else if (selSort.col === 'last_audit_date') {
+        va = ha.last_audit_date || '';
+        vb = hb.last_audit_date || '';
+      } else if (selSort.col === 'last_audit_result') {
+        var pa = prevCatsForSelect[a.username] || {};
+        var pb = prevCatsForSelect[b.username] || {};
+        va = (pa.result || pa || '');
+        vb = (pb.result || pb || '');
+      } else {
+        va = '';
+        vb = '';
+      }
+      var cmp =
+        typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb));
+      return selSort.dir === 'asc' ? cmp : -cmp;
+    });
+
+    var selectedCount = Object.values(selectedFlws).filter(Boolean).length;
+    var allSel =
+      (workers || []).length > 0 &&
+      (workers || []).every(function (w) {
+        return selectedFlws[w.username];
+      });
+
+    var selHeader = function (col, label, align) {
+      var active = selSort.col === col;
+      return React.createElement(
+        'th',
+        {
+          key: col,
+          className:
+            'px-4 py-2 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none' +
+            (align === 'center' ? ' text-center' : ' text-left'),
+          onClick: function () {
+            setSelSort({
+              col: col,
+              dir: active && selSort.dir === 'asc' ? 'desc' : 'asc',
+            });
+          },
+        },
+        label + (active ? (selSort.dir === 'asc' ? ' ▲' : ' ▼') : ''),
+      );
+    };
+
+    var prevCatBadge = function (catEntry) {
+      // catEntry may be {result: "...", notes: "..."} or a bare string
+      var result = catEntry && (catEntry.result || catEntry);
+      if (!result) return React.createElement('span', { className: 'text-gray-300' }, '—');
+      return resultBadge(result);
+    };
+
+    return React.createElement(
+      'div',
+      { className: 'space-y-6' },
+      // Header
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm p-6' },
+        React.createElement(
+          'h2',
+          { className: 'text-xl font-bold text-gray-900' },
+          'Select FLWs for Audit',
+        ),
+        React.createElement(
+          'p',
+          { className: 'text-gray-600 mt-1' },
+          'Choose which frontline workers to include in this audit run.',
+        ),
+      ),
+      // Table
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm overflow-hidden' },
+        historyLoading &&
+          React.createElement(
+            'div',
+            { className: 'px-4 py-2 text-xs text-gray-400 bg-gray-50 border-b' },
+            'Loading audit history…',
+          ),
+        // Toolbar
+        React.createElement(
+          'div',
+          { className: 'px-4 py-2 bg-gray-50 border-b flex items-center gap-2' },
+          React.createElement('input', {
+            type: 'text',
+            value: selSearch,
+            onChange: function (e) {
+              setSelSearch(e.target.value);
+            },
+            placeholder: 'Search FLWs…',
+            className: 'border rounded px-2 py-1 text-sm flex-1',
+          }),
+          React.createElement(
+            'span',
+            { className: 'text-sm text-gray-500' },
+            selectedCount + ' selected',
+          ),
+        ),
+        // Table body
+        React.createElement(
+          'div',
+          { className: 'max-h-96 overflow-y-auto' },
+          React.createElement(
+            'table',
+            { className: 'min-w-full divide-y divide-gray-200' },
+            React.createElement(
+              'thead',
+              { className: 'bg-gray-50 sticky top-0' },
+              React.createElement(
+                'tr',
+                null,
+                React.createElement(
+                  'th',
+                  { className: 'px-4 py-2 text-left w-10' },
+                  React.createElement('input', {
+                    type: 'checkbox',
+                    checked: allSel,
+                    onChange: toggleAll,
+                  }),
+                ),
+                selHeader('name', 'FLW (' + (workers || []).length + ')'),
+                selHeader('username', 'Connect ID'),
+                selHeader('audit_count', 'Past Audits', 'center'),
+                selHeader('last_audit_date', 'Last Audit Date'),
+                selHeader('last_audit_result', 'Last Performance Category'),
+              ),
+            ),
+            React.createElement(
+              'tbody',
+              { className: 'divide-y divide-gray-200' },
+              filteredWorkers.map(function (w) {
+                var h = flwHistory[w.username] || {};
+                return React.createElement(
+                  'tr',
+                  {
+                    key: w.username,
+                    className: 'hover:bg-gray-50 cursor-pointer',
+                    onClick: function () {
+                      toggleFlw(w.username);
+                    },
+                  },
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2' },
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: !!selectedFlws[w.username],
+                      onChange: function () {
+                        toggleFlw(w.username);
+                      },
+                      onClick: function (e) {
+                        e.stopPropagation();
+                      },
+                    }),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2' },
+                    React.createElement(
+                      'div',
+                      { className: 'font-medium text-sm' },
+                      w.name || w.username,
+                    ),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-xs text-gray-500 font-mono' },
+                    w.username,
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-center text-sm text-gray-600' },
+                    h.audit_count > 0
+                      ? h.audit_count
+                      : React.createElement('span', { className: 'text-gray-300' }, '—'),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-sm text-gray-600' },
+                    h.last_audit_date
+                      ? new Date(h.last_audit_date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })
+                      : React.createElement('span', { className: 'text-gray-300' }, '—'),
+                  ),
+                  React.createElement(
+                    'td',
+                    { className: 'px-4 py-2 text-sm' },
+                    prevCatBadge(prevCatsForSelect[w.username]),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      ),
+      // Launch button
+      React.createElement(
+        'div',
+        { className: 'flex justify-end' },
+        React.createElement(
+          'button',
+          {
+            onClick: handleLaunch,
+            disabled: selectedCount === 0 || launching,
+            className:
+              'px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50',
+          },
+          launching
+            ? 'Launching…'
+            : 'Run Audit (' + selectedCount + ' FLWs)',
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // Loading / error states
+  // =========================================================================
+  if (step === 'idle' || step === 'running') {
+    return React.createElement(
+      'div',
+      { className: 'space-y-4' },
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm p-6' },
+        React.createElement(
+          'h1',
+          { className: 'text-2xl font-bold text-gray-900' },
+          definition.name,
+        ),
+        React.createElement(
+          'p',
+          { className: 'text-gray-600 mt-1' },
+          definition.description,
+        ),
+      ),
+      React.createElement(
+        'div',
+        { className: 'bg-blue-50 border border-blue-200 rounded-lg p-6' },
+        React.createElement(
+          'div',
+          { className: 'flex items-center gap-3 mb-3' },
+          React.createElement('i', {
+            className: 'fa-solid fa-spinner fa-spin text-blue-600 text-xl',
+          }),
+          React.createElement(
+            'span',
+            { className: 'font-medium text-blue-800' },
+            step === 'idle' ? 'Preparing analysis…' : 'Running analysis…',
+          ),
+        ),
+        jobMessages.length > 0 &&
+          React.createElement(
+            'div',
+            { className: 'text-sm text-blue-700 space-y-0.5' },
+            jobMessages.slice(-5).map(function (m, i) {
+              return React.createElement('div', { key: i }, m);
+            }),
+          ),
+      ),
+    );
+  }
+
+  if (step === 'error') {
+    return React.createElement(
+      'div',
+      { className: 'space-y-4' },
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm p-6' },
+        React.createElement(
+          'h1',
+          { className: 'text-2xl font-bold text-gray-900' },
+          definition.name,
+        ),
+      ),
+      React.createElement(
+        'div',
+        { className: 'bg-red-50 border border-red-200 rounded-lg p-6' },
+        React.createElement(
+          'div',
+          {
+            className: 'flex items-center gap-2 text-red-800 font-medium mb-2',
+          },
+          React.createElement('i', {
+            className: 'fa-solid fa-circle-exclamation',
+          }),
+          'Analysis Error',
+        ),
+        React.createElement(
+          'p',
+          { className: 'text-red-700 text-sm' },
+          jobError || 'An unknown error occurred.',
+        ),
+        React.createElement(
+          'button',
+          {
+            className:
+              'mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-medium',
+            onClick: function () {
+              setStep('idle');
+              runAnalysis();
+            },
+          },
+          'Retry',
+        ),
+      ),
+    );
+  }
+
+  // =========================================================================
+  // KPI summary (compact single row)
+  // =========================================================================
+  var totalFlws = enrichedData.length;
+  var redCount = enrichedData.filter(function (f) {
+    return f.flags.type === 'red';
+  }).length;
+  var yellowCount = enrichedData.filter(function (f) {
+    return f.flags.type === 'yellow';
+  }).length;
+  var taskedCount = enrichedData.filter(function (f) {
+    return f.hasTask;
+  }).length;
+  var categorizedCount = enrichedData.filter(function (f) {
+    return f.result;
+  }).length;
+
+  var KpiBar = function () {
+    var kpis = [
+      {
+        label: 'FLWs',
+        value: totalFlws,
+        bg: 'bg-blue-50 border-blue-300 text-blue-700',
+      },
+      {
+        label: 'Red ⚑',
+        value: redCount,
+        bg: 'bg-red-50 border-red-300 text-red-700',
+      },
+      {
+        label: 'Yellow ⚑',
+        value: yellowCount,
+        bg: 'bg-yellow-50 border-yellow-300 text-yellow-700',
+      },
+      {
+        label: 'Tasks',
+        value: taskedCount,
+        bg: 'bg-orange-50 border-orange-300 text-orange-700',
+      },
+      {
+        label: 'Categorized',
+        value: categorizedCount + '/' + totalFlws,
+        bg: 'bg-green-50 border-green-300 text-green-700',
+      },
+    ];
+    return React.createElement(
+      'div',
+      { className: 'flex items-center gap-2 flex-wrap' },
+      kpis.map(function (kpi, i) {
+        return React.createElement(
+          'div',
+          {
+            key: i,
+            className:
+              'flex flex-col items-center justify-center w-20 h-14 rounded-lg border text-center ' +
+              kpi.bg,
+          },
+          React.createElement(
+            'div',
+            { className: 'text-lg font-bold leading-tight' },
+            kpi.value,
+          ),
+          React.createElement(
+            'div',
+            { className: 'text-xs leading-tight mt-0.5' },
+            kpi.label,
+          ),
+        );
+      }),
+    );
+  };
+
+  // =========================================================================
+  // Tab 1: Per FLW Audit Report
+  // =========================================================================
+  var Tab1 = function () {
+    return React.createElement(
+      'div',
+      { className: 'space-y-4' },
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm p-4' },
+        React.createElement(
+          'div',
+          { className: 'flex flex-wrap items-center gap-3' },
+          React.createElement(FilterBar, {
+            total: enrichedData.length,
+            redCount: redCount,
+            yellowCount: yellowCount,
+            taskedCount: taskedCount,
+            current: filterFlag,
+            onChange: setFilterFlag,
+          }),
+          React.createElement('input', {
+            type: 'text',
+            placeholder: 'Search FLWs…',
+            value: search,
+            onChange: function (e) {
+              setSearch(e.target.value);
+            },
+            className:
+              'flex-1 min-w-36 border border-gray-300 rounded-lg px-3 py-1.5 text-sm',
+          }),
+          React.createElement(
+            'button',
+            {
+              className:
+                'ml-auto px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+              onClick: runAnalysis,
+              title: 'Refresh data',
+            },
+            React.createElement('i', {
+              className: 'fa-solid fa-rotate-right mr-1',
+            }),
+            'Refresh',
+          ),
+        ),
+      ),
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
+        React.createElement(
+          'table',
+          { className: 'min-w-full divide-y divide-gray-200' },
+          React.createElement(TableHeader, { showAuditStatus: true }),
+          React.createElement(
+            'tbody',
+            { className: 'bg-white divide-y divide-gray-200' },
+            filteredData.map(function (flw) {
+              return React.createElement(MetricRow, {
+                key: flw.username,
+                flw: flw,
+                showChange: true,
+                showAuditStatus: true,
+              });
+            }),
+            filteredData.length === 0 &&
+              React.createElement(
+                'tr',
+                null,
+                React.createElement(
+                  'td',
+                  {
+                    colSpan: 17,
+                    className: 'px-4 py-8 text-center text-gray-400',
+                  },
+                  'No FLWs match current filters.',
+                ),
+              ),
+          ),
+        ),
+      ),
+      Object.keys(prevMetrics).length > 0 &&
+        React.createElement(
+          'p',
+          { className: 'text-xs text-gray-400 px-1' },
+          '▲▼ arrows show change vs. previous concluded run. "Prev" column shows last run\'s category.',
+        ),
+    );
+  };
+
+  // =========================================================================
+  // Tab 2: Improvement Within Audit
+  // =========================================================================
+  var Tab2 = function () {
+    if (tab2FlaggedRows.length === 0) {
+      return React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm p-8 text-center' },
+        React.createElement('i', {
+          className: 'fa-solid fa-check-circle text-green-400 text-3xl mb-3',
+        }),
+        React.createElement(
+          'p',
+          { className: 'text-gray-600' },
+          'No FLWs with open tasks in this run.',
+        ),
+      );
+    }
+
+    var taskedWithDate = tab2FlaggedRows.filter(function (f) {
+      return taskStates[f.username] && taskStates[f.username].triggered_at;
+    });
+
+    return React.createElement(
+      'div',
+      { className: 'space-y-4' },
+      // Filter bar
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm p-4' },
+        React.createElement(FilterBar, {
+          total: tab2FlaggedRows.length,
+          redCount: tab2FlaggedRows.filter(function (f) {
+            return f.flags.type === 'red';
+          }).length,
+          yellowCount: tab2FlaggedRows.filter(function (f) {
+            return f.flags.type === 'yellow';
+          }).length,
+          taskedCount: tab2FlaggedRows.filter(function (f) {
+            return f.hasTask;
+          }).length,
+          current: tab2FilterFlag,
+          onChange: setTab2FilterFlag,
+        }),
+      ),
+      // Info + compute button
+      React.createElement(
+        'div',
+        {
+          className:
+            'bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start justify-between gap-3',
+        },
+        React.createElement(
+          'div',
+          { className: 'text-sm text-blue-700' },
+          React.createElement('i', {
+            className: 'fa-solid fa-circle-info mr-1',
+          }),
+          tab2Step === 'ready'
+            ? "Post-task metrics: only data submitted after each FLW's task was triggered."
+            : 'Showing FLWs with open tasks. Click "Compute Post-Task Metrics" to load data submitted after each task was triggered.',
+        ),
+        React.createElement(
+          'button',
+          {
+            className:
+              'shrink-0 px-3 py-1.5 text-sm rounded border font-medium transition-colors ' +
+              (tab2Step === 'running' || taskedWithDate.length === 0
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'),
+            onClick: runTab2Analysis,
+            disabled: tab2Step === 'running' || taskedWithDate.length === 0,
+            title:
+              taskedWithDate.length === 0
+                ? 'No task trigger dates found — create tasks for FLWs first'
+                : '',
+          },
+          tab2Step === 'running'
+            ? React.createElement(
+                'span',
+                null,
+                React.createElement('i', {
+                  className: 'fa-solid fa-spinner fa-spin mr-1',
+                }),
+                'Computing…',
+              )
+            : React.createElement(
+                'span',
+                null,
+                React.createElement('i', {
+                  className: 'fa-solid fa-rotate-right mr-1',
+                }),
+                'Compute Post-Task Metrics',
+              ),
+        ),
+      ),
+      React.createElement(
+        'div',
+        { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
+        React.createElement(
+          'table',
+          { className: 'min-w-full divide-y divide-gray-200' },
+          React.createElement(TableHeader, null),
+          React.createElement(
+            'tbody',
+            { className: 'bg-white divide-y divide-gray-200' },
+            tab2FilteredRows.map(function (flw) {
+              var postTask = tab2Data && tab2Data[flw.username];
+              var followupRateDelta = null;
+              var displayFlw = postTask
+                ? Object.assign({}, flw, {
+                    gs_score: postTask.gs_score,
+                    followup_rate: postTask.followup_rate,
+                    pct_still_eligible: null,
+                    ebf_pct: postTask.ebf_pct,
+                    revisit_dist: postTask.revisit_dist,
+                    meter_per_visit: postTask.meter_per_visit,
+                    dist_ratio: postTask.dist_ratio,
+                    minute_per_visit: postTask.minute_per_visit,
+                    followup_rate_denom: postTask.followup_rate_denom,
+                    ebf_denom: postTask.ebf_denom,
+                    gps_denom: postTask.gps_denom,
+                    duration_denom: postTask.duration_denom,
+                  })
+                : flw;
+              if (postTask && postTask.followup_rate != null && flw.followup_rate != null) {
+                followupRateDelta = postTask.followup_rate - flw.followup_rate;
+              }
+              var tab2PrevOverride = null;
+              if (postTask) {
+                tab2PrevOverride = {};
+                METRIC_COLS.forEach(function (col) {
+                  tab2PrevOverride[col.key] = flw[col.key];
+                });
+              }
+              return React.createElement(MetricRow, {
+                key: flw.username,
+                flw: displayFlw,
+                showChange: !!postTask,
+                prevOverride: tab2PrevOverride,
+                followupRateDelta: followupRateDelta,
+              });
+            }),
+            tab2FilteredRows.length === 0 &&
+              React.createElement(
+                'tr',
+                null,
+                React.createElement(
+                  'td',
+                  {
+                    colSpan: 15,
+                    className: 'px-4 py-8 text-center text-gray-400',
+                  },
+                  'No FLWs match current filter.',
+                ),
+              ),
+          ),
+        ),
+      ),
+    );
+  };
+
+  // =========================================================================
+  // Tab 3: Summary by Performance Band
+  // =========================================================================
+  var Tab3 = function () {
+    var bands = perfData || computePerfBands();
+    var bandColor = {
+      green: 'border-green-400',
+      yellow: 'border-yellow-400',
+      red: 'border-red-400',
+      gray: 'border-gray-300',
+    };
+
+    return React.createElement(
+      'div',
+      { className: 'space-y-4' },
+      React.createElement(
+        'div',
+        { className: 'flex items-center justify-between' },
+        React.createElement(
+          'p',
+          { className: 'text-sm text-gray-500' },
+          'Based on latest performance categories set for each FLW.',
+        ),
+        React.createElement(
+          'button',
+          {
+            className:
+              'px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+            onClick: function () {
+              setPerfData(computePerfBands());
+            },
+          },
+          React.createElement('i', {
+            className: 'fa-solid fa-rotate-right mr-1',
+          }),
+          'Refresh',
+        ),
+      ),
+      React.createElement(
+        'div',
+        { className: 'overflow-x-auto bg-white rounded-lg shadow-sm' },
+        React.createElement(
+          'table',
+          { className: 'min-w-full divide-y divide-gray-200' },
+          React.createElement(
+            'thead',
+            { className: 'bg-gray-50' },
+            React.createElement(
+              'tr',
+              null,
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase',
+                },
+                'Status',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                '# FLWs',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                'Total Mothers',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                'Eligible at Reg',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                'Still Eligible',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                '% Still Eligible',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                'Avg Follow-up %',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                'Avg GS Score',
+              ),
+            ),
+          ),
+          React.createElement(
+            'tbody',
+            { className: 'bg-white divide-y divide-gray-200' },
+            bands.map(function (band) {
+              var pctColor =
+                band.pct_still_eligible != null
+                  ? band.pct_still_eligible >= 85
+                    ? '#22c55e'
+                    : band.pct_still_eligible >= 50
+                    ? '#eab308'
+                    : '#ef4444'
+                  : undefined;
+              return React.createElement(
+                'tr',
+                {
+                  key: band.id || 'none',
+                  className:
+                    'hover:bg-gray-50 border-l-4 ' +
+                    (bandColor[band.color] || bandColor.gray),
+                },
+                React.createElement(
+                  'td',
+                  {
+                    className:
+                      'px-3 py-2 font-medium text-sm text-gray-900 whitespace-nowrap',
+                  },
+                  React.createElement(
+                    'span',
+                    { className: 'inline-flex items-center gap-1.5' },
+                    React.createElement('span', {
+                      style: {
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        backgroundColor: {
+                          green: '#22c55e',
+                          yellow: '#eab308',
+                          red: '#ef4444',
+                          gray: '#9ca3af',
+                        }[band.color],
+                        display: 'inline-block',
+                      },
+                    }),
+                    band.label,
+                  ),
+                ),
+                React.createElement(
+                  'td',
+                  {
+                    className:
+                      'px-3 py-2 text-right text-sm font-bold text-gray-800',
+                  },
+                  band.num_flws,
+                ),
+                React.createElement(
+                  'td',
+                  { className: 'px-3 py-2 text-right text-sm text-gray-700' },
+                  band.total_mothers,
+                ),
+                React.createElement(
+                  'td',
+                  { className: 'px-3 py-2 text-right text-sm text-gray-700' },
+                  band.total_eligible,
+                ),
+                React.createElement(
+                  'td',
+                  { className: 'px-3 py-2 text-right text-sm text-gray-700' },
+                  band.total_still_eligible,
+                ),
+                React.createElement(
+                  'td',
+                  {
+                    className: 'px-3 py-2 text-right text-sm font-medium',
+                    style: pctColor ? { color: pctColor } : undefined,
+                  },
+                  band.pct_still_eligible != null
+                    ? band.pct_still_eligible + '%'
+                    : '—',
+                ),
+                React.createElement(
+                  'td',
+                  { className: 'px-3 py-2 text-right text-sm text-gray-700' },
+                  band.avg_fu != null ? band.avg_fu + '%' : '—',
+                ),
+                React.createElement(
+                  'td',
+                  { className: 'px-3 py-2 text-right text-sm text-gray-700' },
+                  band.avg_gs != null ? band.avg_gs + '%' : '—',
+                ),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  };
+
+  // =========================================================================
+  // Tab 4: Guide
+  // =========================================================================
+  var Tab4 = function () {
+    var sections = [
+      {
+        title: 'Workflow Overview',
+        body: 'Every two weeks, the PM triggers a new audit run. The dashboard loads data for all active FLWs. The PM reviews flags, triggers tasks for red-flagged FLWs (mandatory) and yellow-flagged FLWs (optional with a note), monitors improvement over 7 days, then sets final performance categories and concludes the run.',
+      },
+      {
+        title: 'Flag Types',
+        body: '🔴 Red flag = task required. Triggered by: Follow-up Rate below 50%, % Still Eligible below 50%, or GS Score below 50%.\n🟡 Yellow flag = task optional. Triggered by: Follow-up Rate 50–79%, % Still Eligible below 85%, EBF% ≤30% or >89%, GPS Dist Ratio < 1.0, or any metric worsening >10% since the last concluded run.',
+      },
+      {
+        title: 'Metric Definitions',
+        items: [
+          {
+            name: 'GS Score',
+            def: 'Gold Standard visit checklist score. Max score recorded for this FLW. Red flag if below 50%.',
+          },
+          {
+            name: 'Follow-up Rate',
+            def: 'Of visits due more than 5 days ago (across all mothers), % completed. Red if below 50%, yellow if 50–79%.',
+          },
+          {
+            name: '% Still Eligible',
+            def: 'Of eligible mothers, % who have missed fewer than 2 visits. Green ≥85%, yellow 50–84%, red <50%.',
+          },
+          {
+            name: 'EBF %',
+            def: 'Percentage of visits where current breastfeeding status is exclusive. Yellow flag if ≤30% or >89%.',
+          },
+          {
+            name: 'Revisit Dist (m)',
+            def: 'Mean GPS distance between visits to the same mother case (meters). Green < 30m, yellow 30–50m, red > 50m.',
+          },
+          {
+            name: 'Meter/Visit',
+            def: 'Median GPS distance per revisit (meters). Green > 50m, yellow 20–50m, red < 20m.',
+          },
+          {
+            name: 'Min/Visit',
+            def: 'Median duration per visit in minutes (requires visit timeStart). Green > 20 min, yellow 10–20 min, red < 10 min.',
+          },
+          {
+            name: 'Dist Ratio',
+            def: 'Mean revisit distance ÷ Median. Values below 1.0 suggest GPS clustering (yellow flag).',
+          },
+          {
+            name: 'Prev',
+            def: 'Category assigned in the previous concluded run (Eligible / Requires Improvement / Suspension).',
+          },
+        ],
+      },
+      {
+        title: 'Performance Categories',
+        items: [
+          {
+            name: 'Eligible for Renewal ✓',
+            def: 'FLW met performance standards and is eligible for program renewal.',
+          },
+          {
+            name: 'Requires Improvement ⚠',
+            def: 'FLW showed improvement but needs continued monitoring.',
+          },
+          {
+            name: 'Suspension ✗',
+            def: 'FLW did not improve sufficiently and is recommended for suspension.',
+          },
+        ],
+      },
+      {
+        title: 'Concluding a Run',
+        body: 'The run can only be concluded once all open tasks are resolved. When concluded, current metrics and categories are saved as the baseline for the next run. Use Tab 3 to review the performance band breakdown before concluding.',
+      },
+    ];
+    return React.createElement(
+      'div',
+      { className: 'space-y-6 max-w-3xl' },
+      sections.map(function (s, i) {
+        return React.createElement(
+          'div',
+          { key: i, className: 'bg-white rounded-lg shadow-sm p-6' },
+          React.createElement(
+            'h3',
+            { className: 'text-lg font-semibold text-gray-900 mb-3' },
+            s.title,
+          ),
+          s.body &&
+            React.createElement(
+              'p',
+              { className: 'text-sm text-gray-700 whitespace-pre-line' },
+              s.body,
+            ),
+          s.items &&
+            React.createElement(
+              'dl',
+              { className: 'space-y-2' },
+              s.items.map(function (item, j) {
+                return React.createElement(
+                  'div',
+                  { key: j },
+                  React.createElement(
+                    'dt',
+                    { className: 'text-sm font-medium text-gray-900' },
+                    item.name,
+                  ),
+                  React.createElement(
+                    'dd',
+                    { className: 'text-sm text-gray-600 ml-4' },
+                    item.def,
+                  ),
+                );
+              }),
+            ),
+        );
+      }),
+    );
+  };
+
+  // =========================================================================
+  // Main render
+  // =========================================================================
+  var tabs = [
+    { id: 'audit', label: 'Audit Report', icon: 'fa-table' },
+    { id: 'improvement', label: 'Improvement in Audit', icon: 'fa-chart-line' },
+    { id: 'summary', label: 'Summary by Band', icon: 'fa-layer-group' },
+    { id: 'guide', label: 'Guide', icon: 'fa-book' },
+  ];
+
+  var notesFlwName = notesModal ? flwNameMap[notesModal] || notesModal : '';
+
+  return React.createElement(
+    'div',
+    { className: 'space-y-3 pb-8' },
+
+    // Header
+    React.createElement(
+      'div',
+      {
+        className:
+          'bg-white rounded-lg shadow-sm p-4 flex items-center justify-between gap-4',
+      },
+      React.createElement(
+        'div',
+        null,
+        React.createElement(
+          'h1',
+          { className: 'text-xl font-bold text-gray-900' },
+          definition.name,
+        ),
+        React.createElement(
+          'p',
+          { className: 'text-gray-600 text-sm mt-0.5' },
+          definition.description,
+        ),
+      ),
+      React.createElement(
+        'button',
+        {
+          className:
+            'px-4 py-2 text-sm rounded-lg font-medium transition-colors shrink-0 ' +
+            (!canConclude
+              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              : 'bg-green-600 text-white hover:bg-green-700'),
+          onClick: function () {
+            if (canConclude) setConcludeModal(true);
+          },
+          disabled: !canConclude,
+          title: canConclude
+            ? 'Conclude this audit run'
+            : 'All tasks must be resolved, all red FLWs must have tasks, and all yellow FLWs must be triaged before concluding',
+        },
+        React.createElement('i', {
+          className: 'fa-solid fa-flag-checkered mr-2',
+        }),
+        'Conclude Run',
+      ),
+    ),
+
+    // KPI bar (compact single row)
+    React.createElement(
+      'div',
+      { className: 'bg-white rounded-lg shadow-sm px-4 py-3' },
+      React.createElement(KpiBar, null),
+    ),
+
+    // Tab bar + content
+    React.createElement(
+      'div',
+      { className: 'bg-white rounded-lg shadow-sm' },
+      React.createElement(
+        'div',
+        { className: 'flex border-b border-gray-200 overflow-x-auto' },
+        tabs.map(function (tab) {
+          return React.createElement(
+            'button',
+            {
+              key: tab.id,
+              onClick: function () {
+                setActiveTab(tab.id);
+              },
+              className:
+                'flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ' +
+                (activeTab === tab.id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'),
+            },
+            React.createElement('i', { className: 'fa-solid ' + tab.icon }),
+            tab.label,
+          );
+        }),
+      ),
+      React.createElement(
+        'div',
+        { className: 'p-4' },
+        activeTab === 'audit'
+          ? React.createElement(Tab1, null)
+          : activeTab === 'improvement'
+          ? React.createElement(Tab2, null)
+          : activeTab === 'summary'
+          ? React.createElement(Tab3, null)
+          : React.createElement(Tab4, null),
+      ),
+    ),
+
+    // Notes modal (with inline category result buttons, like mbw_monitoring_v2)
+    notesModal &&
+      React.createElement(
+        'div',
+        {
+          className:
+            'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40',
+          onClick: function (e) {
+            if (e.target === e.currentTarget) setNotesModal(null);
+          },
+        },
+        React.createElement(
+          'div',
+          { className: 'bg-white rounded-xl shadow-2xl w-full max-w-md mx-4' },
+          React.createElement(
+            'div',
+            {
+              className:
+                'px-6 py-4 border-b border-gray-200 font-semibold text-gray-900',
+            },
+            'Notes for ' + notesFlwName,
+          ),
+          React.createElement(
+            'div',
+            { className: 'px-6 py-4 space-y-3' },
+            React.createElement('textarea', {
+              className:
+                'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm',
+              rows: 4,
+              value: notesDraft,
+              onChange: function (e) {
+                setNotesDraft(e.target.value);
+              },
+              placeholder: 'Add notes about this FLW…',
+            }),
+            React.createElement(
+              'div',
+              { className: 'flex items-center gap-2 flex-wrap' },
+              React.createElement(
+                'span',
+                { className: 'text-xs text-gray-600' },
+                'Category:',
+              ),
+              PERF_CATEGORIES.map(function (cat) {
+                var active = notesModalResult === cat.id;
+                return React.createElement(
+                  'button',
+                  {
+                    key: cat.id,
+                    onClick: function () {
+                      setNotesModalResult(active ? null : cat.id);
+                    },
+                    className:
+                      'px-3 py-1 rounded text-xs font-medium border transition-colors ' +
+                      (active ? cat.active : cat.inactive),
+                  },
+                  React.createElement('i', {
+                    className: 'fa-solid ' + cat.icon + ' mr-1',
+                  }),
+                  cat.label,
+                );
+              }),
+              notesModalResult &&
+                React.createElement(
+                  'button',
+                  {
+                    onClick: function () {
+                      setNotesModalResult(null);
+                    },
+                    className:
+                      'px-2 py-1 text-xs rounded border border-gray-300 text-gray-500 hover:bg-gray-100',
+                  },
+                  'Clear',
+                ),
+            ),
+          ),
+          React.createElement(
+            'div',
+            {
+              className:
+                'px-6 py-4 border-t border-gray-200 flex justify-end gap-3',
+            },
+            React.createElement(
+              'button',
+              {
+                className:
+                  'px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50',
+                onClick: function () {
+                  setNotesModal(null);
+                },
+              },
+              'Cancel',
+            ),
+            React.createElement(
+              'button',
+              {
+                className:
+                  'px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400',
+                onClick: handleSaveNotes,
+                disabled: savingNotes,
+              },
+              savingNotes ? 'Saving…' : 'Save Notes',
+            ),
+          ),
+        ),
+      ),
+
+    // Audit status "Not Required" reason modal
+    auditStatusModal &&
+      React.createElement(
+        'div',
+        {
+          className:
+            'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40',
+          onClick: function (e) {
+            if (e.target === e.currentTarget) { setAuditStatusModal(null); setAuditStatusDraft(''); }
+          },
+        },
+        React.createElement(
+          'div',
+          { className: 'bg-white rounded-xl shadow-2xl w-full max-w-md mx-4' },
+          React.createElement(
+            'div',
+            { className: 'px-6 py-4 border-b border-gray-200 font-semibold text-gray-900' },
+            'Audit Not Required — ',
+            flwNameMap[auditStatusModal] || auditStatusModal,
+          ),
+          React.createElement(
+            'div',
+            { className: 'px-6 py-4 space-y-2' },
+            React.createElement(
+              'p',
+              { className: 'text-sm text-gray-600' },
+              'Please provide a reason why this yellow-flagged FLW does not require an audit.',
+            ),
+            React.createElement('textarea', {
+              className: 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm',
+              rows: 3,
+              value: auditStatusDraft,
+              onChange: function (e) { setAuditStatusDraft(e.target.value); },
+              placeholder: 'e.g. Flag triggered by data entry error, FLW confirmed compliant…',
+              autoFocus: true,
+            }),
+          ),
+          React.createElement(
+            'div',
+            { className: 'px-6 py-4 border-t border-gray-200 flex justify-end gap-3' },
+            React.createElement(
+              'button',
+              {
+                className: 'px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50',
+                onClick: function () { setAuditStatusModal(null); setAuditStatusDraft(''); },
+              },
+              'Cancel',
+            ),
+            React.createElement(
+              'button',
+              {
+                className: 'px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400',
+                onClick: handleSaveAuditNotRequired,
+                disabled: !auditStatusDraft.trim(),
+              },
+              'Save',
+            ),
+          ),
+        ),
+      ),
+
+    // Conclude run modal
+    concludeModal &&
+      React.createElement(
+        'div',
+        {
+          className:
+            'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40',
+          onClick: function (e) {
+            if (e.target === e.currentTarget) setConcludeModal(false);
+          },
+        },
+        React.createElement(
+          'div',
+          { className: 'bg-white rounded-xl shadow-2xl w-full max-w-md mx-4' },
+          React.createElement(
+            'div',
+            { className: 'px-6 py-4 bg-green-50 border-b border-green-200' },
+            React.createElement(
+              'h3',
+              { className: 'text-lg font-semibold text-green-900' },
+              React.createElement('i', {
+                className: 'fa-solid fa-flag-checkered mr-2',
+              }),
+              'Conclude Audit Run',
+            ),
+          ),
+          React.createElement(
+            'div',
+            { className: 'px-6 py-5 text-sm text-gray-700 space-y-3' },
+            React.createElement(
+              'p',
+              null,
+              'This will mark the run as ',
+              React.createElement('strong', null, 'Completed'),
+              ' and save current metrics and categories as the baseline for the next run.',
+            ),
+            React.createElement(
+              'p',
+              null,
+              categorizedCount +
+                ' of ' +
+                totalFlws +
+                ' FLWs have been categorized.',
+            ),
+            // Completion checklist
+            (function () {
+              var openTasks = Object.values(taskStates).filter(function (t) {
+                return t.triggered_at && t.status !== 'closed' && t.status !== 'completed';
+              });
+              var redNoTask = enrichedData.filter(function (f) {
+                return f.flags.type === 'red' && !(taskStates[f.username] && taskStates[f.username].triggered_at);
+              });
+              var yellowNotTriaged = enrichedData.filter(function (f) {
+                if (f.flags.type !== 'yellow') return false;
+                var as = auditStatuses[f.username] || {};
+                if (!as.status) return true;
+                if (as.status === 'audit_not_required') return !as.reason;
+                if (as.status === 'audit_required') return !(taskStates[f.username] && taskStates[f.username].triggered_at);
+                return false;
+              });
+              var items = [
+                { ok: openTasks.length === 0, label: openTasks.length === 0 ? 'All triggered tasks resolved' : openTasks.length + ' task(s) still open' },
+                { ok: redNoTask.length === 0, label: redNoTask.length === 0 ? 'All red-flagged FLWs have tasks' : redNoTask.length + ' red-flagged FLW(s) missing a task' },
+                { ok: yellowNotTriaged.length === 0, label: yellowNotTriaged.length === 0 ? 'All yellow-flagged FLWs triaged' : yellowNotTriaged.length + ' yellow-flagged FLW(s) need audit status or task' },
+              ];
+              return React.createElement(
+                'div',
+                { className: 'bg-gray-50 rounded-lg p-3 space-y-1.5 border border-gray-200' },
+                items.map(function (item, i) {
+                  return React.createElement(
+                    'div',
+                    { key: i, className: 'flex items-center gap-2 text-xs' },
+                    React.createElement('i', {
+                      className: item.ok ? 'fa-solid fa-circle-check text-green-500' : 'fa-solid fa-circle-xmark text-red-400',
+                    }),
+                    React.createElement('span', { className: item.ok ? 'text-gray-600' : 'text-red-700 font-medium' }, item.label),
+                  );
+                }),
+              );
+            })(),
+            React.createElement(
+              'p',
+              { className: 'text-orange-700 font-medium' },
+              'This action cannot be undone.',
+            ),
+          ),
+          React.createElement(
+            'div',
+            {
+              className:
+                'px-6 py-4 border-t border-gray-200 flex justify-end gap-3',
+            },
+            React.createElement(
+              'button',
+              {
+                className:
+                  'px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50',
+                onClick: function () {
+                  setConcludeModal(false);
+                },
+              },
+              'Cancel',
+            ),
+            React.createElement(
+              'button',
+              {
+                className:
+                  'px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 font-medium',
+                onClick: handleConclude,
+                disabled: concluding,
+              },
+              concluding ? 'Concluding…' : 'Conclude Run',
+            ),
+          ),
+        ),
+      ),
+  );
 }
