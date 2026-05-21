@@ -213,3 +213,55 @@ def test_template_key_mismatch_rejected(mock_wda, client, auth_user):
     assert data["result"]["structuredContent"]["error"]["code"] == "TEMPLATE_KEY_MISMATCH"
     assert "old_key" in data["result"]["structuredContent"]["error"]["message"]
     assert "'x'" in data["result"]["structuredContent"]["error"]["message"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_writes_happen_when_dry_run_false(mock_wda, client, auth_user):
+    _, raw = auth_user
+
+    current_def = MagicMock()
+    current_def.id = 42
+    current_def.data = {"name": "X-old", "statuses": [], "pipeline_sources": [], "version": 7}
+    current_def.template_type = "x"
+
+    current_render = MagicMock()
+    current_render.version = 11
+    current_render.component_code = "function WorkflowUI() { return 'old'; }"
+
+    instance = MagicMock()
+    instance.get_definition.return_value = current_def
+    instance.get_render_code.return_value = current_render
+    mock_wda.return_value = instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 9,
+            "template_source": _SIMPLE_TEMPLATE_SOURCE,
+            "expected_render_code_version": 11,
+            "expected_definition_version": 7,
+            "dry_run": False,  # Enable writes
+        },
+    )
+
+    assert data["result"]["isError"] is False, data
+    payload = data["result"]["structuredContent"]
+    assert payload["workflow_id"] == 42
+    assert payload["dry_run"] is False
+    assert payload["render_code"]["version_after"] == 12
+    assert payload["definition"]["version_after"] == 8
+
+    # Verify both updates were called with correct versions
+    instance.update_definition.assert_called_once()
+    call_args = instance.update_definition.call_args
+    assert call_args[0][0] == 42  # workflow_id
+    assert call_args[1]["expected_version"] == 7
+
+    instance.save_render_code.assert_called_once()
+    call_args = instance.save_render_code.call_args
+    assert call_args[0][0] == 42  # workflow_id
+    assert call_args[0][1] == "function WorkflowUI() { return null; }"  # new render code
+    assert call_args[1]["expected_version"] == 11

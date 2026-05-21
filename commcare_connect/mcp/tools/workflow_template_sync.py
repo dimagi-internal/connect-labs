@@ -181,11 +181,23 @@ def workflow_sync_from_template_file(
         if dry_run:
             return result
 
-        # Writes — implemented in a follow-up task.
-        raise MCPToolError(
-            "NOT_IMPLEMENTED",
-            "non-dry-run sync is not implemented yet — set dry_run=true to validate.",
-        )
+        # Writes: definition first, then render_code (order matters for consistency).
+        # Both use optimistic concurrency (version checking already done above).
+        if definition_changed or render_changed:
+            if definition_changed:
+                wda.update_definition(
+                    workflow_id,
+                    new_def_data,
+                    expected_version=expected_definition_version,
+                )
+            if render_changed:
+                wda.save_render_code(
+                    workflow_id,
+                    parsed.render_code,
+                    expected_version=current_render.version,
+                )
+
+        return result
     finally:
         if hasattr(wda, "close"):
             wda.close()
