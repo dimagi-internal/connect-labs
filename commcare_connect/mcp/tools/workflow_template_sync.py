@@ -202,21 +202,18 @@ def workflow_sync_from_template_file(
         if dry_run:
             return result
 
-        # Writes: definition first, then render_code, then pipelines (order matters for consistency).
-        # Both use optimistic concurrency (version checking already done above).
-        if definition_changed or render_changed:
-            if definition_changed:
-                wda.update_definition(
-                    workflow_id,
-                    new_def_data,
-                    expected_version=expected_definition_version,
-                )
-            if render_changed:
-                wda.save_render_code(
-                    workflow_id,
-                    parsed.render_code,
-                    expected_version=current_render.version,
-                )
+        # Writes: definition first, then render_code, then pipelines.
+        # Version checks already happened above; the bumped version is part of
+        # new_def_data, and save_render_code takes the new version explicitly.
+        if definition_changed:
+            wda.update_definition(definition_id=workflow_id, data=new_def_data)
+        if render_changed:
+            new_render_record = wda.save_render_code(
+                definition_id=workflow_id,
+                component_code=parsed.render_code,
+                version=expected_render_code_version + 1,
+            )
+            result["render_code"]["version_after"] = new_render_record.version
 
         # Pipelines — map each PIPELINE_SCHEMAS entry to a live pipeline by alias.
         if parsed.pipeline_schemas:
