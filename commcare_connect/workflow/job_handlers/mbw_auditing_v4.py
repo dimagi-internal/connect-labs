@@ -83,7 +83,13 @@ def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=No
 
 
 def _get_prev_categories(access_token: str, opportunity_id: int, workflow_definition_id: int) -> dict:
-    """Fetch worker_results from the most recent run that has categories assigned."""
+    """Fetch the most recent performance category per FLW across all runs for this definition.
+
+    Merges worker_results from every candidate run so a FLW categorised in any
+    prior run (not just the single most-recent one) gets a Prev value. For each
+    FLW the entry with the latest assessed_at timestamp wins; falls back to the
+    run's created_at when assessed_at is absent.
+    """
     try:
         from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
         from commcare_connect.workflow.data_access import WorkflowRunRecord
@@ -94,8 +100,6 @@ def _get_prev_categories(access_token: str, opportunity_id: int, workflow_defini
                 type="workflow_run",
                 model_class=WorkflowRunRecord,
             )
-        # Keep runs for this definition that have at least one category assigned.
-        # Excludes the current run (which has no worker_results yet).
         candidates = [
             r
             for r in runs
@@ -104,9 +108,23 @@ def _get_prev_categories(access_token: str, opportunity_id: int, workflow_defini
         ]
         if not candidates:
             return {}
-        candidates.sort(key=lambda r: r.data.get("created_at") or "", reverse=True)
-        state = candidates[0].data.get("state") or {}
-        return state.get("worker_results") or {}
+
+        # Merge: for each FLW keep the entry with the latest assessed_at.
+        # Fall back to the run's created_at so older runs without assessed_at
+        # still lose to newer ones.
+        merged: dict[str, tuple[str, dict]] = {}  # username → (timestamp, entry)
+        for run in candidates:
+            run_ts = run.data.get("created_at") or ""
+            results = (run.data.get("state") or {}).get("worker_results") or {}
+            for username, entry in results.items():
+                if not isinstance(entry, dict):
+                    continue
+                entry_ts = entry.get("assessed_at") or run_ts
+                existing = merged.get(username)
+                if existing is None or entry_ts > existing[0]:
+                    merged[username] = (entry_ts, entry)
+
+        return {u: v for u, (_, v) in merged.items()}
     except Exception:
         logger.exception("Failed to fetch previous run categories")
         return {}
