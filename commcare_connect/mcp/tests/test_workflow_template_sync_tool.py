@@ -101,3 +101,115 @@ def test_dry_run_returns_diff_without_writes(mock_wda, client, auth_user):
     # No writes on dry_run.
     instance.update_definition.assert_not_called()
     instance.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_definition_version_conflict_rejected(mock_wda, client, auth_user):
+    _, raw = auth_user
+
+    current_def = MagicMock()
+    current_def.id = 42
+    current_def.data = {"name": "X", "statuses": [], "pipeline_sources": [], "version": 999}
+    current_def.template_type = "x"
+
+    current_render = MagicMock()
+    current_render.version = 11
+    current_render.component_code = "function WorkflowUI() { return null; }"
+
+    instance = MagicMock()
+    instance.get_definition.return_value = current_def
+    instance.get_render_code.return_value = current_render
+    mock_wda.return_value = instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 9,
+            "template_source": _SIMPLE_TEMPLATE_SOURCE,
+            "expected_render_code_version": 11,
+            "expected_definition_version": 7,  # Mismatch: actual is 999
+            "dry_run": True,
+        },
+    )
+
+    assert data["result"]["isError"] is True
+    assert data["result"]["structuredContent"]["error"]["code"] == "VERSION_CONFLICT"
+    assert "version 999" in data["result"]["structuredContent"]["error"]["message"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_render_code_version_conflict_rejected(mock_wda, client, auth_user):
+    _, raw = auth_user
+
+    current_def = MagicMock()
+    current_def.id = 42
+    current_def.data = {"name": "X", "statuses": [], "pipeline_sources": [], "version": 7}
+    current_def.template_type = "x"
+
+    current_render = MagicMock()
+    current_render.version = 999  # Mismatch
+    current_render.component_code = "function WorkflowUI() { return null; }"
+
+    instance = MagicMock()
+    instance.get_definition.return_value = current_def
+    instance.get_render_code.return_value = current_render
+    mock_wda.return_value = instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 9,
+            "template_source": _SIMPLE_TEMPLATE_SOURCE,
+            "expected_render_code_version": 11,  # Mismatch: actual is 999
+            "expected_definition_version": 7,
+            "dry_run": True,
+        },
+    )
+
+    assert data["result"]["isError"] is True
+    assert data["result"]["structuredContent"]["error"]["code"] == "VERSION_CONFLICT"
+    assert "version 999" in data["result"]["structuredContent"]["error"]["message"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_template_key_mismatch_rejected(mock_wda, client, auth_user):
+    _, raw = auth_user
+
+    current_def = MagicMock()
+    current_def.id = 42
+    current_def.data = {"name": "X", "statuses": [], "pipeline_sources": [], "version": 7}
+    current_def.template_type = "old_key"  # Mismatch: template has "x"
+
+    current_render = MagicMock()
+    current_render.version = 11
+    current_render.component_code = "function WorkflowUI() { return null; }"
+
+    instance = MagicMock()
+    instance.get_definition.return_value = current_def
+    instance.get_render_code.return_value = current_render
+    mock_wda.return_value = instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 9,
+            "template_source": _SIMPLE_TEMPLATE_SOURCE,
+            "expected_render_code_version": 11,
+            "expected_definition_version": 7,
+            "dry_run": True,
+        },
+    )
+
+    assert data["result"]["isError"] is True
+    assert data["result"]["structuredContent"]["error"]["code"] == "TEMPLATE_KEY_MISMATCH"
+    assert "old_key" in data["result"]["structuredContent"]["error"]["message"]
+    assert "'x'" in data["result"]["structuredContent"]["error"]["message"]
