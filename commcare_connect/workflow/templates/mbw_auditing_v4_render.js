@@ -93,7 +93,9 @@ function WorkflowUI({
   var savedSelectedWorkers =
     (instance.state && instance.state.selected_workers) || [];
 
-  var _step = React.useState(savedSelectedWorkers.length > 0 ? 'idle' : 'select');
+  var _step = React.useState(
+    savedSelectedWorkers.length > 0 ? 'idle' : 'select',
+  );
   var step = _step[0];
   var setStep = _step[1];
   var _dashData = React.useState(null);
@@ -183,7 +185,8 @@ function WorkflowUI({
   var launching = _launching[0];
   var setLaunching = _launching[1];
 
-  var savedAuditStatuses = (instance.state && instance.state.audit_statuses) || {};
+  var savedAuditStatuses =
+    (instance.state && instance.state.audit_statuses) || {};
   var _auditStatuses = React.useState(savedAuditStatuses);
   var auditStatuses = _auditStatuses[0];
   var setAuditStatuses = _auditStatuses[1];
@@ -224,7 +227,7 @@ function WorkflowUI({
   var getCSRF = React.useCallback(function () {
     return (
       (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value ||
-      ((document.cookie.match(/csrftoken=([^;]+)/) || [])[1]) ||
+      (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] ||
       ''
     );
   }, []);
@@ -1019,7 +1022,11 @@ function WorkflowUI({
 
   var handleSetAuditStatus = function (username, status, reason) {
     var updated = Object.assign({}, auditStatuses);
-    updated[username] = { status: status, reason: reason || '', set_at: new Date().toISOString() };
+    updated[username] = {
+      status: status,
+      reason: reason || '',
+      set_at: new Date().toISOString(),
+    };
     setAuditStatuses(updated);
     onUpdateState({ audit_statuses: updated }).catch(function (e) {
       console.warn('audit status save failed:', e);
@@ -1041,7 +1048,11 @@ function WorkflowUI({
       alert('Please enter a reason why no audit is required.');
       return;
     }
-    handleSetAuditStatus(auditStatusModal, 'audit_not_required', auditStatusDraft.trim());
+    handleSetAuditStatus(
+      auditStatusModal,
+      'audit_not_required',
+      auditStatusDraft.trim(),
+    );
     setAuditStatusModal(null);
     setAuditStatusDraft('');
   };
@@ -1086,20 +1097,44 @@ function WorkflowUI({
 
   var canConclude = React.useMemo(
     function () {
-      if (!Object.values(taskStates).every(function (t) {
-        return !t.triggered_at || t.status === 'closed' || t.status === 'completed';
-      })) return false;
+      if (
+        !Object.values(taskStates).every(function (t) {
+          return (
+            !t.triggered_at || t.status === 'closed' || t.status === 'completed'
+          );
+        })
+      )
+        return false;
       if (enrichedData.length > 0) {
-        if (!enrichedData.filter(function (f) { return f.flags.type === 'red'; }).every(function (f) {
-          return taskStates[f.username] && taskStates[f.username].triggered_at;
-        })) return false;
-        if (!enrichedData.filter(function (f) { return f.flags.type === 'yellow'; }).every(function (f) {
-          var as = auditStatuses[f.username] || {};
-          if (!as.status) return false;
-          if (as.status === 'audit_not_required') return !!as.reason;
-          if (as.status === 'audit_required') return !!(taskStates[f.username] && taskStates[f.username].triggered_at);
+        if (
+          !enrichedData
+            .filter(function (f) {
+              return f.flags.type === 'red';
+            })
+            .every(function (f) {
+              return (
+                taskStates[f.username] && taskStates[f.username].triggered_at
+              );
+            })
+        )
           return false;
-        })) return false;
+        if (
+          !enrichedData
+            .filter(function (f) {
+              return f.flags.type === 'yellow';
+            })
+            .every(function (f) {
+              var as = auditStatuses[f.username] || {};
+              if (!as.status) return false;
+              if (as.status === 'audit_not_required') return !!as.reason;
+              if (as.status === 'audit_required')
+                return !!(
+                  taskStates[f.username] && taskStates[f.username].triggered_at
+                );
+              return false;
+            })
+        )
+          return false;
       }
       return true;
     },
@@ -1236,19 +1271,28 @@ function WorkflowUI({
   var AuditStatusCell = function (props) {
     var flw = props.flw;
     if (!flw.flags.type) {
-      return React.createElement('span', { className: 'text-gray-200 text-xs' }, '—');
+      return React.createElement(
+        'span',
+        { className: 'text-gray-200 text-xs' },
+        '—',
+      );
     }
     if (flw.flags.type === 'red') {
       return React.createElement(
         'span',
-        { className: 'inline-block text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium whitespace-nowrap' },
+        {
+          className:
+            'inline-block text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium whitespace-nowrap',
+        },
         'Audit Required',
       );
     }
     // Yellow flag
     var as = auditStatuses[flw.username] || {};
     var status = as.status;
-    var hasTask = !!(taskStates[flw.username] && taskStates[flw.username].triggered_at);
+    var hasTask = !!(
+      taskStates[flw.username] && taskStates[flw.username].triggered_at
+    );
     if (!status) {
       return React.createElement(
         'div',
@@ -1256,15 +1300,19 @@ function WorkflowUI({
         React.createElement(
           'button',
           {
-            className: 'text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 whitespace-nowrap',
-            onClick: function () { handleSetAuditStatus(flw.username, 'audit_required'); },
+            className:
+              'text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 whitespace-nowrap',
+            onClick: function () {
+              handleSetAuditStatus(flw.username, 'audit_required');
+            },
           },
           'Audit Required',
         ),
         React.createElement(
           'button',
           {
-            className: 'text-xs px-2 py-0.5 rounded bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200 whitespace-nowrap',
+            className:
+              'text-xs px-2 py-0.5 rounded bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200 whitespace-nowrap',
             onClick: function () {
               setAuditStatusModal(flw.username);
               setAuditStatusDraft('');
@@ -1280,19 +1328,25 @@ function WorkflowUI({
         { className: 'flex flex-col gap-1 items-start' },
         React.createElement(
           'span',
-          { className: 'text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap' },
+          {
+            className:
+              'text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap',
+          },
           '✓ Audit Required',
         ),
-        !hasTask && React.createElement(
-          'span',
-          { className: 'text-xs text-red-500 whitespace-nowrap' },
-          'Task required →',
-        ),
+        !hasTask &&
+          React.createElement(
+            'span',
+            { className: 'text-xs text-red-500 whitespace-nowrap' },
+            'Task required →',
+          ),
         React.createElement(
           'button',
           {
             className: 'text-xs text-gray-400 hover:text-gray-600',
-            onClick: function () { handleClearAuditStatus(flw.username); },
+            onClick: function () {
+              handleClearAuditStatus(flw.username);
+            },
           },
           'Change',
         ),
@@ -1305,7 +1359,8 @@ function WorkflowUI({
         React.createElement(
           'button',
           {
-            className: 'text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-300 font-medium whitespace-nowrap',
+            className:
+              'text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-300 font-medium whitespace-nowrap',
             title: 'Reason: ' + as.reason,
             onClick: function () {
               setAuditStatusModal(flw.username);
@@ -1318,7 +1373,9 @@ function WorkflowUI({
           'button',
           {
             className: 'text-xs text-gray-400 hover:text-gray-600',
-            onClick: function () { handleClearAuditStatus(flw.username); },
+            onClick: function () {
+              handleClearAuditStatus(flw.username);
+            },
           },
           'Change',
         ),
@@ -1620,8 +1677,8 @@ function WorkflowUI({
       } else if (selSort.col === 'last_audit_result') {
         var pa = prevCatsForSelect[a.username] || {};
         var pb = prevCatsForSelect[b.username] || {};
-        va = (pa.result || pa || '');
-        vb = (pb.result || pb || '');
+        va = pa.result || pa || '';
+        vb = pb.result || pb || '';
       } else {
         va = '';
         vb = '';
@@ -1661,7 +1718,8 @@ function WorkflowUI({
     var prevCatBadge = function (catEntry) {
       // catEntry may be {result: "...", notes: "..."} or a bare string
       var result = catEntry && (catEntry.result || catEntry);
-      if (!result) return React.createElement('span', { className: 'text-gray-300' }, '—');
+      if (!result)
+        return React.createElement('span', { className: 'text-gray-300' }, '—');
       return resultBadge(result);
     };
 
@@ -1690,13 +1748,17 @@ function WorkflowUI({
         historyLoading &&
           React.createElement(
             'div',
-            { className: 'px-4 py-2 text-xs text-gray-400 bg-gray-50 border-b' },
+            {
+              className: 'px-4 py-2 text-xs text-gray-400 bg-gray-50 border-b',
+            },
             'Loading audit history…',
           ),
         // Toolbar
         React.createElement(
           'div',
-          { className: 'px-4 py-2 bg-gray-50 border-b flex items-center gap-2' },
+          {
+            className: 'px-4 py-2 bg-gray-50 border-b flex items-center gap-2',
+          },
           React.createElement('input', {
             type: 'text',
             value: selSearch,
@@ -1785,21 +1847,34 @@ function WorkflowUI({
                   ),
                   React.createElement(
                     'td',
-                    { className: 'px-4 py-2 text-center text-sm text-gray-600' },
+                    {
+                      className: 'px-4 py-2 text-center text-sm text-gray-600',
+                    },
                     h.audit_count > 0
                       ? h.audit_count
-                      : React.createElement('span', { className: 'text-gray-300' }, '—'),
+                      : React.createElement(
+                          'span',
+                          { className: 'text-gray-300' },
+                          '—',
+                        ),
                   ),
                   React.createElement(
                     'td',
                     { className: 'px-4 py-2 text-sm text-gray-600' },
                     h.last_audit_date
-                      ? new Date(h.last_audit_date).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })
-                      : React.createElement('span', { className: 'text-gray-300' }, '—'),
+                      ? new Date(h.last_audit_date).toLocaleDateString(
+                          'en-US',
+                          {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          },
+                        )
+                      : React.createElement(
+                          'span',
+                          { className: 'text-gray-300' },
+                          '—',
+                        ),
                   ),
                   React.createElement(
                     'td',
@@ -1824,9 +1899,7 @@ function WorkflowUI({
             className:
               'px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50',
           },
-          launching
-            ? 'Launching…'
-            : 'Run Audit (' + selectedCount + ' FLWs)',
+          launching ? 'Launching…' : 'Run Audit (' + selectedCount + ' FLWs)',
         ),
       ),
     );
@@ -2795,7 +2868,10 @@ function WorkflowUI({
           className:
             'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40',
           onClick: function (e) {
-            if (e.target === e.currentTarget) { setAuditStatusModal(null); setAuditStatusDraft(''); }
+            if (e.target === e.currentTarget) {
+              setAuditStatusModal(null);
+              setAuditStatusDraft('');
+            }
           },
         },
         React.createElement(
@@ -2803,7 +2879,10 @@ function WorkflowUI({
           { className: 'bg-white rounded-xl shadow-2xl w-full max-w-md mx-4' },
           React.createElement(
             'div',
-            { className: 'px-6 py-4 border-b border-gray-200 font-semibold text-gray-900' },
+            {
+              className:
+                'px-6 py-4 border-b border-gray-200 font-semibold text-gray-900',
+            },
             'Audit Not Required — ',
             flwNameMap[auditStatusModal] || auditStatusModal,
           ),
@@ -2816,29 +2895,41 @@ function WorkflowUI({
               'Please provide a reason why this yellow-flagged FLW does not require an audit.',
             ),
             React.createElement('textarea', {
-              className: 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm',
+              className:
+                'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm',
               rows: 3,
               value: auditStatusDraft,
-              onChange: function (e) { setAuditStatusDraft(e.target.value); },
-              placeholder: 'e.g. Flag triggered by data entry error, FLW confirmed compliant…',
+              onChange: function (e) {
+                setAuditStatusDraft(e.target.value);
+              },
+              placeholder:
+                'e.g. Flag triggered by data entry error, FLW confirmed compliant…',
               autoFocus: true,
             }),
           ),
           React.createElement(
             'div',
-            { className: 'px-6 py-4 border-t border-gray-200 flex justify-end gap-3' },
+            {
+              className:
+                'px-6 py-4 border-t border-gray-200 flex justify-end gap-3',
+            },
             React.createElement(
               'button',
               {
-                className: 'px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50',
-                onClick: function () { setAuditStatusModal(null); setAuditStatusDraft(''); },
+                className:
+                  'px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50',
+                onClick: function () {
+                  setAuditStatusModal(null);
+                  setAuditStatusDraft('');
+                },
               },
               'Cancel',
             ),
             React.createElement(
               'button',
               {
-                className: 'px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400',
+                className:
+                  'px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400',
                 onClick: handleSaveAuditNotRequired,
                 disabled: !auditStatusDraft.trim(),
               },
@@ -2895,35 +2986,81 @@ function WorkflowUI({
             // Completion checklist
             (function () {
               var openTasks = Object.values(taskStates).filter(function (t) {
-                return t.triggered_at && t.status !== 'closed' && t.status !== 'completed';
+                return (
+                  t.triggered_at &&
+                  t.status !== 'closed' &&
+                  t.status !== 'completed'
+                );
               });
               var redNoTask = enrichedData.filter(function (f) {
-                return f.flags.type === 'red' && !(taskStates[f.username] && taskStates[f.username].triggered_at);
+                return (
+                  f.flags.type === 'red' &&
+                  !(
+                    taskStates[f.username] &&
+                    taskStates[f.username].triggered_at
+                  )
+                );
               });
               var yellowNotTriaged = enrichedData.filter(function (f) {
                 if (f.flags.type !== 'yellow') return false;
                 var as = auditStatuses[f.username] || {};
                 if (!as.status) return true;
                 if (as.status === 'audit_not_required') return !as.reason;
-                if (as.status === 'audit_required') return !(taskStates[f.username] && taskStates[f.username].triggered_at);
+                if (as.status === 'audit_required')
+                  return !(
+                    taskStates[f.username] &&
+                    taskStates[f.username].triggered_at
+                  );
                 return false;
               });
               var items = [
-                { ok: openTasks.length === 0, label: openTasks.length === 0 ? 'All triggered tasks resolved' : openTasks.length + ' task(s) still open' },
-                { ok: redNoTask.length === 0, label: redNoTask.length === 0 ? 'All red-flagged FLWs have tasks' : redNoTask.length + ' red-flagged FLW(s) missing a task' },
-                { ok: yellowNotTriaged.length === 0, label: yellowNotTriaged.length === 0 ? 'All yellow-flagged FLWs triaged' : yellowNotTriaged.length + ' yellow-flagged FLW(s) need audit status or task' },
+                {
+                  ok: openTasks.length === 0,
+                  label:
+                    openTasks.length === 0
+                      ? 'All triggered tasks resolved'
+                      : openTasks.length + ' task(s) still open',
+                },
+                {
+                  ok: redNoTask.length === 0,
+                  label:
+                    redNoTask.length === 0
+                      ? 'All red-flagged FLWs have tasks'
+                      : redNoTask.length + ' red-flagged FLW(s) missing a task',
+                },
+                {
+                  ok: yellowNotTriaged.length === 0,
+                  label:
+                    yellowNotTriaged.length === 0
+                      ? 'All yellow-flagged FLWs triaged'
+                      : yellowNotTriaged.length +
+                        ' yellow-flagged FLW(s) need audit status or task',
+                },
               ];
               return React.createElement(
                 'div',
-                { className: 'bg-gray-50 rounded-lg p-3 space-y-1.5 border border-gray-200' },
+                {
+                  className:
+                    'bg-gray-50 rounded-lg p-3 space-y-1.5 border border-gray-200',
+                },
                 items.map(function (item, i) {
                   return React.createElement(
                     'div',
                     { key: i, className: 'flex items-center gap-2 text-xs' },
                     React.createElement('i', {
-                      className: item.ok ? 'fa-solid fa-circle-check text-green-500' : 'fa-solid fa-circle-xmark text-red-400',
+                      className: item.ok
+                        ? 'fa-solid fa-circle-check text-green-500'
+                        : 'fa-solid fa-circle-xmark text-red-400',
                     }),
-                    React.createElement('span', { className: item.ok ? 'text-gray-600' : 'text-red-700 font-medium' }, item.label),
+                    React.createElement(
+                      'span',
+                      {
+                        className: item.ok
+                          ? 'text-gray-600'
+                          : 'text-red-700 font-medium',
+                      },
+                      item.label,
+                    ),
                   );
                 }),
               );

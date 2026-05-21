@@ -121,6 +121,7 @@ The `custom_analysis/` section of Labs predates the workflow engine. Most of tho
 2. **Pick a starting template.** Find the closest match in the Starter Templates table. If you're new, a good first project is a one-row-per-FLW weekly performance chart based on **KMC Project Metrics**.
 
 3. **Open Claude Code and describe what you want.** Start with something like:
+
    > "I want to create a new workflow template for [my opportunity]. Walk me through the initial steps to create a basic one-row-per-FLW weekly performance chart."
 
 4. **Claude Code generates the template and deploys it.** Changes go directly to Connect Labs prod — no local server needed. After Claude pushes the update, reload the workflow in your browser to see the result.

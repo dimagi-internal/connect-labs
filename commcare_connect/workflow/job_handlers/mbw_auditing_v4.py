@@ -301,7 +301,11 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     # ── Follow-up rate and eligibility computation ──
     progress_callback("Computing follow-up metrics…")
 
-    now = date.fromisoformat(job_config["current_date"]) if job_config.get("current_date") else datetime.now(tz=timezone.utc).date()
+    now = (
+        date.fromisoformat(job_config["current_date"])
+        if job_config.get("current_date")
+        else datetime.now(tz=timezone.utc).date()
+    )
     grace_cutoff = now - timedelta(days=_GRACE_PERIOD_DAYS)
 
     # flw_fu[username] = {total_eligible, filtered_completed, filtered_denominator, still_eligible}
