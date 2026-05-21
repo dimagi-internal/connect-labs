@@ -57,6 +57,26 @@ TEMPLATE = {"key": "x", "definition": DEFINITION, "render_code": RENDER_CODE}
 """
 
 
+_TEMPLATE_WITH_PIPELINE = """
+DEFINITION = {
+    "name": "X",
+    "statuses": [],
+    "pipeline_sources": [{"pipeline_id": 100, "alias": "visits"}],
+    "version": 1,
+}
+RENDER_CODE = "function WorkflowUI() { return null; }"
+
+VISITS_SCHEMA = {"fields": [{"name": "form_name", "path": "form.@name"}]}
+
+PIPELINE_SCHEMAS = [
+    {"alias": "visits", "name": "Visits", "schema": VISITS_SCHEMA},
+]
+
+TEMPLATE = {"key": "x", "definition": DEFINITION, "render_code": RENDER_CODE,
+            "pipeline_schemas": PIPELINE_SCHEMAS}
+"""
+
+
 @pytest.mark.django_db
 @patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
 def test_dry_run_returns_diff_without_writes(mock_wda, client, auth_user):
@@ -265,3 +285,167 @@ def test_writes_happen_when_dry_run_false(mock_wda, client, auth_user):
     assert call_args[0][0] == 42  # workflow_id
     assert call_args[0][1] == "function WorkflowUI() { return null; }"  # new render code
     assert call_args[1]["expected_version"] == 11
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflow_template_sync.PipelineDataAccess")
+@patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_pipeline_schemas_updated_by_alias(mock_wda, mock_pda, client, auth_user):
+    _, raw = auth_user
+
+    current_def = MagicMock()
+    current_def.id = 42
+    current_def.data = {
+        "name": "X",
+        "statuses": [],
+        "pipeline_sources": [{"pipeline_id": 100, "alias": "visits"}],
+        "version": 7,
+    }
+    current_def.template_type = "x"
+
+    current_render = MagicMock()
+    current_render.version = 11
+    current_render.component_code = "old"
+
+    new_render = MagicMock()
+    new_render.version = 12
+
+    wda_instance = MagicMock()
+    wda_instance.get_definition.return_value = current_def
+    wda_instance.get_render_code.return_value = current_render
+    wda_instance.save_render_code.return_value = new_render
+    mock_wda.return_value = wda_instance
+
+    current_pipe = MagicMock()
+    current_pipe.id = 100
+    current_pipe.version = 3
+    current_pipe.data = {"schema": {"fields": []}}
+    new_pipe = MagicMock()
+    new_pipe.version = 4
+
+    pda_instance = MagicMock()
+    pda_instance.get_definition.return_value = current_pipe
+    pda_instance.update_definition.return_value = new_pipe
+    mock_pda.return_value = pda_instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 9,
+            "template_source": _TEMPLATE_WITH_PIPELINE,
+            "expected_render_code_version": 11,
+            "expected_definition_version": 7,
+            "dry_run": False,
+        },
+    )
+
+    assert data["result"]["isError"] is False, data
+    payload = data["result"]["structuredContent"]
+    assert len(payload["pipelines"]) == 1
+    p = payload["pipelines"][0]
+    assert p["alias"] == "visits"
+    assert p["pipeline_id"] == 100
+    assert p["schema_version_before"] == 3
+    assert p["schema_version_after"] == 4
+    assert p["changed"] is True
+
+    args, kwargs = pda_instance.update_definition.call_args
+    assert kwargs["definition_id"] == 100
+    assert kwargs["schema"] == {"fields": [{"name": "form_name", "path": "form.@name"}]}
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflow_template_sync.PipelineDataAccess")
+@patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_partial_sync_when_pipeline_update_fails(mock_wda, mock_pda, client, auth_user):
+    _, raw = auth_user
+
+    current_def = MagicMock()
+    current_def.data = {
+        "name": "X",
+        "statuses": [],
+        "pipeline_sources": [{"pipeline_id": 100, "alias": "visits"}],
+        "version": 7,
+    }
+    current_def.template_type = "x"
+
+    current_render = MagicMock()
+    current_render.version = 11
+    current_render.component_code = "old"
+    new_render = MagicMock()
+    new_render.version = 12
+
+    wda_instance = MagicMock()
+    wda_instance.get_definition.return_value = current_def
+    wda_instance.get_render_code.return_value = current_render
+    wda_instance.save_render_code.return_value = new_render
+    mock_wda.return_value = wda_instance
+
+    pda_instance = MagicMock()
+    pda_instance.get_definition.side_effect = RuntimeError("upstream 502")
+    mock_pda.return_value = pda_instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 9,
+            "template_source": _TEMPLATE_WITH_PIPELINE,
+            "expected_render_code_version": 11,
+            "expected_definition_version": 7,
+            "dry_run": False,
+        },
+    )
+
+    err = data["result"]["structuredContent"]["error"]
+    assert data["result"]["isError"] is True
+    assert err["code"] == "PARTIAL_SYNC"
+    # Definition + render_code went through before the pipeline failure.
+    assert err["details"]["written"] == ["definition", "render_code"]
+    assert err["details"]["failed_at"]["phase"] == "pipeline"
+    assert err["details"]["failed_at"]["alias"] == "visits"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflow_template_sync.WorkflowDataAccess")
+def test_pipeline_alias_missing_from_workflow_rejects_pre_write(mock_wda, client, auth_user):
+    _, raw = auth_user
+
+    current_def = MagicMock()
+    current_def.data = {
+        "name": "X",
+        "statuses": [],
+        "pipeline_sources": [{"pipeline_id": 200, "alias": "other_alias"}],
+        "version": 7,
+    }
+    current_def.template_type = "x"
+    current_render = MagicMock()
+    current_render.version = 11
+    current_render.component_code = "old"
+
+    instance = MagicMock()
+    instance.get_definition.return_value = current_def
+    instance.get_render_code.return_value = current_render
+    mock_wda.return_value = instance
+
+    data = _call_tool(
+        client,
+        raw,
+        {
+            "workflow_id": 42,
+            "opportunity_id": 9,
+            "template_source": _TEMPLATE_WITH_PIPELINE,
+            "expected_render_code_version": 11,
+            "expected_definition_version": 7,
+            "dry_run": False,
+        },
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert data["result"]["isError"] is True
+    assert err["code"] == "PIPELINE_ALIAS_NOT_FOUND"
+    # No writes should have happened.
+    instance.update_definition.assert_not_called()
+    instance.save_render_code.assert_not_called()
