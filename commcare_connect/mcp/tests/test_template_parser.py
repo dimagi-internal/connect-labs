@@ -70,3 +70,64 @@ TEMPLATE = {"key": "z", "definition": DEFINITION, "render_code": RENDER_CODE}
     result = parse_template_source(source, sidecar_files={})
     assert result.definition["limits"] == (-1, 0, 1)
     assert result.definition["tags"] == {"a", "b"}
+
+
+def test_parses_sidecar_render_code():
+    source = """
+from pathlib import Path
+
+DEFINITION = {"name": "Z", "statuses": [], "pipeline_sources": []}
+
+RENDER_CODE = (Path(__file__).parent / "z_render.js").read_text(encoding="utf-8")
+
+TEMPLATE = {"key": "z", "definition": DEFINITION, "render_code": RENDER_CODE}
+"""
+    result = parse_template_source(
+        source,
+        sidecar_files={"z_render.js": "function WorkflowUI() { return 'z'; }"},
+    )
+    assert result.render_code == "function WorkflowUI() { return 'z'; }"
+
+
+def test_missing_sidecar_raises():
+    source = """
+from pathlib import Path
+
+DEFINITION = {"name": "Z", "statuses": [], "pipeline_sources": []}
+RENDER_CODE = (Path(__file__).parent / "missing.js").read_text(encoding="utf-8")
+TEMPLATE = {"key": "z", "definition": DEFINITION, "render_code": RENDER_CODE}
+"""
+    with pytest.raises(TemplateParseError, match="missing.js"):
+        parse_template_source(source, sidecar_files={})
+
+
+def test_disallows_arbitrary_call():
+    source = """
+RENDER_CODE = open("/etc/passwd").read()
+DEFINITION = {}
+TEMPLATE = {"key": "k"}
+"""
+    with pytest.raises(TemplateParseError, match="unsupported expression"):
+        parse_template_source(source, sidecar_files={})
+
+
+def test_round_trips_real_mbw_template():
+    """Parser must handle the actual on-disk template that triggered this work."""
+    from pathlib import Path
+
+    base = Path("commcare_connect/workflow/templates")
+    py_source = (base / "mbw_auditing_v4.py").read_text()
+    sidecar = (base / "mbw_auditing_v4_render.js").read_text()
+
+    result = parse_template_source(py_source, sidecar_files={"mbw_auditing_v4_render.js": sidecar})
+
+    assert result.template_key == "mbw_auditing_v4"
+    assert result.render_code == sidecar
+    assert result.definition["name"] == "MBW Auditing V4"
+    assert len(result.pipeline_schemas) == 4
+    assert {ps["alias"] for ps in result.pipeline_schemas} == {
+        "visits",
+        "visits_agg",
+        "registrations",
+        "gs_forms",
+    }
