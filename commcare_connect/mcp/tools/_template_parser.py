@@ -56,6 +56,36 @@ def parse_template_source(template_source: str, sidecar_files: dict[str, str]) -
     )
 
 
+def _match_sidecar_call(node: ast.AST) -> str | None:
+    """Recognize `(Path(__file__).parent / "X").read_text(...)` and return X."""
+    # Outer call: <expr>.read_text(...)
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "read_text"):
+        return None
+    # The object being read: Path(__file__).parent / "X"
+    binop = node.func.value
+    if not (isinstance(binop, ast.BinOp) and isinstance(binop.op, ast.Div)):
+        return None
+    # Right side: string literal sidecar name.
+    if not (isinstance(binop.right, ast.Constant) and isinstance(binop.right.value, str)):
+        return None
+    # Left side: Path(__file__).parent
+    left = binop.left
+    if not (isinstance(left, ast.Attribute) and left.attr == "parent"):
+        return None
+    parent_call = left.value
+    if not (
+        isinstance(parent_call, ast.Call) and isinstance(parent_call.func, ast.Name) and parent_call.func.id == "Path"
+    ):
+        return None
+    if not (
+        len(parent_call.args) == 1
+        and isinstance(parent_call.args[0], ast.Name)
+        and parent_call.args[0].id == "__file__"
+    ):
+        return None
+    return binop.right.value
+
+
 def _evaluate(node: ast.AST, names: dict, sidecar_files: dict[str, str]) -> object:
     if isinstance(node, ast.Constant):
         return node.value
@@ -79,4 +109,11 @@ def _evaluate(node: ast.AST, names: dict, sidecar_files: dict[str, str]) -> obje
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub) and isinstance(node.operand, ast.Constant):
         # `-1` parses as UnaryOp(USub, Constant(1)) in Python's AST.
         return -node.operand.value
+    sidecar_name = _match_sidecar_call(node)
+    if sidecar_name is not None:
+        if sidecar_name not in sidecar_files:
+            raise TemplateParseError(
+                f"template references sidecar {sidecar_name!r} but no such file " "was supplied in sidecar_files"
+            )
+        return sidecar_files[sidecar_name]
     raise TemplateParseError(f"unsupported expression at line {getattr(node, 'lineno', '?')}: " f"{ast.dump(node)}")
