@@ -147,8 +147,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     progress_callback("Processing visit data…")
 
     # ── Single pass over visits: attribution, GPS distances, EBF%, mother sets ──
-    # Sort chronologically once so last-write-wins attribution is correct.
-    visits_sorted = sorted(visits_rows, key=lambda r: r.get("visit_datetime") or "")
+    # Sort chronologically in-place (no copy) so last-write-wins attribution is correct.
+    visits_rows.sort(key=lambda r: r.get("visit_datetime") or "")
 
     # When visits_agg rows are available and no per-visit date filter is active
     # (Tab 1), use pre-aggregated SQL counts for num_mothers/bf_count/ebf_count
@@ -159,11 +159,12 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     visits_by_mother: dict[str, dict[str, str]] = {}  # mid → {form_name → date}
     gps_distances: dict[str, list[float]] = {}
     visit_durations: dict[str, list[float]] = {}
-    visit_times: dict[str, list[tuple]] = {}  # username → [(time_start, time_end)] sorted chronologically
+    inter_visit_gaps: dict[str, list[float]] = {}
+    last_visit_end: dict[str, str] = {}  # username → ts_end of most recent processed visit
     visits_completed_by_flw: dict[str, int] = {}
     ebf_count_by_flw: dict[str, int] = {}
     bf_count_by_flw: dict[str, int] = {}
-    mother_sets_by_flw: dict[str, set] = {}  # only populated when not use_agg_counts
+    mother_sets_by_flw: dict[str, set] = {}  # used for eligible_mothers_visited regardless of use_agg_counts
     num_mothers_by_flw: dict[str, int] = {}  # only populated when use_agg_counts
     anc_ok_mothers: set[str] = set()  # mothers with antenatal_visit_completion == "ok"
 
@@ -185,7 +186,10 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             except (TypeError, ValueError):
                 pass
 
-    for row in visits_sorted:
+    total_visits = len(visits_rows)
+    for visit_idx, row in enumerate(visits_rows):
+        if visit_idx > 0 and visit_idx % 5000 == 0:
+            progress_callback(f"Processing visits ({visit_idx:,}/{total_visits:,})…")
         username = (row.get("username") or row.get("_username") or "").lower()
         if not username:
             continue
@@ -231,11 +235,21 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                 mins = (t1 - t0).total_seconds() / 60
                 if 0 < mins < 300:  # sanity: 0–5 hours
                     visit_durations.setdefault(username, []).append(mins)
+                # Inter-visit gap: time from previous visit end to this visit start.
+                # visits_rows is sorted chronologically so last_visit_end is always
+                # the immediately preceding visit for this FLW.
+                prev_end = last_visit_end.get(username)
+                if prev_end:
+                    try:
+                        t_prev = datetime.fromisoformat(prev_end.replace("Z", "+00:00"))
+                        gap_mins = (t0 - t_prev).total_seconds() / 60
+                        if 0 < gap_mins < 480:  # sanity: 0–8 hours (cross-day gaps excluded)
+                            inter_visit_gaps.setdefault(username, []).append(gap_mins)
+                    except (ValueError, TypeError):
+                        pass
+                last_visit_end[username] = ts_end
             except (ValueError, TypeError):
                 pass
-            # Collect (time_start, time_end) pairs in order for inter-visit gap calculation.
-            # visits_sorted is chronological so appending here is already ordered per FLW.
-            visit_times.setdefault(username, []).append((ts_start, ts_end))
 
         if not use_agg_counts:
             bf_status = (row.get("bf_status") or "").strip()
@@ -243,21 +257,6 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                 bf_count_by_flw[username] = bf_count_by_flw.get(username, 0) + 1
                 if "ebf" in bf_status.split():
                     ebf_count_by_flw[username] = ebf_count_by_flw.get(username, 0) + 1
-
-    # ── Inter-visit travel time (median gap between consecutive visits per FLW) ──
-    inter_visit_gaps: dict[str, list[float]] = {}
-    for u, vt_list in visit_times.items():
-        for i in range(1, len(vt_list)):
-            prev_end = vt_list[i - 1][1]
-            curr_start = vt_list[i][0]
-            try:
-                t0 = datetime.fromisoformat(prev_end.replace("Z", "+00:00"))
-                t1 = datetime.fromisoformat(curr_start.replace("Z", "+00:00"))
-                gap_mins = (t1 - t0).total_seconds() / 60
-                if 0 < gap_mins < 480:  # sanity: 0–8 hours (cross-day gaps excluded)
-                    inter_visit_gaps.setdefault(u, []).append(gap_mins)
-            except (ValueError, TypeError):
-                pass
 
     # ── Registrations: schedules + eligibility per mother ──
     progress_callback("Processing registration data…")

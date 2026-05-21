@@ -57,6 +57,7 @@ VISITS_GPS_SCHEMA = {
     "fields": [
         {"name": "mother_case_id", "path": "form.parents.parent.case.@case_id", "aggregation": "first"},
         {"name": "visit_datetime", "path": "form.meta.timeEnd", "aggregation": "first"},
+        {"name": "time_start", "path": "form.meta.timeStart", "aggregation": "first"},
         {"name": "form_name", "path": "form.@name", "aggregation": "first"},
         {"name": "bf_status", "paths": _BF_STATUS_PATHS, "aggregation": "first"},
         {
