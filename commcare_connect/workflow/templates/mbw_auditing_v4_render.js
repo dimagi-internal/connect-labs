@@ -59,6 +59,7 @@ function WorkflowUI({
     { key: 'minute_per_visit', label: 'Min/Visit', fmt: 'int', higherBetter: null, denomKey: 'duration_denom' },
   ];
   var MIN_DENOM = 3;
+  var TAB2_METRIC_COLS = METRIC_COLS.filter(function (col) { return col.key !== 'pct_still_eligible'; });
 
   // =========================================================================
   // State
@@ -1315,10 +1316,19 @@ function WorkflowUI({
         : prevMetrics[flw.username] || null;
     var prevCat = prevCategories[flw.username] || null;
 
-    var followupRateDelta = props.followupRateDelta !== undefined ? props.followupRateDelta : null;
+    var followupRateAtTrigger = props.followupRateAtTrigger !== undefined ? props.followupRateAtTrigger : null;
+    var rowCols = props.metricCols !== undefined ? props.metricCols : METRIC_COLS;
 
-    var cells = METRIC_COLS.map(function (col) {
+    var cells = rowCols.map(function (col) {
       var val = flw[col.key];
+      // pct_still_eligible: hide when fewer than 10 eligible mothers
+      if (col.key === 'pct_still_eligible' && flw.num_mothers_eligible != null && flw.num_mothers_eligible < 10) {
+        return React.createElement(
+          'td',
+          { key: col.key, className: 'px-3 py-2 text-sm text-center whitespace-nowrap' },
+          React.createElement('span', { className: 'text-gray-400 text-xs italic' }, 'not enough data'),
+        );
+      }
       var denom = col.denomKey != null ? flw[col.denomKey] : null;
       if (denom != null && denom < MIN_DENOM) {
         return React.createElement(
@@ -1333,10 +1343,11 @@ function WorkflowUI({
           : null;
       var valColor = getMetricValueColor(col.key, val);
       var deltaEl = null;
-      if (col.key === 'followup_rate' && followupRateDelta != null) {
-        var deltaSign = followupRateDelta >= 0 ? '+' : '';
-        var deltaColor = followupRateDelta > 0 ? 'text-green-600' : followupRateDelta < 0 ? 'text-red-500' : 'text-yellow-500';
-        deltaEl = React.createElement('span', { className: deltaColor + ' ml-1 text-xs' }, '(' + deltaSign + Math.round(followupRateDelta) + '%)');
+      if (col.key === 'followup_rate' && followupRateAtTrigger != null) {
+        var fuDir = val > followupRateAtTrigger ? 'up' : val < followupRateAtTrigger ? 'down' : 'same';
+        var arrowChar = fuDir === 'up' ? '▲' : fuDir === 'down' ? '▼' : '≈';
+        var arrowColor = fuDir === 'up' ? 'text-green-600' : fuDir === 'down' ? 'text-red-500' : 'text-yellow-500';
+        deltaEl = React.createElement('span', { className: arrowColor + ' ml-1 text-xs' }, '(' + arrowChar + ' from ' + followupRateAtTrigger + '%)');
       }
       return React.createElement(
         'td',
@@ -1461,6 +1472,7 @@ function WorkflowUI({
   // Table header (shared Tab 1 and Tab 2)
   // =========================================================================
   var TableHeader = function (props) {
+    var thCols = props.metricCols !== undefined ? props.metricCols : METRIC_COLS;
     return React.createElement(
       'thead',
       { className: 'bg-gray-50 sticky top-0 z-10' },
@@ -1481,7 +1493,7 @@ function WorkflowUI({
           label: '# Mothers',
           title: 'Total (eligible)',
         }),
-        METRIC_COLS.map(function (col) {
+        thCols.map(function (col) {
           return React.createElement(SortTh, {
             key: col.key,
             col: col.key,
@@ -2182,18 +2194,18 @@ function WorkflowUI({
         React.createElement(
           'table',
           { className: 'min-w-full divide-y divide-gray-200' },
-          React.createElement(TableHeader, null),
+          React.createElement(TableHeader, { metricCols: TAB2_METRIC_COLS }),
           React.createElement(
             'tbody',
             { className: 'bg-white divide-y divide-gray-200' },
             tab2FilteredRows.map(function (flw) {
               var postTask = tab2Data && tab2Data[flw.username];
-              var followupRateDelta = null;
+              var followupRateAtTrigger = postTask && postTask.followup_rate_at_trigger != null
+                ? postTask.followup_rate_at_trigger : null;
               var displayFlw = postTask
                 ? Object.assign({}, flw, {
                     gs_score: postTask.gs_score,
-                    followup_rate: postTask.followup_rate,
-                    pct_still_eligible: null,
+                    followup_rate: flw.followup_rate,
                     ebf_pct: postTask.ebf_pct,
                     revisit_dist: postTask.revisit_dist,
                     meter_per_visit: postTask.meter_per_visit,
@@ -2205,13 +2217,10 @@ function WorkflowUI({
                     duration_denom: postTask.duration_denom,
                   })
                 : flw;
-              if (postTask && postTask.followup_rate != null && flw.followup_rate != null) {
-                followupRateDelta = postTask.followup_rate - flw.followup_rate;
-              }
               var tab2PrevOverride = null;
               if (postTask) {
                 tab2PrevOverride = {};
-                METRIC_COLS.forEach(function (col) {
+                TAB2_METRIC_COLS.forEach(function (col) {
                   tab2PrevOverride[col.key] = flw[col.key];
                 });
               }
@@ -2220,7 +2229,8 @@ function WorkflowUI({
                 flw: displayFlw,
                 showChange: !!postTask,
                 prevOverride: tab2PrevOverride,
-                followupRateDelta: followupRateDelta,
+                followupRateAtTrigger: followupRateAtTrigger,
+                metricCols: TAB2_METRIC_COLS,
               });
             }),
             tab2FilteredRows.length === 0 &&
