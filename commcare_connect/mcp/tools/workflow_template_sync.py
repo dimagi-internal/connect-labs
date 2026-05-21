@@ -8,7 +8,7 @@ for the design contract.
 
 from __future__ import annotations
 
-from commcare_connect.workflow.data_access import WorkflowDataAccess
+from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register
@@ -178,10 +178,31 @@ def workflow_sync_from_template_file(
             "pipelines": [],
         }
 
+        # Validate pipeline aliases against the *current* workflow's pipeline_sources
+        # (pre-write) so a template can't introduce a new alias and immediately
+        # try to use it — the alias must already exist on the live workflow.
+        # This check runs before any writes so a bad alias can't leave the
+        # workflow in a partially-synced state.
+        pipeline_sources_map = {
+            src.get("alias"): src.get("pipeline_id")
+            for src in current_def.data.get("pipeline_sources", [])
+            if src.get("alias")
+        }
+        if parsed.pipeline_schemas:
+            missing = [ps["alias"] for ps in parsed.pipeline_schemas if ps["alias"] not in pipeline_sources_map]
+            if missing:
+                raise MCPToolError(
+                    "PIPELINE_ALIAS_NOT_FOUND",
+                    f"PIPELINE_SCHEMAS reference aliases not present on workflow {workflow_id}: "
+                    f"{sorted(missing)}. Update the workflow's pipeline_sources first, "
+                    "or remove the stray PIPELINE_SCHEMAS entries.",
+                    details={"missing_aliases": sorted(missing)},
+                )
+
         if dry_run:
             return result
 
-        # Writes: definition first, then render_code (order matters for consistency).
+        # Writes: definition first, then render_code, then pipelines (order matters for consistency).
         # Both use optimistic concurrency (version checking already done above).
         if definition_changed or render_changed:
             if definition_changed:
@@ -196,6 +217,59 @@ def workflow_sync_from_template_file(
                     parsed.render_code,
                     expected_version=current_render.version,
                 )
+
+        # Pipelines — map each PIPELINE_SCHEMAS entry to a live pipeline by alias.
+        if parsed.pipeline_schemas:
+            pda = PipelineDataAccess(access_token=token, opportunity_id=opportunity_id)
+            try:
+                for ps in parsed.pipeline_schemas:
+                    alias = ps["alias"]
+                    pipeline_id = pipeline_sources_map[alias]
+                    try:
+                        current_pipe = pda.get_definition(pipeline_id)
+                        if current_pipe is None:
+                            raise MCPToolError(
+                                "NOT_FOUND",
+                                f"pipeline {pipeline_id} (alias {alias!r}) not found",
+                            )
+                        before_schema = (current_pipe.data or {}).get("schema")
+                        before_version = current_pipe.version
+                        updated = pda.update_definition(
+                            definition_id=pipeline_id,
+                            name=ps.get("name"),
+                            description=ps.get("description"),
+                            schema=ps["schema"],
+                        )
+                        result["pipelines"].append(
+                            {
+                                "alias": alias,
+                                "pipeline_id": pipeline_id,
+                                "schema_version_before": before_version,
+                                "schema_version_after": updated.version,
+                                "changed": before_schema != ps["schema"],
+                            }
+                        )
+                    except MCPToolError:
+                        raise
+                    except Exception as exc:
+                        raise MCPToolError(
+                            "PARTIAL_SYNC",
+                            f"definition+render_code were written, but pipeline "
+                            f"{alias!r} (id {pipeline_id}) failed: {exc}",
+                            details={
+                                "written": ["definition", "render_code"],
+                                "failed_at": {
+                                    "phase": "pipeline",
+                                    "alias": alias,
+                                    "pipeline_id": pipeline_id,
+                                    "error": str(exc),
+                                },
+                                "pipelines_written": list(result["pipelines"]),
+                            },
+                        ) from exc
+            finally:
+                if hasattr(pda, "close"):
+                    pda.close()
 
         return result
     finally:
