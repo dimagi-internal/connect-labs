@@ -1,10 +1,4 @@
-"""Unit tests for the template-source AST parser.
-
-The parser walks a Python module's top-level assignments and extracts the
-four artifacts a workflow template exposes: RENDER_CODE, DEFINITION,
-PIPELINE_SCHEMAS, and TEMPLATE. It deliberately rejects anything outside a
-small literal-with-names grammar — no exec(), no eval(), no arbitrary calls.
-"""
+"""Unit tests for the template-source AST parser."""
 
 from commcare_connect.mcp.tools._template_parser import parse_template_source
 

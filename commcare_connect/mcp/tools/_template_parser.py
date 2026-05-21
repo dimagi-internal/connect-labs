@@ -1,10 +1,4 @@
-"""AST parser for workflow template .py source.
-
-Extracts RENDER_CODE, DEFINITION, PIPELINE_SCHEMAS, and TEMPLATE from a
-template's source string. Only a small literal-with-names grammar is
-supported — anything outside it raises TemplateParseError. The parser
-never executes the source.
-"""
+"""AST parser for template module source — extracts RENDER_CODE, DEFINITION, PIPELINE_SCHEMAS, TEMPLATE."""
 
 from __future__ import annotations
 
