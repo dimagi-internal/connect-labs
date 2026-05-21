@@ -17,6 +17,7 @@ urlpatterns = [
     path("ace", RedirectView.as_view(url="/ace/", permanent=True), name="ace_slash_redirect"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     path("health/", views.health_check, name="health_check"),
+    path("robots.txt", views.robots_txt, name="robots_txt"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     # Labs apps
