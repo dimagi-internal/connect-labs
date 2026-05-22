@@ -5,6 +5,15 @@ description: Use this skill when iterating on a live workflow in labs — readin
 
 # Authoring Live Workflows
 
+## When to use this skill — and when to reach for the template-sync tool instead
+
+Two iteration loops are supported. Pick the right one for the change at hand:
+
+- **One-off workflow (default):** edit `render_code` / `definition` directly on the workflow via `workflow_update_render_code`, `workflow_patch_render_code`, `workflow_update_definition`. No template file needed. This is the right choice for most edits.
+- **Template authoring:** edit the `.py` file in `commcare_connect/workflow/templates/`, then call `workflow_sync_from_template_file` against a live preview workflow. The `.py` file is the source of truth — do not fork iteration onto the workflow itself. Commit the `.py` when the design has settled.
+
+A common failure mode is iterating directly on a workflow because "deploys are slow," then forgetting to back-port to the template. The sync tool removes that incentive — the template file iteration loop is just as fast as the workflow one.
+
 Use the `connect_labs` MCP tools to round-trip a workflow between labs and Claude Code without copy-pasting through the browser.
 
 **Prereq:** the user must have logged into labs in a browser at least once (creates their `UserConnectToken`) and have a PAT configured in `~/.claude/mcp.json` (see `docs/MCP_SETUP.md`). If the first MCP call returns `PERMISSION_DENIED`, tell the user to log into labs in a browser and retry.
