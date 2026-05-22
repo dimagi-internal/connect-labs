@@ -1109,10 +1109,17 @@ function WorkflowUI({
         if (requestId !== taskDetailRequestIdRef.current) return null;
         if (result && result.success && result.task) {
           setTaskDetail(result.task);
-          return actions.getAITranscript(tid);
+          // getAISessions links the OCS session_id to the task before we fetch
+          // the transcript — without this step task_ai_transcript returns 404
+          return actions.getAISessions(tid);
         }
         setTaskDetailLoading(false);
         return null;
+      })
+      .then(function (sessionsResult) {
+        if (sessionsResult === null) return null;
+        if (requestId !== taskDetailRequestIdRef.current) return null;
+        return actions.getAITranscript(tid);
       })
       .then(function (transcriptResult) {
         if (requestId !== taskDetailRequestIdRef.current) return;
