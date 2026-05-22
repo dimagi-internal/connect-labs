@@ -417,8 +417,6 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             for mid, schedules in mother_schedules.items():
                 if mother_to_flw.get(mid) != flw_username:
                     continue
-                if not (mother_eligibility.get(mid, False) and mid in anc_ok_mothers):
-                    continue
 
                 mother_visits = visits_by_mother_all.get(mid, {})
 
