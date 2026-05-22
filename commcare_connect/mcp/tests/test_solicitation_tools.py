@@ -76,7 +76,7 @@ def _make_mock_record(record_id, rtype, experiment="25", program_id=25, data=Non
 
 def test_write_tools_flagged_is_write():
     """Writes must be registered with is_write=True so rate limiting and audit apply."""
-    for name in ("create_solicitation", "update_solicitation", "award_response"):
+    for name in ("create_solicitation", "update_solicitation", "award_response", "delete_solicitation"):
         tool = get_tool(name)
         assert tool is not None, f"{name} not registered"
         assert tool.is_write is True, f"{name} should have is_write=True"
@@ -720,6 +720,181 @@ def test_award_response_not_found(mock_client_cls, client, auth_user):
 
 
 # ---------------------------------------------------------------------------
+# delete_solicitation
+# ---------------------------------------------------------------------------
+
+
+def _wire_cascade(mock_client, sol, responses=(), reviews_by_response=None):
+    """Wire up get_record_by_id + get_records to return a synthetic cascade."""
+    reviews_by_response = reviews_by_response or {}
+    mock_client.get_record_by_id.return_value = sol
+
+    def _get_records(**kwargs):
+        if kwargs.get("type") == "solicitation_response":
+            return list(responses)
+        if kwargs.get("type") == "solicitation_review":
+            return list(reviews_by_response.get(kwargs.get("labs_record_id"), []))
+        return []
+
+    mock_client.get_records.side_effect = _get_records
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_delete_solicitation_empty_cascade_no_force(mock_client_cls, client, auth_user):
+    """Empty cascade deletes without force=true."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    _wire_cascade(mock_client, _make_mock_record(7, "solicitation", data={"status": "active"}))
+
+    data = _call_tool(client, raw, "delete_solicitation", {"solicitation_id": 7})
+
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content == {
+        "solicitation_id": 7,
+        "deleted": {"solicitations": 1, "responses": 0, "reviews": 0},
+    }
+    mock_client.delete_record.assert_called_once_with(7)
+    mock_client.delete_records.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_delete_solicitation_non_empty_cascade_no_force_refuses(mock_client_cls, client, auth_user):
+    """Non-empty cascade without force returns FAILED_PRECONDITION and deletes nothing."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    _wire_cascade(
+        mock_client,
+        _make_mock_record(42, "solicitation", data={"status": "draft"}),
+        responses=[
+            _make_mock_record(101, "solicitation_response", labs_record_id=42),
+            _make_mock_record(102, "solicitation_response", labs_record_id=42),
+        ],
+        reviews_by_response={101: [_make_mock_record(201, "solicitation_review", labs_record_id=101)]},
+    )
+
+    data = _call_tool(client, raw, "delete_solicitation", {"solicitation_id": 42})
+
+    assert data["result"]["isError"] is True, data
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "FAILED_PRECONDITION"
+    assert "2 responses" in err["message"]
+    assert "1 reviews" in err["message"]
+    assert "force=true" in err["message"]
+    mock_client.delete_record.assert_not_called()
+    mock_client.delete_records.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_delete_solicitation_non_empty_cascade_force_deletes(mock_client_cls, client, auth_user):
+    """force=true destroys the populated cascade bottom-up."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    _wire_cascade(
+        mock_client,
+        _make_mock_record(42, "solicitation", data={"status": "awarded"}),
+        responses=[
+            _make_mock_record(101, "solicitation_response", labs_record_id=42),
+            _make_mock_record(102, "solicitation_response", labs_record_id=42),
+        ],
+        reviews_by_response={
+            101: [
+                _make_mock_record(201, "solicitation_review", labs_record_id=101),
+                _make_mock_record(202, "solicitation_review", labs_record_id=101),
+            ]
+        },
+    )
+
+    data = _call_tool(client, raw, "delete_solicitation", {"solicitation_id": 42, "force": True})
+
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content == {
+        "solicitation_id": 42,
+        "deleted": {"solicitations": 1, "responses": 2, "reviews": 2},
+    }
+
+    # Verify cascade order: reviews first, then responses, then solicitation.
+    delete_records_calls = mock_client.delete_records.call_args_list
+    assert delete_records_calls[0].args[0] == [201, 202]
+    assert delete_records_calls[1].args[0] == [101, 102]
+    mock_client.delete_record.assert_called_once_with(42)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["active", "awarded", "draft", "closed"])
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_delete_solicitation_status_does_not_affect_gate(mock_client_cls, status, client, auth_user):
+    """Status field is no longer load-bearing — the cascade is the gate.
+
+    An empty cascade deletes regardless of status; a non-empty cascade refuses
+    regardless of status. Status only affects marketplace display.
+    """
+    _, raw = auth_user
+
+    # Empty cascade: deletes for every status.
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    _wire_cascade(mock_client, _make_mock_record(7, "solicitation", data={"status": status}))
+
+    data = _call_tool(client, raw, "delete_solicitation", {"solicitation_id": 7})
+    assert data["result"]["isError"] is False, (status, data)
+
+    # Non-empty cascade: refuses for every status.
+    mock_client.reset_mock()
+    _wire_cascade(
+        mock_client,
+        _make_mock_record(7, "solicitation", data={"status": status}),
+        responses=[_make_mock_record(101, "solicitation_response", labs_record_id=7)],
+    )
+
+    data = _call_tool(client, raw, "delete_solicitation", {"solicitation_id": 7})
+    assert data["result"]["isError"] is True, (status, data)
+    assert data["result"]["structuredContent"]["error"]["code"] == "FAILED_PRECONDITION"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_delete_solicitation_not_found(mock_client_cls, client, auth_user):
+    """Returns NOT_FOUND when the solicitation does not exist."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = None
+
+    data = _call_tool(client, raw, "delete_solicitation", {"solicitation_id": 999})
+
+    assert data["result"]["isError"] is True, data
+    assert data["result"]["structuredContent"]["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_delete_solicitation_propagates_scope_to_client(mock_client_cls, client, auth_user):
+    """program_id/organization_id are forwarded so the underlying read is authorized."""
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    _wire_cascade(mock_client, _make_mock_record(5, "solicitation", data={"status": "draft"}))
+
+    _call_tool(
+        client,
+        raw,
+        "delete_solicitation",
+        {"solicitation_id": 5, "program_id": "25"},
+    )
+
+    init_kwargs = mock_client_cls.call_args.kwargs
+    assert init_kwargs["program_id"] == 25
+
+
+# ---------------------------------------------------------------------------
 # Missing Connect token
 # ---------------------------------------------------------------------------
 
@@ -738,6 +913,7 @@ def test_tools_require_connect_token(client, db):
         ("create_solicitation", {"program_id": "1", "data": {"title": "X"}}),
         ("update_solicitation", {"solicitation_id": 1, "update_data": {"title": "X"}}),
         ("award_response", {"response_id": 1, "reward_budget": 100, "org_id": "o"}),
+        ("delete_solicitation", {"solicitation_id": 1}),
     ]:
         resp_data = _call_tool(client, raw, name, args)
         assert (

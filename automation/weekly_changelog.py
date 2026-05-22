@@ -24,6 +24,7 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -35,6 +36,44 @@ sys.path.insert(0, str(Path(__file__).parent))
 from confluence_client import ConfluenceClient  # isort: skip  # noqa: E402
 
 CHANGELOG_PAGE_ID = "3918528513"  # Connect Labs Changelog
+
+MARKETING_PATHS = (
+    "commcare_connect/prelogin/",
+    "commcare_connect/templates/prelogin/",
+    "commcare_connect/static/prelogin/",
+)
+
+
+def classify_pr(files: list[str]) -> str:
+    """Return 'marketing', 'app', or 'mixed' based on which paths a PR touched."""
+    if not files:
+        return "app"
+    marketing = [f for f in files if any(f.startswith(p) for p in MARKETING_PATHS)]
+    app = [f for f in files if not any(f.startswith(p) for p in MARKETING_PATHS)]
+    if marketing and not app:
+        return "marketing"
+    if app and not marketing:
+        return "app"
+    return "mixed"
+
+
+def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
+    """Return list of filenames changed in a PR, via the gh CLI."""
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pulls/{pr_number}/files", "--jq", ".[].filename"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"  [warn] gh api timed out for PR #{pr_number}", file=sys.stderr)
+        return []
+    if result.returncode != 0:
+        print(f"  [warn] gh api failed for PR #{pr_number}: {result.stderr.strip()}", file=sys.stderr)
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
 
 WEEKLY_SYSTEM_PROMPT = """\
 You write weekly product updates for the Connect Labs web application.
@@ -50,6 +89,10 @@ Format rules:
 - Omit infra, refactoring, and developer-tooling changes entirely
 - Do NOT include PR numbers or links in the body text (added separately)
 - Return only the summary text — no preamble, no trailing notes
+- PRs marked [category: marketing]: prefix every bullet from that PR with "[Marketing] "
+- PRs marked [category: mixed]: split the description into separate bullets for the app \
+changes and the marketing/website changes; prefix only the marketing bullets with "[Marketing] "
+- PRs marked [category: app]: no prefix on bullets
 """
 
 
@@ -73,10 +116,13 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
     """Load merged PRs, returning only those with a non-empty Product Description."""
     with open(prs_file) as f:
         prs = json.load(f)
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
     result = []
     for pr in prs:
         desc = extract_product_description(pr.get("body") or "")
         if desc:
+            # Skip file fetching in local dev (no GITHUB_REPOSITORY set)
+            files = fetch_pr_files(pr["number"], repo) if repo else []
             result.append(
                 {
                     "number": pr["number"],
@@ -84,6 +130,7 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
                     "url": pr.get("html_url", ""),
                     "merged_at": pr.get("merged_at", ""),
                     "description": desc,
+                    "category": classify_pr(files),
                 }
             )
     return result
@@ -91,7 +138,9 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
 
 def generate_weekly_summary(client: anthropic.Anthropic, prs: list[dict]) -> str:
     """Ask Claude for a user-friendly weekly summary."""
-    pr_text = "\n\n".join(f"PR #{p['number']}: {p['title']}\n{p['description']}" for p in prs)
+    pr_text = "\n\n".join(
+        f"PR #{p['number']} [category: {p.get('category', 'app')}]: {p['title']}\n{p['description']}" for p in prs
+    )
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=800,

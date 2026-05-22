@@ -35,9 +35,11 @@ def test_fill_form_json_returns_a_value_for_every_question():
         anomalies_for_visit=[],
         rng=rng,
     )
-    assert "form.weight_kg" in out
-    assert "form.muac_cm" in out
-    assert out["form.kmc_status"] in ("active", "inactive")
+    # fill_form_json builds a nested dict from dotted question paths,
+    # so "form.weight_kg" lands at out["form"]["weight_kg"].
+    assert "weight_kg" in out["form"]
+    assert "muac_cm" in out["form"]
+    assert out["form"]["kmc_status"] in ("active", "inactive")
 
 
 def test_fill_form_json_applies_anomaly_outlier():
@@ -56,7 +58,7 @@ def test_fill_form_json_applies_anomaly_outlier():
         rng=rng,
     )
     # Anomaly outliers are >= 4 stddevs from cohort mean
-    assert abs(out["form.weight_kg"] - 12.4) >= 4 * 0.5
+    assert abs(out["form"]["weight_kg"] - 12.4) >= 4 * 0.5
 
 
 def test_fill_form_json_is_deterministic():

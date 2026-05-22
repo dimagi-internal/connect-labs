@@ -253,12 +253,7 @@ class LabsContextMiddleware(MiddlewareMixin):
 
     def process_request(self, request: HttpRequest):
         """Process request to extract and validate context."""
-        # Only run in labs environment for authenticated users
-        from django.conf import settings
-
-        is_labs = getattr(settings, "IS_LABS_ENVIRONMENT", False)
-
-        if not is_labs or not request.user.is_authenticated:
+        if not request.user.is_authenticated:
             request.labs_context = {}
             return None
 

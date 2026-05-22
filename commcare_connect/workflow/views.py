@@ -957,11 +957,11 @@ def save_worker_result_api(request, run_id):
     Request body:
         {
             "username": "worker@example.com",
-            "result": "eligible_for_renewal" | "probation" | "suspended" | null,
+            "result": "eligible_for_renewal" | "probation" | "requires_improvement" | "suspended" | null,
             "notes": "Optional notes"
         }
     """
-    VALID_RESULTS = ("eligible_for_renewal", "probation", "suspended")
+    VALID_RESULTS = ("eligible_for_renewal", "probation", "requires_improvement", "suspended")
 
     data_access = None
     try:
@@ -2657,10 +2657,7 @@ def prev_categories_api(request):
         runs = wf_access.list_runs()
         wf_access.close()
 
-        candidates = [
-            r for r in runs
-            if (r.data.get("state") or {}).get("worker_results")
-        ]
+        candidates = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]
         if not candidates:
             return JsonResponse({"prev_categories": {}, "source_run_id": None})
 

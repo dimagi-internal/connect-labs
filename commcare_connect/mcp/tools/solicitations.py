@@ -412,6 +412,122 @@ def update_solicitation(
 
 
 @register(
+    name="delete_solicitation",
+    description=(
+        "Delete a solicitation and cascade-delete its associated responses and "
+        "reviews. Refuses to delete solicitations with non-zero responses or "
+        "reviews unless force=true. Cascade count is reported in the response. "
+        "Status field is not consulted — the gate is the actual cascade, not "
+        "a status proxy. IRREVERSIBLE — used by ACE sweep to clean up orphan "
+        "dogfood solicitations."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "solicitation_id": {
+                "type": "integer",
+                "description": "The Labs Record ID of the solicitation to delete.",
+            },
+            "program_id": {
+                "type": "string",
+                "description": (
+                    "Program ID that owns the solicitation. Required for non-public "
+                    "records so prod authorizes the underlying read."
+                ),
+            },
+            "organization_id": {
+                "type": "string",
+                "description": (
+                    "Organization ID alternative to program_id when the solicitation is "
+                    "org-scoped rather than program-scoped."
+                ),
+            },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Override the cascade guard. When false (default), the tool refuses "
+                    "to delete a solicitation with any responses or reviews. When true, "
+                    "all child records are destroyed alongside the parent."
+                ),
+            },
+        },
+        "required": ["solicitation_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def delete_solicitation(
+    user,
+    solicitation_id: int,
+    program_id: str | None = None,
+    organization_id: str | None = None,
+    force: bool = False,
+) -> dict:
+    """Delete a solicitation plus its child responses and reviews.
+
+    Cascade guard: refuses when responses or reviews exist unless ``force=True``.
+    The status field is intentionally not consulted — a freshly-published
+    solicitation lands in 'active' with an empty cascade, and an admin can
+    flip a populated solicitation to 'closed', so status is not a reliable
+    proxy for whether destroying the record would lose engagement data.
+    """
+    token = require_connect_token(user)
+    client = LabsRecordAPIClient(
+        access_token=token,
+        program_id=_coerce_id(program_id),
+        organization_id=_coerce_id(organization_id),
+    )
+    try:
+        solicitation = client.get_record_by_id(solicitation_id, type="solicitation")
+        if solicitation is None:
+            raise MCPToolError("NOT_FOUND", f"Solicitation {solicitation_id} not found")
+
+        # Collect cascade first so the gate can compare against actual engagement
+        # data rather than the status proxy.
+        responses = client.get_records(
+            type="solicitation_response",
+            labs_record_id=solicitation_id,
+        )
+        response_ids = [r.id for r in responses]
+
+        review_ids: list[int] = []
+        for response_id in response_ids:
+            reviews = client.get_records(
+                type="solicitation_review",
+                labs_record_id=response_id,
+            )
+            review_ids.extend(r.id for r in reviews)
+
+        if (response_ids or review_ids) and not force:
+            raise MCPToolError(
+                "FAILED_PRECONDITION",
+                (
+                    f"Cannot delete solicitation {solicitation_id}: "
+                    f"{len(response_ids)} responses + {len(review_ids)} reviews "
+                    f"would be destroyed. Pass force=true to override."
+                ),
+            )
+
+        # Bottom-up delete so a partial failure never leaves dangling parents.
+        if review_ids:
+            client.delete_records(review_ids)
+        if response_ids:
+            client.delete_records(response_ids)
+        client.delete_record(solicitation_id)
+
+        return {
+            "solicitation_id": solicitation_id,
+            "deleted": {
+                "solicitations": 1,
+                "responses": len(response_ids),
+                "reviews": len(review_ids),
+            },
+        }
+    finally:
+        client.close()
+
+
+@register(
     name="award_response",
     description=(
         "Award a solicitation response: marks it as awarded with reward_budget and org_id. "

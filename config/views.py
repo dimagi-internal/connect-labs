@@ -6,6 +6,10 @@ def health_check(request):
     return HttpResponse("OK", status=200)
 
 
+def robots_txt(request):
+    return HttpResponse("User-agent: *\nDisallow: /\n", content_type="text/plain")
+
+
 def assetlinks_json(request):
     assetfile = [
         {
