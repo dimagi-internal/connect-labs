@@ -237,6 +237,9 @@ function WorkflowUI({
   var _taskDetailLoading = React.useState(false);
   var taskDetailLoading = _taskDetailLoading[0];
   var setTaskDetailLoading = _taskDetailLoading[1];
+  var _taskTranscriptError = React.useState(null);
+  var taskTranscriptError = _taskTranscriptError[0];
+  var setTaskTranscriptError = _taskTranscriptError[1];
 
   var jobCleanupRef = React.useRef(null);
   var tab2CleanupRef = React.useRef(null);
@@ -1093,6 +1096,7 @@ function WorkflowUI({
       setExpandedTaskFlw(null);
       setTaskDetail(null);
       setTaskTranscript(null);
+      setTaskTranscriptError(null);
       return;
     }
     var ts = taskStates[username] || {};
@@ -1103,6 +1107,7 @@ function WorkflowUI({
     setTaskDetailLoading(true);
     setTaskDetail(null);
     setTaskTranscript(null);
+    setTaskTranscriptError(null);
     if (!actions || !actions.getTaskDetail) {
       setTaskDetailLoading(false);
       return;
@@ -1131,12 +1136,14 @@ function WorkflowUI({
         if (transcriptResult && transcriptResult.success) {
           setTaskTranscript(transcriptResult.messages || []);
         } else if (transcriptResult) {
+          setTaskTranscriptError(transcriptResult.error || 'Transcript unavailable');
           setTaskTranscript([]);
         }
       })
-      .catch(function () {
+      .catch(function (err) {
         if (requestId !== taskDetailRequestIdRef.current) return;
         setTaskDetailLoading(false);
+        setTaskTranscriptError((err && err.message) || 'Failed to load transcript');
       });
   };
 
@@ -1530,13 +1537,12 @@ function WorkflowUI({
                         ? React.createElement(
                             'div',
                             {
-                              className:
-                                'text-center text-gray-400 text-sm py-4',
+                              className: 'text-center text-sm py-4 ' + (taskTranscriptError ? 'text-red-500' : 'text-gray-400'),
                             },
                             React.createElement('i', {
-                              className: 'fa-solid fa-comment-slash mr-1',
+                              className: 'fa-solid ' + (taskTranscriptError ? 'fa-circle-exclamation' : 'fa-comment-slash') + ' mr-1',
                             }),
-                            'No messages yet',
+                            taskTranscriptError || 'No messages yet',
                           )
                         : !taskDetailLoading
                         ? React.createElement(
