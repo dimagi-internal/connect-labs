@@ -20,6 +20,7 @@ from __future__ import annotations
 from datetime import date
 
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 
 # =========================================================================
 # Canonical enums — imported by forms.py for the UI ChoiceFields so the
@@ -197,11 +198,12 @@ def validate_solicitation_payload(data, *, partial: bool = False) -> None:
     linked-questions references) applies identically.
 
     Cross-field invariants like "evaluation_criteria.linked_questions must
-    reference declared question ids" only fire when both sides are present in
-    the partial payload. A partial update that touches criteria but not
-    questions is validated against the criteria's own self-consistency, not
-    against the existing record's questions — the data-access layer is the
-    place to enforce cross-record invariants if we ever need them.
+    reference declared question ids" are validated against whatever ``data``
+    the caller passes — so for partial updates, the caller must merge the
+    update_data with the existing record's data BEFORE validating, otherwise
+    a criteria-only update would falsely reject for unknown question ids that
+    actually live on the existing record. The MCP update_solicitation tool
+    handles this by fetching, merging, then validating the merged shape.
     """
     if not isinstance(data, dict):
         raise ValidationError({"data": "must be a dict"})
@@ -235,8 +237,14 @@ def validate_solicitation_payload(data, *, partial: bool = False) -> None:
     _validate_iso_date(data.get("expected_end_date"), "expected_end_date")
 
     email = data.get("contact_email")
-    if email is not None and email != "" and "@" not in email:
-        raise ValidationError({"contact_email": "must contain '@'"})
+    if email:
+        # Use Django's validator (same one SolicitationForm.contact_email uses
+        # via EmailField) so the MCP/API paths agree with the UI on what counts
+        # as a valid address.
+        try:
+            validate_email(email)
+        except ValidationError as e:
+            raise ValidationError({"contact_email": "must be a valid email address"}) from e
 
     coid = data.get("connect_opportunity_id")
     if coid is not None and (not isinstance(coid, int) or isinstance(coid, bool)):

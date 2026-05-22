@@ -161,6 +161,18 @@ def test_invalid_email():
     assert "contact_email" in exc_info.value.message_dict
 
 
+@pytest.mark.parametrize("bad", ["a@", "@b", "@@", "foo@bar", "spaces in@example.com"])
+def test_email_validator_rejects_malformed_shapes(bad):
+    """Use Django's EmailValidator — a bare ``@``-substring check tolerated these."""
+    with pytest.raises(ValidationError) as exc_info:
+        validate_solicitation_payload({**_minimal_valid(), "contact_email": bad})
+    assert "contact_email" in exc_info.value.message_dict
+
+
+def test_valid_email_passes():
+    validate_solicitation_payload({**_minimal_valid(), "contact_email": "ace@dimagi.com"})
+
+
 # ---------------------------------------------------------------------------
 # Questions
 # ---------------------------------------------------------------------------
