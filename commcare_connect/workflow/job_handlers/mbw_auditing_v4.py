@@ -117,12 +117,18 @@ def _get_prev_categories(access_token: str, opportunity_id: int, workflow_defini
             run_ts = run.data.get("created_at") or ""
             results = (run.data.get("state") or {}).get("worker_results") or {}
             for username, entry in results.items():
-                if not isinstance(entry, dict):
+                if isinstance(entry, dict):
+                    entry_ts = entry.get("assessed_at") or run_ts
+                    entry_val = entry
+                elif isinstance(entry, str) and entry:
+                    # Legacy format: plain result string stored by older render code
+                    entry_ts = run_ts
+                    entry_val = {"result": entry}
+                else:
                     continue
-                entry_ts = entry.get("assessed_at") or run_ts
                 existing = merged.get(username)
                 if existing is None or entry_ts > existing[0]:
-                    merged[username] = (entry_ts, entry)
+                    merged[username] = (entry_ts, entry_val)
 
         return {u: v for u, (_, v) in merged.items()}
     except Exception:
