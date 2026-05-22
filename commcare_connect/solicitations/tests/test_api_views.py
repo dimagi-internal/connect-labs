@@ -228,6 +228,31 @@ class TestApiSolicitationsList:
         mock_da.create_solicitation.assert_called_once_with({"title": "New One", "status": "draft"})
 
     @patch(_DA_PATCH)
+    def test_post_canonical_drift_returns_400(self, mock_get_da):
+        """Schema drift caught at the data-access layer surfaces as HTTP 400.
+
+        The validator raises Django ValidationError; the API view converts it
+        to a structured 400 response with per-field details. This is the same
+        exception the MCP tool maps to INVALID_SCHEMA — one contract, two
+        protocol envelopes.
+        """
+        from django.core.exceptions import ValidationError
+
+        mock_da = MagicMock()
+        mock_da.create_solicitation.side_effect = ValidationError(
+            {"description": "required, must be a non-empty string"}
+        )
+        mock_get_da.return_value = mock_da
+
+        request = _make_post_request(body={"title": "Drifted"})
+        response = api_solicitations_list(request)
+
+        assert response.status_code == 400
+        body = _parse_response(response)
+        assert body["error"] == "Invalid payload"
+        assert "description" in body["details"]
+
+    @patch(_DA_PATCH)
     def test_post_invalid_json_returns_400(self, mock_get_da):
         mock_get_da.return_value = MagicMock()
 

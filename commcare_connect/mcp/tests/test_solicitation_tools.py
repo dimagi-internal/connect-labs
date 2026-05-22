@@ -320,13 +320,18 @@ def test_get_response_not_found(mock_client_cls, client, auth_user):
 
 
 @pytest.mark.django_db
-@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
-def test_create_solicitation_happy_path(mock_client_cls, client, auth_user):
-    """Creates a record and returns its serialized form."""
+@patch("commcare_connect.mcp.tools.solicitations.SolicitationsDataAccess")
+def test_create_solicitation_happy_path(mock_da_cls, client, auth_user):
+    """The MCP tool forwards flat kwargs as a canonical data dict to data-access.
+
+    Validation correctness is exercised in solicitations/tests/test_validation.py.
+    This test pins the MCP wiring: kwargs → data dict → da.create_solicitation,
+    response → serialized record.
+    """
     _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.create_record.return_value = _make_mock_record(
+    mock_da = MagicMock()
+    mock_da_cls.return_value = mock_da
+    mock_da.create_solicitation.return_value = _make_mock_record(
         77, "solicitation", data={"title": "New Sol", "status": "draft"}
     )
 
@@ -334,7 +339,13 @@ def test_create_solicitation_happy_path(mock_client_cls, client, auth_user):
         client,
         raw,
         "create_solicitation",
-        {"program_id": "25", "data": {"title": "New Sol", "status": "draft"}},
+        {
+            "program_id": "25",
+            "title": "New Sol",
+            "description": "A useful solicitation.",
+            "solicitation_type": "eoi",
+            "status": "draft",
+        },
     )
 
     assert data["result"]["isError"] is False, data
@@ -342,45 +353,47 @@ def test_create_solicitation_happy_path(mock_client_cls, client, auth_user):
     assert content["id"] == 77
     assert content["title"] == "New Sol"
 
-    mock_client.create_record.assert_called_once_with(
-        experiment="25",
-        type="solicitation",
-        data={"title": "New Sol", "status": "draft"},
-        program_id=25,
-        public=False,
-    )
+    # Verify data-access was constructed with the right scope...
+    mock_da_cls.assert_called_once()
+    da_init_kwargs = mock_da_cls.call_args.kwargs
+    assert da_init_kwargs["program_id"] == "25"
+
+    # ...and called with the canonical-shape data dict.
+    mock_da.create_solicitation.assert_called_once()
+    payload = mock_da.create_solicitation.call_args.args[0]
+    assert payload["title"] == "New Sol"
+    assert payload["description"] == "A useful solicitation."
+    assert payload["solicitation_type"] == "eoi"
+    assert payload["status"] == "draft"
+    assert payload["is_public"] is False  # data-access strips this and forwards to envelope
 
 
 @pytest.mark.django_db
-@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
-def test_create_solicitation_propagates_is_public_to_server(mock_client_cls, client, auth_user):
-    """is_public=true in data flips the server-side `public` ACL flag.
-
-    Solicitations are an exception to the broader MCP no-public-records policy
-    because their content is public-facing by design (title, scope, questions).
-    """
+@patch("commcare_connect.mcp.tools.solicitations.SolicitationsDataAccess")
+def test_create_solicitation_propagates_is_public(mock_da_cls, client, auth_user):
+    """is_public=true flows through to the data-access layer (which forwards to envelope)."""
     _, raw = auth_user
-    mock_client = MagicMock()
-    mock_client_cls.return_value = mock_client
-    mock_client.create_record.return_value = _make_mock_record(
-        78, "solicitation", data={"title": "Public Sol", "is_public": True}, public=True
+    mock_da = MagicMock()
+    mock_da_cls.return_value = mock_da
+    mock_da.create_solicitation.return_value = _make_mock_record(
+        78, "solicitation", data={"title": "Public Sol"}, public=True
     )
 
     _call_tool(
         client,
         raw,
         "create_solicitation",
-        {"program_id": "25", "data": {"title": "Public Sol", "is_public": True}},
+        {
+            "program_id": "25",
+            "title": "Public Sol",
+            "description": "Publicly listed.",
+            "solicitation_type": "rfp",
+            "is_public": True,
+        },
     )
 
-    # is_public is forwarded as public= and stripped from the persisted JSON
-    mock_client.create_record.assert_called_once_with(
-        experiment="25",
-        type="solicitation",
-        data={"title": "Public Sol"},
-        program_id=25,
-        public=True,
-    )
+    payload = mock_da.create_solicitation.call_args.args[0]
+    assert payload["is_public"] is True
 
 
 @pytest.mark.django_db
@@ -392,11 +405,79 @@ def test_create_solicitation_missing_scope(client, auth_user):
         client,
         raw,
         "create_solicitation",
-        {"data": {"title": "Scopeless"}},
+        {
+            "title": "Scopeless",
+            "description": "x",
+            "solicitation_type": "eoi",
+        },
     )
 
     assert data["result"]["isError"] is True, data
     assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.SolicitationsDataAccess")
+def test_create_solicitation_maps_validation_error_to_invalid_schema(mock_da_cls, client, auth_user):
+    """ValidationError from the shared validator surfaces as MCP INVALID_SCHEMA.
+
+    This is the contract between the MCP transport and the data-access layer:
+    schema drift caught by validate_solicitation_payload becomes a structured
+    INVALID_SCHEMA error with per-field details — not an internal-error blob.
+    """
+    from django.core.exceptions import ValidationError
+
+    _, raw = auth_user
+    mock_da = MagicMock()
+    mock_da_cls.return_value = mock_da
+    mock_da.create_solicitation.side_effect = ValidationError({"description": "required, must be a non-empty string"})
+
+    data = _call_tool(
+        client,
+        raw,
+        "create_solicitation",
+        {
+            "program_id": "25",
+            "title": "Drifted",
+            "description": "x",
+            "solicitation_type": "eoi",
+        },
+    )
+
+    assert data["result"]["isError"] is True, data
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+    # Field-level structure is preserved in details so callers can render per-field.
+    assert "fields" in err["details"]
+    assert "description" in err["details"]["fields"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.SolicitationsDataAccess")
+def test_create_solicitation_forwards_connect_opportunity_id(mock_da_cls, client, auth_user):
+    """connect_opportunity_id rides into the data dict for downstream review/award linkage."""
+    _, raw = auth_user
+    mock_da = MagicMock()
+    mock_da_cls.return_value = mock_da
+    mock_da.create_solicitation.return_value = _make_mock_record(
+        99, "solicitation", data={"title": "Linked", "connect_opportunity_id": 1821}
+    )
+
+    _call_tool(
+        client,
+        raw,
+        "create_solicitation",
+        {
+            "program_id": "25",
+            "title": "Linked",
+            "description": "x",
+            "solicitation_type": "eoi",
+            "connect_opportunity_id": 1821,
+        },
+    )
+
+    payload = mock_da.create_solicitation.call_args.args[0]
+    assert payload["connect_opportunity_id"] == 1821
 
 
 # ---------------------------------------------------------------------------
@@ -544,6 +625,81 @@ def test_update_solicitation_propagates_is_public_to_server_flag(mock_client_cls
     merged = call_kwargs["data"]
     assert "is_public" not in merged
     assert "public" not in merged
+
+
+@pytest.mark.django_db
+def test_update_solicitation_rejects_unknown_field(client, auth_user):
+    """Same drift surface as create — unknown fields in update_data are now rejected.
+
+    Pre-fetch validation: the validator fires before LabsRecordAPIClient is
+    even instantiated, so the test doesn't need to mock anything beyond auth.
+    """
+    _, raw = auth_user
+
+    data = _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {
+            "solicitation_id": 42,
+            "update_data": {"overview": "drifted name for description"},
+        },
+    )
+
+    assert data["result"]["isError"] is True, data
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+    assert "overview" in err["message"]
+
+
+@pytest.mark.django_db
+def test_update_solicitation_rejects_bad_enum(client, auth_user):
+    """Field-level validation fires in partial mode for present fields."""
+    _, raw = auth_user
+
+    data = _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {"solicitation_id": 42, "update_data": {"status": "open"}},
+    )
+
+    assert data["result"]["isError"] is True
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+    assert "fields" in err["details"]
+    assert "status" in err["details"]["fields"]
+
+
+@pytest.mark.django_db
+def test_update_solicitation_rejects_dangling_linked_question(client, auth_user):
+    """Nested-shape checks fire in partial mode just like in create."""
+    _, raw = auth_user
+
+    data = _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {
+            "solicitation_id": 42,
+            "update_data": {
+                "questions": [{"id": "q1", "text": "?", "type": "text"}],
+                "evaluation_criteria": [
+                    {
+                        "id": "ec1",
+                        "name": "X",
+                        "weight": 100,
+                        "linked_questions": ["q_does_not_exist"],
+                    }
+                ],
+            },
+        },
+    )
+
+    assert data["result"]["isError"] is True
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_SCHEMA"
+    assert "q_does_not_exist" in err["message"]
 
 
 @pytest.mark.django_db
@@ -910,7 +1066,15 @@ def test_tools_require_connect_token(client, db):
         ("get_solicitation", {"solicitation_id": 1}),
         ("list_responses", {"solicitation_id": 1}),
         ("get_response", {"response_id": 1}),
-        ("create_solicitation", {"program_id": "1", "data": {"title": "X"}}),
+        (
+            "create_solicitation",
+            {
+                "program_id": "1",
+                "title": "X",
+                "description": "Y",
+                "solicitation_type": "eoi",
+            },
+        ),
         ("update_solicitation", {"solicitation_id": 1, "update_data": {"title": "X"}}),
         ("award_response", {"response_id": 1, "reward_budget": 100, "org_id": "o"}),
         ("delete_solicitation", {"solicitation_id": 1}),
