@@ -1395,6 +1395,13 @@ function WorkflowUI({
         { className: 'px-3 py-2 text-xs text-gray-500 whitespace-nowrap' },
         daysAgo(flw.last_active),
       ),
+      props.taskTriggeredAt !== undefined
+        ? React.createElement(
+            'td',
+            { className: 'px-3 py-2 text-xs text-gray-500 whitespace-nowrap' },
+            daysAgo(props.taskTriggeredAt),
+          )
+        : null,
       React.createElement(
         'td',
         { className: 'px-3 py-2 text-sm text-center' },
@@ -1488,6 +1495,16 @@ function WorkflowUI({
           },
           'Last Active',
         ),
+        props.showTaskTriggered
+          ? React.createElement(
+              'th',
+              {
+                className:
+                  'px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
+              },
+              'Task Triggered',
+            )
+          : null,
         React.createElement(SortTh, {
           col: 'num_mothers',
           label: '# Mothers',
@@ -2194,7 +2211,7 @@ function WorkflowUI({
         React.createElement(
           'table',
           { className: 'min-w-full divide-y divide-gray-200' },
-          React.createElement(TableHeader, { metricCols: TAB2_METRIC_COLS }),
+          React.createElement(TableHeader, { metricCols: TAB2_METRIC_COLS, showTaskTriggered: true }),
           React.createElement(
             'tbody',
             { className: 'bg-white divide-y divide-gray-200' },
@@ -2231,6 +2248,7 @@ function WorkflowUI({
                 prevOverride: tab2PrevOverride,
                 followupRateAtTrigger: followupRateAtTrigger,
                 metricCols: TAB2_METRIC_COLS,
+                taskTriggeredAt: flw.taskTriggeredAt,
               });
             }),
             tab2FilteredRows.length === 0 &&

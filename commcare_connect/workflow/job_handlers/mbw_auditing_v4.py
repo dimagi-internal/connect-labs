@@ -176,7 +176,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     use_agg_counts = bool(visits_agg_rows) and not task_filters
 
     mother_to_flw: dict[str, str] = {}
-    visits_by_mother: dict[str, dict[str, str]] = {}  # mid → {form_name → date}
+    visits_by_mother: dict[str, dict[str, str]] = {}  # mid → {form_name → date} post-trigger only
+    visits_by_mother_all: dict[str, dict[str, str]] = {}  # mid → {form_name → earliest date} all visits
     gps_distances: dict[str, list[float]] = {}
     visit_durations: dict[str, list[float]] = {}
     inter_visit_gaps: dict[str, list[float]] = {}
@@ -215,6 +216,21 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             continue
 
         vdt = (row.get("visit_datetime") or "")[:10]
+        mid = (row.get("mother_case_id") or "").lower()
+        # Normalize form name to match visit_type keys produced by mbw_visit_schedules extractor
+        raw_form_name = (row.get("form_name") or "").strip()
+        form_name = _FORM_NAME_ALIASES.get(raw_form_name, raw_form_name)
+
+        # Always update attribution and all-time visit history (needed for baseline follow-up
+        # rate computation even when task_filters skips this visit below).
+        if mid:
+            mother_to_flw[mid] = username
+            if form_name and vdt:
+                mid_dict = visits_by_mother_all.setdefault(mid, {})
+                if form_name not in mid_dict or vdt < mid_dict[form_name]:
+                    mid_dict[form_name] = vdt  # keep earliest visit date per (mother, visit_type)
+            if (row.get("antenatal_visit_completion") or "").strip() == "ok":
+                anc_ok_mothers.add(mid)
 
         # For Tab 2: skip visits submitted before the task trigger date
         if task_filters and username in task_filters:
@@ -224,18 +240,10 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
 
         visits_completed_by_flw[username] = visits_completed_by_flw.get(username, 0) + 1
 
-        mid = (row.get("mother_case_id") or "").lower()
-        # Normalize form name to match visit_type keys produced by mbw_visit_schedules extractor
-        raw_form_name = (row.get("form_name") or "").strip()
-        form_name = _FORM_NAME_ALIASES.get(raw_form_name, raw_form_name)
-
         if mid:
-            mother_to_flw[mid] = username
             mother_sets_by_flw.setdefault(username, set()).add(mid)
             if form_name and vdt:
                 visits_by_mother.setdefault(mid, {})[form_name] = vdt
-            if (row.get("antenatal_visit_completion") or "").strip() == "ok":
-                anc_ok_mothers.add(mid)
 
         dist = row.get("distance_from_prev_case_visit_m")
         if dist is not None:
@@ -412,9 +420,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                 if not (mother_eligibility.get(mid, False) and mid in anc_ok_mothers):
                     continue
 
-                # visits_by_mother stores ALL visit dates including post-trigger ones.
-                # For baseline, only count visits completed before the trigger date.
-                mother_visits = visits_by_mother.get(mid, {})
+                mother_visits = visits_by_mother_all.get(mid, {})
 
                 for s in schedules:
                     if not isinstance(s, dict):
