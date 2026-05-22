@@ -2,6 +2,7 @@ import json
 import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.core.exceptions import ValidationError
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -379,6 +380,19 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
                 da = _get_data_access(request)
                 da.create_solicitation(data)
                 return redirect("solicitations:manage_list")
+            except ValidationError as e:
+                # Canonical-schema drift caught at the data-access layer.
+                # The form's field-level validators already passed — this
+                # surfaces structural issues (e.g. dangling linked_questions
+                # in evaluation_criteria) that the form doesn't otherwise see.
+                errors = e.message_dict if hasattr(e, "message_dict") else {"__all__": list(e.messages)}
+                for field, msgs in errors.items():
+                    msg_list = msgs if isinstance(msgs, list) else [msgs]
+                    for msg in msg_list:
+                        form.add_error(None, f"{field}: {msg}")
+                ctx = self.get_context_data(**kwargs)
+                ctx["form"] = form
+                return self.render_to_response(ctx)
             except Exception:
                 logger.exception("Failed to create solicitation")
                 ctx = self.get_context_data(**kwargs)
