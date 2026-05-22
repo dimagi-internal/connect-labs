@@ -17,6 +17,22 @@ def clear_cache():
     cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def _require_working_cache_backend():
+    """Skip when the cache backend silently swallows reads/writes.
+
+    The rate-limit enforcement leans entirely on Django's cache. In production
+    the cache is redis with ``IGNORE_EXCEPTIONS=True`` (settings/base.py), so
+    a dead backend silently turns the cap into a no-op — and these tests, which
+    exercise the cap end-to-end, would fail in a confusing way (third write
+    still goes through instead of being rejected). Round-trip a sentinel key
+    to detect that case and skip with a clear message instead of failing.
+    """
+    cache.set("_rate_limit_test_probe", "ok", 5)
+    if cache.get("_rate_limit_test_probe") != "ok":
+        pytest.skip("Cache backend not reachable; rate-limit enforcement is a no-op")
+
+
 @pytest.fixture
 def write_tool():
     @register(

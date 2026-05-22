@@ -1149,12 +1149,10 @@ def compute_flw_performance_by_status(
 
         total_cases = len(all_mothers)
         eligible_mothers = [
-            m for m in all_mothers
+            m
+            for m in all_mothers
             if m.get("eligible")
-            and any(
-                v["visit_type"] == "ANC" and v["status"].startswith("Completed")
-                for v in m.get("visits", [])
-            )
+            and any(v["visit_type"] == "ANC" and v["status"].startswith("Completed") for v in m.get("visits", []))
         ]
         total_eligible = len(eligible_mothers)
 

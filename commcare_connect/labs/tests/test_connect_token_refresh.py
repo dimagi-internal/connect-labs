@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from django.utils import timezone
 
-from commcare_connect.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+from commcare_connect.labs.connect_tokens import ConnectReLoginRequired, ConnectTokenError, get_valid_access_token
 from commcare_connect.labs.models import UserConnectToken
 from commcare_connect.users.models import User
 
@@ -32,7 +32,7 @@ def test_raises_when_no_token():
 def test_refreshes_when_expired(mock_post, settings):
     settings.CONNECT_OAUTH_CLIENT_ID = "test-client"
     mock_post.return_value = MagicMock(
-        ok=True,
+        is_success=True,
         json=lambda: {
             "access_token": "new-access",
             "refresh_token": "new-refresh",
@@ -68,10 +68,42 @@ def test_raises_when_expired_and_no_refresh_token():
 
 @pytest.mark.django_db
 @patch("commcare_connect.labs.connect_tokens.httpx.post")
-def test_raises_when_refresh_exchange_fails(mock_post, settings):
+def test_raises_re_login_required_on_400(mock_post, settings):
     settings.CONNECT_OAUTH_CLIENT_ID = "test-client"
-    mock_post.return_value = MagicMock(ok=False, status_code=400, text="bad")
+    mock_post.return_value = MagicMock(is_success=False, status_code=400, text='{"error": "invalid_grant"}')
     user = User.objects.create(username="erin")
+    UserConnectToken.objects.create(
+        user=user,
+        access_token="old",
+        refresh_token="old-refresh",
+        expires_at=timezone.now() - timedelta(hours=1),
+    )
+    with pytest.raises(ConnectReLoginRequired, match="Re-login at labs"):
+        get_valid_access_token(user)
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.labs.connect_tokens.httpx.post")
+def test_raises_re_login_required_on_401_invalid_client(mock_post, settings):
+    settings.CONNECT_OAUTH_CLIENT_ID = "test-client"
+    mock_post.return_value = MagicMock(is_success=False, status_code=401, text='{"error": "invalid_client"}')
+    user = User.objects.create(username="frank")
+    UserConnectToken.objects.create(
+        user=user,
+        access_token="old",
+        refresh_token="old-refresh",
+        expires_at=timezone.now() - timedelta(hours=1),
+    )
+    with pytest.raises(ConnectReLoginRequired):
+        get_valid_access_token(user)
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.labs.connect_tokens.httpx.post")
+def test_raises_generic_error_on_other_failure(mock_post, settings):
+    settings.CONNECT_OAUTH_CLIENT_ID = "test-client"
+    mock_post.return_value = MagicMock(is_success=False, status_code=503, text="upstream down")
+    user = User.objects.create(username="gina")
     UserConnectToken.objects.create(
         user=user,
         access_token="old",

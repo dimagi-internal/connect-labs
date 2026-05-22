@@ -16,6 +16,7 @@ from . import synthetic_tasks  # noqa: F401  -- registers task_create_synthetic
 from . import templates  # noqa: F401
 from . import workflow_create_run  # noqa: F401  -- registers workflow_create_run
 from . import workflow_snapshots  # noqa: F401  -- registers workflow_save_snapshot
+from . import workflow_template_sync  # noqa: F401
 from . import workflows  # noqa: F401
 from . import (  # noqa: F401  -- registers synthetic_register, synthetic_disable, synthetic_generate_from_manifest
     synthetic,
