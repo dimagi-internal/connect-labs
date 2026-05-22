@@ -298,6 +298,16 @@ _CANONICAL_FIELD_PROPERTIES = {
                     "items": {"type": "string"},
                     "description": "Required when type=multiple_choice.",
                 },
+                "framing": {
+                    "type": "string",
+                    "description": (
+                        "Optional 1-2 sentence 'why we're asking' preface. Rendered "
+                        "above the prompt in the public detail template so respondents "
+                        "see the intent of the question, not just the prompt. Structured "
+                        "field (vs. prose-prefixed text) so downstream consumers can "
+                        "render or score against it cleanly."
+                    ),
+                },
             },
             "required": ["id", "text", "type"],
             "additionalProperties": False,
