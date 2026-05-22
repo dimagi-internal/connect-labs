@@ -225,6 +225,25 @@ The **Prev** column shows the performance category assigned to each field worker
 
 ---
 
+## Solicitations
+
+Solicitations are the structured postings used to invite field workers to apply for an opportunity. They are created either through the MCP tool or via the Labs manager interface.
+
+### Required fields and validation
+
+When a solicitation is created, Labs now checks that all required fields are present and correctly named before saving. If anything is wrong — a misspelled field name, a missing deadline, a malformed evaluation rubric, or a question reference that points to something that doesn't exist — the creation will fail immediately with a clear error message describing exactly what needs to be fixed.
+
+This replaces the previous behaviour where incorrectly shaped solicitations were saved silently, causing data to land in the wrong place. If you are using the manager UI to create a solicitation and something is wrong with the form, you will now see an inline error on the affected field rather than having the problem slip through unnoticed.
+
+!!! note "If you receive a validation error"
+    Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, `overview` instead of `description`) or leaving the application deadline blank. Correct the flagged fields and resubmit.
+
+### Evaluation rubric
+
+Each solicitation can include an evaluation rubric — a list of criteria used to score applications. Each criterion must have a **name** and a **description**. Any questions referenced in the rubric must exist in the solicitation's question list. If a criterion references a question that isn't defined, the validation will catch this and tell you which reference is broken.
+
+---
+
 ## Common Questions
 
 **How do I create a new workflow for my program?**
@@ -255,16 +274,4 @@ Workflow dashboards are actively developed. Check the [weekly changelog](https:/
 Several calculations in the MBW Monitoring dashboard were updated to match the original MBW v1 definitions more precisely. In particular, eligible mother counts, completion rates, performance categories, and GPS figures may shift slightly compared to earlier versions of the dashboard. The new numbers are more accurate. If a figure still looks unexpected, check the "Last refreshed" timestamp and contact your program administrator if the discrepancy persists.
 
 **The MBW Auditing V4 dashboard was showing an error on load — is that fixed?**
-Yes. A loading error that caused the dashboard to crash before displaying any data has been resolved. If you continue to see an error, try refreshing the page. If the problem persists, contact your program administrator.
-
-**The % Still Eligible figure in MBW Auditing V4 looks much lower than expected — is something wrong?**
-This figure was previously undercounting eligible mothers due to two issues: certain visit types were not being matched correctly to their scheduled entries, and the ANC visit was being included in the missed-visit check even though it is already a requirement for entering the denominator. Both issues have been corrected. If the number still looks unexpected after a data refresh, contact your program administrator.
-
-**The MBW Auditing V4 data looks incomplete or like it isn't accounting for all cases — is something wrong?**
-This was caused by a background processing issue where open tasks were silently not being loaded, resulting in the auditing job running against an incomplete set of records. The issue has been fixed — open tasks now load through a dedicated pathway that is more reliable, so task indicators should appear correctly on the dashboard. If your data still looks incomplete after a refresh, check the "Last refreshed" timestamp and contact your program administrator if the problem continues.
-
-**In MBW Auditing V4, the eligible mother count shown in parentheses was higher than the total mother count — is that fixed?**
-Yes. This was a display bug caused by the two figures drawing from different data sources. Both the total and eligible mother counts now come from the same source — mothers attributed to each field worker through visit records — so the eligible figure will always be equal to or less than the total. If you still see the eligible count exceed the total after a refresh, contact your program administrator.
-
-**In MBW Auditing V4, the Prev column was always showing "—" even for workers with previous categories — is that fixed?**
-Yes. The Prev column now correctly loads performance categories from the most recent run where categories were set, including categories recorded under previous versions of the workflow. If the column still appears blank after a data refresh, contact your program administrator.
+Yes. A loading error that caused the dashboard to crash before displaying any data has been resolved. If you continue to see an error, try refreshing the page.
