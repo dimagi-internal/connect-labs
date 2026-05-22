@@ -47,7 +47,6 @@ def _past_ts(hours=1):
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True)
 def test_fresh_session_token_is_no_op():
     user = User.objects.create(username="alice")
     request = _make_request(
@@ -63,7 +62,6 @@ def test_fresh_session_token_is_no_op():
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True)
 def test_expired_session_token_refreshed_from_fresh_db_token():
     """Session expired but UserConnectToken in DB is still good — no HTTP call needed."""
     user = User.objects.create(username="bob")
@@ -95,7 +93,7 @@ def test_expired_session_token_refreshed_from_fresh_db_token():
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True, CONNECT_OAUTH_CLIENT_ID="test")
+@override_settings(CONNECT_OAUTH_CLIENT_ID="test")
 @patch("commcare_connect.labs.connect_tokens.httpx.post")
 def test_expired_session_and_db_token_triggers_refresh_call(mock_post):
     """Session expired AND DB token expired but refresh_token works — HTTP call fires."""
@@ -124,7 +122,7 @@ def test_expired_session_and_db_token_triggers_refresh_call(mock_post):
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True, CONNECT_OAUTH_CLIENT_ID="test")
+@override_settings(CONNECT_OAUTH_CLIENT_ID="test")
 @patch("commcare_connect.labs.connect_tokens._exchange_refresh_token")
 def test_refresh_failure_logs_user_out(mock_exchange):
     mock_exchange.side_effect = ConnectReLoginRequired("refresh rejected by provider")
@@ -147,7 +145,6 @@ def test_refresh_failure_logs_user_out(mock_exchange):
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True)
 def test_no_user_connect_token_logs_user_out():
     """Authenticated Django session but no DB token (e.g., legacy session) → logout."""
     user = User.objects.create(username="eve")
@@ -163,7 +160,6 @@ def test_no_user_connect_token_logs_user_out():
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True)
 def test_missing_labs_oauth_payload_logs_user_out():
     """Django session has user but no labs_oauth shape at all → logout."""
     user = User.objects.create(username="frank")
@@ -175,7 +171,6 @@ def test_missing_labs_oauth_payload_logs_user_out():
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True)
 def test_anonymous_user_is_no_op():
     """Anonymous requests aren't touched — login mixins handle them."""
     from django.contrib.auth.models import AnonymousUser
@@ -188,7 +183,6 @@ def test_anonymous_user_is_no_op():
 
 
 @pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=True)
 @pytest.mark.parametrize(
     "skip_path",
     [
@@ -215,15 +209,3 @@ def test_oauth_flow_paths_are_skipped(skip_path):
     _run(request)
 
     assert request.user.is_authenticated  # untouched
-
-
-@pytest.mark.django_db
-@override_settings(IS_LABS_ENVIRONMENT=False)
-def test_disabled_outside_labs_environment():
-    """Non-labs deploys (the prod connect server itself) must not run this middleware."""
-    user = User.objects.create(username="non-labs")
-    request = _make_request("/audit/", user, session_data=None)  # no labs_oauth
-
-    _run(request)
-
-    assert request.user.is_authenticated

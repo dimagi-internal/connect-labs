@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from django.contrib.auth import logout
 from django.utils import timezone
 
@@ -59,8 +58,6 @@ class LabsOAuthSessionMiddleware:
 
     @staticmethod
     def _should_check(request) -> bool:
-        if not getattr(settings, "IS_LABS_ENVIRONMENT", False):
-            return False
         if not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
         path = request.path

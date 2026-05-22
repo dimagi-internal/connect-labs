@@ -23,7 +23,6 @@ LABS_MIDDLEWARE = [
 ]
 
 LABS_SETTINGS = dict(
-    IS_LABS_ENVIRONMENT=True,
     MIDDLEWARE=LABS_MIDDLEWARE,
     LOGIN_URL="/labs/login/",
     CONNECT_PRODUCTION_URL="https://connect.example.com",
