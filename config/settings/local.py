@@ -68,7 +68,11 @@ INSTALLED_APPS = INSTALLED_APPS + [  # noqa: F405
 # Add labs context middleware after auth
 MIDDLEWARE = list(MIDDLEWARE)  # noqa: F405
 _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
-MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.context.LabsContextMiddleware")
+# OAuth session sync runs first so the rest of the stack sees a fresh
+# session.labs_oauth (or a logged-out user, if refresh failed). See
+# commcare_connect/labs/oauth_session.py.
+MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.oauth_session.LabsOAuthSessionMiddleware")
+MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.context.LabsContextMiddleware")
 
 # Pipeline cache settings for local development
 # 24-hour cache TTL for dev (production default: 1 hour)
