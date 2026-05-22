@@ -178,6 +178,14 @@ function WorkflowUI({
   var _tab2Data = React.useState(null);
   var tab2Data = _tab2Data[0];
   var setTab2Data = _tab2Data[1];
+  var _visibleCols = React.useState(
+    METRIC_COLS.map(function (c) { return c.key; })
+  );
+  var visibleCols = _visibleCols[0];
+  var setVisibleCols = _visibleCols[1];
+  var _showColPicker = React.useState(false);
+  var showColPicker = _showColPicker[0];
+  var setShowColPicker = _showColPicker[1];
   var _perfData = React.useState(null);
   var perfData = _perfData[0];
   var setPerfData = _perfData[1];
@@ -760,6 +768,22 @@ function WorkflowUI({
     }
     return { type: type, reasons: reasons };
   };
+
+  var toggleCol = function (key) {
+    setVisibleCols(function (prev) {
+      return prev.indexOf(key) >= 0
+        ? prev.filter(function (c) { return c !== key; })
+        : prev.concat([key]);
+    });
+  };
+
+  // Filtered column lists respecting per-session visibility toggles
+  var effectiveMetricCols = METRIC_COLS.filter(function (col) {
+    return visibleCols.indexOf(col.key) >= 0;
+  });
+  var effectiveTab2MetricCols = TAB2_METRIC_COLS.filter(function (col) {
+    return visibleCols.indexOf(col.key) >= 0;
+  });
 
   // =========================================================================
   // Enriched data
@@ -2206,27 +2230,94 @@ function WorkflowUI({
               'flex-1 min-w-36 border border-gray-300 rounded-lg px-3 py-1.5 text-sm',
           }),
           React.createElement(
-            'button',
-            {
-              className:
-                'ml-auto px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-              onClick: runAnalysis,
-              title: 'Refresh data',
-            },
-            React.createElement('i', {
-              className: 'fa-solid fa-rotate-right mr-1',
-            }),
-            'Refresh',
+            'div',
+            { className: 'ml-auto flex items-center gap-2', style: { position: 'relative' } },
+            showColPicker && React.createElement(
+              'div',
+              { style: { position: 'fixed', inset: 0, zIndex: 40 }, onClick: function () { setShowColPicker(false); } }
+            ),
+            React.createElement(
+              'button',
+              {
+                className: 'px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50 inline-flex items-center',
+                onClick: function () { setShowColPicker(function (v) { return !v; }); },
+              },
+              React.createElement('i', { className: 'fa-solid fa-table-columns mr-2' }),
+              'Columns',
+              React.createElement(
+                'span',
+                { className: 'ml-1.5 bg-gray-100 text-gray-600 text-xs px-1.5 py-0.5 rounded-full' },
+                visibleCols.length + '/' + METRIC_COLS.length
+              )
+            ),
+            showColPicker && React.createElement(
+              'div',
+              {
+                style: {
+                  position: 'absolute', right: 0, top: '100%', marginTop: '4px',
+                  zIndex: 50, width: '210px', backgroundColor: 'white',
+                  border: '1px solid #e5e7eb', borderRadius: '8px',
+                  boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                }
+              },
+              React.createElement(
+                'div',
+                { className: 'px-3 py-2 border-b border-gray-200' },
+                React.createElement('span', { className: 'text-xs font-medium text-gray-500 uppercase' }, 'Toggle Columns')
+              ),
+              React.createElement(
+                'div',
+                { style: { maxHeight: '320px', overflowY: 'auto' }, className: 'py-1' },
+                METRIC_COLS.map(function (col) {
+                  return React.createElement(
+                    'label',
+                    { key: col.key, className: 'flex items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50' },
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: visibleCols.indexOf(col.key) >= 0,
+                      onChange: function () { toggleCol(col.key); },
+                      className: 'mr-2 rounded border-gray-300',
+                      style: { accentColor: '#2563eb' },
+                    }),
+                    col.label
+                  );
+                })
+              ),
+              React.createElement(
+                'div',
+                { className: 'px-3 py-2 border-t border-gray-200 flex gap-3' },
+                React.createElement(
+                  'button',
+                  { className: 'text-xs text-blue-600 hover:underline', onClick: function () { setVisibleCols(METRIC_COLS.map(function (c) { return c.key; })); } },
+                  'Show all'
+                ),
+                React.createElement(
+                  'button',
+                  { className: 'text-xs text-gray-500 hover:underline', onClick: function () { setVisibleCols([]); } },
+                  'Hide all'
+                )
+              )
+            ),
+            React.createElement(
+              'button',
+              {
+                className: 'px-3 py-1.5 text-sm rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+                onClick: runAnalysis,
+                title: 'Refresh data',
+              },
+              React.createElement('i', { className: 'fa-solid fa-rotate-right mr-1' }),
+              'Refresh',
+            )
           ),
         ),
       ),
       React.createElement(
         'div',
-        { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
+        { className: 'bg-white rounded-lg shadow-sm overflow-auto', style: { maxHeight: '70vh' } },
         React.createElement(
           'table',
           { className: 'min-w-full divide-y divide-gray-200' },
-          React.createElement(TableHeader, { showAuditStatus: true }),
+          React.createElement(TableHeader, { showAuditStatus: true, metricCols: effectiveMetricCols }),
           React.createElement(
             'tbody',
             { className: 'bg-white divide-y divide-gray-200' },
@@ -2236,6 +2327,7 @@ function WorkflowUI({
                 flw: flw,
                 showChange: true,
                 showAuditStatus: true,
+                metricCols: effectiveMetricCols,
               });
             }),
             filteredData.length === 0 &&
@@ -2313,7 +2405,7 @@ function WorkflowUI({
         'div',
         {
           className:
-            'bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start justify-between gap-3',
+            'bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start justify-between gap-3 flex-wrap',
         },
         React.createElement(
           'div',
@@ -2326,47 +2418,117 @@ function WorkflowUI({
             : 'Showing FLWs with open tasks. Click "Compute Post-Task Metrics" to load data submitted after each task was triggered.',
         ),
         React.createElement(
-          'button',
-          {
-            className:
-              'shrink-0 px-3 py-1.5 text-sm rounded border font-medium transition-colors ' +
-              (tab2Step === 'running' || taskedWithDate.length === 0
-                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'),
-            onClick: runTab2Analysis,
-            disabled: tab2Step === 'running' || taskedWithDate.length === 0,
-            title:
-              taskedWithDate.length === 0
-                ? 'No task trigger dates found — create tasks for FLWs first'
-                : '',
-          },
-          tab2Step === 'running'
-            ? React.createElement(
-                'span',
-                null,
-                React.createElement('i', {
-                  className: 'fa-solid fa-spinner fa-spin mr-1',
-                }),
-                'Computing…',
-              )
-            : React.createElement(
-                'span',
-                null,
-                React.createElement('i', {
-                  className: 'fa-solid fa-rotate-right mr-1',
-                }),
-                'Compute Post-Task Metrics',
+          'div',
+          { className: 'shrink-0 flex items-center gap-2', style: { position: 'relative' } },
+          showColPicker && React.createElement(
+            'div',
+            { style: { position: 'fixed', inset: 0, zIndex: 40 }, onClick: function () { setShowColPicker(false); } }
+          ),
+          React.createElement(
+            'button',
+            {
+              className: 'px-3 py-1.5 text-sm rounded border bg-white text-blue-700 border-blue-300 hover:bg-blue-50 inline-flex items-center',
+              onClick: function () { setShowColPicker(function (v) { return !v; }); },
+            },
+            React.createElement('i', { className: 'fa-solid fa-table-columns mr-2' }),
+            'Columns',
+            React.createElement(
+              'span',
+              { className: 'ml-1.5 bg-blue-100 text-blue-600 text-xs px-1.5 py-0.5 rounded-full' },
+              visibleCols.length + '/' + METRIC_COLS.length
+            )
+          ),
+          showColPicker && React.createElement(
+            'div',
+            {
+              style: {
+                position: 'absolute', right: 0, top: '100%', marginTop: '4px',
+                zIndex: 50, width: '210px', backgroundColor: 'white',
+                border: '1px solid #e5e7eb', borderRadius: '8px',
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+              }
+            },
+            React.createElement(
+              'div',
+              { className: 'px-3 py-2 border-b border-gray-200' },
+              React.createElement('span', { className: 'text-xs font-medium text-gray-500 uppercase' }, 'Toggle Columns')
+            ),
+            React.createElement(
+              'div',
+              { style: { maxHeight: '320px', overflowY: 'auto' }, className: 'py-1' },
+              METRIC_COLS.map(function (col) {
+                return React.createElement(
+                  'label',
+                  { key: col.key, className: 'flex items-center px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50' },
+                  React.createElement('input', {
+                    type: 'checkbox',
+                    checked: visibleCols.indexOf(col.key) >= 0,
+                    onChange: function () { toggleCol(col.key); },
+                    className: 'mr-2 rounded border-gray-300',
+                    style: { accentColor: '#2563eb' },
+                  }),
+                  col.label
+                );
+              })
+            ),
+            React.createElement(
+              'div',
+              { className: 'px-3 py-2 border-t border-gray-200 flex gap-3' },
+              React.createElement(
+                'button',
+                { className: 'text-xs text-blue-600 hover:underline', onClick: function () { setVisibleCols(METRIC_COLS.map(function (c) { return c.key; })); } },
+                'Show all'
               ),
+              React.createElement(
+                'button',
+                { className: 'text-xs text-gray-500 hover:underline', onClick: function () { setVisibleCols([]); } },
+                'Hide all'
+              )
+            )
+          ),
+          React.createElement(
+            'button',
+            {
+              className:
+                'shrink-0 px-3 py-1.5 text-sm rounded border font-medium transition-colors ' +
+                (tab2Step === 'running' || taskedWithDate.length === 0
+                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'),
+              onClick: runTab2Analysis,
+              disabled: tab2Step === 'running' || taskedWithDate.length === 0,
+              title:
+                taskedWithDate.length === 0
+                  ? 'No task trigger dates found — create tasks for FLWs first'
+                  : '',
+            },
+            tab2Step === 'running'
+              ? React.createElement(
+                  'span',
+                  null,
+                  React.createElement('i', {
+                    className: 'fa-solid fa-spinner fa-spin mr-1',
+                  }),
+                  'Computing…',
+                )
+              : React.createElement(
+                  'span',
+                  null,
+                  React.createElement('i', {
+                    className: 'fa-solid fa-rotate-right mr-1',
+                  }),
+                  'Compute Post-Task Metrics',
+                ),
+          ),
         ),
       ),
       React.createElement(
         'div',
-        { className: 'bg-white rounded-lg shadow-sm overflow-x-auto' },
+        { className: 'bg-white rounded-lg shadow-sm overflow-auto', style: { maxHeight: '70vh' } },
         React.createElement(
           'table',
           { className: 'min-w-full divide-y divide-gray-200' },
           React.createElement(TableHeader, {
-            metricCols: TAB2_METRIC_COLS,
+            metricCols: effectiveTab2MetricCols,
             showTaskTriggered: true,
           }),
           React.createElement(
@@ -2396,7 +2558,7 @@ function WorkflowUI({
               var tab2PrevOverride = null;
               if (postTask) {
                 tab2PrevOverride = {};
-                TAB2_METRIC_COLS.forEach(function (col) {
+                effectiveTab2MetricCols.forEach(function (col) {
                   tab2PrevOverride[col.key] = flw[col.key];
                 });
               }
@@ -2406,7 +2568,7 @@ function WorkflowUI({
                 showChange: !!postTask,
                 prevOverride: tab2PrevOverride,
                 followupRateAtTrigger: followupRateAtTrigger,
-                metricCols: TAB2_METRIC_COLS,
+                metricCols: effectiveTab2MetricCols,
                 taskTriggeredAt: flw.taskTriggeredAt,
               });
             }),
