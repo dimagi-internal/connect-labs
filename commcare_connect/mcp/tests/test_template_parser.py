@@ -131,3 +131,40 @@ def test_round_trips_real_mbw_template():
         "registrations",
         "gs_forms",
     }
+
+
+@pytest.mark.parametrize(
+    "template_basename",
+    [
+        "audit_with_ai_review",
+        "bulk_image_audit",
+        "kmc_flw_flags",
+        "kmc_longitudinal",
+        "kmc_project_metrics",
+        "llo_weekly_review",
+        "mbw_auditing_v4",
+        "mbw_monitoring_v2",
+        "mbw_monitoring_v3",
+        "ocs_outreach",
+        "performance_review",
+        "program_admin_audit",
+        "sam_followup",
+    ],
+)
+def test_parser_handles_every_shipped_template(template_basename):
+    """If a template can't round-trip through the parser, update the parser (not the template)."""
+    from pathlib import Path
+
+    base = Path("commcare_connect/workflow/templates")
+    py_path = base / f"{template_basename}.py"
+    if not py_path.exists():
+        pytest.skip(f"{py_path} not present on this branch")
+    sidecar_files = {}
+    sidecar_path = base / f"{template_basename}_render.js"
+    if sidecar_path.exists():
+        sidecar_files[sidecar_path.name] = sidecar_path.read_text()
+
+    result = parse_template_source(py_path.read_text(), sidecar_files=sidecar_files)
+    assert result.template_key
+    assert isinstance(result.definition, dict)
+    assert isinstance(result.render_code, str) and result.render_code
