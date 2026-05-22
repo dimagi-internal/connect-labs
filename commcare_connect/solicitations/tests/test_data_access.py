@@ -273,7 +273,14 @@ class TestGetSolicitationById:
 
 class TestCreateSolicitation:
     def test_creates_record(self, data_access, mock_api_client):
-        input_data = {"title": "New Solicitation", "status": "draft"}
+        # Canonical-shape payload — validate_solicitation_payload (called inside
+        # data_access.create_solicitation) requires title/description/type.
+        input_data = {
+            "title": "New Solicitation",
+            "description": "Why this matters.",
+            "solicitation_type": "eoi",
+            "status": "draft",
+        }
         api_return = LocalLabsRecord(
             {
                 "id": 100,
@@ -303,13 +310,19 @@ class TestCreateSolicitation:
         The flag lives on LabsRecord.public (the envelope), not inside data, so
         we don't want a stale duplicate sitting in the JSON column.
         """
-        input_data = {"title": "Public Solicitation", "is_public": True}
+        input_data = {
+            "title": "Public Solicitation",
+            "description": "Listed publicly.",
+            "solicitation_type": "rfp",
+            "is_public": True,
+        }
+        persisted_data = {k: v for k, v in input_data.items() if k != "is_public"}
         api_return = LocalLabsRecord(
             {
                 "id": 101,
                 "experiment": "42",
                 "type": SOLICITATION_TYPE,
-                "data": {"title": "Public Solicitation"},
+                "data": persisted_data,
                 "opportunity_id": 0,
                 "public": True,
             }
@@ -322,10 +335,24 @@ class TestCreateSolicitation:
         mock_api_client.create_record.assert_called_once_with(
             experiment="42",
             type=SOLICITATION_TYPE,
-            data={"title": "Public Solicitation"},
+            data=persisted_data,
             program_id=42,
             public=True,
         )
+
+    def test_invalid_payload_raises_validation_error(self, data_access, mock_api_client):
+        """The chokepoint: schema drift is rejected at the data-access layer.
+
+        This is what makes the UI form, the HTTP API, and the MCP tool all share
+        one contract — they all flow through this method, and any drift surfaces
+        as ValidationError before persistence.
+        """
+        from django.core.exceptions import ValidationError
+
+        with pytest.raises(ValidationError):
+            # Missing required `description` and `solicitation_type`.
+            data_access.create_solicitation({"title": "Drifted"})
+        mock_api_client.create_record.assert_not_called()
 
 
 class TestUpdateSolicitation:

@@ -98,6 +98,10 @@ class SolicitationRecord(LocalLabsRecord):
     def fund_id(self):
         return self.data.get("fund_id")
 
+    @property
+    def connect_opportunity_id(self):
+        return self.data.get("connect_opportunity_id")
+
     def can_accept_responses(self):
         return self.status == "active"
 

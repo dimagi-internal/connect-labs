@@ -8,7 +8,16 @@ from __future__ import annotations
 
 import logging
 
+from django.core.exceptions import ValidationError
+
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from commcare_connect.solicitations.data_access import SolicitationsDataAccess
+from commcare_connect.solicitations.validation import (
+    QUESTION_TYPES,
+    VALID_SOLICITATION_TYPES,
+    VALID_STATUSES,
+    validate_solicitation_payload,
+)
 
 from ..connect_token import require_connect_token
 from ..tool_registry import MCPToolError, register  # noqa: F401
@@ -241,11 +250,113 @@ def get_response(user, response_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# Canonical solicitation field properties — shared between create's top-level
+# schema and update's update_data schema so both surfaces stay in lockstep with
+# commcare_connect.solicitations.validation.ALLOWED_FIELDS. When you add a new
+# canonical field, edit it here and in validation.py once.
+_CANONICAL_FIELD_PROPERTIES = {
+    "title": {"type": "string", "maxLength": 255},
+    "description": {"type": "string", "description": "Markdown."},
+    "scope_of_work": {"type": "string", "description": "Markdown."},
+    "solicitation_type": {"type": "string", "enum": sorted(VALID_SOLICITATION_TYPES)},
+    "status": {"type": "string", "enum": sorted(VALID_STATUSES)},
+    "application_deadline": {"type": "string", "format": "date", "description": "YYYY-MM-DD."},
+    "expected_start_date": {"type": "string", "format": "date", "description": "YYYY-MM-DD."},
+    "expected_end_date": {"type": "string", "format": "date", "description": "YYYY-MM-DD."},
+    "estimated_scale": {"type": "string"},
+    "contact_email": {"type": "string", "format": "email"},
+    "program_name": {
+        "type": "string",
+        "description": "Optional human-readable program name shown on the public detail page.",
+    },
+    "connect_opportunity_id": {
+        "type": "integer",
+        "description": (
+            "Connect Opportunity ID this solicitation targets. Stored on the record so "
+            "downstream review/award flows can link back to the opp."
+        ),
+    },
+    "fund_id": {
+        "type": "integer",
+        "description": "Optional fund ID for downstream allocation when a response is awarded.",
+    },
+    "questions": {
+        "type": "array",
+        "description": (
+            "Application questions respondents must answer. Each question's `id` must be unique "
+            "within the solicitation — responses are keyed by id."
+        ),
+        "items": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "text": {"type": "string"},
+                "type": {"type": "string", "enum": sorted(QUESTION_TYPES)},
+                "required": {"type": "boolean", "default": False},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Required when type=multiple_choice.",
+                },
+            },
+            "required": ["id", "text", "type"],
+            "additionalProperties": False,
+        },
+    },
+    "evaluation_criteria": {
+        "type": "array",
+        "description": (
+            "Rubric used to score responses. `linked_questions` entries must reference IDs " "in the questions[] list."
+        ),
+        "items": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "name": {"type": "string"},
+                "weight": {"type": "number", "minimum": 0, "maximum": 100},
+                "description": {"type": "string"},
+                "scoring_guide": {"type": "string"},
+                "linked_questions": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["id", "name", "weight"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def _validation_error_to_mcp(exc: ValidationError) -> MCPToolError:
+    """Convert a Django ValidationError to an MCP INVALID_SCHEMA error.
+
+    Preserves the field-level structure via ``details`` so callers can render
+    per-field messages instead of a stringified blob.
+    """
+    if hasattr(exc, "message_dict"):
+        details = {"fields": exc.message_dict}
+        # Render a one-line summary for the message text.
+        summary = "; ".join(
+            f"{field}: {msgs[0] if isinstance(msgs, list) else msgs}" for field, msgs in exc.message_dict.items()
+        )
+    else:
+        details = {"messages": list(exc.messages)}
+        summary = "; ".join(exc.messages)
+    return MCPToolError("INVALID_SCHEMA", summary, details=details)
+
+
 @register(
     name="create_solicitation",
     description=(
-        "Create a new solicitation via the Labs Record API. "
-        "Requires either program_id or organization_id for scoping."
+        "Create a new solicitation via the Labs Record API. Fields are flat — "
+        "do NOT wrap them in a `data` object. Unknown fields are rejected. "
+        "Requires either program_id or organization_id for scoping. "
+        "Set is_public=true to surface the record on the public /solicitations/ "
+        "marketplace; this flips the server-side `public` ACL flag (the field "
+        "the marketplace query actually filters on). Solicitations are an "
+        "exception to the broader MCP no-public-records policy because their "
+        "content is public-facing by design. Do NOT include PII or pipeline-"
+        "derived data. Schema is enforced server-side at the data-access "
+        "layer (commcare_connect.solicitations.validation) — the UI form, "
+        "HTTP API, and this MCP tool all share the same contract."
     ),
     input_schema={
         "type": "object",
@@ -258,57 +369,57 @@ def get_response(user, response_id: int) -> dict:
                 "type": "string",
                 "description": "Organization ID to scope the record when program_id is absent.",
             },
-            "data": {
-                "type": "object",
-                "description": (
-                    "Application-level solicitation fields (title, status, solicitation_type, etc.). "
-                    "Set `is_public=true` to surface the record on the public /solicitations/ "
-                    "marketplace listing — this also flips the server-side `public` ACL flag, which "
-                    "is the field the marketplace query actually filters on. Solicitations are an "
-                    "exception to the broader MCP no-public-records policy because their data is "
-                    "public-facing by design (title, scope, questions). Do NOT include PII or "
-                    "pipeline-derived data in a public solicitation."
-                ),
-                "additionalProperties": True,
-            },
+            "is_public": {"type": "boolean", "default": False},
+            **_CANONICAL_FIELD_PROPERTIES,
         },
-        "required": ["data"],
+        "required": ["title", "description", "solicitation_type"],
         "additionalProperties": False,
     },
     is_write=True,
 )
 def create_solicitation(
     user,
-    data: dict,
     program_id: str | None = None,
     organization_id: str | None = None,
+    is_public: bool = False,
+    **fields,
 ) -> dict:
-    """Create a new solicitation. Requires data and at least one scope param."""
-    if not data:
-        raise MCPToolError("INVALID_SCHEMA", "data is required")
-    experiment = program_id or organization_id
-    if not experiment:
+    """Create a new solicitation by delegating to SolicitationsDataAccess.
+
+    Thin shim. All shape validation lives in
+    :func:`commcare_connect.solicitations.validation.validate_solicitation_payload`,
+    invoked inside ``SolicitationsDataAccess.create_solicitation``. The UI form
+    view, the HTTP API, and this tool all flow through that same chokepoint.
+
+    The ``**fields`` catch-all keeps unknown top-level kwargs from raising
+    TypeError at the transport's ``**arguments`` unpack — they get forwarded
+    into the data dict where the validator catches them with a clean
+    INVALID_SCHEMA error.
+    """
+    if not program_id and not organization_id:
         raise MCPToolError("INVALID_SCHEMA", "Either program_id or organization_id is required")
+    if not isinstance(is_public, bool):
+        raise MCPToolError("INVALID_SCHEMA", "is_public must be a boolean")
+
+    # Stamp created_by from the authenticated user so the record carries
+    # provenance the UI form view sets the same way (views.py SolicitationCreateView).
+    data = dict(fields)
+    data.setdefault("created_by", getattr(user, "username", "") or "")
+    data["is_public"] = is_public  # stripped by data_access and forwarded to envelope
 
     token = require_connect_token(user)
-    client = LabsRecordAPIClient(access_token=token)
+    da = SolicitationsDataAccess(
+        access_token=token,
+        program_id=program_id,
+        organization_id=organization_id,
+    )
     try:
-        # is_public is the user-facing API name; persistence is record.public on
-        # the LabsRecord envelope. Strip from data so the JSON column never
-        # duplicates the flag.
-        is_public = bool(data.get("is_public", False))
-        data = {k: v for k, v in data.items() if k != "is_public"}
-        prog_id = int(program_id) if program_id else None
-        record = client.create_record(
-            experiment=experiment,
-            type="solicitation",
-            data=data,
-            program_id=prog_id,
-            public=is_public,
-        )
+        record = da.create_solicitation(data)
         return _serialize_record(record)
+    except ValidationError as e:
+        raise _validation_error_to_mcp(e) from e
     finally:
-        client.close()
+        da.labs_api.close()
 
 
 @register(
@@ -319,7 +430,9 @@ def create_solicitation(
         "Pass program_id (or organization_id) for non-public records — the merge starts with "
         "a get_record_by_id that needs scope to authorize the read. Setting `is_public` in "
         "update_data also flips the server-side `public` ACL flag (the one the marketplace "
-        "filters on); omit `is_public` to leave the existing visibility unchanged."
+        "filters on); omit `is_public` to leave the existing visibility unchanged. "
+        "update_data is validated against the same canonical schema as create_solicitation "
+        "(partial mode — required fields not enforced). Unknown fields are rejected."
     ),
     input_schema={
         "type": "object",
@@ -330,8 +443,15 @@ def create_solicitation(
             },
             "update_data": {
                 "type": "object",
-                "description": "Fields to update. Merged (shallow) into the existing data dict.",
-                "additionalProperties": True,
+                "description": (
+                    "Fields to update. Merged (shallow) into the existing data dict. "
+                    "Same canonical shape as create_solicitation, all fields optional."
+                ),
+                "properties": {
+                    "is_public": {"type": "boolean"},
+                    **_CANONICAL_FIELD_PROPERTIES,
+                },
+                "additionalProperties": False,
             },
             "program_id": {
                 "type": "string",
@@ -362,6 +482,12 @@ def update_solicitation(
 ) -> dict:
     """Update an existing solicitation by merging update_data into its data dict.
 
+    Validates ``update_data`` against the canonical schema in partial mode
+    (required fields not enforced; everything else applies) BEFORE merging,
+    so drift surfaces with a pointed error at the field the caller sent
+    wrong — not after merge where it'd be harder to attribute. This is the
+    same validator the create path uses, just with ``partial=True``.
+
     Visibility (``is_public``) lives on the LabsRecord envelope as a separate ACL
     column, not inside the JSON ``data``. When ``update_data`` includes
     ``is_public``, we capture it before stripping the key from the merge and
@@ -369,6 +495,19 @@ def update_solicitation(
     actually sees the change. The redundant ``public`` key is also stripped to
     prevent the envelope name from being shadowed inside ``data``.
     """
+    # Validate the caller's partial payload against the canonical schema BEFORE
+    # the upstream fetch. Strip both `is_public` (envelope flag, not data) and
+    # the legacy `public` duplicate (defensively tolerated for callers that
+    # still send the old shape) — they'd otherwise trip the validator's
+    # unknown-fields check.
+    update_payload = dict(update_data)
+    update_payload.pop("is_public", None)
+    update_payload.pop("public", None)
+    try:
+        validate_solicitation_payload(update_payload, partial=True)
+    except ValidationError as e:
+        raise _validation_error_to_mcp(e) from e
+
     token = require_connect_token(user)
     client = LabsRecordAPIClient(
         access_token=token,

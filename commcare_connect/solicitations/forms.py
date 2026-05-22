@@ -9,6 +9,8 @@ import json
 
 from django import forms
 
+from commcare_connect.solicitations.validation import SOLICITATION_TYPE_CHOICES, STATUS_CHOICES
+
 # =========================================================================
 # Shared widget classes
 # =========================================================================
@@ -21,17 +23,9 @@ _SELECT_CLASSES = "base-dropdown"
 # Choice Constants
 # =========================================================================
 
-SOLICITATION_TYPE_CHOICES = [
-    ("eoi", "Expression of Interest (EOI)"),
-    ("rfp", "Request for Proposal (RFP)"),
-]
-
-STATUS_CHOICES = [
-    ("draft", "Draft"),
-    ("active", "Active"),
-    ("closed", "Closed"),
-    ("awarded", "Awarded"),
-]
+# SOLICITATION_TYPE_CHOICES and STATUS_CHOICES are the canonical source in
+# solicitations.validation; imported above so the form's ChoiceFields and the
+# validator stay in lockstep.
 
 RECOMMENDATION_CHOICES = [
     ("under_review", "Under Review"),

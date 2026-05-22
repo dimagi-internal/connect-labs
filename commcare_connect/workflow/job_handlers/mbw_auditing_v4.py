@@ -447,9 +447,7 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
                             baseline_completed += 1
 
             baseline_followup_rates[flw_username] = (
-                round(baseline_completed / baseline_denominator * 100)
-                if baseline_denominator > 0
-                else None
+                round(baseline_completed / baseline_denominator * 100) if baseline_denominator > 0 else None
             )
 
     # ── Previous run categories ──

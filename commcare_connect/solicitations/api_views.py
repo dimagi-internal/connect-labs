@@ -8,6 +8,7 @@ All data access goes through SolicitationsDataAccess (API-backed, no local DB).
 import json
 import logging
 
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -134,6 +135,10 @@ def api_solicitations_list(request):
             {"solicitation": _serialize_solicitation(solicitation)},
             status=201,
         )
+    except ValidationError as e:
+        # Canonical-schema drift caught at the data-access layer.
+        details = e.message_dict if hasattr(e, "message_dict") else {"__all__": list(e.messages)}
+        return JsonResponse({"error": "Invalid payload", "details": details}, status=400)
     except Exception:
         logger.exception("API: Failed to create solicitation")
         return JsonResponse({"error": "Failed to create solicitation"}, status=500)
