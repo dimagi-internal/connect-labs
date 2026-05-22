@@ -83,12 +83,14 @@ def _get_open_tasks(access_token: str, opportunity_id: int, progress_callback=No
 
 
 def _get_prev_categories(access_token: str, opportunity_id: int, workflow_definition_id: int) -> dict:
-    """Fetch the most recent performance category per FLW across all runs for this definition.
+    """Fetch the most recent performance category per FLW across all runs for this opportunity.
 
-    Merges worker_results from every candidate run so a FLW categorised in any
-    prior run (not just the single most-recent one) gets a Prev value. For each
-    FLW the entry with the latest assessed_at timestamp wins; falls back to the
-    run's created_at when assessed_at is absent.
+    Intentionally ignores definition_id so categories from prior workflow versions
+    (cloned definitions, template updates) remain visible — same policy as the
+    prev_categories_api view. Merges worker_results from every candidate run so a
+    FLW categorised in any prior run gets a Prev value. For each FLW the entry with
+    the latest assessed_at timestamp wins; falls back to the run's created_at when
+    assessed_at is absent.
     """
     try:
         from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
@@ -103,8 +105,7 @@ def _get_prev_categories(access_token: str, opportunity_id: int, workflow_defini
         candidates = [
             r
             for r in runs
-            if r.data.get("definition_id") == workflow_definition_id
-            and (r.data.get("state") or {}).get("worker_results")
+            if (r.data.get("state") or {}).get("worker_results")
         ]
         if not candidates:
             return {}
