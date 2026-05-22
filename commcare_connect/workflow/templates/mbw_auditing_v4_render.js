@@ -225,8 +225,22 @@ function WorkflowUI({
   var auditStatusDraft = _auditStatusDraft[0];
   var setAuditStatusDraft = _auditStatusDraft[1];
 
+  var _expandedTaskFlw = React.useState(null);
+  var expandedTaskFlw = _expandedTaskFlw[0];
+  var setExpandedTaskFlw = _expandedTaskFlw[1];
+  var _taskDetail = React.useState(null);
+  var taskDetail = _taskDetail[0];
+  var setTaskDetail = _taskDetail[1];
+  var _taskTranscript = React.useState(null);
+  var taskTranscript = _taskTranscript[0];
+  var setTaskTranscript = _taskTranscript[1];
+  var _taskDetailLoading = React.useState(false);
+  var taskDetailLoading = _taskDetailLoading[0];
+  var setTaskDetailLoading = _taskDetailLoading[1];
+
   var jobCleanupRef = React.useRef(null);
   var tab2CleanupRef = React.useRef(null);
+  var taskDetailRequestIdRef = React.useRef(0);
   // Holds selected usernames for the current run so runAnalysis can read them
   // even before onUpdateState resolves (instance.state not yet updated)
   var selectedForRunRef = React.useRef(
@@ -802,6 +816,7 @@ function WorkflowUI({
           hasTask: !!ts.triggered_at,
           taskStatus: ts.status || null,
           taskTriggeredAt: ts.triggered_at || null,
+          taskId: ts.task_id || null,
         });
       });
     },
@@ -1060,9 +1075,58 @@ function WorkflowUI({
       status: 'closed',
     });
     setTaskStates(updated);
+    setExpandedTaskFlw(null);
+    setTaskDetail(null);
+    setTaskTranscript(null);
     onUpdateState({ task_states: updated }).catch(function (e) {
       console.warn('task state save failed:', e);
     });
+  };
+
+  var toggleTaskExpand = function (username) {
+    if (expandedTaskFlw === username) {
+      taskDetailRequestIdRef.current++;
+      setExpandedTaskFlw(null);
+      setTaskDetail(null);
+      setTaskTranscript(null);
+      return;
+    }
+    var ts = taskStates[username] || {};
+    var tid = ts.task_id;
+    if (!tid) return;
+    var requestId = ++taskDetailRequestIdRef.current;
+    setExpandedTaskFlw(username);
+    setTaskDetailLoading(true);
+    setTaskDetail(null);
+    setTaskTranscript(null);
+    if (!actions || !actions.getTaskDetail) {
+      setTaskDetailLoading(false);
+      return;
+    }
+    actions
+      .getTaskDetail(tid)
+      .then(function (result) {
+        if (requestId !== taskDetailRequestIdRef.current) return null;
+        if (result && result.success && result.task) {
+          setTaskDetail(result.task);
+          return actions.getAITranscript(tid);
+        }
+        setTaskDetailLoading(false);
+        return null;
+      })
+      .then(function (transcriptResult) {
+        if (requestId !== taskDetailRequestIdRef.current) return;
+        setTaskDetailLoading(false);
+        if (transcriptResult && transcriptResult.success) {
+          setTaskTranscript(transcriptResult.messages || []);
+        } else if (transcriptResult) {
+          setTaskTranscript([]);
+        }
+      })
+      .catch(function () {
+        if (requestId !== taskDetailRequestIdRef.current) return;
+        setTaskDetailLoading(false);
+      });
   };
 
   var handleSetAuditStatus = function (username, status, reason) {
@@ -1265,37 +1329,33 @@ function WorkflowUI({
     if (flw.hasTask) {
       var isClosed =
         flw.taskStatus === 'closed' || flw.taskStatus === 'completed';
-      return React.createElement(
-        'div',
-        { className: 'flex flex-col gap-1 items-center' },
-        React.createElement(
+      if (isClosed) {
+        return React.createElement(
           'span',
           {
             className:
-              'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded ' +
-              (isClosed
-                ? 'bg-green-100 text-green-700'
-                : 'bg-blue-100 text-blue-700'),
+              'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-700',
           },
-          React.createElement('i', {
-            className:
-              'fa-solid ' + (isClosed ? 'fa-circle-check' : 'fa-clock'),
-          }),
-          flw.taskStatus || 'open',
-        ),
-        !isClosed &&
-          React.createElement(
-            'button',
-            {
-              className:
-                'text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200',
-              onClick: function () {
-                handleMarkTaskResolved(flw.username);
-              },
-              title: 'Mark as resolved',
-            },
-            'Resolve',
-          ),
+          React.createElement('i', { className: 'fa-solid fa-circle-check' }),
+          flw.taskStatus,
+        );
+      }
+      var isExpanded = expandedTaskFlw === flw.username;
+      return React.createElement(
+        'button',
+        {
+          className:
+            'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded ' +
+            (isExpanded
+              ? 'bg-blue-200 text-blue-800'
+              : 'bg-blue-100 text-blue-700 hover:bg-blue-200'),
+          onClick: function () {
+            toggleTaskExpand(flw.username);
+          },
+          title: 'View task details and chat history',
+        },
+        React.createElement('i', { className: 'fa-solid fa-clock' }),
+        flw.taskStatus || 'investigating',
       );
     }
     return React.createElement(
@@ -1310,6 +1370,198 @@ function WorkflowUI({
       },
       React.createElement('i', { className: 'fa-solid fa-plus mr-1' }),
       'Task',
+    );
+  };
+
+  var TaskDetailPanel = function (props) {
+    var username = props.username;
+    var colCount = props.colCount || 16;
+    return React.createElement(
+      'tr',
+      { key: username + '-task-detail' },
+      React.createElement(
+        'td',
+        {
+          colSpan: colCount,
+          className: 'px-0 py-0 bg-blue-50',
+        },
+        React.createElement(
+          'div',
+          {
+            className:
+              'border-t border-b border-blue-200 bg-white mx-4 my-2 rounded-lg shadow-sm overflow-hidden',
+          },
+          taskDetailLoading && !taskDetail
+            ? React.createElement(
+                'div',
+                { className: 'p-6 text-center text-gray-500' },
+                React.createElement('i', {
+                  className: 'fa-solid fa-spinner fa-spin mr-2',
+                }),
+                'Loading task...',
+              )
+            : taskDetail
+            ? React.createElement(
+                'div',
+                null,
+                React.createElement(
+                  'div',
+                  {
+                    className:
+                      'px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between',
+                  },
+                  React.createElement(
+                    'div',
+                    { className: 'flex items-center gap-2' },
+                    React.createElement('i', {
+                      className: 'fa-solid fa-clipboard-list text-blue-600',
+                    }),
+                    React.createElement(
+                      'span',
+                      { className: 'font-medium text-sm text-blue-900' },
+                      taskDetail.title,
+                    ),
+                    React.createElement(
+                      'span',
+                      {
+                        className:
+                          'px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700',
+                      },
+                      taskDetail.status || 'investigating',
+                    ),
+                  ),
+                  React.createElement(
+                    'button',
+                    {
+                      className: 'text-gray-400 hover:text-gray-600 text-sm',
+                      onClick: function () {
+                        toggleTaskExpand(username);
+                      },
+                    },
+                    React.createElement('i', {
+                      className: 'fa-solid fa-xmark',
+                    }),
+                  ),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'flex' },
+                  React.createElement(
+                    'div',
+                    {
+                      className: 'flex-1 min-w-0 border-r border-gray-100',
+                    },
+                    React.createElement(
+                      'div',
+                      {
+                        className:
+                          'px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center',
+                      },
+                      React.createElement(
+                        'span',
+                        { className: 'text-xs font-medium text-gray-600' },
+                        React.createElement('i', {
+                          className: 'fa-solid fa-comments mr-1',
+                        }),
+                        'AI Conversation',
+                      ),
+                    ),
+                    React.createElement(
+                      'div',
+                      {
+                        className: 'p-3 overflow-y-auto space-y-2',
+                        style: { minHeight: '120px', maxHeight: '400px' },
+                      },
+                      taskTranscript && taskTranscript.length > 0
+                        ? taskTranscript.map(function (msg, idx) {
+                            var isAssistant = msg.role === 'assistant';
+                            return React.createElement(
+                              'div',
+                              {
+                                key: idx,
+                                className:
+                                  'flex ' +
+                                  (isAssistant
+                                    ? 'justify-start'
+                                    : 'justify-end'),
+                              },
+                              React.createElement(
+                                'div',
+                                {
+                                  className:
+                                    'rounded-lg px-3 py-2 text-sm ' +
+                                    (isAssistant
+                                      ? 'bg-gray-100 text-gray-800'
+                                      : 'bg-blue-500 text-white'),
+                                  style: { maxWidth: '85%' },
+                                },
+                                React.createElement(
+                                  'div',
+                                  { className: 'whitespace-pre-wrap break-words' },
+                                  msg.content,
+                                ),
+                                msg.created_at &&
+                                  React.createElement(
+                                    'div',
+                                    {
+                                      className:
+                                        'text-xs mt-1 ' +
+                                        (isAssistant
+                                          ? 'text-gray-400'
+                                          : 'text-blue-200'),
+                                    },
+                                    new Date(msg.created_at).toLocaleString(),
+                                  ),
+                              ),
+                            );
+                          })
+                        : taskTranscript && taskTranscript.length === 0
+                        ? React.createElement(
+                            'div',
+                            {
+                              className:
+                                'text-center text-gray-400 text-sm py-4',
+                            },
+                            React.createElement('i', {
+                              className: 'fa-solid fa-comment-slash mr-1',
+                            }),
+                            'No messages yet',
+                          )
+                        : !taskDetailLoading
+                        ? React.createElement(
+                            'div',
+                            {
+                              className:
+                                'text-center text-gray-400 text-sm py-4',
+                            },
+                            'Loading conversation...',
+                          )
+                        : null,
+                    ),
+                  ),
+                  React.createElement(
+                    'div',
+                    { className: 'w-56 p-4 space-y-3 bg-gray-50 flex-shrink-0' },
+                    React.createElement(
+                      'button',
+                      {
+                        className:
+                          'w-full px-3 py-2 rounded text-sm font-medium bg-green-600 text-white hover:bg-green-700',
+                        onClick: function () {
+                          handleMarkTaskResolved(username);
+                        },
+                      },
+                      React.createElement('i', {
+                        className: 'fa-solid fa-circle-check mr-1',
+                      }),
+                      'Resolve task',
+                    ),
+                  ),
+                ),
+              )
+            : null,
+        ),
+      ),
     );
   };
 
@@ -2322,13 +2574,25 @@ function WorkflowUI({
             'tbody',
             { className: 'bg-white divide-y divide-gray-200' },
             filteredData.map(function (flw) {
-              return React.createElement(MetricRow, {
-                key: flw.username,
-                flw: flw,
-                showChange: true,
-                showAuditStatus: true,
-                metricCols: effectiveMetricCols,
-              });
+              var rows = [
+                React.createElement(MetricRow, {
+                  key: flw.username,
+                  flw: flw,
+                  showChange: true,
+                  showAuditStatus: true,
+                  metricCols: effectiveMetricCols,
+                }),
+              ];
+              if (expandedTaskFlw === flw.username) {
+                rows.push(
+                  React.createElement(TaskDetailPanel, {
+                    key: flw.username + '-detail',
+                    username: flw.username,
+                    colCount: effectiveMetricCols.length + 9,
+                  }),
+                );
+              }
+              return rows;
             }),
             filteredData.length === 0 &&
               React.createElement(
