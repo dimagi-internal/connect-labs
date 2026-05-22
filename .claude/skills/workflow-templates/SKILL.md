@@ -122,3 +122,11 @@ While iterating on a new template, do not redeploy labs between edits. Instead:
 5. Commit the `.py` (and sidecar) once the design has settled.
 
 If the tool returns `PARTIAL_SYNC`, call `workflow_get` to see what landed and what didn't, then fix the failing piece (usually a pipeline schema) and re-run. The definition and render_code writes are durable across the failure.
+
+### Parser grammar — what the sync tool can and can't read
+
+`workflow_sync_from_template_file` parses the `.py` source via a constrained AST walker — no `exec`. It supports module-level assignments that are: string/number/bool literals, dict/list/tuple/set literals, references to other module-level names, negative numeric literals, and the `(Path(__file__).parent / "X.js").read_text(...)` sidecar idiom. Anything else (function calls in `DEFINITION`/`PIPELINE_SCHEMAS`, list comprehensions, `*spread` unpacking, subscript access, `dict.get(...)`) makes the tool reject with `INVALID_TEMPLATE`.
+
+If you want a template to be sync'd, keep its module-level definitions in that literal-with-names form. If you need helper functions or comprehensions, run them inside a module-level loop that builds plain lists/dicts and assign those plain values to `DEFINITION`/`PIPELINE_SCHEMAS` instead.
+
+Templates known to be sync-incompatible today (use a redeploy instead, or refactor the offending module-level expression to literal form): `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_monitoring_v3`, `program_admin_audit`, `sam_followup`. The parametrized test in `commcare_connect/mcp/tests/test_template_parser.py::test_parser_handles_every_shipped_template` is the source of truth for this list.
