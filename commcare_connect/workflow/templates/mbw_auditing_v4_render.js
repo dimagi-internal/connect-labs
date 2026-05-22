@@ -385,7 +385,8 @@ function WorkflowUI({
   };
 
   var resultBadge = function (result) {
-    if (!result) return null;
+    var str = typeof result === 'string' ? result : (result && result.result) || '';
+    if (!str) return null;
     var styles = {
       eligible_for_renewal: 'bg-green-100 text-green-800',
       requires_improvement: 'bg-amber-100 text-amber-800',
@@ -396,9 +397,9 @@ function WorkflowUI({
       {
         className:
           'px-1.5 py-0.5 rounded text-xs font-medium whitespace-nowrap ' +
-          (styles[result] || 'bg-gray-100 text-gray-700'),
+          (styles[str] || 'bg-gray-100 text-gray-700'),
       },
-      result.replace(/_/g, ' '),
+      str.replace(/_/g, ' '),
     );
   };
 
