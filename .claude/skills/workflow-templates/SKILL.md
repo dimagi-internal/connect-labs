@@ -110,3 +110,15 @@ Test by cloning into a throwaway opportunity:
 > "Create a new workflow from the my_new_template template in opp 999"
 
 Claude will call `workflow_create_from_template` and you can verify the result lives in labs. If the template needs changes, edit the Python file and redeploy — seed templates are a deploy-gated surface.
+
+## Iterating on a new template — use the sync tool, not deploys
+
+While iterating on a new template, do not redeploy labs between edits. Instead:
+
+1. Create the `.py` (and any `_render.js` sidecar) under `commcare_connect/workflow/templates/`.
+2. Spin up a preview workflow via `workflow_create_from_template` (manually-registered templates may need a one-time deploy first; once registered, additional iteration is deploy-free).
+3. Iterate: edit the template file, call `workflow_sync_from_template_file(workflow_id, opportunity_id, template_source=<py contents>, sidecar_files={"foo_render.js": <js contents>}, expected_render_code_version=N, expected_definition_version=M)`, reload the labs tab.
+4. Use `dry_run=true` to validate + diff without writing when you want a sanity check before pushing.
+5. Commit the `.py` (and sidecar) once the design has settled.
+
+If the tool returns `PARTIAL_SYNC`, call `workflow_get` to see what landed and what didn't, then fix the failing piece (usually a pipeline schema) and re-run. The definition and render_code writes are durable across the failure.
