@@ -236,7 +236,7 @@ When a solicitation is created, Labs now checks that all required fields are pre
 This replaces the previous behaviour where incorrectly shaped solicitations were saved silently, causing data to land in the wrong place. If you are using the manager UI to create a solicitation and something is wrong with the form, you will now see an inline error on the affected field rather than having the problem slip through unnoticed.
 
 !!! note "If you receive a validation error"
-    Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, `overview` instead of `description`) or leaving the application deadline blank. Correct the flagged fields and resubmit.
+Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, `overview` instead of `description`) or leaving the application deadline blank. Correct the flagged fields and resubmit.
 
 ### Evaluation rubric
 

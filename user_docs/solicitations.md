@@ -41,7 +41,7 @@ Fill in:
 Click **Generate Criteria** and paste in text describing your program requirements, or upload a PDF. The AI will suggest a structured set of evaluation criteria and scoring weights. Review and adjust the suggestions before saving.
 
 !!! info "Validation errors on the creation form"
-    Labs now checks that all fields are in the correct format when a solicitation is saved. If something is wrong — for example, a deadline that isn't a valid date, an evaluation criterion missing a name, or a response question that references something that no longer exists — you will see an inline error message on the relevant field. Correct the flagged fields and save again. These checks prevent incomplete or misformatted solicitations from being stored silently.
+Labs now checks that all fields are in the correct format when a solicitation is saved. If something is wrong — for example, a deadline that isn't a valid date, an evaluation criterion missing a name, or a response question that references something that no longer exists — you will see an inline error message on the relevant field. Correct the flagged fields and save again. These checks prevent incomplete or misformatted solicitations from being stored silently.
 
 ### Reviewing Responses
 
@@ -82,7 +82,7 @@ Published solicitations are visible on the Labs solicitations page without loggi
 4. Review your answers, then click **Submit**
 
 !!! warning "Submissions are final"
-    Responses cannot be edited after submission. Make sure your response is complete before submitting. If you need to make a correction, contact the program team directly.
+Responses cannot be edited after submission. Make sure your response is complete before submitting. If you need to make a correction, contact the program team directly.
 
 ### Tracking Your Submission
 

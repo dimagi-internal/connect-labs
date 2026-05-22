@@ -385,11 +385,16 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
                 # The form's field-level validators already passed — this
                 # surfaces structural issues (e.g. dangling linked_questions
                 # in evaluation_criteria) that the form doesn't otherwise see.
+                # Attach to the matching form field when one exists so errors
+                # render inline; fall back to non_field_errors for nested paths
+                # (e.g. ``evaluation_criteria[0].linked_questions``).
                 errors = e.message_dict if hasattr(e, "message_dict") else {"__all__": list(e.messages)}
+                form_fields = set(form.fields)
                 for field, msgs in errors.items():
                     msg_list = msgs if isinstance(msgs, list) else [msgs]
+                    target = field if field in form_fields else None
                     for msg in msg_list:
-                        form.add_error(None, f"{field}: {msg}")
+                        form.add_error(target, msg if target else f"{field}: {msg}")
                 ctx = self.get_context_data(**kwargs)
                 ctx["form"] = form
                 return self.render_to_response(ctx)

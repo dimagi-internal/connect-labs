@@ -495,19 +495,6 @@ def update_solicitation(
     actually sees the change. The redundant ``public`` key is also stripped to
     prevent the envelope name from being shadowed inside ``data``.
     """
-    # Validate the caller's partial payload against the canonical schema BEFORE
-    # the upstream fetch. Strip both `is_public` (envelope flag, not data) and
-    # the legacy `public` duplicate (defensively tolerated for callers that
-    # still send the old shape) — they'd otherwise trip the validator's
-    # unknown-fields check.
-    update_payload = dict(update_data)
-    update_payload.pop("is_public", None)
-    update_payload.pop("public", None)
-    try:
-        validate_solicitation_payload(update_payload, partial=True)
-    except ValidationError as e:
-        raise _validation_error_to_mcp(e) from e
-
     token = require_connect_token(user)
     client = LabsRecordAPIClient(
         access_token=token,
@@ -533,6 +520,19 @@ def update_solicitation(
         update_data.pop("is_public", None)
         update_data.pop("public", None)
         merged_data.update(update_data)
+
+        # Validate the MERGED shape, not the partial. The validator's
+        # cross-field checks (evaluation_criteria.linked_questions must
+        # reference declared question ids) need to see both sides — and
+        # for a partial update that only touches one side, the other
+        # side comes from the existing record. Validating just the
+        # partial would over-reject any criteria-only or questions-only
+        # update where the existing-record's matching half was needed
+        # to satisfy the cross-check.
+        try:
+            validate_solicitation_payload(merged_data, partial=True)
+        except ValidationError as e:
+            raise _validation_error_to_mcp(e) from e
 
         update_kwargs: dict = {
             "record_id": solicitation_id,

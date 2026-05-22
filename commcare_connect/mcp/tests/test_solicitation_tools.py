@@ -628,13 +628,19 @@ def test_update_solicitation_propagates_is_public_to_server_flag(mock_client_cls
 
 
 @pytest.mark.django_db
-def test_update_solicitation_rejects_unknown_field(client, auth_user):
-    """Same drift surface as create — unknown fields in update_data are now rejected.
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_rejects_unknown_field(mock_client_cls, client, auth_user):
+    """Same drift surface as create — unknown fields in update_data are rejected.
 
-    Pre-fetch validation: the validator fires before LabsRecordAPIClient is
-    even instantiated, so the test doesn't need to mock anything beyond auth.
+    Validation runs against the merged post-fetch shape, so we mock the fetch
+    to return a benign existing record.
     """
     _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = _make_mock_record(
+        42, "solicitation", data={"title": "Old", "description": "x", "solicitation_type": "eoi"}
+    )
 
     data = _call_tool(
         client,
@@ -653,9 +659,15 @@ def test_update_solicitation_rejects_unknown_field(client, auth_user):
 
 
 @pytest.mark.django_db
-def test_update_solicitation_rejects_bad_enum(client, auth_user):
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_rejects_bad_enum(mock_client_cls, client, auth_user):
     """Field-level validation fires in partial mode for present fields."""
     _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = _make_mock_record(
+        42, "solicitation", data={"title": "Old", "description": "x", "solicitation_type": "eoi"}
+    )
 
     data = _call_tool(
         client,
@@ -672,9 +684,15 @@ def test_update_solicitation_rejects_bad_enum(client, auth_user):
 
 
 @pytest.mark.django_db
-def test_update_solicitation_rejects_dangling_linked_question(client, auth_user):
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_rejects_dangling_linked_question(mock_client_cls, client, auth_user):
     """Nested-shape checks fire in partial mode just like in create."""
     _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = _make_mock_record(
+        42, "solicitation", data={"title": "Old", "description": "x", "solicitation_type": "eoi"}
+    )
 
     data = _call_tool(
         client,
@@ -700,6 +718,85 @@ def test_update_solicitation_rejects_dangling_linked_question(client, auth_user)
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] == "INVALID_SCHEMA"
     assert "q_does_not_exist" in err["message"]
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_criteria_only_against_existing_questions(mock_client_cls, client, auth_user):
+    """Updating ONLY criteria validates against the existing record's questions.
+
+    Locks in the post-merge validation: a partial update touching just
+    evaluation_criteria with linked_questions referencing the existing record's
+    question ids must succeed. Before the merged-shape fix, this case
+    falsely rejected — the validator saw an empty question_ids set because
+    questions weren't in the partial payload.
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    # Existing record has q1 already.
+    existing_data = {
+        "title": "Existing",
+        "description": "x",
+        "solicitation_type": "eoi",
+        "questions": [{"id": "q1", "text": "Original?", "type": "text"}],
+    }
+    mock_client.get_record_by_id.return_value = _make_mock_record(42, "solicitation", data=existing_data)
+    mock_client.update_record.return_value = _make_mock_record(42, "solicitation", data=existing_data)
+
+    # Partial update sends ONLY criteria. linked_questions=["q1"] resolves
+    # against the merged shape (existing.questions ∪ none-from-payload).
+    data = _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {
+            "solicitation_id": 42,
+            "update_data": {
+                "evaluation_criteria": [{"id": "ec1", "name": "Quality", "weight": 100, "linked_questions": ["q1"]}],
+            },
+        },
+    )
+
+    assert data["result"]["isError"] is False, data
+    mock_client.update_record.assert_called_once()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.solicitations.LabsRecordAPIClient")
+def test_update_solicitation_criteria_only_dangling_against_existing(mock_client_cls, client, auth_user):
+    """Negative pair to the above: criteria-only update referencing a question
+    that DOESN'T exist in the merged shape is still rejected.
+    """
+    _, raw = auth_user
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.get_record_by_id.return_value = _make_mock_record(
+        42,
+        "solicitation",
+        data={
+            "title": "Existing",
+            "description": "x",
+            "solicitation_type": "eoi",
+            "questions": [{"id": "q1", "text": "Original?", "type": "text"}],
+        },
+    )
+
+    data = _call_tool(
+        client,
+        raw,
+        "update_solicitation",
+        {
+            "solicitation_id": 42,
+            "update_data": {
+                "evaluation_criteria": [{"id": "ec1", "name": "X", "weight": 100, "linked_questions": ["q_nope"]}],
+            },
+        },
+    )
+
+    assert data["result"]["isError"] is True
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_SCHEMA"
+    assert "q_nope" in data["result"]["structuredContent"]["error"]["message"]
 
 
 @pytest.mark.django_db
