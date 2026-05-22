@@ -2387,7 +2387,7 @@ function WorkflowUI({
                     meter_per_visit: postTask.meter_per_visit,
                     dist_ratio: postTask.dist_ratio,
                     minute_per_visit: postTask.minute_per_visit,
-                    followup_rate_denom: postTask.followup_rate_denom,
+                    followup_rate_denom: flw.followup_rate_denom,
                     ebf_denom: postTask.ebf_denom,
                     gps_denom: postTask.gps_denom,
                     duration_denom: postTask.duration_denom,
