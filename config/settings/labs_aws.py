@@ -78,7 +78,6 @@ if SENTRY_DSN:
 CSRF_TRUSTED_ORIGINS = ["https://*.127.0.0.1"] + env.list("CSRF_TRUSTED_ORIGINS", default=[])
 # LABS ENVIRONMENT
 # ------------------------------------------------------------------------------
-IS_LABS_ENVIRONMENT = True
 DEPLOY_ENVIRONMENT = "labs"
 
 # OAuth configuration

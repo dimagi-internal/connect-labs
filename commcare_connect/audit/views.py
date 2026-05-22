@@ -126,27 +126,18 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
         labs_context = getattr(self.request, "labs_context", {})
         context["has_context"] = bool(labs_context.get("opportunity_id") or labs_context.get("program_id"))
 
-        # Check for Connect OAuth token
-        from django.conf import settings
+        # Check for Connect OAuth token (lives in session.labs_oauth, populated at login).
+        labs_oauth = self.request.session.get("labs_oauth", {})
+        context["has_connect_token"] = bool(labs_oauth.get("access_token"))
+        if labs_oauth.get("expires_at"):
+            import datetime
 
-        # In labs mode, OAuth token is in session
-        if getattr(settings, "IS_LABS_ENVIRONMENT", False):
-            labs_oauth = self.request.session.get("labs_oauth", {})
-            context["has_connect_token"] = bool(labs_oauth.get("access_token"))
-            if labs_oauth.get("expires_at"):
-                import datetime
+            from django.utils import timezone
 
-                from django.utils import timezone
-
-                context["token_expires_at"] = datetime.datetime.fromtimestamp(
-                    labs_oauth["expires_at"], tz=timezone.get_current_timezone()
-                )
-            else:
-                context["token_expires_at"] = None
+            context["token_expires_at"] = datetime.datetime.fromtimestamp(
+                labs_oauth["expires_at"], tz=timezone.get_current_timezone()
+            )
         else:
-            # allauth SocialAccount was removed during labs simplification.
-            # Non-labs users won't have Connect tokens.
-            context["has_connect_token"] = False
             context["token_expires_at"] = None
 
         return context

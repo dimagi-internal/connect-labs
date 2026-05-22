@@ -7,7 +7,6 @@ Usage:
     python manage.py test_experiment_views
 """
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.test import Client, override_settings
@@ -22,11 +21,6 @@ class Command(BaseCommand):
         self.stdout.write("=" * 80)
         self.stdout.write(self.style.SUCCESS("TASKS VIEWS RUNTIME TEST"))
         self.stdout.write("=" * 80)
-
-        # Check if we're in labs mode
-        is_labs = getattr(settings, "IS_LABS_ENVIRONMENT", False)
-        if is_labs:
-            self.stdout.write(self.style.WARNING("\n[INFO] Labs mode detected\n"))
 
         errors = []
         tests_passed = 0
@@ -48,22 +42,8 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"    [FAIL] Could not create test user: {e}"))
             return
 
-        # Test with labs mode disabled first
-        self.stdout.write("\n" + "=" * 80)
-        self.stdout.write("[Phase 1] Testing with IS_LABS_ENVIRONMENT=False...")
-        self.stdout.write("=" * 80)
-
-        with override_settings(IS_LABS_ENVIRONMENT=False, ALLOWED_HOSTS=["*"]):
-            client = Client()
-            client.force_login(user)
-            errors, tests_passed = self._run_all_tests(client, errors, tests_passed)
-
-        # Test with labs mode enabled (the real production scenario)
-        self.stdout.write("\n" + "=" * 80)
-        self.stdout.write("[Phase 2] Testing with IS_LABS_ENVIRONMENT=True (real scenario)...")
-        self.stdout.write("=" * 80)
-
-        with override_settings(IS_LABS_ENVIRONMENT=True, ALLOWED_HOSTS=["*"]):
+        # Allow test host so the Client() requests pass ALLOWED_HOSTS.
+        with override_settings(ALLOWED_HOSTS=["*"]):
             client = Client()
             client.force_login(user)
             errors, tests_passed = self._run_all_tests(client, errors, tests_passed)

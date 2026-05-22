@@ -33,10 +33,6 @@ CELERY_TASK_STORE_EAGER_RESULT = True  # Store results even in eager mode so we 
 # CommCareConnect
 # ------------------------------------------------------------------------------
 
-# Labs Mode Configuration
-# ------------------------------------------------------------------------------
-IS_LABS_ENVIRONMENT = True
-
 # OAuth configuration
 LABS_OAUTH_SCOPES = ["export", "openid"]
 
