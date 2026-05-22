@@ -70,7 +70,7 @@ ALLOWED_FIELDS: frozenset[str] = frozenset(
 
 REQUIRED_FIELDS: tuple[str, ...] = ("title", "description", "solicitation_type")
 
-_QUESTION_FIELDS: frozenset[str] = frozenset({"id", "text", "type", "required", "options"})
+_QUESTION_FIELDS: frozenset[str] = frozenset({"id", "text", "type", "required", "options", "framing"})
 _CRITERION_FIELDS: frozenset[str] = frozenset(
     {"id", "name", "weight", "description", "scoring_guide", "linked_questions"}
 )
@@ -125,6 +125,11 @@ def _validate_questions(questions) -> set[str]:
 
         if "required" in q and not isinstance(q["required"], bool):
             raise ValidationError({f"{prefix}.required": "must be a boolean"})
+
+        if "framing" in q and (not isinstance(q["framing"], str) or not q["framing"].strip()):
+            # Optional, but if present must be non-empty — empty framing renders
+            # an awkward "Why we're asking: " label with nothing after it.
+            raise ValidationError({f"{prefix}.framing": "must be a non-empty string"})
 
         if q_type == "multiple_choice":
             opts = q.get("options")

@@ -227,6 +227,45 @@ def test_question_rejects_unknown_keys():
         )
 
 
+def test_question_framing_passes_when_present():
+    """Optional 'why we're asking' preface accepts non-empty strings."""
+    validate_solicitation_payload(
+        {
+            **_minimal_valid(),
+            "questions": [
+                {
+                    "id": "q1",
+                    "text": "Propose your per-HH FLW rate.",
+                    "type": "text",
+                    "framing": "Helps us calibrate against the payment band.",
+                }
+            ],
+        }
+    )
+
+
+def test_question_framing_rejects_empty_string():
+    """Blank framing would render an awkward 'Why we're asking: ' label with no content."""
+    with pytest.raises(ValidationError) as exc_info:
+        validate_solicitation_payload(
+            {
+                **_minimal_valid(),
+                "questions": [{"id": "q1", "text": "?", "type": "text", "framing": "   "}],
+            }
+        )
+    assert "questions[0].framing" in exc_info.value.message_dict
+
+
+def test_question_framing_rejects_non_string():
+    with pytest.raises(ValidationError):
+        validate_solicitation_payload(
+            {
+                **_minimal_valid(),
+                "questions": [{"id": "q1", "text": "?", "type": "text", "framing": 123}],
+            }
+        )
+
+
 # ---------------------------------------------------------------------------
 # Evaluation criteria
 # ---------------------------------------------------------------------------
