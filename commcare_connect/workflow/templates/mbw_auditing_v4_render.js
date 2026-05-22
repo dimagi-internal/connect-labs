@@ -509,6 +509,10 @@ function WorkflowUI({
                       title: t.title,
                     };
                   });
+                  // Persist task_id so it survives page refresh
+                  onUpdateState({ task_states: merged }).catch(function (e) {
+                    console.warn('task_states persist failed:', e);
+                  });
                   return merged;
                 });
               }
