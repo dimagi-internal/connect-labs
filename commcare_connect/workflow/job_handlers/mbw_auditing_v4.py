@@ -401,6 +401,14 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
     # shown in the Tab 2 parenthetical: e.g. "86% (▲ from 82%)".
     baseline_followup_rates: dict[str, int | None] = {}
     if task_filters:
+        # Pre-index mothers by their attributed FLW so the per-FLW baseline loop
+        # doesn't scan all mothers for each FLW (O(FLWs × mothers) → O(mothers)).
+        mothers_by_flw: dict[str, list[str]] = {}
+        for mid in mother_schedules:
+            flw = mother_to_flw.get(mid)
+            if flw:
+                mothers_by_flw.setdefault(flw, []).append(mid)
+
         for flw_username, triggered_at_str in task_filters.items():
             trigger_date_str = (triggered_at_str or "")[:10]
             if not trigger_date_str:
@@ -414,10 +422,8 @@ def handle_mbw_auditing_v4_job(job_config: dict, access_token: str, progress_cal
             baseline_completed = 0
             baseline_denominator = 0
 
-            for mid, schedules in mother_schedules.items():
-                if mother_to_flw.get(mid) != flw_username:
-                    continue
-
+            for mid in mothers_by_flw.get(flw_username, []):
+                schedules = mother_schedules[mid]
                 mother_visits = visits_by_mother_all.get(mid, {})
 
                 for s in schedules:
