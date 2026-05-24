@@ -539,6 +539,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#generating-demo-or-test-data-from-a-real-opportunity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generating Demo or Test Data from a Real Opportunity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#creating-a-new-workflow-with-claude-code" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -698,6 +709,45 @@
     <span class="md-ellipsis">
       
         Prev column
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#solicitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Solicitations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Solicitations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-fields-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required fields and validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#evaluation-rubric" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Evaluation rubric
       
     </span>
   </a>
@@ -1079,6 +1129,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#generating-demo-or-test-data-from-a-real-opportunity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generating Demo or Test Data from a Real Opportunity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#creating-a-new-workflow-with-claude-code" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1250,6 +1311,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#solicitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Solicitations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Solicitations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-fields-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required fields and validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#evaluation-rubric" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Evaluation rubric
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-questions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1387,6 +1487,10 @@
 <td><strong>Bulk Image Audit</strong></td>
 <td>Image-based QA combined with workflow status</td>
 </tr>
+<tr>
+<td><strong>CHC Nutrition Analysis</strong></td>
+<td>Community health centre nutrition program monitoring</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -1408,6 +1512,25 @@
 </ol>
 <p>All aggregation belongs in SQL. If Claude Code ever suggests doing aggregation in Python instead, that is a signal the session has gone off track — ask in <strong>#connect-labs</strong> before continuing. Because the pipelines use the same JSON query approach as Superset, you can paste a pipeline's SQL directly into Superset to debug it if something looks wrong.</p>
 <p>The <code>custom_analysis/</code> section of Labs predates the workflow engine. Most of those dashboards could now be rebuilt as workflows. Write custom Django or Python only for a genuinely complex multi-step UI — and even then, the better answer is usually to split the work into multiple simpler workflows.</p>
+<h3 id="generating-demo-or-test-data-from-a-real-opportunity">Generating Demo or Test Data from a Real Opportunity<a class="headerlink" href="#generating-demo-or-test-data-from-a-real-opportunity" title="Permanent link">&para;</a></h3>
+<p>If you need realistic data for testing, training, or demonstrations, Labs can generate a <strong>synthetic dataset</strong> based on the statistical profile of an existing opportunity — without any real patient data leaving the server.</p>
+<p>This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges, and so on) and producing a synthetic dataset that looks realistic but contains no actual records. The result can be used to populate a test workflow instance so you can demonstrate the dashboard or validate a new template without using live data.</p>
+<p>Synthetic opportunities now support the complete program management loop, not just the dashboard view. This means a demo can include:</p>
+<ul>
+<li><strong>Audit drill-downs with MUAC photos</strong> — so stakeholders can see what an image-based quality audit looks like end to end.</li>
+<li><strong>Task follow-ups</strong> — showing how supervisors assign and track corrective actions after a flagged visit.</li>
+<li><strong>OCS coaching transcripts</strong> — demonstrating the outreach coaching conversation flow within the synthetic opportunity.</li>
+</ul>
+<p>This makes synthetic data suitable for full stakeholder and funder demonstrations without any real patient data being used.</p>
+<p>To use this capability, ask your program administrator or raise a request in <strong>#connect-labs</strong>. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.</p>
+<div class="admonition note">
+<p class="admonition-title">No real data is used in the output</p>
+</div>
+<p>The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.</p>
+<div class="admonition note">
+<p class="admonition-title">Nutrition metrics and other program-specific fields in synthetic data</p>
+</div>
+<p>Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.</p>
 <h3 id="creating-a-new-workflow-with-claude-code">Creating a New Workflow with Claude Code<a class="headerlink" href="#creating-a-new-workflow-with-claude-code" title="Permanent link">&para;</a></h3>
 <ol>
 <li>
@@ -1517,35 +1640,25 @@
 <h3 id="prev-column">Prev column<a class="headerlink" href="#prev-column" title="Permanent link">&para;</a></h3>
 <p>The <strong>Prev</strong> column shows the performance category assigned to each field worker in the most recent previous run. This lets you compare a worker's current category against where they stood last time. The column looks back across previous workflow versions as well, so a worker's prior category will appear even if the workflow has been updated since that run. If the column was showing "—" for all workers even when previous runs existed, that display issue has been corrected — the column now correctly loads categories from the most recent run where categories were set.</p>
 <hr />
+<h2 id="solicitations">Solicitations<a class="headerlink" href="#solicitations" title="Permanent link">&para;</a></h2>
+<p>Solicitations are the structured postings used to invite field workers to apply for an opportunity. They are created either through the MCP tool or via the Labs manager interface.</p>
+<h3 id="required-fields-and-validation">Required fields and validation<a class="headerlink" href="#required-fields-and-validation" title="Permanent link">&para;</a></h3>
+<p>When a solicitation is created, Labs now checks that all required fields are present and correctly named before saving. If anything is wrong — a misspelled field name, a missing deadline, a malformed evaluation rubric, or a question reference that points to something that doesn't exist — the creation will fail immediately with a clear error message describing exactly what needs to be fixed.</p>
+<p>This replaces the previous behaviour where incorrectly shaped solicitations were saved silently, causing data to land in the wrong place. If you are using the manager UI to create a solicitation and something is wrong with the form, you will now see an inline error on the affected field rather than having the problem slip through unnoticed.</p>
+<div class="admonition note">
+<p class="admonition-title">If you receive a validation error</p>
+</div>
+<p>Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, <code>overview</code> instead of <code>description</code>) or leaving the application deadline blank. Correct the flagged fields and resubmit.</p>
+<h3 id="evaluation-rubric">Evaluation rubric<a class="headerlink" href="#evaluation-rubric" title="Permanent link">&para;</a></h3>
+<p>Each solicitation can include an evaluation rubric — a list of criteria used to score applications. Each criterion must have a <strong>name</strong> and a <strong>description</strong>. Any questions referenced in the rubric must exist in the solicitation's question list. If a criterion references a question that isn't defined, the validation will catch this and tell you which reference is broken.</p>
+<hr />
 <h2 id="common-questions">Common Questions<a class="headerlink" href="#common-questions" title="Permanent link">&para;</a></h2>
 <p><strong>How do I create a new workflow for my program?</strong>
 Start from the closest existing template and have Claude Code build a new one — see <a href="#creating-and-customizing-workflows">Creating and Customizing Workflows</a> above for step-by-step guidance. You don't need to run Labs locally; changes deploy directly to Labs prod.</p>
 <p><strong>Should I build a workflow or a custom dashboard in Python?</strong>
 Use a workflow for almost all program reporting needs. Custom Python or Django code is only warranted for genuinely complex multi-step UIs — and even then, breaking the work into multiple simpler workflows is usually the right answer.</p>
 <p><strong>Claude Code keeps generating Python aggregation code instead of SQL — what should I do?</strong>
-All data aggregation in workflows must be SQL-based. Python aggregation means the session has gone off track. Ask in <strong>#connect-labs</strong>, or start a fresh Claude Code session with just a clean summary of your requirements as input.</p>
-<p><strong>I edited a workflow and then redeployed Labs — did I lose my changes?</strong>
-No. Workflow definitions are stored in Connect prod, not in the Labs environment. Redeploying Labs only updates the rendering layer; your workflow data is unaffected.</p>
-<p><strong>Why is a worker's data missing or outdated?</strong>
-Pipelines refresh data on a schedule. If a CommCare form was submitted recently, it may take up to 30 minutes to appear. Look for the "Last refreshed" timestamp at the top of the workflow.</p>
-<p><strong>Can I export the workflow data?</strong>
-Some workflows include an export button in the top toolbar. If yours doesn't, ask your program administrator — this can be configured.</p>
-<p><strong>Can I edit what a workflow displays?</strong>
-Program administrators can edit workflow layouts using the AI-powered workflow editor. See <a href="../ai-features/">AI Features</a> for details.</p>
-<p><strong>The dashboard looks different from yesterday — what changed?</strong>
-Workflow dashboards are actively developed. Check the <a href="https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513/Connect+Labs+Changelog">weekly changelog</a> for recent updates.</p>
-<p><strong>The MBW Monitoring numbers look different from what I saw before — is something wrong?</strong>
-Several calculations in the MBW Monitoring dashboard were updated to match the original MBW v1 definitions more precisely. In particular, eligible mother counts, completion rates, performance categories, and GPS figures may shift slightly compared to earlier versions of the dashboard. The new numbers are more accurate. If a figure still looks unexpected, check the "Last refreshed" timestamp and contact your program administrator if the discrepancy persists.</p>
-<p><strong>The MBW Auditing V4 dashboard was showing an error on load — is that fixed?</strong>
-Yes. A loading error that caused the dashboard to crash before displaying any data has been resolved. If you continue to see an error, try refreshing the page. If the problem persists, contact your program administrator.</p>
-<p><strong>The % Still Eligible figure in MBW Auditing V4 looks much lower than expected — is something wrong?</strong>
-This figure was previously undercounting eligible mothers due to two issues: certain visit types were not being matched correctly to their scheduled entries, and the ANC visit was being included in the missed-visit check even though it is already a requirement for entering the denominator. Both issues have been corrected. If the number still looks unexpected after a data refresh, contact your program administrator.</p>
-<p><strong>The MBW Auditing V4 data looks incomplete or like it isn't accounting for all cases — is something wrong?</strong>
-This was caused by a background processing issue where open tasks were silently not being loaded, resulting in the auditing job running against an incomplete set of records. The issue has been fixed — open tasks now load through a dedicated pathway that is more reliable, so task indicators should appear correctly on the dashboard. If your data still looks incomplete after a refresh, check the "Last refreshed" timestamp and contact your program administrator if the problem continues.</p>
-<p><strong>In MBW Auditing V4, the eligible mother count shown in parentheses was higher than the total mother count — is that fixed?</strong>
-Yes. This was a display bug caused by the two figures drawing from different data sources. Both the total and eligible mother counts now come from the same source — mothers attributed to each field worker through visit records — so the eligible figure will always be equal to or less than the total. If you still see the eligible count exceed the total after a refresh, contact your program administrator.</p>
-<p><strong>In MBW Auditing V4, the Prev column was always showing "—" even for workers with previous categories — is that fixed?</strong>
-Yes. The Prev column now correctly loads performance categories from the most recent run where categories were set, including categories recorded under previous versions of the workflow. If the column still appears blank after a data refresh, contact your program administrator.</p>
+All data aggreg</p>
 
 
 

@@ -1042,6 +1042,12 @@
 </table>
 <p><strong>AI-assisted criteria generation:</strong>
 Click <strong>Generate Criteria</strong> and paste in text describing your program requirements, or upload a PDF. The AI will suggest a structured set of evaluation criteria and scoring weights. Review and adjust the suggestions before saving.</p>
+<p><strong>Adding context to response questions:</strong>
+When building your response template, each question has an optional <strong>Framing</strong> field where you can write one or two sentences explaining why you're asking that question. This framing appears above the question prompt on the public solicitation page, displayed in muted italic text, so respondents understand the intent behind the question — not just what you're asking. Framing is optional; questions without it display exactly as before.</p>
+<div class="admonition info">
+<p class="admonition-title">Validation errors on the creation form</p>
+</div>
+<p>Labs now checks that all fields are in the correct format when a solicitation is saved. If something is wrong — for example, a deadline that isn't a valid date, an evaluation criterion missing a name, or a response question that references something that no longer exists — you will see an inline error message on the relevant field. Correct the flagged fields and save again. These checks prevent incomplete or misformatted solicitations from being stored silently.</p>
 <h3 id="reviewing-responses">Reviewing Responses<a class="headerlink" href="#reviewing-responses" title="Permanent link">&para;</a></h3>
 <p>Once the deadline passes, go to the solicitation and click <strong>Responses</strong>.</p>
 <p>For each response:</p>
@@ -1069,7 +1075,7 @@ Click <strong>Generate Criteria</strong> and paste in text describing your progr
 <ol>
 <li>Open a solicitation and read the full description and scope of work</li>
 <li>Click <strong>Submit Response</strong></li>
-<li>Answer each question in the response template</li>
+<li>Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for</li>
 <li>Review your answers, then click <strong>Submit</strong></li>
 </ol>
 <div class="admonition warning">
@@ -1118,6 +1124,10 @@ Funds are optional tracking records in Labs that let program teams monitor disbu
 Edit the solicitation and uncheck the <strong>Publicly Listed</strong> checkbox. Saving the form immediately removes it from the public marketplace.</p>
 <p><strong>My solicitation shows as published but isn't appearing on the public listing — what's wrong?</strong>
 This should no longer occur for solicitations edited through the standard Labs interface — unchecking <strong>Publicly Listed</strong> and saving is all that is needed. If you are working with a solicitation that was last edited before this fix was in place and it still appears incorrectly, contact your Labs administrator to have the visibility settings corrected.</p>
+<p><strong>I'm seeing inline errors on fields I didn't change when editing an existing solicitation — why?</strong>
+A small number of older solicitations were saved before Labs began enforcing field validation. When you open one of these records for editing, any fields that were stored in the wrong format will be flagged immediately so they can be corrected. Update the highlighted fields to the expected format and save. If you are unsure what a field requires, refer to the table in <a href="#creating-a-solicitation">Creating a Solicitation</a> or contact your Labs administrator.</p>
+<p><strong>What is the Framing field on a response question?</strong>
+Framing is an optional one-to-two sentence note you can attach to any question in your response template. It appears above the question prompt on the public solicitation page in italics, giving respondents context about why you're asking. It has no effect on scoring or submission — it is purely for the benefit of applicants reading the solicitation.</p>
 
 
 
