@@ -76,16 +76,16 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 Labs includes pre-built workflow templates for common program types. Your program administrator can create a workflow from any of these templates and configure it for your opportunity.
 
-| Template                | Best for                                        |
-| ----------------------- | ----------------------------------------------- |
-| **KMC Longitudinal**    | Kangaroo Mother Care — tracking cases over time |
-| **KMC FLW Flags**       | Flag workers needing supervisory follow-up      |
-| **KMC Project Metrics** | Program-level KPIs and summary statistics       |
-| **MBW Monitoring**      | Mother and baby wellness visit tracking         |
-| **Performance Review**  | FLW performance compared across programs        |
-| **SAM Follow-up**       | Severe acute malnutrition case management       |
-| **OCS Outreach**        | Community health outreach tracking              |
-| **Bulk Image Audit**    | Image-based QA combined with workflow status    |
+| Template                   | Best for                                             |
+| -------------------------- | ---------------------------------------------------- |
+| **KMC Longitudinal**       | Kangaroo Mother Care — tracking cases over time      |
+| **KMC FLW Flags**          | Flag workers needing supervisory follow-up           |
+| **KMC Project Metrics**    | Program-level KPIs and summary statistics            |
+| **MBW Monitoring**         | Mother and baby wellness visit tracking              |
+| **Performance Review**     | FLW performance compared across programs             |
+| **SAM Follow-up**          | Severe acute malnutrition case management            |
+| **OCS Outreach**           | Community health outreach tracking                   |
+| **Bulk Image Audit**       | Image-based QA combined with workflow status         |
 | **CHC Nutrition Analysis** | Community health centre nutrition program monitoring |
 
 ---
@@ -132,10 +132,10 @@ This makes synthetic data suitable for full stakeholder and funder demonstration
 To use this capability, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
 !!! note "No real data is used in the output"
-    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
+The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
 !!! note "Nutrition metrics and other program-specific fields in synthetic data"
-    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
+Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
 
 ### Creating a New Workflow with Claude Code
 

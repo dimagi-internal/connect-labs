@@ -317,6 +317,166 @@ def synthetic_generate_from_manifest(
 
 
 @register(
+    name="synthetic_create_labs_only",
+    description=(
+        "Create a labs-only synthetic opportunity from scratch. No real Connect "
+        "opp is required — opportunity_id is auto-allocated from the labs-only "
+        "reserved range (10_000+). The opp is surfaced into labs_context only "
+        "for users with view_synthetic_opps=True whose email domain matches one "
+        "of allowed_domains. Returns the new opportunity_id."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "gdrive_folder_id": {"type": "string"},
+            "org_name": {"type": "string", "default": "Labs Synthetic"},
+            "program_name": {"type": "string", "default": "Labs Synthetic"},
+            "allowed_domains": {
+                "type": "array",
+                "items": {"type": "string"},
+                "default": ["@dimagi.com"],
+                "description": "Email-domain allowlist (e.g. ['@dimagi.com']). Empty = any.",
+            },
+            "enabled": {"type": "boolean", "default": True},
+            "notes": {"type": "string", "default": ""},
+        },
+        "required": ["label", "gdrive_folder_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_create_labs_only(
+    user,
+    *,
+    label: str,
+    gdrive_folder_id: str,
+    org_name: str = "Labs Synthetic",
+    program_name: str = "Labs Synthetic",
+    allowed_domains: list[str] | None = None,
+    enabled: bool = True,
+    notes: str = "",
+) -> dict[str, Any]:
+    new_opp_id = SyntheticOpportunity.next_labs_only_opp_id()
+    row = SyntheticOpportunity.objects.create(
+        opportunity_id=new_opp_id,
+        label=label,
+        gdrive_folder_id=gdrive_folder_id,
+        org_name=org_name,
+        program_name=program_name,
+        allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com"],
+        enabled=enabled,
+        notes=notes,
+        labs_only=True,
+        created_by=user,
+    )
+    invalidate_cache()
+    return {
+        "opportunity_id": row.opportunity_id,
+        "label": row.label,
+        "gdrive_folder_id": row.gdrive_folder_id,
+        "org_name": row.org_name,
+        "program_name": row.program_name,
+        "allowed_domains": list(row.allowed_domains),
+        "labs_only": True,
+        "enabled": row.enabled,
+    }
+
+
+@register(
+    name="synthetic_clone_to_labs_only",
+    description=(
+        "Clone an existing SyntheticOpportunity (real-backed or labs-only) into a "
+        "new labs-only opp. Reuses the source's gdrive_folder_id (same fixture set, "
+        "new opp_id from the 10_000+ range). The caller must have access to the "
+        "source opportunity_id via their Connect membership OR the source must "
+        "already be a labs-only opp the caller can see. Use this to make existing "
+        "synthetic fixture data accessible to users who lack Connect membership "
+        "for the original opp (e.g. ACE)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_opportunity_id": {"type": "integer"},
+            "label": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Label for the new opp. Defaults to 'Clone of <source label>'.",
+            },
+            "org_name": {"type": ["string", "null"], "default": None},
+            "program_name": {"type": ["string", "null"], "default": None},
+            "allowed_domains": {
+                "type": "array",
+                "items": {"type": "string"},
+                "default": ["@dimagi.com", "@dimagi-ai.com"],
+                "description": (
+                    "Email-domain allowlist for the new labs-only opp. Default is broad "
+                    "(['@dimagi.com', '@dimagi-ai.com']) so ace@dimagi-ai.com can use it."
+                ),
+            },
+        },
+        "required": ["source_opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_clone_to_labs_only(
+    user,
+    *,
+    source_opportunity_id: int,
+    label: str | None = None,
+    org_name: str | None = None,
+    program_name: str | None = None,
+    allowed_domains: list[str] | None = None,
+) -> dict[str, Any]:
+    try:
+        source = SyntheticOpportunity.objects.get(opportunity_id=source_opportunity_id)
+    except SyntheticOpportunity.DoesNotExist:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"No SyntheticOpportunity for opportunity_id={source_opportunity_id}. "
+            "Register the source as synthetic first via synthetic_register or "
+            "synthetic_generate_from_manifest.",
+        )
+
+    # Authorization: either the user has Connect access to the source opp, OR
+    # the source is itself a labs-only opp the user can already see. Without
+    # one of these the user could clone any opp they happen to know the ID for.
+    if not source.labs_only:
+        _require_opportunity_access(user, source_opportunity_id)
+    elif not source.is_visible_to(user):
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            f"Source labs-only opp {source_opportunity_id} is not visible to you.",
+        )
+
+    new_opp_id = SyntheticOpportunity.next_labs_only_opp_id()
+    row = SyntheticOpportunity.objects.create(
+        opportunity_id=new_opp_id,
+        label=label or f"Clone of {source.label or source.opportunity_id}",
+        gdrive_folder_id=source.gdrive_folder_id,
+        org_name=org_name or source.org_name or "Labs Synthetic",
+        program_name=program_name or source.program_name or "Labs Synthetic",
+        allowed_domains=(allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"]),
+        enabled=True,
+        notes=f"Cloned from opp {source_opportunity_id} via MCP.",
+        labs_only=True,
+        created_by=user,
+    )
+    invalidate_cache()
+    return {
+        "opportunity_id": row.opportunity_id,
+        "source_opportunity_id": source_opportunity_id,
+        "label": row.label,
+        "gdrive_folder_id": row.gdrive_folder_id,
+        "org_name": row.org_name,
+        "program_name": row.program_name,
+        "allowed_domains": list(row.allowed_domains),
+        "labs_only": True,
+    }
+
+
+@register(
     name="synthetic_profile_from_prod",
     description=(
         "Analyze real production data for an opportunity and produce a "
