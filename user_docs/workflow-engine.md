@@ -126,6 +126,9 @@ To use this capability, ask your program administrator or raise a request in **#
 !!! note "No real data is used in the output"
     The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
+!!! note "Nutrition metrics and other program-specific fields in synthetic data"
+    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
+
 ### Creating a New Workflow with Claude Code
 
 1. **Get the connect-labs repo and Claude Code.** Clone the repository — you don't need to run it locally, but having it gives Claude Code the context it needs to understand the system. Install the Claude Code CLI.
@@ -271,12 +274,4 @@ All data aggregation in workflows must be SQL-based. Python aggregation means th
 No. Workflow definitions are stored in Connect prod, not in the Labs environment. Redeploying Labs only updates the rendering layer; your workflow data is unaffected.
 
 **Why is a worker's data missing or outdated?**
-Pipelines refresh data on a schedule. If a CommCare form was submitted recently, it may take up to 30 minutes to appear. Look for the "Last refreshed" timestamp at the top of the workflow.
-
-**Can I export the workflow data?**
-Some workflows include an export button in the top toolbar. If yours doesn't, ask your program administrator — this can be configured.
-
-**Can I edit what a workflow displays?**
-Program administrators can edit workflow layouts using the AI-powered workflow editor. See [AI Features](ai-features.md) for details.
-
-**The
+Pipelines refresh data on a schedule
