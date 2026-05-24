@@ -248,6 +248,21 @@ The **Prev** column shows the performance category assigned to each field worker
 
 ---
 
+## CHC Nutrition Analysis Dashboard
+
+The **CHC Nutrition Analysis** template now surfaces the same per-FLW metrics as the legacy custom_analysis nutrition dashboard, making it a drop-in replacement as custom_analysis is retired. If you were previously using the custom_analysis view for nutrition reporting, the workflow dashboard will show the same figures in the same columns.
+
+### What changed in this update
+
+Five metrics that were missing from the workflow template have been added, and four existing column names have been renamed to match the field names used by custom_analysis. This ensures that any downstream tooling, exports, or integrations that reference those field names continue to work without adjustment.
+
+If you have a saved export or integration that pulls data from the CHC Nutrition Analysis workflow, check that it references the updated field names. If a column you relied on appears to have moved or been renamed, compare against the custom_analysis field names — the workflow column will now match those exactly.
+
+!!! note "No change to how figures are calculated"
+This update only adds missing fields and aligns column names. The underlying calculations — visit counts, MUAC measurements, eligibility flags, and other nutrition metrics — are unchanged.
+
+---
+
 ## Solicitations
 
 Solicitations are the structured postings used to invite field workers to apply for an opportunity. They are created either through the MCP tool or via the Labs manager interface.
@@ -259,21 +274,4 @@ When a solicitation is created, Labs now checks that all required fields are pre
 This replaces the previous behaviour where incorrectly shaped solicitations were saved silently, causing data to land in the wrong place. If you are using the manager UI to create a solicitation and something is wrong with the form, you will now see an inline error on the affected field rather than having the problem slip through unnoticed.
 
 !!! note "If you receive a validation error"
-Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, `overview` instead of `description`) or leaving the application deadline blank. Correct the flagged fields and resubmit.
-
-### Evaluation rubric
-
-Each solicitation can include an evaluation rubric — a list of criteria used to score applications. Each criterion must have a **name** and a **description**. Any questions referenced in the rubric must exist in the solicitation's question list. If a criterion references a question that isn't defined, the validation will catch this and tell you which reference is broken.
-
----
-
-## Common Questions
-
-**How do I create a new workflow for my program?**
-Start from the closest existing template and have Claude Code build a new one — see [Creating and Customizing Workflows](#creating-and-customizing-workflows) above for step-by-step guidance. You don't need to run Labs locally; changes deploy directly to Labs prod.
-
-**Should I build a workflow or a custom dashboard in Python?**
-Use a workflow for almost all program reporting needs. Custom Python or Django code is only warranted for genuinely complex multi-step UIs — and even then, breaking the work into multiple simpler workflows is usually the right answer.
-
-**Claude Code keeps generating Python aggregation code instead of SQL — what should I do?**
-All data aggreg
+Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, `overview` instead of `description`) or leaving the application deadline blank. Correct the
