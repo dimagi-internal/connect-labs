@@ -291,11 +291,28 @@ def synthetic_generate_from_manifest(
         opportunity_name=manifest.opportunity_name,
         fixtures=fixtures,
     )
+
+    task_records = fixtures.get("task_records", [])
+    tasks_created = 0
+    if task_records:
+        client = LabsRecordAPIClient(access_token=require_connect_token(user), opportunity_id=opportunity_id)
+        try:
+            for rec in task_records:
+                client.create_record(
+                    experiment="task",
+                    type="synthetic_task",
+                    data=rec,
+                )
+                tasks_created += 1
+        finally:
+            client.close()
+
     return {
         "folder_id": result.folder_id,
         "folder_url": result.folder_url,
         "record_counts": result.record_counts,
         "form_schema_questions": len(form_schema.questions),
+        "tasks_created": tasks_created,
     }
 
 
