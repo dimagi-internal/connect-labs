@@ -440,6 +440,8 @@ CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
 # enable the synthetic-opportunity feature. See docs/SYNTHETIC_OPPS.md.
 # LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID is the Drive folder ID where dump output lands.
 LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = env("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", default="")
+# LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is the Drive folder ID for stock images.
+LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", default="")
 
 # Labs admin allowlist — LOCAL DEV ONLY fallback for Connect test accounts that
 # have no email address configured (e.g. username='matt', email='').
