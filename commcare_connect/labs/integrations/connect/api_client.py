@@ -1,8 +1,12 @@
 """
 CommCare Connect LabsRecord API Client.
 
-Pure API client for production LabsRecord endpoints. No local storage.
-All operations are performed via HTTP calls to production API.
+Hybrid client. Real Connect opportunities flow over HTTP to production's
+``/export/labs_record/`` endpoint. Labs-only synthetic opportunities (opp_ids
+>= 10_000 registered in the SyntheticOpportunity table with ``labs_only=True``)
+flow into the local ``LabsLocalRecord`` table via the
+``labs.synthetic.local_records_backend`` module. The dispatch is invisible to
+callers: every method returns the same ``LocalLabsRecord`` wrapper either way.
 """
 
 import logging
@@ -11,6 +15,7 @@ import httpx
 from django.conf import settings
 
 from commcare_connect.labs.models import LocalLabsRecord
+from commcare_connect.labs.synthetic import local_records_backend as _local_backend
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,13 @@ class LabsRecordAPIClient:
         if self.http_client:
             self.http_client.close()
 
+    def _effective_opportunity_id(self, opportunity_id: int | None = None) -> int | None:
+        """Resolve the opportunity_id used for dispatch — caller arg wins, then client init."""
+        return opportunity_id if opportunity_id is not None else self.opportunity_id
+
+    def _is_labs_only(self, opportunity_id: int | None = None) -> bool:
+        return _local_backend.is_labs_only_opportunity_id(self._effective_opportunity_id(opportunity_id))
+
     def __enter__(self):
         """Context manager entry."""
         return self
@@ -117,6 +129,19 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        if self._is_labs_only():
+            return _local_backend.get_records(
+                opportunity_id=self.opportunity_id,
+                experiment=experiment,
+                type=type,
+                username=username,
+                program_id=program_id or self.program_id,
+                organization_id=organization_id if isinstance(organization_id, int) else self.organization_id,
+                labs_record_id=labs_record_id,
+                model_class=model_class,
+                public=public,
+                **data_filters,
+            )
         try:
             # Build query parameters
             params = {}
@@ -196,6 +221,14 @@ class LabsRecordAPIClient:
         Returns:
             LocalLabsRecord instance (or proxy model) or None if not found
         """
+        if self._is_labs_only():
+            return _local_backend.get_record_by_id(
+                record_id=record_id,
+                opportunity_id=self.opportunity_id,
+                experiment=experiment,
+                type=type,
+                model_class=model_class,
+            )
         try:
             url = f"{self.base_url}/export/labs_record/"
             params = {"id": record_id}
@@ -252,6 +285,18 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        if self._is_labs_only():
+            return _local_backend.create_record(
+                opportunity_id=self.opportunity_id,
+                experiment=experiment,
+                type=type,
+                data=data,
+                username=username,
+                program_id=program_id or self.program_id,
+                organization_id=self.organization_id if isinstance(self.organization_id, int) else None,
+                labs_record_id=labs_record_id,
+                public=public,
+            )
         payload = {
             "experiment": experiment,
             "type": type,
@@ -323,6 +368,19 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        if self._is_labs_only():
+            return _local_backend.update_record(
+                record_id=record_id,
+                opportunity_id=self.opportunity_id,
+                experiment=experiment,
+                type=type,
+                data=data,
+                username=username,
+                program_id=program_id or self.program_id,
+                organization_id=self.organization_id if isinstance(self.organization_id, int) else None,
+                labs_record_id=labs_record_id,
+                public=public,
+            )
         # Use provided record or fetch current to read metadata
         if current_record is not None and current_record.id != record_id:
             logger.warning(
@@ -412,6 +470,10 @@ class LabsRecordAPIClient:
             LabsAPIError: If API request fails
         """
         if not record_ids:
+            return
+
+        if self._is_labs_only():
+            _local_backend.delete_records(record_ids=record_ids)
             return
 
         try:
