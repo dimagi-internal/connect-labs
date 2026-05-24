@@ -388,11 +388,12 @@ def synthetic_create_labs_only(
     description=(
         "Clone an existing SyntheticOpportunity (real-backed or labs-only) into a "
         "new labs-only opp. Reuses the source's gdrive_folder_id (same fixture set, "
-        "new opp_id from the 10_000+ range). The caller must have access to the "
-        "source opportunity_id via their Connect membership OR the source must "
-        "already be a labs-only opp the caller can see. Use this to make existing "
-        "synthetic fixture data accessible to users who lack Connect membership "
-        "for the original opp (e.g. ACE)."
+        "new opp_id from the 10_000+ range). Open to any authenticated MCP caller: "
+        "once a source has been registered as a SyntheticOpportunity it's already a "
+        "labs-controlled fixture artifact, so cloning it doesn't grant any new data "
+        "access — it just creates a second view onto the same GDrive fixture folder. "
+        "Use this to make existing synthetic fixture data accessible to users who "
+        "lack Connect membership for the original opp (e.g. ACE)."
     ),
     input_schema={
         "type": "object",
@@ -439,17 +440,11 @@ def synthetic_clone_to_labs_only(
             "synthetic_generate_from_manifest.",
         )
 
-    # Authorization: either the user has Connect access to the source opp, OR
-    # the source is itself a labs-only opp the user can already see. Without
-    # one of these the user could clone any opp they happen to know the ID for.
-    if not source.labs_only:
-        _require_opportunity_access(user, source_opportunity_id)
-    elif not source.is_visible_to(user):
-        raise MCPToolError(
-            "PERMISSION_DENIED",
-            f"Source labs-only opp {source_opportunity_id} is not visible to you.",
-        )
-
+    # Auth: any authenticated MCP caller may clone an existing SyntheticOpportunity.
+    # The source row's existence is the gate — it was registered by a human with
+    # Connect access, the underlying data is already a synthetic fixture, and the
+    # clone creates only a second view onto the same GDrive folder (no new data).
+    # Visibility of the new opp is controlled by allowed_domains + view_synthetic_opps.
     new_opp_id = SyntheticOpportunity.next_labs_only_opp_id()
     row = SyntheticOpportunity.objects.create(
         opportunity_id=new_opp_id,
@@ -473,6 +468,36 @@ def synthetic_clone_to_labs_only(
         "program_name": row.program_name,
         "allowed_domains": list(row.allowed_domains),
         "labs_only": True,
+    }
+
+
+@register(
+    name="synthetic_set_my_visibility",
+    description=(
+        "Toggle the calling user's `view_synthetic_opps` setting. When on, "
+        "labs-only synthetic opportunities whose `allowed_domains` matches the "
+        "user's email domain are merged into the user's labs_context (org/"
+        "program/opportunity lists). Off by default. Returns the new state."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "enabled": {
+                "type": "boolean",
+                "description": "True to opt in to seeing labs-only opps; False to opt out.",
+            },
+        },
+        "required": ["enabled"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_set_my_visibility(user, *, enabled: bool) -> dict[str, Any]:
+    user.view_synthetic_opps = bool(enabled)
+    user.save(update_fields=["view_synthetic_opps"])
+    return {
+        "view_synthetic_opps": user.view_synthetic_opps,
+        "email": user.email,
     }
 
 

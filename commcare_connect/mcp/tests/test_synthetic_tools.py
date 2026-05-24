@@ -324,25 +324,38 @@ def test_synthetic_clone_to_labs_only_404s_on_missing_source(user):
 
 
 @pytest.mark.django_db
-def test_synthetic_clone_to_labs_only_requires_source_access(user, monkeypatch):
-    """Cloning a real-backed source opp requires the user to have Connect access."""
+def test_synthetic_clone_to_labs_only_does_not_require_source_connect_access(user, monkeypatch):
+    """Cloning any registered SyntheticOpportunity is allowed for any MCP caller.
+
+    Once an opp is in the SyntheticOpportunity registry it's already a
+    labs-controlled fixture. Cloning grants no new data access — just a
+    second view onto the same GDrive folder. The previous Connect-access
+    check defeated the "make this easy to do again" goal for users who
+    lack Connect membership on the source (e.g. ACE).
+    """
     SyntheticOpportunity.objects.create(opportunity_id=814, gdrive_folder_id="folder-814", labs_only=False)
 
+    # Even when Connect access check would deny, clone still succeeds.
     from commcare_connect.mcp.tools import synthetic as syn
 
     monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
 
     tool = get_tool("synthetic_clone_to_labs_only")
-    with pytest.raises(MCPToolError) as exc:
-        tool.handler(user=user, source_opportunity_id=814)
-    assert exc.value.code == "PERMISSION_DENIED"
+    result = tool.handler(user=user, source_opportunity_id=814)
+    assert result["labs_only"] is True
+    assert result["gdrive_folder_id"] == "folder-814"
 
 
 @pytest.mark.django_db
-def test_synthetic_clone_to_labs_only_allows_visible_labs_only_source(user, monkeypatch):
-    """Cloning a labs-only source skips Connect access check, uses is_visible_to."""
-    user.email = "alice@dimagi.com"
-    user.view_synthetic_opps = True
+def test_synthetic_clone_to_labs_only_works_on_invisible_labs_only_source(user):
+    """A labs-only source the caller can't see directly is still cloneable.
+
+    Same rationale: it's already a labs-controlled fixture. allowed_domains
+    on the source controls who sees the SOURCE in labs_context, not who
+    can clone it.
+    """
+    user.email = "bob@external.com"
+    user.view_synthetic_opps = False
     user.save()
 
     SyntheticOpportunity.objects.create(
@@ -351,12 +364,6 @@ def test_synthetic_clone_to_labs_only_allows_visible_labs_only_source(user, monk
         labs_only=True,
         allowed_domains=["@dimagi.com"],
     )
-
-    # Even though _require_opportunity_access would deny, we should skip it
-    # for labs-only sources and hit the is_visible_to path instead.
-    from commcare_connect.mcp.tools import synthetic as syn
-
-    monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
 
     tool = get_tool("synthetic_clone_to_labs_only")
     result = tool.handler(user=user, source_opportunity_id=10_000)
@@ -364,25 +371,24 @@ def test_synthetic_clone_to_labs_only_allows_visible_labs_only_source(user, monk
     assert result["gdrive_folder_id"] == "folder-src"
 
 
+# -----------------------------------------------------------------------------
+# synthetic_set_my_visibility
+# -----------------------------------------------------------------------------
+
+
 @pytest.mark.django_db
-def test_synthetic_clone_to_labs_only_denies_invisible_labs_only_source(user, monkeypatch):
-    """Cloning a labs-only source the user can't see is denied."""
-    user.email = "bob@external.com"
-    user.view_synthetic_opps = True
+def test_synthetic_set_my_visibility_flips_user_flag(user):
+    user.view_synthetic_opps = False
     user.save()
 
-    SyntheticOpportunity.objects.create(
-        opportunity_id=10_000,
-        gdrive_folder_id="folder-src",
-        labs_only=True,
-        allowed_domains=["@dimagi.com"],
-    )
+    tool = get_tool("synthetic_set_my_visibility")
+    result = tool.handler(user=user, enabled=True)
 
-    from commcare_connect.mcp.tools import synthetic as syn
+    assert result["view_synthetic_opps"] is True
+    user.refresh_from_db()
+    assert user.view_synthetic_opps is True
 
-    monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
-
-    tool = get_tool("synthetic_clone_to_labs_only")
-    with pytest.raises(MCPToolError) as exc:
-        tool.handler(user=user, source_opportunity_id=10_000)
-    assert exc.value.code == "PERMISSION_DENIED"
+    result = tool.handler(user=user, enabled=False)
+    assert result["view_synthetic_opps"] is False
+    user.refresh_from_db()
+    assert user.view_synthetic_opps is False
