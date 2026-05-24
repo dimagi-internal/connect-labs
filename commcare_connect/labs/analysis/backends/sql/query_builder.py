@@ -1111,6 +1111,7 @@ def build_flw_aggregation_query(
         # Use _base_ prefix to avoid conflicts with custom config fields of the same name
         "MIN(visit_date) as _base_first_visit_date",
         "MAX(visit_date) as _base_last_visit_date",
+        "COUNT(DISTINCT visit_date) as _base_days_active",
     ]
 
     # If joins are configured, both the outer FROM and the correlated inner
