@@ -86,6 +86,7 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **SAM Follow-up**       | Severe acute malnutrition case management       |
 | **OCS Outreach**        | Community health outreach tracking              |
 | **Bulk Image Audit**    | Image-based QA combined with workflow status    |
+| **CHC Nutrition Analysis** | Community health centre nutrition program monitoring |
 
 ---
 
@@ -113,6 +114,17 @@ All workflows follow the same core pattern — the same approach Superset uses:
 All aggregation belongs in SQL. If Claude Code ever suggests doing aggregation in Python instead, that is a signal the session has gone off track — ask in **#connect-labs** before continuing. Because the pipelines use the same JSON query approach as Superset, you can paste a pipeline's SQL directly into Superset to debug it if something looks wrong.
 
 The `custom_analysis/` section of Labs predates the workflow engine. Most of those dashboards could now be rebuilt as workflows. Write custom Django or Python only for a genuinely complex multi-step UI — and even then, the better answer is usually to split the work into multiple simpler workflows.
+
+### Generating Demo or Test Data from a Real Opportunity
+
+If you need realistic data for testing, training, or demonstrations, Labs can generate a **synthetic dataset** based on the statistical profile of an existing opportunity — without any real patient data leaving the server.
+
+This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges, and so on) and producing a synthetic dataset that looks realistic but contains no actual records. The result can be used to populate a test workflow instance so you can demonstrate the dashboard or validate a new template without using live data.
+
+To use this capability, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
+
+!!! note "No real data is used in the output"
+    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
 ### Creating a New Workflow with Claude Code
 
@@ -267,11 +279,4 @@ Some workflows include an export button in the top toolbar. If yours doesn't, as
 **Can I edit what a workflow displays?**
 Program administrators can edit workflow layouts using the AI-powered workflow editor. See [AI Features](ai-features.md) for details.
 
-**The dashboard looks different from yesterday — what changed?**
-Workflow dashboards are actively developed. Check the [weekly changelog](https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513/Connect+Labs+Changelog) for recent updates.
-
-**The MBW Monitoring numbers look different from what I saw before — is something wrong?**
-Several calculations in the MBW Monitoring dashboard were updated to match the original MBW v1 definitions more precisely. In particular, eligible mother counts, completion rates, performance categories, and GPS figures may shift slightly compared to earlier versions of the dashboard. The new numbers are more accurate. If a figure still looks unexpected, check the "Last refreshed" timestamp and contact your program administrator if the discrepancy persists.
-
-**The MBW Auditing V4 dashboard was showing an error on load — is that fixed?**
-Yes. A loading error that caused the dashboard to crash before displaying any data has been resolved. If you continue to see an error, try refreshing the page.
+**The
