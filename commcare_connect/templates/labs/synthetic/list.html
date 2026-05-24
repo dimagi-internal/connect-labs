@@ -34,6 +34,10 @@
           <i class="fa-solid fa-plus mr-1.5"></i>
           New synthetic opp
         </a>
+        <a href="{% url 'labs:synthetic:labs_only_new' %}" class="button button-sm outline-style" title="Create a labs-only opp with no real Connect opp behind it">
+          <i class="fa-solid fa-flask-vial mr-1.5"></i>
+          New labs-only
+        </a>
       </div>
     </div>
   </div>
@@ -71,6 +75,33 @@
     </p>
   </div>
 
+  <!-- view_synthetic_opps toggle -->
+  <div class="bg-white border border-gray-200 rounded-md p-3 mb-6 flex items-center justify-between gap-3">
+    <div class="flex items-start gap-3">
+      <i class="fa-solid fa-eye text-gray-500 mt-0.5"></i>
+      <div>
+        <div class="text-sm font-medium text-gray-900">Show labs-only synthetic opps in my context</div>
+        <div class="text-xs text-gray-500">
+          When on, labs-only opps you have domain access to appear in your org/program/opportunity selectors as if they were real Connect opps.
+          Currently:
+          <span class="font-mono {% if request.user.view_synthetic_opps %}text-green-700{% else %}text-gray-600{% endif %}">
+            {{ request.user.view_synthetic_opps|yesno:"on,off" }}
+          </span>
+        </div>
+      </div>
+    </div>
+    <form method="post" action="{% url 'labs:synthetic:toggle_view_synthetic' %}" class="inline">
+      {% csrf_token %}
+      <button type="submit" class="button button-sm {% if request.user.view_synthetic_opps %}primary-dark{% else %}outline-style{% endif %}">
+        {% if request.user.view_synthetic_opps %}
+          <i class="fa-solid fa-toggle-on mr-1.5"></i>Turn off
+        {% else %}
+          <i class="fa-solid fa-toggle-off mr-1.5"></i>Turn on
+        {% endif %}
+      </button>
+    </form>
+  </div>
+
   {% if opps %}
   <!-- Table -->
   <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -89,7 +120,14 @@
         {% for opp in opps %}
         <tr class="hover:bg-gray-50">
           <td class="px-4 py-3 whitespace-nowrap">
-            <div class="font-medium text-gray-900">{{ opp.connect_name|default:"(name unavailable)" }}</div>
+            <div class="font-medium text-gray-900">
+              {{ opp.connect_name|default:"(name unavailable)" }}
+              {% if opp.labs_only %}
+                <span class="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700" title="Labs-only — no real Connect opp behind this">
+                  <i class="fa-solid fa-flask-vial mr-1 text-xs"></i>labs-only
+                </span>
+              {% endif %}
+            </div>
             <div class="text-xs text-gray-500">id {{ opp.opportunity_id }}</div>
           </td>
           <td class="px-4 py-3 text-sm text-gray-700">{{ opp.label|default:"—" }}</td>
@@ -115,8 +153,17 @@
           </td>
           <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
             <div class="inline-flex gap-1">
-              <a href="{% url 'labs:synthetic:edit' opp.pk %}" class="button button-sm outline-style" title="Edit">
-                <i class="fa-solid fa-pen mr-1"></i>Edit
+              {% if opp.labs_only %}
+                <a href="{% url 'labs:synthetic:labs_only_edit' opp.pk %}" class="button button-sm outline-style" title="Edit">
+                  <i class="fa-solid fa-pen mr-1"></i>Edit
+                </a>
+              {% else %}
+                <a href="{% url 'labs:synthetic:edit' opp.pk %}" class="button button-sm outline-style" title="Edit">
+                  <i class="fa-solid fa-pen mr-1"></i>Edit
+                </a>
+              {% endif %}
+              <a href="{% url 'labs:synthetic:labs_only_clone' opp.opportunity_id %}" class="button button-sm outline-style" title="Clone into a new labs-only opp (no real Connect opp behind it)">
+                <i class="fa-solid fa-copy mr-1"></i>Clone
               </a>
               <form method="post" action="{% url 'labs:synthetic:reload' opp.pk %}" class="inline">
                 {% csrf_token %}
