@@ -96,6 +96,53 @@ class SyntheticOpportunity(models.Model):
         return any(email.endswith(d.lower()) for d in self.allowed_domains)
 
 
+class LabsLocalRecord(models.Model):
+    """LabsRecord stored in the labs DB instead of production Connect.
+
+    Used for opportunities that have no real Connect opp behind them — i.e.
+    labs-only synthetic opps. Mirrors the production LabsRecord schema so that
+    LabsRecordAPIClient can dispatch transparently: real opp_ids hit prod via
+    HTTP, labs-only opp_ids hit this table via the ORM. Same wire shape on
+    both sides (LocalLabsRecord wraps the resulting dict).
+    """
+
+    experiment = models.CharField(max_length=200, db_index=True)
+    type = models.CharField(max_length=100, db_index=True)
+    data = models.JSONField(default=dict)
+    public = models.BooleanField(default=False)
+    opportunity_id = models.IntegerField(db_index=True)
+    organization_id = models.IntegerField(null=True, blank=True)
+    program_id = models.IntegerField(null=True, blank=True, db_index=True)
+    labs_record_id = models.IntegerField(null=True, blank=True, db_index=True)
+    username = models.CharField(max_length=150, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "labs_local_labs_record"
+        ordering = ["-id"]
+        verbose_name = "Labs-local LabsRecord"
+        verbose_name_plural = "Labs-local LabsRecords"
+
+    def to_api_dict(self) -> dict:
+        """Return the dict shape LocalLabsRecord(...) expects."""
+        return {
+            "id": self.id,
+            "experiment": self.experiment,
+            "type": self.type,
+            "data": self.data,
+            "public": self.public,
+            "opportunity_id": self.opportunity_id,
+            "organization_id": self.organization_id,
+            "program_id": self.program_id,
+            "labs_record_id": self.labs_record_id,
+            "username": self.username or None,
+        }
+
+    def __str__(self):
+        return f"local:{self.experiment}:{self.type}:{self.id}"
+
+
 class UserSyntheticDataset(models.Model):
     """Per-user synthetic fixture data stored in the database.
 
