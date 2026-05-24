@@ -76,10 +76,14 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
             {
                 "id": opp.opportunity_id,
                 "name": opp.label or f"Synthetic {opp.opportunity_id}",
-                "organization": org_label,
-                "organization_slug": org_slug,
-                "program_id": program_id,
+                # `organization` carries the org slug to match Connect's serializer shape
+                # (templates do {{ opp.organization }} expecting a slug for URL building).
+                "organization": org_slug,
+                "program": program_id,
                 "program_name": program_label,
+                "is_active": True,
+                "end_date": None,
+                "visit_count": 0,
                 "labs_only": True,
             }
         )
@@ -101,8 +105,9 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
                 {
                     "id": program_id,
                     "name": program_label,
-                    "organization": org_label,
-                    "organization_slug": org_slug,
+                    # Connect's serializer uses `organization` as a SlugRelatedField,
+                    # so a program's `organization` value is the slug, not the name.
+                    "organization": org_slug,
                     "labs_only": True,
                 }
             )

@@ -286,3 +286,71 @@ def test_labs_context_search_with_no_matches_returns_empty(mock_fetch, client, a
     content = data["result"]["structuredContent"]
     assert content["organizations"] == []
     assert content["totals"] == {"organizations": 0, "programs": 0, "opportunities": 0}
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.labs_context.fetch_user_organization_data")
+def test_labs_context_merges_labs_only_when_user_opted_in(mock_fetch, client, auth_user):
+    """labs_context surfaces labs-only synthetic opps when view_synthetic_opps is on."""
+    from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+
+    user, raw = auth_user
+    user.email = "ace@dimagi-ai.com"
+    user.view_synthetic_opps = True
+    user.save()
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10_000,
+        label="CHC demo",
+        org_name="Labs Synthetic",
+        program_name="Labs Synthetic",
+        gdrive_folder_id="folder-xyz",
+        labs_only=True,
+        allowed_domains=["@dimagi-ai.com"],
+    )
+
+    mock_fetch.return_value = {
+        "user": {},
+        "organizations": [{"id": 1, "slug": "acme", "name": "Acme Org"}],
+        "programs": [],
+        "opportunities": [],
+    }
+
+    resp = _call_tool(client, raw, "labs_context", {})
+    tree = resp["result"]["structuredContent"]["organizations"]
+    org_slugs = {o["slug"] for o in tree}
+    assert "acme" in org_slugs
+    labs_org = next(o for o in tree if o["slug"].startswith("labs-synthetic-"))
+    assert any(opp["id"] == 10_000 for prog in labs_org["programs"] for opp in prog["opportunities"]) or any(
+        opp["id"] == 10_000 for opp in labs_org["opportunities"]
+    )
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.labs_context.fetch_user_organization_data")
+def test_labs_context_does_not_merge_when_user_opted_out(mock_fetch, client, auth_user):
+    """labs-only opps stay hidden when view_synthetic_opps is False."""
+    from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+
+    user, raw = auth_user
+    user.email = "ace@dimagi-ai.com"
+    user.view_synthetic_opps = False
+    user.save()
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10_000,
+        gdrive_folder_id="folder-xyz",
+        labs_only=True,
+        allowed_domains=["@dimagi-ai.com"],
+    )
+
+    mock_fetch.return_value = {
+        "user": {},
+        "organizations": [{"id": 1, "slug": "acme", "name": "Acme Org"}],
+        "programs": [],
+        "opportunities": [],
+    }
+
+    resp = _call_tool(client, raw, "labs_context", {})
+    tree = resp["result"]["structuredContent"]["organizations"]
+    assert {o["slug"] for o in tree} == {"acme"}
