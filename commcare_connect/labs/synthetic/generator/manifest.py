@@ -133,6 +133,30 @@ class CoachingArc(BaseModel):
     follow_up_outcome_week: PositiveInt | None = None
 
 
+# ---------- Tasks ----------
+
+TaskPriority = Literal["low", "medium", "high"]
+TaskStatus = Literal["pending", "in_progress", "completed"]
+
+
+class TaskSpec(BaseModel):
+    flw_id: str
+    title: str
+    priority: TaskPriority
+    status: TaskStatus
+    created_week: PositiveInt
+    ocs_persona: str | None = None
+
+
+# ---------- Image config ----------
+
+
+class ImageConfig(BaseModel):
+    question_path: str = "form.muac_group.muac_display_group_1.muac_photo"
+    stock_image_count: PositiveInt = 15
+    probability: float = Field(ge=0, le=1, default=0.85)
+
+
 # ---------- Timeline ----------
 
 
@@ -168,6 +192,8 @@ class Manifest(BaseModel):
     anomalies: list[Anomaly] = Field(default_factory=list)
     kpi_config: list[KpiSpec] = Field(min_length=1)
     coaching_arcs: list[CoachingArc] = Field(default_factory=list)
+    tasks: list[TaskSpec] = Field(default_factory=list)
+    image_config: ImageConfig | None = None
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:
@@ -190,4 +216,7 @@ class Manifest(BaseModel):
             unknown = set(anomaly.flw_ids) - flw_ids
             if unknown:
                 raise ValueError(f"anomaly {anomaly.id} references unknown flw_ids={unknown}")
+        for task in self.tasks:
+            if task.flw_id not in flw_ids:
+                raise ValueError(f"task references unknown flw_id={task.flw_id}")
         return self
