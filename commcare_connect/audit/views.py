@@ -636,29 +636,41 @@ class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
     """Serve audit visit images from Connect API (no CommCare HQ)"""
 
     def get(self, request, opp_id, blob_id):
+        from commcare_connect.labs.synthetic.image_server import SyntheticImageServer
+        from commcare_connect.labs.synthetic.registry import get_synthetic_opp
+
+        if SyntheticImageServer.is_synthetic_blob(blob_id) and get_synthetic_opp(opp_id):
+            return self._serve_synthetic_image(blob_id)
+
         try:
-            # Initialize data access with opportunity ID
             data_access = AuditDataAccess(opportunity_id=opp_id, request=request)
-
             try:
-                # Download image from Connect API
                 image_content = data_access.download_image_from_connect(blob_id, opp_id)
-
-                # Return as image response
                 response = HttpResponse(image_content, content_type="image/jpeg")
                 disposition = 'inline; filename="' + blob_id + '.jpg"'
                 response["Content-Disposition"] = disposition
                 return response
-
             finally:
                 data_access.close()
-
         except Exception as e:
             import traceback
 
             print(f"[ERROR] Image fetch failed for blob_id={blob_id}, opp_id={opp_id}")
             print(f"[ERROR] {traceback.format_exc()}")
             return HttpResponse(f"Image not found: {e}", status=404)
+
+    def _serve_synthetic_image(self, blob_id: str):
+        from commcare_connect.labs.synthetic.image_server import get_image_server
+
+        try:
+            data = get_image_server().get_image(blob_id)
+            if data:
+                response = HttpResponse(data, content_type="image/jpeg")
+                response["Content-Disposition"] = f'inline; filename="{blob_id}.jpg"'
+                return response
+        except Exception as e:
+            logger.warning("Failed to serve synthetic image %s: %s", blob_id, e)
+        return HttpResponse("Synthetic image not found", status=404)
 
 
 class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):

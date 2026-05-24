@@ -12,10 +12,12 @@ import uuid
 from typing import Any
 
 from .fields import fill_form_json
+from .images import assign_visit_images
 from .manifest import Manifest
 from .opportunity import build_opportunity
 from .schema_loader import FormSchema
 from .status import decide_visit_status
+from .tasks import build_task_records
 from .timeline import expand_visit_schedule
 from .user_data import build_user_data
 from .works import build_works_and_modules
@@ -96,6 +98,18 @@ def generate(
             }
         )
 
+    if manifest.image_config:
+        assign_visit_images(visits, manifest.image_config, rng)
+
+    persona_names = {p.id: p.display_name or p.id for p in personas}
+    task_records = build_task_records(
+        opportunity_id=manifest.opportunity_id,
+        tasks=manifest.tasks,
+        coaching_arcs=manifest.coaching_arcs,
+        timeline=manifest.timeline,
+        persona_names=persona_names,
+    )
+
     user_data = build_user_data(personas, visits)
     works, modules = build_works_and_modules(visits, payment_units)
     opportunity = build_opportunity(opportunity_detail, opportunity_name_override=manifest.opportunity_name)
@@ -106,4 +120,5 @@ def generate(
         "user_data": user_data,
         "completed_works": works,
         "completed_module": modules,
+        "task_records": task_records,
     }

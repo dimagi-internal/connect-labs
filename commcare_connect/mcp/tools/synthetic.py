@@ -291,11 +291,110 @@ def synthetic_generate_from_manifest(
         opportunity_name=manifest.opportunity_name,
         fixtures=fixtures,
     )
+
+    task_records = fixtures.get("task_records", [])
+    tasks_created = 0
+    if task_records:
+        client = LabsRecordAPIClient(access_token=require_connect_token(user), opportunity_id=opportunity_id)
+        try:
+            for rec in task_records:
+                client.create_record(
+                    experiment="task",
+                    type="synthetic_task",
+                    data=rec,
+                )
+                tasks_created += 1
+        finally:
+            client.close()
+
     return {
         "folder_id": result.folder_id,
         "folder_url": result.folder_url,
         "record_counts": result.record_counts,
         "form_schema_questions": len(form_schema.questions),
+        "tasks_created": tasks_created,
+    }
+
+
+@register(
+    name="synthetic_profile_from_prod",
+    description=(
+        "Analyze real production data for an opportunity and produce a "
+        "synthetic-data manifest that reproduces the same statistical shape. "
+        "Reads the five export endpoints server-side, computes per-FLW "
+        "distributions (approval rates, flag rates, visit cadence), field "
+        "value distributions from form_json, and timeline parameters. "
+        "Returns a YAML manifest string (no PII) ready to pass to "
+        "synthetic_generate_from_manifest."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "form_json_paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional explicit list of form_json dot-paths to profile "
+                    "(e.g. ['form.case.update.soliciter_muac_cm']). If omitted, "
+                    "auto-discovers numeric fields from a sample of visits."
+                ),
+            },
+        },
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_profile_from_prod(
+    user,
+    *,
+    opportunity_id: int,
+    form_json_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    _require_opportunity_access(user, opportunity_id)
+
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "No Connect token available — cannot fetch production data.",
+        )
+
+    base_url = settings.CONNECT_PRODUCTION_URL
+
+    logger.info("synthetic_profile_from_prod: fetching exports for opp %s", opportunity_id)
+    detail = _fetch_endpoint(base_url, opportunity_id, "", token)
+    user_visits = _fetch_endpoint(base_url, opportunity_id, "user_visits", token)
+    user_data = _fetch_endpoint(base_url, opportunity_id, "user_data", token)
+
+    if not isinstance(user_visits, list) or not user_visits:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"No user_visits data for opportunity_id={opportunity_id}",
+        )
+
+    logger.info(
+        "synthetic_profile_from_prod: profiling %d visits, %d users for opp %s",
+        len(user_visits),
+        len(user_data) if isinstance(user_data, list) else 0,
+        opportunity_id,
+    )
+
+    manifest_yaml = _profile(
+        opportunity_id=opportunity_id,
+        user_visits=user_visits,
+        user_data=user_data if isinstance(user_data, list) else [],
+        opportunity_detail=detail if isinstance(detail, dict) else {},
+        form_json_paths=form_json_paths,
+    )
+
+    return {
+        "manifest_yaml": manifest_yaml,
+        "source_visit_count": len(user_visits),
+        "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
+        "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
     }
 
 
