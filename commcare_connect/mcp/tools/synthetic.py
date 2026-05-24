@@ -6,11 +6,14 @@ import logging
 from typing import Any
 
 import httpx
+from django.conf import settings
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from commcare_connect.labs.synthetic.dump import _fetch_endpoint
 from commcare_connect.labs.synthetic.gdrive import DriveClient
 from commcare_connect.labs.synthetic.generator.engine import generate as _generate
 from commcare_connect.labs.synthetic.generator.manifest import Manifest, ManifestValidationError
+from commcare_connect.labs.synthetic.generator.profiler import profile as _profile
 from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, parse_form_schema_from_app_json
 from commcare_connect.labs.synthetic.generator.uploader import upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
@@ -293,4 +296,86 @@ def synthetic_generate_from_manifest(
         "folder_url": result.folder_url,
         "record_counts": result.record_counts,
         "form_schema_questions": len(form_schema.questions),
+    }
+
+
+@register(
+    name="synthetic_profile_from_prod",
+    description=(
+        "Analyze real production data for an opportunity and produce a "
+        "synthetic-data manifest that reproduces the same statistical shape. "
+        "Reads the five export endpoints server-side, computes per-FLW "
+        "distributions (approval rates, flag rates, visit cadence), field "
+        "value distributions from form_json, and timeline parameters. "
+        "Returns a YAML manifest string (no PII) ready to pass to "
+        "synthetic_generate_from_manifest."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "form_json_paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional explicit list of form_json dot-paths to profile "
+                    "(e.g. ['form.case.update.soliciter_muac_cm']). If omitted, "
+                    "auto-discovers numeric fields from a sample of visits."
+                ),
+            },
+        },
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_profile_from_prod(
+    user,
+    *,
+    opportunity_id: int,
+    form_json_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    _require_opportunity_access(user, opportunity_id)
+
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "No Connect token available — cannot fetch production data.",
+        )
+
+    base_url = settings.CONNECT_PRODUCTION_URL
+
+    logger.info("synthetic_profile_from_prod: fetching exports for opp %s", opportunity_id)
+    detail = _fetch_endpoint(base_url, opportunity_id, "", token)
+    user_visits = _fetch_endpoint(base_url, opportunity_id, "user_visits", token)
+    user_data = _fetch_endpoint(base_url, opportunity_id, "user_data", token)
+
+    if not isinstance(user_visits, list) or not user_visits:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"No user_visits data for opportunity_id={opportunity_id}",
+        )
+
+    logger.info(
+        "synthetic_profile_from_prod: profiling %d visits, %d users for opp %s",
+        len(user_visits),
+        len(user_data) if isinstance(user_data, list) else 0,
+        opportunity_id,
+    )
+
+    manifest_yaml = _profile(
+        opportunity_id=opportunity_id,
+        user_visits=user_visits,
+        user_data=user_data if isinstance(user_data, list) else [],
+        opportunity_detail=detail if isinstance(detail, dict) else {},
+        form_json_paths=form_json_paths,
+    )
+
+    return {
+        "manifest_yaml": manifest_yaml,
+        "source_visit_count": len(user_visits),
+        "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
+        "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
     }
