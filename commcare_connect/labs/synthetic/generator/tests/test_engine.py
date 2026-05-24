@@ -16,7 +16,7 @@ def _load_inputs():
     return manifest, detail, schema
 
 
-def test_generate_returns_all_five_endpoints():
+def test_generate_returns_all_endpoints():
     manifest, detail, schema = _load_inputs()
     out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
     assert set(out.keys()) == {
@@ -25,6 +25,7 @@ def test_generate_returns_all_five_endpoints():
         "user_data",
         "completed_works",
         "completed_module",
+        "task_records",
     }
 
 
@@ -58,6 +59,58 @@ def test_generate_user_data_matches_personas():
     out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
     usernames = {u["username"] for u in out["user_data"]}
     assert usernames == {"asha", "ravi"}
+
+
+def test_generate_with_image_config():
+    """Visits whose form_json has a MUAC field should have images assigned."""
+    base_yaml = (GOLDEN / "manifest.yaml").read_text()
+    # Add a MUAC field distribution so visits get a muac value in form_json,
+    # and add image_config so assign_visit_images is called.
+    muac_patch = "image_config:\n" "  probability: 1.0\n" "  stock_image_count: 5\n"
+    # Add muac field distribution to the cohort.
+    muac_field = "      'form.case.update.soliciter_muac_cm': { distribution: normal, mean: 13.5, stddev: 0.3 }\n"
+    patched = base_yaml + muac_patch
+    patched = patched.replace(
+        "      'form.weight_kg': { distribution: normal, mean: 12.4, stddev: 0.5 }\n",
+        "      'form.weight_kg': { distribution: normal, mean: 12.4, stddev: 0.5 }\n" + muac_field,
+    )
+    manifest = Manifest.from_yaml(patched)
+    detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
+    schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits_with_images = [v for v in out["user_visits"] if v["images"]]
+    assert len(visits_with_images) > 0, "expected at least one visit with images"
+    for v in visits_with_images:
+        assert len(v["images"]) == 1
+        blob_id = v["images"][0]["blob_id"]
+        assert blob_id.startswith("synth-muac-"), f"unexpected blob_id: {blob_id}"
+
+
+def test_generate_produces_task_records():
+    """A manifest with one task should produce one task_record entry."""
+    base_yaml = (GOLDEN / "manifest.yaml").read_text()
+    task_yaml = (
+        "tasks:\n"
+        "  - flw_id: asha\n"
+        "    title: Follow up on low-weight child\n"
+        "    priority: high\n"
+        "    status: pending\n"
+        "    created_week: 1\n"
+    )
+    patched = base_yaml + task_yaml
+    manifest = Manifest.from_yaml(patched)
+    detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
+    schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    assert "task_records" in out
+    assert len(out["task_records"]) == 1
+    record = out["task_records"][0]
+    assert record["title"] == "Follow up on low-weight child"
+    assert record["assigned_to"] == "asha"
 
 
 def test_generate_flags_visits_when_anomaly_scheduled(tmp_path):
