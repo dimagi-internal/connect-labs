@@ -25,6 +25,12 @@ PIPELINE_SCHEMA = {
     "terminal_stage": "aggregated",
     "fields": [
         {
+            "name": "commcare_userid",
+            "path": "form.meta.userID",
+            "aggregation": "first",
+            "description": "CommCare user ID from form metadata",
+        },
+        {
             "name": "male_count",
             "path": "form.additional_case_info.childs_gender",
             # Alt paths: "form.child_registration.childs_gender",
@@ -41,6 +47,18 @@ PIPELINE_SCHEMA = {
             "filter_path": "form.additional_case_info.childs_gender",
             "filter_value": "female",
             "description": "Number of female children visited",
+        },
+        {
+            "name": "muac_consent_count",
+            "paths": [
+                "form.case.update.muac_consent",
+                "form.subcase_0.case.update.muac_consent",
+                "form.service_delivery.muac_group.muac_consent_group.muac_consent",
+            ],
+            "aggregation": "count",
+            "filter_path": "form.case.update.muac_consent",
+            "filter_value": "yes",
+            "description": "Number of MUAC consents obtained",
         },
         {
             "name": "muac_measurements_count",
@@ -76,7 +94,7 @@ PIPELINE_SCHEMA = {
             "description": "Number of visits where child was unwell",
         },
         {
-            "name": "under_treatment_count",
+            "name": "under_malnutrition_treatment_count",
             "paths": [
                 "form.case.update.under_treatment_for_mal",
                 "form.subcase_0.case.update.under_treatment_for_mal",
@@ -100,7 +118,18 @@ PIPELINE_SCHEMA = {
             "description": "Children diagnosed with malnutrition in past 3 months",
         },
         {
-            "name": "va_knowledge_shared_count",
+            "name": "received_va_dose_before_count",
+            "paths": [
+                "form.case.update.received_va_dose_before",
+                "form.subcase_0.case.update.received_va_dose_before",
+            ],
+            "aggregation": "count",
+            "filter_path": "form.case.update.received_va_dose_before",
+            "filter_value": "yes",
+            "description": "Children who received VA dose before",
+        },
+        {
+            "name": "va_confirm_shared_knowledge_count",
             "paths": [
                 "form.case.update.va_confirm_shared_knowledge",
                 "form.subcase_0.case.update.va_confirm_shared_knowledge",
@@ -109,7 +138,7 @@ PIPELINE_SCHEMA = {
             "description": "Times VA knowledge was shared and confirmed",
         },
         {
-            "name": "ors_recovered_count",
+            "name": "ors_child_recovered_count",
             "paths": [
                 "form.ors_group.did_the_child_recover",
                 "form.service_delivery.ors_group.did_the_child_recover",
@@ -120,7 +149,18 @@ PIPELINE_SCHEMA = {
             "description": "Children who recovered with ORS",
         },
         {
-            "name": "received_vaccine_count",
+            "name": "ors_still_facing_symptoms_count",
+            "paths": [
+                "form.ors_group.still_facing_symptoms",
+                "form.service_delivery.ors_group.still_facing_symptoms",
+            ],
+            "aggregation": "count",
+            "filter_path": "form.ors_group.still_facing_symptoms",
+            "filter_value": "yes",
+            "description": "Children still facing symptoms after ORS",
+        },
+        {
+            "name": "received_any_vaccine_count",
             "paths": [
                 "form.pictures.received_any_vaccine",
                 "form.service_delivery.pictures.received_any_vaccine",
@@ -209,7 +249,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     var samRate = totalMuac > 0 ? Math.round(totalSam / totalMuac * 1000) / 10 : 0;
     var mamRate = totalMuac > 0 ? Math.round(totalMam / totalMuac * 1000) / 10 : 0;
     var totalUnwell = rows.reduce(function(s, r) { return s + (r.children_unwell_count || 0); }, 0);
-    var totalTreatment = rows.reduce(function(s, r) { return s + (r.under_treatment_count || 0); }, 0);
+    var totalTreatment = rows.reduce(function(s, r) { return s + (r.under_malnutrition_treatment_count || 0); }, 0);
 
     // ── State ───────────────────────────────────────────────────
     var _sort = React.useState('total_visits');
