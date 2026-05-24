@@ -121,6 +121,14 @@ If you need realistic data for testing, training, or demonstrations, Labs can ge
 
 This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges, and so on) and producing a synthetic dataset that looks realistic but contains no actual records. The result can be used to populate a test workflow instance so you can demonstrate the dashboard or validate a new template without using live data.
 
+Synthetic opportunities now support the complete program management loop, not just the dashboard view. This means a demo can include:
+
+- **Audit drill-downs with MUAC photos** — so stakeholders can see what an image-based quality audit looks like end to end.
+- **Task follow-ups** — showing how supervisors assign and track corrective actions after a flagged visit.
+- **OCS coaching transcripts** — demonstrating the outreach coaching conversation flow within the synthetic opportunity.
+
+This makes synthetic data suitable for full stakeholder and funder demonstrations without any real patient data being used.
+
 To use this capability, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
 !!! note "No real data is used in the output"
@@ -268,10 +276,4 @@ Start from the closest existing template and have Claude Code build a new one �
 Use a workflow for almost all program reporting needs. Custom Python or Django code is only warranted for genuinely complex multi-step UIs — and even then, breaking the work into multiple simpler workflows is usually the right answer.
 
 **Claude Code keeps generating Python aggregation code instead of SQL — what should I do?**
-All data aggregation in workflows must be SQL-based. Python aggregation means the session has gone off track. Ask in **#connect-labs**, or start a fresh Claude Code session with just a clean summary of your requirements as input.
-
-**I edited a workflow and then redeployed Labs — did I lose my changes?**
-No. Workflow definitions are stored in Connect prod, not in the Labs environment. Redeploying Labs only updates the rendering layer; your workflow data is unaffected.
-
-**Why is a worker's data missing or outdated?**
-Pipelines refresh data on a schedule
+All data aggreg
