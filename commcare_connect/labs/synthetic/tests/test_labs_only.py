@@ -163,7 +163,8 @@ def test_get_org_data_merges_visible_labs_only_opp(dimagi_user):
     labs_opp = next(o for o in org_data["opportunities"] if o["id"] == 10_000)
     assert labs_opp["labs_only"] is True
     assert labs_opp["name"] == "CHC demo"
-    assert labs_opp["organization"] == "Acme Health"
+    # `organization` carries the org slug (Connect serializer shape), not the name.
+    assert labs_opp["organization"] == "labs-synthetic-acme-health"
 
     org_names = {o["name"] for o in org_data["organizations"]}
     assert "Acme Health" in org_names
