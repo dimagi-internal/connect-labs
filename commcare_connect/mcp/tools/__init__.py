@@ -5,6 +5,7 @@ Importing this package triggers all registration.
 """
 
 from . import apps  # noqa: F401
+from . import custom_analysis_run  # noqa: F401  -- registers custom_analysis_run
 from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
 from . import mbw_parity  # noqa: F401
