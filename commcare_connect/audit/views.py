@@ -625,9 +625,21 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
 
             return JsonResponse(response_data)
 
-        except Exception:
+        except Exception as exc:
+            import traceback as _tb
+
             logger.exception("Failed to load bulk assessment data")
-            return JsonResponse({"error": "An internal error occurred"}, status=500)
+            # Temporary: surface the traceback to the client for labs-side
+            # debugging of the synthetic audit smoke test. Revert before
+            # production roll-out.
+            return JsonResponse(
+                {
+                    "error": "An internal error occurred",
+                    "detail": str(exc),
+                    "traceback": _tb.format_exc()[-2000:],
+                },
+                status=500,
+            )
         finally:
             data_access.close()
 
