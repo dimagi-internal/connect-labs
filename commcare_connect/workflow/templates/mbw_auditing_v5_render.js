@@ -817,6 +817,7 @@ function WorkflowUI({
   var jobCleanupRef = React.useRef(null);
   var tab2CleanupRef = React.useRef(null);
   var taskDetailRequestIdRef = React.useRef(0);
+  var saveQueueRef = React.useRef(Promise.resolve());
   // Holds selected usernames for the current run so runAnalysis can read them
   // even before onUpdateState resolves (instance.state not yet updated)
   var selectedForRunRef = React.useRef(
@@ -1643,28 +1644,32 @@ function WorkflowUI({
     // Toggle: clicking the active category clears it
     var current = (workerResults[username] || {}).result;
     var newCategory = current === category ? null : category;
-    setSavingUser(username);
     var wr = workerResults[username] || {};
-    actions
-      .saveWorkerResult(instance.id, {
-        username: username,
-        result: newCategory,
-        notes: wr.notes || '',
-      })
-      .then(function (resp) {
-        if (resp.success) {
-          var updated = Object.assign({}, workerResults);
-          updated[username] = Object.assign({}, wr, { result: newCategory });
-          setWorkerResults(resp.worker_results || updated);
-        } else {
-          alert('Failed to save: ' + (resp.error || 'unknown error'));
-        }
-      })
-      .catch(function (e) {
-        alert('Error: ' + ((e && e.message) || e));
-      })
-      .finally(function () {
-        setSavingUser(null);
+    setSavingUser(username);
+    saveQueueRef.current = saveQueueRef.current
+      .catch(function () {})
+      .then(function () {
+        return actions
+          .saveWorkerResult(instance.id, {
+            username: username,
+            result: newCategory,
+            notes: wr.notes || '',
+          })
+          .then(function (resp) {
+            if (resp.success) {
+              var updated = Object.assign({}, workerResults);
+              updated[username] = Object.assign({}, wr, { result: newCategory });
+              setWorkerResults(resp.worker_results || updated);
+            } else {
+              alert('Failed to save: ' + (resp.error || 'unknown error'));
+            }
+          })
+          .catch(function (e) {
+            alert('Error: ' + ((e && e.message) || e));
+          })
+          .finally(function () {
+            setSavingUser(null);
+          });
       });
   };
 
@@ -1680,30 +1685,34 @@ function WorkflowUI({
     setSavingNotes(true);
     var username = notesModal;
     var wr = workerResults[username] || {};
-    actions
-      .saveWorkerResult(instance.id, {
-        username: username,
-        result: notesModalResult,
-        notes: notesDraft,
-      })
-      .then(function (resp) {
-        if (resp.success) {
-          var updated = Object.assign({}, workerResults);
-          updated[username] = Object.assign({}, wr, {
+    saveQueueRef.current = saveQueueRef.current
+      .catch(function () {})
+      .then(function () {
+        return actions
+          .saveWorkerResult(instance.id, {
+            username: username,
             result: notesModalResult,
             notes: notesDraft,
+          })
+          .then(function (resp) {
+            if (resp.success) {
+              var updated = Object.assign({}, workerResults);
+              updated[username] = Object.assign({}, wr, {
+                result: notesModalResult,
+                notes: notesDraft,
+              });
+              setWorkerResults(resp.worker_results || updated);
+              setNotesModal(null);
+            } else {
+              alert('Failed to save notes: ' + (resp.error || 'unknown error'));
+            }
+          })
+          .catch(function (e) {
+            alert('Error: ' + ((e && e.message) || e));
+          })
+          .finally(function () {
+            setSavingNotes(false);
           });
-          setWorkerResults(resp.worker_results || updated);
-          setNotesModal(null);
-        } else {
-          alert('Failed to save notes: ' + (resp.error || 'unknown error'));
-        }
-      })
-      .catch(function (e) {
-        alert('Error: ' + ((e && e.message) || e));
-      })
-      .finally(function () {
-        setSavingNotes(false);
       });
   };
 
