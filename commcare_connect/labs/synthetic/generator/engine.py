@@ -68,7 +68,13 @@ def generate(
     for slot in slots:
         persona = persona_index[slot.flw_id]
         anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
-        form_json = fill_form_json(schema=form_schema, cohort=cohort, anomalies_for_visit=anomalies, rng=rng)
+        form_json = fill_form_json(
+            schema=form_schema,
+            cohort=cohort,
+            anomalies_for_visit=anomalies,
+            rng=rng,
+            persona=persona,
+        )
         status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
         # Visit id MUST be a PostgreSQL bigint-compatible integer — the audit
         # data-access layer and labs cache both type the column as int, and a

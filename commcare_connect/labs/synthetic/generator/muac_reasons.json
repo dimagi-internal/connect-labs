@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "description": "Per-image rationale for the bad-MUAC photo corpus. Mirror of reasons.json in the shared stock-images Drive folder (LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID).",
+    "source_doc": "https://docs.google.com/document/d/1MTp7Ogx6ywg8e2Lu6I9BUddAMOWIRGZMCAe5Jv7hb84/edit?tab=t.4ekg38rl0ie2",
+    "categories": {
+      "tape_usage": "MUAC tape is improperly applied — overflows the framing window, misaligned, or twisted.",
+      "framing": "Photo framing makes the reading impossible to verify — too zoomed, no arrows visible, or no arm context.",
+      "equipment": "The MUAC strip itself is damaged — faded arrows, worn edges, lost tick marks.",
+      "misleading": "Photo appears fraudulent — tape is on a finger, hand, or surface, not a child's arm.",
+      "content_free": "Image is unusable due to motion blur, focus, or obstruction; reading cannot be confirmed."
+    }
+  },
+  "muac_bad_001.jpg": {
+    "category": "tape_usage",
+    "reason": "MUAC tape overflows the framing reticle (not threaded back) — the loose end sticks out below the window."
+  },
+  "muac_bad_002.jpg": {
+    "category": "tape_usage",
+    "reason": "Tape is not threaded through the reticle at all; the strip lies flat across the arm so no measurement window is formed."
+  },
+  "muac_bad_003.jpg": {
+    "category": "tape_usage",
+    "reason": "Tape is twisted/rotated vertically so the reading window faces sideways and the numbers cannot be read in the normal orientation."
+  },
+  "muac_bad_004.jpg": {
+    "category": "framing",
+    "reason": "Extreme zoom — only the digit '15' is visible, with no arrows, no arm, and no color zone for context."
+  },
+  "muac_bad_005.jpg": {
+    "category": "framing",
+    "reason": "Framing is too distant and the reading window is small in the frame; the numbers around the arrows are difficult to read."
+  },
+  "muac_bad_006.jpg": {
+    "category": "equipment",
+    "reason": "Tape edges are worn — tick marks near 16-17-18 cm are scuffed off, reducing precision of the measurement."
+  },
+  "muac_bad_007.jpg": {
+    "category": "equipment",
+    "reason": "The red color zone on the strip is heavily scratched/peeling, which would compromise an FLW's ability to triage severe-acute cases by color."
+  },
+  "muac_bad_008.jpg": {
+    "category": "equipment",
+    "reason": "Tape is uniformly faded — arrows, tick marks, and numbers are nearly invisible and the reading cannot be confirmed."
+  },
+  "muac_bad_009.jpg": {
+    "category": "misleading",
+    "reason": "Tape is wrapped around the FLW's finger, not a child's arm — circumference is impossible at this diameter and the photo is fraudulent."
+  },
+  "muac_bad_010.jpg": {
+    "category": "misleading",
+    "reason": "Tape is laid flat against the FLW's thumb and palm rather than wrapped around a child's arm."
+  },
+  "muac_bad_011.jpg": {
+    "category": "misleading",
+    "reason": "Tape is wrapped around an adult finger — the diameter is far too small to be a child's mid-upper arm."
+  },
+  "muac_bad_012.jpg": {
+    "category": "content_free",
+    "reason": "The MUAC window is visible but the numeric reading is partially occluded and shot at a steep angle that distorts the value."
+  },
+  "muac_bad_013.jpg": {
+    "category": "content_free",
+    "reason": "Image is heavily out of focus — the reading window is a green blur and no digits are legible."
+  }
+}

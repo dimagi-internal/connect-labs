@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from .manifest import Anomaly, BeneficiaryCohort, NormalDistribution, UniformDistribution
+from .manifest import Anomaly, BeneficiaryCohort, FlwPersona, NormalDistribution, UniformDistribution
 from .schema_loader import FormSchema, QuestionSpec
 
 
@@ -83,13 +83,19 @@ def fill_form_json(
     cohort: BeneficiaryCohort,
     anomalies_for_visit: list[Anomaly],
     rng: random.Random,
+    persona: FlwPersona | None = None,
 ) -> dict[str, Any]:
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
+    # Persona overrides take precedence over cohort distributions. Building a
+    # merged map once avoids re-checking the persona on every field.
+    overrides = persona.field_overrides if persona else {}
+    effective: dict[str, Any] = {**cohort.field_distributions, **overrides}
+
     out: dict[str, Any] = {}
     covered_paths: set[str] = set()
     for spec in schema.questions:
         covered_paths.add(spec.json_path)
-        dist = cohort.field_distributions.get(spec.json_path)
+        dist = effective.get(spec.json_path)
         if dist is None:
             value = _default_for_kind(spec, rng)
         else:
@@ -106,7 +112,7 @@ def fill_form_json(
     # Write values for manifest field_distributions not covered by the HQ schema.
     # This ensures paths like form.case.update.soliciter_muac_cm get populated
     # even when the app structure API returns them under different question IDs.
-    for path, dist in cohort.field_distributions.items():
+    for path, dist in effective.items():
         if path in covered_paths:
             continue
         raw = _outlier(dist, rng) if path in anomaly_paths else _draw(dist, rng)
