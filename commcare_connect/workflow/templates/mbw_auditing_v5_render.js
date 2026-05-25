@@ -125,7 +125,10 @@ function v5_processVisits(visitsRows, taskFilters) {
     }
 
     // For Tab 2: skip visits submitted before this FLW's task trigger date.
-    if (taskFilters && Object.prototype.hasOwnProperty.call(taskFilters, username)) {
+    if (
+      taskFilters &&
+      Object.prototype.hasOwnProperty.call(taskFilters, username)
+    ) {
       var trigger = v5_dateStr(taskFilters[username] || '');
       if (vdt && trigger && vdt < trigger) {
         continue;
@@ -227,7 +230,10 @@ function v5_processRegistrations(regRows) {
     var elig = ((row.eligible_full_intervention_bonus || '') + '').trim();
     motherEligibility[mid] = elig === '1';
   }
-  return { motherSchedules: motherSchedules, motherEligibility: motherEligibility };
+  return {
+    motherSchedules: motherSchedules,
+    motherEligibility: motherEligibility,
+  };
 }
 
 // Process GS forms rows. Mirrors v4 handler lines 317-329.
@@ -345,7 +351,10 @@ function v5_computeBaselineFollowupRates({
   Object.keys(taskFilters).forEach(function (flwUsername) {
     var triggerDateStr = v5_dateStr(taskFilters[flwUsername]);
     if (!triggerDateStr) return;
-    var triggerGraceCutoff = v5_subtractDays(triggerDateStr, V5_GRACE_PERIOD_DAYS);
+    var triggerGraceCutoff = v5_subtractDays(
+      triggerDateStr,
+      V5_GRACE_PERIOD_DAYS,
+    );
 
     var baselineCompleted = 0;
     var baselineDenominator = 0;
@@ -525,8 +534,7 @@ function v5_computeMbwAuditingData({
 
     summaries.push({
       username: u,
-      display_name:
-        (flwNames && (flwNames[u] || flwNames[username])) || u,
+      display_name: (flwNames && (flwNames[u] || flwNames[username])) || u,
       num_mothers: numMothers,
       num_mothers_eligible: totalEligible,
       num_eligible_mothers_visited: eligibleMothersVisited,
@@ -534,7 +542,11 @@ function v5_computeMbwAuditingData({
       gs_score: gsScore,
       followup_rate: followupRate,
       followup_rate_denom: denom,
-      followup_rate_at_trigger: taskFilters ? (baselineRates[u] != null ? baselineRates[u] : null) : null,
+      followup_rate_at_trigger: taskFilters
+        ? baselineRates[u] != null
+          ? baselineRates[u]
+          : null
+        : null,
       pct_still_eligible: pctStillEligible,
       ebf_pct: ebfPct,
       ebf_denom: bfCount,
@@ -1017,11 +1029,9 @@ function WorkflowUI({
           visitsAggRows:
             (snapPipelines.visits_agg && snapPipelines.visits_agg.rows) || [],
           regRows:
-            (snapPipelines.registrations &&
-              snapPipelines.registrations.rows) ||
+            (snapPipelines.registrations && snapPipelines.registrations.rows) ||
             [],
-          gsRows:
-            (snapPipelines.gs_forms && snapPipelines.gs_forms.rows) || [],
+          gsRows: (snapPipelines.gs_forms && snapPipelines.gs_forms.rows) || [],
           activeUsernames: snapSel,
           flwNames: flwNameMap,
           taskFilters: null,
@@ -1062,16 +1072,13 @@ function WorkflowUI({
       // Pipeline rows: prefer view.pipelines (snapshot-aware) and fall back
       // to props.pipelines (live data when view not yet wired in some legacy
       // contexts). For an in_progress run both resolve to the same data.
-      var srcPipelines =
-        (view && view.pipelines) || pipelines || {};
-      var visitsRows =
-        (srcPipelines.visits && srcPipelines.visits.rows) || [];
+      var srcPipelines = (view && view.pipelines) || pipelines || {};
+      var visitsRows = (srcPipelines.visits && srcPipelines.visits.rows) || [];
       var visitsAggRows =
         (srcPipelines.visits_agg && srcPipelines.visits_agg.rows) || [];
       var regRows =
         (srcPipelines.registrations && srcPipelines.registrations.rows) || [];
-      var gsRows =
-        (srcPipelines.gs_forms && srcPipelines.gs_forms.rows) || [];
+      var gsRows = (srcPipelines.gs_forms && srcPipelines.gs_forms.rows) || [];
 
       // If pipelines haven't loaded yet, bail out — the framework's
       // streamPipelineData effect will load them and re-render; the mount
@@ -1314,8 +1321,7 @@ function WorkflowUI({
       var visitsRows2 =
         (srcPipelines2.visits && srcPipelines2.visits.rows) || [];
       var regRows2 =
-        (srcPipelines2.registrations && srcPipelines2.registrations.rows) ||
-        [];
+        (srcPipelines2.registrations && srcPipelines2.registrations.rows) || [];
       var gsRows2 =
         (srcPipelines2.gs_forms && srcPipelines2.gs_forms.rows) || [];
 

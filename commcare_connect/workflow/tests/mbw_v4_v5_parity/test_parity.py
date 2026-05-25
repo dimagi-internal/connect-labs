@@ -18,7 +18,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[4]
 RUN_V5_JS = REPO_ROOT / "commcare_connect" / "workflow" / "tests" / "mbw_v4_v5_parity" / "run_v5.js"
 MOUNT_JS = REPO_ROOT / "commcare_connect" / "workflow" / "tests" / "mbw_v4_v5_parity" / "mount_v4_v5.js"
@@ -28,9 +27,7 @@ MOUNT_DEPS_DIR = Path("/tmp/v5-mount-test")
 
 
 def _run_v4(fixture: dict, *, with_task_filters: bool) -> dict:
-    from commcare_connect.workflow.job_handlers.mbw_auditing_v4 import (
-        handle_mbw_auditing_v4_job,
-    )
+    from commcare_connect.workflow.job_handlers.mbw_auditing_v4 import handle_mbw_auditing_v4_job
 
     job_config = {
         "pipeline_data": {
@@ -49,9 +46,7 @@ def _run_v4(fixture: dict, *, with_task_filters: bool) -> dict:
     def _progress(msg, **_):
         pass
 
-    result = handle_mbw_auditing_v4_job(
-        job_config, access_token="", progress_callback=_progress
-    )
+    result = handle_mbw_auditing_v4_job(job_config, access_token="", progress_callback=_progress)
     # Drop keys not part of the SQL-compute parity surface (v5 fetches these
     # from REST endpoints, not the compute helpers).
     result.pop("open_tasks", None)
@@ -98,10 +93,7 @@ def _assert_parity(v4_out: dict, v5_out: dict, label: str) -> None:
             if a.get(k) != b.get(k):
                 diffs.append(f"  {u}.{k}: v4={a.get(k)!r} v5={b.get(k)!r}")
 
-    assert not diffs, (
-        f"v4↔v5 parity FAIL ({label}): {len(diffs)} diff(s):\n"
-        + "\n".join(diffs)
-    )
+    assert not diffs, f"v4↔v5 parity FAIL ({label}): {len(diffs)} diff(s):\n" + "\n".join(diffs)
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
@@ -118,9 +110,7 @@ def test_tab1_parity(tmp_path):
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
 def test_tab2_parity(tmp_path):
     """Tab 2: per-FLW baseline rate at trigger date (with task_filters)."""
-    from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import (
-        fixture_for_tab2,
-    )
+    from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import fixture_for_tab2
 
     fx = fixture_for_tab2()
     v4_out = _run_v4(fx, with_task_filters=True)
@@ -132,9 +122,7 @@ def test_tab2_parity(tmp_path):
 def test_edge_cases_parity(tmp_path):
     """Edge cases: zero-visit FLW, empty schedules, NaN GPS, bf_status
     tokenization, GS user_connect_id vs username fallback."""
-    from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import (
-        fixture_edge_cases,
-    )
+    from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import fixture_edge_cases
 
     fx = fixture_edge_cases()
     v4_out = _run_v4(fx, with_task_filters=False)
@@ -180,6 +168,7 @@ def test_v4_v5_mount_html_identical(tmp_path):
     # point NODE_PATH at the install dir's node_modules so the script picks
     # up @babel/standalone, react, react-dom from there.
     import os as _os
+
     env = _os.environ.copy()
     env["NODE_PATH"] = str(MOUNT_DEPS_DIR / "node_modules")
     proc = subprocess.run(
@@ -195,18 +184,14 @@ def test_v4_v5_mount_html_identical(tmp_path):
         text=True,
         timeout=30,
     )
-    assert proc.returncode == 0, (
-        f"v4↔v5 mount FAIL:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-    )
+    assert proc.returncode == 0, f"v4↔v5 mount FAIL:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
 def test_tab2_edge_cases_parity(tmp_path):
     """Tab 2 edge cases: trigger date in the future, trigger date before any
     visits, ensuring baseline rate handles zero-denominator gracefully."""
-    from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import (
-        fixture_tab2_edge,
-    )
+    from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import fixture_tab2_edge
 
     fx = fixture_tab2_edge()
     v4_out = _run_v4(fx, with_task_filters=True)

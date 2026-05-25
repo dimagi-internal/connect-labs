@@ -7,10 +7,7 @@ Usage:
 import json
 import sys
 
-from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import (
-    build_fixture,
-    fixture_for_tab2,
-)
+from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import build_fixture, fixture_for_tab2
 
 
 def main() -> None:
