@@ -209,13 +209,6 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "color": "green",
             },
             {
-                "name": "CHC Nutrition",
-                "url": "/custom_analysis/chc_nutrition/",
-                "icon": "fa-heartbeat",
-                "description": "Nutrition and health metrics analysis for the Child Health Campaign",
-                "color": "rose",
-            },
-            {
                 "name": "KMC Timeline",
                 "url": "/custom_analysis/kmc/children/",
                 "icon": "fa-baby",
