@@ -51,11 +51,24 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
 def _require_opportunity_access(user, opportunity_id: int) -> None:
     """Raise PERMISSION_DENIED if the user has no access to ``opportunity_id``.
 
-    Checked against the user's live Connect membership data — same source
-    the labs synthetic UI uses, just without the request-bound session
-    detour. Empty set (no token, upstream failure) is treated as "no
-    access" so an unauthenticated MCP caller can't slip a write through.
+    Two paths are accepted:
+    1. The opp is a labs-only SyntheticOpportunity the user can see (via
+       ``view_synthetic_opps`` + matching ``allowed_domains``). These opps
+       have no Connect side and are gated entirely on the labs visibility model.
+    2. The opp is in the user's live Connect membership data (the existing
+       check — same source the labs synthetic UI uses, just without the
+       request-bound session detour). Empty set (no token, upstream failure)
+       is treated as "no access" so an unauthenticated caller can't slip a
+       write through.
     """
+    # Labs-only path first — cheap DB lookup, no upstream call.
+    try:
+        opp = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id, labs_only=True)
+    except SyntheticOpportunity.DoesNotExist:
+        opp = None
+    if opp is not None and opp.is_visible_to(user):
+        return
+
     accessible = _accessible_opp_ids_for_user(user)
     if opportunity_id not in accessible:
         raise MCPToolError(
