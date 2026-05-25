@@ -507,6 +507,54 @@ def synthetic_clone_to_labs_only(
 
 
 @register(
+    name="synthetic_image_server_status",
+    description=(
+        "Diagnostic: report the synthetic image-server config and folder access — "
+        "whether LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is set, what filenames the "
+        "service-account can see in that folder, and whether a sample stock image "
+        "downloads. Used to root-cause why audit MUAC photo cards render with "
+        "placeholders."
+    ),
+    input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+    is_write=False,
+)
+def synthetic_image_server_status(user) -> dict[str, Any]:
+    from django.conf import settings
+
+    from commcare_connect.labs.synthetic.image_server import SyntheticImageServer
+
+    folder_id = getattr(settings, "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", "") or ""
+    result: dict[str, Any] = {
+        "folder_id_set": bool(folder_id),
+        "folder_id": folder_id,
+        "listing_files": [],
+        "listing_error": None,
+        "sample_download_ok": False,
+        "sample_download_error": None,
+    }
+    if not folder_id:
+        return result
+
+    try:
+        server = SyntheticImageServer()
+        # The drive client; force a fresh listing.
+        listing = server._drive.list_folder(folder_id)
+        result["listing_files"] = sorted(listing.keys())
+    except Exception as exc:  # noqa: BLE001 — diagnostic surfaces all errors
+        result["listing_error"] = f"{type(exc).__name__}: {exc}"
+        return result
+
+    try:
+        data = server.get_image("synth-muac-001")
+        result["sample_download_ok"] = bool(data)
+        result["sample_bytes"] = len(data) if data else 0
+    except Exception as exc:  # noqa: BLE001
+        result["sample_download_error"] = f"{type(exc).__name__}: {exc}"
+
+    return result
+
+
+@register(
     name="synthetic_local_records_count",
     description=(
         "Diagnostic: return counts of LabsLocalRecord rows for a labs-only opp, "
