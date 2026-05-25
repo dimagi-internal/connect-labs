@@ -12,6 +12,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from datetime import timezone as _stdlib_timezone
 
 import httpx
 from django.conf import settings
@@ -454,7 +455,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 visit_date_raw = first_image.get("visit_date", "")
                 visit_date_dt = parse_datetime(visit_date_raw) if visit_date_raw else None
                 if visit_date_dt and timezone.is_naive(visit_date_dt):
-                    visit_date_dt = timezone.make_aware(visit_date_dt, timezone.utc)
+                    # django.utils.timezone.utc was removed in Django 5; use stdlib's
+                    # datetime.timezone.utc instead.
+                    visit_date_dt = timezone.make_aware(visit_date_dt, _stdlib_timezone.utc)
                 visit_date_local = timezone.localtime(visit_date_dt) if visit_date_dt else None
                 visit_date_display = visit_date_local.strftime("%b %d, %H:%M") if visit_date_local else ""
                 visit_date_sort = visit_date_local.isoformat() if visit_date_local else ""
@@ -625,21 +628,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
 
             return JsonResponse(response_data)
 
-        except Exception as exc:
-            import traceback as _tb
-
+        except Exception:
             logger.exception("Failed to load bulk assessment data")
-            # Temporary: surface the traceback to the client for labs-side
-            # debugging of the synthetic audit smoke test. Revert before
-            # production roll-out.
-            return JsonResponse(
-                {
-                    "error": "An internal error occurred",
-                    "detail": str(exc),
-                    "traceback": _tb.format_exc()[-2000:],
-                },
-                status=500,
-            )
+            return JsonResponse({"error": "An internal error occurred"}, status=500)
         finally:
             data_access.close()
 
