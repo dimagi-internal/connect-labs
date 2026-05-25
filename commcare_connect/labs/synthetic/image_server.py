@@ -15,7 +15,12 @@ from commcare_connect.labs.synthetic.gdrive import DriveClient
 
 logger = logging.getLogger(__name__)
 
-_SYNTH_PATTERN = re.compile(r"^synth-muac-(\d+)$")
+# Legacy form: ``synth-muac-NNN`` → ``muac_NNN.jpg`` (uncategorized pool).
+# Pooled form: ``synth-muac-good-NNN`` / ``synth-muac-bad-NNN`` → the
+# corresponding ``muac_good_NNN.jpg`` / ``muac_bad_NNN.jpg`` in the same
+# folder. Both share the cache; the pool prefix is part of the cache key
+# via the blob_id itself.
+_SYNTH_PATTERN = re.compile(r"^synth-muac-(?:(good|bad)-)?(\d+)$")
 
 _instance: SyntheticImageServer | None = None
 
@@ -39,7 +44,11 @@ class SyntheticImageServer:
         m = _SYNTH_PATTERN.match(blob_id)
         if not m:
             return None
-        return f"muac_{int(m.group(1)):03d}.jpg"
+        pool = m.group(1)  # 'good', 'bad', or None
+        n = int(m.group(2))
+        if pool is None:
+            return f"muac_{n:03d}.jpg"
+        return f"muac_{pool}_{n:03d}.jpg"
 
     @staticmethod
     def is_synthetic_blob(blob_id: str) -> bool:
