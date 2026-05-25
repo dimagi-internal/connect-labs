@@ -2657,7 +2657,7 @@ def prev_categories_api(request):
         runs = wf_access.list_runs()
         wf_access.close()
 
-        candidates = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]
+        candidates = [r for r in runs if r.is_completed and (r.data.get("state") or {}).get("worker_results")]
         if not candidates:
             return JsonResponse({"prev_categories": {}, "source_run_id": None})
 
