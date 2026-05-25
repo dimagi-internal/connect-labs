@@ -233,11 +233,9 @@ class CoverageMapStreamView(LoginRequiredMixin, View):
             yield send_sse(f"CommCare HQ complete: {len(coverage.delivery_units)} delivery units")
 
             # STEP 3: Get analysis config
-            config = loader.get_analysis_config()
-            if not config:
-                from commcare_connect.coverage.analysis import COVERAGE_BASE_CONFIG
+            from commcare_connect.coverage.analysis import COVERAGE_BASE_CONFIG
 
-                config = COVERAGE_BASE_CONFIG
+            config = COVERAGE_BASE_CONFIG
 
             # STEP 4: Connect - Download visits
             yield send_sse("Fetching Connect data (this may take a while)...")
