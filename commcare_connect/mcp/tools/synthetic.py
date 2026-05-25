@@ -319,10 +319,15 @@ def synthetic_generate_from_manifest(
         client = LabsRecordAPIClient(access_token=token, opportunity_id=opportunity_id)
         try:
             for rec in task_records:
+                # Write as Task records so the Tasks UI (experiment="tasks",
+                # type="Task") picks them up. The synthetic generator already
+                # produces records in the Task schema; this just registers them
+                # under the right experiment/type tags.
                 client.create_record(
-                    experiment="task",
-                    type="synthetic_task",
+                    experiment="tasks",
+                    type="Task",
                     data=rec,
+                    username=rec.get("username") or "",
                 )
                 tasks_created += 1
         finally:

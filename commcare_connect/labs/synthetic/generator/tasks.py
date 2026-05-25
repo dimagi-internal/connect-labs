@@ -54,12 +54,37 @@ def _build_from_coaching_arc(arc: CoachingArc, timeline: Timeline, persona_names
             template_key=arc.persona, flw_name=flw_name, base_timestamp=created_at + dt.timedelta(hours=1)
         )
 
+    # Match the schema TasksDataAccess.create_task writes so synthetic tasks
+    # show up in the Tasks UI alongside human-created ones. The synthetic flag
+    # + ocs_conversation field carry the demo-specific payload; the Tasks UI
+    # ignores unknown fields, leaving room for a custom OCS-transcript renderer.
     return {
-        "assigned_to": arc.flw_id,
         "title": f"Coaching: {arc.target_behavior}",
+        "description": f"Synthetic coaching task generated for {flw_name}.",
         "priority": "medium",
         "status": "completed",
-        "created_at": created_at.isoformat(),
+        "username": arc.flw_id,
+        "flw_name": flw_name,
+        "user_id": None,
+        "assigned_to_type": "self",
+        "assigned_to_name": "Synthetic Coach",
+        "audit_session_id": None,
+        "workflow_run_id": None,
+        "resolution_details": {},
+        "events": [
+            {
+                "event_type": "created",
+                "actor": "Synthetic Coach",
+                "description": f"Coaching task created targeting: {arc.target_behavior}",
+                "timestamp": created_at.isoformat(),
+            },
+            {
+                "event_type": "resolved",
+                "actor": "Synthetic Coach",
+                "description": "Coaching arc completed.",
+                "timestamp": (created_at + dt.timedelta(days=3)).isoformat(),
+            },
+        ],
         "ocs_conversation": conversation,
         "synthetic": True,
     }
