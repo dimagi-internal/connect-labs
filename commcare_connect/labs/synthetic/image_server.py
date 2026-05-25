@@ -45,6 +45,24 @@ class SyntheticImageServer:
     def is_synthetic_blob(blob_id: str) -> bool:
         return bool(_SYNTH_PATTERN.match(blob_id))
 
+    @property
+    def stock_folder_id(self) -> str:
+        """Public accessor for the configured stock-images folder id."""
+        return self._stock_folder_id
+
+    def list_stock_folder(self) -> dict[str, str]:
+        """Public listing of {filename: drive_file_id} for the stock folder.
+
+        Cached on the instance after first call. Returns {} if no folder is
+        configured; raises ``DriveAPIError`` on access failure (caller's
+        responsibility to handle).
+        """
+        if not self._stock_folder_id:
+            return {}
+        if self._folder_listing is None:
+            self._folder_listing = self._drive.list_folder(self._stock_folder_id)
+        return self._folder_listing
+
     def get_image(self, blob_id: str) -> bytes | None:
         if blob_id in self._cache:
             return self._cache[blob_id]
@@ -57,10 +75,8 @@ class SyntheticImageServer:
             logger.warning("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID not set")
             return None
 
-        if self._folder_listing is None:
-            self._folder_listing = self._drive.list_folder(self._stock_folder_id)
-
-        file_id = self._folder_listing.get(filename)
+        listing = self.list_stock_folder()
+        file_id = listing.get(filename)
         if not file_id:
             logger.warning("Stock image %s not found in folder %s", filename, self._stock_folder_id)
             return None
