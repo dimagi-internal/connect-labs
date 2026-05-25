@@ -52,10 +52,18 @@ def test_build_task_records_with_coaching_arc():
     )
     assert len(records) == 1
     r = records[0]
-    assert r["assigned_to"] == "flw_014"
+    # Tasks schema uses `username` (Connect's canonical FLW identifier) — the
+    # previous `assigned_to` field was a holdover from the synthetic-only
+    # shape that the Tasks UI couldn't render.
+    assert r["username"] == "flw_014"
+    assert r["flw_name"] == "Nuhu D."
+    assert r["status"] == "completed"
     assert "ocs_conversation" in r
     assert len(r["ocs_conversation"]) >= 3
     assert any("Nuhu" in msg["text"] for msg in r["ocs_conversation"])
+    # Events match the Task schema (created + resolved entries).
+    assert any(e["event_type"] == "created" for e in r["events"])
+    assert any(e["event_type"] == "resolved" for e in r["events"])
 
 
 def test_build_task_records_explicit_transcript():
