@@ -112,7 +112,7 @@ class FLWAnalysisAPIView(LoginRequiredMixin, View):
         # Try to get from config registry if name provided
         if config_name:
             try:
-                from commcare_connect.coverage.config_registry import get_config
+                from commcare_connect.labs.analysis.config_registry import get_config
 
                 registered_config = get_config(config_name)
                 if registered_config:

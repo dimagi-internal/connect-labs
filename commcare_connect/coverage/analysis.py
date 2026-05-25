@@ -121,14 +121,13 @@ def get_coverage_visit_analysis(
         VisitAnalysisResult with service_area_id populated
 
     Example:
-        from commcare_connect.coverage.analysis import get_coverage_visit_analysis
-        from commcare_connect.custom_analysis.chc_nutrition.analysis_config import CHC_NUTRITION_CONFIG
+        from commcare_connect.coverage.analysis import COVERAGE_BASE_CONFIG, get_coverage_visit_analysis
 
         # Build DU lookup from coverage data
         du_lookup = {du.du_name: {"service_area_id": du.service_area_id} for du in coverage.delivery_units.values()}
 
         # Get cached analysis with coverage context
-        result = get_coverage_visit_analysis(request, CHC_NUTRITION_CONFIG, du_lookup)
+        result = get_coverage_visit_analysis(request, COVERAGE_BASE_CONFIG, du_lookup)
     """
     # Ensure config requests visit-level output (not aggregated)
     # This is important because coverage needs individual visit data
@@ -166,7 +165,7 @@ def create_coverage_analysis_config(
     Optionally extends an existing config with additional coverage-specific fields.
 
     Args:
-        base_config: Optional base config to extend (e.g., CHC_NUTRITION_CONFIG)
+        base_config: Optional base config to extend
         additional_fields: Optional additional field computations
 
     Returns:
