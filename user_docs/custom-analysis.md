@@ -120,3 +120,6 @@ Labs dashboards may apply additional filters or use different date logic than Co
 
 **Data is loading slowly — is something wrong?**
 Large programs with many visits take longer to load. If the progress bar hasn't moved in 5+ minutes, try refreshing the page. If the problem persists, post in **#connect-labs**.
+
+**The Coverage tile on the home page used to have two buttons — where did the second one go?**
+The **Coverage** tile previously showed a separate "CHC Nutrition View" button alongside the main map link. Both buttons opened the same map display, so the extra button has been removed. Clicking **Coverage** now takes you directly to the map. Nothing about the map itself has changed.
