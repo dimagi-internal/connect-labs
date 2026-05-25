@@ -308,7 +308,15 @@ def synthetic_generate_from_manifest(
     task_records = fixtures.get("task_records", [])
     tasks_created = 0
     if task_records:
-        client = LabsRecordAPIClient(access_token=require_connect_token(user), opportunity_id=opportunity_id)
+        # For labs-only opps the client has no Connect token; the dispatch in
+        # LabsRecordAPIClient routes writes to LabsLocalRecord instead. Pass
+        # token=None (won't be used) rather than require_connect_token which
+        # would raise for users without a Connect membership.
+        try:
+            token = require_connect_token(user)
+        except MCPToolError:
+            token = ""
+        client = LabsRecordAPIClient(access_token=token, opportunity_id=opportunity_id)
         try:
             for rec in task_records:
                 client.create_record(
@@ -319,6 +327,15 @@ def synthetic_generate_from_manifest(
                 tasks_created += 1
         finally:
             client.close()
+
+    # Invalidate the labs analysis SQL cache so the next pipeline read sees the
+    # fresh visits/fixtures we just uploaded — otherwise stale aggregated cache
+    # from a prior fixture set keeps shadowing the new data.
+    from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
+    from commcare_connect.labs.synthetic.registry import invalidate_cache as _reg_invalidate
+
+    SQLCacheManager.delete_all_cache(opportunity_id)
+    _reg_invalidate()
 
     return {
         "folder_id": result.folder_id,
