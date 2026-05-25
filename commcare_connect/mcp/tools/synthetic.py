@@ -519,36 +519,70 @@ def synthetic_clone_to_labs_only(
     is_write=False,
 )
 def synthetic_image_server_status(user) -> dict[str, Any]:
+    import json as _json
+    import os as _os
+
     from django.conf import settings
 
     from commcare_connect.labs.synthetic.image_server import SyntheticImageServer
+
+    # Try to expose the labs Drive service-account email so the operator
+    # knows what address to share the stock-images folder with when the
+    # listing comes back empty.
+    sa_email = None
+    raw = _os.environ.get("LABS_SYNTHETIC_GDRIVE_SA_KEY", "")
+    if raw:
+        try:
+            if raw.strip().startswith("{"):
+                sa_email = _json.loads(raw).get("client_email")
+            else:
+                with open(raw) as _f:
+                    sa_email = _json.load(_f).get("client_email")
+        except Exception:  # noqa: BLE001 — best-effort, don't fail the diagnostic
+            pass
 
     folder_id = getattr(settings, "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", "") or ""
     result: dict[str, Any] = {
         "folder_id_set": bool(folder_id),
         "folder_id": folder_id,
+        "service_account_email": sa_email,
         "listing_files": [],
         "listing_error": None,
+        "sample_blob_id": None,
         "sample_download_ok": False,
+        "sample_bytes": 0,
         "sample_download_error": None,
     }
     if not folder_id:
         return result
 
+    server = SyntheticImageServer()
     try:
-        server = SyntheticImageServer()
-        # The drive client; force a fresh listing.
-        listing = server._drive.list_folder(folder_id)
+        listing = server.list_stock_folder()
         result["listing_files"] = sorted(listing.keys())
     except Exception as exc:  # noqa: BLE001 — diagnostic surfaces all errors
         result["listing_error"] = f"{type(exc).__name__}: {exc}"
         return result
 
+    # Pick the first muac_NNN.jpg from the listing and translate to its blob_id.
+    # Hardcoding "synth-muac-001" would 404 if the operator's stock folder
+    # used a different numbering scheme.
+    sample_blob_id = None
+    for fn in result["listing_files"]:
+        if fn.startswith("muac_") and fn.endswith(".jpg"):
+            digits = fn[len("muac_") : -len(".jpg")]
+            if digits.isdigit():
+                sample_blob_id = f"synth-muac-{int(digits):03d}"
+                break
+    result["sample_blob_id"] = sample_blob_id
+    if not sample_blob_id:
+        return result
+
     try:
-        data = server.get_image("synth-muac-001")
+        data = server.get_image(sample_blob_id)
         result["sample_download_ok"] = bool(data)
         result["sample_bytes"] = len(data) if data else 0
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — diagnostic surfaces all errors
         result["sample_download_error"] = f"{type(exc).__name__}: {exc}"
 
     return result
