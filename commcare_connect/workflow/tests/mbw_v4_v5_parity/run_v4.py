@@ -16,13 +16,8 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
 django.setup()
 
-from commcare_connect.workflow.job_handlers.mbw_auditing_v4 import (  # noqa: E402
-    handle_mbw_auditing_v4_job,
-)
-from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import (  # noqa: E402
-    build_fixture,
-    fixture_for_tab2,
-)
+from commcare_connect.workflow.job_handlers.mbw_auditing_v4 import handle_mbw_auditing_v4_job  # noqa: E402
+from commcare_connect.workflow.tests.mbw_v4_v5_parity.fixture import build_fixture, fixture_for_tab2  # noqa: E402
 
 
 def main() -> None:

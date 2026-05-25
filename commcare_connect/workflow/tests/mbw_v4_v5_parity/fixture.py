@@ -27,8 +27,9 @@ def build_fixture(current_date_str: str = "2025-06-01") -> dict:
     expiry boundaries are deterministic relative to that "today."
     """
     today = date.fromisoformat(current_date_str)
-    d = lambda days: (today + timedelta(days=days)).isoformat()
-    dt = lambda days, h=12, m=0: (today + timedelta(days=days)).isoformat() + f"T{h:02d}:{m:02d}:00Z"
+
+    def dt(days, h=12, m=0):
+        return (today + timedelta(days=days)).isoformat() + f"T{h:02d}:{m:02d}:00Z"
 
     visits = [
         # FLW alice visits mother M1 (registered, eligible, ANC OK), three visits
@@ -249,7 +250,9 @@ def fixture_edge_cases(current_date_str: str = "2025-06-01") -> dict:
       - GS form with missing user_connect_id (falls back to username)
     """
     today = date.fromisoformat(current_date_str)
-    dt = lambda days, h=12, m=0: (today + timedelta(days=days)).isoformat() + f"T{h:02d}:{m:02d}:00Z"
+
+    def dt(days, h=12, m=0):
+        return (today + timedelta(days=days)).isoformat() + f"T{h:02d}:{m:02d}:00Z"
 
     visits = [
         # dave: ONE visit only, no GPS, no prior visit to gap-compute
@@ -378,12 +381,12 @@ def fixture_edge_cases(current_date_str: str = "2025-06-01") -> dict:
 
 def fixture_tab2_edge(current_date_str: str = "2025-06-01") -> dict:
     """Tab 2 edge cases:
-      - FLW in task_filters who has zero visits (bug: divide by zero)
-      - FLW in task_filters whose trigger date is BEFORE any of their visits
-        (baseline numerator/denominator should be 0 → rate=None)
-      - FLW in task_filters whose trigger date is AFTER all their visits
-        (baseline should reflect all-time history, then post-trigger fields
-        should be empty for Tab 2's active visits scan)
+    - FLW in task_filters who has zero visits (bug: divide by zero)
+    - FLW in task_filters whose trigger date is BEFORE any of their visits
+      (baseline numerator/denominator should be 0 → rate=None)
+    - FLW in task_filters whose trigger date is AFTER all their visits
+      (baseline should reflect all-time history, then post-trigger fields
+      should be empty for Tab 2's active visits scan)
     """
     f = build_fixture(current_date_str)
     today = date.fromisoformat(current_date_str)

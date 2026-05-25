@@ -31,7 +31,8 @@ function loadV5Helpers() {
   // Eval helpers in this scope so the v5_* functions become callable.
   // Wrap in a Function so we can return the compute entry point.
   const fn = new Function(
-    helpers + '\nreturn { v5_computeMbwAuditingData: v5_computeMbwAuditingData };',
+    helpers +
+      '\nreturn { v5_computeMbwAuditingData: v5_computeMbwAuditingData };',
   );
   return fn();
 }

@@ -24,7 +24,9 @@ const React = require('react');
 const ReactDOMServer = require('react-dom/server');
 
 if (process.argv.length < 5) {
-  console.error('Usage: node mount_v4_v5.js <v4-render> <v5-render> <fixture-json>');
+  console.error(
+    'Usage: node mount_v4_v5.js <v4-render> <v5-render> <fixture-json>',
+  );
   process.exit(2);
 }
 const [, , v4Path, v5Path, fixturePath] = process.argv;
@@ -95,7 +97,8 @@ global.document = global.document || {
   createElement: () => ({}),
   head: { appendChild: () => {} },
 };
-global.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+global.fetch = () =>
+  Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
 global.alert = () => {};
 
 function loadComponent(renderPath) {
@@ -109,7 +112,12 @@ function loadComponent(renderPath) {
 function renderOnce(label, Component) {
   const view = makeView();
   const props = {
-    definition: { name: 'shared', statuses: [], config: {}, pipeline_sources: [] },
+    definition: {
+      name: 'shared',
+      statuses: [],
+      config: {},
+      pipeline_sources: [],
+    },
     instance: mockInstance,
     workers: mockWorkers,
     pipelines: view.pipelines,
@@ -144,7 +152,9 @@ if (!v5Result.ok) {
 }
 
 if (v4Result.html === v5Result.html) {
-  console.log(`OK: v4 and v5 mount to byte-identical HTML (${v4Result.html.length} bytes)`);
+  console.log(
+    `OK: v4 and v5 mount to byte-identical HTML (${v4Result.html.length} bytes)`,
+  );
   process.exit(0);
 } else {
   console.error('FAIL: v4 and v5 mount to different HTML');
