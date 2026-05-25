@@ -93,7 +93,11 @@ def test_persona_field_overrides_replace_cohort_distribution():
     samples = []
     for _ in range(50):
         out = fill_form_json(
-            schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=rng, persona=persona,
+            schema=_schema(),
+            cohort=_cohort(),
+            anomalies_for_visit=[],
+            rng=rng,
+            persona=persona,
         )
         samples.append(out["form"]["weight_kg"])
     avg = sum(samples) / len(samples)
@@ -103,10 +107,17 @@ def test_persona_field_overrides_replace_cohort_distribution():
 def test_persona_without_overrides_matches_cohort():
     persona = _persona()
     a = fill_form_json(
-        schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(7), persona=persona,
+        schema=_schema(),
+        cohort=_cohort(),
+        anomalies_for_visit=[],
+        rng=random.Random(7),
+        persona=persona,
     )
     b = fill_form_json(
-        schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(7),
+        schema=_schema(),
+        cohort=_cohort(),
+        anomalies_for_visit=[],
+        rng=random.Random(7),
     )
     assert a == b, "empty field_overrides should be a no-op"
 
@@ -115,7 +126,11 @@ def test_persona_override_only_applies_to_named_path():
     # Override one field; the other still comes from the cohort.
     persona = _persona({"form.weight_kg": NormalDistribution(mean=99.0, stddev=0.01)})
     out = fill_form_json(
-        schema=_schema(), cohort=_cohort(), anomalies_for_visit=[], rng=random.Random(7), persona=persona,
+        schema=_schema(),
+        cohort=_cohort(),
+        anomalies_for_visit=[],
+        rng=random.Random(7),
+        persona=persona,
     )
     assert abs(out["form"]["weight_kg"] - 99.0) < 0.5
     # muac is not overridden — should be near cohort mean 13.2.
@@ -125,28 +140,22 @@ def test_persona_override_only_applies_to_named_path():
 def test_persona_uniform_override_works_with_transform():
     # Skew gender on a single persona via a uniform distribution + transform.
     persona = _persona(
-        {
-            "form.gender": UniformDistribution(
-                distribution="uniform", low=0, high=0.3, transform="gender"
-            )
-        }
+        {"form.gender": UniformDistribution(distribution="uniform", low=0, high=0.3, transform="gender")}
     )
     cohort = BeneficiaryCohort(
         id="primary",
         size=10,
         field_distributions={
-            "form.gender": UniformDistribution(
-                distribution="uniform", low=0, high=1.0, transform="gender"
-            )
+            "form.gender": UniformDistribution(distribution="uniform", low=0, high=1.0, transform="gender")
         },
         progression="flat",
     )
     schema = FormSchema(questions=[QuestionSpec("form.gender", "select", choices=["male", "female"])])
     rng = random.Random(0)
     samples = [
-        fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng, persona=persona)[
-            "form"
-        ]["gender"]
+        fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng, persona=persona)["form"][
+            "gender"
+        ]
         for _ in range(200)
     ]
     female_rate = sum(s == "female" for s in samples) / len(samples)
