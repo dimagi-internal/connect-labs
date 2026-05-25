@@ -242,6 +242,11 @@ class TaskCreateEditView(LoginRequiredMixin, TemplateView):
                         "assigned_to_type": task.assigned_to_type,
                         "assigned_to_name": task.assigned_to_name,
                         "resolution_details": task.resolution_details,
+                        # Embedded OCS coaching transcript from synthetic tasks.
+                        # The Tasks UI normally fetches transcripts from OCS via
+                        # session_id, but synthetic coaching arcs carry the
+                        # conversation inline so demos work without an OCS round-trip.
+                        "ocs_conversation": task.data.get("ocs_conversation") or [],
                     }
                 data_access.close()
             except Exception as e:
