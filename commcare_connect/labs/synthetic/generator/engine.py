@@ -70,9 +70,15 @@ def generate(
         anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
         form_json = fill_form_json(schema=form_schema, cohort=cohort, anomalies_for_visit=anomalies, rng=rng)
         status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
+        # Visit id MUST be a PostgreSQL bigint-compatible integer — the audit
+        # data-access layer and labs cache both type the column as int, and a
+        # UUID-string id breaks `filter_visit_ids=set([...])` lookups + the
+        # `/audit/api/<id>/bulk-data/` rendering path (500s on type mismatch).
+        # 60 bits ≈ 1e18, way under bigint max; chance of collision with another
+        # synthetic opp is vanishingly small for demo-scale fixture sets.
         visits.append(
             {
-                "id": str(uuid.UUID(int=rng.getrandbits(128))),
+                "id": rng.getrandbits(60),
                 "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
                 "opportunity_id": manifest.opportunity_id,
                 "username": persona.id,
