@@ -215,6 +215,7 @@ TEMPLATE = {
     "description": "Pipeline-native MBW audit: follow-up rates, GPS metrics, GS scores, and performance categorization.",
     "icon": "fa-clipboard-check",
     "color": "blue",
+    "multi_opp": False,
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schemas": PIPELINE_SCHEMAS,
