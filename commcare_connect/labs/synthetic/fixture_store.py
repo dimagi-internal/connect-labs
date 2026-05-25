@@ -27,6 +27,11 @@ ENDPOINT_FILES: dict[str, str] = {
 class FixtureStore:
     """Serves fixture JSON for a set of synthetic opportunities.
 
+    Cache keys include the registered GDrive ``folder_id`` so that a regen
+    that swaps an opp's folder gets an automatic cache miss across every
+    worker — no cross-worker reload broadcast needed. Old keys go stale but
+    sit dormant in memory until the worker restarts (demo-scale entries).
+
     Args:
         drive: something that implements `list_folder(folder_id)` and
             `download_file(file_id)`.
@@ -36,18 +41,16 @@ class FixtureStore:
     def __init__(self, drive, folder_lookup: Callable[[int], str | None]):
         self._drive = drive
         self._folder_lookup = folder_lookup
-        self._cache: dict[tuple[int, str], Any] = {}
-        self._folder_listing_cache: dict[int, dict[str, str]] = {}
+        # Cache keyed on (opp_id, folder_id, endpoint_key) so a folder swap
+        # auto-invalidates per-opp content without an explicit reload call.
+        self._cache: dict[tuple[int, str, str], Any] = {}
+        self._folder_listing_cache: dict[tuple[int, str], dict[str, str]] = {}
 
     def load_endpoint(self, opp_id: int, endpoint_key: str) -> list[dict] | dict:
         """Return parsed JSON for one endpoint. Empty list on any miss."""
         if endpoint_key not in ENDPOINT_FILES:
             logger.warning("synthetic: unknown endpoint key %r for opp %s", endpoint_key, opp_id)
             return []
-
-        cached = self._cache.get((opp_id, endpoint_key))
-        if cached is not None:
-            return cached
 
         folder_id = self._folder_lookup(opp_id)
         if not folder_id:
@@ -57,7 +60,11 @@ class FixtureStore:
             )
             return []
 
-        listing = self._folder_listing_cache.get(opp_id)
+        cached = self._cache.get((opp_id, folder_id, endpoint_key))
+        if cached is not None:
+            return cached
+
+        listing = self._folder_listing_cache.get((opp_id, folder_id))
         if listing is None:
             try:
                 listing = self._drive.list_folder(folder_id)
@@ -69,7 +76,7 @@ class FixtureStore:
                     e,
                 )
                 return []
-            self._folder_listing_cache[opp_id] = listing
+            self._folder_listing_cache[(opp_id, folder_id)] = listing
 
         filename = ENDPOINT_FILES[endpoint_key]
         file_id = listing.get(filename)
@@ -80,7 +87,7 @@ class FixtureStore:
                 folder_id,
                 opp_id,
             )
-            self._cache[(opp_id, endpoint_key)] = []
+            self._cache[(opp_id, folder_id, endpoint_key)] = []
             return []
 
         try:
@@ -107,13 +114,20 @@ class FixtureStore:
                 len(raw),
                 e,
             )
-            self._cache[(opp_id, endpoint_key)] = []
+            self._cache[(opp_id, folder_id, endpoint_key)] = []
             return []
-        self._cache[(opp_id, endpoint_key)] = parsed
+        self._cache[(opp_id, folder_id, endpoint_key)] = parsed
         return parsed
 
     def reload(self, opp_id: int) -> None:
-        """Drop any cached data for this opp; next `load_endpoint` re-pulls."""
-        self._folder_listing_cache.pop(opp_id, None)
+        """Drop any cached data for this opp; next `load_endpoint` re-pulls.
+
+        With folder_id-keyed entries a swap auto-misses, so reload is mainly
+        useful for forcing a re-pull of the SAME folder (e.g. after a manual
+        Drive edit). Both per-folder listings and per-endpoint payloads are
+        cleared for this opp_id across all folder_ids.
+        """
+        for key in [k for k in self._folder_listing_cache if k[0] == opp_id]:
+            self._folder_listing_cache.pop(key)
         for key in [k for k in self._cache if k[0] == opp_id]:
             self._cache.pop(key)
