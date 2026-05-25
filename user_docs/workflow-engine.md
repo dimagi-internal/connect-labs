@@ -87,6 +87,8 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **OCS Outreach**           | Community health outreach tracking                   |
 | **Bulk Image Audit**       | Image-based QA combined with workflow status         |
 | **CHC Nutrition Analysis** | Community health centre nutrition program monitoring |
+| **MBW Auditing V4**        | MBW audit reviews with flag and task workflow        |
+| **MBW Auditing V5**        | MBW audit reviews — faster loads and preserved runs  |
 
 ---
 
@@ -132,10 +134,10 @@ This makes synthetic data suitable for full stakeholder and funder demonstration
 To use this capability, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
 !!! note "No real data is used in the output"
-The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
+    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
 !!! note "Nutrition metrics and other program-specific fields in synthetic data"
-Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
+    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
 
 ### Creating a New Workflow with Claude Code
 
@@ -248,30 +250,28 @@ The **Prev** column shows the performance category assigned to each field worker
 
 ---
 
+## MBW Auditing V5 Dashboard
+
+**MBW Auditing V5** is a new template available alongside V4 in the template picker. It produces the same dashboard as V4 — the same FLW summaries, the same flags, the same trigger-task workflow, and the same Conclude gate — with two practical improvements for program staff.
+
+**V4 is unchanged.** Existing V4 workflow instances continue to work exactly as before. V5 is an additional option for new instances. Once parity has been confirmed on a live opportunity, V4 will be retired.
+
+### What's different in V5
+
+**Completed runs are preserved.** V5 opts into the saved-runs framework. When you conclude a V5 run, it becomes read-only and permanently shows the data and decisions that were live at the moment you concluded. If you reopen last Monday's review, you see last Monday's numbers — not today's recalculated figures. V4 does not preserve runs in this way.
+
+**Faster dashboard load.** The dashboard renders directly from pipeline rows as soon as they are available, with no background job to wait for. In V4 a celery job must spin up before the dashboard can display; in V5 you can start reviewing as soon as the pipeline has finished running.
+
+### Which version should I use?
+
+If you are starting a new MBW audit workflow, use **V5**. If you already have a V4 instance running mid-review, there is no need to switch — finish that review in V4 and consider V5 for the next cycle.
+
+---
+
 ## CHC Nutrition Analysis Dashboard
 
 The **CHC Nutrition Analysis** template now surfaces the same per-FLW metrics as the legacy custom_analysis nutrition dashboard, making it a drop-in replacement as custom_analysis is retired. If you were previously using the custom_analysis view for nutrition reporting, the workflow dashboard will show the same figures in the same columns.
 
 ### What changed in this update
 
-Five metrics that were missing from the workflow template have been added, and four existing column names have been renamed to match the field names used by custom_analysis. This ensures that any downstream tooling, exports, or integrations that reference those field names continue to work without adjustment.
-
-If you have a saved export or integration that pulls data from the CHC Nutrition Analysis workflow, check that it references the updated field names. If a column you relied on appears to have moved or been renamed, compare against the custom_analysis field names — the workflow column will now match those exactly.
-
-!!! note "No change to how figures are calculated"
-This update only adds missing fields and aligns column names. The underlying calculations — visit counts, MUAC measurements, eligibility flags, and other nutrition metrics — are unchanged.
-
----
-
-## Solicitations
-
-Solicitations are the structured postings used to invite field workers to apply for an opportunity. They are created either through the MCP tool or via the Labs manager interface.
-
-### Required fields and validation
-
-When a solicitation is created, Labs now checks that all required fields are present and correctly named before saving. If anything is wrong — a misspelled field name, a missing deadline, a malformed evaluation rubric, or a question reference that points to something that doesn't exist — the creation will fail immediately with a clear error message describing exactly what needs to be fixed.
-
-This replaces the previous behaviour where incorrectly shaped solicitations were saved silently, causing data to land in the wrong place. If you are using the manager UI to create a solicitation and something is wrong with the form, you will now see an inline error on the affected field rather than having the problem slip through unnoticed.
-
-!!! note "If you receive a validation error"
-Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, `overview` instead of `description`) or leaving the application deadline blank. Correct the
+Five metrics that were missing from the workflow template have been added, and four
