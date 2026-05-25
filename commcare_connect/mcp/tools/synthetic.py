@@ -507,6 +507,39 @@ def synthetic_clone_to_labs_only(
 
 
 @register(
+    name="synthetic_local_records_count",
+    description=(
+        "Diagnostic: return counts of LabsLocalRecord rows for a labs-only opp, "
+        "grouped by (experiment, type). Useful for verifying that synthetic-data "
+        "writes landed correctly in the labs-local backend before triaging UI gaps."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"opportunity_id": {"type": "integer"}},
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_local_records_count(user, *, opportunity_id: int) -> dict[str, Any]:
+    from django.db.models import Count
+
+    from commcare_connect.labs.synthetic.models import LabsLocalRecord
+
+    rows = (
+        LabsLocalRecord.objects.filter(opportunity_id=opportunity_id)
+        .values("experiment", "type")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+    return {
+        "opportunity_id": opportunity_id,
+        "groups": list(rows),
+        "total": LabsLocalRecord.objects.filter(opportunity_id=opportunity_id).count(),
+    }
+
+
+@register(
     name="synthetic_set_my_visibility",
     description=(
         "Toggle the calling user's `view_synthetic_opps` setting. When on, "
