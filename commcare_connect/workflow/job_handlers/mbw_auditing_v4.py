@@ -102,7 +102,7 @@ def _get_prev_categories(access_token: str, opportunity_id: int, workflow_defini
                 type="workflow_run",
                 model_class=WorkflowRunRecord,
             )
-        candidates = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]
+        candidates = [r for r in runs if r.is_completed and (r.data.get("state") or {}).get("worker_results")]
         if not candidates:
             return {}
 
