@@ -152,14 +152,33 @@
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
-                  x-model="taskForm.status"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
-                  <option value="investigating">Investigating</option>
-                  <option value="flw_action_in_progress">FLW Action In Progress</option>
-                  <option value="flw_action_completed">FLW Action Completed</option>
-                  <option value="review_needed">Review Needed</option>
-                </select>
+                <!-- Closed tasks: show a read-only badge instead of the open-status
+                     dropdown. The dropdown's options only cover the open states
+                     (investigating / flw_action_in_progress / …), so when
+                     taskForm.status === "closed" Alpine renders the first option
+                     ("Investigating") and the form lies about reality. -->
+                <template x-if="taskForm.status === 'closed'">
+                  <div class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-medium">
+                      <i class="fa-solid fa-check"></i>
+                      <span>Closed</span>
+                    </span>
+                    <span
+                      x-show="taskForm.resolution_details && taskForm.resolution_details.official_action"
+                      class="text-sm text-gray-700"
+                      x-text="'· ' + (taskForm.resolution_details ? taskForm.resolution_details.official_action : '')"></span>
+                  </div>
+                </template>
+                <template x-if="taskForm.status !== 'closed'">
+                  <select
+                    x-model="taskForm.status"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                    <option value="investigating">Investigating</option>
+                    <option value="flw_action_in_progress">FLW Action In Progress</option>
+                    <option value="flw_action_completed">FLW Action Completed</option>
+                    <option value="review_needed">Review Needed</option>
+                  </select>
+                </template>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Assigned To</label>
@@ -976,7 +995,11 @@ function taskCreateEditPage() {
           description: taskData.description || '',
           status: taskData.status || 'investigating',
           assigned_to_type: taskData.assigned_to_type || 'self',
-          assigned_to_name: taskData.assigned_to_name || ''
+          assigned_to_name: taskData.assigned_to_name || '',
+          // Closed-task badge needs to read the official action — exposing
+          // resolution_details on taskForm so the read-only status surface
+          // can display "Closed · warned" etc.
+          resolution_details: taskData.resolution_details || null
         };
         this.selectedFlwUsername = taskData.username || '';
         this.selectedFlw = {
