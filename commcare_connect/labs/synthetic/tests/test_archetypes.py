@@ -229,6 +229,53 @@ def test_closed_warned_transcript_includes_formal_warning_language():
     assert "formal warning" in bot_messages or "warning" in bot_messages
 
 
+def test_flw_pipeline_row_shape_matches_chc_nutrition_schema():
+    """build_flw_pipeline_row produces all the fields chc_nutrition's render
+    code reads from each row."""
+    from commcare_connect.labs.synthetic.archetypes import build_flw_pipeline_row
+
+    row = build_flw_pipeline_row(
+        flw_id="amina",
+        archetype="solid",
+        flagged_this_week=False,
+        rng_seed=42,
+    )
+    required = {
+        "username", "name", "total_visits", "approved_visits", "days_active",
+        "muac_measurements_count", "muac_distribution_count", "muac_distribution_mean",
+        "avg_muac_cm", "male_count", "female_count", "children_unwell_count",
+        "under_malnutrition_treatment_count",
+        "muac_9_5_10_5_visits", "muac_10_5_11_5_visits", "muac_11_5_12_5_visits",
+        "muac_12_5_13_5_visits", "muac_13_5_14_5_visits", "muac_14_5_15_5_visits",
+    }
+    missing = required - set(row.keys())
+    assert not missing, f"missing fields: {missing}"
+    # Solid FLW: ~zero SAM, mostly healthy distribution. Allow ≤1 jitter
+    # noise from the per-bin RNG so the assertion isn't seed-sensitive.
+    assert row["muac_9_5_10_5_visits"] <= 1
+    assert row["avg_muac_cm"] >= 13.0
+
+
+def test_flw_pipeline_row_suspended_fraudulent_skews_low():
+    """suspended_fraudulent FLW in their flag week should have heavy SAM
+    concentration (low MUAC bins) — distinguishable from a solid FLW."""
+    from commcare_connect.labs.synthetic.archetypes import build_flw_pipeline_row
+
+    solid = build_flw_pipeline_row(flw_id="a", archetype="solid", flagged_this_week=False, rng_seed=1)
+    fraud = build_flw_pipeline_row(flw_id="b", archetype="suspended_fraudulent", flagged_this_week=True, rng_seed=1)
+    assert fraud["muac_9_5_10_5_visits"] > solid["muac_9_5_10_5_visits"]
+    assert fraud["avg_muac_cm"] < solid["avg_muac_cm"]
+
+
+def test_flw_pipeline_row_deterministic():
+    """Same seed → same row, regenerations stable."""
+    from commcare_connect.labs.synthetic.archetypes import build_flw_pipeline_row
+
+    a = build_flw_pipeline_row(flw_id="x", archetype="improver_warned", flagged_this_week=True, rng_seed=100)
+    b = build_flw_pipeline_row(flw_id="x", archetype="improver_warned", flagged_this_week=True, rng_seed=100)
+    assert a == b
+
+
 def test_closed_suspended_fraud_uses_fraud_template():
     data = build_task_data(
         archetype_name="closed_suspended_fraud",

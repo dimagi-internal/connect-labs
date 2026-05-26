@@ -533,3 +533,140 @@ def build_task_data(
         "ocs_conversation": ocs_conversation,
         "synthetic": True,
     }
+
+
+# -----------------------------------------------------------------------------
+# CHC Nutrition pipeline row generator
+# -----------------------------------------------------------------------------
+#
+# The CHC Nutrition Analysis workflow template renders one row per FLW with
+# total visits, MUAC distribution, SAM/MAM rates, gender split, and a
+# decisions column. The synthetic generator emits backdated workflow_runs
+# with empty pipeline snapshots by default — which means "Open the run"
+# from the Program Admin Report lands on a blank "No data available"
+# table. To make the underlying weekly review meaningful, we synthesise
+# one pipeline row per active FLW per week, with shape driven by the FLW's
+# narrative state (solid / improver-in-flag-week / suspended).
+
+
+def _muac_distribution(*, severity: int, rng) -> dict[str, int]:
+    """Return MUAC distribution bin counts for a given severity (0=clean,
+    higher=more SAM/MAM)."""
+    # Severity 0: peak around 14-15cm (healthy)
+    # Severity 1: some MAM (12.5-13.5) and lower
+    # Severity 2: heavy SAM (10.5-11.5) — concerning
+    # Severity 3: very heavy SAM (9.5-10.5) — suspected fraud / measurement issues
+    if severity <= 0:
+        weights = {
+            "muac_9_5_10_5_visits": 0,
+            "muac_10_5_11_5_visits": 0,
+            "muac_11_5_12_5_visits": 1,
+            "muac_12_5_13_5_visits": 3,
+            "muac_13_5_14_5_visits": 7,
+            "muac_14_5_15_5_visits": 9,
+        }
+    elif severity == 1:
+        weights = {
+            "muac_9_5_10_5_visits": 0,
+            "muac_10_5_11_5_visits": 1,
+            "muac_11_5_12_5_visits": 3,
+            "muac_12_5_13_5_visits": 6,
+            "muac_13_5_14_5_visits": 6,
+            "muac_14_5_15_5_visits": 4,
+        }
+    elif severity == 2:
+        weights = {
+            "muac_9_5_10_5_visits": 1,
+            "muac_10_5_11_5_visits": 4,
+            "muac_11_5_12_5_visits": 6,
+            "muac_12_5_13_5_visits": 5,
+            "muac_13_5_14_5_visits": 3,
+            "muac_14_5_15_5_visits": 1,
+        }
+    else:  # severity 3+
+        weights = {
+            "muac_9_5_10_5_visits": 4,
+            "muac_10_5_11_5_visits": 6,
+            "muac_11_5_12_5_visits": 5,
+            "muac_12_5_13_5_visits": 3,
+            "muac_13_5_14_5_visits": 1,
+            "muac_14_5_15_5_visits": 1,
+        }
+    # Apply small jitter so two FLWs in the same archetype don't look identical.
+    return {k: max(0, v + rng.randint(-1, 1)) for k, v in weights.items()}
+
+
+def build_flw_pipeline_row(
+    *,
+    flw_id: str,
+    archetype: str,
+    flagged_this_week: bool,
+    rng_seed: int,
+) -> dict[str, Any]:
+    """Build a synthetic CHC Nutrition pipeline row for one FLW for one week.
+
+    Field shape matches ``chc_nutrition_analysis.PIPELINE_SCHEMA`` — the
+    chc_nutrition render code reads from these directly.
+    """
+    import random
+
+    rng = random.Random(rng_seed)
+
+    # Severity reflects the FLW's narrative state for THIS week:
+    #   - solid / new_hire: clean MUAC distribution (severity 0)
+    #   - improver in flag week: moderate (1)
+    #   - suspended FLW in flag week: severe (2-3)
+    if archetype in ("solid", "new_hire"):
+        severity = 0
+    elif archetype in ("improver_closed_satisfactory", "improver_warned", "improver_in_progress"):
+        severity = 1 if flagged_this_week else 0
+    elif archetype == "suspended_repeat_offense":
+        severity = 2 if flagged_this_week else 1
+    elif archetype == "suspended_fraudulent":
+        severity = 3 if flagged_this_week else 1
+    else:
+        severity = 0
+
+    distribution = _muac_distribution(severity=severity, rng=rng)
+    muac_count = sum(distribution.values())
+
+    # Compute average MUAC from distribution bin midpoints (10, 11, 12, 13, 14, 15).
+    bin_midpoints = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+    bin_keys = [
+        "muac_9_5_10_5_visits",
+        "muac_10_5_11_5_visits",
+        "muac_11_5_12_5_visits",
+        "muac_12_5_13_5_visits",
+        "muac_13_5_14_5_visits",
+        "muac_14_5_15_5_visits",
+    ]
+    if muac_count > 0:
+        total = sum(midpoint * distribution[k] for midpoint, k in zip(bin_midpoints, bin_keys))
+        avg_muac = round(total / muac_count, 2)
+    else:
+        avg_muac = 0.0
+
+    # Visit + gender splits — believable per-FLW totals.
+    total_visits = muac_count + rng.randint(2, 6)  # MUAC-eligible + non-MUAC visits
+    approved_visits = total_visits if severity <= 1 else max(0, total_visits - rng.randint(2, 4))
+    male_count = rng.randint(0, muac_count)
+    female_count = muac_count - male_count
+
+    return {
+        "username": flw_id,
+        "commcare_userid": f"synth-{flw_id}",
+        "name": flw_id,
+        "total_visits": total_visits,
+        "approved_visits": approved_visits,
+        "days_active": rng.randint(3, 6),
+        "muac_consent_count": muac_count,
+        "muac_measurements_count": muac_count,
+        "muac_distribution_count": muac_count,
+        "muac_distribution_mean": avg_muac,
+        "avg_muac_cm": avg_muac,
+        "male_count": male_count,
+        "female_count": female_count,
+        "children_unwell_count": distribution["muac_9_5_10_5_visits"] + distribution["muac_10_5_11_5_visits"],
+        "under_malnutrition_treatment_count": distribution["muac_9_5_10_5_visits"],
+        **distribution,
+    }

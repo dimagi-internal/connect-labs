@@ -238,11 +238,61 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
 # -----------------------------------------------------------------------------
 
 
-def _create_backdated_workflow_run(*, wda, definition_id: int, opportunity_id: int, monday_iso: str) -> int:
+def _create_backdated_workflow_run(
+    *,
+    wda,
+    definition_id: int,
+    opportunity_id: int,
+    monday_iso: str,
+    flws_active: list[dict] | None = None,
+    week_idx: int = 0,
+) -> int:
     """Write a workflow_run record directly with status=completed +
-    backdated completed_at. Returns the new record id."""
+    backdated completed_at, and (optionally) a CHC Nutrition pipeline
+    snapshot with one row per active FLW.
+
+    Without the pipeline snapshot, "Open the run" from the Program Admin
+    Report lands on an empty "No data available" table — there's no real
+    FLW visit data in the synthetic opp to back the live pipeline. The
+    rows we synthesise here let the chc_nutrition table render properly,
+    with per-FLW decision pills + state-aware action buttons.
+
+    ``flws_active`` is a list of dicts (each at minimum has ``id``,
+    ``archetype``, and the flag-week metadata used by
+    ``_decisions_for_flw_across_weeks``). ``week_idx`` lets us infer
+    whether the FLW was in a flagged state this week so the synthetic
+    MUAC distribution matches the narrative.
+    """
+    from commcare_connect.labs.synthetic.archetypes import build_flw_pipeline_row
+
     completed_at = _monday_dt(monday_iso, hour=9, minute=0).isoformat()
     period_end = (dt.date.fromisoformat(monday_iso) + dt.timedelta(days=6)).isoformat()
+
+    pipeline_rows: list[dict] = []
+    if flws_active:
+        for flw in flws_active:
+            archetype = flw["archetype"]
+            # Did this FLW get flagged this week? Use the trajectory builder
+            # to derive the per-week decision spec.
+            specs = _decisions_for_flw_across_weeks(flw, week_count=week_idx + 1)
+            spec_this_week = specs[week_idx] if week_idx < len(specs) else None
+            if spec_this_week is None:
+                continue  # FLW not on roster this week
+            flagged = spec_this_week.get("decision_type") == "action_taken"
+            # Seed: stable per (opp, flw, week) so regenerations are deterministic.
+            seed = hash((opportunity_id, flw["id"], week_idx)) & 0xFFFFFFFF
+            pipeline_rows.append(
+                build_flw_pipeline_row(
+                    flw_id=flw["id"],
+                    archetype=archetype,
+                    flagged_this_week=flagged,
+                    rng_seed=seed,
+                )
+            )
+
+    snapshot_state = {"period_start": monday_iso, "period_end": period_end}
+    snapshot_pipelines = {"data": pipeline_rows} if pipeline_rows else {}
+
     data = {
         "definition_id": definition_id,
         "opportunity_id": opportunity_id,
@@ -250,10 +300,11 @@ def _create_backdated_workflow_run(*, wda, definition_id: int, opportunity_id: i
         "completed_at": completed_at,
         "period_start": monday_iso,
         "period_end": period_end,
-        "state": {"period_start": monday_iso, "period_end": period_end},
-        # Minimal snapshot so useRunView can render — chc_nutrition pulls
-        # decisions live via view.decisionsFor anyway.
-        "snapshot": {"workers": [], "pipelines": {}, "state": {"period_start": monday_iso, "period_end": period_end}},
+        "state": snapshot_state,
+        # Snapshot consumed by chc_nutrition's `view.pipelines.data` reads.
+        # Decisions are NOT in the snapshot — they're queried live via
+        # view.decisionsFor() against the separate Decision LabsRecord rows.
+        "snapshot": {"workers": [], "pipelines": snapshot_pipelines, "state": snapshot_state},
     }
     rec = wda.labs_api.create_record(
         experiment="workflow",
@@ -574,6 +625,8 @@ def program_admin_demo_seed_v2(
                     definition_id=definition.id,
                     opportunity_id=opp_id,
                     monday_iso=monday_iso,
+                    flws_active=flws,
+                    week_idx=week_idx,
                 )
                 decisions_made = 0
                 tasks_spawned = 0
