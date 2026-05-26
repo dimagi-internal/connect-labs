@@ -1032,6 +1032,20 @@ def task_ai_transcript(request, task_id):
                     }
                 )
 
+            # Auto-save the transcript so future viewers don't need OCS auth
+            try:
+                for session_event in ai_sessions:
+                    if session_event.get("session_id") == session_id:
+                        session_event["saved_transcript"] = {
+                            "messages": formatted_messages,
+                            "saved_at": datetime.now(timezone.utc).isoformat(),
+                            "saved_by": "auto",
+                        }
+                        data_access.save_task(task)
+                        break
+            except Exception:
+                logger.warning("Failed to auto-save transcript for task %s", task_id, exc_info=True)
+
             data_access.close()
             return JsonResponse(
                 {
@@ -1046,10 +1060,15 @@ def task_ai_transcript(request, task_id):
             data_access.close()
             return JsonResponse({"success": False, "error": "Invalid transcript format from OCS"}, status=500)
 
-    except OCSAPIError:
-        logger.exception("Error fetching transcript from OCS")
+    except OCSAPIError as e:
         data_access.close()
-        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
+        if "not configured or expired" in str(e):
+            return JsonResponse(
+                {"success": False, "error": "OCS authentication required to view this transcript.", "ocs_auth_required": True},
+                status=403,
+            )
+        logger.exception("Error fetching transcript from OCS")
+        return JsonResponse({"success": False, "error": "Failed to load transcript from OCS"}, status=500)
 
 
 @login_required
