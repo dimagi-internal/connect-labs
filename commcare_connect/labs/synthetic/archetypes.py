@@ -63,6 +63,14 @@ logger = logging.getLogger(__name__)
 # in the generator package — that file is the source of truth for the bad
 # pool. The good pool is simply numbered 001..N (no categorization needed).
 
+# Pool sizes for the MUAC stock corpus. The bad pool size is derived from
+# muac_reasons.json (the source of truth). The good pool has no rationale
+# JSON since there's nothing to explain — so we hard-code its size and bump
+# this constant when new good photos are added to the GDrive stock folder.
+# Verify with the ``synthetic_image_server_status`` MCP tool — its
+# ``listing_files`` lists everything the service account can see.
+_GOOD_POOL_SIZE = 8
+
 _REASONS_PATH = Path(__file__).parent / "generator" / "muac_reasons.json"
 
 
@@ -210,10 +218,14 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
     rng = random.Random(rng_seed)
     out: list[tuple[str, str | None]] = []
 
-    # Good pool — we don't have a JSON catalog for good photos; assume the
-    # pool runs 001..050 (matches typical stock-images counts; the image
-    # server caches what's actually present and silently 404s the rest).
-    good_pool = [f"muac_good_{i:03d}.jpg" for i in range(1, 51)]
+    # Good pool — there's no JSON catalog for good photos (they don't need
+    # per-image rationale). The actual GDrive folder runs muac_good_001 ..
+    # muac_good_008 today. Picking from a wider range silently 404s on the
+    # image server, which makes audit cards render as "Assessment image"
+    # placeholders instead of the real thumbnail. Bump _GOOD_POOL_SIZE
+    # whenever new good photos are added to the stock folder (see
+    # docs/synthetic-data/audit-corpus.md).
+    good_pool = [f"muac_good_{i:03d}.jpg" for i in range(1, _GOOD_POOL_SIZE + 1)]
 
     # Bad pool with category preference: primary category first, then top up
     # from the rest in deterministic order.
