@@ -11,6 +11,7 @@ from . import labs_context  # noqa: F401
 from . import mbw_parity  # noqa: F401
 from . import pipelines  # noqa: F401
 from . import program_admin_demo  # noqa: F401  -- registers program_admin_demo_seed
+from . import program_admin_demo_v2  # noqa: F401  -- registers program_admin_demo_seed_v2
 from . import reviews  # noqa: F401
 from . import sample_ids  # noqa: F401
 from . import solicitations  # noqa: F401
