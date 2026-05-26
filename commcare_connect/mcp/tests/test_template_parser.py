@@ -142,7 +142,7 @@ _PARSER_UNSUPPORTED_TEMPLATES = {
     "kmc_project_metrics",
     "llo_weekly_review",
     "mbw_monitoring_v3",
-    "program_admin_audit",
+    "program_admin_report",
     "sam_followup",
 }
 
@@ -161,7 +161,7 @@ _PARSER_UNSUPPORTED_TEMPLATES = {
         "mbw_monitoring_v3",
         "ocs_outreach",
         "performance_review",
-        "program_admin_audit",
+        "program_admin_report",
         "sam_followup",
     ],
 )
