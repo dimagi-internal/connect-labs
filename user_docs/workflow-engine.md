@@ -89,6 +89,7 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **CHC Nutrition Analysis** | Community health centre nutrition program monitoring |
 | **MBW Auditing V4**        | MBW audit reviews with flag and task workflow        |
 | **MBW Auditing V5**        | MBW audit reviews — faster loads and preserved runs  |
+| **Program Admin Report**   | Cross-opportunity compliance view for program admins |
 
 ---
 
@@ -272,6 +273,4 @@ If you are starting a new MBW audit workflow, use **V5**. If you already have a 
 
 The **CHC Nutrition Analysis** template now surfaces the same per-FLW metrics as the legacy custom_analysis nutrition dashboard, making it a drop-in replacement as custom_analysis is retired. If you were previously using the custom_analysis view for nutrition reporting, the workflow dashboard will show the same figures in the same columns.
 
-### What changed in this update
-
-Five metrics that were missing from the workflow template have been added, and four
+### What changed
