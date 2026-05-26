@@ -41,7 +41,14 @@ the categories were derived from is
 | `misleading`   | 3      | Photo appears fraudulent — tape on a finger, hand, or surface, not a child's arm. |
 | `content_free` | 2      | Image is unusable due to motion blur, focus, or obstruction.                      |
 
-Totals as of writing: **5 good photos, 13 bad photos** in the corpus.
+Totals as of writing: **8 good photos, 13 bad photos** in the corpus. The good
+pool size is mirrored in
+`commcare_connect/labs/synthetic/archetypes.py::_GOOD_POOL_SIZE` — bump it
+when you add more good photos.
+
+> **Verify the live corpus** with the `synthetic_image_server_status` MCP
+> tool. Its `listing_files` is everything the service account can actually
+> see in the stock folder, and is the source of truth for image existence.
 
 ## Adding more photos
 
