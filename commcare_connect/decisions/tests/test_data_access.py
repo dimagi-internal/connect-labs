@@ -162,12 +162,8 @@ def test_get_decisions_for_run_filters_by_workflow_run_id(decisions_da):
 
 def test_get_decisions_for_run_returns_records(decisions_da):
     decisions_da.labs_api.get_records.return_value = [
-        DecisionRecord(
-            {"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}
-        ),
-        DecisionRecord(
-            {"id": 2, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}
-        ),
+        DecisionRecord({"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}),
+        DecisionRecord({"id": 2, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}),
     ]
     result = decisions_da.get_decisions_for_run(503)
     assert len(result) == 2

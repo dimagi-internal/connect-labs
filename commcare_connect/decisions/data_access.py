@@ -37,9 +37,7 @@ class DecisionsDataAccess(BaseDataAccess):
     ) -> DecisionRecord:
         """Create a new Decision. See spec §3.2 for field semantics."""
         if decision_type not in ALLOWED_DECISION_TYPES:
-            raise ValueError(
-                f"decision_type must be one of {ALLOWED_DECISION_TYPES}, got {decision_type!r}"
-            )
+            raise ValueError(f"decision_type must be one of {ALLOWED_DECISION_TYPES}, got {decision_type!r}")
         if not flw_id or not flw_id.strip():
             raise ValueError("flw_id is required")
         if decision_type == "action_taken" and not reason_key:

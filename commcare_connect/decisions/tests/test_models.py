@@ -47,25 +47,19 @@ def test_property_round_trip():
 
 
 def test_decision_type_defaults_to_no_issues():
-    rec = DecisionRecord(
-        {"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}
-    )
+    rec = DecisionRecord({"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}})
     assert rec.decision_type == "no_issues"
 
 
 def test_list_and_dict_defaults_when_missing():
-    rec = DecisionRecord(
-        {"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}
-    )
+    rec = DecisionRecord({"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}})
     assert rec.audit_session_ids == []
     assert rec.task_ids == []
     assert rec.kpi_snapshot == {}
 
 
 def test_optional_fields_return_none_when_missing():
-    rec = DecisionRecord(
-        {"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}
-    )
+    rec = DecisionRecord({"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}})
     assert rec.reason_key is None
     assert rec.reason_label is None
     assert rec.notes is None
