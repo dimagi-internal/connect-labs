@@ -522,4 +522,14 @@ TEMPLATE = {
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": PIPELINE_SCHEMA,
+    # Saved-runs opt-in (spec §4.1). Freezes a snapshot at run completion so
+    # re-opening the run shows what was true at the moment of completion.
+    # Decisions are NOT in the snapshot — they're queried live (spec §3.3,
+    # exposed via view.decisionsFor() in render code).
+    "supports_saved_runs": True,
+    "snapshot_inputs": {
+        "pipelines": None,  # capture all pipelines on the workflow definition
+        "workers": True,
+        "state_keys": [],   # this template currently has no state to preserve
+    },
 }
