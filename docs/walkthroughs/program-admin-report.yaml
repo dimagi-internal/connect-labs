@@ -1,0 +1,64 @@
+name: "Program Admin Report — Cross-Opp Performance Story"
+narrative: "One screen for the program admin: which network manager is running the SOP, who is taking action on poor performers, and how does the story develop over time"
+base_url: "http://localhost:8000"
+
+record_video: true
+video_pace: medium
+video_viewport_width: 1440
+video_viewport_height: 900
+
+auth:
+  type: command
+  check: "cd ~/emdash-projects/connect-labs && source .venv/bin/activate && python manage.py get_cli_token --list-profiles 2>&1 | grep -E 'main.*no'"
+  login: "cd ~/emdash-projects/connect-labs && source .venv/bin/activate && python manage.py get_cli_token --profile main"
+  inject_url: "/labs/test-auth/?profile=main"
+
+personas:
+  priya:
+    name: "Priya Sharma"
+    role: "Program Admin, Continuum Health"
+    color: "#7c3aed"
+    intro: "Priya runs a child-nutrition program through two network managers. She needs to know — without reading 8 weekly review pages — which network manager is on top of things and which workers need attention."
+
+scenes:
+  - persona: priya
+    title: "The whole program at a glance"
+    show: "Program Admin Report at /labs/workflow/65/run/?run_id=365 — 2 opp rows × 4 week columns + pinned aggregate column on the right. Each cell shows FLW-decision, Audits, and Tasks KPI bars with green/yellow/red color coding."
+    impressive_because: "Eight weekly reviews compressed into one grid. Priya sees Northern Cluster ran all 4 weeks (green aggregate), Southern Cluster missed a week (red NO RUN card) — before reading a single number."
+    video_hold_seconds: 5
+
+  - persona: priya
+    title: "Northern Cluster: on top of things"
+    show: "Aggregate card for Northern Cluster on the right — '4/4 RUNS · ✓ SOP MET', 100% FLW decisions, audits taken, all tasks resolved"
+    impressive_because: "When a row's aggregate is all green, Priya doesn't need to look further. amani_nm is running the SOP and resolving issues."
+    video_hold_seconds: 4
+
+  - persona: priya
+    title: "Southern Cluster: missed a week"
+    show: "Wk 2 cell on the Southern Cluster row — bright red border, '⚠ NO RUN — SOP missed'"
+    impressive_because: "The single visual cue Priya needs to flag the network manager. No drill-down required."
+    video_hold_seconds: 4
+
+  - persona: priya
+    title: "Click the worst run to see who got flagged"
+    show: "Click Southern Cluster Wk 0 cell. Detail row opens directly under that cell with 4 columns: FLW, Decision, Audits, Tasks. Three FLWs flagged: miriam_s (gender skew → warned), pinda_s (bad MUAC → warned), rina_s (misleading photos → warned)."
+    impressive_because: "One click, no page change, instantly see the per-FLW story for that run."
+    video_hold_seconds: 6
+
+  - persona: priya
+    title: "Two weeks later: same workers, harder action"
+    show: "Click Southern Cluster Wk 2 cell. Detail row updates in place. pinda_s and rina_s now have second flags — Tasks column shows 'suspended', Audits show completed fail. ola_s newly flagged (in_progress)."
+    impressive_because: "kwame_nm caught the repeat offenders and suspended them. Bad workers identified and removed — that's good network manager performance."
+    video_hold_seconds: 6
+
+  - persona: priya
+    title: "Wk 3: roster healed itself"
+    show: "Click Southern Cluster Wk 4 cell. Detail row shows 8 active FLWs — pinda_s and rina_s gone, new_hire tola_s onboarded. All FLW decisions = no_issues."
+    impressive_because: "The system shows the program self-correcting — suspended workers off the roster, replacements onboarded, weekly SOP back to clean."
+    video_hold_seconds: 5
+
+  - persona: priya
+    title: "Open the underlying weekly review"
+    show: "From the detail row, click the run link → opens the CHC Nutrition weekly review for that opp/week"
+    impressive_because: "Drill-down preserves context. Priya can go from program-level view → opp/week → individual worker without losing her place."
+    video_hold_seconds: 4
