@@ -13,10 +13,7 @@ from datetime import datetime
 
 from commcare_connect.decisions.data_access import DecisionsDataAccess
 from commcare_connect.tasks.data_access import TaskDataAccess
-from commcare_connect.workflow.data_access import (
-    WorkflowDataAccess,
-    get_saved_runs_for_program_report,
-)
+from commcare_connect.workflow.data_access import WorkflowDataAccess, get_saved_runs_for_program_report
 
 logger = logging.getLogger(__name__)
 
@@ -101,11 +98,7 @@ def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids
                             "status": t.status,
                             "official_action": (t.resolution_details or {}).get("official_action"),
                             "closed_at": next(
-                                (
-                                    e.get("timestamp")
-                                    for e in (t.events or [])
-                                    if e.get("event_type") == "closed"
-                                ),
+                                (e.get("timestamp") for e in (t.events or []) if e.get("event_type") == "closed"),
                                 None,
                             ),
                         }

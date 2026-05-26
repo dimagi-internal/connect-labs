@@ -131,9 +131,7 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
     mock_dda_class = MagicMock()
     mock_tda_class = MagicMock()
     mock_get_saved_runs = MagicMock(
-        return_value=[
-            {"opportunity_id": 10001, "workflow_definition_id": 47, "runs": [fake_run]}
-        ]
+        return_value=[{"opportunity_id": 10001, "workflow_definition_id": 47, "runs": [fake_run]}]
     )
 
     mock_dda_class.return_value.get_decisions_for_run.return_value = [
