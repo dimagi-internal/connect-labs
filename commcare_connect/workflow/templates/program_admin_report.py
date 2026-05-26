@@ -53,7 +53,16 @@ def _parse_iso(s):
 
 
 def build_snapshot(
-    *, pipelines, state, opportunity_id, workers, opportunity_ids, definition_id, request=None, access_token=None, **_
+    *,
+    pipelines,
+    state,
+    opportunity_id,
+    workers=None,
+    opportunity_ids=None,
+    definition_id=None,
+    request=None,
+    access_token=None,
+    **_,
 ):
     """Freeze a window-scoped rollup of decisions + their live task/audit
     status at run completion time. See spec §5.3.
@@ -64,6 +73,10 @@ def build_snapshot(
     extracted from session) or ``access_token`` (MCP/CLI path — caller has
     the Connect OAuth token already). Exactly one must yield a token; the
     DAOs raise ``ValueError`` if neither is present.
+
+    ``workers``, ``opportunity_ids``, and ``definition_id`` are accepted for
+    framework-call compatibility but not used here — this snapshot is read
+    from `state.watched_sources`, not the run's own workers/pipelines.
     """
     window_start = _parse_iso(state.get("window_start"))
     window_end = _parse_iso(state.get("window_end"))
