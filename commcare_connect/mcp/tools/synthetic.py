@@ -622,6 +622,46 @@ def synthetic_local_records_count(user, *, opportunity_id: int) -> dict[str, Any
 
 
 @register(
+    name="synthetic_local_record_dump",
+    description=(
+        "Diagnostic: return the full ``data`` JSON for a single LabsLocalRecord "
+        "row, scoped to the caller's labs-only opp. Used to debug shape "
+        "mismatches between the synthetic generator's emitted dict and what "
+        "the labs UI reads back."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "record_id": {"type": "integer"},
+        },
+        "required": ["opportunity_id", "record_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_local_record_dump(user, *, opportunity_id: int, record_id: int) -> dict[str, Any]:
+    from commcare_connect.labs.synthetic.models import LabsLocalRecord
+
+    try:
+        rec = LabsLocalRecord.objects.get(id=record_id, opportunity_id=opportunity_id)
+    except LabsLocalRecord.DoesNotExist:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"no LabsLocalRecord with id={record_id} in opp {opportunity_id}",
+        )
+    return {
+        "id": rec.id,
+        "opportunity_id": rec.opportunity_id,
+        "experiment": rec.experiment,
+        "type": rec.type,
+        "username": rec.username,
+        "data_keys": sorted(rec.data.keys()) if isinstance(rec.data, dict) else [],
+        "data": rec.data,
+    }
+
+
+@register(
     name="synthetic_set_my_visibility",
     description=(
         "Toggle the calling user's `view_synthetic_opps` setting. When on, "
