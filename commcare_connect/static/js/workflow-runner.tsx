@@ -1350,6 +1350,23 @@ function WorkflowRunner({
       }
     };
 
+    // Decisions are always queried live (per spec §3.3 — Decision lifecycle
+    // state-of-truth lives on the Decision record, not the run snapshot).
+    // Newest-first so multiple decisions for the same FLW resolve to the
+    // most recent via decisionsFor().
+    const decisionsList = (initialData.decisions ?? [])
+      .slice()
+      .sort((a, b) => (b.decided_at || '').localeCompare(a.decided_at || ''));
+    const decisionsByFlw = new Map<string, (typeof decisionsList)[number]>();
+    for (const d of decisionsList) {
+      if (!decisionsByFlw.has(d.flw_id)) {
+        // sorted desc — first seen = latest
+        decisionsByFlw.set(d.flw_id, d);
+      }
+    }
+    const decisionsFor = (username: string) =>
+      decisionsByFlw.get(username) ?? null;
+
     if (isCompleted && snapshot) {
       return {
         workers: (snapshot.workers as WorkerData[]) ?? initialData.workers,
@@ -1360,6 +1377,8 @@ function WorkflowRunner({
         isCompleted: true,
         asOf: inst.completed_at ?? null,
         complete: completeFn,
+        decisions: decisionsList,
+        decisionsFor,
       };
     }
 
@@ -1370,10 +1389,13 @@ function WorkflowRunner({
       isCompleted: false,
       asOf: null,
       complete: completeFn,
+      decisions: decisionsList,
+      decisionsFor,
     };
   }, [
     initialData.instance,
     initialData.workers,
+    initialData.decisions,
     initialData.apiEndpoints.completeRun,
     pipelineData,
     instanceState,
