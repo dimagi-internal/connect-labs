@@ -411,7 +411,7 @@ from . import (  # noqa: E402
     mbw_monitoring_v3,
     ocs_outreach,
     performance_review,
-    program_admin_audit,
+    program_admin_report,
 )
 
 __all__ = [
@@ -430,5 +430,5 @@ __all__ = [
     "kmc_flw_flags",
     "kmc_project_metrics",
     "llo_weekly_review",
-    "program_admin_audit",
+    "program_admin_report",
 ]
