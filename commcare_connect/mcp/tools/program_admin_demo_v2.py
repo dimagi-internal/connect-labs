@@ -204,14 +204,18 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
     elif archetype in ("suspended_repeat_offense", "suspended_fraudulent"):
         first = flw.get("first_flag_week", 0)
         last = flw.get("second_flag_week", first + 2)
+        is_fraud = archetype == "suspended_fraudulent"
         reason = flw.get(
             "reason_key",
-            "misleading_photos" if archetype == "suspended_fraudulent" else "bad_muac_distribution",
+            "misleading_photos" if is_fraud else "bad_muac_distribution",
         )
         # First flag: tape_usage / misleading audit (fail) + warned task.
-        first_audit = "completed_fail_misleading" if archetype == "suspended_fraudulent" else "completed_fail_tape_usage"
-        # Second flag: still failing → suspended task.
+        first_audit = "completed_fail_misleading" if is_fraud else "completed_fail_tape_usage"
+        # Second flag: still failing → suspended task. Fraud variant uses the
+        # fraud-framed coaching transcript; repeat-failure variant uses the
+        # standard repeat-offense one.
         second_audit = first_audit
+        suspension_task = "closed_suspended_fraud" if is_fraud else "closed_suspended"
         for i in range(week_count):
             if i < first:
                 out[i] = no_issues
@@ -220,7 +224,7 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
             elif i < last:
                 out[i] = no_issues
             elif i == last:
-                out[i] = flag("repeated_failure", second_audit, "closed_suspended")
+                out[i] = flag("repeated_failure", second_audit, suspension_task)
             else:
                 out[i] = None  # removed from roster after suspension
     else:
