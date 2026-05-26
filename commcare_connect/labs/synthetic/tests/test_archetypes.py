@@ -164,3 +164,82 @@ def test_all_task_archetypes_have_descriptions():
     for name, arche in TASK_ARCHETYPES.items():
         assert arche.description, f"{name} missing description"
         assert arche.status in {"investigating", "closed"}
+
+
+def test_task_carries_archetype_appropriate_ocs_conversation():
+    """build_task_data attaches an OCS coaching transcript matching the
+    task's narrative outcome (closed_satisfactory → resolved-clean tone,
+    closed_warned → formal warning, closed_suspended → suspension)."""
+    for archetype_name in ("closed_satisfactory", "closed_warned", "closed_suspended", "closed_suspended_fraud", "investigating"):
+        data = build_task_data(
+            archetype_name=archetype_name,
+            flw_id="grace",
+            monday_iso="2025-11-03",
+            opportunity_id=10001,
+            workflow_run_id=200,
+            audit_session_id=300,
+            title=f"[demo] {archetype_name}",
+            creator_name="kwame_nm",
+        )
+        conv = data["ocs_conversation"]
+        assert conv, f"{archetype_name} should have an ocs_conversation"
+        assert len(conv) >= 4, f"{archetype_name} conversation too short ({len(conv)} msgs)"
+        roles = {m["role"] for m in conv}
+        assert roles == {"bot", "flw"}, f"{archetype_name} bad roles: {roles}"
+        # First message must be from the bot (coach initiates)
+        assert conv[0]["role"] == "bot"
+        # FLW name placeholder must be filled in
+        assert all("{flw_name}" not in m["text"] for m in conv)
+        # Each message has an ISO timestamp
+        from datetime import datetime
+        for m in conv:
+            datetime.fromisoformat(m["ts"])
+
+
+def test_closed_satisfactory_transcript_tone_is_supportive():
+    """The closed_satisfactory transcript should read as a friendly check-in,
+    not a warning — checked by keyword in the bot's first message."""
+    data = build_task_data(
+        archetype_name="closed_satisfactory",
+        flw_id="grace",
+        monday_iso="2025-11-03",
+        opportunity_id=10001,
+        workflow_run_id=200,
+        audit_session_id=300,
+        title="[demo] satisfactory",
+        creator_name="kwame_nm",
+    )
+    bot_messages = [m["text"] for m in data["ocs_conversation"] if m["role"] == "bot"]
+    full = " ".join(bot_messages).lower()
+    assert "small" in full or "refresher" in full or "great work" in full, full
+
+
+def test_closed_warned_transcript_includes_formal_warning_language():
+    data = build_task_data(
+        archetype_name="closed_warned",
+        flw_id="grace",
+        monday_iso="2025-11-03",
+        opportunity_id=10001,
+        workflow_run_id=200,
+        audit_session_id=300,
+        title="[demo] warned",
+        creator_name="kwame_nm",
+    )
+    bot_messages = " ".join(m["text"] for m in data["ocs_conversation"] if m["role"] == "bot").lower()
+    assert "formal warning" in bot_messages or "warning" in bot_messages
+
+
+def test_closed_suspended_fraud_uses_fraud_template():
+    data = build_task_data(
+        archetype_name="closed_suspended_fraud",
+        flw_id="rina",
+        monday_iso="2025-11-17",
+        opportunity_id=10001,
+        workflow_run_id=200,
+        audit_session_id=300,
+        title="[demo] fraud",
+        creator_name="kwame_nm",
+    )
+    bot_messages = " ".join(m["text"] for m in data["ocs_conversation"] if m["role"] == "bot").lower()
+    # The fraud template specifically mentions the photo-not-of-a-child finding
+    assert "finger" in bot_messages or "fraud" in bot_messages or "real measurements" in bot_messages
