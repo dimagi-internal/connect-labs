@@ -18,6 +18,7 @@ from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
+from commcare_connect.decisions.data_access import DecisionsDataAccess
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
@@ -375,6 +376,11 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     logger.exception("Failed to load workers for opp %s", oid)
             context["workers"] = workers
 
+            # Hoisted: decisions are loaded only on the run-id branch (live
+            # query — never frozen on the watched workflow's snapshot, per
+            # spec §3.3). For edit mode and the picker branch, this stays [].
+            decisions_for_run: list[dict] = []
+
             # Get or create run based on mode
             if is_edit_mode:
                 # Edit mode: create temporary run (not persisted)
@@ -424,6 +430,32 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "snapshot": run.snapshot,
                 }
                 context["is_edit_mode"] = False
+
+                # Load Decisions for this run (queried live; not stored on the
+                # run snapshot). Render code uses these via
+                # `view.decisionsFor(username)` to show what the LLO recorded
+                # during the run, in both in_progress and completed modes —
+                # Decision lifecycle is live by design (spec §3.3).
+                try:
+                    dda = DecisionsDataAccess(request=self.request, opportunity_id=opportunity_id)
+                    for d in dda.get_decisions_for_run(int(run_id)):
+                        decisions_for_run.append(
+                            {
+                                "id": d.id,
+                                "flw_id": d.flw_id,
+                                "decision_type": d.decision_type,
+                                "reason_key": d.reason_key,
+                                "reason_label": d.reason_label,
+                                "audit_session_ids": d.audit_session_ids,
+                                "task_ids": d.task_ids,
+                                "kpi_snapshot": d.kpi_snapshot,
+                                "notes": d.notes,
+                                "decided_at": d.decided_at,
+                                "decided_by": d.decided_by,
+                            }
+                        )
+                except Exception:
+                    logger.warning("Failed to load decisions for run %s", run_id, exc_info=True)
             else:
                 # No run_id and not edit mode — render the run picker. Past runs
                 # are listed; user clicks "Open" to load one or "Start Run" to
@@ -467,6 +499,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "is_edit_mode": is_edit_mode,
                 "workers": workers,
                 "pipeline_data": pipeline_data,
+                "decisions": decisions_for_run,
                 "links": {
                     "auditUrlBase": "/audit/create/",
                     "taskUrlBase": "/tasks/new/",
