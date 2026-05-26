@@ -393,13 +393,19 @@ def build_audit_data(
 @dataclass(frozen=True)
 class TaskArchetype:
     """Named task state. Maps to Task data fields the task edit view reads
-    (status, resolution_details, events)."""
+    (status, resolution_details, events) plus an optional OCS coaching
+    transcript that renders in the Tasks UI's Coaching Conversation panel.
+
+    ``ocs_template_key`` references a template key in
+    ``commcare_connect/labs/synthetic/generator/ocs_templates.py``.
+    """
 
     name: str
     description: str
     status: str  # "investigating" | "closed"
     official_action: str | None  # "satisfactory" | "warned" | "suspended" | None
     close_delay_days: int | None  # None → never closed
+    ocs_template_key: str | None = None
     resolution_note_template: str = "Closed by {actor} — {action}"
 
 
@@ -410,6 +416,7 @@ TASK_ARCHETYPES: dict[str, TaskArchetype] = {
         status="closed",
         official_action="satisfactory",
         close_delay_days=6,
+        ocs_template_key="coaching_resolved_clean",
     ),
     "closed_warned": TaskArchetype(
         name="closed_warned",
@@ -417,6 +424,7 @@ TASK_ARCHETYPES: dict[str, TaskArchetype] = {
         status="closed",
         official_action="warned",
         close_delay_days=5,
+        ocs_template_key="coaching_formal_warning",
     ),
     "closed_suspended": TaskArchetype(
         name="closed_suspended",
@@ -424,6 +432,15 @@ TASK_ARCHETYPES: dict[str, TaskArchetype] = {
         status="closed",
         official_action="suspended",
         close_delay_days=2,
+        ocs_template_key="coaching_repeat_offense_suspension",
+    ),
+    "closed_suspended_fraud": TaskArchetype(
+        name="closed_suspended_fraud",
+        description="Closed by suspending the FLW for suspected photo fraud — stronger framing than a repeat-failure suspension.",
+        status="closed",
+        official_action="suspended",
+        close_delay_days=2,
+        ocs_template_key="coaching_repeat_offense_fraud_suspension",
     ),
     "investigating": TaskArchetype(
         name="investigating",
@@ -431,6 +448,7 @@ TASK_ARCHETYPES: dict[str, TaskArchetype] = {
         status="investigating",
         official_action=None,
         close_delay_days=None,
+        ocs_template_key="coaching_in_progress",
     ),
 }
 
@@ -483,6 +501,20 @@ def build_task_data(
             }
         )
 
+    # Optional synthetic OCS coaching conversation. The Tasks UI renders
+    # ``data.ocs_conversation`` as a "Coaching Conversation" panel when set
+    # (see commcare_connect/templates/tasks/task_create_edit.html and the
+    # task-data composition in commcare_connect/tasks/views.py).
+    ocs_conversation: list[dict[str, Any]] = []
+    if archetype.ocs_template_key:
+        from .generator.ocs_templates import render_transcript
+
+        ocs_conversation = render_transcript(
+            template_key=archetype.ocs_template_key,
+            flw_name=flw_id,
+            base_timestamp=created_at + dt.timedelta(hours=1),
+        )
+
     return {
         "title": title,
         "description": archetype.description,
@@ -498,4 +530,6 @@ def build_task_data(
         "workflow_run_id": workflow_run_id,
         "resolution_details": resolution_details,
         "events": events,
+        "ocs_conversation": ocs_conversation,
+        "synthetic": True,
     }
