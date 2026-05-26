@@ -524,13 +524,60 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                             );
                                         })()
                                     ),
-                                    // Actions
+                                    // Actions — state-aware. The button surface reflects what
+                                    // already happened for this FLW so the reviewer sees the
+                                    // *next* action they could take rather than the same
+                                    // generic "Audit" button for everyone.
+                                    //   - if a decision was recorded with linked audit / task →
+                                    //     show "View audit #N" / "View task #N" (links to the
+                                    //     existing record, opp-scoped so cross-opp drill works)
+                                    //   - if the decision was no_issues with no follow-up →
+                                    //     show "✓ Confirmed OK" pill (read-only)
+                                    //   - if no decision yet → show "✓ Mark no issues" +
+                                    //     "📋 Create audit" so the reviewer can decide.
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
-                                        React.createElement('a', {
-                                            href: links.auditUrl({username: r.username, count: 5}),
-                                            className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors',
-                                            title: 'Create audit for ' + name
-                                        }, '📋 Audit')
+                                        (function() {
+                                            var d = (view && typeof view.decisionsFor === 'function') ? view.decisionsFor(r.username) : null;
+                                            var oppScope = (instance && instance.opportunity_id) ? '?opportunity_id=' + instance.opportunity_id : '';
+                                            var buttons = [];
+                                            if (d && d.audit_session_ids && d.audit_session_ids.length) {
+                                                buttons.push(React.createElement('a', {
+                                                    key: 'audit',
+                                                    href: '/audit/' + d.audit_session_ids[0] + '/' + oppScope,
+                                                    className: 'inline-flex items-center px-3 py-1 border border-indigo-300 rounded-md text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors',
+                                                    title: 'View audit session for ' + name,
+                                                }, '📋 View audit #' + d.audit_session_ids[0]));
+                                            }
+                                            if (d && d.task_ids && d.task_ids.length) {
+                                                buttons.push(React.createElement('a', {
+                                                    key: 'task',
+                                                    href: '/tasks/' + d.task_ids[0] + '/edit/' + oppScope,
+                                                    className: 'inline-flex items-center px-3 py-1 border border-indigo-300 rounded-md text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ml-2',
+                                                    title: 'View follow-up task for ' + name,
+                                                }, '✓ View task #' + d.task_ids[0]));
+                                            }
+                                            if (d && d.decision_type === 'no_issues' && buttons.length === 0) {
+                                                buttons.push(React.createElement('span', {
+                                                    key: 'confirmed',
+                                                    className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200',
+                                                    title: 'Reviewer marked this FLW as having no issues this week',
+                                                }, '✓ Confirmed OK'));
+                                            }
+                                            if (!d) {
+                                                buttons.push(React.createElement('span', {
+                                                    key: 'mark',
+                                                    className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200 cursor-default',
+                                                    title: 'Mark this FLW as no issues',
+                                                }, '✓ Mark no issues'));
+                                                buttons.push(React.createElement('a', {
+                                                    key: 'create-audit',
+                                                    href: links.auditUrl({username: r.username, count: 5}),
+                                                    className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors ml-2',
+                                                    title: 'Create audit for ' + name,
+                                                }, '📋 Create audit'));
+                                            }
+                                            return React.createElement('div', {className: 'flex flex-wrap items-center gap-y-1'}, buttons);
+                                        })()
                                     )
                                 );
                             })
