@@ -344,15 +344,37 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
             selectedCell.opportunity_id === source.opportunity_id &&
             selectedCell.run_id === run.id;
         var k = computeRunKpis(run);
+
+        // Completion status — "did the network manager finish what this run
+        // started?" — surface independently of "was the run executed?".
+        // A run is RESOLVED if every audit and task it spawned is closed;
+        // it's IN PROGRESS if any are still open. Runs with no actions
+        // taken are CLEAN — no work was needed.
+        var openAudits = k.audits.denom - k.audits.num;
+        var openTasks = k.tasks.denom - k.tasks.num;
+        var openCount = openAudits + openTasks;
+        var hasAnyActions = k.audits.denom > 0 || k.tasks.denom > 0;
+        var statusPill;
+        var statusBg = 'white';
+        if (!hasAnyActions) {
+            statusPill = pill('✓ Clean run', 'green');
+        } else if (openCount === 0) {
+            statusPill = pill('✓ All resolved', 'green');
+        } else {
+            statusPill = pill('⏳ ' + openCount + ' open', 'yellow');
+            statusBg = '#fffbeb';
+        }
+
         var border = isSelected
             ? '2px solid #4f46e5'
-            : '1px solid #e5e7eb';
+            : (openCount > 0 ? '1px solid #fcd34d' : '1px solid #e5e7eb');
+
         return React.createElement('div', {
             onClick: function() {
                 setSelectedCell(isSelected ? null : {opportunity_id: source.opportunity_id, run_id: run.id});
             },
             style: {
-                background: 'white',
+                background: statusBg,
                 borderRadius: 10,
                 border: border,
                 padding: 10,
@@ -370,6 +392,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
                 pill('✓ RAN', 'green'),
                 React.createElement('span', {style: {fontSize: 10, color: '#6b7280'}}, fmtDate(run.completed_at))
             ),
+            React.createElement('div', {style: {marginTop: -2}}, statusPill),
             kpiBar('FLW dec.', k.flwDec.num, k.flwDec.denom),
             kpiBar('Audits', k.audits.num, k.audits.denom),
             kpiBar('Tasks', k.tasks.num, k.tasks.denom)
