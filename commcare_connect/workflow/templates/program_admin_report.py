@@ -137,14 +137,25 @@ def build_snapshot(
                 "runs": run_summaries,
             }
         )
-    return {"schema_version": 1, "watched_summary": watched_summary}
+    # Wrap in `state` so useRunView's `view.state = snapshot.state` path
+    # finds the rollup. We preserve the window + sources alongside so the
+    # render code never has to reach into the definition config.
+    return {
+        "schema_version": 1,
+        "state": {
+            "watched_summary": watched_summary,
+            "window_start": state.get("window_start"),
+            "window_end": state.get("window_end"),
+            "watched_sources": watched_sources,
+        },
+    }
 
 
 RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
-    var summary = (view && view.state && view.state.watched_summary) || [];
-    var config = (definition && definition.config) || {};
-    var windowStart = config.window_start || '';
-    var windowEnd = config.window_end || '';
+    var state = (view && view.state) || {};
+    var summary = state.watched_summary || [];
+    var windowStart = state.window_start || (definition && definition.config && definition.config.window_start) || '';
+    var windowEnd = state.window_end || (definition && definition.config && definition.config.window_end) || '';
 
     var [selectedCell, setSelectedCell] = React.useState(null);
 
