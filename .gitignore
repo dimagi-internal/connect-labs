@@ -382,3 +382,4 @@ docs/.dry-run/
 scripts/
 .gstack/
 .claude/settings.local.json
+.superpowers/
