@@ -2068,3 +2068,58 @@ class PipelineDataAccess(BaseDataAccess):
             # pipelines for the same opp don't clobber each other (#116).
             pipeline_id=definition_id,
         )
+
+
+# =============================================================================
+# Cross-workflow reader for program_admin_report (spec §5.5)
+# =============================================================================
+
+
+def get_saved_runs_for_program_report(
+    wda: "WorkflowDataAccess",
+    *,
+    watched_sources: list[dict],
+    window_start,
+    window_end,
+) -> list[dict]:
+    """For each (opp_id, workflow_definition_id) pair in ``watched_sources``,
+    return every completed run whose ``completed_at`` falls within
+    ``[window_start, window_end]``.
+
+    Returns a list of ``{opportunity_id, workflow_definition_id, runs:
+    list[WorkflowRunRecord]}`` entries. A source with no completed runs in
+    the window still appears with ``runs=[]`` so the caller can render a
+    "no run" cell.
+
+    The window is inclusive on both ends. ``completed_at`` is compared as
+    parsed datetime; bad/missing timestamps are skipped.
+    """
+    from datetime import datetime
+
+    def _within(completed_at_str):
+        if not completed_at_str:
+            return False
+        try:
+            ts = datetime.fromisoformat(completed_at_str.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return window_start <= ts <= window_end
+
+    out = []
+    for source in watched_sources:
+        opp_id = source["opportunity_id"]
+        def_id = source["workflow_definition_id"]
+        all_runs = wda.list_runs(definition_id=def_id)
+        matched = [
+            r
+            for r in all_runs
+            if r.opportunity_id == opp_id and r.status == "completed" and _within(r.completed_at)
+        ]
+        out.append(
+            {
+                "opportunity_id": opp_id,
+                "workflow_definition_id": def_id,
+                "runs": matched,
+            }
+        )
+    return out
