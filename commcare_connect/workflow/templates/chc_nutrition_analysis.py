@@ -208,7 +208,14 @@ DEFINITION = {
 
 RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState, view }) {
     // ── Data ────────────────────────────────────────────────────
-    var rows = (pipelines && pipelines.default && pipelines.default.rows) || [];
+    // Prefer the snapshot-aware view.pipelines on completed runs so the
+    // saved-run replay shows the same rows the reviewer saw at completion.
+    // Falls back to the live top-level `pipelines` prop for in-progress
+    // runs. The pipeline alias is configured per-workflow on
+    // pipeline_sources — accept either "data" or "default".
+    var pipelinesEff = (view && view.pipelines) || pipelines || {};
+    var pipeData = pipelinesEff.data || pipelinesEff.default || null;
+    var rows = (pipeData && pipeData.rows) || [];
 
     // ── Histogram bin names ─────────────────────────────────────
     var BINS = [
