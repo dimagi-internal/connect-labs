@@ -72,12 +72,16 @@ def build_snapshot(
     if not window_start or not window_end:
         return {"schema_version": 1, "watched_summary": [], "error": "missing_window"}
 
-    wda = WorkflowDataAccess(request=request, access_token=access_token)
+    # Don't pass a shared WDA here — the reader constructs a per-source
+    # scoped WDA internally so list_runs hits the LabsRecord API with the
+    # right opp scope (the labs API silently returns 0 records when called
+    # without a scope unless the records are public).
     sources = get_saved_runs_for_program_report(
-        wda,
         watched_sources=watched_sources,
         window_start=window_start,
         window_end=window_end,
+        request=request,
+        access_token=access_token,
     )
 
     dda = DecisionsDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
