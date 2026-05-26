@@ -54,12 +54,19 @@ def test_post_decision_creates_via_data_access(MockDA, rf):
         guard.return_value = None
 
         url = "/labs/workflow/api/503/decisions/"
-        req = _attach_user(_post(rf, url, {
-            "opportunity_id": 10001,
-            "flw_id": "amina",
-            "decision_type": "no_issues",
-        }))
+        req = _attach_user(
+            _post(
+                rf,
+                url,
+                {
+                    "opportunity_id": 10001,
+                    "flw_id": "amina",
+                    "decision_type": "no_issues",
+                },
+            )
+        )
         from commcare_connect.decisions import views as v
+
         response = v.create_decision_for_run(req, workflow_run_id=503)
 
     assert response.status_code == 201
@@ -81,6 +88,7 @@ def test_post_decision_returns_400_on_missing_fields(MockDA, rf):
         url = "/labs/workflow/api/503/decisions/"
         req = _attach_user(_post(rf, url, {"opportunity_id": 10001, "decision_type": "no_issues"}))
         from commcare_connect.decisions import views as v
+
         response = v.create_decision_for_run(req, workflow_run_id=503)
 
     assert response.status_code == 400
@@ -98,10 +106,19 @@ def test_post_decision_refused_when_run_completed(MockDA, rf):
             status=409,
         )
         url = "/labs/workflow/api/503/decisions/"
-        req = _attach_user(_post(rf, url, {
-            "opportunity_id": 10001, "flw_id": "amina", "decision_type": "no_issues",
-        }))
+        req = _attach_user(
+            _post(
+                rf,
+                url,
+                {
+                    "opportunity_id": 10001,
+                    "flw_id": "amina",
+                    "decision_type": "no_issues",
+                },
+            )
+        )
         from commcare_connect.decisions import views as v
+
         response = v.create_decision_for_run(req, workflow_run_id=503)
 
     assert response.status_code == 409
@@ -154,6 +171,7 @@ def test_get_decisions_for_run_returns_list(MockDA, rf):
     req.user = MagicMock(username="jane_okeke")
 
     from commcare_connect.decisions import views as v
+
     response = v.list_decisions_for_run(req, workflow_run_id=503)
 
     assert response.status_code == 200
