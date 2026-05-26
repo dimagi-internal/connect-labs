@@ -585,30 +585,63 @@ def _muac_distribution(*, severity: int, rng) -> dict[str, int]:
     return {bin_name: max(0, w + rng.randint(-1, 1)) for bin_name, w in zip(_ALL_MUAC_BINS, weights)}
 
 
+def _gender_counts(*, muac_count: int, kpi_issue: str | None, rng) -> tuple[int, int]:
+    """Split ``muac_count`` between male + female children.
+
+    For most FLWs we want a believably balanced split (40-60% female), which
+    is what the chc_nutrition render code treats as the green KPI band.
+    Random uniform splits produce too many red rows because the band only
+    covers 20% of the [0, n] range.
+
+    When ``kpi_issue == 'gender'`` we intentionally bias the split outside
+    the band so the FLW's row appears red — the audit and task that get
+    spawned that week then have a real KPI issue to point at.
+    """
+    if muac_count <= 0:
+        return 0, 0
+    if kpi_issue == "gender":
+        # Strongly skew toward one sex (>= 80% one way). The choice of sex
+        # is rng-driven so the gender-skewed FLW alternates across weeks if
+        # the trajectory repeats.
+        skew_pct = 0.80 + rng.random() * 0.15
+        female_pct = skew_pct if rng.random() < 0.5 else (1.0 - skew_pct)
+    else:
+        # Tight band: female_pct in [0.45, 0.55] so renders comfortably green.
+        female_pct = 0.45 + rng.random() * 0.10
+    female_count = max(0, min(muac_count, round(muac_count * female_pct)))
+    male_count = muac_count - female_count
+    return male_count, female_count
+
+
 def build_flw_pipeline_row(
     *,
     flw_id: str,
     archetype: str,
     flagged_this_week: bool,
     rng_seed: int,
+    kpi_issue: str | None = None,
 ) -> dict[str, Any]:
     """Build a synthetic CHC Nutrition pipeline row for one FLW for one week.
 
     Field shape matches ``chc_nutrition_analysis.PIPELINE_SCHEMA`` — the
     chc_nutrition render code reads from these directly.
+
+    ``kpi_issue`` (when set) drives which KPI looks bad on this row:
+      - ``"muac"``   — high SAM/MAM concentration in the MUAC distribution
+      - ``"gender"`` — gender split outside the green band (>60% one sex)
+      - ``None``     — clean across all KPIs (default for ``solid`` rows)
     """
     import random
 
     rng = random.Random(rng_seed)
 
-    # Severity reflects the FLW's narrative state for THIS week:
-    #   - solid / new_hire: clean MUAC distribution (severity 0)
-    #   - improver in flag week: moderate (1)
-    #   - suspended FLW in flag week: severe (2-3)
+    # Severity reflects the FLW's narrative state for THIS week, restricted
+    # to MUAC-distribution issues. Gender skew is handled separately via
+    # ``kpi_issue == 'gender'`` so the two issue types are independent.
     if archetype in ("solid", "new_hire"):
         severity = 0
     elif archetype in ("improver_closed_satisfactory", "improver_warned", "improver_in_progress"):
-        severity = 1 if flagged_this_week else 0
+        severity = 1 if (flagged_this_week and kpi_issue == "muac") else 0
     elif archetype == "suspended_repeat_offense":
         severity = 2 if flagged_this_week else 1
     elif archetype == "suspended_fraudulent":
@@ -619,7 +652,6 @@ def build_flw_pipeline_row(
     distribution = _muac_distribution(severity=severity, rng=rng)
     muac_count = sum(distribution.values())
 
-    # Compute average MUAC from distribution bin midpoints (10, 11, 12, 13, 14, 15).
     # Midpoint of each bin (9.5-10.5 → 10.0, 10.5-11.5 → 11.0, …, 20.5-21.5 → 21.0).
     bin_midpoints = [10.0 + i for i in range(len(_ALL_MUAC_BINS))]
     if muac_count > 0:
@@ -631,8 +663,7 @@ def build_flw_pipeline_row(
     # Visit + gender splits — believable per-FLW totals.
     total_visits = muac_count + rng.randint(2, 6)  # MUAC-eligible + non-MUAC visits
     approved_visits = total_visits if severity <= 1 else max(0, total_visits - rng.randint(2, 4))
-    male_count = rng.randint(0, muac_count)
-    female_count = muac_count - male_count
+    male_count, female_count = _gender_counts(muac_count=muac_count, kpi_issue=kpi_issue, rng=rng)
 
     return {
         "username": flw_id,

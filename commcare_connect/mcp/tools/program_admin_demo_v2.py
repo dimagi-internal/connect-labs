@@ -279,6 +279,17 @@ def _create_backdated_workflow_run(
             if spec_this_week is None:
                 continue  # FLW not on roster this week
             flagged = spec_this_week.get("decision_type") == "action_taken"
+            # Derive kpi_issue from the decision's reason_key so the pipeline
+            # row's shape matches WHY the FLW was flagged this week.
+            # gender_skew → gender bias; bad_muac_distribution / misleading /
+            # repeated_failure all show up as MUAC-distribution issues.
+            kpi_issue: str | None = None
+            if flagged:
+                reason = spec_this_week.get("reason_key") or ""
+                if reason == "gender_skew":
+                    kpi_issue = "gender"
+                elif reason in ("bad_muac_distribution", "misleading_photos", "repeated_failure"):
+                    kpi_issue = "muac"
             # Seed: stable per (opp, flw, week) so regenerations are deterministic.
             seed = hash((opportunity_id, flw["id"], week_idx)) & 0xFFFFFFFF
             pipeline_rows.append(
@@ -287,6 +298,7 @@ def _create_backdated_workflow_run(
                     archetype=archetype,
                     flagged_this_week=flagged,
                     rng_seed=seed,
+                    kpi_issue=kpi_issue,
                 )
             )
 
