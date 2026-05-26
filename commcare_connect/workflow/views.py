@@ -1157,6 +1157,12 @@ def complete_run_api(request, run_id):
             opportunity_id=opportunity_id,
             workers=workers,
             opportunity_ids=effective_opp_ids,
+            # Optional context fields that some templates' build_snapshot hooks
+            # accept (definition_id, request). The framework relays via
+            # **context — hooks that don't use these fields just absorb them
+            # into **_.
+            definition_id=definition_id,
+            request=request,
         )
         if not isinstance(snapshot_payload, dict):
             return JsonResponse(
