@@ -107,3 +107,62 @@ def test_post_decision_refused_when_run_completed(MockDA, rf):
     assert response.status_code == 409
     # create_decision should NOT have been called
     MockDA.return_value.create_decision.assert_not_called()
+
+
+@patch("commcare_connect.decisions.views.DecisionsDataAccess")
+def test_get_decisions_for_run_returns_list(MockDA, rf):
+    from commcare_connect.decisions.models import DecisionRecord
+
+    instance = MockDA.return_value
+    instance.get_decisions_for_run.return_value = [
+        DecisionRecord(
+            {
+                "id": 11,
+                "experiment": "decisions",
+                "type": "Decision",
+                "username": "amina",
+                "opportunity_id": 10001,
+                "data": {
+                    "flw_id": "amina",
+                    "decision_type": "action_taken",
+                    "reason_key": "bad_muac_distribution",
+                    "reason_label": "Bad MUAC pattern",
+                    "audit_session_ids": [46],
+                    "task_ids": [123],
+                    "decided_at": "2025-11-11T11:42:00Z",
+                },
+            }
+        ),
+        DecisionRecord(
+            {
+                "id": 12,
+                "experiment": "decisions",
+                "type": "Decision",
+                "username": "binta",
+                "opportunity_id": 10001,
+                "data": {
+                    "flw_id": "binta",
+                    "decision_type": "no_issues",
+                    "decided_at": "2025-11-11T11:43:00Z",
+                },
+            }
+        ),
+    ]
+
+    req = rf.get("/labs/workflow/api/503/decisions/")
+    req.session = {"labs_oauth": {"access_token": "stub-token"}}
+    req.user = MagicMock(username="jane_okeke")
+
+    from commcare_connect.decisions import views as v
+    response = v.list_decisions_for_run(req, workflow_run_id=503)
+
+    assert response.status_code == 200
+    body = json.loads(response.content)
+    assert body["count"] == 2
+    decisions = body["decisions"]
+    assert decisions[0]["id"] == 11
+    assert decisions[0]["decision_type"] == "action_taken"
+    assert decisions[0]["audit_session_ids"] == [46]
+    assert decisions[0]["task_ids"] == [123]
+    assert decisions[1]["decision_type"] == "no_issues"
+    instance.get_decisions_for_run.assert_called_once_with(503)

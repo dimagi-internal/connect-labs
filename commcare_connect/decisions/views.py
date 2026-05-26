@@ -86,3 +86,36 @@ def create_decision_for_run(request: HttpRequest, workflow_run_id: int) -> JsonR
         },
         status=201,
     )
+
+
+@require_http_methods(["GET"])
+def list_decisions_for_run(request: HttpRequest, workflow_run_id: int) -> JsonResponse:
+    """GET /labs/workflow/api/<workflow_run_id>/decisions/
+
+    Returns: {"count": N, "decisions": [...]}
+    """
+    da = DecisionsDataAccess(request=request)
+    decisions = da.get_decisions_for_run(workflow_run_id)
+    return JsonResponse(
+        {
+            "count": len(decisions),
+            "decisions": [
+                {
+                    "id": d.id,
+                    "workflow_run_id": d.workflow_run_id,
+                    "opportunity_id": d.data.get("opportunity_id"),
+                    "flw_id": d.flw_id,
+                    "decision_type": d.decision_type,
+                    "reason_key": d.reason_key,
+                    "reason_label": d.reason_label,
+                    "kpi_snapshot": d.kpi_snapshot,
+                    "audit_session_ids": d.audit_session_ids,
+                    "task_ids": d.task_ids,
+                    "notes": d.notes,
+                    "decided_at": d.decided_at,
+                    "decided_by": d.decided_by,
+                }
+                for d in decisions
+            ],
+        }
+    )
