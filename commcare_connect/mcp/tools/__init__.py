@@ -10,6 +10,7 @@ from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
 from . import mbw_parity  # noqa: F401
 from . import pipelines  # noqa: F401
+from . import program_admin_demo  # noqa: F401  -- registers program_admin_demo_seed
 from . import reviews  # noqa: F401
 from . import sample_ids  # noqa: F401
 from . import solicitations  # noqa: F401
