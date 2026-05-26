@@ -291,7 +291,10 @@ def _create_backdated_workflow_run(
             )
 
     snapshot_state = {"period_start": monday_iso, "period_end": period_end}
-    snapshot_pipelines = {"data": pipeline_rows} if pipeline_rows else {}
+    # chc_nutrition_analysis reads `pipelines.data.rows` (not `pipelines.data`)
+    # because the runtime pipelines dict wraps rows in a {rows: [...]} object.
+    # Match that exact shape so the saved snapshot replay works the same way.
+    snapshot_pipelines = {"data": {"rows": pipeline_rows}} if pipeline_rows else {}
 
     data = {
         "definition_id": definition_id,
