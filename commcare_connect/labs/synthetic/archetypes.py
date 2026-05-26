@@ -549,51 +549,40 @@ def build_task_data(
 # narrative state (solid / improver-in-flag-week / suspended).
 
 
+_ALL_MUAC_BINS = (
+    "muac_9_5_10_5_visits",   "muac_10_5_11_5_visits",
+    "muac_11_5_12_5_visits",  "muac_12_5_13_5_visits",
+    "muac_13_5_14_5_visits",  "muac_14_5_15_5_visits",
+    "muac_15_5_16_5_visits",  "muac_16_5_17_5_visits",
+    "muac_17_5_18_5_visits",  "muac_18_5_19_5_visits",
+    "muac_19_5_20_5_visits",  "muac_20_5_21_5_visits",
+)
+
+
 def _muac_distribution(*, severity: int, rng) -> dict[str, int]:
-    """Return MUAC distribution bin counts for a given severity (0=clean,
-    higher=more SAM/MAM)."""
-    # Severity 0: peak around 14-15cm (healthy)
-    # Severity 1: some MAM (12.5-13.5) and lower
-    # Severity 2: heavy SAM (10.5-11.5) — concerning
-    # Severity 3: very heavy SAM (9.5-10.5) — suspected fraud / measurement issues
+    """Return MUAC distribution bin counts across all 12 bins for the given
+    severity (0=clean, higher=more SAM/MAM).
+
+    Children measured for MUAC are typically under 5 years old, so readings
+    are concentrated in the 12-17 cm range with a long right tail toward
+    healthier values. The synthetic generator earlier only emitted weights
+    for the first 6 bins (9.5-15.5cm), which made the rendered MUAC sparkline
+    look truncated. Now spans the full 9.5-21.5cm range.
+    """
+    # Per-severity bin weights, indexed by bin (in the order of _ALL_MUAC_BINS).
+    # Healthy distributions peak around 14-15cm and have a meaningful right
+    # tail of larger-arm children up to ~18cm. Severe distributions are
+    # left-skewed with mass in the 10-12cm range.
     if severity <= 0:
-        weights = {
-            "muac_9_5_10_5_visits": 0,
-            "muac_10_5_11_5_visits": 0,
-            "muac_11_5_12_5_visits": 1,
-            "muac_12_5_13_5_visits": 3,
-            "muac_13_5_14_5_visits": 7,
-            "muac_14_5_15_5_visits": 9,
-        }
+        weights = [0, 0, 1, 3, 6, 8, 6, 3, 2, 1, 0, 0]
     elif severity == 1:
-        weights = {
-            "muac_9_5_10_5_visits": 0,
-            "muac_10_5_11_5_visits": 1,
-            "muac_11_5_12_5_visits": 3,
-            "muac_12_5_13_5_visits": 6,
-            "muac_13_5_14_5_visits": 6,
-            "muac_14_5_15_5_visits": 4,
-        }
+        weights = [0, 1, 3, 6, 6, 5, 3, 2, 1, 1, 0, 0]
     elif severity == 2:
-        weights = {
-            "muac_9_5_10_5_visits": 1,
-            "muac_10_5_11_5_visits": 4,
-            "muac_11_5_12_5_visits": 6,
-            "muac_12_5_13_5_visits": 5,
-            "muac_13_5_14_5_visits": 3,
-            "muac_14_5_15_5_visits": 1,
-        }
+        weights = [1, 4, 6, 5, 3, 2, 1, 1, 0, 0, 0, 0]
     else:  # severity 3+
-        weights = {
-            "muac_9_5_10_5_visits": 4,
-            "muac_10_5_11_5_visits": 6,
-            "muac_11_5_12_5_visits": 5,
-            "muac_12_5_13_5_visits": 3,
-            "muac_13_5_14_5_visits": 1,
-            "muac_14_5_15_5_visits": 1,
-        }
-    # Apply small jitter so two FLWs in the same archetype don't look identical.
-    return {k: max(0, v + rng.randint(-1, 1)) for k, v in weights.items()}
+        weights = [4, 6, 5, 3, 1, 1, 0, 0, 0, 0, 0, 0]
+    # Per-bin jitter so two FLWs in the same archetype don't look identical.
+    return {bin_name: max(0, w + rng.randint(-1, 1)) for bin_name, w in zip(_ALL_MUAC_BINS, weights)}
 
 
 def build_flw_pipeline_row(
@@ -631,17 +620,10 @@ def build_flw_pipeline_row(
     muac_count = sum(distribution.values())
 
     # Compute average MUAC from distribution bin midpoints (10, 11, 12, 13, 14, 15).
-    bin_midpoints = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
-    bin_keys = [
-        "muac_9_5_10_5_visits",
-        "muac_10_5_11_5_visits",
-        "muac_11_5_12_5_visits",
-        "muac_12_5_13_5_visits",
-        "muac_13_5_14_5_visits",
-        "muac_14_5_15_5_visits",
-    ]
+    # Midpoint of each bin (9.5-10.5 → 10.0, 10.5-11.5 → 11.0, …, 20.5-21.5 → 21.0).
+    bin_midpoints = [10.0 + i for i in range(len(_ALL_MUAC_BINS))]
     if muac_count > 0:
-        total = sum(midpoint * distribution[k] for midpoint, k in zip(bin_midpoints, bin_keys))
+        total = sum(midpoint * distribution[k] for midpoint, k in zip(bin_midpoints, _ALL_MUAC_BINS))
         avg_muac = round(total / muac_count, 2)
     else:
         avg_muac = 0.0

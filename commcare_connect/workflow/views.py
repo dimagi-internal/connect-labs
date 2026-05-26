@@ -436,9 +436,55 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 # `view.decisionsFor(username)` to show what the LLO recorded
                 # during the run, in both in_progress and completed modes —
                 # Decision lifecycle is live by design (spec §3.3).
+                #
+                # Each decision is enriched with audit_outcomes + task_outcomes
+                # so render code can show outcome-aware button labels (e.g.
+                # "View audit #1165 (pass)") without a second round-trip.
                 try:
+                    from commcare_connect.audit.data_access import AuditDataAccess
+                    from commcare_connect.tasks.data_access import TaskDataAccess
+
                     dda = DecisionsDataAccess(request=self.request, opportunity_id=opportunity_id)
+                    ada = AuditDataAccess(request=self.request, opportunity_id=opportunity_id)
+                    tda = TaskDataAccess(request=self.request, opportunity_id=opportunity_id)
+                    # Preload audits + tasks once per opp; lookups become O(1).
+                    audit_by_id = {}
+                    try:
+                        audit_by_id = {a.id: a for a in ada.get_audit_sessions()}
+                    except Exception:
+                        logger.warning("Failed to preload audits for run %s", run_id, exc_info=True)
                     for d in dda.get_decisions_for_run(int(run_id)):
+                        audit_outcomes = []
+                        for aid in d.audit_session_ids:
+                            a = audit_by_id.get(aid)
+                            if a is None:
+                                continue
+                            img = a.data.get("image_results") or {}
+                            audit_outcomes.append(
+                                {
+                                    "id": a.id,
+                                    "status": a.status,
+                                    "overall_result": a.overall_result,
+                                    "pass_count": img.get("pass", 0),
+                                    "fail_count": img.get("fail", 0),
+                                    "pending_count": img.get("pending", 0),
+                                }
+                            )
+                        task_outcomes = []
+                        for tid in d.task_ids:
+                            try:
+                                t = tda.get_task(tid)
+                            except Exception:
+                                continue
+                            if t is None:
+                                continue
+                            task_outcomes.append(
+                                {
+                                    "id": t.id,
+                                    "status": t.status,
+                                    "official_action": (t.resolution_details or {}).get("official_action"),
+                                }
+                            )
                         decisions_for_run.append(
                             {
                                 "id": d.id,
@@ -448,6 +494,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                                 "reason_label": d.reason_label,
                                 "audit_session_ids": d.audit_session_ids,
                                 "task_ids": d.task_ids,
+                                "audit_outcomes": audit_outcomes,
+                                "task_outcomes": task_outcomes,
                                 "kpi_snapshot": d.kpi_snapshot,
                                 "notes": d.notes,
                                 "decided_at": d.decided_at,

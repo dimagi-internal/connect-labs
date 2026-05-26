@@ -524,57 +524,88 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                             );
                                         })()
                                     ),
-                                    // Actions — state-aware. The button surface reflects what
-                                    // already happened for this FLW so the reviewer sees the
-                                    // *next* action they could take rather than the same
-                                    // generic "Audit" button for everyone.
-                                    //   - if a decision was recorded with linked audit / task →
-                                    //     show "View audit #N" / "View task #N" (links to the
-                                    //     existing record, opp-scoped so cross-opp drill works)
-                                    //   - if the decision was no_issues with no follow-up →
-                                    //     show "✓ Confirmed OK" pill (read-only)
-                                    //   - if no decision yet → show "✓ Mark no issues" +
-                                    //     "📋 Create audit" so the reviewer can decide.
+                                    // Actions — state-aware per-FLW. Buttons reflect:
+                                    //   - the existing decision + linked audit/task (with their
+                                    //     outcome rendered inline so the reviewer can scan the
+                                    //     column without opening each one)
+                                    //   - whether the FLW is failing any KPI (SAM > 5%, MAM > 15%,
+                                    //     or gender split outside 40-60%) — failing FLWs can't
+                                    //     be marked "no issue" without first reviewing the data
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         (function() {
                                             var d = (view && typeof view.decisionsFor === 'function') ? view.decisionsFor(r.username) : null;
                                             var oppScope = (instance && instance.opportunity_id) ? '?opportunity_id=' + instance.opportunity_id : '';
+                                            // Failing-KPI check: any of SAM > 5%, MAM > 15%, gender out of 40-60% band.
+                                            var sPct = muacCount(r) > 0 ? (samCount(r) / muacCount(r)) * 100 : 0;
+                                            var mPct = muacCount(r) > 0 ? (mamCount(r) / muacCount(r)) * 100 : 0;
+                                            var gPct = genderPct(r);
+                                            var isFailing = (sPct > 5) || (mPct > 15) || (gPct !== null && (gPct < 40 || gPct > 60));
+
+                                            function auditLabel(a) {
+                                                if (!a) return 'View audit #' + d.audit_session_ids[0];
+                                                if (a.status === 'in_review' || a.status === 'in_progress') {
+                                                    return 'View audit #' + a.id + ' (in review)';
+                                                }
+                                                if (a.overall_result === 'pass') {
+                                                    return 'View audit #' + a.id + ' (pass)';
+                                                }
+                                                if (a.overall_result === 'fail') {
+                                                    var total = (a.pass_count || 0) + (a.fail_count || 0) + (a.pending_count || 0);
+                                                    return 'View audit #' + a.id + ' (fail · ' + (a.fail_count || 0) + '/' + total + ')';
+                                                }
+                                                return 'View audit #' + a.id;
+                                            }
+                                            function taskLabel(t) {
+                                                if (!t) return 'View task #' + d.task_ids[0];
+                                                if (t.status === 'closed') {
+                                                    var action = t.official_action || 'closed';
+                                                    return 'View task #' + t.id + ' (closed · ' + action + ')';
+                                                }
+                                                return 'View task #' + t.id + ' (' + (t.status || '').replace(/_/g, ' ') + ')';
+                                            }
+
                                             var buttons = [];
                                             if (d && d.audit_session_ids && d.audit_session_ids.length) {
+                                                var firstAudit = (d.audit_outcomes && d.audit_outcomes[0]) || null;
                                                 buttons.push(React.createElement('a', {
                                                     key: 'audit',
                                                     href: '/audit/' + d.audit_session_ids[0] + '/' + oppScope,
                                                     className: 'inline-flex items-center px-3 py-1 border border-indigo-300 rounded-md text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors',
                                                     title: 'View audit session for ' + name,
-                                                }, '📋 View audit #' + d.audit_session_ids[0]));
+                                                }, auditLabel(firstAudit)));
                                             }
                                             if (d && d.task_ids && d.task_ids.length) {
+                                                var firstTask = (d.task_outcomes && d.task_outcomes[0]) || null;
                                                 buttons.push(React.createElement('a', {
                                                     key: 'task',
                                                     href: '/tasks/' + d.task_ids[0] + '/edit/' + oppScope,
                                                     className: 'inline-flex items-center px-3 py-1 border border-indigo-300 rounded-md text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ml-2',
                                                     title: 'View follow-up task for ' + name,
-                                                }, '✓ View task #' + d.task_ids[0]));
+                                                }, taskLabel(firstTask)));
                                             }
                                             if (d && d.decision_type === 'no_issues' && buttons.length === 0) {
                                                 buttons.push(React.createElement('span', {
                                                     key: 'confirmed',
                                                     className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200',
                                                     title: 'Reviewer marked this FLW as having no issues this week',
-                                                }, '✓ Confirmed OK'));
+                                                }, 'Confirmed No Issue'));
                                             }
                                             if (!d) {
-                                                buttons.push(React.createElement('span', {
-                                                    key: 'mark',
-                                                    className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200 cursor-default',
-                                                    title: 'Mark this FLW as no issues',
-                                                }, '✓ Mark no issues'));
+                                                // Only allow "Mark no issues" when KPIs are within thresholds.
+                                                // FLWs failing any KPI need a real review (audit) before any sign-off.
+                                                if (!isFailing) {
+                                                    buttons.push(React.createElement('span', {
+                                                        key: 'mark',
+                                                        className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200 cursor-default',
+                                                        title: 'Mark this FLW as no issues',
+                                                    }, 'Mark No Issue'));
+                                                }
                                                 buttons.push(React.createElement('a', {
                                                     key: 'create-audit',
                                                     href: links.auditUrl({username: r.username, count: 5}),
-                                                    className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors ml-2',
+                                                    className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors' + (isFailing ? '' : ' ml-2'),
                                                     title: 'Create audit for ' + name,
-                                                }, '📋 Create audit'));
+                                                }, 'Create Audit'));
                                             }
                                             return React.createElement('div', {className: 'flex flex-wrap items-center gap-y-1'}, buttons);
                                         })()
