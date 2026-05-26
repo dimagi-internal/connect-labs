@@ -606,8 +606,19 @@ def _gender_counts(*, muac_count: int, kpi_issue: str | None, rng) -> tuple[int,
         skew_pct = 0.80 + rng.random() * 0.15
         female_pct = skew_pct if rng.random() < 0.5 else (1.0 - skew_pct)
     else:
-        # Tight band: female_pct in [0.45, 0.55] so renders comfortably green.
-        female_pct = 0.45 + rng.random() * 0.10
+        # Compute the exact integer range that lands in the 45–55% green band
+        # for this muac_count, then sample from it. Float-based sampling +
+        # round() occasionally drifts to 44% for small samples (e.g.
+        # 14/32 = 43.8%), which renders yellow.
+        import math as _math
+        lo = _math.ceil(muac_count * 0.46)
+        hi = _math.floor(muac_count * 0.54)
+        if lo > hi:
+            female_count = muac_count // 2
+        else:
+            female_count = rng.randint(lo, hi)
+        male_count = muac_count - female_count
+        return male_count, female_count
     female_count = max(0, min(muac_count, round(muac_count * female_pct)))
     male_count = muac_count - female_count
     return male_count, female_count
