@@ -129,6 +129,12 @@ def workflow_save_snapshot(
             opportunity_id=opportunity_id,
             workers=workers,
             opportunity_ids=effective_opp_ids,
+            # Optional context fields some templates' build_snapshot hooks accept
+            # (definition_id, access_token). Templates that don't use these
+            # absorb them via **_. access_token is necessary for hooks that
+            # construct their own DAOs (no `request` is available in MCP path).
+            definition_id=definition_id,
+            access_token=wda.access_token,
         )
         if not isinstance(snapshot_payload, dict):
             raise MCPToolError(
