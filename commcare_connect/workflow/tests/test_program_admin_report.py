@@ -137,16 +137,33 @@ def _patch_path(name):
 def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
     from unittest.mock import MagicMock
 
+    from commcare_connect.audit.models import AuditSessionRecord
     from commcare_connect.decisions.models import DecisionRecord
     from commcare_connect.tasks.models import TaskRecord
     from commcare_connect.workflow.templates import program_admin_report as par
 
-    # Mock the data-access classes + the cross-workflow reader at module scope
-    mock_wda_class = MagicMock()
+    # Mock the data-access classes + the cross-workflow reader at module scope.
+    # AuditDataAccess is imported lazily inside build_snapshot so we patch its
+    # import path directly.
     mock_dda_class = MagicMock()
     mock_tda_class = MagicMock()
+    mock_ada_class = MagicMock()
     mock_get_saved_runs = MagicMock(
         return_value=[{"opportunity_id": 10001, "workflow_definition_id": 47, "runs": [fake_run]}]
+    )
+
+    audit_record = AuditSessionRecord(
+        {
+            "id": 77,
+            "experiment": "audit",
+            "type": "AuditSession",
+            "opportunity_id": 10001,
+            "data": {
+                "status": "completed",
+                "overall_result": "pass",
+                "image_results": {"pass": 5, "fail": 0, "pending": 0},
+            },
+        }
     )
 
     mock_dda_class.return_value.get_decisions_for_run.return_value = [
@@ -163,7 +180,7 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
                     "decision_type": "action_taken",
                     "reason_key": "bad_muac_distribution",
                     "reason_label": "Bad MUAC",
-                    "audit_session_ids": [],
+                    "audit_session_ids": [77],
                     "task_ids": [123],
                     "decided_at": "2025-11-10T11:00:00Z",
                 },
@@ -187,11 +204,13 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
             },
         }
     )
+    mock_ada_class.return_value.get_audit_sessions.return_value = [audit_record]
 
-    monkeypatch.setattr(par, "WorkflowDataAccess", mock_wda_class)
     monkeypatch.setattr(par, "DecisionsDataAccess", mock_dda_class)
     monkeypatch.setattr(par, "TaskDataAccess", mock_tda_class)
     monkeypatch.setattr(par, "get_saved_runs_for_program_report", mock_get_saved_runs)
+    # AuditDataAccess is imported inside build_snapshot — patch at source.
+    monkeypatch.setattr("commcare_connect.audit.data_access.AuditDataAccess", mock_ada_class)
 
     state = {
         "window_start": "2025-11-04T00:00:00Z",
@@ -230,6 +249,13 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
     assert outcome["status"] == "closed"
     assert outcome["official_action"] == "satisfactory"
     assert outcome["closed_at"] == "2025-11-15T14:00:00Z"
+    # audit_outcomes now joined from AuditDataAccess.get_audit_sessions
+    assert len(decision["audit_outcomes"]) == 1
+    audit = decision["audit_outcomes"][0]
+    assert audit["id"] == 77
+    assert audit["status"] == "completed"
+    assert audit["overall_result"] == "pass"
+    assert audit["pass_count"] == 5
 
 
 def test_build_snapshot_missing_window_returns_error(monkeypatch):
