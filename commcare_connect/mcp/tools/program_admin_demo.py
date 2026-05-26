@@ -320,6 +320,7 @@ def program_admin_demo_seed(
             workers=[],
             opportunity_ids=opportunity_ids,
             definition_id=par_def.id,
+            access_token=token,
         )
         par_wda.complete_run(run_id=par_run.id, snapshot=snapshot)
         summary["program_admin_report"] = {
