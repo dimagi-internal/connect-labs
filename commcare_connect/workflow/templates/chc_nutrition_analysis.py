@@ -504,31 +504,25 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // Gender Split
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         React.createElement(GenderBadge, {row: r})),
-                                    // Decision — populated by view.decisionsFor() in saved-run + live modes;
-                                    // shows a colored pill if the NM recorded a Decision for this FLW.
-                                    // Spec §4.3.
+                                    // Decision — only the warning pill when the FLW was flagged.
+                                    // "No issues" decisions intentionally leave this cell empty:
+                                    // the Actions column already shows "Confirmed No Issue" so
+                                    // a redundant green pill here just adds noise. Similarly,
+                                    // the "N audit · M task" sub-text was redundant once Actions
+                                    // started showing "View audit #N (pass)" / "View task #N
+                                    // (closed · warned)" with outcomes baked in.
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         (function() {
                                             if (!view || typeof view.decisionsFor !== 'function') return null;
                                             var d = view.decisionsFor(r.username);
-                                            if (!d) return React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
-                                            if (d.decision_type === 'no_issues') {
-                                                return React.createElement('span', {
-                                                    className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800',
-                                                    title: d.decided_at ? 'Decided ' + d.decided_at : ''
-                                                }, '✓ No issues');
+                                            if (!d || d.decision_type === 'no_issues') {
+                                                return null;  // empty cell — Actions column carries the signal
                                             }
                                             var label = d.reason_label || d.reason_key || 'Action';
-                                            var counts = [];
-                                            if (d.audit_session_ids && d.audit_session_ids.length) counts.push(d.audit_session_ids.length + ' audit');
-                                            if (d.task_ids && d.task_ids.length) counts.push(d.task_ids.length + ' task');
-                                            return React.createElement('div', null,
-                                                React.createElement('span', {
-                                                    className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800',
-                                                    title: d.decided_at ? 'Decided ' + d.decided_at : ''
-                                                }, '⚠ ' + label),
-                                                counts.length ? React.createElement('div', {className: 'text-xs text-gray-500 mt-0.5'}, counts.join(' · ')) : null
-                                            );
+                                            return React.createElement('span', {
+                                                className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800',
+                                                title: d.decided_at ? 'Decided ' + d.decided_at : ''
+                                            }, '⚠ ' + label);
                                         })()
                                     ),
                                     // Actions — state-aware per-FLW. Buttons reflect:
