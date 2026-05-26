@@ -196,7 +196,9 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
     )
 
     assert snapshot["schema_version"] == 1
-    summary = snapshot["watched_summary"]
+    summary = snapshot["state"]["watched_summary"]
+    assert snapshot["state"]["window_start"] == "2025-11-04T00:00:00Z"
+    assert snapshot["state"]["window_end"] == "2025-11-25T23:59:59Z"
     assert len(summary) == 1
     source = summary[0]
     assert source["opportunity_id"] == 10001
@@ -227,4 +229,5 @@ def test_build_snapshot_missing_window_returns_error(monkeypatch):
         definition_id=999,
     )
     assert snapshot["error"] == "missing_window"
+    # missing-window error path returns the legacy top-level shape (no state)
     assert snapshot["watched_summary"] == []
