@@ -35,24 +35,39 @@ def _run(run_id, definition_id, status, completed_at, opportunity_id=10001):
     )
 
 
-def test_get_saved_runs_for_program_report_filters_by_source_and_window(stub_wda):
+def _patch_wda_with(side_effect, monkeypatch):
+    """Patch WorkflowDataAccess so its list_runs returns scripted data per def_id.
+
+    Used by reader tests since the reader constructs its own scoped WDA per
+    watched source — we can't pre-stub a single WDA the way we used to.
+    """
+    from commcare_connect.workflow import data_access as wda_module
+
+    instance = MagicMock()
+    instance.list_runs = MagicMock(side_effect=side_effect)
+    instance.access_token = "stub-token"
+    instance.close = MagicMock()
+    monkeypatch.setattr(wda_module, "WorkflowDataAccess", lambda *a, **kw: instance)
+    return instance
+
+
+def test_get_saved_runs_for_program_report_filters_by_source_and_window(monkeypatch):
     """Only completed runs for the watched (opp, def) pair within window are returned."""
     from commcare_connect.workflow.data_access import get_saved_runs_for_program_report
 
-    stub_wda.list_runs = MagicMock(
-        side_effect=lambda definition_id: {
-            47: [
-                _run(1, 47, "completed", "2025-11-10T09:00:00Z", opportunity_id=10001),
-                _run(2, 47, "in_progress", None, opportunity_id=10001),
-                _run(3, 47, "completed", "2025-11-17T09:00:00Z", opportunity_id=10001),
-                _run(4, 47, "completed", "2025-12-01T09:00:00Z", opportunity_id=10001),
-                _run(5, 47, "completed", "2025-11-15T09:00:00Z", opportunity_id=99999),
-            ],
-            48: [
-                _run(10, 48, "completed", "2025-11-10T09:00:00Z", opportunity_id=10002),
-            ],
-        }[definition_id]
-    )
+    runs_by_def = {
+        47: [
+            _run(1, 47, "completed", "2025-11-10T09:00:00Z", opportunity_id=10001),
+            _run(2, 47, "in_progress", None, opportunity_id=10001),
+            _run(3, 47, "completed", "2025-11-17T09:00:00Z", opportunity_id=10001),
+            _run(4, 47, "completed", "2025-12-01T09:00:00Z", opportunity_id=10001),
+            _run(5, 47, "completed", "2025-11-15T09:00:00Z", opportunity_id=99999),
+        ],
+        48: [
+            _run(10, 48, "completed", "2025-11-10T09:00:00Z", opportunity_id=10002),
+        ],
+    }
+    _patch_wda_with(lambda definition_id: runs_by_def[definition_id], monkeypatch)
 
     window_start = datetime(2025, 11, 4, tzinfo=timezone.utc)
     window_end = datetime(2025, 11, 25, tzinfo=timezone.utc)
@@ -62,10 +77,10 @@ def test_get_saved_runs_for_program_report_filters_by_source_and_window(stub_wda
     ]
 
     result = get_saved_runs_for_program_report(
-        stub_wda,
         watched_sources=sources,
         window_start=window_start,
         window_end=window_end,
+        access_token="stub-token",
     )
 
     assert len(result) == 2
@@ -74,19 +89,19 @@ def test_get_saved_runs_for_program_report_filters_by_source_and_window(stub_wda
     assert sorted(r.id for r in opp_to_runs[10002]["runs"]) == [10]
 
 
-def test_get_saved_runs_for_program_report_handles_missing_runs(stub_wda):
+def test_get_saved_runs_for_program_report_handles_missing_runs(monkeypatch):
     """A source with no completed runs in window still appears with runs=[]."""
     from commcare_connect.workflow.data_access import get_saved_runs_for_program_report
 
-    stub_wda.list_runs = MagicMock(return_value=[])
+    _patch_wda_with(lambda definition_id: [], monkeypatch)
     window_start = datetime(2025, 11, 4, tzinfo=timezone.utc)
     window_end = datetime(2025, 11, 25, tzinfo=timezone.utc)
 
     result = get_saved_runs_for_program_report(
-        stub_wda,
         watched_sources=[{"opportunity_id": 10001, "workflow_definition_id": 47}],
         window_start=window_start,
         window_end=window_end,
+        access_token="stub-token",
     )
 
     assert len(result) == 1

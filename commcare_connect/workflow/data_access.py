@@ -2076,11 +2076,13 @@ class PipelineDataAccess(BaseDataAccess):
 
 
 def get_saved_runs_for_program_report(
-    wda: "WorkflowDataAccess",
+    wda: "WorkflowDataAccess | None" = None,
     *,
     watched_sources: list[dict],
     window_start,
     window_end,
+    access_token: str | None = None,
+    request=None,
 ) -> list[dict]:
     """For each (opp_id, workflow_definition_id) pair in ``watched_sources``,
     return every completed run whose ``completed_at`` falls within
@@ -2119,11 +2121,28 @@ def get_saved_runs_for_program_report(
         ts = _to_utc(ts)
         return ws <= ts <= we
 
+    # Per-source WDA so list_runs is scoped to the watched opp. A single
+    # opp-less WDA would hit the LabsRecord API with no scope param and
+    # return only public records, which workflow_runs are not — silently
+    # producing an empty rollup. Caller can pass ``wda`` (with no opp scope)
+    # for the legacy single-source path; if so we still re-scope per source
+    # by minting a fresh WDA per loop iteration.
+    if access_token is None and wda is not None:
+        access_token = getattr(wda, "access_token", None)
+
     out = []
     for source in watched_sources:
         opp_id = source["opportunity_id"]
         def_id = source["workflow_definition_id"]
-        all_runs = wda.list_runs(definition_id=def_id)
+        scoped_wda = WorkflowDataAccess(
+            request=request,
+            access_token=access_token,
+            opportunity_id=opp_id,
+        )
+        try:
+            all_runs = scoped_wda.list_runs(definition_id=def_id)
+        finally:
+            scoped_wda.close()
         matched = [
             r
             for r in all_runs
