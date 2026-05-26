@@ -84,56 +84,95 @@ def build_snapshot(
         access_token=access_token,
     )
 
-    dda = DecisionsDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
-    tda = TaskDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
+    # Per-source DAOs scoped to the watched opp. A single primary-opp DAO
+    # returns 0 records when queried for a non-primary opp because the labs
+    # API enforces opp-scope on every request. See spec §5.3.
+    from commcare_connect.audit.data_access import AuditDataAccess
 
     watched_summary = []
     for src in sources:
-        run_summaries = []
-        for run in src["runs"]:
-            decisions = []
-            for d in dda.get_decisions_for_run(run.id):
-                task_outcomes = []
-                for tid in d.task_ids:
-                    try:
-                        t = tda.get_task(tid)
-                    except Exception:
-                        logger.warning("Failed to fetch task %s for decision %s", tid, d.id)
-                        continue
-                    if t is None:
-                        continue
-                    task_outcomes.append(
+        src_opp_id = src["opportunity_id"]
+        dda = DecisionsDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
+        tda = TaskDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
+        ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
+
+        try:
+            # Preload all audits for this opp once; lookups per decision are
+            # then dict reads. The labs API has no batch-get-by-id so the
+            # alternative is N+1 round-trips.
+            try:
+                all_audits = ada.get_audit_sessions()
+                audit_by_id = {a.id: a for a in all_audits}
+            except Exception:
+                logger.warning("Failed to preload audits for opp %s", src_opp_id, exc_info=True)
+                audit_by_id = {}
+
+            run_summaries = []
+            for run in src["runs"]:
+                decisions = []
+                for d in dda.get_decisions_for_run(run.id):
+                    task_outcomes = []
+                    for tid in d.task_ids:
+                        try:
+                            t = tda.get_task(tid)
+                        except Exception:
+                            logger.warning("Failed to fetch task %s for decision %s", tid, d.id)
+                            continue
+                        if t is None:
+                            continue
+                        task_outcomes.append(
+                            {
+                                "id": t.id,
+                                "status": t.status,
+                                "official_action": (t.resolution_details or {}).get("official_action"),
+                                "closed_at": next(
+                                    (e.get("timestamp") for e in (t.events or []) if e.get("event_type") == "closed"),
+                                    None,
+                                ),
+                            }
+                        )
+                    audit_outcomes = []
+                    for aid in d.audit_session_ids:
+                        a = audit_by_id.get(aid)
+                        if a is None:
+                            continue
+                        img = a.data.get("image_results") or {}
+                        audit_outcomes.append(
+                            {
+                                "id": a.id,
+                                "status": a.status,
+                                "overall_result": a.overall_result,
+                                "pass_count": img.get("pass", 0),
+                                "fail_count": img.get("fail", 0),
+                                "pending_count": img.get("pending", 0),
+                            }
+                        )
+                    decisions.append(
                         {
-                            "id": t.id,
-                            "status": t.status,
-                            "official_action": (t.resolution_details or {}).get("official_action"),
-                            "closed_at": next(
-                                (e.get("timestamp") for e in (t.events or []) if e.get("event_type") == "closed"),
-                                None,
-                            ),
+                            "id": d.id,
+                            "flw_id": d.flw_id,
+                            "decision_type": d.decision_type,
+                            "reason_key": d.reason_key,
+                            "reason_label": d.reason_label,
+                            "audit_session_ids": d.audit_session_ids,
+                            "task_ids": d.task_ids,
+                            "audit_outcomes": audit_outcomes,
+                            "task_outcomes": task_outcomes,
+                            "decided_at": d.decided_at,
                         }
                     )
-                decisions.append(
+                run_summaries.append(
                     {
-                        "id": d.id,
-                        "flw_id": d.flw_id,
-                        "decision_type": d.decision_type,
-                        "reason_key": d.reason_key,
-                        "reason_label": d.reason_label,
-                        "audit_session_ids": d.audit_session_ids,
-                        "task_ids": d.task_ids,
-                        "audit_outcomes": [],
-                        "task_outcomes": task_outcomes,
-                        "decided_at": d.decided_at,
+                        "id": run.id,
+                        "completed_at": run.completed_at,
+                        "decisions": decisions,
                     }
                 )
-            run_summaries.append(
-                {
-                    "id": run.id,
-                    "completed_at": run.completed_at,
-                    "decisions": decisions,
-                }
-            )
+        finally:
+            dda.close()
+            tda.close()
+            ada.close()
+
         watched_summary.append(
             {
                 "opportunity_id": src["opportunity_id"],
@@ -166,7 +205,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
 
     function fmtDate(iso) {
         if (!iso) return '';
-        try { return new Date(iso).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}); } catch(e) { return iso; }
+        // Use UTC components so date-only ISO strings render as the same
+        // calendar day in every viewer's TZ (otherwise "2025-11-03" parses
+        // as midnight UTC → previous evening in negative-offset zones).
+        try {
+            var d = new Date(iso);
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return months[d.getUTCMonth()] + ' ' + d.getUTCDate();
+        } catch(e) { return iso; }
     }
 
     function pill(text, color) {
