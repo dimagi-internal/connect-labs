@@ -52,11 +52,18 @@ def _parse_iso(s):
         return None
 
 
-def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids, definition_id, **_):
+def build_snapshot(
+    *, pipelines, state, opportunity_id, workers, opportunity_ids, definition_id, request=None, access_token=None, **_
+):
     """Freeze a window-scoped rollup of decisions + their live task/audit
     status at run completion time. See spec §5.3.
 
     `state` must contain ``window_start``, ``window_end``, ``watched_sources``.
+
+    Auth: the hook accepts either ``request`` (web view path — token is
+    extracted from session) or ``access_token`` (MCP/CLI path — caller has
+    the Connect OAuth token already). Exactly one must yield a token; the
+    DAOs raise ``ValueError`` if neither is present.
     """
     window_start = _parse_iso(state.get("window_start"))
     window_end = _parse_iso(state.get("window_end"))
@@ -65,8 +72,7 @@ def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids
     if not window_start or not window_end:
         return {"schema_version": 1, "watched_summary": [], "error": "missing_window"}
 
-    request = _build_request_for_hook()
-    wda = WorkflowDataAccess(request=request)
+    wda = WorkflowDataAccess(request=request, access_token=access_token)
     sources = get_saved_runs_for_program_report(
         wda,
         watched_sources=watched_sources,
@@ -74,8 +80,8 @@ def build_snapshot(*, pipelines, state, opportunity_id, workers, opportunity_ids
         window_end=window_end,
     )
 
-    dda = DecisionsDataAccess(request=request, opportunity_id=opportunity_id)
-    tda = TaskDataAccess(request=request, opportunity_id=opportunity_id)
+    dda = DecisionsDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
+    tda = TaskDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
 
     watched_summary = []
     for src in sources:
