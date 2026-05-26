@@ -558,6 +558,6 @@ TEMPLATE = {
     "snapshot_inputs": {
         "pipelines": None,  # capture all pipelines on the workflow definition
         "workers": True,
-        "state_keys": [],   # this template currently has no state to preserve
+        "state_keys": [],  # this template currently has no state to preserve
     },
 }
