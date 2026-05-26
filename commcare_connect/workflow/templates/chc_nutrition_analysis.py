@@ -206,7 +206,7 @@ DEFINITION = {
     "pipeline_sources": [],
 }
 
-RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState }) {
+RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState, view }) {
     // ── Data ────────────────────────────────────────────────────
     var rows = (pipelines && pipelines.default && pipelines.default.rows) || [];
 
@@ -436,13 +436,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                             React.createElement(SortTh, {skey: 'mam', label: 'MAM', title: 'Moderate Acute Malnutrition (MUAC 11.5-12.5 cm)'}),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'MUAC Distribution'),
                             React.createElement(SortTh, {skey: 'gender', label: 'Gender Split', title: 'Female % of (Male + Female)'}),
+                            React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Decision'),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Actions')
                         )
                     ),
                     React.createElement('tbody', {className: 'bg-white divide-y divide-gray-200'},
                         sortedRows.length === 0
                             ? React.createElement('tr', null,
-                                React.createElement('td', {colSpan: 11, className: 'px-4 py-8 text-center text-sm text-gray-500'}, 'No data available'))
+                                React.createElement('td', {colSpan: 12, className: 'px-4 py-8 text-center text-sm text-gray-500'}, 'No data available'))
                             : sortedRows.map(function(r) {
                                 var mc = muacCount(r);
                                 var sc = samCount(r);
@@ -496,6 +497,33 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // Gender Split
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         React.createElement(GenderBadge, {row: r})),
+                                    // Decision — populated by view.decisionsFor() in saved-run + live modes;
+                                    // shows a colored pill if the NM recorded a Decision for this FLW.
+                                    // Spec §4.3.
+                                    React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
+                                        (function() {
+                                            if (!view || typeof view.decisionsFor !== 'function') return null;
+                                            var d = view.decisionsFor(r.username);
+                                            if (!d) return React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
+                                            if (d.decision_type === 'no_issues') {
+                                                return React.createElement('span', {
+                                                    className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800',
+                                                    title: d.decided_at ? 'Decided ' + d.decided_at : ''
+                                                }, '✓ No issues');
+                                            }
+                                            var label = d.reason_label || d.reason_key || 'Action';
+                                            var counts = [];
+                                            if (d.audit_session_ids && d.audit_session_ids.length) counts.push(d.audit_session_ids.length + ' audit');
+                                            if (d.task_ids && d.task_ids.length) counts.push(d.task_ids.length + ' task');
+                                            return React.createElement('div', null,
+                                                React.createElement('span', {
+                                                    className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800',
+                                                    title: d.decided_at ? 'Decided ' + d.decided_at : ''
+                                                }, '⚠ ' + label),
+                                                counts.length ? React.createElement('div', {className: 'text-xs text-gray-500 mt-0.5'}, counts.join(' · ')) : null
+                                            );
+                                        })()
+                                    ),
                                     // Actions
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         React.createElement('a', {
@@ -522,4 +550,14 @@ TEMPLATE = {
     "definition": DEFINITION,
     "render_code": RENDER_CODE,
     "pipeline_schema": PIPELINE_SCHEMA,
+    # Saved-runs opt-in (spec §4.1). Freezes a snapshot at run completion so
+    # re-opening the run shows what was true at the moment of completion.
+    # Decisions are NOT in the snapshot — they're queried live (spec §3.3,
+    # exposed via view.decisionsFor() in render code).
+    "supports_saved_runs": True,
+    "snapshot_inputs": {
+        "pipelines": None,  # capture all pipelines on the workflow definition
+        "workers": True,
+        "state_keys": [],  # this template currently has no state to preserve
+    },
 }

@@ -78,6 +78,41 @@ export interface RunView {
    * or server error (errors are surfaced via window.alert for now).
    */
   complete(opts?: { confirm?: string }): Promise<boolean>;
+
+  /**
+   * Decisions recorded against this run, newest first. Always queried live
+   * from the Decision records (not snapshot-frozen) — Decision lifecycle
+   * state-of-truth lives on the Decision record itself. See
+   * docs/superpowers/specs/2026-05-25-program-admin-report-design.md §3.3.
+   */
+  decisions: Decision[];
+
+  /**
+   * Convenience: return the most-recent Decision for `username`, or null if
+   * none. When an FLW has multiple decisions in the same run, returns the
+   * latest by `decided_at`.
+   */
+  decisionsFor(username: string): Decision | null;
+}
+
+/**
+ * A Decision is a record of "the network manager looked at this FLW during a
+ * workflow run and concluded X." Can spawn zero or more Tasks/AuditSessions;
+ * the status of those is queried live off the Task/AuditSession itself,
+ * never stored on the Decision.
+ */
+export interface Decision {
+  id: number;
+  flw_id: string;
+  decision_type: 'no_issues' | 'action_taken';
+  reason_key: string | null;
+  reason_label: string | null;
+  audit_session_ids: number[];
+  task_ids: number[];
+  kpi_snapshot: Record<string, unknown>;
+  notes: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
 }
 
 // =============================================================================
@@ -787,6 +822,10 @@ export interface WorkflowDataFromDjango {
   };
   workers: WorkerData[];
   pipeline_data?: Record<string, PipelineResult>;
+  /** Decisions recorded against the current run. Optional for legacy
+   * payloads that predate the Phase 2a wiring (defaults to [] in
+   * useRunView). */
+  decisions?: Decision[];
   links: {
     auditUrlBase: string;
     taskUrlBase: string;
