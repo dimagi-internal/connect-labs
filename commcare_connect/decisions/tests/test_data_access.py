@@ -124,3 +124,51 @@ def test_create_decision_rejects_empty_flw_id(decisions_da):
             flw_id="",
             decision_type="no_issues",
         )
+
+
+def test_get_decision_returns_record_when_found(decisions_da):
+    decisions_da.labs_api.get_record_by_id.return_value = DecisionRecord(
+        {
+            "id": 99,
+            "experiment": "decisions",
+            "type": "Decision",
+            "username": "amina",
+            "opportunity_id": 10001,
+            "data": {"flw_id": "amina", "decision_type": "no_issues"},
+        }
+    )
+    result = decisions_da.get_decision(99)
+    assert isinstance(result, DecisionRecord)
+    assert result.id == 99
+    call = decisions_da.labs_api.get_record_by_id.call_args.kwargs
+    assert call["record_id"] == 99
+    assert call["experiment"] == "decisions"
+    assert call["type"] == "Decision"
+
+
+def test_get_decision_returns_none_when_missing(decisions_da):
+    decisions_da.labs_api.get_record_by_id.return_value = None
+    assert decisions_da.get_decision(404) is None
+
+
+def test_get_decisions_for_run_filters_by_workflow_run_id(decisions_da):
+    decisions_da.labs_api.get_records.return_value = []
+    decisions_da.get_decisions_for_run(503)
+    call = decisions_da.labs_api.get_records.call_args.kwargs
+    assert call["experiment"] == "decisions"
+    assert call["type"] == "Decision"
+    assert call["workflow_run_id"] == 503
+
+
+def test_get_decisions_for_run_returns_records(decisions_da):
+    decisions_da.labs_api.get_records.return_value = [
+        DecisionRecord(
+            {"id": 1, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}
+        ),
+        DecisionRecord(
+            {"id": 2, "experiment": "decisions", "type": "Decision", "opportunity_id": 0, "data": {}}
+        ),
+    ]
+    result = decisions_da.get_decisions_for_run(503)
+    assert len(result) == 2
+    assert [r.id for r in result] == [1, 2]

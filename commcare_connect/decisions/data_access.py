@@ -76,3 +76,27 @@ class DecisionsDataAccess(BaseDataAccess):
                 "opportunity_id": record.opportunity_id,
             }
         )
+
+    # ---- read ----------------------------------------------------------
+
+    def get_decision(self, decision_id: int) -> DecisionRecord | None:
+        """Get one Decision by id, or None if not found."""
+        return self.labs_api.get_record_by_id(
+            record_id=decision_id,
+            experiment="decisions",
+            type="Decision",
+            model_class=DecisionRecord,
+        )
+
+    def get_decisions_for_run(self, workflow_run_id: int) -> list[DecisionRecord]:
+        """All Decisions created by the given workflow run.
+
+        Filters server-side via the JSONField lookup on ``data.workflow_run_id``
+        (same mechanism as ``TaskDataAccess.get_tasks_for_run``).
+        """
+        return self.labs_api.get_records(
+            experiment="decisions",
+            type="Decision",
+            model_class=DecisionRecord,
+            workflow_run_id=workflow_run_id,
+        )
