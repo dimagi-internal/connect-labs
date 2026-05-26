@@ -338,7 +338,10 @@ def program_admin_demo_seed(
             "window_start": window_start,
             "window_end": window_end,
             "watched_sources_count": len(watched_sources),
-            "snapshot_summary_count": len(snapshot.get("watched_summary", [])),
+            "snapshot_summary_count": len(snapshot.get("state", {}).get("watched_summary", [])),
+            "snapshot_total_runs": sum(
+                len(src.get("runs", [])) for src in snapshot.get("state", {}).get("watched_summary", [])
+            ),
         }
     finally:
         par_wda.close()
