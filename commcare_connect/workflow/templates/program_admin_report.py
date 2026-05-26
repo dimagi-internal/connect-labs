@@ -439,14 +439,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
         );
     }
 
-    function flwRow(decision) {
+    function flwRow(decision, source) {
         var d = decision;
+        // Cross-opp links: every link out of the PAR detail panel needs to
+        // carry the watched source's opportunity_id, otherwise labs scopes
+        // the lookup to whatever opp the PAR run itself lives in (the
+        // primary) and the audit/task/run page returns "not found" for any
+        // non-primary watched opp.
+        var oppScope = source && source.opportunity_id
+            ? '?opportunity_id=' + source.opportunity_id
+            : '';
         var decisionCell = d.decision_type === 'no_issues'
             ? pill('✓ No issues', 'green')
             : pill('⚠ ' + (d.reason_label || d.reason_key || 'Action'), 'red');
         var auditCell = d.audit_session_ids && d.audit_session_ids.length
             ? React.createElement('a', {
-                href: '/audit/' + d.audit_session_ids[0] + '/',
+                href: '/audit/' + d.audit_session_ids[0] + '/' + oppScope,
                 className: 'text-indigo-600 underline text-xs'
             }, 'Audit #' + d.audit_session_ids[0])
             : React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
@@ -456,7 +464,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
             return React.createElement('div', {key: t.id, className: 'flex items-center gap-2'},
                 pill(t.status + actionLabel, c),
                 React.createElement('a', {
-                    href: '/tasks/' + t.id + '/edit/',
+                    href: '/tasks/' + t.id + '/edit/' + oppScope,
                     className: 'text-indigo-600 underline text-xs'
                 }, 'Task #' + t.id)
             );
@@ -588,7 +596,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
                             ),
                             React.createElement('div', {style: {display: 'flex', gap: 8, alignItems: 'center'}},
                                 React.createElement('a', {
-                                    href: '/labs/workflow/' + source.workflow_definition_id + '/run/?run_id=' + run.id,
+                                    href: '/labs/workflow/' + source.workflow_definition_id + '/run/?run_id=' + run.id + '&opportunity_id=' + source.opportunity_id,
                                     style: {display: 'inline-flex', alignItems: 'center', gap: 6, background: '#4f46e5', color: 'white', padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, textDecoration: 'none'}
                                 }, '↗ Open the run'),
                                 React.createElement('button', {
@@ -610,7 +618,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
                                 decisions.length === 0
                                     ? React.createElement('tr', null,
                                         React.createElement('td', {colSpan: 4, style: {padding: '24px', textAlign: 'center', color: '#9ca3af'}}, 'No decisions recorded'))
-                                    : decisions.map(flwRow)
+                                    : decisions.map(function(d) { return flwRow(d, source); })
                             )
                         )
                     );
