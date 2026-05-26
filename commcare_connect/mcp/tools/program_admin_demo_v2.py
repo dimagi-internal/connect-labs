@@ -1,21 +1,32 @@
-"""MCP tool: program_admin_demo_seed_v2 — narrative-driven demo seeder.
+"""MCP tool: ``program_admin_demo_seed_v2`` — narrative-driven synthetic generator
+for the Program Admin Report demo.
+
+(Tool name retained for API stability; the implementation is the synthetic
+data generator, not a one-shot DB seeder. Internal helpers + docs use
+"generator" / "generate".)
 
 Replaces the v1 ``program_admin_demo_seed`` with a much richer config that
 drives a believable multi-opp story:
 
-- Per-opp FLW roster with archetypes (solid / improver_* / suspended_* / new_hire)
+- Per-opp FLW roster with FLW archetypes
+  (``solid`` / ``improver_*`` / ``suspended_*`` / ``new_hire``)
 - Backdated weekly workflow_runs (each on its actual Monday)
-- Audit + Task records spawned with realistic open/closed states
+- Audit + Task records generated via the named **audit_archetype** and
+  **task_archetype** vocabulary in
+  ``commcare_connect/labs/synthetic/archetypes.py``. Audits attach real
+  MUAC stock images from the corpus (see ``docs/synthetic-data/audit-corpus.md``)
+  so labs's bulk-assessment view renders thumbnails + pass/fail outcomes,
+  not a blank "0 assessments" page.
 - Optional "missed week" per opp so the NO-RUN cell variant shows up
 - Repeatable: ``cleanup_first=True`` wipes prior workflow data for the opps
-  so the demo can be re-run without accumulating stale records
+  so the demo can be re-generated without accumulating stale records
 
 The renderer (program_admin_report.py) reads the same Decision contract; this
-tool just constructs the records via direct LabsRecord writes so it can:
+generator constructs records via direct LabsRecord writes so it can:
 - Backdate ``completed_at`` (the higher-level ``complete_run`` helper uses
   wall-clock ``now``)
 - Stamp Task close events at custom timestamps
-- Set arbitrary AuditSession status/outcome counts
+- Attach archetype-appropriate image sets to AuditSession records
 
 See docs/superpowers/specs/2026-05-25-program-admin-report-design.md.
 """
@@ -131,66 +142,64 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
         - ``decision_type``: "no_issues" | "action_taken"
         - ``reason_key`` (action_taken only)
         - ``reason_label``
-        - ``spawn_task`` (bool)
-        - ``task_outcome`` ("open" | "warned" | "satisfactory" | "suspended")
-        - ``task_close_delay_days`` (int, only for closed tasks)
-        - ``spawn_audit`` (bool)
-        - ``audit_outcome`` ("in_review" | "completed_pass" | "completed_fail" | "completed_mixed")
+        - ``audit_archetype`` (str — key in AUDIT_ARCHETYPES), or None
+        - ``task_archetype`` (str — key in TASK_ARCHETYPES), or None
 
     Returning None for a week means the FLW is not in the roster that week
     (new hires before they join, suspended FLWs after they're suspended).
+
+    The per-FLW-archetype → (audit_archetype, task_archetype) mapping below
+    is the single place to tune what an "improver_warned" or "suspended_repeat
+    _offense" trajectory looks like in terms of concrete audit/task evidence.
     """
     archetype = flw["archetype"]
     out: list[dict | None] = [None] * week_count
 
+    def flag(reason: str, audit_arche: str, task_arche: str) -> dict:
+        return {
+            "decision_type": "action_taken",
+            "reason_key": reason,
+            "reason_label": REASON_LABELS.get(reason, reason),
+            "audit_archetype": audit_arche,
+            "task_archetype": task_arche,
+        }
+
+    no_issues = {"decision_type": "no_issues", "audit_archetype": None, "task_archetype": None}
+
     if archetype == "solid":
         for i in range(week_count):
-            out[i] = {"decision_type": "no_issues"}
+            out[i] = no_issues
 
     elif archetype == "new_hire":
         joined = flw.get("joined_week", week_count - 1)
         for i in range(joined, week_count):
-            out[i] = {"decision_type": "no_issues"}
+            out[i] = no_issues
 
     elif archetype in ("improver_closed_satisfactory", "improver_warned"):
         flag_week = flw.get("flag_week", 0)
         reason = flw.get("reason_key", "bad_muac_distribution")
-        outcome = "satisfactory" if archetype == "improver_closed_satisfactory" else "warned"
+        if archetype == "improver_closed_satisfactory":
+            audit_arche, task_arche = "completed_pass_clean", "closed_satisfactory"
+        else:
+            audit_arche, task_arche = "completed_mixed_tape_usage", "closed_warned"
         for i in range(week_count):
             if i < flag_week:
-                out[i] = {"decision_type": "no_issues"}
+                out[i] = no_issues
             elif i == flag_week:
-                out[i] = {
-                    "decision_type": "action_taken",
-                    "reason_key": reason,
-                    "reason_label": REASON_LABELS.get(reason, reason),
-                    "spawn_task": True,
-                    "task_outcome": outcome,
-                    "task_close_delay_days": 6,
-                    "spawn_audit": True,
-                    "audit_outcome": "completed_pass" if outcome == "satisfactory" else "completed_mixed",
-                }
+                out[i] = flag(reason, audit_arche, task_arche)
             else:
-                out[i] = {"decision_type": "no_issues"}
+                out[i] = no_issues
 
     elif archetype == "improver_in_progress":
         flag_week = flw.get("flag_week", 0)
         reason = flw.get("reason_key", "bad_muac_distribution")
         for i in range(week_count):
             if i < flag_week:
-                out[i] = {"decision_type": "no_issues"}
+                out[i] = no_issues
             elif i == flag_week:
-                out[i] = {
-                    "decision_type": "action_taken",
-                    "reason_key": reason,
-                    "reason_label": REASON_LABELS.get(reason, reason),
-                    "spawn_task": True,
-                    "task_outcome": "open",
-                    "spawn_audit": True,
-                    "audit_outcome": "in_review",
-                }
+                out[i] = flag(reason, "in_review_partial", "investigating")
             else:
-                out[i] = {"decision_type": "no_issues"}
+                out[i] = no_issues
 
     elif archetype in ("suspended_repeat_offense", "suspended_fraudulent"):
         first = flw.get("first_flag_week", 0)
@@ -199,33 +208,19 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
             "reason_key",
             "misleading_photos" if archetype == "suspended_fraudulent" else "bad_muac_distribution",
         )
+        # First flag: tape_usage / misleading audit (fail) + warned task.
+        first_audit = "completed_fail_misleading" if archetype == "suspended_fraudulent" else "completed_fail_tape_usage"
+        # Second flag: still failing → suspended task.
+        second_audit = first_audit
         for i in range(week_count):
             if i < first:
-                out[i] = {"decision_type": "no_issues"}
+                out[i] = no_issues
             elif i == first:
-                out[i] = {
-                    "decision_type": "action_taken",
-                    "reason_key": reason,
-                    "reason_label": REASON_LABELS.get(reason, reason),
-                    "spawn_task": True,
-                    "task_outcome": "warned",
-                    "task_close_delay_days": 5,
-                    "spawn_audit": True,
-                    "audit_outcome": "completed_fail",
-                }
+                out[i] = flag(reason, first_audit, "closed_warned")
             elif i < last:
-                out[i] = {"decision_type": "no_issues"}
+                out[i] = no_issues
             elif i == last:
-                out[i] = {
-                    "decision_type": "action_taken",
-                    "reason_key": "repeated_failure",
-                    "reason_label": REASON_LABELS["repeated_failure"],
-                    "spawn_task": True,
-                    "task_outcome": "suspended",
-                    "task_close_delay_days": 2,
-                    "spawn_audit": True,
-                    "audit_outcome": "completed_fail",
-                }
+                out[i] = flag("repeated_failure", second_audit, "closed_suspended")
             else:
                 out[i] = None  # removed from roster after suspension
     else:
@@ -264,31 +259,46 @@ def _create_backdated_workflow_run(*, wda, definition_id: int, opportunity_id: i
     return rec.id
 
 
-def _create_audit(
-    *, ada, opportunity_id: int, workflow_run_id: int, flw_id: str, monday_iso: str, outcome: str
-) -> int:
-    """Spawn an AuditSession record with the given outcome. Returns the audit id."""
-    created_at = _monday_dt(monday_iso, hour=10, minute=0).isoformat()
-    status = "in_review" if outcome == "in_review" else "completed"
-    # Image counts depend on outcome: pass/fail/pending breakdowns
-    if outcome == "completed_pass":
-        image_results = {"pass": 5, "fail": 0, "pending": 0}
-    elif outcome == "completed_fail":
-        image_results = {"pass": 1, "fail": 4, "pending": 0}
-    elif outcome == "completed_mixed":
-        image_results = {"pass": 3, "fail": 2, "pending": 0}
-    else:  # in_review
-        image_results = {"pass": 2, "fail": 1, "pending": 2}
+# Counter used to mint unique synthetic visit_ids per audit. Real visit_ids
+# would be unique UserVisit row IDs; the synthetic generator has no live
+# visits to point at, but BulkAssessmentView keys visit_images on visit_id,
+# so we just need a unique int per audit.
+_visit_id_counter = 9_000_000
 
-    data = {
-        "title": f"MUAC audit for {flw_id}",
-        "tag": "demo_seed",
-        "status": status,
-        "workflow_run_id": workflow_run_id,
-        "opportunity_id": opportunity_id,
-        "image_results": image_results,
-        "created_at": created_at,
-    }
+
+def _next_visit_id() -> int:
+    global _visit_id_counter
+    _visit_id_counter += 1
+    return _visit_id_counter
+
+
+def _generate_audit(
+    *,
+    ada,
+    opportunity_id: int,
+    opportunity_name: str,
+    workflow_run_id: int,
+    flw_id: str,
+    monday_iso: str,
+    audit_archetype: str,
+) -> int:
+    """Generate an AuditSession record from a named audit archetype.
+
+    Returns the audit id. The archetype controls status / overall_result /
+    image set (real blob_ids backed by the MUAC stock corpus); see
+    ``commcare_connect/labs/synthetic/archetypes.py``.
+    """
+    from commcare_connect.labs.synthetic.archetypes import build_audit_data
+
+    data = build_audit_data(
+        archetype_name=audit_archetype,
+        flw_id=flw_id,
+        monday_iso=monday_iso,
+        opportunity_id=opportunity_id,
+        opportunity_name=opportunity_name,
+        workflow_run_id=workflow_run_id,
+        visit_id_base=_next_visit_id(),
+    )
     rec = ada.labs_api.create_record(
         experiment="audit",
         type="AuditSession",
@@ -299,62 +309,35 @@ def _create_audit(
     return rec.id
 
 
-def _create_task(
+def _generate_task(
     *,
     tda,
     opportunity_id: int,
     workflow_run_id: int,
+    audit_session_id: int | None,
     flw_id: str,
     monday_iso: str,
     title: str,
-    outcome: str,
-    close_delay_days: int = 0,
-    creator_name: str = "demo_seeder",
+    task_archetype: str,
+    creator_name: str,
 ) -> int:
-    """Spawn a Task record with backdated created/closed events."""
-    created_at = _monday_dt(monday_iso, hour=10, minute=15)
-    events = [
-        {
-            "event_type": "created",
-            "actor": creator_name,
-            "description": f"Task created by {creator_name}",
-            "timestamp": created_at.isoformat(),
-        }
-    ]
-    status = "investigating"
-    resolution_details: dict = {}
-    if outcome != "open":
-        closed_at = created_at + dt.timedelta(days=close_delay_days, hours=4)
-        status = "closed"
-        resolution_details = {
-            "official_action": outcome,
-            "resolution_note": f"Closed by {creator_name} — {outcome}",
-        }
-        events.append(
-            {
-                "event_type": "closed",
-                "actor": creator_name,
-                "description": f"Closed: {outcome}",
-                "timestamp": closed_at.isoformat(),
-            }
-        )
+    """Generate a Task record from a named task archetype.
 
-    data = {
-        "title": title,
-        "description": "Auto-spawned by program_admin_demo_seed_v2.",
-        "priority": "high",
-        "status": status,
-        "username": flw_id,
-        "flw_name": flw_id,
-        "user_id": None,
-        "opportunity_id": opportunity_id,
-        "assigned_to_type": "self",
-        "assigned_to_name": creator_name,
-        "audit_session_id": None,
-        "workflow_run_id": workflow_run_id,
-        "resolution_details": resolution_details,
-        "events": events,
-    }
+    Returns the task id. The archetype controls status / official_action /
+    close timing; see ``commcare_connect/labs/synthetic/archetypes.py``.
+    """
+    from commcare_connect.labs.synthetic.archetypes import build_task_data
+
+    data = build_task_data(
+        archetype_name=task_archetype,
+        flw_id=flw_id,
+        monday_iso=monday_iso,
+        opportunity_id=opportunity_id,
+        workflow_run_id=workflow_run_id,
+        audit_session_id=audit_session_id,
+        title=title,
+        creator_name=creator_name,
+    )
     rec = tda.labs_api.create_record(
         experiment="tasks",
         type="Task",
@@ -372,40 +355,48 @@ def _apply_decision_spec(
     spec: dict,
     workflow_run_id: int,
     opportunity_id: int,
+    opportunity_name: str,
     flw_id: str,
     monday_iso: str,
     creator_name: str,
 ):
     """Materialize one (run, flw) decision spec into records.
-    Creates audit + task + decision as appropriate."""
+
+    If the spec is an ``action_taken`` and specifies an ``audit_archetype``
+    and/or ``task_archetype``, we generate those records (using the named
+    audit + task archetypes in ``commcare_connect/labs/synthetic/archetypes.py``)
+    and link them from the Decision."""
     decision_type = spec["decision_type"]
     audit_ids: list[int] = []
     task_ids: list[int] = []
 
     if decision_type == "action_taken":
-        if spec.get("spawn_audit"):
-            audit_ids.append(
-                _create_audit(
-                    ada=ada,
-                    opportunity_id=opportunity_id,
-                    workflow_run_id=workflow_run_id,
-                    flw_id=flw_id,
-                    monday_iso=monday_iso,
-                    outcome=spec.get("audit_outcome", "in_review"),
-                )
+        audit_archetype = spec.get("audit_archetype")
+        task_archetype = spec.get("task_archetype")
+        spawned_audit_id: int | None = None
+        if audit_archetype:
+            spawned_audit_id = _generate_audit(
+                ada=ada,
+                opportunity_id=opportunity_id,
+                opportunity_name=opportunity_name,
+                workflow_run_id=workflow_run_id,
+                flw_id=flw_id,
+                monday_iso=monday_iso,
+                audit_archetype=audit_archetype,
             )
-        if spec.get("spawn_task"):
+            audit_ids.append(spawned_audit_id)
+        if task_archetype:
             task_title = f"[{spec.get('reason_label', spec.get('reason_key', 'Action'))}] {flw_id}"
             task_ids.append(
-                _create_task(
+                _generate_task(
                     tda=tda,
                     opportunity_id=opportunity_id,
                     workflow_run_id=workflow_run_id,
+                    audit_session_id=spawned_audit_id,
                     flw_id=flw_id,
                     monday_iso=monday_iso,
                     title=task_title,
-                    outcome=spec.get("task_outcome", "open"),
-                    close_delay_days=spec.get("task_close_delay_days", 0),
+                    task_archetype=task_archetype,
                     creator_name=creator_name,
                 )
             )
@@ -422,7 +413,7 @@ def _apply_decision_spec(
         task_ids=task_ids,
         decided_at=decided_at,
         decided_by=creator_name,
-        notes=f"Demo seed week {monday_iso}",
+        notes=f"Synthetic week {monday_iso}",
     )
 
 
@@ -461,13 +452,17 @@ def _list_decisions_for_opp(dda, opportunity_id: int):
 @register(
     name="program_admin_demo_seed_v2",
     description=(
-        "Narrative-driven demo seeder. Builds 4 weekly chc_nutrition saved runs "
-        "per opp with backdated completed_at, applies per-FLW archetype "
-        "trajectories (solid / improver_* / suspended_* / new_hire), spawns "
-        "AuditSession + Task records with realistic open/closed outcomes, "
-        "and creates a final program_admin_report run watching all opps. "
-        "Pass cleanup_first=true to wipe prior runs/decisions/tasks/audits "
-        "for the opps before re-seeding (idempotent). See module docstring."
+        "Narrative-driven synthetic generator for the program-admin-report demo. "
+        "Builds 4 weekly chc_nutrition saved runs per opp with backdated "
+        "completed_at, applies per-FLW archetype trajectories (solid / "
+        "improver_* / suspended_* / new_hire), generates AuditSession + Task "
+        "records from named **audit_archetype** + **task_archetype** vocabularies "
+        "(see commcare_connect/labs/synthetic/archetypes.py), and creates a "
+        "final program_admin_report run watching all opps. Audits attach real "
+        "MUAC stock images so the bulk-assessment view renders thumbnails. "
+        "Pass cleanup_first=true to wipe prior runs/decisions/tasks/audits for "
+        "the opps before regenerating (idempotent). Tool name retained as "
+        "*_seed_v2 for API stability."
     ),
     input_schema={
         "type": "object",
@@ -585,9 +580,9 @@ def program_admin_demo_seed_v2(
                     if spec is None:
                         continue  # not in roster this week
                     active_flw_count += 1
-                    if spec.get("spawn_task"):
+                    if spec.get("task_archetype"):
                         tasks_spawned += 1
-                    if spec.get("spawn_audit"):
+                    if spec.get("audit_archetype"):
                         audits_spawned += 1
                     _apply_decision_spec(
                         dda=dda,
@@ -596,6 +591,7 @@ def program_admin_demo_seed_v2(
                         spec=spec,
                         workflow_run_id=run_id,
                         opportunity_id=opp_id,
+                        opportunity_name=opp_cfg["label"],
                         flw_id=flw["id"],
                         monday_iso=monday_iso,
                         creator_name=nm,
