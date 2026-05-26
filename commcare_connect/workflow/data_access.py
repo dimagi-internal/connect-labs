@@ -2093,8 +2093,21 @@ def get_saved_runs_for_program_report(
 
     The window is inclusive on both ends. ``completed_at`` is compared as
     parsed datetime; bad/missing timestamps are skipped.
+
+    Window bounds are coerced to UTC if naive so comparison against
+    Connect's TZ-aware ``completed_at`` doesn't raise TypeError.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
+
+    def _to_utc(dt_):
+        if dt_ is None:
+            return None
+        if dt_.tzinfo is None:
+            return dt_.replace(tzinfo=timezone.utc)
+        return dt_.astimezone(timezone.utc)
+
+    ws = _to_utc(window_start)
+    we = _to_utc(window_end)
 
     def _within(completed_at_str):
         if not completed_at_str:
@@ -2103,7 +2116,8 @@ def get_saved_runs_for_program_report(
             ts = datetime.fromisoformat(completed_at_str.replace("Z", "+00:00"))
         except ValueError:
             return False
-        return window_start <= ts <= window_end
+        ts = _to_utc(ts)
+        return ws <= ts <= we
 
     out = []
     for source in watched_sources:
