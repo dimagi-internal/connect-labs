@@ -291,9 +291,18 @@ def program_admin_demo_seed(
             primary_opp_id=primary_opp_id,
             watched_sources=watched_sources,
         )
-        # Create one run spanning weeks[0] → last week + 7d window-end
-        window_start = weeks[0]
-        window_end = (dt.date.fromisoformat(weeks[-1]) + dt.timedelta(days=6)).isoformat()
+        # The watched runs' `completed_at` is whenever the seeder ran
+        # (today), not the historical `period_start`. The window has to
+        # span [first seed time, now+1d] so the filter actually catches
+        # them; otherwise the rollup is silently empty. We expose the
+        # configured `weeks[0]` → `weeks[-1]+6d` as display dates in the
+        # state so the render header shows the intent, but the filter
+        # window covers today.
+        display_window_start = weeks[0]
+        display_window_end = (dt.date.fromisoformat(weeks[-1]) + dt.timedelta(days=6)).isoformat()
+        today = dt.date.today()
+        window_start = display_window_start
+        window_end = (today + dt.timedelta(days=1)).isoformat()
         par_run = par_wda.create_run(
             definition_id=par_def.id,
             opportunity_id=primary_opp_id,
