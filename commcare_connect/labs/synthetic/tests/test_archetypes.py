@@ -110,9 +110,7 @@ def test_audit_data_is_deterministic_for_same_seed():
     )
     a = build_audit_data(**kw)
     b = build_audit_data(**kw)
-    assert [p["blob_id"] for p in a["visit_images"]["9000010"]] == [
-        p["blob_id"] for p in b["visit_images"]["9000010"]
-    ]
+    assert [p["blob_id"] for p in a["visit_images"]["9000010"]] == [p["blob_id"] for p in b["visit_images"]["9000010"]]
 
 
 def test_task_closed_warned_has_close_event_and_resolution():
@@ -132,6 +130,7 @@ def test_task_closed_warned_has_close_event_and_resolution():
     assert event_types == ["created", "closed"]
     # Closed event should be 5 days + 4 hours after created
     from datetime import datetime
+
     created = datetime.fromisoformat(data["events"][0]["timestamp"])
     closed = datetime.fromisoformat(data["events"][1]["timestamp"])
     assert (closed - created).days == 5
@@ -170,7 +169,13 @@ def test_task_carries_archetype_appropriate_ocs_conversation():
     """build_task_data attaches an OCS coaching transcript matching the
     task's narrative outcome (closed_satisfactory → resolved-clean tone,
     closed_warned → formal warning, closed_suspended → suspension)."""
-    for archetype_name in ("closed_satisfactory", "closed_warned", "closed_suspended", "closed_suspended_fraud", "investigating"):
+    for archetype_name in (
+        "closed_satisfactory",
+        "closed_warned",
+        "closed_suspended",
+        "closed_suspended_fraud",
+        "investigating",
+    ):
         data = build_task_data(
             archetype_name=archetype_name,
             flw_id="grace",
@@ -192,6 +197,7 @@ def test_task_carries_archetype_appropriate_ocs_conversation():
         assert all("{flw_name}" not in m["text"] for m in conv)
         # Each message has an ISO timestamp
         from datetime import datetime
+
         for m in conv:
             datetime.fromisoformat(m["ts"])
 
@@ -241,12 +247,25 @@ def test_flw_pipeline_row_shape_matches_chc_nutrition_schema():
         rng_seed=42,
     )
     required = {
-        "username", "name", "total_visits", "approved_visits", "days_active",
-        "muac_measurements_count", "muac_distribution_count", "muac_distribution_mean",
-        "avg_muac_cm", "male_count", "female_count", "children_unwell_count",
+        "username",
+        "name",
+        "total_visits",
+        "approved_visits",
+        "days_active",
+        "muac_measurements_count",
+        "muac_distribution_count",
+        "muac_distribution_mean",
+        "avg_muac_cm",
+        "male_count",
+        "female_count",
+        "children_unwell_count",
         "under_malnutrition_treatment_count",
-        "muac_9_5_10_5_visits", "muac_10_5_11_5_visits", "muac_11_5_12_5_visits",
-        "muac_12_5_13_5_visits", "muac_13_5_14_5_visits", "muac_14_5_15_5_visits",
+        "muac_9_5_10_5_visits",
+        "muac_10_5_11_5_visits",
+        "muac_11_5_12_5_visits",
+        "muac_12_5_13_5_visits",
+        "muac_13_5_14_5_visits",
+        "muac_14_5_15_5_visits",
     }
     missing = required - set(row.keys())
     assert not missing, f"missing fields: {missing}"

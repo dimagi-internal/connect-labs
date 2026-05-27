@@ -197,7 +197,8 @@ def main() -> int:
             print(f"\nScene {i}/{len(scenes)} ({target_key}): {scene['title']}")
             print(f"  URL: {handler['url']}")
             goto_and_settle(
-                page, handler["url"],
+                page,
+                handler["url"],
                 timeout=30_000,
                 wait_for_selector="text=Connect Labs",
                 settle_seconds=2.0,

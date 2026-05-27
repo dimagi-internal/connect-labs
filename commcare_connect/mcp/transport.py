@@ -142,6 +142,7 @@ def _handle_tools_call(params: dict, user) -> dict:
         # prod ALL responses, gate on a flag — but for now the diagnostic
         # value outweighs the noise.
         import traceback
+
         tb = traceback.format_exc()
         raise MCPToolError("UPSTREAM_ERROR", f"{type(e).__name__}: {e}\n{tb}") from e
 

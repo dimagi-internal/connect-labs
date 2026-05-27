@@ -103,7 +103,8 @@ def main() -> None:
 
         # ---------- Recording ----------
         goto_and_settle(
-            page, par_url,
+            page,
+            par_url,
             timeout=60_000,
             wait_for_selector="text=Window aggregate",
             settle_seconds=0,
@@ -199,7 +200,8 @@ def main() -> None:
 
         # Scene 5: back to PAR, jump to incomplete-run cell.
         goto_and_settle(
-            page, par_url,
+            page,
+            par_url,
             timeout=30_000,
             wait_for_selector="text=Window aggregate",
             settle_seconds=0.6,
@@ -221,7 +223,8 @@ def main() -> None:
 
         # Scene 7: back, drill into the investigating task.
         goto_and_settle(
-            page, par_url,
+            page,
+            par_url,
             timeout=30_000,
             wait_for_selector="text=Window aggregate",
             settle_seconds=0.6,
