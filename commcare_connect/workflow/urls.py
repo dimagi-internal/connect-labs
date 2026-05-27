@@ -1,5 +1,7 @@
 from django.urls import include, path
 
+from commcare_connect.labs.synthetic import manager_flow_views
+
 from . import views
 
 app_name = "workflow"
@@ -117,4 +119,17 @@ urlpatterns = [
     path("api/<int:opp_id>/visit-images/", views.visit_images_api, name="api_visit_images"),
     # Decisions scoped to a workflow run — implemented in commcare_connect/decisions
     path("api/run/<int:workflow_run_id>/decisions/", include("commcare_connect.decisions.urls")),
+    # Synthetic manager-flow demo helpers — create a pass-clean audit + decision in
+    # one shot, then attach a believable OCS coaching conversation onto a task.
+    # See commcare_connect/labs/synthetic/manager_flow_views.py.
+    path(
+        "api/run/<int:run_id>/manager-audit/",
+        manager_flow_views.manager_audit_create_api,
+        name="api_manager_audit",
+    ),
+    path(
+        "api/run/<int:run_id>/manager-coaching/",
+        manager_flow_views.manager_coaching_attach_api,
+        name="api_manager_coaching",
+    ),
 ]
