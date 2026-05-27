@@ -237,6 +237,26 @@ def program_admin_demo_seed(
       ``cleanup_first`` — wipe prior runs/decisions/tasks/audits for the
           opps before re-seeding. Default True.
     """
+    # Defensive: some MCP clients double-encode list args as JSON strings
+    # when their cached schema doesn't know the property is an array. Parse
+    # back to native lists so the rest of the seed body works uniformly.
+    # Handle three shapes: full string ("[...]"), list of strings
+    # (["{...}", "{...}"]), and dict items in either list level.
+    import json as _json
+
+    def _maybe_load(v):
+        return _json.loads(v) if isinstance(v, str) else v
+
+    if isinstance(weeks, str):
+        weeks = _json.loads(weeks)
+    if isinstance(opps, str):
+        opps = _json.loads(opps)
+    opps = [_maybe_load(o) for o in opps]
+    for o in opps:
+        if isinstance(o, dict) and isinstance(o.get("flws"), str):
+            o["flws"] = _json.loads(o["flws"])
+        if isinstance(o, dict) and isinstance(o.get("flws"), list):
+            o["flws"] = [_maybe_load(f) for f in o["flws"]]
     from commcare_connect.audit.data_access import AuditDataAccess
     from commcare_connect.decisions.data_access import DecisionsDataAccess
     from commcare_connect.labs.synthetic.walkthrough_kit import (
