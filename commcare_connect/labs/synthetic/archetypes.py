@@ -1,7 +1,7 @@
 """Synthetic generator archetypes for non-FLW entities.
 
 Mirrors the FLW archetype pattern (see ``commcare_connect/labs/synthetic/self_service.py``
-and ``commcare_connect/mcp/tools/program_admin_demo_v2.py``) for the other
+and ``commcare_connect/labs/synthetic/program_admin_demo.py``) for the other
 record types the synthetic generator emits — primarily ``AuditSession`` and
 ``Task``. The point of the archetype layer is the same as for FLWs: name a
 narrative state once (e.g. ``completed_warned_tape_usage``) so every story we
@@ -43,7 +43,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -96,9 +96,7 @@ def bad_muac_filenames_for_category(category: str) -> list[str]:
     with ``synth-muac-bad-`` to get a blob_id the image server can resolve.
     """
     return sorted(
-        fname
-        for fname, meta in _MUAC_CATALOG.items()
-        if isinstance(meta, dict) and meta.get("category") == category
+        fname for fname, meta in _MUAC_CATALOG.items() if isinstance(meta, dict) and meta.get("category") == category
     )
 
 
@@ -298,9 +296,7 @@ def build_audit_data(
     rng_seed = rng_seed if rng_seed is not None else visit_id_base
     photos = _pick_blob_ids(archetype.image_spec, rng_seed)
 
-    monday_dt = dt.datetime.fromisoformat(monday_iso).replace(
-        hour=10, minute=0, tzinfo=dt.timezone.utc
-    )
+    monday_dt = dt.datetime.fromisoformat(monday_iso).replace(hour=10, minute=0, tzinfo=dt.timezone.utc)
     visit_iso = monday_dt.isoformat()
     visit_id = visit_id_base
 
@@ -436,7 +432,10 @@ TASK_ARCHETYPES: dict[str, TaskArchetype] = {
     ),
     "closed_suspended_fraud": TaskArchetype(
         name="closed_suspended_fraud",
-        description="Closed by suspending the FLW for suspected photo fraud — stronger framing than a repeat-failure suspension.",
+        description=(
+            "Closed by suspending the FLW for suspected photo fraud — "
+            "stronger framing than a repeat-failure suspension."
+        ),
         status="closed",
         official_action="suspended",
         close_delay_days=2,
@@ -469,9 +468,7 @@ def build_task_data(
     Pass the result to ``labs_api.create_record(experiment='tasks', type='Task', ...)``.
     """
     archetype = TASK_ARCHETYPES[archetype_name]
-    created_at = dt.datetime.fromisoformat(monday_iso).replace(
-        hour=10, minute=15, tzinfo=dt.timezone.utc
-    )
+    created_at = dt.datetime.fromisoformat(monday_iso).replace(hour=10, minute=15, tzinfo=dt.timezone.utc)
 
     events: list[dict[str, Any]] = [
         {
@@ -550,12 +547,18 @@ def build_task_data(
 
 
 _ALL_MUAC_BINS = (
-    "muac_9_5_10_5_visits",   "muac_10_5_11_5_visits",
-    "muac_11_5_12_5_visits",  "muac_12_5_13_5_visits",
-    "muac_13_5_14_5_visits",  "muac_14_5_15_5_visits",
-    "muac_15_5_16_5_visits",  "muac_16_5_17_5_visits",
-    "muac_17_5_18_5_visits",  "muac_18_5_19_5_visits",
-    "muac_19_5_20_5_visits",  "muac_20_5_21_5_visits",
+    "muac_9_5_10_5_visits",
+    "muac_10_5_11_5_visits",
+    "muac_11_5_12_5_visits",
+    "muac_12_5_13_5_visits",
+    "muac_13_5_14_5_visits",
+    "muac_14_5_15_5_visits",
+    "muac_15_5_16_5_visits",
+    "muac_16_5_17_5_visits",
+    "muac_17_5_18_5_visits",
+    "muac_18_5_19_5_visits",
+    "muac_19_5_20_5_visits",
+    "muac_20_5_21_5_visits",
 )
 
 
@@ -581,6 +584,7 @@ def _muac_distribution(*, severity: int, rng) -> dict[str, int]:
         weights = [1, 4, 6, 5, 3, 2, 1, 1, 0, 0, 0, 0]
     else:  # severity 3+
         weights = [4, 6, 5, 3, 1, 1, 0, 0, 0, 0, 0, 0]
+
     # Per-bin jitter so two FLWs in the same archetype don't look identical.
     # SAM-range bins (the first two: 9.5-10.5 and 10.5-11.5) get NO upward
     # jitter for severity-0 FLWs — otherwise a clean FLW could accidentally
@@ -623,6 +627,7 @@ def _gender_counts(*, muac_count: int, kpi_issue: str | None, rng) -> tuple[int,
         # round() occasionally drifts to 44% for small samples (e.g.
         # 14/32 = 43.8%), which renders yellow.
         import math as _math
+
         lo = _math.ceil(muac_count * 0.46)
         hi = _math.floor(muac_count * 0.54)
         if lo > hi:

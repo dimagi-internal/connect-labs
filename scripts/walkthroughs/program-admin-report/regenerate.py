@@ -1,30 +1,26 @@
 """Regenerate the Program Admin Report demo from demo_config.json.
 
-The synthetic data generator itself lives in
-``commcare_connect/mcp/tools/program_admin_demo_v2.py`` and is invoked
-either via the labs MCP (``mcp__connect_labs__program_admin_demo_seed_v2``)
-or — for scripted reproducibility — directly via this wrapper.
+Loads ``demo_config.json``, invokes the synthetic data generator
+(``commcare_connect.labs.synthetic.program_admin_demo``), and persists
+the resulting run ids to ``.run_ids.json`` so the recorder scripts can
+pick them up without copy-pasting integers between terminals.
 
-This wrapper exists so the demo configuration is **versioned**. Before it,
-each regeneration required copy-pasting a large JSON payload into an MCP
-tool call from chat history, which made the demo non-reproducible.
+Usage::
 
-Usage:
     # From a connect-labs checkout, with the labs venv active:
     python scripts/walkthroughs/program-admin-report/regenerate.py
 
     # Or via the MCP from Claude:
     #   read demo_config.json
-    #   pass its contents to mcp__connect_labs__program_admin_demo_seed_v2
+    #   pass its contents to mcp__connect_labs__program_admin_demo_seed
 
-The script invokes ``program_admin_demo_seed_v2`` directly (no MCP round-
-trip required) and prints the run ids needed by the recorder scripts:
+Writes ``scripts/walkthroughs/program-admin-report/.run_ids.json``
+with these keys (consumed by the recorders + capture_walkthrough):
 
-    PAR_RUN_ID=<id>   # the cross-opp Program Admin Report run
-    WK4_RUN_ID=<id>   # the Northern Wk4 in_progress run (Manager-flow target)
-
-These env vars are what the recorder scripts (record_manager_flow.py,
-record_drill_through.py, capture_walkthrough.py) consume.
+    par_run_id        — the cross-opp Program Admin Report run
+    wk4_run_id        — Northern's last-week in_progress run (manager-flow target)
+    opp_id            — primary opportunity id (Northern, by convention)
+    workflow_def_id   — chc_nutrition_analysis workflow definition id
 """
 
 from __future__ import annotations
@@ -34,60 +30,74 @@ import os
 import sys
 from pathlib import Path
 
+HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parents[2]
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-def main():
-    here = Path(__file__).resolve().parent
-    config_path = here / "demo_config.json"
+from walkthroughs._lib import config as wcfg  # noqa: E402
+from walkthroughs._lib.verify import report, run_checks  # noqa: E402
+
+
+def main() -> int:
+    config_path = HERE / "demo_config.json"
     config = json.loads(config_path.read_text())
     config.pop("_comment", None)
 
-    # The seed tool function lives inside Django, so we need Django set up.
+    # Django setup so we can import the seed function directly.
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
     import django
+
     django.setup()
 
-    from commcare_connect.mcp.tools.program_admin_demo_v2 import program_admin_demo_seed_v2
+    from commcare_connect.labs.synthetic.program_admin_demo import program_admin_demo_seed
 
-    # The MCP wrapper passes `user=request.user`; running standalone we need a
-    # user proxy that the OAuth-token resolver can find. The token resolver
-    # walks request.session for a stashed access_token; fall back to env var.
-    class _User:
-        # Match the minimal surface the tool function reads — just .username
-        # + a way for require_connect_token to find a token in the env.
-        username = os.environ.get("LABS_USER", "manager")
-
-    # require_connect_token looks for an env-stashed token first.
     if not os.environ.get("LABS_CONNECT_TOKEN"):
         sys.exit(
             "ERROR: LABS_CONNECT_TOKEN env var is required. Export your labs "
             "OAuth access token before running this script. The recorder "
-            "scripts use the same token from ~/.ace/labs-session.json — "
-            "extract its access_token cookie value."
+            "scripts use the same token via the session file at "
+            f"{wcfg.session_path()}."
         )
 
-    result = program_admin_demo_seed_v2(
+    class _User:
+        # Minimal surface: `username` for record provenance + access via env
+        # for the OAuth token resolver.
+        username = os.environ.get("LABS_USER", "manager")
+
+    result = program_admin_demo_seed(
         user=_User(),
         weeks=config["weeks"],
         opps=config["opps"],
         cleanup_first=bool(config.get("cleanup_first", True)),
     )
 
+    # Resolve the four ids the recorders need.
     par_run_id = result["program_admin_report"]["run_id"]
-    northern = next(
-        opp for opp in result["opportunities"]
-        if opp["opportunity_id"] == 10000
-    )
-    wk4 = next(w for w in northern["weeks"] if w.get("in_progress"))
+    primary_opp_cfg = config["opps"][0]
+    primary_opp_id = primary_opp_cfg["opportunity_id"]
+    primary = next(opp for opp in result["opportunities"] if opp["opportunity_id"] == primary_opp_id)
+    wk4 = next((w for w in primary["weeks"] if w.get("in_progress")), None)
+    ids = {
+        "par_run_id": par_run_id,
+        "opp_id": primary_opp_id,
+        "workflow_def_id": primary["workflow_definition_id"],
+    }
+    if wk4:
+        ids["wk4_run_id"] = wk4["run_id"]
 
+    written = wcfg.write_run_ids(HERE, ids)
     print(json.dumps(result, indent=2))
     print()
-    print(f"PAR_RUN_ID={par_run_id}")
-    print(f"WK4_RUN_ID={wk4['run_id']}")
-    print(f"OPP_ID={northern['opportunity_id']}")
-    print(f"WORKFLOW_DEF_ID={northern['workflow_definition_id']}")
-    print()
-    print("Pass these to record_manager_flow.py / record_drill_through.py.")
+    for k, v in ids.items():
+        print(f"  {k}={v}")
+    print(f"\nWrote {written}")
+
+    # Pre-record smoke check — surface any mismatch immediately rather
+    # than during the recorder's scene 2.
+    print("\nRunning verify checks...")
+    issues = run_checks(result, config)
+    return report(issues)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

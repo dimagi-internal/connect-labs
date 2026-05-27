@@ -1,0 +1,381 @@
+"""Playwright recording helpers shared by every walkthrough.
+
+The previous two recorders each reinvented:
+  - Playwright context setup with cursor overlay
+  - Dialog auto-accept (for the ``window.confirm`` bulk-mark prompts)
+  - Console + pageerror capture
+  - A snapshot manifest writer (``snap()``)
+  - ``slow_move``, ``click_text`` with post-wait selector, ``wait_for_text``
+
+This module consolidates them so a new walkthrough writes just its
+scene sequence.
+
+Usage::
+
+    from _lib.recorder import RecorderSession, slow_move, click_text, snap
+
+    with RecorderSession(
+        out_dir=Path("/tmp/my_walkthrough/video"),
+        manifest_path=Path("/tmp/my_walkthrough/scenes.json"),
+    ) as rec:
+        # rec.page is the recording page (with cursor overlay).
+        # rec.warm_page is the pre-warm page (no cursor, no video).
+        rec.page.goto(...)
+        snap(rec, "scene_1")
+        click_text(rec.page, "Mark all No Issue", ...)
+
+The warm context is optional — pass ``prewarm=False`` if you don't need
+the GDrive image cache primed.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from playwright.sync_api import Page, sync_playwright
+
+from . import config
+
+CURSOR_OVERLAY_JS = (Path(__file__).resolve().parent / "cursor_overlay.js").read_text()
+
+DEFAULT_VIEWPORT = {"width": 1440, "height": 900}
+
+
+class RecorderSession:
+    """Playwright recording session: pre-warm + record contexts + helpers.
+
+    Lifecycle:
+
+      with RecorderSession(out_dir=...) as rec:
+          rec.warm_page.goto(...)    # optional: pre-warm caches
+          rec.page.goto(...)         # recording page; gets cursor + video
+
+    On exit, contexts close (which flushes the .webm) and the browser
+    quits. ``rec.video_paths`` is populated with the resulting webm paths.
+    """
+
+    def __init__(
+        self,
+        *,
+        out_dir: Path,
+        manifest_path: Path | None = None,
+        viewport: dict | None = None,
+        prewarm: bool = True,
+        accept_dialogs: bool = True,
+        with_cursor: bool = True,
+        record: bool = True,
+    ) -> None:
+        self.out_dir = Path(out_dir)
+        self.manifest_path = Path(manifest_path) if manifest_path else None
+        self.viewport = viewport or DEFAULT_VIEWPORT
+        self.prewarm = prewarm
+        self.accept_dialogs = accept_dialogs
+        self.with_cursor = with_cursor
+        self.record = record
+
+        self._pw = None
+        self.browser = None
+        self.warm_context = None
+        self.warm_page = None
+        self.context = None
+        self.page = None
+        self.console_log: list[str] = []
+        self.scene_snapshots: dict[str, str] = {}
+        self.video_paths: list[Path] = []
+
+    # ------------------------------------------------------------------ #
+    # context manager
+    # ------------------------------------------------------------------ #
+
+    def __enter__(self) -> RecorderSession:
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        if self.manifest_path:
+            self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            self.manifest_path.write_text("{}")
+
+        storage_state = str(config.require_session_file())
+
+        self._pw = sync_playwright().start()
+        self.browser = self._pw.chromium.launch()
+
+        if self.prewarm:
+            self.warm_context = self.browser.new_context(
+                viewport=self.viewport,
+                device_scale_factor=2,
+                storage_state=storage_state,
+            )
+            self.warm_page = self.warm_context.new_page()
+
+        record_kwargs: dict[str, Any] = {}
+        if self.record:
+            record_kwargs = {
+                "record_video_dir": str(self.out_dir),
+                "record_video_size": dict(self.viewport),
+            }
+        self.context = self.browser.new_context(
+            viewport=self.viewport,
+            device_scale_factor=2,
+            storage_state=storage_state,
+            **record_kwargs,
+        )
+        if self.with_cursor:
+            self.context.add_init_script(CURSOR_OVERLAY_JS)
+
+        self.page = self.context.new_page()
+
+        if self.accept_dialogs:
+
+            def _accept(dialog):
+                print(f"  dialog: {dialog.message[:80]!r}")
+                dialog.accept()
+
+            self.page.on("dialog", _accept)
+
+        self.page.on(
+            "console",
+            lambda m: self.console_log.append(f"[{m.type}] {m.text[:200]}"),
+        )
+        self.page.on(
+            "pageerror",
+            lambda e: self.console_log.append(f"[pageerror] {str(e)[:200]}"),
+        )
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        try:
+            if self.context:
+                self.context.close()
+            if self.warm_context:
+                self.warm_context.close()
+            if self.browser:
+                self.browser.close()
+        finally:
+            if self._pw:
+                self._pw.stop()
+
+        # Collect any webms Playwright produced.
+        if self.record:
+            self.video_paths = sorted(self.out_dir.glob("*.webm"), key=lambda p: p.stat().st_mtime)
+        if self.console_log:
+            tail = self.console_log[-20:]
+            print(f"\nConsole log ({len(self.console_log)} entries, last {len(tail)}):")
+            for line in tail:
+                print(f"  {line}")
+        if self.video_paths:
+            print(f"\nRecorded video(s) in {self.out_dir}:")
+            for v in self.video_paths:
+                print(f"  {v} ({v.stat().st_size / 1024:.0f} KB)")
+
+
+# ---------------------------------------------------------------------- #
+# Snapshot manifest
+# ---------------------------------------------------------------------- #
+
+
+def snap(session: RecorderSession, key: str) -> None:
+    """Record the visible page text at this scene boundary.
+
+    Writes incrementally so a mid-recording crash still leaves verifiable
+    partial data. Reads via session.scene_snapshots + session.manifest_path.
+    """
+    page = session.page
+    try:
+        session.scene_snapshots[key] = page.inner_text("body") if page else ""
+    except Exception as e:
+        session.scene_snapshots[key] = f"<<snapshot failed: {e}>>"
+    if session.manifest_path:
+        session.manifest_path.write_text(json.dumps(session.scene_snapshots, indent=2))
+
+
+# ---------------------------------------------------------------------- #
+# Page interaction primitives
+# ---------------------------------------------------------------------- #
+
+
+def slow_move(page: Page, x: float, y: float, steps: int = 40) -> None:
+    """Mouse move with enough steps that the cursor overlay can animate it."""
+    page.mouse.move(x, y, steps=steps)
+
+
+def wait_for_text(page: Page, text: str, timeout_ms: int = 15_000) -> None:
+    page.wait_for_function(
+        "(t) => document.body && document.body.innerText.includes(t)",
+        arg=text,
+        timeout=timeout_ms,
+    )
+
+
+def click_text(
+    page: Page,
+    text: str,
+    *,
+    timeout_ms: int = 4_000,
+    post_wait_selector: str | None = None,
+    post_wait_timeout_ms: int = 10_000,
+    pre_dwell_s: float = 0.4,
+) -> bool:
+    """Locate text, slow-move cursor onto it, click, wait for the next page state.
+
+    Returns True on successful click + post-wait (or no post-wait), False
+    if the text wasn't there. Catches the post_wait_selector timeout and
+    logs it rather than raising — the caller's scene snapshot will record
+    what actually rendered.
+    """
+    locator = page.locator(f"text={text}").first
+    locator.wait_for(state="visible", timeout=timeout_ms)
+    box = locator.bounding_box()
+    if not box:
+        return False
+    slow_move(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.wait_for_timeout(int(pre_dwell_s * 1000))
+    locator.click()
+    page.wait_for_load_state("networkidle")
+    if post_wait_selector:
+        try:
+            page.wait_for_selector(post_wait_selector, timeout=post_wait_timeout_ms)
+        except Exception as e:
+            print(f"  ! post-click wait for {post_wait_selector!r} failed: {e}")
+    return True
+
+
+def smooth_scroll_to_text(page: Page, text: str, *, header_tag: str = "h3") -> bool:
+    """Smooth-scroll the page so the element containing ``text`` is in view.
+
+    Used to reveal "Coaching Conversation" panels below the fold. Returns
+    True if an element was found and scrolled to.
+    """
+    return bool(
+        page.evaluate(
+            """({text, tag}) => {
+                const el = Array.from(document.querySelectorAll(tag))
+                    .find(h => h.textContent.includes(text));
+                if (el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); return true; }
+                return false;
+            }""",
+            {"text": text, "tag": header_tag},
+        )
+    )
+
+
+def scroll_through_page(page: Page, *, max_duration_ms: int = 5_000) -> None:
+    """Eased top-to-bottom scroll. Used to show off an audit page's full
+    set of thumbnails without jump-cutting."""
+    height = page.evaluate("() => document.documentElement.scrollHeight")
+    viewport_h = page.evaluate("() => window.innerHeight")
+    distance = max(0, height - viewport_h)
+    if distance <= 50:
+        return
+    page.evaluate(
+        """([dist, maxDur]) => new Promise(res => {
+            const start = performance.now();
+            const dur = Math.min(maxDur, dist * 1.5);
+            function step(t) {
+                const r = Math.min(1, (t - start) / dur);
+                const eased = r < 0.5 ? 4*r*r*r : 1 - Math.pow(-2*r + 2, 3)/2;
+                window.scrollTo(0, dist * eased);
+                if (r < 1) requestAnimationFrame(step); else res();
+            }
+            requestAnimationFrame(step);
+        })""",
+        [distance, max_duration_ms],
+    )
+
+
+def wait_for_row_count(page: Page, *, at_least: int, timeout_ms: int = 12_000) -> bool:
+    """Wait until ``tbody tr`` count reaches ``at_least``. Used after async
+    table renders. Returns False on timeout (caller can scene-snap to log
+    what was there)."""
+    try:
+        page.wait_for_function(
+            "(n) => document.querySelectorAll('tbody tr').length >= n",
+            arg=at_least,
+            timeout=timeout_ms,
+        )
+        return True
+    except Exception as e:
+        print(f"  ! table didn't reach {at_least} rows: {e}")
+        return False
+
+
+def wait_for_audit_images(page: Page, *, at_least: int, timeout_ms: int = 15_000) -> bool:
+    """Wait for at least ``at_least`` ``/audit/image/`` thumbnails to decode.
+
+    The bulk-assessment view streams JPGs from GDrive; without this wait,
+    a recording captures the spinner state. Returns False on timeout.
+    """
+    try:
+        page.wait_for_function(
+            """(n) => {
+                const imgs = Array.from(document.querySelectorAll('img'))
+                    .filter(i => i.src.includes('/audit/image/'));
+                return imgs.length >= n
+                    && imgs.filter(i => i.complete && i.naturalWidth > 0).length >= n;
+            }""",
+            arg=at_least,
+            timeout=timeout_ms,
+        )
+        return True
+    except Exception as e:
+        print(f"  ! audit images not fully loaded ({at_least}): {e}")
+        return False
+
+
+# ---------------------------------------------------------------------- #
+# Row helpers — table-of-FLWs operations the recorders share
+# ---------------------------------------------------------------------- #
+
+
+def scroll_row_into_view(page: Page, username: str) -> None:
+    page.evaluate(
+        "(uname) => { const row = [...document.querySelectorAll('tr')]"
+        ".find(r => r.innerText.includes(uname));"
+        " if (row) row.scrollIntoView({block: 'center'}); }",
+        username,
+    )
+
+
+def click_row_button(page: Page, username: str, button_text: str) -> bool:
+    """Find the row containing ``username`` and click the button whose label
+    matches ``button_text`` (exact-text match preferred, falls back to
+    ``includes``).
+
+    Returns True if the click was issued, False if nothing matched. Caller
+    is responsible for waiting on the resulting navigation/network.
+    """
+    clicked = page.evaluate(
+        """([uname, label]) => {
+            const row = [...document.querySelectorAll('tr')]
+                .find(r => r.innerText.includes(uname));
+            if (!row) return false;
+            const btns = [...row.querySelectorAll('button, a')];
+            const exact = btns.find(b => b.innerText.trim() === label);
+            const fuzzy = btns.find(b => b.innerText.includes(label));
+            const target = exact || fuzzy;
+            if (!target) return false;
+            target.click();
+            return true;
+        }""",
+        [username, button_text],
+    )
+    return bool(clicked)
+
+
+def row_button_labels(page: Page, username: str) -> list[str]:
+    """Return the button + link labels visible on ``username``'s row.
+
+    Useful for debugging "Create Audit isn't there" without a recorder
+    rerun — print before the click and the labels show whether the
+    previous run already created the audit.
+    """
+    return page.evaluate(
+        """(uname) => {
+            const row = [...document.querySelectorAll('tr')]
+                .find(r => r.innerText.includes(uname));
+            if (!row) return [];
+            return [...row.querySelectorAll('button, a')]
+                .map(b => b.innerText.trim());
+        }""",
+        username,
+    )
