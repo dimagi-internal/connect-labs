@@ -110,6 +110,31 @@ export interface RunView {
       evidence?: Record<string, unknown>;
     }>,
   ): Promise<Flag[]>;
+
+  /**
+   * Audits created against this run. Live-queried from AuditSession
+   * records by `labs_record_id == workflow_run_id`; not snapshot-frozen
+   * (audits live their own lifecycle and may transition status after
+   * the run completes). Render code uses {@link auditsFor} to know
+   * whether a per-row "Create Audit" affordance should swap to a
+   * "View audit" link to the existing artifact.
+   */
+  audits: Audit[];
+
+  /**
+   * Convenience: return all Audits for `username`. Empty array if none.
+   */
+  auditsFor(username: string): Audit[];
+
+  /**
+   * Tasks created against this run. Same live-query philosophy as audits.
+   */
+  tasks: Task[];
+
+  /**
+   * Convenience: return all Tasks for `username`. Empty array if none.
+   */
+  tasksFor(username: string): Task[];
 }
 
 /**
@@ -127,6 +152,38 @@ export interface Flag {
   source: 'auto' | 'manual';
   flagged_at: string | null;
   flagged_by: string | null;
+}
+
+/**
+ * An AuditSession created against a workflow run, as seen from the
+ * runner's `view.audits` array. Mirrors the per-FLW shape PAR's
+ * build_snapshot uses so a template can read both surfaces with the
+ * same field names. The link to the run is by `labs_record_id ==
+ * workflow_run_id` server-side; render code doesn't need to know that.
+ */
+export interface Audit {
+  id: number;
+  flw_id: string;
+  status: string;
+  overall_result: string | null;
+  pass_count: number;
+  fail_count: number;
+  pending_count: number;
+}
+
+/**
+ * A Task created against a workflow run, as seen from the runner's
+ * `view.tasks` array. The link to the run is by `data.workflow_run_id`
+ * server-side. `official_action` reflects the resolution chosen when
+ * the task was closed (e.g. "satisfactory", "warned", "suspended").
+ */
+export interface Task {
+  id: number;
+  flw_id: string;
+  status: string;
+  title: string;
+  priority: string;
+  official_action: string | null;
 }
 
 // =============================================================================
@@ -839,6 +896,13 @@ export interface WorkflowDataFromDjango {
   /** Flags raised against the current run. Optional — defaults to [] in
    * useRunView when the BE response omits it. */
   flags?: Flag[];
+  /** Audits created against the current run (link is by
+   * `labs_record_id == workflow_run_id` server-side). Optional —
+   * defaults to [] in useRunView when the BE response omits it. */
+  audits?: Audit[];
+  /** Tasks created against the current run. Optional — defaults to []
+   * in useRunView when the BE response omits it. */
+  tasks?: Task[];
   links: {
     auditUrlBase: string;
     taskUrlBase: string;
