@@ -98,8 +98,7 @@ def main() -> None:
         # synthetic run can take 15-25s on first hit.
         print("Scene 1: Auto-flags appear on mount")
         page.wait_for_function(
-            "() => /SAM rate < 1%|MAM rate < 3%|Gender split outside 40-60%/.test("
-            "document.body.innerText)",
+            "() => /SAM rate < 1%|MAM rate < 3%|Gender split outside 40-60%/" ".test(document.body.innerText)",
             timeout=45_000,
         )
         page.wait_for_timeout(1_500)
@@ -126,8 +125,7 @@ def main() -> None:
         page.wait_for_timeout(600)
         if not click_menu_item(page, AUDIT_MENU_ITEM):
             raise RuntimeError(
-                f"Menu item {AUDIT_MENU_ITEM!r} not found after opening "
-                f"Create Audit menu for {FLAGGED_FLW}."
+                f"Menu item {AUDIT_MENU_ITEM!r} not found after opening Create Audit menu for {FLAGGED_FLW}."
             )
         page.wait_for_url("**/audit/**", timeout=30_000)
         # Wait for the audit's assessment count header instead of networkidle —

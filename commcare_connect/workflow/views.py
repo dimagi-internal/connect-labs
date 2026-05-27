@@ -20,10 +20,10 @@ from django.views.generic import TemplateView
 
 from commcare_connect.audit.data_access import AuditDataAccess
 from commcare_connect.flags.data_access import FlagsDataAccess
-from commcare_connect.tasks.data_access import TaskDataAccess
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
+from commcare_connect.tasks.data_access import TaskDataAccess
 from commcare_connect.utils.feature_access import can_create_from_template, get_allowed_templates
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 from commcare_connect.workflow.templates import TEMPLATES
