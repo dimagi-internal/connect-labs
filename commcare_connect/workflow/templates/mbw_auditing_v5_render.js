@@ -813,6 +813,12 @@ function WorkflowUI({
   var _taskTranscriptError = React.useState(null);
   var taskTranscriptError = _taskTranscriptError[0];
   var setTaskTranscriptError = _taskTranscriptError[1];
+  var _transcriptOcsRequired = React.useState(false);
+  var transcriptOcsRequired = _transcriptOcsRequired[0];
+  var setTranscriptOcsRequired = _transcriptOcsRequired[1];
+  var _oauthStatus = React.useState(null);
+  var oauthStatus = _oauthStatus[0];
+  var setOauthStatus = _oauthStatus[1];
 
   var jobCleanupRef = React.useRef(null);
   var tab2CleanupRef = React.useRef(null);
@@ -1209,6 +1215,22 @@ function WorkflowUI({
       onUpdateState,
     ],
   );
+
+  // Fetch OCS auth status on mount so transcript panel can show auth link
+  React.useEffect(function () {
+    fetch(
+      '/labs/workflow/api/auth-status/?next=' +
+        encodeURIComponent(window.location.pathname),
+      { credentials: 'same-origin' },
+    )
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        setOauthStatus(data);
+      })
+      .catch(function () {});
+  }, []);
 
   // Auto-run on mount only when reopening an existing run (saved workers present)
   React.useEffect(function () {
@@ -1760,6 +1782,7 @@ function WorkflowUI({
       setTaskDetail(null);
       setTaskTranscript(null);
       setTaskTranscriptError(null);
+      setTranscriptOcsRequired(false);
       return;
     }
     var ts = taskStates[username] || {};
@@ -1771,6 +1794,7 @@ function WorkflowUI({
     setTaskDetail(null);
     setTaskTranscript(null);
     setTaskTranscriptError(null);
+    setTranscriptOcsRequired(false);
     if (!actions || !actions.getTaskDetail) {
       setTaskDetailLoading(false);
       return;
@@ -1799,8 +1823,11 @@ function WorkflowUI({
         if (transcriptResult && transcriptResult.success) {
           setTaskTranscript(transcriptResult.messages || []);
         } else if (transcriptResult) {
+          setTranscriptOcsRequired(!!transcriptResult.ocs_auth_required);
           setTaskTranscriptError(
-            transcriptResult.error || 'Transcript unavailable',
+            transcriptResult.ocs_auth_required
+              ? null
+              : transcriptResult.error || 'Transcript unavailable',
           );
           setTaskTranscript([]);
         }
@@ -2216,25 +2243,56 @@ function WorkflowUI({
                             );
                           })
                         : taskTranscript && taskTranscript.length === 0
-                        ? React.createElement(
-                            'div',
-                            {
-                              className:
-                                'text-center text-sm py-4 ' +
-                                (taskTranscriptError
-                                  ? 'text-red-500'
-                                  : 'text-gray-400'),
-                            },
-                            React.createElement('i', {
-                              className:
-                                'fa-solid ' +
-                                (taskTranscriptError
-                                  ? 'fa-circle-exclamation'
-                                  : 'fa-comment-slash') +
-                                ' mr-1',
-                            }),
-                            taskTranscriptError || 'No messages yet',
-                          )
+                        ? transcriptOcsRequired ||
+                          (oauthStatus && !oauthStatus.ocs?.active)
+                          ? React.createElement(
+                              'div',
+                              { className: 'text-center py-4' },
+                              React.createElement(
+                                'div',
+                                { className: 'text-amber-600 text-sm mb-2' },
+                                React.createElement('i', {
+                                  className: 'fa-solid fa-link-slash mr-1',
+                                }),
+                                ' OCS authorization required to load AI conversation',
+                              ),
+                              oauthStatus &&
+                              oauthStatus.ocs &&
+                              oauthStatus.ocs.authorize_url
+                                ? React.createElement(
+                                    'a',
+                                    {
+                                      href: oauthStatus.ocs.authorize_url,
+                                      className:
+                                        'inline-block px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 no-underline',
+                                    },
+                                    React.createElement('i', {
+                                      className:
+                                        'fa-solid fa-arrow-right-to-bracket mr-1',
+                                    }),
+                                    ' Connect to OCS',
+                                  )
+                                : null,
+                            )
+                          : React.createElement(
+                              'div',
+                              {
+                                className:
+                                  'text-center text-sm py-4 ' +
+                                  (taskTranscriptError
+                                    ? 'text-red-500'
+                                    : 'text-gray-400'),
+                              },
+                              React.createElement('i', {
+                                className:
+                                  'fa-solid ' +
+                                  (taskTranscriptError
+                                    ? 'fa-circle-exclamation'
+                                    : 'fa-comment-slash') +
+                                  ' mr-1',
+                              }),
+                              taskTranscriptError || 'No messages yet',
+                            )
                         : !taskDetailLoading
                         ? React.createElement(
                             'div',
