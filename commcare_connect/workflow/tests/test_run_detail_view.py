@@ -1,4 +1,4 @@
-"""Backend tests for WorkflowRunView decisions injection."""
+"""Backend tests for WorkflowRunView flags injection."""
 
 from unittest.mock import MagicMock, patch
 
@@ -19,13 +19,13 @@ def _request_for(rf, run_id):
     return req
 
 
-@patch("commcare_connect.workflow.views.DecisionsDataAccess")
+@patch("commcare_connect.workflow.views.FlagsDataAccess")
 @patch("commcare_connect.workflow.views.WorkflowDataAccess")
 @patch("commcare_connect.workflow.views.get_org_data", return_value={})
-def test_workflow_run_view_injects_decisions(mock_org, MockWDA, MockDDA, rf):
-    """When a real run_id is loaded, the run's Decisions are included in
-    workflow_data["decisions"] for the frontend to consume."""
-    from commcare_connect.decisions.models import DecisionRecord
+def test_workflow_run_view_injects_flags(mock_org, MockWDA, MockFDA, rf):
+    """When a real run_id is loaded, the run's Flags are included in
+    workflow_data["flags"] for the frontend to consume."""
+    from commcare_connect.flags.models import FlagRecord
     from commcare_connect.workflow.data_access import WorkflowDefinitionRecord, WorkflowRunRecord
     from commcare_connect.workflow.views import WorkflowRunView
 
@@ -51,39 +51,40 @@ def test_workflow_run_view_injects_decisions(mock_org, MockWDA, MockDDA, rf):
     )
     wda.get_workers.return_value = []
 
-    dda = MockDDA.return_value
-    dda.get_decisions_for_run.return_value = [
-        DecisionRecord(
+    fda = MockFDA.return_value
+    fda.get_flags_for_run.return_value = [
+        FlagRecord(
             {
                 "id": 11,
-                "experiment": "decisions",
-                "type": "Decision",
+                "experiment": "flags",
+                "type": "Flag",
                 "username": "amina",
                 "opportunity_id": 10001,
                 "data": {
                     "workflow_run_id": 503,
                     "flw_id": "amina",
-                    "decision_type": "action_taken",
-                    "reason_key": "bad_muac_distribution",
-                    "reason_label": "Bad MUAC pattern",
-                    "audit_session_ids": [46],
-                    "task_ids": [123],
-                    "decided_at": "2025-11-11T11:42:00Z",
+                    "flag_key": "sam_low",
+                    "flag_label": "SAM rate low",
+                    "evidence": {"sam_pct": 0.1},
+                    "source": "auto",
+                    "flagged_at": "2025-11-11T11:42:00Z",
                 },
             }
         ),
-        DecisionRecord(
+        FlagRecord(
             {
                 "id": 12,
-                "experiment": "decisions",
-                "type": "Decision",
+                "experiment": "flags",
+                "type": "Flag",
                 "username": "binta",
                 "opportunity_id": 10001,
                 "data": {
                     "workflow_run_id": 503,
                     "flw_id": "binta",
-                    "decision_type": "no_issues",
-                    "decided_at": "2025-11-11T11:43:00Z",
+                    "flag_key": "gender_skew",
+                    "flag_label": "Gender split outside 40-60%",
+                    "source": "auto",
+                    "flagged_at": "2025-11-11T11:43:00Z",
                 },
             }
         ),
@@ -96,23 +97,22 @@ def test_workflow_run_view_injects_decisions(mock_org, MockWDA, MockDDA, rf):
     context = view.get_context_data()
 
     assert "workflow_data" in context, "expected workflow_data context key for a loaded run"
-    decisions = context["workflow_data"]["decisions"]
-    assert len(decisions) == 2
-    assert decisions[0]["flw_id"] == "amina"
-    assert decisions[0]["decision_type"] == "action_taken"
-    assert decisions[0]["reason_key"] == "bad_muac_distribution"
-    assert decisions[0]["audit_session_ids"] == [46]
-    assert decisions[0]["task_ids"] == [123]
-    assert decisions[1]["flw_id"] == "binta"
-    assert decisions[1]["decision_type"] == "no_issues"
-    dda.get_decisions_for_run.assert_called_once_with(503)
+    flags = context["workflow_data"]["flags"]
+    assert len(flags) == 2
+    assert flags[0]["flw_id"] == "amina"
+    assert flags[0]["flag_key"] == "sam_low"
+    assert flags[0]["evidence"] == {"sam_pct": 0.1}
+    assert flags[0]["source"] == "auto"
+    assert flags[1]["flw_id"] == "binta"
+    assert flags[1]["flag_key"] == "gender_skew"
+    fda.get_flags_for_run.assert_called_once_with(503)
 
 
-@patch("commcare_connect.workflow.views.DecisionsDataAccess")
+@patch("commcare_connect.workflow.views.FlagsDataAccess")
 @patch("commcare_connect.workflow.views.WorkflowDataAccess")
 @patch("commcare_connect.workflow.views.get_org_data", return_value={})
-def test_workflow_run_view_decisions_empty_when_load_fails(mock_org, MockWDA, MockDDA, rf):
-    """If DecisionsDataAccess raises, the page must still render — decisions
+def test_workflow_run_view_flags_empty_when_load_fails(mock_org, MockWDA, MockFDA, rf):
+    """If FlagsDataAccess raises, the page must still render — flags
     default to []."""
     from commcare_connect.workflow.data_access import WorkflowDefinitionRecord, WorkflowRunRecord
     from commcare_connect.workflow.views import WorkflowRunView
@@ -138,11 +138,11 @@ def test_workflow_run_view_decisions_empty_when_load_fails(mock_org, MockWDA, Mo
         }
     )
     wda.get_workers.return_value = []
-    MockDDA.return_value.get_decisions_for_run.side_effect = RuntimeError("API down")
+    MockFDA.return_value.get_flags_for_run.side_effect = RuntimeError("API down")
 
     view = WorkflowRunView()
     view.request = _request_for(rf, 503)
     view.kwargs = {"definition_id": 47}
 
     context = view.get_context_data()
-    assert context["workflow_data"]["decisions"] == []
+    assert context["workflow_data"]["flags"] == []

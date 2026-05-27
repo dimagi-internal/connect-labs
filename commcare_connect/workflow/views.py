@@ -18,7 +18,7 @@ from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
-from commcare_connect.decisions.data_access import DecisionsDataAccess
+from commcare_connect.flags.data_access import FlagsDataAccess
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
@@ -376,10 +376,10 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     logger.exception("Failed to load workers for opp %s", oid)
             context["workers"] = workers
 
-            # Hoisted: decisions are loaded only on the run-id branch (live
+            # Hoisted: flags are loaded only on the run-id branch (live
             # query — never frozen on the watched workflow's snapshot, per
             # spec §3.3). For edit mode and the picker branch, this stays [].
-            decisions_for_run: list[dict] = []
+            flags_for_run: list[dict] = []
 
             # Get or create run based on mode
             if is_edit_mode:
@@ -431,79 +431,27 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 }
                 context["is_edit_mode"] = False
 
-                # Load Decisions for this run (queried live; not stored on the
-                # run snapshot). Render code uses these via
-                # `view.decisionsFor(username)` to show what the LLO recorded
-                # during the run, in both in_progress and completed modes —
-                # Decision lifecycle is live by design (spec §3.3).
-                #
-                # Each decision is enriched with audit_outcomes + task_outcomes
-                # so render code can show outcome-aware button labels (e.g.
-                # "View audit #1165 (pass)") without a second round-trip.
+                # Load Flags for this run (queried live; not stored on the
+                # run snapshot). Render code reads these via `view.flagsFor
+                # (username)` to render the Flag column pills and to dedup
+                # writes from `view.ensureAutoFlags(...)` on mount.
                 try:
-                    from commcare_connect.audit.data_access import AuditDataAccess
-                    from commcare_connect.tasks.data_access import TaskDataAccess
-
-                    dda = DecisionsDataAccess(request=self.request, opportunity_id=opportunity_id)
-                    ada = AuditDataAccess(request=self.request, opportunity_id=opportunity_id)
-                    tda = TaskDataAccess(request=self.request, opportunity_id=opportunity_id)
-                    # Preload audits + tasks once per opp; lookups become O(1).
-                    audit_by_id = {}
-                    try:
-                        audit_by_id = {a.id: a for a in ada.get_audit_sessions()}
-                    except Exception:
-                        logger.warning("Failed to preload audits for run %s", run_id, exc_info=True)
-                    for d in dda.get_decisions_for_run(int(run_id)):
-                        audit_outcomes = []
-                        for aid in d.audit_session_ids:
-                            a = audit_by_id.get(aid)
-                            if a is None:
-                                continue
-                            img = a.data.get("image_results") or {}
-                            audit_outcomes.append(
-                                {
-                                    "id": a.id,
-                                    "status": a.status,
-                                    "overall_result": a.overall_result,
-                                    "pass_count": img.get("pass", 0),
-                                    "fail_count": img.get("fail", 0),
-                                    "pending_count": img.get("pending", 0),
-                                }
-                            )
-                        task_outcomes = []
-                        for tid in d.task_ids:
-                            try:
-                                t = tda.get_task(tid)
-                            except Exception:
-                                continue
-                            if t is None:
-                                continue
-                            task_outcomes.append(
-                                {
-                                    "id": t.id,
-                                    "status": t.status,
-                                    "official_action": (t.resolution_details or {}).get("official_action"),
-                                }
-                            )
-                        decisions_for_run.append(
+                    fda = FlagsDataAccess(request=self.request, opportunity_id=opportunity_id)
+                    for f in fda.get_flags_for_run(int(run_id)):
+                        flags_for_run.append(
                             {
-                                "id": d.id,
-                                "flw_id": d.flw_id,
-                                "decision_type": d.decision_type,
-                                "reason_key": d.reason_key,
-                                "reason_label": d.reason_label,
-                                "audit_session_ids": d.audit_session_ids,
-                                "task_ids": d.task_ids,
-                                "audit_outcomes": audit_outcomes,
-                                "task_outcomes": task_outcomes,
-                                "kpi_snapshot": d.kpi_snapshot,
-                                "notes": d.notes,
-                                "decided_at": d.decided_at,
-                                "decided_by": d.decided_by,
+                                "id": f.id,
+                                "flw_id": f.flw_id,
+                                "flag_key": f.flag_key,
+                                "flag_label": f.flag_label,
+                                "evidence": f.evidence,
+                                "source": f.source,
+                                "flagged_at": f.flagged_at,
+                                "flagged_by": f.flagged_by,
                             }
                         )
                 except Exception:
-                    logger.warning("Failed to load decisions for run %s", run_id, exc_info=True)
+                    logger.warning("Failed to load flags for run %s", run_id, exc_info=True)
             else:
                 # No run_id and not edit mode — render the run picker. Past runs
                 # are listed; user clicks "Open" to load one or "Start Run" to
@@ -547,7 +495,7 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "is_edit_mode": is_edit_mode,
                 "workers": workers,
                 "pipeline_data": pipeline_data,
-                "decisions": decisions_for_run,
+                "flags": flags_for_run,
                 "links": {
                     "auditUrlBase": "/audit/create/",
                     "taskUrlBase": "/tasks/new/",
