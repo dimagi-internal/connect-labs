@@ -859,19 +859,46 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                 });
                                             }
 
-                                            return React.createElement('div', {className: 'flex gap-2'},
-                                                React.createElement(MenuButton, {
+                                            // State-aware affordance: when the row already has an
+                                            // audit/task created against this run, swap the "Create"
+                                            // menu for a plain "View" link. Mirrors the pre-flags
+                                            // state-aware buttons — on a saved-run replay the manager
+                                            // sees what they did, not what they could do. Picks the
+                                            // most recent record if there's more than one.
+                                            var rowAudits = (view && typeof view.auditsFor === 'function') ? view.auditsFor(r.username) : [];
+                                            var rowTasks = (view && typeof view.tasksFor === 'function') ? view.tasksFor(r.username) : [];
+                                            var latestAudit = rowAudits.length ? rowAudits[rowAudits.length - 1] : null;
+                                            var latestTask = rowTasks.length ? rowTasks[rowTasks.length - 1] : null;
+                                            var viewBtnBase = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium border transition-colors no-underline ';
+
+                                            var auditAffordance = latestAudit
+                                                ? React.createElement('a', {
+                                                    href: '/audit/' + latestAudit.id + '/' + oppScope,
+                                                    className: viewBtnBase + 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
+                                                    title: 'Open audit #' + latestAudit.id + ' (' + (latestAudit.status || 'unknown') + ')',
+                                                  }, 'View Audit')
+                                                : React.createElement(MenuButton, {
                                                     label: 'Create Audit',
                                                     className: 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
                                                     title: 'Audit options for ' + name,
                                                     items: auditItems,
-                                                }),
-                                                React.createElement(MenuButton, {
+                                                  });
+                                            var taskAffordance = latestTask
+                                                ? React.createElement('a', {
+                                                    href: '/tasks/' + latestTask.id + '/edit/' + oppScope,
+                                                    className: viewBtnBase + 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
+                                                    title: 'Open task #' + latestTask.id + ' (' + (latestTask.status || 'unknown') + ')',
+                                                  }, 'View Task')
+                                                : React.createElement(MenuButton, {
                                                     label: 'Create Task',
                                                     className: 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
                                                     title: 'Task options for ' + name,
                                                     items: taskItems,
-                                                })
+                                                  });
+
+                                            return React.createElement('div', {className: 'flex gap-2'},
+                                                auditAffordance,
+                                                taskAffordance
                                             );
                                         })()
                                     )

@@ -39,6 +39,8 @@ import type {
   CompleteRunResponse,
   RunView,
   Flag,
+  Audit,
+  Task,
   WorkerData,
   WorkflowState,
 } from '@/components/workflow/types';
@@ -1368,6 +1370,36 @@ function WorkflowRunner({
     }
     const flagsFor = (username: string) => flagsByFlw.get(username) ?? [];
 
+    // Audits + Tasks created against this run — same live-query
+    // philosophy as flags (the workflow_run snapshot never freezes them).
+    // Render code reads via view.auditsFor(username) / view.tasksFor
+    // (username) to know whether a per-row Action affordance should
+    // surface as "View" instead of "Create" — i.e., the action was
+    // already taken. Works on both in_progress and completed runs.
+    const auditsList = (initialData.audits ?? []) as Audit[];
+    const auditsByFlw = new Map<string, Audit[]>();
+    for (const a of auditsList) {
+      const list = auditsByFlw.get(a.flw_id);
+      if (list) {
+        list.push(a);
+      } else {
+        auditsByFlw.set(a.flw_id, [a]);
+      }
+    }
+    const auditsFor = (username: string) => auditsByFlw.get(username) ?? [];
+
+    const tasksList = (initialData.tasks ?? []) as Task[];
+    const tasksByFlw = new Map<string, Task[]>();
+    for (const t of tasksList) {
+      const list = tasksByFlw.get(t.flw_id);
+      if (list) {
+        list.push(t);
+      } else {
+        tasksByFlw.set(t.flw_id, [t]);
+      }
+    }
+    const tasksFor = (username: string) => tasksByFlw.get(username) ?? [];
+
     // Dedup key for ensureAutoFlags. We track in a closure-scoped Set so
     // repeated render-effect calls within the same page load are no-ops
     // after the first POST, even before the BE reflects the new flag.
@@ -1445,6 +1477,10 @@ function WorkflowRunner({
         flags: flagsList,
         flagsFor,
         ensureAutoFlags,
+        audits: auditsList,
+        auditsFor,
+        tasks: tasksList,
+        tasksFor,
       };
     }
 
@@ -1458,11 +1494,17 @@ function WorkflowRunner({
       flags: flagsList,
       flagsFor,
       ensureAutoFlags,
+      audits: auditsList,
+      auditsFor,
+      tasks: tasksList,
+      tasksFor,
     };
   }, [
     initialData.instance,
     initialData.workers,
     initialData.flags,
+    initialData.audits,
+    initialData.tasks,
     initialData.apiEndpoints.completeRun,
     pipelineData,
     instanceState,
