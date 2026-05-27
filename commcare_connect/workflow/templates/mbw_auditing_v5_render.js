@@ -582,9 +582,9 @@ function WorkflowUI({
     fu_red: 50,
     fu_yellow: 80,
     pct_still_elig_red: 50,
-    pct_still_elig_yellow: 85,
+    pct_still_elig_yellow: 80,
     ebf_low: 30,
-    ebf_high: 89,
+    ebf_high: 94,
     dist_ratio_low: 1.0,
     worsened_pct: 10,
   };
@@ -931,12 +931,12 @@ function WorkflowUI({
     }
     if (key === 'pct_still_eligible') {
       if (val < 50) return 'text-red-600';
-      if (val < 85) return 'text-yellow-600';
+      if (val < 80) return 'text-yellow-600';
       return 'text-green-600';
     }
     if (key === 'ebf_pct') {
       if (val < 10 || val >= 99) return 'text-red-600';
-      if (val <= 30 || val >= 90) return 'text-yellow-600';
+      if (val <= 30 || val > 94) return 'text-yellow-600';
       return 'text-green-600';
     }
     if (key === 'revisit_dist') {
@@ -1423,7 +1423,7 @@ function WorkflowUI({
       flw.pct_still_eligible != null &&
       flw.pct_still_eligible < THRESHOLDS.pct_still_elig_yellow
     ) {
-      reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '%');
+      reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '% (below 80%)');
       if (!type) type = 'yellow';
     }
     if (
@@ -3975,7 +3975,7 @@ function WorkflowUI({
       },
       {
         title: 'Flag Types',
-        body: '🔴 Red flag = task required. Triggered by: Follow-up Rate below 50%, % Still Eligible below 50%, or GS Score below 50%.\n🟡 Yellow flag = task optional. Triggered by: Follow-up Rate 50–79%, % Still Eligible below 85%, EBF% ≤30% or >89%, GPS Dist Ratio < 1.0, or any metric worsening >10% since the last concluded run.',
+        body: '🔴 Red flag = task required. Triggered by: Follow-up Rate below 50%, % Still Eligible below 50%, or GS Score below 50%.\n🟡 Yellow flag = task optional. Triggered by: Follow-up Rate 50–79%, % Still Eligible below 80%, EBF% ≤30% or >94%, GPS Dist Ratio < 1.0, or any metric worsening >10% since the last concluded run.',
       },
       {
         title: 'Metric Definitions',
@@ -3994,7 +3994,7 @@ function WorkflowUI({
           },
           {
             name: 'EBF %',
-            def: 'Percentage of visits where current breastfeeding status is exclusive. Yellow flag if ≤30% or >89%.',
+            def: 'Percentage of visits where current breastfeeding status is exclusive. Yellow flag if ≤30% or >94%.',
           },
           {
             name: 'Revisit Dist (m)',
