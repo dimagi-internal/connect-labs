@@ -63,13 +63,15 @@ Many per-opportunity reports include a **Flags** column. Flags are findings the 
 
 When you open a report, the system reads the data and applies all relevant flags immediately on page load. There is nothing to click to trigger this — flags are already present by the time the dashboard is visible. A row with no concerns shows an em-dash (—).
 
-Each active concern appears as a coloured pill in the Flags cell. A row can carry more than one flag at the same time.
+Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same time.
 
 ### Actions column
 
-Every row has an **Actions** column with two menu buttons: **Create Audit ▾** and **Send Task ▾**. Both buttons are always available regardless of whether the row carries a flag.
+Every row has an **Actions** column with two menu buttons: **Create Audit ▾** and **Create Task ▾**. Both buttons are always available regardless of whether the row carries a flag.
 
-When a row does carry a flag, opening either menu surfaces a flag-context-aware quick action — for example, an audit filter or a coaching prompt that is already pre-filled based on the specific concern raised for that worker.
+When a row does carry a flag, opening either menu surfaces a flag-context-aware quick action — for example, an audit filter or a coaching prompt that is already pre-filled based on the specific concern raised for that worker. These menu items use the same styling as all other menu items; they have no special icon or background tint. The label describes what the action does (for example, "Audit low-MUAC visits" or "Coaching: reach harder households").
+
+The action dropdown menus use a white background with a soft shadow and gray border. Each menu item is clearly clickable, with a highlighted background on hover.
 
 ### CHC Nutrition Analysis flags
 
@@ -77,9 +79,9 @@ The CHC Nutrition Analysis dashboard uses the following flag catalog:
 
 | Flag            | What it means                                                                                                                                |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **sam_low**     | The FLW's SAM case rate is lower than expected — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
-| **mam_low**     | The FLW's MAM case rate is lower than expected — same pattern as sam_low but for moderate acute malnutrition                                 |
-| **gender_skew** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                                   |
+| **SAM rate < 1%** | The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
+| **MAM rate < 3%** | The FLW's MAM case rate is below 3% — same pattern as the SAM flag but for moderate acute malnutrition                                 |
+| **Gender split outside 40–60%** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                                   |
 
 !!! note "SAM/MAM flags signal too few at-risk cases, not too many"
 These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
@@ -256,11 +258,4 @@ The **MBW Monitoring** template has five tabs. The sections below describe what 
 
 ### Followups tab
 
-- **Completion rate** is calculated using the same eligibility filter as MBW v1, and includes a 5-day grace window so visits completed slightly after their due date are not counted as missed.
-- **Worker attribution**: if no visits have been recorded for a mother yet, the dashboard attributes her to the field worker who submitted her registration form, rather than leaving the row blank.
-- **Visit status** uses six categories: _Completed – On Time_, _Completed – Late_, _Due – On Time_, _Due – Late_, _Missed_, and _Not Due Yet_. The visit-type breakdown chart will render correctly with this data.
-
-### GPS tab
-
-- **Flagged visits** and **total flagged** are now calculated using the 5 km distance threshold.
-- \*\*Cases with revis
+- **Completion rate** is calculated using the same eligibility filter as MBW v1, and includes a 5-day grace window so visits completed slightly after their due date are not counted as missed
