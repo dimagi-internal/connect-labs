@@ -2144,9 +2144,7 @@ def get_saved_runs_for_program_report(
         finally:
             scoped_wda.close()
         matched = [
-            r
-            for r in all_runs
-            if r.opportunity_id == opp_id and r.status == "completed" and _within(r.completed_at)
+            r for r in all_runs if r.opportunity_id == opp_id and r.status == "completed" and _within(r.completed_at)
         ]
         out.append(
             {

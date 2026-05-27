@@ -1450,7 +1450,9 @@ function WorkflowUI({
       flw.pct_still_eligible != null &&
       flw.pct_still_eligible < THRESHOLDS.pct_still_elig_yellow
     ) {
-      reasons.push('% Still Eligible: ' + flw.pct_still_eligible + '% (below 80%)');
+      reasons.push(
+        '% Still Eligible: ' + flw.pct_still_eligible + '% (below 80%)',
+      );
       if (!type) type = 'yellow';
     }
     if (
@@ -1707,7 +1709,9 @@ function WorkflowUI({
           .then(function (resp) {
             if (resp.success) {
               var updated = Object.assign({}, workerResults);
-              updated[username] = Object.assign({}, wr, { result: newCategory });
+              updated[username] = Object.assign({}, wr, {
+                result: newCategory,
+              });
               setWorkerResults(resp.worker_results || updated);
             } else {
               alert('Failed to save: ' + (resp.error || 'unknown error'));
@@ -2284,8 +2288,8 @@ function WorkflowUI({
                                 ' OCS authorization required to load AI conversation',
                               ),
                               oauthStatus &&
-                              oauthStatus.ocs &&
-                              oauthStatus.ocs.authorize_url
+                                oauthStatus.ocs &&
+                                oauthStatus.ocs.authorize_url
                                 ? React.createElement(
                                     'a',
                                     {

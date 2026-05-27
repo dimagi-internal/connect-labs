@@ -55,7 +55,8 @@ def main() -> None:
         # of background PAR snapshot polling.
         print("Scene 0: Wk4 in_progress weekly review")
         goto_and_settle(
-            page, wk4_url,
+            page,
+            wk4_url,
             timeout=60_000,
             wait_for_selector=f"text={FLAGGED_FLW}",
             settle_seconds=2.5,
@@ -103,7 +104,8 @@ def main() -> None:
         # Scene 4: back to Wk4 review.
         print("Scene 4: Back to Wk4 weekly review")
         goto_and_settle(
-            page, wk4_url,
+            page,
+            wk4_url,
             timeout=60_000,
             wait_for_selector=f"text={FLAGGED_FLW}",
             settle_seconds=2.5,
@@ -136,12 +138,15 @@ def main() -> None:
         print("Scene 6: Open Initiate AI Assistant modal")
         page.click("button:has-text('Initiate AI Assistant')")
         page.wait_for_function(
-            "() => { const ta = document.querySelector('textarea[placeholder=\\\"Instructions for the bot...\\\"]'); return ta && ta.value && ta.value.length > 50; }",
+            "() => { const ta = document.querySelector("
+            "'textarea[placeholder=\\\"Instructions for the bot...\\\"]'"
+            "); return ta && ta.value && ta.value.length > 50; }",
             timeout=15_000,
         )
         # Wait for the synthetic bot to appear in the dropdown, then select it.
         page.wait_for_function(
-            "() => [...document.querySelectorAll('select')].some(s => [...s.options].some(o => o.value === 'synthetic-muac-coaching'))",
+            "() => [...document.querySelectorAll('select')].some("
+            "s => [...s.options].some(o => o.value === 'synthetic-muac-coaching'))",
             timeout=10_000,
         )
         page.evaluate(

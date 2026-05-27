@@ -280,16 +280,20 @@ def main(argv: list[str] | None = None) -> int:
         "--max-static",
         type=float,
         default=1.0,
-        help=("Maximum seconds to keep of any static run. Default 1.0s — long enough "
-              "to register 'we are loading' as a visual beat, short enough to feel snappy."),
+        help=(
+            "Maximum seconds to keep of any static run. Default 1.0s — long enough "
+            "to register 'we are loading' as a visual beat, short enough to feel snappy."
+        ),
     )
     p.add_argument(
         "--identity-threshold",
         type=int,
         default=IDENTITY_THRESHOLD,
-        help=("Hash-distance below which two frames are considered the same scene. "
-              "Increase for noisier video (animated spinners), decrease if real "
-              "scene changes are being collapsed."),
+        help=(
+            "Hash-distance below which two frames are considered the same scene. "
+            "Increase for noisier video (animated spinners), decrease if real "
+            "scene changes are being collapsed."
+        ),
     )
     p.add_argument(
         "--sample-fps",

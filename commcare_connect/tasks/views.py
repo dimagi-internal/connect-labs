@@ -827,8 +827,7 @@ def task_initiate_ai(request, task_id):
         from commcare_connect.labs.synthetic.registry import get_synthetic_opp
 
         is_synthetic = (
-            experiment == "synthetic-muac-coaching"
-            or get_synthetic_opp(int(task.opportunity_id)) is not None
+            experiment == "synthetic-muac-coaching" or get_synthetic_opp(int(task.opportunity_id)) is not None
         )
         if is_synthetic:
             updated_data = dict(task.data or {})
@@ -1154,7 +1153,11 @@ def task_ai_transcript(request, task_id):
         data_access.close()
         if "not configured or expired" in str(e):
             return JsonResponse(
-                {"success": False, "error": "OCS authentication required to view this transcript.", "ocs_auth_required": True},
+                {
+                    "success": False,
+                    "error": "OCS authentication required to view this transcript.",
+                    "ocs_auth_required": True,
+                },
                 status=403,
             )
         logger.exception("Error fetching transcript from OCS")
