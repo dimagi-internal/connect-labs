@@ -133,9 +133,9 @@
               </label>
               <textarea
                 x-model="taskForm.description"
-                rows="2"
+                rows="5"
                 placeholder="Detailed explanation of what happened..."
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo resize-none"></textarea>
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo resize-y min-h-[120px]"></textarea>
             </div>
 
             <!-- Priority, Status & Assigned To Row (both create and edit mode) -->
@@ -809,8 +809,8 @@
           </label>
           <textarea
             x-model="aiParams.prompt_text"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 resize-none"
-            rows="4"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 resize-y min-h-[180px]"
+            rows="8"
             placeholder="Instructions for the bot..."></textarea>
         </div>
 
@@ -901,6 +901,11 @@ function taskCreateEditPage() {
       priority: 'medium',
       title: '',
       description: '',
+      // Long-form coaching prompt fed to the OCS bot. Separate from
+      // `description` (which is the short human-readable task summary)
+      // so the AI modal pre-fills with the bot-targeted instructions and
+      // the task UI stays scannable.
+      coaching_prompt: '',
       status: 'investigating',
       assigned_to_type: 'self',
       assigned_to_name: ''
@@ -988,6 +993,7 @@ function taskCreateEditPage() {
           priority: taskData.priority || 'medium',
           title: taskData.title || '',
           description: taskData.description || '',
+          coaching_prompt: taskData.coaching_prompt || '',
           status: taskData.status || 'investigating',
           assigned_to_type: taskData.assigned_to_type || 'self',
           assigned_to_name: taskData.assigned_to_name || '',
@@ -1170,12 +1176,17 @@ function taskCreateEditPage() {
 
     showAIModal() {
       this.aiParams.identifier = this.selectedFlw?.username || '';
-      // Pre-fill the prompt textarea from the task description so the manager
-      // sees the coaching prompt they built upstream (in chc_nutrition's
-      // Create Task with Coaching button) and can edit it before firing.
-      // Only set if textarea is still empty — preserves manual edits.
-      if (!this.aiParams.prompt_text && this.taskForm && this.taskForm.description) {
-        this.aiParams.prompt_text = this.taskForm.description;
+      // Pre-fill the modal's prompt textarea. Prefer a stored
+      // coaching_prompt (set by chc_nutrition's Create Task with
+      // Coaching button — long-form instructions targeted at the bot),
+      // and only fall back to the task description when no coaching
+      // prompt exists. Either way, preserve any edit the user already
+      // typed in the modal.
+      if (!this.aiParams.prompt_text && this.taskForm) {
+        this.aiParams.prompt_text =
+          this.taskForm.coaching_prompt ||
+          this.taskForm.description ||
+          '';
       }
       this.aiProgress = { show: false, status: '', message: '', detail: '' };
       this.showAI = true;
