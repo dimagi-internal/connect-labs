@@ -1259,3 +1259,123 @@ Snapshots live inside `LabsRecord.data` JSON. The framework warns at 1 MB per sn
 - `SNAPSHOT_SCHEMA` documenting the shape for future readers.
 - No `build_snapshot` hook — the render's summary cards (`Total / Reviewed / Pending / Confirmed`) are computed in JSX via `React.useMemo` from `view.workers` + `view.state.worker_states`, so they work identically in_progress and completed.
 - Render code reads `view.workers`, `view.state.worker_states`, calls `view.complete(...)` from a "Mark Run Complete" button, and surfaces a completed banner with `view.asOf` when `view.isCompleted`.
+
+## 10. Flags + actions catalog
+
+A workflow template that produces a per-FLW report can declare a static
+catalog of **Flags** (findings the report computes from data) and
+**Actions** (operations the manager can initiate per row). The catalog
+lives on `DEFINITION` so the contract is auditable from outside the
+render code; the render code is still in charge of computing flag
+presence and wiring up action handlers.
+
+### Flag = finding, not judgment
+
+A `Flag` is a record persisted to the labs `Flag` LabsRecord. It carries:
+
+```
+flw_id, workflow_run_id, opportunity_id, flag_key, flag_label,
+evidence (dict of metric values), source ('auto' | 'manual'),
+flagged_at, flagged_by
+```
+
+Multiple flags can exist for the same `(run, flw)` — one record per
+`flag_key`. Flags are not "decisions" — they don't approve or reject
+anything. They just say "this metric crossed this threshold." The Flag
+schema deliberately does **not** carry `audit_session_ids` or
+`task_ids`; audits and tasks created in response are queried separately
+by their own `workflow_run_id` linkage.
+
+### Declaring the catalog
+
+```python
+DEFINITION = {
+    # ...
+    "flags": [
+        {"key": "sam_low",     "label": "SAM rate suspiciously low", "auto": True},
+        {"key": "gender_skew", "label": "Gender split outside 40-60%", "auto": True},
+    ],
+    "actions": [
+        {"key": "create_audit", "label": "Create Audit"},
+        {"key": "send_task",    "label": "Send Task"},
+    ],
+}
+```
+
+The catalog is documentation; the framework does not enforce the listed
+keys. Render code is free to add flag keys via `view.ensureAutoFlags`
+that aren't in the catalog (you'll just be auditing on the honor
+system).
+
+### Auto-applying flags on mount
+
+Render code computes flag presence per row and calls
+`view.ensureAutoFlags(computed)` from a `React.useEffect`. The framework
+dedups by `(workflow_run_id, flw_id, flag_key)` — calling it repeatedly
+is safe.
+
+```js
+React.useEffect(function() {
+    if (!view.ensureAutoFlags || view.isCompleted || !rows.length) return;
+    var computed = [];
+    rows.forEach(function(r) {
+        if (samLow(r))    computed.push({flw_id: r.username, flag_key: 'sam_low',     flag_label: 'SAM low',     evidence: {sam_pct: samPct(r)}});
+        if (genderSkew(r)) computed.push({flw_id: r.username, flag_key: 'gender_skew', flag_label: 'Gender skew', evidence: {female_pct: genderPct(r)}});
+    });
+    if (computed.length) view.ensureAutoFlags(computed);
+}, [rows.length]);
+```
+
+### Rendering the Flag column
+
+```js
+React.createElement('td', null,
+    (function() {
+        var rowFlags = view.flagsFor(r.username);  // returns array (possibly empty)
+        if (!rowFlags.length) return '—';
+        return rowFlags.map(function(f) {
+            return pill(f.flag_label, 'amber');
+        });
+    })()
+);
+```
+
+### Per-row Action menus
+
+Actions are **always** available, regardless of flag status. When a row
+carries a relevant flag, the action's menu surfaces a flag-context-aware
+quick action that pre-fills the audit filter or coaching prompt.
+
+```js
+React.createElement(MenuButton, {
+    label: 'Create Audit',
+    items: [
+        {label: 'Audit 5 recent visits', onClick: function() { createAudit(r, {count: 5}); }},
+        hasLowMUACFlag
+            ? {label: 'Audit low-MUAC visits', highlight: true,
+               onClick: function() { createAudit(r, {filter: 'low_muac'}); }}
+            : null,
+    ].filter(Boolean),
+});
+```
+
+### Reference implementation
+
+`commcare_connect/workflow/templates/chc_nutrition_analysis.py` is the
+canonical flags+actions template:
+
+- `DEFINITION["flags"]` declares `sam_low`, `mam_low`, `gender_skew`.
+- `DEFINITION["actions"]` declares `create_audit`, `send_task`.
+- A render-local `FLAG_CATALOG` constant pairs each declared flag key
+  with its `predicate(row)` and `evidence(row)` functions.
+- The `React.useEffect` on `rows.length` computes flag presence per row
+  and POSTs missing ones via `view.ensureAutoFlags`.
+- Per-row `MenuButton` widgets render Create Audit / Send Task with
+  flag-context-aware quick actions.
+
+`commcare_connect/workflow/templates/program_admin_report.py` is the
+cross-opp rollup. Its `build_snapshot` reads flags + audits + tasks
+independently per run (via `FlagsDataAccess.get_flags_for_run`,
+`AuditDataAccess.get_sessions_by_workflow_run`, and
+`TaskDataAccess.get_tasks_for_run`) and groups them into `flw_rows` for
+the render layer.

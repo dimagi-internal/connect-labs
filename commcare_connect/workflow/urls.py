@@ -118,10 +118,10 @@ urlpatterns = [
     # Image proxy and visit images API
     path("api/image/<int:opp_id>/<str:blob_id>/", views.WorkflowImageProxyView.as_view(), name="api_image_proxy"),
     path("api/<int:opp_id>/visit-images/", views.visit_images_api, name="api_visit_images"),
-    # Decisions scoped to a workflow run — implemented in commcare_connect/decisions
-    path("api/run/<int:workflow_run_id>/decisions/", include("commcare_connect.decisions.urls")),
-    # Synthetic manager-flow demo helpers — create a pass-clean audit + decision in
-    # one shot, then attach a believable OCS coaching conversation onto a task.
+    # Flags scoped to a workflow run — implemented in commcare_connect/flags
+    path("api/run/<int:workflow_run_id>/flags/", include("commcare_connect.flags.urls")),
+    # Synthetic manager-flow demo helpers — create a pass-clean audit in one shot,
+    # then attach a believable OCS coaching conversation onto a task.
     # See commcare_connect/labs/synthetic/manager_flow_views.py.
     path(
         "api/run/<int:run_id>/manager-audit/",

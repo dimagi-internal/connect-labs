@@ -12,12 +12,15 @@ What this generator produces, per ``demo_config.json``:
   reused on re-runs.
 - One backdated workflow_run per (opp × week) — last week of the
   first opp can be left ``in_progress`` for manager-flow walkthroughs.
-- Decision + Audit + Task records per (run × FLW) materialized from
-  the FLW's archetype trajectory (``_decisions_for_flw_across_weeks``).
+- Audit + Task records per (run × FLW) materialized from the FLW's
+  archetype trajectory (``_actions_for_flw_across_weeks``). Flags are
+  NOT seeded — the chc_nutrition render code derives them from the
+  pipeline data at render time and persists them via
+  view.ensureAutoFlags.
 - A ``program_admin_report`` rollup run watching all the chc runs.
 
 Generic primitives (cleanup, backdated-run writer, archetype-driven
-audit + task creation, decision-spec application) live in
+audit + task creation, action-spec application) live in
 ``walkthrough_kit``; this module keeps only what's specific to the
 PAR/CHC-nutrition story.
 """
@@ -59,29 +62,30 @@ REASON_LABELS = {
 # ---------------------------------------------------------------------- #
 
 
-def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | None]:
-    """Return a list of per-week decision specs (or None when the FLW isn't
+def _actions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | None]:
+    """Return a list of per-week action specs (or None when the FLW isn't
     on the roster that week — pre-hire for new_hire, post-suspension for
     suspended_*).
 
     The FLW-archetype → (audit_archetype, task_archetype) mapping below
     is the single place to tune what an "improver_warned" or "suspended_
     repeat_offense" trajectory looks like in terms of concrete audit/task
-    evidence.
+    evidence. Flags themselves are not seeded here — the chc_nutrition
+    render code derives them from the pipeline data at render time and
+    persists them via view.ensureAutoFlags.
     """
     archetype = flw["archetype"]
     out: list[dict | None] = [None] * week_count
 
-    def flag(reason: str, audit_arche: str, task_arche: str) -> dict:
+    def action(reason: str, audit_arche: str, task_arche: str) -> dict:
         return {
-            "decision_type": "action_taken",
             "reason_key": reason,
             "reason_label": REASON_LABELS.get(reason, reason),
             "audit_archetype": audit_arche,
             "task_archetype": task_arche,
         }
 
-    no_issues = {"decision_type": "no_issues", "audit_archetype": None, "task_archetype": None}
+    no_issues: dict = {"audit_archetype": None, "task_archetype": None}
 
     if archetype == "solid":
         for i in range(week_count):
@@ -103,7 +107,7 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
             if i < flag_week:
                 out[i] = no_issues
             elif i == flag_week:
-                out[i] = flag(reason, audit_arche, task_arche)
+                out[i] = action(reason, audit_arche, task_arche)
             else:
                 out[i] = no_issues
 
@@ -114,7 +118,7 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
             if i < flag_week:
                 out[i] = no_issues
             elif i == flag_week:
-                out[i] = flag(reason, "in_review_partial", "investigating")
+                out[i] = action(reason, "in_review_partial", "investigating")
             else:
                 out[i] = no_issues
 
@@ -133,11 +137,11 @@ def _decisions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | N
             if i < first:
                 out[i] = no_issues
             elif i == first:
-                out[i] = flag(reason, first_audit, "closed_warned")
+                out[i] = action(reason, first_audit, "closed_warned")
             elif i < last:
                 out[i] = no_issues
             elif i == last:
-                out[i] = flag("repeated_failure", second_audit, suspension_task)
+                out[i] = action("repeated_failure", second_audit, suspension_task)
             else:
                 out[i] = None  # removed from roster after suspension
     else:
@@ -167,11 +171,11 @@ def _build_chc_pipeline_rows(opp_id: int, flws: list[dict], week_idx: int) -> li
 
     rows: list[dict] = []
     for flw in flws:
-        specs = _decisions_for_flw_across_weeks(flw, week_count=week_idx + 1)
+        specs = _actions_for_flw_across_weeks(flw, week_count=week_idx + 1)
         spec = specs[week_idx] if week_idx < len(specs) else None
         if spec is None:
             continue
-        flagged = spec.get("decision_type") == "action_taken"
+        flagged = bool(spec.get("audit_archetype") or spec.get("task_archetype"))
         kpi_issue: str | None = None
         if flagged:
             reason = spec.get("reason_key") or ""
@@ -234,7 +238,7 @@ def program_admin_demo_seed(
           opportunity_id, label, network_manager, flws (list of FLW dicts
           with id + archetype + per-archetype params), and optionally
           missed_week_idxs + in_progress_last_week.
-      ``cleanup_first`` — wipe prior runs/decisions/tasks/audits for the
+      ``cleanup_first`` — wipe prior runs/flags/tasks/audits for the
           opps before re-seeding. Default True.
     """
     # Defensive: some MCP clients double-encode list args as JSON strings
@@ -258,10 +262,10 @@ def program_admin_demo_seed(
         if isinstance(o, dict) and isinstance(o.get("flws"), list):
             o["flws"] = [_maybe_load(f) for f in o["flws"]]
     from commcare_connect.audit.data_access import AuditDataAccess
-    from commcare_connect.decisions.data_access import DecisionsDataAccess
+    from commcare_connect.flags.data_access import FlagsDataAccess
     from commcare_connect.labs.synthetic.walkthrough_kit import (
         VisitIdSequence,
-        apply_decision_spec,
+        apply_action_spec,
         cleanup_opportunity_workflows,
         create_backdated_workflow_run,
         monday_dt,
@@ -286,7 +290,7 @@ def program_admin_demo_seed(
         nm = opp_cfg["network_manager"]
 
         wda = WorkflowDataAccess(opportunity_id=opp_id, access_token=token)
-        dda = DecisionsDataAccess(opportunity_id=opp_id, access_token=token)
+        fda = FlagsDataAccess(opportunity_id=opp_id, access_token=token)
         tda = TaskDataAccess(opportunity_id=opp_id, access_token=token)
         ada = AuditDataAccess(opportunity_id=opp_id, access_token=token)
         try:
@@ -294,7 +298,7 @@ def program_admin_demo_seed(
             if cleanup_first:
                 cleanup_counts = cleanup_opportunity_workflows(
                     wda=wda,
-                    dda=dda,
+                    fda=fda,
                     tda=tda,
                     ada=ada,
                     opportunity_id=opp_id,
@@ -313,7 +317,7 @@ def program_admin_demo_seed(
 
             watched_sources.append({"opportunity_id": opp_id, "workflow_definition_id": definition.id})
 
-            per_flw_specs = {f["id"]: _decisions_for_flw_across_weeks(f, week_count) for f in flws}
+            per_flw_specs = {f["id"]: _actions_for_flw_across_weeks(f, week_count) for f in flws}
 
             week_summaries: list[dict] = []
             last_week_idx = week_count - 1
@@ -323,7 +327,7 @@ def program_admin_demo_seed(
                     continue
 
                 # Manager-demo: leave the LAST week's run as in_progress with
-                # no decisions/audits/tasks generated; the walkthrough recorder
+                # no audits/tasks generated; the walkthrough recorder
                 # writes those live so viewers see the flow.
                 is_in_progress_week = in_progress_last_week and week_idx == last_week_idx
                 pipelines_snapshot = _chc_pipeline_snapshot(opp_id, flws, week_idx)
@@ -336,7 +340,7 @@ def program_admin_demo_seed(
                     pipelines=pipelines_snapshot,
                 )
 
-                decisions_made = 0
+                actions_taken = 0
                 tasks_spawned = 0
                 audits_spawned = 0
                 active_flw_count = 0
@@ -351,8 +355,9 @@ def program_admin_demo_seed(
                         tasks_spawned += 1
                     if spec.get("audit_archetype"):
                         audits_spawned += 1
-                    apply_decision_spec(
-                        dda=dda,
+                    if not spec.get("task_archetype") and not spec.get("audit_archetype"):
+                        continue
+                    apply_action_spec(
                         tda=tda,
                         ada=ada,
                         spec=spec,
@@ -364,7 +369,7 @@ def program_admin_demo_seed(
                         creator_name=nm,
                         visit_id_seq=visit_id_seq,
                     )
-                    decisions_made += 1
+                    actions_taken += 1
 
                 week_summaries.append(
                     {
@@ -372,7 +377,7 @@ def program_admin_demo_seed(
                         "ran": True,
                         "run_id": run_id,
                         "in_progress": is_in_progress_week,
-                        "decisions": decisions_made,
+                        "actions": actions_taken,
                         "tasks_spawned": tasks_spawned,
                         "audits_spawned": audits_spawned,
                         "active_flws": active_flw_count,
@@ -391,7 +396,7 @@ def program_admin_demo_seed(
             )
         finally:
             wda.close()
-            dda.close()
+            fda.close()
             tda.close()
             ada.close()
 

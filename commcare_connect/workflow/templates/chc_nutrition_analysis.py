@@ -204,6 +204,24 @@ DEFINITION = {
         "showFilters": False,
     },
     "pipeline_sources": [],
+    # Flag catalog — auto-applied via view.ensureAutoFlags on mount.
+    # Render code re-derives presence per row; this list is the contractual
+    # set so reviewers know what the report can flag. Concern is too-LOW
+    # SAM/MAM rates (FLW cherry-picking easier households) rather than too-
+    # high; gender skew is symmetric (either side of 40-60% triggers).
+    "flags": [
+        {"key": "sam_low", "label": "SAM rate suspiciously low", "auto": True},
+        {"key": "mam_low", "label": "MAM rate suspiciously low", "auto": True},
+        {"key": "gender_skew", "label": "Gender split outside 40-60%", "auto": True},
+    ],
+    # Action catalog — all available regardless of flag status. If a row
+    # carries a flag, the action's menu surfaces a flag-context-aware
+    # quick action that pre-fills the relevant audit filter or coaching
+    # prompt.
+    "actions": [
+        {"key": "create_audit", "label": "Create Audit"},
+        {"key": "send_task", "label": "Send Task"},
+    ],
 }
 
 RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState, view }) {
@@ -268,17 +286,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     var totalUnwell = rows.reduce(function(s, r) { return s + (r.children_unwell_count || 0); }, 0);
     var totalTreatment = rows.reduce(function(s, r) { return s + (r.under_malnutrition_treatment_count || 0); }, 0);
 
-    // ── KPI failure check ───────────────────────────────────────
-    // Used by Actions cell (block "Mark No Issue" for failing FLWs) AND
-    // by the column-header bulk action (skip failing FLWs).
-    function rowIsFailingKPI(r) {
-        var mc = muacCount(r);
-        var sPct = mc > 0 ? (samCount(r) / mc) * 100 : 0;
-        var mPct = mc > 0 ? (mamCount(r) / mc) * 100 : 0;
-        var gPct = genderPct(r);
-        return (sPct > 5) || (mPct > 15) || (gPct !== null && (gPct < 40 || gPct > 60));
-    }
-
     // ── apiPost helper ──────────────────────────────────────────
     // Render-code-local fetch wrapper. Grabs CSRF off the workflow-root
     // dataset (where workflow-runner.tsx sets it on page mount) and posts
@@ -301,120 +308,139 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         });
     }
 
-    // ── Bulk decision helpers ───────────────────────────────────
+    // ── Run / opp context ───────────────────────────────────────
     var runId = (instance && instance.id) || null;
     var oppId = (instance && instance.opportunity_id) || null;
     var runIsLive = !(view && view.isCompleted);
-    var decisionsBase = runId ? ('/labs/workflow/api/run/' + runId + '/decisions/') : null;
+    var oppScope = oppId ? '?opportunity_id=' + oppId : '';
 
-    function postNoIssueDecision(row, kpiSnapshot) {
-        // POST one no_issues decision. Returns the fetch promise so callers
-        // can chain refresh logic. Surfaces server-side errors via alert().
-        return apiPost(decisionsBase, {
+    // ── Flag catalog ────────────────────────────────────────────
+    // Each entry: {key, label, predicate(row) → bool, evidence(row) → obj}.
+    // The framework auto-applies these on mount via view.ensureAutoFlags
+    // and dedups per (run, flw, flag_key) so it's safe to call on every
+    // render. Mirrors the static catalog declared on DEFINITION.flags so
+    // the contract is auditable from both ends.
+    //
+    // Concern semantics for SAM/MAM: too-LOW rates relative to a typical
+    // catchment population imply the FLW is only visiting easy-to-reach
+    // households (and thus missing the actual at-risk cases). We require a
+    // floor of 10 MUAC measurements before flagging so a brand-new FLW
+    // with 2 visits doesn't trip this on a small-sample fluke.
+    var FLAG_CATALOG = [
+        {
+            key: 'sam_low',
+            label: 'SAM rate suspiciously low',
+            predicate: function(r) {
+                var mc = muacCount(r);
+                if (mc < 10) return false;
+                return (samCount(r) / mc) * 100 < 1;
+            },
+            evidence: function(r) {
+                var mc = muacCount(r);
+                return {sam_pct: mc > 0 ? (samCount(r) / mc) * 100 : 0, n: mc};
+            },
+        },
+        {
+            key: 'mam_low',
+            label: 'MAM rate suspiciously low',
+            predicate: function(r) {
+                var mc = muacCount(r);
+                if (mc < 10) return false;
+                return (mamCount(r) / mc) * 100 < 3;
+            },
+            evidence: function(r) {
+                var mc = muacCount(r);
+                return {mam_pct: mc > 0 ? (mamCount(r) / mc) * 100 : 0, n: mc};
+            },
+        },
+        {
+            key: 'gender_skew',
+            label: 'Gender split outside 40-60%',
+            predicate: function(r) {
+                var g = genderPct(r);
+                return g !== null && (g < 40 || g > 60);
+            },
+            evidence: function(r) {
+                return {female_pct: genderPct(r)};
+            },
+        },
+    ];
+
+    function computeFlagsForRow(r) {
+        return FLAG_CATALOG.filter(function(f) { return f.predicate(r); });
+    }
+
+    // ── Per-row action handlers ─────────────────────────────────
+    // Each action is always available regardless of flag status (per the
+    // design — actions can be initiated whether or not the system has
+    // raised a concern). When a flag IS present, the action's quick-menu
+    // surfaces a flag-context-aware variant that pre-fills the relevant
+    // filter or coaching prompt.
+
+    function createAudit(row, opts) {
+        // Manager-flow shortcut: when the run is in_progress, hit the
+        // synthetic helper that atomically writes a pass-clean audit and
+        // returns a redirect URL. Once the run is completed, fall back to
+        // the regular audit wizard (which doesn't carry the same context
+        // pre-filling but at least opens the right page).
+        if (!runIsLive || !runId || !oppId) {
+            window.location.href = links.auditUrl({username: row.username, count: (opts && opts.count) || 5});
+            return;
+        }
+        apiPost('/labs/workflow/api/run/' + runId + '/manager-audit/', {
             opportunity_id: oppId,
             flw_id: row.username,
-            decision_type: 'no_issues',
-            kpi_snapshot: kpiSnapshot || null,
+            filter: (opts && opts.filter) || null,
         }).then(function(res) {
-            if (!res.ok) {
-                var msg = (res.data && (res.data.error || res.data.detail)) || ('HTTP ' + res.status);
-                window.alert('Failed to mark ' + row.username + ' as no issue: ' + msg);
+            if (!res.ok || !res.data) {
+                var emsg = (res.data && (res.data.error || res.data.detail)) || ('HTTP ' + res.status);
+                window.alert('Failed to create audit: ' + emsg);
+                return;
             }
-            return res;
+            window.location.href = res.data.redirect_url;
         });
     }
 
-    function markAllNoIssue() {
-        // Header action — bulk-mark every FLW that has no existing decision
-        // AND isn't failing any KPI (KPI failures need a real audit first).
-        if (!decisionsBase) {
-            window.alert('Cannot record decisions: run id is unknown.');
-            return;
-        }
-        var eligible = rows.filter(function(r) {
-            var d = (view && typeof view.decisionsFor === 'function') ? view.decisionsFor(r.username) : null;
-            return !d && !rowIsFailingKPI(r);
-        });
-        if (!eligible.length) {
-            window.alert('No FLWs eligible for bulk "Mark No Issue" (everyone is either flagged or already decided).');
-            return;
-        }
-        if (!window.confirm('Mark ' + eligible.length + ' FLWs as having no issues? Flagged FLWs are skipped.')) {
-            return;
-        }
-        Promise.all(eligible.map(function(r) {
-            return postNoIssueDecision(r, {sam_pct: muacCount(r) > 0 ? (samCount(r) / muacCount(r)) * 100 : 0,
-                                          mam_pct: muacCount(r) > 0 ? (mamCount(r) / muacCount(r)) * 100 : 0,
-                                          gender_pct: genderPct(r)});
-        })).then(function() { window.location.reload(); });
-    }
-
-    function createTaskWithCoaching(row) {
-        // Two-step flow:
-        //   1) POST /tasks/api/single-create/ — create the task with a short
-        //      description (scannable on the task UI) plus a long-form
-        //      coaching prompt stashed in extra_data.coaching_prompt. The
-        //      task page's "Initiate AI Assistant" modal pre-fills from
-        //      coaching_prompt when present (see task_create_edit.html
-        //      showAIModal). The Django view reads opportunity_id from
-        //      request.labs_context (set by the labs middleware off the
-        //      URL's opportunity_id query param), so the page must carry
-        //      ?opportunity_id=.
-        //   2) POST /labs/workflow/api/run/<id>/decisions/ — record the
-        //      decision linking the new task back to the FLW so the row
-        //      shows the "View task" button on reload. We carry forward
-        //      audit_session_ids if a prior manager-audit decision exists.
+    function createTask(row, opts) {
+        // Per #282: description stays short and scannable on the task UI;
+        // a long-form coaching_prompt rides in extra_data.coaching_prompt
+        // so the task page's "Initiate AI Assistant" modal can pre-fill
+        // from it (see task_create_edit.html showAIModal).
         var name = displayName(row);
-        var shortDescription =
-            'Coach ' + name + ' on MUAC measurement technique. Audit photos ' +
-            'passed cleanly but the MUAC distribution suggests a technique issue ' +
-            'worth talking through.';
-        var coachingPrompt =
-            'Hi ' + name + ', your visit photos this week looked good — well-framed and the children appeared properly positioned. ' +
-            'But the MUAC distribution shows something unusual: more measurements are clustered toward the low end than we\'d expect ' +
-            'for a healthy population. This is the kind of pattern that often points at a measurement-technique issue rather than ' +
-            'malpractice. Can we walk through how you\'re applying the MUAC tape — where on the arm, whether it\'s snug but not tight, ' +
-            'and whether the arm is fully relaxed when you measure?';
-
-        return apiPost('/tasks/api/single-create/', {
+        var title = (opts && opts.title) || ('Follow-up: ' + name);
+        var description = (opts && opts.description) || '';
+        var body = {
             username: row.username,
             flw_name: name,
-            title: 'MUAC technique coaching: ' + name,
-            description: shortDescription,
+            title: title,
+            description: description,
             priority: 'medium',
             workflow_run_id: runId,
-            extra_data: { coaching_prompt: coachingPrompt },
-        }).then(function(taskRes) {
-            if (!taskRes.ok || !taskRes.data || !taskRes.data.success) {
-                var emsg = (taskRes.data && (taskRes.data.error || taskRes.data.detail)) || ('HTTP ' + taskRes.status);
+        };
+        if (opts && opts.coaching_prompt) {
+            body.extra_data = { coaching_prompt: opts.coaching_prompt };
+        }
+        apiPost('/tasks/api/single-create/', body).then(function(res) {
+            if (!res.ok || !res.data || !res.data.success) {
+                var emsg = (res.data && (res.data.error || res.data.detail)) || ('HTTP ' + res.status);
                 window.alert('Failed to create task: ' + emsg);
-                return null;
+                return;
             }
-            var taskId = taskRes.data.task_id;
-            // Carry forward the audit id from the prior manager-audit click
-            // (if any). decisionsFor() returns the most recent decision; we
-            // expect that to be the action_taken/audit one.
-            var priorDecision = (view && typeof view.decisionsFor === 'function')
-                ? view.decisionsFor(row.username) : null;
-            var audit_ids = (priorDecision && priorDecision.audit_session_ids) || null;
-            return apiPost(decisionsBase, {
-                opportunity_id: oppId,
-                flw_id: row.username,
-                decision_type: 'action_taken',
-                reason_key: 'bad_muac_distribution',
-                reason_label: 'Bad MUAC distribution',
-                audit_session_ids: audit_ids,
-                task_ids: [taskId],
-            }).then(function(decRes) {
-                if (!decRes.ok) {
-                    console.warn('decision create failed for task ' + taskId + ':', decRes);
-                }
-                // Navigate the manager straight to the task page so they can
-                // open the Initiate AI Assistant modal next.
-                var oppScope = oppId ? '?opportunity_id=' + oppId : '';
-                window.location.href = '/tasks/' + taskId + '/edit/' + oppScope;
-            });
+            window.location.href = '/tasks/' + res.data.task_id + '/edit/' + oppScope;
         });
+    }
+
+    function coachingPromptForLowRates(name) {
+        return 'Hi ' + name + ', your nutrition numbers this week look unusually low — very few SAM or MAM cases relative to ' +
+               'what we\'d expect from a representative sample of households in your area. Sometimes this happens when only ' +
+               'easier-to-reach households get visited and the more vulnerable ones get skipped. Can we walk through the ' +
+               'households you visited this week and identify any that you weren\'t able to reach?';
+    }
+
+    function coachingPromptForGenderSkew(name, pct) {
+        var direction = (pct !== null && pct > 60) ? 'more girls than boys' : 'more boys than girls';
+        return 'Hi ' + name + ', your gender split this week shows ' + direction + ' — outside the typical 40-60% band. ' +
+               'Is there a reason for this? Make sure the households you visit are representative of your area.';
     }
 
     // ── State ───────────────────────────────────────────────────
@@ -429,6 +455,31 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         if (sortKey === key) { setSortDesc(!sortDesc); }
         else { setSortKey(key); setSortDesc(true); }
     }
+
+    // ── Auto-apply flags on mount ─────────────────────────────
+    // Computes flags from the current rows and POSTs anything not already
+    // persisted. The framework dedups by (run, flw, flag_key) so this is
+    // safe to call on every render — but we still gate on rows.length so
+    // we don't fire while the SSE pipeline-data stream is still warming up
+    // (initial render with empty rows would create zero flags anyway, but
+    // explicit is better than implicit).
+    React.useEffect(function() {
+        if (!view || !view.ensureAutoFlags || !runIsLive || !rows.length) return;
+        var computed = [];
+        rows.forEach(function(r) {
+            computeFlagsForRow(r).forEach(function(f) {
+                computed.push({
+                    flw_id: r.username,
+                    flag_key: f.key,
+                    flag_label: f.label,
+                    evidence: f.evidence(r),
+                });
+            });
+        });
+        if (computed.length) {
+            view.ensureAutoFlags(computed);
+        }
+    }, [rows.length, runIsLive]);
 
     // ── Worker name lookup ──────────────────────────────────────
     var workerMap = React.useMemo(function() {
@@ -510,6 +561,73 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         );
     }
 
+    // ── MenuButton (split-button dropdown) ─────────────────────
+    // A button with a caret that opens a popover of quick actions. Each
+    // item is {label, description?, highlight?, onClick}. Items marked
+    // highlight render with an accent (used for flag-context-aware
+    // shortcuts so the manager's eye is drawn to the relevant variant).
+    // Closes on outside click or escape.
+    function MenuButton(props) {
+        var _open = React.useState(false);
+        var open = _open[0]; var setOpen = _open[1];
+        var ref = React.useRef(null);
+        React.useEffect(function() {
+            if (!open) return;
+            function onDocClick(e) {
+                if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+            }
+            function onKey(e) { if (e.key === 'Escape') setOpen(false); }
+            document.addEventListener('mousedown', onDocClick);
+            document.addEventListener('keydown', onKey);
+            return function() {
+                document.removeEventListener('mousedown', onDocClick);
+                document.removeEventListener('keydown', onKey);
+            };
+        }, [open]);
+        var btnClass = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium border transition-colors ' + (props.className || '');
+        return React.createElement('div', {ref: ref, className: 'relative inline-block'},
+            React.createElement('button', {
+                type: 'button',
+                onClick: function() { setOpen(!open); },
+                className: btnClass,
+                title: props.title || '',
+            },
+                React.createElement('span', null, props.label),
+                React.createElement('i', {className: 'fa-solid fa-caret-down text-[10px] opacity-70'})
+            ),
+            open
+                ? React.createElement('div', {
+                    className: 'absolute right-0 z-20 mt-1 w-72 origin-top-right rounded-md bg-white shadow-lg border border-gray-200 ring-1 ring-black ring-opacity-5'
+                  },
+                    React.createElement('div', {className: 'py-1'}, props.items.map(function(item, i) {
+                        return React.createElement('button', {
+                            key: i,
+                            type: 'button',
+                            disabled: !!item.disabled,
+                            onClick: function() { setOpen(false); item.onClick(); },
+                            className: 'w-full text-left block px-3 py-2 text-xs ' +
+                                (item.disabled
+                                    ? 'text-gray-400 cursor-not-allowed'
+                                    : 'text-gray-700 hover:bg-gray-50') +
+                                (item.highlight ? ' bg-amber-50/60' : ''),
+                            title: item.title || '',
+                        },
+                            React.createElement('div', {className: 'flex items-center gap-1.5'},
+                                item.highlight
+                                    ? React.createElement('i', {className: 'fa-solid fa-bolt text-amber-500 text-[10px]'})
+                                    : null,
+                                React.createElement('span', {className: 'font-medium'}, item.label)
+                            ),
+                            item.description
+                                ? React.createElement('div', {className: 'text-[11px] text-gray-500 mt-0.5 ml-' + (item.highlight ? '4' : '0')}, item.description)
+                                : null
+                        );
+                    }))
+                  )
+                : null
+        );
+    }
+
     // ── Render ──────────────────────────────────────────────────
     return React.createElement('div', {className: 'space-y-6'},
 
@@ -586,22 +704,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                     'FLW-Level Analysis',
                     React.createElement('span', {className: 'text-sm text-gray-600 font-normal ml-2'},
                         '(' + rows.length + ' FLWs)')
-                ),
-                // Bulk-mark toolbar action. Lives in the table title row so
-                // it reads as a real action button (rather than a tiny pill
-                // shoved into the column header). Hidden once the run is
-                // completed since decisions are read-only.
-                runIsLive && decisionsBase
-                    ? React.createElement('button', {
-                        type: 'button',
-                        onClick: markAllNoIssue,
-                        className: 'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-green-700 bg-white border border-green-300 hover:bg-green-50 transition-colors',
-                        title: 'Mark every non-flagged FLW (no decision yet) as having no issues',
-                      },
-                        React.createElement('i', {className: 'fa-solid fa-check-double'}),
-                        React.createElement('span', null, 'Mark all non-flagged FLWs as No Issue')
-                      )
-                    : null
+                )
+                // No bulk toolbar — auto-flags are applied on mount via
+                // view.ensureAutoFlags. The efficiency win for the manager
+                // is in the per-row action menus, not in a "mark everything"
+                // sweep.
             ),
             React.createElement('div', {className: 'overflow-x-auto'},
                 React.createElement('table', {className: 'min-w-full divide-y divide-gray-200'},
@@ -617,7 +724,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                             React.createElement(SortTh, {skey: 'mam', label: 'MAM', title: 'Moderate Acute Malnutrition (MUAC 11.5-12.5 cm)'}),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'MUAC Distribution'),
                             React.createElement(SortTh, {skey: 'gender', label: 'Gender Split', title: 'Female % of (Male + Female)'}),
-                            React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Decision'),
+                            React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Flags'),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Actions')
                         )
                     ),
@@ -678,158 +785,128 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // Gender Split
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         React.createElement(GenderBadge, {row: r})),
-                                    // Decision — fill the cell with the right pill: green "No Issues"
-                                    // for no_issues decisions, red warning for action_taken. The
-                                    // Actions column does NOT repeat this signal for no_issues
-                                    // (it's empty for those rows); for action_taken it shows
-                                    // the View Audit / View Task buttons.
-                                    React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
+                                    // Flags — pill per active flag, or em-dash when none.
+                                    // Each pill shows the flag_label + a tooltip with the
+                                    // evidence (the metric values that triggered it). Order
+                                    // by flag_key so the same row always renders pills in
+                                    // the same slot.
+                                    React.createElement('td', {className: 'px-4 py-3 text-sm align-top'},
                                         (function() {
-                                            if (!view || typeof view.decisionsFor !== 'function') return null;
-                                            var d = view.decisionsFor(r.username);
-                                            if (!d) return null;
-                                            if (d.decision_type === 'no_issues') {
-                                                return React.createElement('span', {
-                                                    className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800',
-                                                    title: d.decided_at ? 'Decided ' + d.decided_at : ''
-                                                },
-                                                    React.createElement('i', {className: 'fa-solid fa-check'}),
-                                                    'No Issues'
-                                                );
+                                            var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
+                                            rowFlags = rowFlags.slice().sort(function(a, b) {
+                                                return (a.flag_key || '').localeCompare(b.flag_key || '');
+                                            });
+                                            if (!rowFlags.length) {
+                                                return React.createElement('span', {className: 'text-gray-300 text-xs'}, '—');
                                             }
-                                            var label = d.reason_label || d.reason_key || 'Action';
-                                            return React.createElement('span', {
-                                                className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800',
-                                                title: d.decided_at ? 'Decided ' + d.decided_at : ''
-                                            }, '⚠ ' + label);
+                                            return React.createElement('div', {className: 'flex flex-wrap gap-1'},
+                                                rowFlags.map(function(f) {
+                                                    var ev = f.evidence ? Object.keys(f.evidence).map(function(k) {
+                                                        var v = f.evidence[k];
+                                                        if (typeof v === 'number') v = v.toFixed(1);
+                                                        return k + ': ' + v;
+                                                    }).join(' · ') : '';
+                                                    return React.createElement('span', {
+                                                        key: f.id || f.flag_key,
+                                                        className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800',
+                                                        title: f.flag_label + (ev ? ' (' + ev + ')' : ''),
+                                                    },
+                                                        React.createElement('i', {className: 'fa-solid fa-flag text-amber-600 text-[10px]'}),
+                                                        f.flag_label || f.flag_key
+                                                    );
+                                                })
+                                            );
                                         })()
                                     ),
-                                    // Actions — state-aware per-FLW. Buttons reflect:
-                                    //   - the existing decision + linked audit/task (with their
-                                    //     outcome rendered inline so the reviewer can scan the
-                                    //     column without opening each one)
-                                    //   - whether the FLW is failing any KPI (SAM > 5%, MAM > 15%,
-                                    //     or gender split outside 40-60%) — failing FLWs can't
-                                    //     be marked "no issue" without first reviewing the data
-                                    React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
+                                    // Actions — two split-button menus, always rendered. Each
+                                    // menu opens to a list of quick actions. When a row carries
+                                    // a flag, the relevant flag-context quick action is added
+                                    // to the menu and rendered with an amber highlight so the
+                                    // manager's eye lands on the recommended variant.
+                                    React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm align-top'},
                                         (function() {
-                                            var d = (view && typeof view.decisionsFor === 'function') ? view.decisionsFor(r.username) : null;
-                                            var oppScope = (instance && instance.opportunity_id) ? '?opportunity_id=' + instance.opportunity_id : '';
-                                            // Failing-KPI check: any of SAM > 5%, MAM > 15%, gender out of 40-60% band.
-                                            var sPct = muacCount(r) > 0 ? (samCount(r) / muacCount(r)) * 100 : 0;
-                                            var mPct = muacCount(r) > 0 ? (mamCount(r) / muacCount(r)) * 100 : 0;
+                                            var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
+                                            var flagKeys = rowFlags.map(function(f) { return f.flag_key; });
+                                            var hasLowMUAC = (flagKeys.indexOf('sam_low') >= 0) || (flagKeys.indexOf('mam_low') >= 0);
+                                            var hasGenderSkew = flagKeys.indexOf('gender_skew') >= 0;
                                             var gPct = genderPct(r);
-                                            var isFailing = (sPct > 5) || (mPct > 15) || (gPct !== null && (gPct < 40 || gPct > 60));
 
-                                            function auditLabel(a) {
-                                                if (!a) return 'View audit #' + d.audit_session_ids[0];
-                                                if (a.status === 'in_review' || a.status === 'in_progress') {
-                                                    return 'View audit #' + a.id + ' (in review)';
-                                                }
-                                                if (a.overall_result === 'pass') {
-                                                    return 'View audit #' + a.id + ' (pass)';
-                                                }
-                                                if (a.overall_result === 'fail') {
-                                                    var total = (a.pass_count || 0) + (a.fail_count || 0) + (a.pending_count || 0);
-                                                    return 'View audit #' + a.id + ' (fail · ' + (a.fail_count || 0) + '/' + total + ')';
-                                                }
-                                                return 'View audit #' + a.id;
+                                            var auditItems = [
+                                                {
+                                                    label: 'Audit 5 recent visits',
+                                                    description: 'Standard random sample of recent submissions',
+                                                    onClick: function() { createAudit(r, {count: 5}); },
+                                                },
+                                            ];
+                                            if (hasLowMUAC) {
+                                                auditItems.push({
+                                                    label: 'Audit low-MUAC visits',
+                                                    description: 'Pre-filtered for the cases this FLW may be missing',
+                                                    highlight: true,
+                                                    onClick: function() { createAudit(r, {count: 5, filter: 'low_muac'}); },
+                                                });
                                             }
-                                            function taskLabel(t) {
-                                                if (!t) return 'View task #' + d.task_ids[0];
-                                                if (t.status === 'closed') {
-                                                    var action = t.official_action || 'closed';
-                                                    return 'View task #' + t.id + ' (closed · ' + action + ')';
-                                                }
-                                                return 'View task #' + t.id + ' (' + (t.status || '').replace(/_/g, ' ') + ')';
+                                            if (hasGenderSkew) {
+                                                auditItems.push({
+                                                    label: 'Audit underrepresented gender',
+                                                    description: 'Pre-filtered for the gender below the typical band',
+                                                    highlight: true,
+                                                    onClick: function() { createAudit(r, {count: 5, filter: 'underrep_gender'}); },
+                                                });
                                             }
 
-                                            var buttons = [];
-                                            if (d && d.audit_session_ids && d.audit_session_ids.length) {
-                                                var firstAudit = (d.audit_outcomes && d.audit_outcomes[0]) || null;
-                                                buttons.push(React.createElement('a', {
-                                                    key: 'audit',
-                                                    href: '/audit/' + d.audit_session_ids[0] + '/' + oppScope,
-                                                    className: 'inline-flex items-center px-3 py-1 border border-indigo-300 rounded-md text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors',
-                                                    title: 'View audit session for ' + name,
-                                                }, auditLabel(firstAudit)));
+                                            var taskItems = [
+                                                {
+                                                    label: 'Generic follow-up task',
+                                                    description: 'Empty task for the manager to fill in',
+                                                    onClick: function() {
+                                                        createTask(r, {title: 'Follow-up: ' + name});
+                                                    },
+                                                },
+                                            ];
+                                            if (hasLowMUAC) {
+                                                taskItems.push({
+                                                    label: 'Coaching: reach harder households',
+                                                    description: 'Pre-filled prompt about cherry-picking easy visits',
+                                                    highlight: true,
+                                                    onClick: function() {
+                                                        createTask(r, {
+                                                            title: 'Coaching — reach harder households: ' + name,
+                                                            description: 'Coach ' + name + ' on reaching harder-to-access households. SAM/MAM rates are below the expected band, suggesting the easier households are getting visited disproportionately.',
+                                                            coaching_prompt: coachingPromptForLowRates(name),
+                                                        });
+                                                    },
+                                                });
                                             }
-                                            if (d && d.task_ids && d.task_ids.length) {
-                                                var firstTask = (d.task_outcomes && d.task_outcomes[0]) || null;
-                                                buttons.push(React.createElement('a', {
-                                                    key: 'task',
-                                                    href: '/tasks/' + d.task_ids[0] + '/edit/' + oppScope,
-                                                    className: 'inline-flex items-center px-3 py-1 border border-indigo-300 rounded-md text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors ml-2',
-                                                    title: 'View follow-up task for ' + name,
-                                                }, taskLabel(firstTask)));
+                                            if (hasGenderSkew) {
+                                                taskItems.push({
+                                                    label: 'Coaching: gender balance',
+                                                    description: 'Pre-filled prompt about uneven gender split',
+                                                    highlight: true,
+                                                    onClick: function() {
+                                                        createTask(r, {
+                                                            title: 'Coaching — gender balance: ' + name,
+                                                            description: 'Coach ' + name + ' on gender-representative household selection. This week\'s split fell outside the 40-60% band.',
+                                                            coaching_prompt: coachingPromptForGenderSkew(name, gPct),
+                                                        });
+                                                    },
+                                                });
                                             }
-                                            // no_issues decisions render an empty Actions cell —
-                                            // the Decision column carries the "No Issues" pill,
-                                            // and there's nothing to act on once the row is decided.
-                                            if (!d) {
-                                                // Only allow "Mark no issues" when KPIs are within thresholds.
-                                                // FLWs failing any KPI need a real review (audit) before any sign-off.
-                                                if (!isFailing && runIsLive) {
-                                                    buttons.push(React.createElement('button', {
-                                                        key: 'mark',
-                                                        type: 'button',
-                                                        onClick: function() {
-                                                            postNoIssueDecision(r, {sam_pct: sPct, mam_pct: mPct, gender_pct: gPct})
-                                                                .then(function(res) { if (res.ok) window.location.reload(); });
-                                                        },
-                                                        className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100',
-                                                        title: 'Mark this FLW as no issues',
-                                                    }, 'Mark No Issue'));
-                                                }
-                                                // Manager-flow shortcut: when the run is in_progress, "Create
-                                                // Audit" hits the synthetic helper that atomically writes a
-                                                // pass-clean audit + linking decision and returns a redirect
-                                                // URL to the audit detail page. Once the run is completed,
-                                                // fall back to the regular audit wizard.
-                                                if (runIsLive && runId && oppId) {
-                                                    buttons.push(React.createElement('button', {
-                                                        key: 'create-audit',
-                                                        type: 'button',
-                                                        onClick: function() {
-                                                            apiPost('/labs/workflow/api/run/' + runId + '/manager-audit/', {
-                                                                opportunity_id: oppId,
-                                                                flw_id: r.username,
-                                                            }).then(function(res) {
-                                                                if (!res.ok || !res.data) {
-                                                                    var emsg = (res.data && (res.data.error || res.data.detail)) || ('HTTP ' + res.status);
-                                                                    window.alert('Failed to create audit: ' + emsg);
-                                                                    return;
-                                                                }
-                                                                window.location.href = res.data.redirect_url;
-                                                            });
-                                                        },
-                                                        className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors' + ((!isFailing && runIsLive) ? ' ml-2' : ''),
-                                                        title: 'Create audit for ' + name,
-                                                    }, 'Create Audit'));
-                                                } else {
-                                                    buttons.push(React.createElement('a', {
-                                                        key: 'create-audit',
-                                                        href: links.auditUrl({username: r.username, count: 5}),
-                                                        className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors' + ((!isFailing && runIsLive) ? ' ml-2' : ''),
-                                                        title: 'Create audit for ' + name,
-                                                    }, 'Create Audit'));
-                                                }
-                                            }
-                                            // If a decision exists with an audit (passed) but no task yet,
-                                            // expose a "Create Task with Coaching" button. This is the
-                                            // manager-flow second-step: audit passed → still need coaching
-                                            // task because the underlying KPI is bad (e.g. bad MUAC dist).
-                                            if (runIsLive && d && d.audit_session_ids && d.audit_session_ids.length &&
-                                                (!d.task_ids || !d.task_ids.length)) {
-                                                buttons.push(React.createElement('button', {
-                                                    key: 'create-task-ocs',
-                                                    type: 'button',
-                                                    onClick: function() { createTaskWithCoaching(r); },
-                                                    className: 'inline-flex items-center px-3 py-1 border border-purple-300 rounded-md text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 transition-colors ml-2',
-                                                    title: 'Create a follow-up task and start an OCS coaching conversation for ' + name,
-                                                }, 'Create Task with Coaching'));
-                                            }
-                                            return React.createElement('div', {className: 'flex flex-wrap items-center gap-y-1'}, buttons);
+
+                                            return React.createElement('div', {className: 'flex gap-2'},
+                                                React.createElement(MenuButton, {
+                                                    label: 'Create Audit',
+                                                    className: 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
+                                                    title: 'Audit options for ' + name,
+                                                    items: auditItems,
+                                                }),
+                                                React.createElement(MenuButton, {
+                                                    label: 'Send Task',
+                                                    className: 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
+                                                    title: 'Task options for ' + name,
+                                                    items: taskItems,
+                                                })
+                                            );
                                         })()
                                     )
                                 );
@@ -852,8 +929,9 @@ TEMPLATE = {
     "pipeline_schema": PIPELINE_SCHEMA,
     # Saved-runs opt-in (spec §4.1). Freezes a snapshot at run completion so
     # re-opening the run shows what was true at the moment of completion.
-    # Decisions are NOT in the snapshot — they're queried live (spec §3.3,
-    # exposed via view.decisionsFor() in render code).
+    # Flags are NOT in the snapshot — they're queried live (Flag lifecycle
+    # state-of-truth lives on the Flag record itself; exposed via
+    # view.flagsFor() in render code).
     "supports_saved_runs": True,
     "snapshot_inputs": {
         "pipelines": None,  # capture all pipelines on the workflow definition

@@ -80,39 +80,53 @@ export interface RunView {
   complete(opts?: { confirm?: string }): Promise<boolean>;
 
   /**
-   * Decisions recorded against this run, newest first. Always queried live
-   * from the Decision records (not snapshot-frozen) — Decision lifecycle
-   * state-of-truth lives on the Decision record itself. See
-   * docs/superpowers/specs/2026-05-25-program-admin-report-design.md §3.3.
+   * Flags raised against this run, newest first. Always queried live from
+   * the Flag records (not snapshot-frozen). A Flag is a finding derived
+   * from the metrics (`source: 'auto'`) or appended by a human
+   * (`source: 'manual'`). Multiple Flags can exist for the same (run, flw).
    */
-  decisions: Decision[];
+  flags: Flag[];
 
   /**
-   * Convenience: return the most-recent Decision for `username`, or null if
-   * none. When an FLW has multiple decisions in the same run, returns the
-   * latest by `decided_at`.
+   * Convenience: return all Flags for `username`. Empty array if none.
+   * Render code uses this to decide what pills to show in the Flag column.
    */
-  decisionsFor(username: string): Decision | null;
+  flagsFor(username: string): Flag[];
+
+  /**
+   * Persist any auto-computed flags that aren't already on the run. The
+   * framework dedups by (workflow_run_id, flw_id, flag_key) so calling
+   * this on every render is safe — only the first call per (run, flw,
+   * flag_key) actually POSTs. Returns the list of newly-created flags.
+   *
+   * Render code should call this from a React.useEffect on mount, passing
+   * the flags computed from the current row data.
+   */
+  ensureAutoFlags(
+    computed: Array<{
+      flw_id: string;
+      flag_key: string;
+      flag_label?: string;
+      evidence?: Record<string, unknown>;
+    }>,
+  ): Promise<Flag[]>;
 }
 
 /**
- * A Decision is a record of "the network manager looked at this FLW during a
- * workflow run and concluded X." Can spawn zero or more Tasks/AuditSessions;
- * the status of those is queried live off the Task/AuditSession itself,
- * never stored on the Decision.
+ * A Flag is a finding attached to one FLW within one workflow run. Flags
+ * are typically computed from the metrics by render code on mount and
+ * persisted via `view.ensureAutoFlags(...)`. They do not carry audit/task
+ * linkage — actions create audit/task records separately.
  */
-export interface Decision {
+export interface Flag {
   id: number;
   flw_id: string;
-  decision_type: 'no_issues' | 'action_taken';
-  reason_key: string | null;
-  reason_label: string | null;
-  audit_session_ids: number[];
-  task_ids: number[];
-  kpi_snapshot: Record<string, unknown>;
-  notes: string | null;
-  decided_at: string | null;
-  decided_by: string | null;
+  flag_key: string;
+  flag_label: string;
+  evidence: Record<string, unknown>;
+  source: 'auto' | 'manual';
+  flagged_at: string | null;
+  flagged_by: string | null;
 }
 
 // =============================================================================
@@ -822,10 +836,9 @@ export interface WorkflowDataFromDjango {
   };
   workers: WorkerData[];
   pipeline_data?: Record<string, PipelineResult>;
-  /** Decisions recorded against the current run. Optional for legacy
-   * payloads that predate the Phase 2a wiring (defaults to [] in
-   * useRunView). */
-  decisions?: Decision[];
+  /** Flags raised against the current run. Optional — defaults to [] in
+   * useRunView when the BE response omits it. */
+  flags?: Flag[];
   links: {
     auditUrlBase: string;
     taskUrlBase: string;
