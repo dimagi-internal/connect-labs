@@ -13,14 +13,19 @@ recording framework.
 ## What it produces
 
 1. A **synthetic data set** on labs prod (`labs.connect.dimagi.com`):
-   2 opps, 4 weekly chc_nutrition runs each, real audits + tasks + decisions
-   per FLW archetype, and a cross-opp Program Admin Report run that watches
-   them. Northern's last week is left `in_progress` so the manager-flow
-   video can show a real "do the review live" sequence.
+   2 opps, 4 weekly chc_nutrition runs each, real audits + tasks per
+   FLW archetype, and a cross-opp Program Admin Report run that watches
+   them. Flags are NOT seeded — chc_nutrition's render code derives them
+   from the pipeline data at render time and persists them via
+   `view.ensureAutoFlags`. Northern's last week is left `in_progress`
+   so the manager-flow video can show a real "do the review live"
+   sequence.
 2. A **manager-flow video** (`manager_flow.mp4`, ~40s) — the network
-   manager arriving at the in_progress Wk4 review, bulk-marking the
-   non-flagged FLWs as "No Issues", auditing the one flagged FLW
-   (jumoke_n) live, navigating to the resulting task page, and firing
+   manager arriving at the in_progress Wk4 review, the auto-flags
+   appearing on mount, auditing the one flagged FLW (jumoke_n) live
+   via the `Create Audit ▾` menu's highlighted "Audit low-MUAC visits"
+   quick action, navigating to the resulting task via the `Send Task ▾`
+   menu's "Coaching: reach harder households" quick action, and firing
    the "Initiate AI Assistant" coaching chat with the pre-filled prompt.
 3. A **drill-through video** (`drill_through.mp4`, ~80s) — the 9-scene
    tour from the completed PAR grid down into one flagged FLW's audit
@@ -88,7 +93,7 @@ The synthetic-data generator itself lives in
 other synthetic infrastructure (archetypes, manager_flow_views,
 gdrive corpus). The generic primitives it uses
 (`monday_dt`, `cleanup_opportunity_workflows`, `create_backdated_workflow_run`,
-`apply_decision_spec`, …) live in
+`apply_action_spec`, …) live in
 `commcare_connect/labs/synthetic/walkthrough_kit.py` — those are the
 pieces a second walkthrough should import to avoid reinventing the
 LabsRecord write plumbing.
@@ -166,12 +171,14 @@ of demo-specific seeder.
   in_progress synthetic runs show "No data available" because the live
   CSV pipeline returns nothing in the synthetic env.
 - **Severity 2 for muac-flagged FLWs**: severity 1 produces SAM ~3.6%
-  which doesn't trip the chc_nutrition Actions cell's `isFailing` gate
-  (`SAM > 5%`). Severity 2 (~22% SAM) makes the flag visually obvious
-  AND blocks the bulk Mark No Issue button on that row.
+  which doesn't trip the chc_nutrition flag thresholds (`sam_low`
+  predicate fires when SAM/MUAC ratio is below the expected band).
+  Severity 2 (~22% SAM) makes the flag visually obvious and ensures
+  the auto-flag system catches it on mount.
 - **Clean FLWs no upward SAM-bin jitter**: ±1 jitter on the first two
   bins of severity-0 distributions can accidentally push to 7% SAM,
-  tripping isFailing. Jitter clamped to `[-1, 0]` on those bins.
+  tripping the sam_low predicate. Jitter clamped to `[-1, 0]` on
+  those bins.
 - **OCS bot list short-circuit**: synthetic opps return a single canned
   "MUAC Coaching (Synthetic Demo Bot)" so the existing "Initiate AI
   Assistant" modal renders with a selectable bot — without requiring a
@@ -179,8 +186,9 @@ of demo-specific seeder.
 - **PAR snapshot doesn't include in_progress runs**: the snapshot's
   `watched_summary` only captures completed runs. The Wk4 in_progress
   run id must come from `.run_ids.json`, written by `regenerate.py`.
-- **Audit + decision leftovers wedge the recorder**: if a previous
-  recorder run created an audit + decision for the bad-MUAC FLW, the
-  next run sees "View audit/task" instead of "Create Audit". Always
-  regenerate (which cleans first) before re-recording. The verify
-  checks in `regenerate.py` catch most of these post-seed.
+- **Audit + task leftovers wedge the recorder**: if a previous recorder
+  run created an audit + task for the bad-MUAC FLW, the next run's
+  Create Audit/Send Task menu items navigate to the existing artifacts
+  instead of creating fresh ones. Always regenerate (which cleans first)
+  before re-recording. The verify checks in `regenerate.py` catch most
+  of these post-seed.

@@ -537,13 +537,18 @@ def build_task_data(
 # -----------------------------------------------------------------------------
 #
 # The CHC Nutrition Analysis workflow template renders one row per FLW with
-# total visits, MUAC distribution, SAM/MAM rates, gender split, and a
-# decisions column. The synthetic generator emits backdated workflow_runs
-# with empty pipeline snapshots by default — which means "Open the run"
-# from the Program Admin Report lands on a blank "No data available"
-# table. To make the underlying weekly review meaningful, we synthesise
-# one pipeline row per active FLW per week, with shape driven by the FLW's
-# narrative state (solid / improver-in-flag-week / suspended).
+# total visits, MUAC distribution, SAM/MAM rates, gender split, a Flags
+# column (auto-populated from the row's pipeline data via
+# view.ensureAutoFlags on mount), and an Actions column with two split-
+# button menus (Create Audit ▾ / Send Task ▾). The synthetic generator
+# emits backdated workflow_runs with empty pipeline snapshots by default —
+# which means "Open the run" from the Program Admin Report lands on a
+# blank "No data available" table. To make the underlying weekly review
+# meaningful, we synthesise one pipeline row per active FLW per week,
+# with shape driven by the FLW's narrative state (solid /
+# improver-in-flag-week / suspended). The chc_nutrition render code
+# inspects the row's MUAC bins + gender split and emits sam_low/mam_low/
+# gender_skew flags as appropriate.
 
 
 _ALL_MUAC_BINS = (

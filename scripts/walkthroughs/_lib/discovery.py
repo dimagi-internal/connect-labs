@@ -1,8 +1,10 @@
 """PAR snapshot walker — discover drill targets from a completed PAR run.
 
 The PAR snapshot's ``watched_summary`` lists each watched opportunity's
-weekly runs and their per-FLW decisions. Recording scripts need to find
-two specific drill targets in there:
+weekly runs and, per-run, an ``flw_rows`` list with ``{flw_id, flags,
+audits, tasks}`` for every FLW that produced any of those three artifacts
+during the run window. Recording scripts need to find two specific drill
+targets in there:
 
   - A "good run" — completed audit + closed task (the satisfying drill).
   - An "incomplete run" — in_review audit + investigating task (the
@@ -11,6 +13,15 @@ two specific drill targets in there:
 The previous recorders each had their own copy of this walker (one in
 ``record_drill_through.py``, another in ``capture_walkthrough.py``)
 and they were starting to drift. This is the canonical version.
+
+This walker used to read a per-run ``decisions`` list keyed by
+decision_type/audit_outcomes/task_outcomes (a row joining audits +
+tasks together via a Decision record). That join went away in PR #281
+when Decisions became Flags — audits and tasks now carry
+``workflow_run_id`` directly and the snapshot groups them by ``flw_id``
+into ``flw_rows`` independently. The walker still produces the same
+``(opp, run, audit, task, flw)`` tuples; it just sources them from
+the per-FLW group instead of a row-shaped join.
 
 Note: PAR snapshots only include *completed* runs — in_progress runs
 must be discovered separately (e.g. via the ``WK4_RUN_ID`` env var or
@@ -92,11 +103,13 @@ def find_drill_targets(
             week_idx = _resolve_run_week_idx(run, expected_weeks, missed)
             if week_idx is None:
                 continue
-            for d in run.get("decisions", []):
-                if d.get("decision_type") != "action_taken":
-                    continue
-                audits = d.get("audit_outcomes", []) or []
-                tasks = d.get("task_outcomes", []) or []
+            # flw_rows is the post-flags-rename shape: one entry per
+            # FLW that produced any audit/task/flag in this run. We pick
+            # the first audit + first task for each FLW; the snapshot
+            # builder orders them by recency.
+            for fr in run.get("flw_rows", []) or []:
+                audits = fr.get("audits", []) or []
+                tasks = fr.get("tasks", []) or []
                 if not audits or not tasks:
                     continue
                 a, t = audits[0], tasks[0]
@@ -108,7 +121,7 @@ def find_drill_targets(
                     "run_id": run["id"],
                     "audit_id": a["id"],
                     "task_id": t["id"],
-                    "flw_id": d.get("flw_id"),
+                    "flw_id": fr.get("flw_id"),
                 }
                 a_status = a.get("status")
                 t_status = t.get("status")

@@ -1,7 +1,7 @@
 """Pre-record smoke checks: did regenerate.py produce the world the
 recorder expects?
 
-The README's "Audit + decision leftovers wedge the recorder" footgun is
+The README's "Audit + task leftovers wedge the recorder" footgun is
 the exact kind of thing this catches: after one recorder run, the bad-MUAC
 FLW already has an audit + task, so the next ``Create Audit`` click finds
 ``View audit`` instead. Without this check, the recorder fails opaquely
@@ -87,7 +87,8 @@ def check_par_run_present(result: dict, config: dict) -> Iterator[Issue]:
 
 def check_in_progress_week(result: dict, config: dict) -> Iterator[Issue]:
     """If any opp sets ``in_progress_last_week=true``, its last week's
-    run must show ``in_progress=True`` and zero decisions."""
+    run must show ``in_progress=True`` and zero actions (audits/tasks
+    that the recorder is going to write live during the scene)."""
     last_idx = len(config.get("weeks", [])) - 1
     if last_idx < 0:
         return
@@ -113,13 +114,13 @@ def check_in_progress_week(result: dict, config: dict) -> Iterator[Issue]:
                 "NOT_IN_PROGRESS",
                 f"opp {opp['opportunity_id']}: last week run " f"{last_week.get('run_id')} is not marked in_progress.",
             )
-        elif last_week.get("decisions"):
+        elif last_week.get("actions"):
             yield Issue(
                 "warning",
-                "IN_PROGRESS_HAS_DECISIONS",
-                f"opp {opp['opportunity_id']}: in_progress week has "
-                f"{last_week['decisions']} decisions — the manager-flow "
-                "recorder expects to write them live.",
+                "IN_PROGRESS_HAS_ACTIONS",
+                f"opp {opp['opportunity_id']}: in_progress week already has "
+                f"{last_week['actions']} action(s) seeded — the manager-flow "
+                "recorder expects to create the audit + task live.",
             )
 
 
