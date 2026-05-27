@@ -63,15 +63,23 @@ Many per-opportunity reports include a **Flags** column. Flags are findings the 
 
 When you open a report, the system reads the data and applies all relevant flags immediately on page load. There is nothing to click to trigger this — flags are already present by the time the dashboard is visible. A row with no concerns shows an em-dash (—).
 
-Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same time.
+Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same time. Flag pills never break mid-phrase — the FLAGS column widens to fit the full label of whichever flags are active on that row.
 
 ### Actions column
 
 Every row has an **Actions** column with two menu buttons: **Create Audit ▾** and **Create Task ▾**. Both buttons are always available regardless of whether the row carries a flag.
 
-When a row does carry a flag, opening either menu surfaces a flag-context-aware quick action — for example, an audit filter or a coaching prompt that is already pre-filled based on the specific concern raised for that worker. These menu items use the same styling as all other menu items; they have no special icon or background tint. The label describes what the action does (for example, "Audit low-MUAC visits" or "Coaching: reach harder households").
+The dropdown menus display each option as an outlined button (gray border, white background, blue hover highlight) so every option is clearly clickable.
 
-The action dropdown menus use a white background with a soft shadow and gray border. Each menu item is clearly clickable, with a highlighted background on hover.
+**Create Audit menu** always contains exactly two options:
+
+- **New Audit** — opens a blank audit record for that worker
+- **Audit Last 7 days** — opens an audit pre-scoped to the most recent seven days of that worker's visits
+
+**Create Task menu** contains:
+
+- **New Task** — opens a blank task record for that worker
+- **Coach on Flag implications** — only appears when the row carries at least one flag; opens a coaching task whose prompt is composed from the specific flag labels active on that row, so the coaching prompt stays relevant whether the FLW tripped SAM-low, MAM-low, gender-skew, or any combination of those flags
 
 ### CHC Nutrition Analysis flags
 
@@ -254,8 +262,4 @@ The **MBW Monitoring** template has five tabs. The sections below describe what 
 ### Overview tab
 
 - **Eligible mothers** counts only mothers who qualify for the full intervention bonus — this is the same eligibility rule used in the Performance tab and the drilldown, so all three figures stay consistent with each other.
-- **Expected visits** (shown as _total_cases_ in exports) is the count of visits that were expected in the selected period, matching the original MBW v1 definition.
-
-### Followups tab
-
-- **Completion rate** is calculated using the same eligibility filter as MBW v1, and includes a 5-day grace window so visits completed slightly after their due date are not counted as missed
+- **Expected visits** (shown as
