@@ -75,14 +75,14 @@ When a row does carry a flag, opening either menu surfaces a flag-context-aware 
 
 The CHC Nutrition Analysis dashboard uses the following flag catalog:
 
-| Flag | What it means |
-| --- | --- |
-| **sam_low** | The FLW's SAM case rate is lower than expected — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
-| **mam_low** | The FLW's MAM case rate is lower than expected — same pattern as sam_low but for moderate acute malnutrition |
-| **gender_skew** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction |
+| Flag            | What it means                                                                                                                                |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **sam_low**     | The FLW's SAM case rate is lower than expected — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
+| **mam_low**     | The FLW's MAM case rate is lower than expected — same pattern as sam_low but for moderate acute malnutrition                                 |
+| **gender_skew** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                                   |
 
 !!! note "SAM/MAM flags signal too few at-risk cases, not too many"
-    These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
+These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
 
 ---
 
@@ -184,10 +184,10 @@ This is useful for training videos, funder demonstrations, or onboarding walkthr
 To use synthetic data capabilities, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
 !!! note "No real data is used in the output"
-    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
+The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
 !!! note "Nutrition metrics and other program-specific fields in synthetic data"
-    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
+Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
 
 ### Creating a New Workflow with Claude Code
 
@@ -263,4 +263,4 @@ The **MBW Monitoring** template has five tabs. The sections below describe what 
 ### GPS tab
 
 - **Flagged visits** and **total flagged** are now calculated using the 5 km distance threshold.
-- **Cases with revis
+- \*\*Cases with revis
