@@ -547,6 +547,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Generating Demo or Test Data from a Real Opportunity">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#live-manager-flow-demos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live manager-flow demos
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -717,56 +734,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#solicitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Solicitations
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Solicitations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#required-fields-and-validation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Required fields and validation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#evaluation-rubric" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Evaluation rubric
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-questions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common Questions
-      
-    </span>
-  </a>
   
 </li>
       
@@ -1137,6 +1104,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Generating Demo or Test Data from a Real Opportunity">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#live-manager-flow-demos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live manager-flow demos
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -1310,56 +1294,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#solicitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Solicitations
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Solicitations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#required-fields-and-validation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Required fields and validation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#evaluation-rubric" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Evaluation rubric
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-questions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common Questions
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1491,6 +1425,18 @@
 <td><strong>CHC Nutrition Analysis</strong></td>
 <td>Community health centre nutrition program monitoring</td>
 </tr>
+<tr>
+<td><strong>MBW Auditing V4</strong></td>
+<td>MBW audit reviews with flag and task workflow</td>
+</tr>
+<tr>
+<td><strong>MBW Auditing V5</strong></td>
+<td>MBW audit reviews — faster loads and preserved runs</td>
+</tr>
+<tr>
+<td><strong>Program Admin Report</strong></td>
+<td>Cross-opportunity compliance view for program admins</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -1522,7 +1468,22 @@
 <li><strong>OCS coaching transcripts</strong> — demonstrating the outreach coaching conversation flow within the synthetic opportunity.</li>
 </ul>
 <p>This makes synthetic data suitable for full stakeholder and funder demonstrations without any real patient data being used.</p>
-<p>To use this capability, ask your program administrator or raise a request in <strong>#connect-labs</strong>. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.</p>
+<h4 id="live-manager-flow-demos">Live manager-flow demos<a class="headerlink" href="#live-manager-flow-demos" title="Permanent link">&para;</a></h4>
+<p>If you want to record a walkthrough that shows a network manager actually conducting a weekly review — rather than clicking through a pre-decided run — you can request the <strong>in-progress last week</strong> seed flag when setting up a synthetic opportunity. When this flag is enabled:</p>
+<ul>
+<li>The most recent week's run is left in an <strong>in-progress</strong> state with no decisions, audits, or tasks already filled in.</li>
+<li>The manager performing the walkthrough makes real decisions during the recording, so the demo looks and feels like a genuine live review rather than a replay.</li>
+</ul>
+<p>While the run is in progress, the manager has access to the full set of live actions in the dashboard:</p>
+<ul>
+<li><strong>Mark all No Issue</strong> — a toolbar button displayed above the table (next to the table title) that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.</li>
+<li><strong>Mark No Issue</strong> — a per-row button to approve an individual field worker without raising a flag. After clicking either the bulk or per-row button, the Decision column fills in with a green <strong>No Issues</strong> pill and the Actions cell for that row is cleared.</li>
+<li><strong>Create Audit</strong> — creates a real audit record immediately on click, linked to that worker's visit data.</li>
+<li><strong>Create Task with Coaching</strong> — opens the <strong>Initiate AI Assistant</strong> modal on the task page, the same modal a real OCS user sees. The task page shows a short, readable description of what the coaching task is about; the full OCS bot prompt is pre-filled separately in the modal's prompt field, where the manager can read or edit it before clicking <strong>Initiate AI</strong> to start the coaching conversation.</li>
+</ul>
+<p>All four actions are only available while the run is in an <strong>in-progress</strong> state. Once the run is concluded it becomes read-only, so the buttons are no longer shown.</p>
+<p>This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in <strong>#connect-labs</strong> and specify that you need an in-progress run for the most recent week.</p>
+<p>To use synthetic data capabilities, ask your program administrator or raise a request in <strong>#connect-labs</strong>. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.</p>
 <div class="admonition note">
 <p class="admonition-title">No real data is used in the output</p>
 </div>
@@ -1638,27 +1599,7 @@
 <h3 id="mother-counts-per-field-worker">Mother counts per field worker<a class="headerlink" href="#mother-counts-per-field-worker" title="Permanent link">&para;</a></h3>
 <p>Each field worker row shows two mother counts: a <strong>total</strong> and an <strong>eligible</strong> figure (shown in parentheses). Both numbers are drawn from the same source — the set of mothers linked to that worker through visit records. This means the eligible count will always be equal to or less than the total, and you should never see the eligible figure exceed the total.</p>
 <h3 id="prev-column">Prev column<a class="headerlink" href="#prev-column" title="Permanent link">&para;</a></h3>
-<p>The <strong>Prev</strong> column shows the performance category assigned to each field worker in the most recent previous run. This lets you compare a worker's current category against where they stood last time. The column looks back across previous workflow versions as well, so a worker's prior category will appear even if the workflow has been updated since that run. If the column was showing "—" for all workers even when previous runs existed, that display issue has been corrected — the column now correctly loads categories from the most recent run where categories were set.</p>
-<hr />
-<h2 id="solicitations">Solicitations<a class="headerlink" href="#solicitations" title="Permanent link">&para;</a></h2>
-<p>Solicitations are the structured postings used to invite field workers to apply for an opportunity. They are created either through the MCP tool or via the Labs manager interface.</p>
-<h3 id="required-fields-and-validation">Required fields and validation<a class="headerlink" href="#required-fields-and-validation" title="Permanent link">&para;</a></h3>
-<p>When a solicitation is created, Labs now checks that all required fields are present and correctly named before saving. If anything is wrong — a misspelled field name, a missing deadline, a malformed evaluation rubric, or a question reference that points to something that doesn't exist — the creation will fail immediately with a clear error message describing exactly what needs to be fixed.</p>
-<p>This replaces the previous behaviour where incorrectly shaped solicitations were saved silently, causing data to land in the wrong place. If you are using the manager UI to create a solicitation and something is wrong with the form, you will now see an inline error on the affected field rather than having the problem slip through unnoticed.</p>
-<div class="admonition note">
-<p class="admonition-title">If you receive a validation error</p>
-</div>
-<p>Read the error message carefully — it will tell you which field is wrong and what the expected format is. Common issues include using the wrong field name (for example, <code>overview</code> instead of <code>description</code>) or leaving the application deadline blank. Correct the flagged fields and resubmit.</p>
-<h3 id="evaluation-rubric">Evaluation rubric<a class="headerlink" href="#evaluation-rubric" title="Permanent link">&para;</a></h3>
-<p>Each solicitation can include an evaluation rubric — a list of criteria used to score applications. Each criterion must have a <strong>name</strong> and a <strong>description</strong>. Any questions referenced in the rubric must exist in the solicitation's question list. If a criterion references a question that isn't defined, the validation will catch this and tell you which reference is broken.</p>
-<hr />
-<h2 id="common-questions">Common Questions<a class="headerlink" href="#common-questions" title="Permanent link">&para;</a></h2>
-<p><strong>How do I create a new workflow for my program?</strong>
-Start from the closest existing template and have Claude Code build a new one — see <a href="#creating-and-customizing-workflows">Creating and Customizing Workflows</a> above for step-by-step guidance. You don't need to run Labs locally; changes deploy directly to Labs prod.</p>
-<p><strong>Should I build a workflow or a custom dashboard in Python?</strong>
-Use a workflow for almost all program reporting needs. Custom Python or Django code is only warranted for genuinely complex multi-step UIs — and even then, breaking the work into multiple simpler workflows is usually the right answer.</p>
-<p><strong>Claude Code keeps generating Python aggregation code instead of SQL — what should I do?</strong>
-All data aggreg</p>
+<p>The <strong>Prev</strong> column shows the performance category assigned to each field worker in the most recent previous run. This lets you compare a worker's current category against where they stood last time. The column looks back across previous workflow versions as well, so a worker's prior category will appear even if the workflow has been updated since that run. If the column was</p>
 
 
 
