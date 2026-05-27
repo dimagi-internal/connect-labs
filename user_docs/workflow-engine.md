@@ -55,6 +55,37 @@ Click any row to see that worker's detailed record — individual visit data, ti
 
 ---
 
+## Flags and Actions
+
+### Flags column
+
+Many per-opportunity reports include a **Flags** column. Flags are findings the system raises automatically based on the metrics — they represent concerns surfaced from the data, not judgments that a manager records manually.
+
+When you open a report, the system reads the data and applies all relevant flags immediately on page load. There is nothing to click to trigger this — flags are already present by the time the dashboard is visible. A row with no concerns shows an em-dash (—).
+
+Each active concern appears as a coloured pill in the Flags cell. A row can carry more than one flag at the same time.
+
+### Actions column
+
+Every row has an **Actions** column with two menu buttons: **Create Audit ▾** and **Send Task ▾**. Both buttons are always available regardless of whether the row carries a flag.
+
+When a row does carry a flag, opening either menu surfaces a flag-context-aware quick action — for example, an audit filter or a coaching prompt that is already pre-filled based on the specific concern raised for that worker.
+
+### CHC Nutrition Analysis flags
+
+The CHC Nutrition Analysis dashboard uses the following flag catalog:
+
+| Flag | What it means |
+| --- | --- |
+| **sam_low** | The FLW's SAM case rate is lower than expected — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
+| **mam_low** | The FLW's MAM case rate is lower than expected — same pattern as sam_low but for moderate acute malnutrition |
+| **gender_skew** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction |
+
+!!! note "SAM/MAM flags signal too few at-risk cases, not too many"
+    These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
+
+---
+
 ## Workflow Statuses
 
 Many workflows include a status column that tracks where a case is in a program process:
@@ -153,10 +184,10 @@ This is useful for training videos, funder demonstrations, or onboarding walkthr
 To use synthetic data capabilities, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
 !!! note "No real data is used in the output"
-The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
+    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
 !!! note "Nutrition metrics and other program-specific fields in synthetic data"
-Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
+    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
 
 ### Creating a New Workflow with Claude Code
 
@@ -206,6 +237,12 @@ Labs is a rendering and caching layer. All workflow definitions, pipeline config
 
 This has a useful implication: **resetting or redeploying the Labs environment never destroys your workflow data** — everything survives in Connect prod. Editing a workflow via Claude Code or the MCP is equivalent to updating that JSON record on Connect prod.
 
+### How the Program Admin Report rolls up data
+
+The **Program Admin Report** is a cross-opportunity summary that gives program administrators a single view across all opportunities. It queries flags, audits, and tasks independently — each by workflow run — and then groups the results per FLW. This means the counts for each of those three columns reflect only records tied to the current run, not a combined or joined total from an earlier decision-based calculation.
+
+If you notice a figure in the Program Admin Report that differs from what you see inside an individual opportunity's dashboard, check whether you are comparing the same run period in both views.
+
 ---
 
 ## MBW Monitoring Dashboard
@@ -226,43 +263,4 @@ The **MBW Monitoring** template has five tabs. The sections below describe what 
 ### GPS tab
 
 - **Flagged visits** and **total flagged** are now calculated using the 5 km distance threshold.
-- **Cases with revisits** counts distinct mothers, not the total number of distance log entries.
-- **Visits with GPS**, **unique cases**, and **average daily travel (km)** are all produced and visible in the tab.
-
-### Performance tab
-
-Field workers are grouped into four categories, matching the original MBW v1 logic:
-
-| Category             | What it means                                            |
-| -------------------- | -------------------------------------------------------- |
-| Eligible for Renewal | Worker meets the still-eligible business rule            |
-| Probation            | Worker is at risk — missed visits above the threshold    |
-| Suspended            | Worker has exceeded the allowable missed-visit threshold |
-| No Category          | Insufficient data to place the worker in a category      |
-
-The tab also shows the percentage of workers who missed one visit or fewer (_pct_missed_1_or_less_) and milestone percentages.
-
----
-
-## MBW Auditing V4 Dashboard
-
-### % Still Eligible
-
-The **% Still Eligible** figure answers the question: of mothers who are bonus-eligible AND have a completed ANC visit, how many have missed at most 1 of their post-ANC visits within their expiry window?
-
-A mother is included in the denominator only if she meets both of the following conditions:
-
-1. She qualifies for the full intervention bonus.
-2. Her antenatal visit completion is recorded as complete on her visit form.
-
-The missed-visit check then looks only at the five post-ANC visit types — **Postnatal Delivery, 1 Week, 1 Month, 3 Month, and 6 Month** — within the mother's expiry window. The ANC visit itself is not counted in this check, because it is already required just to be included in the denominator.
-
-If you see this figure change compared to an earlier version of the dashboard, it is because the calculation now correctly matches visit records to their scheduled visit types and applies both eligibility filters together before checking for missed visits.
-
-### Mother counts per field worker
-
-Each field worker row shows two mother counts: a **total** and an **eligible** figure (shown in parentheses). Both numbers are drawn from the same source — the set of mothers linked to that worker through visit records. This means the eligible count will always be equal to or less than the total, and you should never see the eligible figure exceed the total.
-
-### Prev column
-
-The **Prev** column shows the performance category assigned to each field worker in the most recent previous run. This lets you compare a worker's current category against where they stood last time. The column looks back across previous workflow versions as well, so a worker's prior category will appear even if the workflow has been updated since that run. If the column was
+- **Cases with revis
