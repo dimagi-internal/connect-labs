@@ -568,39 +568,69 @@ _ALL_MUAC_BINS = (
 
 
 def _muac_distribution(*, severity: int, rng) -> dict[str, int]:
-    """Return MUAC distribution bin counts across all 12 bins for the given
-    severity (0=clean, higher=more SAM/MAM).
+    """Return MUAC distribution bin counts across all 12 bins.
 
-    Children measured for MUAC are typically under 5 years old, so readings
-    are concentrated in the 12-17 cm range with a long right tail toward
-    healthier values. The synthetic generator earlier only emitted weights
-    for the first 6 bins (9.5-15.5cm), which made the rendered MUAC sparkline
-    look truncated. Now spans the full 9.5-21.5cm range.
+    Severity semantics (aligned with PR #281's flag-direction flip):
+
+      - severity 0: HONEST sampling. Realistic distribution that includes
+        the expected baseline of SAM/MAM cases (SAM ≈ 3-7%, MAM ≈ 7-10%)
+        you'd see in a high-malnutrition area. The row passes through
+        without tripping sam_low / mam_low.
+      - severity 1: thin baseline (used between flags for suspended_*
+        archetypes). SAM/MAM still present, just smaller. Doesn't trip
+        flags.
+      - severity 2: CHERRY-PICKING suspect. Zero mass in SAM bins
+        (9.5-11.5cm) and the MAM bin (11.5-12.5cm); the rest of the
+        distribution still looks like a natural bell, just centered a
+        touch higher (the FLW is visiting better-fed children). Trips
+        both sam_low and mam_low.
+      - severity 3+: extreme cherry-picking. Same SAM/MAM-empty left
+        tail; mass shifted further right.
+
+    Children measured for MUAC are typically under 5 years old, so all
+    distributions stay concentrated in the 12-17cm range with a tapering
+    right tail toward ~20cm. Every severity here is meant to LOOK natural
+    in shape — the difference is the size of the left-tail SAM/MAM
+    contribution, not the overall silhouette.
     """
     # Per-severity bin weights, indexed by bin (in the order of _ALL_MUAC_BINS).
-    # Healthy distributions peak around 14-15cm and have a meaningful right
-    # tail of larger-arm children up to ~18cm. Severe distributions are
-    # left-skewed with mass in the 10-12cm range.
     if severity <= 0:
-        weights = [0, 0, 1, 3, 6, 8, 6, 3, 2, 1, 0, 0]
+        # Honest baseline: SAM=2, MAM=3 against ~28 measurements →
+        # SAM ≈ 7%, MAM ≈ 11%. Comfortably above the < 1% / < 3%
+        # thresholds even after downward jitter on bin 1 (worst case
+        # SAM = 1, mc ≈ 27, SAM% ≈ 3.7% — still safe).
+        weights = [0, 2, 3, 5, 6, 5, 3, 2, 1, 1, 0, 0]
     elif severity == 1:
-        weights = [0, 1, 3, 6, 6, 5, 3, 2, 1, 1, 0, 0]
+        # Thinner left tail; still has some SAM/MAM presence so doesn't
+        # trip flags. Used as the steady-state for suspended_* archetypes
+        # in their non-flagged weeks.
+        weights = [0, 1, 2, 5, 6, 5, 3, 2, 1, 1, 0, 0]
     elif severity == 2:
-        weights = [1, 4, 6, 5, 3, 2, 1, 1, 0, 0, 0, 0]
+        # Cherry-picking — zero SAM, zero MAM, bell curve centered ~14cm.
+        weights = [0, 0, 0, 3, 6, 7, 5, 3, 1, 1, 0, 0]
     else:  # severity 3+
-        weights = [4, 6, 5, 3, 1, 1, 0, 0, 0, 0, 0, 0]
+        # Extreme cherry-picking — peak shifted to ~15cm, longer right tail.
+        weights = [0, 0, 0, 1, 4, 7, 6, 4, 2, 1, 0, 0]
 
     # Per-bin jitter so two FLWs in the same archetype don't look identical.
-    # SAM-range bins (the first two: 9.5-10.5 and 10.5-11.5) get NO upward
-    # jitter for severity-0 FLWs — otherwise a clean FLW could accidentally
-    # land at SAM > 5% and trip the chc_nutrition isFailing gate (which
-    # blocks "Mark No Issue" and would force the manager to audit a row
-    # that has no real issue). For severity 1+, the row is already meant
-    # to look concerning so full ±1 jitter is fine.
+    # The SAM bins (0, 1) and the MAM bin (2) are flag-threshold-sensitive
+    # — a single visit in the wrong direction can flip a row across the
+    # < 1% / < 3% line. Direction the jitter accordingly:
+    #
+    #   - severity 0/1 (intended clean): jitter UP only on SAM/MAM bins
+    #     so downward noise can't accidentally cross into the flagged
+    #     zone. The seed weights are already a comfortable margin above
+    #     the threshold; jittering up keeps that distance.
+    #   - severity 2+ (intended flagged): jitter DOWN only on SAM/MAM
+    #     bins so an upward bump can't accidentally land a single
+    #     measurement and un-flag the row.
+    #
+    # All other bins get symmetric ±1 jitter for visual variety.
     def _jit(bin_idx, w):
-        if severity <= 0 and bin_idx < 2:
-            # Clean FLWs: no upward jitter on SAM bins.
-            return max(0, w + rng.randint(-1, 0))
+        if bin_idx <= 2:
+            if severity >= 2:
+                return max(0, w + rng.randint(-1, 0))
+            return max(0, w + rng.randint(0, 1))
         return max(0, w + rng.randint(-1, 1))
 
     return {bin_name: _jit(i, w) for i, (bin_name, w) in enumerate(zip(_ALL_MUAC_BINS, weights))}
