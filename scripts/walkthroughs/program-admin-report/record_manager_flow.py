@@ -1,9 +1,21 @@
-"""Record the manager-flow prepend: Northern Wk4 in_progress → bulk
-Mark No Issue → Create Audit on the flagged FLW → audit detail → back
-to review → Create Task with Coaching → task detail w/ OCS conversation.
+"""Record the manager-flow prepend: Northern Wk4 in_progress → auto-flags
+appear on mount → Create Audit (flag-context quick action) on the flagged
+FLW → audit detail → back to review → Send Task (flag-context coaching
+quick action) → task detail w/ OCS conversation.
 
 Output: a single ``.webm`` in /tmp/par_preview/video_manager/ that's
 later encoded + concatenated with the drill-through recording.
+
+The UI shape changed in PR #281 (Decisions → Flags):
+
+  - There's no longer a "Mark all non-flagged FLWs as No Issue" toolbar
+    button. Flags are auto-applied by the framework on mount (via
+    view.ensureAutoFlags), so the manager arrives at a fully-flagged
+    page; there is nothing to bulk-mark.
+  - Actions are two split-button menus per row (``Create Audit ▾`` /
+    ``Send Task ▾``). When a row carries a flag, the menu surfaces a
+    highlighted flag-context-aware quick action. The recorder picks the
+    highlighted item to mirror what a manager would actually do.
 
 All Playwright primitives + the cursor overlay live in
 ``scripts/walkthroughs/_lib/``; this file is just the scene sequence.
@@ -19,6 +31,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from walkthroughs._lib import config as wcfg  # noqa: E402
 from walkthroughs._lib.recorder import (  # noqa: E402
     RecorderSession,
+    click_menu_item,
     click_row_button,
     goto_and_settle,
     row_button_labels,
@@ -31,6 +44,12 @@ HERE = Path(__file__).resolve().parent
 OUT_DIR = Path("/tmp/par_preview/video_manager")
 MANIFEST = Path("/tmp/par_preview/manager_snapshot_manifest.json")
 FLAGGED_FLW = "jumoke_n"
+
+# Highlighted (flag-context-aware) menu-item labels from chc_nutrition's
+# Actions cell. These are the items the recorder picks because they're
+# what a manager seeing a sam_low/mam_low flag would actually click.
+LOW_MUAC_AUDIT_ITEM = "Audit low-MUAC visits"
+LOW_MUAC_COACHING_ITEM = "Coaching: reach harder households"
 
 
 def main() -> None:
@@ -63,21 +82,25 @@ def main() -> None:
         )
         snap(rec, "wk4_in_progress")
 
-        # Scene 1: title-row "Mark all non-flagged FLWs as No Issue" toolbar
-        # button. Triggers 9 parallel decision POSTs then window.location.reload();
-        # wait for the post-reload remount, then assert 9 "No Issues" pills
-        # are rendered in the Decision column.
-        print("Scene 1: Bulk Mark all non-flagged FLWs as No Issue")
-        page.click("button:has-text('Mark all non-flagged FLWs as No Issue')")
+        # Scene 1: wait for the auto-applied flag pills to render. The
+        # framework calls view.ensureAutoFlags on mount and the table
+        # re-renders with one pill per active flag. Wait for the first
+        # canonical label to appear so we capture the post-mount state.
+        print("Scene 1: Auto-flags appear on mount")
         page.wait_for_function(
-            "() => (document.body.innerText.match(/No Issues/g) || []).length >= 9",
-            timeout=30_000,
+            "() => /SAM rate suspiciously low|MAM rate suspiciously low|"
+            "Gender split outside 40-60%/.test(document.body.innerText)",
+            timeout=20_000,
         )
         page.wait_for_timeout(1_500)
-        snap(rec, "after_bulk_mark")
+        snap(rec, "flags_auto_applied")
 
-        # Scene 2: scroll to flagged FLW, click Create Audit.
-        print(f"Scene 2: Click Create Audit for {FLAGGED_FLW}")
+        # Scene 2: scroll to flagged FLW, open Create Audit menu, click the
+        # highlighted low-MUAC quick action. The menu trigger is a
+        # MenuButton with label "Create Audit"; the highlighted item for a
+        # sam_low/mam_low flag is "Audit low-MUAC visits" (per
+        # chc_nutrition_analysis.py).
+        print(f"Scene 2: Create Audit (low-MUAC quick action) for {FLAGGED_FLW}")
         page.wait_for_selector(f"text={FLAGGED_FLW}", timeout=15_000)
         page.wait_for_timeout(800)
         scroll_row_into_view(page, FLAGGED_FLW)
@@ -85,9 +108,18 @@ def main() -> None:
         print(f"  pre-click row buttons: {row_button_labels(page, FLAGGED_FLW)}")
         if not click_row_button(page, FLAGGED_FLW, "Create Audit"):
             raise RuntimeError(
-                f"Create Audit button not found on {FLAGGED_FLW}'s row. "
+                f"Create Audit menu trigger not found on {FLAGGED_FLW}'s row. "
                 "Did a previous recorder run already create the audit? "
                 "Re-run regenerate.py with cleanup_first=true."
+            )
+        # The menu opens as an absolute-positioned panel — give it a beat
+        # to mount before we look inside.
+        page.wait_for_timeout(600)
+        if not click_menu_item(page, LOW_MUAC_AUDIT_ITEM):
+            raise RuntimeError(
+                f"Menu item {LOW_MUAC_AUDIT_ITEM!r} not found after opening "
+                f"Create Audit menu for {FLAGGED_FLW}. Auto-flags may not "
+                "have populated the flag-context quick actions."
             )
         page.wait_for_url("**/audit/**", timeout=30_000)
         # Wait for the audit's assessment count header instead of networkidle —
@@ -112,16 +144,24 @@ def main() -> None:
         )
         snap(rec, "back_after_audit")
 
-        # Scene 5: Create Task with Coaching for the flagged FLW. Per PR #272
-        # the click creates the task + decision then navigates directly to
-        # /tasks/<id>/edit/ — no separate View Task hop. The task page renders
-        # with the coaching prompt as the description (no OCS conversation
-        # yet — the manager fires that next via Initiate AI Assistant).
-        print(f"Scene 5: Create Task with Coaching for {FLAGGED_FLW}")
+        # Scene 5: open Send Task menu, click the highlighted coaching quick
+        # action. Per PR #281 the coaching task is now under the Send Task
+        # menu (no top-level "Create Task with Coaching" button). The
+        # render-time onClick builds {description, coaching_prompt} from
+        # the FLW's flag set; task_single_create stores coaching_prompt in
+        # task.data and the AI modal pre-fills from there (PR #282).
+        print(f"Scene 5: Send Task (coaching quick action) for {FLAGGED_FLW}")
         scroll_row_into_view(page, FLAGGED_FLW)
         page.wait_for_timeout(1_200)
-        if not click_row_button(page, FLAGGED_FLW, "Create Task with Coaching"):
-            raise RuntimeError(f"Create Task with Coaching button not found on {FLAGGED_FLW}'s row.")
+        if not click_row_button(page, FLAGGED_FLW, "Send Task"):
+            raise RuntimeError(f"Send Task menu trigger not found on {FLAGGED_FLW}'s row.")
+        page.wait_for_timeout(600)
+        if not click_menu_item(page, LOW_MUAC_COACHING_ITEM):
+            raise RuntimeError(
+                f"Menu item {LOW_MUAC_COACHING_ITEM!r} not found after opening "
+                f"Send Task menu for {FLAGGED_FLW}. Auto-flags may not have "
+                "populated the flag-context quick actions."
+            )
         page.wait_for_url("**/tasks/**", timeout=30_000)
         # Wait for the task page header — networkidle won't fire because of
         # the long-polling AI session check on the task page.
@@ -133,8 +173,10 @@ def main() -> None:
         # gets populated via /tasks/api/ocs/bots/ which returns the synthetic
         # "MUAC Coaching" entry for synthetic opps (see OCSBotsListAPIView
         # short-circuit in commcare_connect/tasks/views.py). The prompt
-        # textarea pre-fills from this.taskForm.description via showAIModal()
-        # in task_create_edit.html.
+        # textarea pre-fills from this.taskForm.coaching_prompt (PR #282)
+        # — the long-form bot opener — via showAIModal() in
+        # task_create_edit.html, falling back to description for tasks
+        # created before that PR.
         print("Scene 6: Open Initiate AI Assistant modal")
         page.click("button:has-text('Initiate AI Assistant')")
         page.wait_for_function(

@@ -449,3 +449,42 @@ def row_button_labels(page: Page, username: str) -> list[str]:
         }""",
         username,
     )
+
+
+def click_menu_item(page: Page, item_text: str, *, timeout_ms: int = 5_000) -> bool:
+    """Click an item inside the currently-open MenuButton dropdown.
+
+    The chc_nutrition (and any future flag-aware) Actions cell uses split
+    buttons: clicking the trigger opens a popover of quick actions, then
+    the caller picks one. This helper waits for the popover to render
+    (any button whose text matches ``item_text``), then clicks it.
+
+    The popover panel is rendered with ``absolute z-20`` and no stable
+    test id, so we match on visible button text. Highlighted (flag-
+    context-aware) items always carry the same text the catalog declares,
+    so e.g. ``click_menu_item(page, "Audit low-MUAC visits")`` is the
+    canonical way to fire the sam_low/mam_low quick action.
+
+    Returns True if a click was issued, False if the item never appeared.
+    Caller waits on the resulting navigation/network themselves.
+    """
+    import time as _time
+
+    deadline = _time.time() + timeout_ms / 1000
+    while _time.time() < deadline:
+        clicked = page.evaluate(
+            """(label) => {
+                const items = [...document.querySelectorAll('div.absolute.z-20 button')];
+                const exact = items.find(b => b.innerText.trim() === label);
+                const fuzzy = items.find(b => b.innerText.includes(label));
+                const target = exact || fuzzy;
+                if (!target || target.disabled) return false;
+                target.click();
+                return true;
+            }""",
+            item_text,
+        )
+        if clicked:
+            return True
+        page.wait_for_timeout(150)
+    return False
