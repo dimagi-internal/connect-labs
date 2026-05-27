@@ -226,24 +226,34 @@ DEFINITION = {
 
 RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines, links, actions, onUpdateState, view }) {
     // ── Data ────────────────────────────────────────────────────
-    // Prefer the snapshot-aware view.pipelines on completed runs so the
-    // saved-run replay shows the same rows the reviewer saw at completion.
-    // Falls back to the live top-level `pipelines` prop for in-progress
-    // runs. The pipeline alias is configured per-workflow on
-    // pipeline_sources — accept either "data" or "default".
+    // Row priority:
+    //   1. view.pipelines — snapshot-aware helper. On a completed run this
+    //      returns the rows the reviewer saw at completion; on in_progress
+    //      runs it returns null.
+    //   2. instance.snapshot.pipelines — raw snapshot. Per
+    //      commcare_connect/workflow/views.py the framework leaves snapshot
+    //      null on in_progress runs in production, so this fallback only
+    //      fires when something deliberately seeded one — currently the
+    //      synthetic generator, which stamps a preview snapshot onto its
+    //      backdated in_progress run so the manager-flow demo doesn't open
+    //      on "No data available".
+    //   3. pipelines — live top-level prop. The last resort for real
+    //      in_progress runs that haven't been completed yet.
     //
-    // For synthetic in-progress runs (no real CSV behind the pipeline), the
-    // BE stashes a preview snapshot on `instance.snapshot.pipelines`. Use
-    // that as a third fallback so the table renders before the manager has
-    // clicked "Complete Review" — without this the demo's first scene would
-    // be a "No data available" placeholder.
+    // Snapshot-before-live matters for synthetic demos: opps in the
+    // synthetic registry can have a fixture CSV with a different FLW set
+    // than the seed wrote into the snapshot, and we always want the
+    // narrative FLWs (amina_n / jumoke_n / ...) to win.
+    //
+    // The pipeline alias is configured per-workflow on pipeline_sources —
+    // accept either "data" or "default".
     function _rowsFrom(p) {
         var d = p && (p.data || p.default);
         return (d && d.rows) || [];
     }
     var rows = _rowsFrom((view && view.pipelines) || null);
-    if (!rows.length) rows = _rowsFrom(pipelines);
     if (!rows.length) rows = _rowsFrom(instance && instance.snapshot && instance.snapshot.pipelines);
+    if (!rows.length) rows = _rowsFrom(pipelines);
 
     // ── Histogram bin names ─────────────────────────────────────
     var BINS = [
