@@ -1165,68 +1165,74 @@ function WorkflowUI({
           return { worker_results: {}, audit_statuses: {} };
         });
 
-      Promise.all([openTasksPromise, prevCatPromise, openRunStatePromise]).then(function (vals) {
-        var openTasksResp = vals[0] || {};
-        var prevCatResp = vals[1] || {};
-        var openRunStateResp = vals[2] || {};
-        var fetchedTasks = openTasksResp.open_tasks || {};
-        var prevCats = prevCatResp.prev_categories || {};
-        var crossRunWorkerResults = openRunStateResp.worker_results || {};
-        var crossRunAuditStatuses = openRunStateResp.audit_statuses || {};
+      Promise.all([openTasksPromise, prevCatPromise, openRunStatePromise]).then(
+        function (vals) {
+          var openTasksResp = vals[0] || {};
+          var prevCatResp = vals[1] || {};
+          var openRunStateResp = vals[2] || {};
+          var fetchedTasks = openTasksResp.open_tasks || {};
+          var prevCats = prevCatResp.prev_categories || {};
+          var crossRunWorkerResults = openRunStateResp.worker_results || {};
+          var crossRunAuditStatuses = openRunStateResp.audit_statuses || {};
 
-        setDashData({
-          flw_summaries: enrichedSummaries,
-          prev_categories: prevCats,
-        });
-
-        if (Object.keys(crossRunWorkerResults).length > 0 && !isCompleted) {
-          setWorkerResults(crossRunWorkerResults);
-          onUpdateState({ worker_results: crossRunWorkerResults }).catch(function (e) {
-            console.warn('worker_results cross-run seed failed:', e);
+          setDashData({
+            flw_summaries: enrichedSummaries,
+            prev_categories: prevCats,
           });
-        }
-        if (Object.keys(crossRunAuditStatuses).length > 0 && !isCompleted) {
-          setAuditStatuses(crossRunAuditStatuses);
-          onUpdateState({ audit_statuses: crossRunAuditStatuses }).catch(function (e) {
-            console.warn('audit_statuses cross-run seed failed:', e);
-          });
-        }
 
-        if (Object.keys(fetchedTasks).length > 0) {
-          setTaskStates(function (prev) {
-            var merged = Object.assign({}, prev);
-            Object.keys(fetchedTasks).forEach(function (u) {
-              var t = fetchedTasks[u];
-              // Don't clobber locally-set task state for tasks the user has
-              // already interacted with this session.
-              if (!merged[u] || !merged[u].triggered_at) {
-                merged[u] = {
-                  status: t.status,
-                  triggered_at: t.triggered_at,
-                  task_id: t.task_id,
-                  title: t.title,
-                };
-              }
-            });
-            if (!isCompleted) {
-              onUpdateState({ task_states: merged }).catch(function (e) {
-                console.warn('task_states persist failed:', e);
+          if (Object.keys(crossRunWorkerResults).length > 0 && !isCompleted) {
+            setWorkerResults(crossRunWorkerResults);
+            onUpdateState({ worker_results: crossRunWorkerResults }).catch(
+              function (e) {
+                console.warn('worker_results cross-run seed failed:', e);
+              },
+            );
+          }
+          if (Object.keys(crossRunAuditStatuses).length > 0 && !isCompleted) {
+            setAuditStatuses(crossRunAuditStatuses);
+            onUpdateState({ audit_statuses: crossRunAuditStatuses }).catch(
+              function (e) {
+                console.warn('audit_statuses cross-run seed failed:', e);
+              },
+            );
+          }
+
+          if (Object.keys(fetchedTasks).length > 0) {
+            setTaskStates(function (prev) {
+              var merged = Object.assign({}, prev);
+              Object.keys(fetchedTasks).forEach(function (u) {
+                var t = fetchedTasks[u];
+                // Don't clobber locally-set task state for tasks the user has
+                // already interacted with this session.
+                if (!merged[u] || !merged[u].triggered_at) {
+                  merged[u] = {
+                    status: t.status,
+                    triggered_at: t.triggered_at,
+                    task_id: t.task_id,
+                    title: t.title,
+                  };
+                }
               });
-            }
-            return merged;
-          });
-        }
+              if (!isCompleted) {
+                onUpdateState({ task_states: merged }).catch(function (e) {
+                  console.warn('task_states persist failed:', e);
+                });
+              }
+              return merged;
+            });
+          }
 
-        setStep('ready');
-        if (!isCompleted) {
-          onUpdateState({
-            analysis_complete: true,
-            analysis_ts: new Date().toISOString(),
-          }).catch(function (e) {
-            console.warn('state save failed:', e);
-          });
-        }
-      });
+          setStep('ready');
+          if (!isCompleted) {
+            onUpdateState({
+              analysis_complete: true,
+              analysis_ts: new Date().toISOString(),
+            }).catch(function (e) {
+              console.warn('state save failed:', e);
+            });
+          }
+        },
+      );
     },
     [
       step,
