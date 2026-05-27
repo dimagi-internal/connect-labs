@@ -141,10 +141,10 @@ If you want to record a walkthrough that shows a network manager actually conduc
 
 While the run is in progress, the manager has access to the full set of live actions in the dashboard:
 
-- **Mark all No Issue** — a button in the Decision column header that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.
-- **Mark No Issue** — a per-row button to approve an individual field worker without raising a flag.
+- **Mark all No Issue** — a toolbar button displayed above the table (next to the table title) that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.
+- **Mark No Issue** — a per-row button to approve an individual field worker without raising a flag. After clicking either the bulk or per-row button, the Decision column fills in with a green **No Issues** pill and the Actions cell for that row is cleared.
 - **Create Audit** — creates a real audit record immediately on click, linked to that worker's visit data.
-- **Create Task with Coaching** — creates a corrective-action task and simultaneously starts an in-progress OCS coaching conversation for that worker.
+- **Create Task with Coaching** — opens the **Initiate AI Assistant** modal on the task page, the same modal a real OCS user sees. The manager can review and edit the prompt before clicking **Initiate AI** to start the coaching conversation.
 
 All four actions are only available while the run is in an **in-progress** state. Once the run is concluded it becomes read-only, so the buttons are no longer shown.
 
@@ -265,10 +265,4 @@ Each field worker row shows two mother counts: a **total** and an **eligible** f
 
 ### Prev column
 
-The **Prev** column shows the performance category assigned to each field worker in the most recent previous run. This lets you compare a worker's current category against where they stood last time. The column looks back across previous workflow versions as well, so a worker's prior category will appear even if the workflow has been updated since that run. If the column was showing "—" for all workers even when previous runs existed, that display issue has been corrected — the column now correctly loads categories from the most recent run where categories were set.
-
----
-
-## MBW Auditing V5 Dashboard
-
-**MBW Auditing V5** is a new template available alongside V4 in the template picker. It produces the same dashboard as V4 — the same FLW summaries, the same flags, the same trigger
+The **Prev** column shows the performance category assigned to each field worker in the most recent previous run. This lets you compare a worker's current category against where they stood last time. The column looks back across previous workflow versions as well, so a worker's prior category will appear even if the workflow has been updated since that run. If the column was showing "—" for all workers even when previous runs existed, that display issue has been corrected — the column now correctly loads categories from the most recent run where categories were

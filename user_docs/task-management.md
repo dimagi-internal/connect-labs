@@ -77,12 +77,31 @@ The OCS bot sends an automated chat message to a field worker via CommCare Conne
 To trigger the OCS bot:
 
 1. Open the task
-2. Click **Start OCS Chat**
-3. The bot sends a message to the FLW through CommCare Connect
-4. The conversation transcript appears in the task timeline as it progresses
+2. Click **Create Task with Coaching** (from a review table) or **Start OCS Chat** (from within a task directly)
+3. The **Initiate AI Assistant** modal opens — review the pre-filled prompt, edit it if needed, then click **Initiate AI**
+4. The bot sends a message to the FLW through CommCare Connect
+5. The conversation transcript appears in the task timeline as it progresses
 
 !!! note
 The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
+
+---
+
+## Weekly Review Table — Manager Actions
+
+During a weekly review (such as the CHC Nutrition review), the manager works through each worker row in the review table to record a decision.
+
+**Marking a single row as No Issues:**
+Click **Mark No Issue** in the Actions column for that row. The Decision column updates to show a green **No Issues** pill and the Actions cell clears — no further steps are needed for that worker.
+
+**Marking all rows as No Issues at once:**
+Use the **Mark all No Issue** toolbar button at the top of the table (above the column headers). This applies the green **No Issues** pill to every row in one click, clearing all Actions cells at the same time.
+
+**Creating a task with coaching:**
+Click **Create Task with Coaching** in the Actions column for a worker who needs follow-up. This opens the **Initiate AI Assistant** modal, where you can review and edit the outreach prompt before clicking **Initiate AI** to start the OCS bot conversation.
+
+!!! tip
+Rows marked No Issues are visually distinct — the green pill makes it easy to scan the table and see which workers still need a decision.
 
 ---
 
