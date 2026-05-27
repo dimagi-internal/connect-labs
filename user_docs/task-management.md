@@ -83,7 +83,7 @@ To trigger the OCS bot:
 5. The conversation transcript appears in the task timeline as it progresses
 
 !!! note
-The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
+    The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
 
 ---
 
@@ -100,8 +100,10 @@ Use the **Mark all No Issue** toolbar button at the top of the table (above the 
 **Creating a task with coaching:**
 Click **Create Task with Coaching** in the Actions column for a worker who needs follow-up. This opens the **Initiate AI Assistant** modal, where you can review and edit the outreach prompt before clicking **Initiate AI** to start the OCS bot conversation.
 
+The task page shows a short, readable description of what the follow-up is about — for example, "Coach Maria on MUAC measurement technique." The full script the OCS bot will use is kept separate: it pre-fills the prompt field inside the **Initiate AI Assistant** modal when you're ready to fire it. The prompt textarea is tall enough to show the whole message without scrolling, and you can resize it vertically if you want more room to review or edit.
+
 !!! tip
-Rows marked No Issues are visually distinct — the green pill makes it easy to scan the table and see which workers still need a decision.
+    Rows marked No Issues are visually distinct — the green pill makes it easy to scan the table and see which workers still need a decision.
 
 ---
 
