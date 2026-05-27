@@ -1356,9 +1356,7 @@ function WorkflowRunner({
     // that sorts by flagged_at gets sensible ordering.
     const flagsList = (initialData.flags ?? [])
       .slice()
-      .sort((a, b) =>
-        (b.flagged_at || '').localeCompare(a.flagged_at || ''),
-      );
+      .sort((a, b) => (b.flagged_at || '').localeCompare(a.flagged_at || ''));
     const flagsByFlw = new Map<string, Flag[]>();
     for (const f of flagsList) {
       const list = flagsByFlw.get(f.flw_id);
@@ -1401,25 +1399,22 @@ function WorkflowRunner({
       await Promise.all(
         toPost.map(async (c) => {
           try {
-            const res = await fetch(
-              `/labs/workflow/api/run/${runId}/flags/`,
-              {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-CSRFToken': csrfToken,
-                },
-                body: JSON.stringify({
-                  opportunity_id: oppId,
-                  flw_id: c.flw_id,
-                  flag_key: c.flag_key,
-                  flag_label: c.flag_label || c.flag_key,
-                  evidence: c.evidence || {},
-                  source: 'auto',
-                }),
+            const res = await fetch(`/labs/workflow/api/run/${runId}/flags/`, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
               },
-            );
+              body: JSON.stringify({
+                opportunity_id: oppId,
+                flw_id: c.flw_id,
+                flag_key: c.flag_key,
+                flag_label: c.flag_label || c.flag_key,
+                evidence: c.evidence || {},
+                source: 'auto',
+              }),
+            });
             if (res.ok) {
               const body = (await res.json()) as Flag;
               persistedKeys.add(`${c.flw_id}::${c.flag_key}`);
