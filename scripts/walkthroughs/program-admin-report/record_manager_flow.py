@@ -89,15 +89,18 @@ def main() -> None:
         snap(rec, "wk4_in_progress")
 
         # Scene 1: wait for the auto-applied flag pills to render. The
-        # framework calls view.ensureAutoFlags on mount and the table
-        # re-renders with one pill per active flag. Wait for any of the
-        # current canonical labels (PR #285) to appear so we capture
-        # the post-mount state.
+        # framework calls view.ensureAutoFlags on mount, POSTs the
+        # computed flags to /flags/, and the table re-renders with one
+        # pill per active flag after the post-write refetch. Wait for
+        # any of the current canonical labels (PR #285) to appear so we
+        # capture the post-mount state. 45s timeout because the
+        # ensureAutoFlags POST + refetch round-trip on a freshly-loaded
+        # synthetic run can take 15-25s on first hit.
         print("Scene 1: Auto-flags appear on mount")
         page.wait_for_function(
             "() => /SAM rate < 1%|MAM rate < 3%|Gender split outside 40-60%/.test("
             "document.body.innerText)",
-            timeout=20_000,
+            timeout=45_000,
         )
         page.wait_for_timeout(1_500)
         snap(rec, "flags_auto_applied")
