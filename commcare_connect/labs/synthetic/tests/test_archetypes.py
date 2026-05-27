@@ -269,21 +269,38 @@ def test_flw_pipeline_row_shape_matches_chc_nutrition_schema():
     }
     missing = required - set(row.keys())
     assert not missing, f"missing fields: {missing}"
-    # Solid FLW: ~zero SAM, mostly healthy distribution. Allow ≤1 jitter
-    # noise from the per-bin RNG so the assertion isn't seed-sensitive.
-    assert row["muac_9_5_10_5_visits"] <= 1
+    # Solid FLW (post PR #281 flag-direction flip): SAM bins seeded so the
+    # row produces a baseline SAM presence (~3-7%) — too FEW SAM cases
+    # would now trip sam_low. With weights [0, 2, 3, ...] and downward
+    # jitter capped, bin 1 lands in [2, 3]. Allow the second SAM bin to
+    # carry the floor; just ensure the overall MUAC mean stays in the
+    # healthy range.
     assert row["avg_muac_cm"] >= 13.0
 
 
 def test_flw_pipeline_row_suspended_fraudulent_skews_low():
-    """suspended_fraudulent FLW in their flag week should have heavy SAM
-    concentration (low MUAC bins) — distinguishable from a solid FLW."""
+    """suspended_fraudulent FLW in their flag week should look like
+    cherry-picking — zero SAM mass, distribution shifted toward healthier
+    arm circumferences. Post PR #281 the "fraudulent" signal is
+    SAM/MAM = 0 (the FLW only visited well-fed children), not heavy
+    SAM concentration.
+    """
     from commcare_connect.labs.synthetic.archetypes import build_flw_pipeline_row
 
     solid = build_flw_pipeline_row(flw_id="a", archetype="solid", flagged_this_week=False, rng_seed=1)
     fraud = build_flw_pipeline_row(flw_id="b", archetype="suspended_fraudulent", flagged_this_week=True, rng_seed=1)
-    assert fraud["muac_9_5_10_5_visits"] > solid["muac_9_5_10_5_visits"]
-    assert fraud["avg_muac_cm"] < solid["avg_muac_cm"]
+    # Cherry-picking FLW: zero SAM bins, zero MAM bin — the bands the
+    # flag predicates fire on.
+    assert fraud["muac_9_5_10_5_visits"] == 0
+    assert fraud["muac_10_5_11_5_visits"] == 0
+    assert fraud["muac_11_5_12_5_visits"] == 0
+    # Solid FLW: non-trivial presence in at least one SAM bin so SAM%
+    # stays comfortably above the < 1% threshold.
+    assert solid["muac_10_5_11_5_visits"] >= 1
+    # And the cherry-picking FLW's mean should be at or above the solid
+    # FLW's — they're skipping the low-arm cases that would pull the
+    # mean down.
+    assert fraud["avg_muac_cm"] >= solid["avg_muac_cm"]
 
 
 def test_flw_pipeline_row_deterministic():
