@@ -1,6 +1,6 @@
 # Program Admin Report — Design
 
-**Status:** Approved 2026-05-25 (brainstorming) · Awaiting implementation plan
+**Status:** Historical — the Decision concept described here was superseded by the Flag concept in PR #281 (2026-05-27). Audits + tasks are no longer joined through a Decision record; they each carry `workflow_run_id` directly and are grouped per-FLW at render time. Flags are auto-applied from pipeline data via `view.ensureAutoFlags` instead of being manager-recorded. Current authoritative reference: `commcare_connect/workflow/WORKFLOW_REFERENCE.md` §10 (flags + actions catalog contract). Kept here for trace of the original design.
 **Authors:** jjackson + Claude
 **Related:** `commcare_connect/workflow/templates/program_admin_audit.py` (the existing SEED scaffold, which this design supersedes)
 
