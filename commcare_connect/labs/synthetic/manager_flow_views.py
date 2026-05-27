@@ -112,7 +112,7 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
         # a unique pool — running the recorder twice in a session shouldn't
         # collide visit_ids across audits.
         visit_id_base = int(time.time() * 1000) & 0x7FFFFFFF
-        opp_name = (run.data.get("opportunity_name") or "")  # cosmetic only
+        opp_name = run.data.get("opportunity_name") or ""  # cosmetic only
         audit_data = build_audit_data(
             archetype_name="completed_pass_clean",
             flw_id=flw_id,
@@ -207,11 +207,7 @@ def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonRespon
 
         dda = DecisionsDataAccess(request=request, opportunity_id=opportunity_id)
         prior = next(
-            (
-                d
-                for d in dda.get_decisions_for_run(run_id)
-                if d.flw_id == flw_id and d.audit_session_ids
-            ),
+            (d for d in dda.get_decisions_for_run(run_id) if d.flw_id == flw_id and d.audit_session_ids),
             None,
         )
         audit_ids = prior.audit_session_ids if prior else None
