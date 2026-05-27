@@ -350,17 +350,20 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     }
 
     function createTaskWithCoaching(row) {
-        // Build a coaching prompt from FLW context (bad-MUAC + passing audit).
         // Two-step flow:
-        //   1) POST /tasks/api/single-create/ — create the task record. The
-        //      Django view reads opportunity_id from request.labs_context
-        //      (set by the labs middleware off the URL's opportunity_id
-        //      query param), so the page must carry ?opportunity_id=.
-        //   2) POST /labs/workflow/api/run/<id>/manager-coaching/ —
-        //      synthetic-only endpoint that attaches a believable
-        //      coaching conversation onto the task AND writes the decision
-        //      linking it back to the FLW. Skips the real OCS round-trip
-        //      because labs synthetic opps don't have a bot wired up.
+        //   1) POST /tasks/api/single-create/ — create the task with a coaching
+        //      prompt as description. The Django view reads opportunity_id
+        //      from request.labs_context (set by the labs middleware off the
+        //      URL's opportunity_id query param), so the page must carry
+        //      ?opportunity_id=.
+        //   2) POST /labs/workflow/api/run/<id>/decisions/ — record the
+        //      decision linking the new task back to the FLW so the row
+        //      shows the "View task" button on reload. We carry forward
+        //      audit_session_ids if a prior manager-audit decision exists.
+        // Navigate the manager to the task page so they can fire the OCS
+        // chat via the existing "Initiate AI Assistant" modal (which uses
+        // the description as the pre-filled prompt). No synthetic conversation
+        // is auto-attached here; that's the manager's call.
         var name = displayName(row);
         var prompt =
             'Hi ' + name + ', your visit photos this week looked good — well-framed and the children appeared properly positioned. ' +
@@ -383,18 +386,28 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 return null;
             }
             var taskId = taskRes.data.task_id;
-            return apiPost('/labs/workflow/api/run/' + runId + '/manager-coaching/', {
+            // Carry forward the audit id from the prior manager-audit click
+            // (if any). decisionsFor() returns the most recent decision; we
+            // expect that to be the action_taken/audit one.
+            var priorDecision = (view && typeof view.decisionsFor === 'function')
+                ? view.decisionsFor(row.username) : null;
+            var audit_ids = (priorDecision && priorDecision.audit_session_ids) || null;
+            return apiPost(decisionsBase, {
                 opportunity_id: oppId,
                 flw_id: row.username,
-                task_id: taskId,
+                decision_type: 'action_taken',
                 reason_key: 'bad_muac_distribution',
                 reason_label: 'Bad MUAC distribution',
-                prompt_text: prompt,
-            }).then(function(coachRes) {
-                if (!coachRes.ok) {
-                    console.warn('manager-coaching attach failed for task ' + taskId + ':', coachRes);
+                audit_session_ids: audit_ids,
+                task_ids: [taskId],
+            }).then(function(decRes) {
+                if (!decRes.ok) {
+                    console.warn('decision create failed for task ' + taskId + ':', decRes);
                 }
-                window.location.reload();
+                // Navigate the manager straight to the task page so they can
+                // open the Initiate AI Assistant modal next.
+                var oppScope = oppId ? '?opportunity_id=' + oppId : '';
+                window.location.href = '/tasks/' + taskId + '/edit/' + oppScope;
             });
         });
     }
@@ -563,12 +576,27 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
 
         // FLW table
         React.createElement('div', {className: 'bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden'},
-            React.createElement('div', {className: 'px-6 py-4 border-b border-gray-200 bg-gray-50'},
+            React.createElement('div', {className: 'px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between gap-4'},
                 React.createElement('h2', {className: 'text-lg font-semibold text-gray-900'},
                     'FLW-Level Analysis',
                     React.createElement('span', {className: 'text-sm text-gray-600 font-normal ml-2'},
                         '(' + rows.length + ' FLWs)')
-                )
+                ),
+                // Bulk-mark toolbar action. Lives in the table title row so
+                // it reads as a real action button (rather than a tiny pill
+                // shoved into the column header). Hidden once the run is
+                // completed since decisions are read-only.
+                runIsLive && decisionsBase
+                    ? React.createElement('button', {
+                        type: 'button',
+                        onClick: markAllNoIssue,
+                        className: 'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium text-green-700 bg-white border border-green-300 hover:bg-green-50 transition-colors',
+                        title: 'Mark every non-flagged FLW (no decision yet) as having no issues',
+                      },
+                        React.createElement('i', {className: 'fa-solid fa-check-double'}),
+                        React.createElement('span', null, 'Mark all non-flagged FLWs as No Issue')
+                      )
+                    : null
             ),
             React.createElement('div', {className: 'overflow-x-auto'},
                 React.createElement('table', {className: 'min-w-full divide-y divide-gray-200'},
@@ -584,21 +612,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                             React.createElement(SortTh, {skey: 'mam', label: 'MAM', title: 'Moderate Acute Malnutrition (MUAC 11.5-12.5 cm)'}),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'MUAC Distribution'),
                             React.createElement(SortTh, {skey: 'gender', label: 'Gender Split', title: 'Female % of (Male + Female)'}),
-                            React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'},
-                                React.createElement('div', {className: 'flex items-center gap-2'},
-                                    React.createElement('span', null, 'Decision'),
-                                    // Bulk header action — only meaningful while the run is open.
-                                    // Once completed, decisions are read-only and the endpoint refuses.
-                                    runIsLive && decisionsBase
-                                        ? React.createElement('button', {
-                                            type: 'button',
-                                            onClick: markAllNoIssue,
-                                            className: 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 normal-case',
-                                            title: 'Mark every non-flagged FLW with no decision yet as "No Issue"',
-                                          }, 'Mark all No Issue')
-                                        : null
-                                )
-                            ),
+                            React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Decision'),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Actions')
                         )
                     ),
@@ -659,19 +673,24 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // Gender Split
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         React.createElement(GenderBadge, {row: r})),
-                                    // Decision — only the warning pill when the FLW was flagged.
-                                    // "No issues" decisions intentionally leave this cell empty:
-                                    // the Actions column already shows "Confirmed No Issue" so
-                                    // a redundant green pill here just adds noise. Similarly,
-                                    // the "N audit · M task" sub-text was redundant once Actions
-                                    // started showing "View audit #N (pass)" / "View task #N
-                                    // (closed · warned)" with outcomes baked in.
+                                    // Decision — fill the cell with the right pill: green "No Issues"
+                                    // for no_issues decisions, red warning for action_taken. The
+                                    // Actions column does NOT repeat this signal for no_issues
+                                    // (it's empty for those rows); for action_taken it shows
+                                    // the View Audit / View Task buttons.
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         (function() {
                                             if (!view || typeof view.decisionsFor !== 'function') return null;
                                             var d = view.decisionsFor(r.username);
-                                            if (!d || d.decision_type === 'no_issues') {
-                                                return null;  // empty cell — Actions column carries the signal
+                                            if (!d) return null;
+                                            if (d.decision_type === 'no_issues') {
+                                                return React.createElement('span', {
+                                                    className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800',
+                                                    title: d.decided_at ? 'Decided ' + d.decided_at : ''
+                                                },
+                                                    React.createElement('i', {className: 'fa-solid fa-check'}),
+                                                    'No Issues'
+                                                );
                                             }
                                             var label = d.reason_label || d.reason_key || 'Action';
                                             return React.createElement('span', {
@@ -739,13 +758,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                     title: 'View follow-up task for ' + name,
                                                 }, taskLabel(firstTask)));
                                             }
-                                            if (d && d.decision_type === 'no_issues' && buttons.length === 0) {
-                                                buttons.push(React.createElement('span', {
-                                                    key: 'confirmed',
-                                                    className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200',
-                                                    title: 'Reviewer marked this FLW as having no issues this week',
-                                                }, 'Confirmed No Issue'));
-                                            }
+                                            // no_issues decisions render an empty Actions cell —
+                                            // the Decision column carries the "No Issues" pill,
+                                            // and there's nothing to act on once the row is decided.
                                             if (!d) {
                                                 // Only allow "Mark no issues" when KPIs are within thresholds.
                                                 // FLWs failing any KPI need a real review (audit) before any sign-off.

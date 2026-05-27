@@ -698,6 +698,29 @@ class OCSBotsListAPIView(LoginRequiredMixin, View):
     """List available OCS bots (experiments) via OAuth API."""
 
     def get(self, request):
+        # Synthetic-opp short circuit: the manager-flow demo lives on
+        # synthetic opps that don't have a real OCS account wired up.
+        # Return a single canned coaching bot so the "Initiate AI Assistant"
+        # modal renders with something selectable — the bot id is recognised
+        # downstream in `task_initiate_ai` to skip the real OCS round-trip.
+        from commcare_connect.labs.synthetic.registry import get_synthetic_opp
+
+        labs_context = getattr(request, "labs_context", {}) or {}
+        opp_id = labs_context.get("opportunity_id")
+        if opp_id and get_synthetic_opp(int(opp_id)) is not None:
+            return JsonResponse(
+                {
+                    "success": True,
+                    "bots": [
+                        {
+                            "id": "synthetic-muac-coaching",
+                            "name": "MUAC Coaching (Synthetic Demo Bot)",
+                            "version_number": 1,
+                        }
+                    ],
+                }
+            )
+
         try:
             ocs_client = OCSDataAccess(request=request)
 
@@ -769,6 +792,48 @@ def task_initiate_ai(request, task_id):
             return JsonResponse({"error": "Bot ID (experiment) is required"}, status=400)
         if not prompt_text:
             return JsonResponse({"error": "Prompt instructions are required"}, status=400)
+
+        # Synthetic-opp short circuit: skip the real OCS call and attach a
+        # canned coaching transcript directly onto the task. Triggered when
+        # the modal selected the synthetic bot from OCSBotsListAPIView's
+        # short-circuit return — keeps the manager-flow demo self-contained
+        # without requiring a real OCS account / experiment.
+        from commcare_connect.labs.synthetic.manager_flow_views import _coaching_conversation
+        from commcare_connect.labs.synthetic.registry import get_synthetic_opp
+
+        is_synthetic = (
+            experiment == "synthetic-muac-coaching"
+            or get_synthetic_opp(int(task.opportunity_id)) is not None
+        )
+        if is_synthetic:
+            updated_data = dict(task.data or {})
+            updated_data["ocs_conversation"] = _coaching_conversation(prompt_text)
+            updated_data["ocs_status"] = "in_progress"
+            updated_data.pop("coaching_pending", None)
+            task.data = updated_data
+            data_access.save_task(task)
+
+            actor_name = request.user.get_display_name()
+            data_access.add_ai_session(
+                task,
+                actor=actor_name,
+                session_params={
+                    "identifier": identifier,
+                    "experiment": experiment,
+                    "platform": platform,
+                    "prompt_text": prompt_text,
+                },
+                session_id="synthetic-coaching-session",
+                status="completed",
+            )
+            return JsonResponse(
+                {
+                    "success": True,
+                    "session_id": "synthetic-coaching-session",
+                    "status": "completed",
+                    "message": "Synthetic coaching conversation started.",
+                }
+            )
 
         # Prepare session data to link back to Connect
         session_data = {

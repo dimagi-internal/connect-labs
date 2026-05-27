@@ -298,11 +298,6 @@
       </template>
 
 
-      {% comment %}
-      Synthetic coaching conversation — server-rendered when an OCS transcript
-      is embedded directly on the task (typically synthetic coaching arcs that
-      carry the conversation inline rather than referencing an OCS session_id).
-      {% endcomment %}
       {% if task and task.ocs_conversation %}
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-4">
         <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
@@ -1175,6 +1170,13 @@ function taskCreateEditPage() {
 
     showAIModal() {
       this.aiParams.identifier = this.selectedFlw?.username || '';
+      // Pre-fill the prompt textarea from the task description so the manager
+      // sees the coaching prompt they built upstream (in chc_nutrition's
+      // Create Task with Coaching button) and can edit it before firing.
+      // Only set if textarea is still empty — preserves manual edits.
+      if (!this.aiParams.prompt_text && this.description) {
+        this.aiParams.prompt_text = this.description;
+      }
       this.aiProgress = { show: false, status: '', message: '', detail: '' };
       this.showAI = true;
       this.loadBots();
