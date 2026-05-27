@@ -139,6 +139,15 @@ If you want to record a walkthrough that shows a network manager actually conduc
 - The most recent week's run is left in an **in-progress** state with no decisions, audits, or tasks already filled in.
 - The manager performing the walkthrough makes real decisions during the recording, so the demo looks and feels like a genuine live review rather than a replay.
 
+While the run is in progress, the manager has access to the full set of live actions in the dashboard:
+
+- **Mark all No Issue** — a button in the Decision column header that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.
+- **Mark No Issue** — a per-row button to approve an individual field worker without raising a flag.
+- **Create Audit** — creates a real audit record immediately on click, linked to that worker's visit data.
+- **Create Task with Coaching** — creates a corrective-action task and simultaneously starts an in-progress OCS coaching conversation for that worker.
+
+All four actions are only available while the run is in an **in-progress** state. Once the run is concluded it becomes read-only, so the buttons are no longer shown.
+
 This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in **#connect-labs** and specify that you need an in-progress run for the most recent week.
 
 To use synthetic data capabilities, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
@@ -262,12 +271,4 @@ The **Prev** column shows the performance category assigned to each field worker
 
 ## MBW Auditing V5 Dashboard
 
-**MBW Auditing V5** is a new template available alongside V4 in the template picker. It produces the same dashboard as V4 — the same FLW summaries, the same flags, the same trigger-task workflow, and the same Conclude gate — with two practical improvements for program staff.
-
-**V4 is unchanged.** Existing V4 workflow instances continue to work exactly as before. V5 is an additional option for new instances. Once parity has been confirmed on a live opportunity, V4 will be retired.
-
-### What's different in V5
-
-**Completed runs are preserved.** V5 opts into the saved-runs framework. When you conclude a V5 run, it becomes read-only and permanently shows the data and decisions that were live at the moment you concluded. If you reopen last Monday's review, you see last Monday's numbers — not today's recalculated figures. V4 does not preserve runs in this way.
-
-**Faster dashboard load.** The dashboard renders directly from pipeline rows as soon as they are available,
+**MBW Auditing V5** is a new template available alongside V4 in the template picker. It produces the same dashboard as V4 — the same FLW summaries, the same flags, the same trigger
