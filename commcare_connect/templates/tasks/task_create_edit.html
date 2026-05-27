@@ -1174,8 +1174,13 @@ function taskCreateEditPage() {
       // sees the coaching prompt they built upstream (in chc_nutrition's
       // Create Task with Coaching button) and can edit it before firing.
       // Only set if textarea is still empty — preserves manual edits.
+<<<<<<< Updated upstream
       if (!this.aiParams.prompt_text && this.description) {
         this.aiParams.prompt_text = this.description;
+=======
+      if (!this.aiParams.prompt_text && this.taskForm && this.taskForm.description) {
+        this.aiParams.prompt_text = this.taskForm.description;
+>>>>>>> Stashed changes
       }
       this.aiProgress = { show: false, status: '', message: '', detail: '' };
       this.showAI = true;
