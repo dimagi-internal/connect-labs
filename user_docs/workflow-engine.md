@@ -67,7 +67,9 @@ Each active concern appears as a coloured pill in the Flags cell. The pill displ
 
 ### Actions column
 
-Every row has an **Actions** column with two menu buttons: **Create Audit ▾** and **Create Task ▾**. Both buttons are always available regardless of whether the row carries a flag.
+Every row has an **Actions** column. What the Actions cell shows depends on whether an audit or task has already been created for that worker in the current run.
+
+**When no audit or task exists yet**, the cell shows two menu buttons: **Create Audit ▾** and **Create Task ▾**.
 
 The dropdown menus display each option as an outlined button (gray border, white background, blue hover highlight) so every option is clearly clickable.
 
@@ -80,6 +82,13 @@ The dropdown menus display each option as an outlined button (gray border, white
 
 - **New Task** — opens a blank task record for that worker
 - **Coach on Flag implications** — only appears when the row carries at least one flag; opens a coaching task whose prompt is composed from the specific flag labels active on that row, so the coaching prompt stays relevant whether the FLW tripped SAM-low, MAM-low, gender-skew, or any combination of those flags
+
+**When an audit or task has already been created**, the create menus are replaced by plain links:
+
+- **View Audit** — appears in place of the Create Audit menu when an audit already exists for that worker in this run; clicking it opens that audit record directly
+- **View Task** — appears in place of the Create Task menu when a task already exists for that worker in this run; clicking it opens that task record directly
+
+This means the Actions cell always reflects the current state of the row: rows with no prior action offer the create menus, and rows where action has already been taken show direct links to those records. This applies whether you are viewing the current week's run or replaying a historical run.
 
 ### CHC Nutrition Analysis flags
 
@@ -242,14 +251,4 @@ Use a workflow for nearly all program dashboards and reporting tasks:
 
 Workflows are also more powerful than Superset because they can call other Labs APIs — creating audits, tasks, or conversations directly from a button on the dashboard.
 
-Design workflows to be simple and action-oriented. A good workflow has a clear rule for what "done" looks like for each row. If you are building something that requires an LLO to follow a complex 10-step process with judgment at each step, reconsider the design — ideally those steps map to separate workflows with obvious success criteria at each stage.
-
-### How Workflow Data Is Stored
-
-Labs is a rendering and caching layer. All workflow definitions, pipeline configurations, run history, and status updates are stored as JSON records ("labs records") in Connect prod. When Labs lists your workflows, it is fetching those records in real time.
-
-This has a useful implication: **resetting or redeploying the Labs environment never destroys your workflow data** — everything survives in Connect prod. Editing a workflow via Claude Code or the MCP is equivalent to updating that JSON record on Connect prod.
-
-### How the Program Admin Report rolls up data
-
-The **Program Admin Report** is a cross-opportunity summary that gives program administrators a single view across all opportunities. It queries flags, audits, and tasks independently — each by workflow run — and then groups the results
+Design workflows to be simple and action-oriented. A good workflow has a clear rule for what "done" looks like for each row. If you are building something that requires an LLO to follow a complex 10-step process with judgment at each step, reconsider the design — ideally those steps map to separate workflows with obvious success criteria at each stage
