@@ -386,6 +386,14 @@ docs/.dry-run/
 scripts/*
 !scripts/walkthroughs/
 !scripts/walkthroughs/**
+# Per-walkthrough run-id handoff files are local — regenerate.py emits
+# them, recorders consume them, both run in the same shell. They go stale
+# fast and aren't useful in PR diffs.
+scripts/walkthroughs/*/.run_ids.json
+# Python bytecode + Playwright recordings if anyone runs from inside repo
+scripts/walkthroughs/**/__pycache__/
+scripts/walkthroughs/**/video/
+scripts/walkthroughs/**/video_manager/
 .gstack/
 .claude/settings.local.json
 .superpowers/

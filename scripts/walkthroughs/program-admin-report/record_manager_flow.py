@@ -55,12 +55,14 @@ def main() -> None:
         page.wait_for_timeout(2_500)
         snap(rec, "wk4_in_progress")
 
-        # Scene 1: bulk Mark all No Issue. Triggers 9 parallel decision POSTs
-        # then window.location.reload(); wait for the post-reload remount.
-        print("Scene 1: Bulk Mark all No Issue")
-        page.click("button:has-text('Mark all No Issue')")
+        # Scene 1: title-row "Mark all non-flagged FLWs as No Issue" toolbar
+        # button. Triggers 9 parallel decision POSTs then window.location.reload();
+        # wait for the post-reload remount, then assert 9 "No Issues" pills
+        # are rendered in the Decision column.
+        print("Scene 1: Bulk Mark all non-flagged FLWs as No Issue")
+        page.click("button:has-text('Mark all non-flagged FLWs as No Issue')")
         page.wait_for_function(
-            "() => (document.body.innerText.match(/Confirmed No Issue/g) || []).length >= 9",
+            "() => (document.body.innerText.match(/No Issues/g) || []).length >= 9",
             timeout=30_000,
         )
         page.wait_for_load_state("networkidle", timeout=30_000)
@@ -96,32 +98,83 @@ def main() -> None:
         page.wait_for_timeout(2_500)
         snap(rec, "back_after_audit")
 
-        # Scene 5: Create Task with Coaching for the flagged FLW.
+        # Scene 5: Create Task with Coaching for the flagged FLW. Per PR #272
+        # the click creates the task + decision then navigates directly to
+        # /tasks/<id>/edit/ — no separate View Task hop. The task page renders
+        # with the coaching prompt as the description (no OCS conversation
+        # yet — the manager fires that next via Initiate AI Assistant).
         print(f"Scene 5: Create Task with Coaching for {FLAGGED_FLW}")
         scroll_row_into_view(page, FLAGGED_FLW)
         page.wait_for_timeout(1_200)
         if not click_row_button(page, FLAGGED_FLW, "Create Task with Coaching"):
             raise RuntimeError(f"Create Task with Coaching button not found on {FLAGGED_FLW}'s row.")
-        page.wait_for_load_state("networkidle", timeout=45_000)
-        page.wait_for_timeout(2_500)
-        snap(rec, "after_create_task")
-
-        # Scene 6: View Task → task detail with OCS conversation.
-        print("Scene 6: Click View Task → OCS coaching conversation")
-        scroll_row_into_view(page, FLAGGED_FLW)
-        page.wait_for_timeout(800)
-        if not click_row_button(page, FLAGGED_FLW, "View task"):
-            raise RuntimeError(f"View task link not found on {FLAGGED_FLW}'s row.")
         page.wait_for_url("**/tasks/**", timeout=30_000)
         page.wait_for_load_state("networkidle", timeout=30_000)
         page.wait_for_timeout(2_500)
-        # Scroll to the conversation block so the transcript is visible.
+        snap(rec, "task_page_arrived")
+
+        # Scene 6: open the "Initiate AI Assistant" modal. The bot dropdown
+        # gets populated via /tasks/api/ocs/bots/ which returns the synthetic
+        # "MUAC Coaching" entry for synthetic opps (see OCSBotsListAPIView
+        # short-circuit in commcare_connect/tasks/views.py). The prompt
+        # textarea pre-fills from this.taskForm.description via showAIModal()
+        # in task_create_edit.html.
+        print("Scene 6: Open Initiate AI Assistant modal")
+        page.click("button:has-text('Initiate AI Assistant')")
+        page.wait_for_function(
+            "() => { const ta = document.querySelector('textarea[placeholder=\\\"Instructions for the bot...\\\"]'); return ta && ta.value && ta.value.length > 50; }",
+            timeout=15_000,
+        )
+        # Wait for the synthetic bot to appear in the dropdown, then select it.
+        page.wait_for_function(
+            "() => [...document.querySelectorAll('select')].some(s => [...s.options].some(o => o.value === 'synthetic-muac-coaching'))",
+            timeout=10_000,
+        )
+        page.evaluate(
+            "() => { const sel = [...document.querySelectorAll('select')]"
+            ".find(s => [...s.options].some(o => o.value === 'synthetic-muac-coaching'));"
+            " if (sel) { sel.value = 'synthetic-muac-coaching';"
+            " sel.dispatchEvent(new Event('input', {bubbles:true}));"
+            " sel.dispatchEvent(new Event('change', {bubbles:true})); } }"
+        )
+        page.wait_for_timeout(1_500)
+        snap(rec, "ai_modal_prompt_prefilled")
+
+        # Scene 7: Manager taps a small edit to the prompt. Visually conveys
+        # "manager is tailoring this" without rewriting the whole thing.
+        print("Scene 7: Edit the prompt slightly")
+        page.evaluate(
+            "() => { const ta = document.querySelector('textarea[placeholder=\\\"Instructions for the bot...\\\"]');"
+            " if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }"
+        )
+        page.keyboard.type(" Please be friendly.", delay=60)
+        page.wait_for_timeout(1_500)
+        snap(rec, "ai_modal_prompt_edited")
+
+        # Scene 8: click the modal's "Initiate AI" button (not the outer
+        # "Initiate AI Assistant" — selector scoped via exact text match).
+        # The synthetic short-circuit in task_initiate_ai writes the canned
+        # _coaching_conversation onto task.data.ocs_conversation and returns
+        # success; the modal's success path reloads the page after 2s and
+        # the "Coaching Conversation" block renders.
+        print("Scene 8: Click Initiate AI → coaching conversation appears")
+        page.evaluate(
+            "() => { const btns = [...document.querySelectorAll('button')]"
+            ".filter(b => b.innerText.trim() === 'Initiate AI' && !b.disabled);"
+            " if (btns[0]) btns[0].click(); }"
+        )
+        page.wait_for_function(
+            "() => document.body.innerText.includes('Coaching Conversation')",
+            timeout=30_000,
+        )
+        page.wait_for_load_state("networkidle", timeout=15_000)
+        page.wait_for_timeout(2_000)
         page.evaluate(
             "() => { const els = [...document.querySelectorAll('*')]"
-            ".filter(e => e.innerText && e.innerText.includes('MUAC tape'));"
+            ".filter(e => e.innerText && e.innerText.includes('Coaching Conversation'));"
             " if (els[0]) els[0].scrollIntoView({block: 'center'}); }"
         )
-        page.wait_for_timeout(2_500)
+        page.wait_for_timeout(3_000)
         snap(rec, "task_ocs_conversation")
 
     print(f"\nManifest: {MANIFEST}")
