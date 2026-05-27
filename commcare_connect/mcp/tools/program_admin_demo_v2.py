@@ -246,10 +246,16 @@ def _create_backdated_workflow_run(
     monday_iso: str,
     flws_active: list[dict] | None = None,
     week_idx: int = 0,
+    in_progress: bool = False,
 ) -> int:
     """Write a workflow_run record directly with status=completed +
     backdated completed_at, and (optionally) a CHC Nutrition pipeline
     snapshot with one row per active FLW.
+
+    Pass ``in_progress=True`` to leave the run unfinished — no
+    ``completed_at`` is stamped, status is ``"in_progress"``, and the
+    caller is expected to skip generating decisions/audits/tasks for this
+    week so the manager can do that work live during a walkthrough.
 
     Without the pipeline snapshot, "Open the run" from the Program Admin
     Report lands on an empty "No data available" table — there's no real
@@ -308,19 +314,24 @@ def _create_backdated_workflow_run(
     # Match that exact shape so the saved snapshot replay works the same way.
     snapshot_pipelines = {"data": {"rows": pipeline_rows}} if pipeline_rows else {}
 
-    data = {
+    data: dict[str, Any] = {
         "definition_id": definition_id,
         "opportunity_id": opportunity_id,
-        "status": "completed",
-        "completed_at": completed_at,
         "period_start": monday_iso,
         "period_end": period_end,
         "state": snapshot_state,
-        # Snapshot consumed by chc_nutrition's `view.pipelines.data` reads.
-        # Decisions are NOT in the snapshot — they're queried live via
-        # view.decisionsFor() against the separate Decision LabsRecord rows.
+        # We always store the synthetic pipeline rows on the run record.
+        # For completed runs they're authoritative (view.pipelines reads
+        # them via the snapshot path); for in_progress runs the chc_nutrition
+        # render code falls back to `instance.snapshot.pipelines` so the
+        # demo table renders before the manager has clicked Complete.
         "snapshot": {"workers": [], "pipelines": snapshot_pipelines, "state": snapshot_state},
     }
+    if in_progress:
+        data["status"] = "in_progress"
+    else:
+        data["status"] = "completed"
+        data["completed_at"] = completed_at
     rec = wda.labs_api.create_record(
         experiment="workflow",
         type="workflow_run",
@@ -556,6 +567,16 @@ def _list_decisions_for_opp(dda, opportunity_id: int):
                             "items": {"type": "integer"},
                             "default": [],
                         },
+                        "in_progress_last_week": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": (
+                                "If True, leave the LAST week's run as status=in_progress "
+                                "with no decisions/audits/tasks generated. Used to set up "
+                                "manager-flow walkthroughs where the demo recording drives "
+                                "the manager doing the review live."
+                            ),
+                        },
                         "flws": {
                             "type": "array",
                             "items": {"type": "object"},  # validated dynamically
@@ -602,6 +623,7 @@ def program_admin_demo_seed_v2(
         opp_id = opp_cfg["opportunity_id"]
         flws = opp_cfg["flws"]
         missed = set(opp_cfg.get("missed_week_idxs", []))
+        in_progress_last_week = bool(opp_cfg.get("in_progress_last_week", False))
         nm = opp_cfg["network_manager"]
 
         wda = WorkflowDataAccess(opportunity_id=opp_id, access_token=token)
@@ -630,10 +652,17 @@ def program_admin_demo_seed_v2(
             per_flw_specs = {f["id"]: _decisions_for_flw_across_weeks(f, week_count) for f in flws}
 
             week_summaries = []
+            last_week_idx = week_count - 1
             for week_idx, monday_iso in enumerate(weeks):
                 if week_idx in missed:
                     week_summaries.append({"week": monday_iso, "ran": False})
                     continue
+
+                # The manager-demo path leaves the LAST week's run as
+                # in_progress and skips writing any decisions/audits/tasks
+                # for it — the walkthrough recorder drives those actions
+                # through the UI so viewers see the live flow.
+                is_in_progress_week = in_progress_last_week and week_idx == last_week_idx
 
                 run_id = _create_backdated_workflow_run(
                     wda=wda,
@@ -642,6 +671,7 @@ def program_admin_demo_seed_v2(
                     monday_iso=monday_iso,
                     flws_active=flws,
                     week_idx=week_idx,
+                    in_progress=is_in_progress_week,
                 )
                 decisions_made = 0
                 tasks_spawned = 0
@@ -652,6 +682,10 @@ def program_admin_demo_seed_v2(
                     if spec is None:
                         continue  # not in roster this week
                     active_flw_count += 1
+                    if is_in_progress_week:
+                        # No decision/audit/task written — the manager does
+                        # it live during the walkthrough recording.
+                        continue
                     if spec.get("task_archetype"):
                         tasks_spawned += 1
                     if spec.get("audit_archetype"):
@@ -675,6 +709,7 @@ def program_admin_demo_seed_v2(
                         "week": monday_iso,
                         "ran": True,
                         "run_id": run_id,
+                        "in_progress": is_in_progress_week,
                         "decisions": decisions_made,
                         "tasks_spawned": tasks_spawned,
                         "audits_spawned": audits_spawned,

@@ -213,9 +213,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     // Falls back to the live top-level `pipelines` prop for in-progress
     // runs. The pipeline alias is configured per-workflow on
     // pipeline_sources — accept either "data" or "default".
-    var pipelinesEff = (view && view.pipelines) || pipelines || {};
-    var pipeData = pipelinesEff.data || pipelinesEff.default || null;
-    var rows = (pipeData && pipeData.rows) || [];
+    //
+    // For synthetic in-progress runs (no real CSV behind the pipeline), the
+    // BE stashes a preview snapshot on `instance.snapshot.pipelines`. Use
+    // that as a third fallback so the table renders before the manager has
+    // clicked "Complete Review" — without this the demo's first scene would
+    // be a "No data available" placeholder.
+    function _rowsFrom(p) {
+        var d = p && (p.data || p.default);
+        return (d && d.rows) || [];
+    }
+    var rows = _rowsFrom((view && view.pipelines) || null);
+    if (!rows.length) rows = _rowsFrom(pipelines);
+    if (!rows.length) rows = _rowsFrom(instance && instance.snapshot && instance.snapshot.pipelines);
 
     // ── Histogram bin names ─────────────────────────────────────
     var BINS = [
