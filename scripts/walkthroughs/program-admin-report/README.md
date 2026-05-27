@@ -23,10 +23,11 @@ recording framework.
 2. A **manager-flow video** (`manager_flow.mp4`, ~40s) — the network
    manager arriving at the in_progress Wk4 review, the auto-flags
    appearing on mount, auditing the one flagged FLW (jumoke_n) live
-   via the `Create Audit ▾` menu's highlighted "Audit low-MUAC visits"
-   quick action, navigating to the resulting task via the `Send Task ▾`
-   menu's "Coaching: reach harder households" quick action, and firing
-   the "Initiate AI Assistant" coaching chat with the pre-filled prompt.
+   via the `Create Audit ▾` menu's "Audit Last 7 days" item,
+   navigating to the resulting task via the `Create Task ▾` menu's
+   "Coach on Flag implications" item (only shown when the row carries
+   any flag), and firing the "Initiate AI Assistant" coaching chat
+   with the pre-filled prompt.
 3. A **drill-through video** (`drill_through.mp4`, ~80s) — the 9-scene
    tour from the completed PAR grid down into one flagged FLW's audit
    pictures and OCS coaching task.
