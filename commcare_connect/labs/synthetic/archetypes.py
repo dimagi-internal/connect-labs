@@ -582,7 +582,19 @@ def _muac_distribution(*, severity: int, rng) -> dict[str, int]:
     else:  # severity 3+
         weights = [4, 6, 5, 3, 1, 1, 0, 0, 0, 0, 0, 0]
     # Per-bin jitter so two FLWs in the same archetype don't look identical.
-    return {bin_name: max(0, w + rng.randint(-1, 1)) for bin_name, w in zip(_ALL_MUAC_BINS, weights)}
+    # SAM-range bins (the first two: 9.5-10.5 and 10.5-11.5) get NO upward
+    # jitter for severity-0 FLWs — otherwise a clean FLW could accidentally
+    # land at SAM > 5% and trip the chc_nutrition isFailing gate (which
+    # blocks "Mark No Issue" and would force the manager to audit a row
+    # that has no real issue). For severity 1+, the row is already meant
+    # to look concerning so full ±1 jitter is fine.
+    def _jit(bin_idx, w):
+        if severity <= 0 and bin_idx < 2:
+            # Clean FLWs: no upward jitter on SAM bins.
+            return max(0, w + rng.randint(-1, 0))
+        return max(0, w + rng.randint(-1, 1))
+
+    return {bin_name: _jit(i, w) for i, (bin_name, w) in enumerate(zip(_ALL_MUAC_BINS, weights))}
 
 
 def _gender_counts(*, muac_count: int, kpi_issue: str | None, rng) -> tuple[int, int]:
