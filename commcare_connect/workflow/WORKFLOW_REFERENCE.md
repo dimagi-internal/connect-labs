@@ -1315,28 +1315,45 @@ dedups by `(workflow_run_id, flw_id, flag_key)` — calling it repeatedly
 is safe.
 
 ```js
-React.useEffect(function() {
+React.useEffect(
+  function () {
     if (!view.ensureAutoFlags || view.isCompleted || !rows.length) return;
     var computed = [];
-    rows.forEach(function(r) {
-        if (samLow(r))    computed.push({flw_id: r.username, flag_key: 'sam_low',     flag_label: 'SAM low',     evidence: {sam_pct: samPct(r)}});
-        if (genderSkew(r)) computed.push({flw_id: r.username, flag_key: 'gender_skew', flag_label: 'Gender skew', evidence: {female_pct: genderPct(r)}});
+    rows.forEach(function (r) {
+      if (samLow(r))
+        computed.push({
+          flw_id: r.username,
+          flag_key: 'sam_low',
+          flag_label: 'SAM low',
+          evidence: { sam_pct: samPct(r) },
+        });
+      if (genderSkew(r))
+        computed.push({
+          flw_id: r.username,
+          flag_key: 'gender_skew',
+          flag_label: 'Gender skew',
+          evidence: { female_pct: genderPct(r) },
+        });
     });
     if (computed.length) view.ensureAutoFlags(computed);
-}, [rows.length]);
+  },
+  [rows.length],
+);
 ```
 
 ### Rendering the Flag column
 
 ```js
-React.createElement('td', null,
-    (function() {
-        var rowFlags = view.flagsFor(r.username);  // returns array (possibly empty)
-        if (!rowFlags.length) return '—';
-        return rowFlags.map(function(f) {
-            return pill(f.flag_label, 'amber');
-        });
-    })()
+React.createElement(
+  'td',
+  null,
+  (function () {
+    var rowFlags = view.flagsFor(r.username); // returns array (possibly empty)
+    if (!rowFlags.length) return '—';
+    return rowFlags.map(function (f) {
+      return pill(f.flag_label, 'amber');
+    });
+  })(),
 );
 ```
 
@@ -1348,14 +1365,24 @@ quick action that pre-fills the audit filter or coaching prompt.
 
 ```js
 React.createElement(MenuButton, {
-    label: 'Create Audit',
-    items: [
-        {label: 'Audit 5 recent visits', onClick: function() { createAudit(r, {count: 5}); }},
-        hasLowMUACFlag
-            ? {label: 'Audit low-MUAC visits', highlight: true,
-               onClick: function() { createAudit(r, {filter: 'low_muac'}); }}
-            : null,
-    ].filter(Boolean),
+  label: 'Create Audit',
+  items: [
+    {
+      label: 'Audit 5 recent visits',
+      onClick: function () {
+        createAudit(r, { count: 5 });
+      },
+    },
+    hasLowMUACFlag
+      ? {
+          label: 'Audit low-MUAC visits',
+          highlight: true,
+          onClick: function () {
+            createAudit(r, { filter: 'low_muac' });
+          },
+        }
+      : null,
+  ].filter(Boolean),
 });
 ```
 
