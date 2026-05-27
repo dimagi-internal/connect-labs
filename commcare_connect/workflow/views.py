@@ -2757,6 +2757,40 @@ def prev_categories_api(request):
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 
+@login_required
+def open_run_state_api(request):
+    """
+    Return merged worker_results and audit_statuses across all open (in-progress
+    or completed) runs for this opportunity, sorted oldest-first so newer runs
+    overwrite older ones per FLW. Used by V5 to pre-populate Category, Notes,
+    and Audit Status from whatever run last touched each FLW.
+    """
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        runs = wf_access.list_runs()
+        wf_access.close()
+
+        runs_with_data = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]
+        if not runs_with_data:
+            return JsonResponse({"worker_results": {}, "audit_statuses": {}})
+
+        runs_with_data.sort(key=lambda r: r.data.get("created_at") or "")
+
+        merged_worker_results = {}
+        merged_audit_statuses = {}
+        for run in runs_with_data:
+            state = run.data.get("state") or {}
+            for username, entry in (state.get("worker_results") or {}).items():
+                merged_worker_results[username] = entry
+            for username, entry in (state.get("audit_statuses") or {}).items():
+                merged_audit_statuses[username] = entry
+
+        return JsonResponse({"worker_results": merged_worker_results, "audit_statuses": merged_audit_statuses})
+    except Exception:
+        logger.exception("Failed to fetch open run state for opportunity")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
 class PipelineDataStreamView(BaseSSEStreamView):
     """
     SSE endpoint for streaming pipeline data loading progress.
