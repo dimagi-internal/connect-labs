@@ -28,7 +28,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from walkthroughs._lib import config as wcfg  # noqa: E402
 from walkthroughs._lib.discovery import find_drill_targets  # noqa: E402
 from walkthroughs._lib.grid import find_cell_position  # noqa: E402
-from walkthroughs._lib.recorder import RecorderSession  # noqa: E402
+from walkthroughs._lib.recorder import RecorderSession, goto_and_settle  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 SPEC_PATH = REPO_ROOT / "docs" / "walkthroughs" / "program-admin-report.yaml"
@@ -167,7 +167,7 @@ def main() -> int:
         record=False,
     ) as rec:
         page = rec.page
-        page.goto(par_url, wait_until="networkidle")
+        goto_and_settle(page, par_url, timeout=30_000, settle_seconds=0)
         targets = find_drill_targets(
             page.request.get,
             par_run_id,
@@ -196,12 +196,12 @@ def main() -> int:
                 raise SystemExit(f"Scene {i}: unknown target {target_key!r}")
             print(f"\nScene {i}/{len(scenes)} ({target_key}): {scene['title']}")
             print(f"  URL: {handler['url']}")
-            page.goto(handler["url"], wait_until="networkidle")
-            try:
-                page.wait_for_selector("text=Connect Labs", timeout=10_000)
-            except Exception:
-                pass
-            time.sleep(2.0)
+            goto_and_settle(
+                page, handler["url"],
+                timeout=30_000,
+                wait_for_selector="text=Connect Labs",
+                settle_seconds=2.0,
+            )
             for action in handler["post"]:
                 apply_post_action(page, action)
 

@@ -20,6 +20,7 @@ from walkthroughs._lib import config as wcfg  # noqa: E402
 from walkthroughs._lib.recorder import (  # noqa: E402
     RecorderSession,
     click_row_button,
+    goto_and_settle,
     row_button_labels,
     scroll_row_into_view,
     scroll_through_page,
@@ -49,10 +50,16 @@ def main() -> None:
     ) as rec:
         page = rec.page
 
-        # Scene 0: arrive at Wk4 in_progress weekly review.
+        # Scene 0: arrive at Wk4 in_progress weekly review. Use the
+        # tolerant goto helper — networkidle never settles on labs because
+        # of background PAR snapshot polling.
         print("Scene 0: Wk4 in_progress weekly review")
-        page.goto(wk4_url, wait_until="networkidle", timeout=60_000)
-        page.wait_for_timeout(2_500)
+        goto_and_settle(
+            page, wk4_url,
+            timeout=60_000,
+            wait_for_selector=f"text={FLAGGED_FLW}",
+            settle_seconds=2.5,
+        )
         snap(rec, "wk4_in_progress")
 
         # Scene 1: title-row "Mark all non-flagged FLWs as No Issue" toolbar
@@ -65,7 +72,6 @@ def main() -> None:
             "() => (document.body.innerText.match(/No Issues/g) || []).length >= 9",
             timeout=30_000,
         )
-        page.wait_for_load_state("networkidle", timeout=30_000)
         page.wait_for_timeout(1_500)
         snap(rec, "after_bulk_mark")
 
@@ -83,7 +89,9 @@ def main() -> None:
                 "Re-run regenerate.py with cleanup_first=true."
             )
         page.wait_for_url("**/audit/**", timeout=30_000)
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        # Wait for the audit's assessment count header instead of networkidle —
+        # bulk-assessment images stream from GDrive and never let networkidle fire.
+        page.wait_for_selector("text=Total Assessments", timeout=30_000)
         page.wait_for_timeout(2_500)
         snap(rec, "audit_pass_clean")
 
@@ -94,8 +102,12 @@ def main() -> None:
 
         # Scene 4: back to Wk4 review.
         print("Scene 4: Back to Wk4 weekly review")
-        page.goto(wk4_url, wait_until="networkidle", timeout=60_000)
-        page.wait_for_timeout(2_500)
+        goto_and_settle(
+            page, wk4_url,
+            timeout=60_000,
+            wait_for_selector=f"text={FLAGGED_FLW}",
+            settle_seconds=2.5,
+        )
         snap(rec, "back_after_audit")
 
         # Scene 5: Create Task with Coaching for the flagged FLW. Per PR #272
@@ -109,7 +121,9 @@ def main() -> None:
         if not click_row_button(page, FLAGGED_FLW, "Create Task with Coaching"):
             raise RuntimeError(f"Create Task with Coaching button not found on {FLAGGED_FLW}'s row.")
         page.wait_for_url("**/tasks/**", timeout=30_000)
-        page.wait_for_load_state("networkidle", timeout=30_000)
+        # Wait for the task page header — networkidle won't fire because of
+        # the long-polling AI session check on the task page.
+        page.wait_for_selector("text=Initiate AI Assistant", timeout=30_000)
         page.wait_for_timeout(2_500)
         snap(rec, "task_page_arrived")
 
@@ -167,7 +181,9 @@ def main() -> None:
             "() => document.body.innerText.includes('Coaching Conversation')",
             timeout=30_000,
         )
-        page.wait_for_load_state("networkidle", timeout=15_000)
+        # The post-reload page has a long-poll on /tasks/<id>/ai/sessions/
+        # that prevents networkidle. The 'Coaching Conversation' selector
+        # is the real signal of "we're ready to scroll + capture".
         page.wait_for_timeout(2_000)
         page.evaluate(
             "() => { const els = [...document.querySelectorAll('*')]"
