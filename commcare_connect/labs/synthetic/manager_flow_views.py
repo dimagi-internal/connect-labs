@@ -5,21 +5,21 @@ requiring real OCS bot wiring on every synthetic opportunity.
 Two endpoints, both scoped to an in_progress workflow run:
 
 - POST /labs/workflow/api/run/<run_id>/manager-audit/
-    Body: {opportunity_id, flw_id}
+    Body: {opportunity_id, flw_id, filter?}
     Atomically creates a `completed_pass_clean` AuditSession (5/5 good-pool
-    photos, overall_result=pass) AND a Decision linking it to the FLW for
-    that run. Returns {audit_id, decision_id, redirect_url}.
+    photos, overall_result=pass). Returns {audit_id, redirect_url}. The
+    audit carries ``labs_record_id = workflow_run_id`` so the program-admin
+    rollup can find it by run.
 
 - POST /labs/workflow/api/run/<run_id>/manager-coaching/
-    Body: {opportunity_id, flw_id, task_id, reason_key, reason_label, prompt_text}
+    Body: {opportunity_id, flw_id, task_id, prompt_text}
     Attaches a believable in-progress OCS coaching conversation onto an
-    existing task (so the task page renders a real-looking transcript) AND
-    creates a Decision linking task → FLW (carrying forward any audit ids
-    from a prior manager-audit call so the row shows both).
+    existing task (so the task page renders a real-looking transcript).
+    Returns {task_id}. The task already carries workflow_run_id from when
+    it was created via /tasks/api/single-create/.
 
-Both endpoints mirror the synthetic generator's direct-labs_api write style
-(see commcare_connect/labs/synthetic/program_admin_demo.py) so the records
-they produce are indistinguishable from seeded ones.
+Neither endpoint creates Flag records — flags are findings derived from
+data by the per-opp report's render code, not side-effects of an action.
 """
 
 from __future__ import annotations
@@ -72,8 +72,11 @@ def _coaching_conversation(prompt_text: str) -> list[dict]:
 @csrf_exempt
 @require_http_methods(["POST"])
 def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
-    """Create a completed_pass_clean audit + linking decision for the
-    manager-flow demo. See module docstring.
+    """Create a completed_pass_clean audit for the manager-flow demo.
+
+    The audit is linked back to the run via ``labs_record_id = run_id`` so
+    the program-admin rollup can find it. No Flag is created here — flags
+    are findings, not action side-effects.
     """
     try:
         body = json.loads(request.body or b"{}")
@@ -89,7 +92,6 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
     run_id = int(run_id)
 
     from commcare_connect.audit.data_access import AuditDataAccess
-    from commcare_connect.decisions.data_access import DecisionsDataAccess
     from commcare_connect.labs.synthetic.archetypes import build_audit_data
     from commcare_connect.workflow.data_access import WorkflowDataAccess
 
@@ -131,20 +133,6 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
             labs_record_id=run_id,
             username=flw_id,
         )
-
-        dda = DecisionsDataAccess(request=request, opportunity_id=opportunity_id)
-        decision = dda.create_decision(
-            workflow_run_id=run_id,
-            opportunity_id=opportunity_id,
-            flw_id=flw_id,
-            decision_type="action_taken",
-            reason_key="bad_muac_distribution",
-            reason_label="Bad MUAC distribution",
-            audit_session_ids=[audit_rec.id],
-            task_ids=None,
-            notes=None,
-            decided_by=getattr(request.user, "username", None),
-        )
     except Exception as exc:  # noqa: BLE001 — demo helper, log + 500
         logger.exception("manager_audit_create_api failed")
         return JsonResponse({"error": str(exc)}, status=500)
@@ -152,7 +140,6 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
     return JsonResponse(
         {
             "audit_id": audit_rec.id,
-            "decision_id": decision.id,
             "redirect_url": f"/audit/{audit_rec.id}/?opportunity_id={opportunity_id}",
         },
         status=201,
@@ -162,8 +149,10 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
 @csrf_exempt
 @require_http_methods(["POST"])
 def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonResponse:
-    """Attach a synthetic OCS coaching conversation onto an existing task and
-    record a Decision linking task → FLW. See module docstring.
+    """Attach a synthetic OCS coaching conversation onto an existing task.
+
+    No Flag or Decision side-effect — the task already exists and carries
+    workflow_run_id from when it was created via /tasks/api/single-create/.
     """
     try:
         body = json.loads(request.body or b"{}")
@@ -175,15 +164,11 @@ def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonRespon
     if missing:
         return JsonResponse({"error": f"Missing required fields: {missing}"}, status=400)
 
-    from commcare_connect.decisions.data_access import DecisionsDataAccess
     from commcare_connect.tasks.data_access import TaskDataAccess
 
     opportunity_id = int(body["opportunity_id"])
-    flw_id = body["flw_id"]
     task_id = int(body["task_id"])
     prompt_text = body["prompt_text"]
-    reason_key = body.get("reason_key") or "bad_muac_distribution"
-    reason_label = body.get("reason_label") or "Bad MUAC distribution"
 
     try:
         tda = TaskDataAccess(request=request, opportunity_id=opportunity_id)
@@ -204,30 +189,10 @@ def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonRespon
 
         # Persist via the raw labs_api (same pattern the synthetic seed uses)
         # — TaskDataAccess.save_task wraps a write of the whole record.
-        task_with_update = task
-        task_with_update.data = updated_data
-        tda.save_task(task_with_update)
-
-        dda = DecisionsDataAccess(request=request, opportunity_id=opportunity_id)
-        prior = next(
-            (d for d in dda.get_decisions_for_run(run_id) if d.flw_id == flw_id and d.audit_session_ids),
-            None,
-        )
-        audit_ids = prior.audit_session_ids if prior else None
-        decision = dda.create_decision(
-            workflow_run_id=run_id,
-            opportunity_id=opportunity_id,
-            flw_id=flw_id,
-            decision_type="action_taken",
-            reason_key=reason_key,
-            reason_label=reason_label,
-            audit_session_ids=audit_ids,
-            task_ids=[task_id],
-            notes=None,
-            decided_by=getattr(request.user, "username", None),
-        )
+        task.data = updated_data
+        tda.save_task(task)
     except Exception as exc:  # noqa: BLE001
         logger.exception("manager_coaching_attach_api failed")
         return JsonResponse({"error": str(exc)}, status=500)
 
-    return JsonResponse({"decision_id": decision.id, "task_id": task_id}, status=201)
+    return JsonResponse({"task_id": task_id}, status=201)

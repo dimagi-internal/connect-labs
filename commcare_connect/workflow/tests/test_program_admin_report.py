@@ -134,18 +134,18 @@ def _patch_path(name):
     return f"commcare_connect.workflow.templates.program_admin_report.{name}"
 
 
-def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
+def test_build_snapshot_joins_flags_audits_tasks_by_flw(fake_run, monkeypatch):
     from unittest.mock import MagicMock
 
     from commcare_connect.audit.models import AuditSessionRecord
-    from commcare_connect.decisions.models import DecisionRecord
+    from commcare_connect.flags.models import FlagRecord
     from commcare_connect.tasks.models import TaskRecord
     from commcare_connect.workflow.templates import program_admin_report as par
 
     # Mock the data-access classes + the cross-workflow reader at module scope.
     # AuditDataAccess is imported lazily inside build_snapshot so we patch its
     # import path directly.
-    mock_dda_class = MagicMock()
+    mock_fda_class = MagicMock()
     mock_tda_class = MagicMock()
     mock_ada_class = MagicMock()
     mock_get_saved_runs = MagicMock(
@@ -157,6 +157,7 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
             "id": 77,
             "experiment": "audit",
             "type": "AuditSession",
+            "username": "amina",
             "opportunity_id": 10001,
             "data": {
                 "status": "completed",
@@ -166,47 +167,49 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
         }
     )
 
-    mock_dda_class.return_value.get_decisions_for_run.return_value = [
-        DecisionRecord(
+    mock_fda_class.return_value.get_flags_for_run.return_value = [
+        FlagRecord(
             {
                 "id": 11,
-                "experiment": "decisions",
-                "type": "Decision",
+                "experiment": "flags",
+                "type": "Flag",
                 "username": "amina",
                 "opportunity_id": 10001,
                 "data": {
                     "workflow_run_id": 503,
                     "flw_id": "amina",
-                    "decision_type": "action_taken",
-                    "reason_key": "bad_muac_distribution",
-                    "reason_label": "Bad MUAC",
-                    "audit_session_ids": [77],
-                    "task_ids": [123],
-                    "decided_at": "2025-11-10T11:00:00Z",
+                    "flag_key": "sam_low",
+                    "flag_label": "SAM rate low",
+                    "evidence": {"sam_pct": 0.2},
+                    "source": "auto",
+                    "flagged_at": "2025-11-10T11:00:00Z",
                 },
             }
         ),
     ]
-    mock_tda_class.return_value.get_task.return_value = TaskRecord(
-        {
-            "id": 123,
-            "experiment": "tasks",
-            "type": "Task",
-            "username": "amina",
-            "opportunity_id": 10001,
-            "data": {
-                "status": "closed",
-                "resolution_details": {"official_action": "satisfactory"},
-                "events": [
-                    {"event_type": "created", "timestamp": "2025-11-10T11:01:00Z"},
-                    {"event_type": "closed", "timestamp": "2025-11-15T14:00:00Z"},
-                ],
-            },
-        }
-    )
-    mock_ada_class.return_value.get_audit_sessions.return_value = [audit_record]
+    mock_tda_class.return_value.get_tasks_for_run.return_value = [
+        TaskRecord(
+            {
+                "id": 123,
+                "experiment": "tasks",
+                "type": "Task",
+                "username": "amina",
+                "opportunity_id": 10001,
+                "data": {
+                    "username": "amina",
+                    "status": "closed",
+                    "resolution_details": {"official_action": "satisfactory"},
+                    "events": [
+                        {"event_type": "created", "timestamp": "2025-11-10T11:01:00Z"},
+                        {"event_type": "closed", "timestamp": "2025-11-15T14:00:00Z"},
+                    ],
+                },
+            }
+        )
+    ]
+    mock_ada_class.return_value.get_sessions_by_workflow_run.return_value = [audit_record]
 
-    monkeypatch.setattr(par, "DecisionsDataAccess", mock_dda_class)
+    monkeypatch.setattr(par, "FlagsDataAccess", mock_fda_class)
     monkeypatch.setattr(par, "TaskDataAccess", mock_tda_class)
     monkeypatch.setattr(par, "get_saved_runs_for_program_report", mock_get_saved_runs)
     # AuditDataAccess is imported inside build_snapshot — patch at source.
@@ -239,22 +242,22 @@ def test_build_snapshot_joins_decisions_with_tasks(fake_run, monkeypatch):
     assert len(source["runs"]) == 1
     run = source["runs"][0]
     assert run["id"] == 503
-    assert len(run["decisions"]) == 1
-    decision = run["decisions"][0]
-    assert decision["flw_id"] == "amina"
-    assert decision["reason_key"] == "bad_muac_distribution"
-    assert len(decision["task_outcomes"]) == 1
-    outcome = decision["task_outcomes"][0]
-    assert outcome["id"] == 123
-    assert outcome["status"] == "closed"
-    assert outcome["official_action"] == "satisfactory"
-    assert outcome["closed_at"] == "2025-11-15T14:00:00Z"
-    # audit_outcomes now joined from AuditDataAccess.get_audit_sessions
-    assert len(decision["audit_outcomes"]) == 1
-    audit = decision["audit_outcomes"][0]
-    assert audit["id"] == 77
+    assert len(run["flw_rows"]) == 1
+    fr = run["flw_rows"][0]
+    assert fr["flw_id"] == "amina"
+    assert len(fr["flags"]) == 1
+    assert fr["flags"][0]["flag_key"] == "sam_low"
+    assert len(fr["audits"]) == 1
+    assert fr["audits"][0]["id"] == 77
+    assert fr["audits"][0]["overall_result"] == "pass"
+    assert len(fr["tasks"]) == 1
+    task = fr["tasks"][0]
+    assert task["id"] == 123
+    assert task["status"] == "closed"
+    assert task["official_action"] == "satisfactory"
+    assert task["closed_at"] == "2025-11-15T14:00:00Z"
+    audit = fr["audits"][0]
     assert audit["status"] == "completed"
-    assert audit["overall_result"] == "pass"
     assert audit["pass_count"] == 5
 
 

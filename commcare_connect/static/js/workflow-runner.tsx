@@ -38,6 +38,7 @@ import type {
   CompleteRunParams,
   CompleteRunResponse,
   RunView,
+  Flag,
   WorkerData,
   WorkflowState,
 } from '@/components/workflow/types';
@@ -1350,22 +1351,91 @@ function WorkflowRunner({
       }
     };
 
-    // Decisions are always queried live (per spec §3.3 — Decision lifecycle
-    // state-of-truth lives on the Decision record, not the run snapshot).
-    // Newest-first so multiple decisions for the same FLW resolve to the
-    // most recent via decisionsFor().
-    const decisionsList = (initialData.decisions ?? [])
+    // Flags are always queried live — Flag lifecycle state-of-truth lives
+    // on the Flag record, not the run snapshot. Newest-first so render code
+    // that sorts by flagged_at gets sensible ordering.
+    const flagsList = (initialData.flags ?? [])
       .slice()
-      .sort((a, b) => (b.decided_at || '').localeCompare(a.decided_at || ''));
-    const decisionsByFlw = new Map<string, (typeof decisionsList)[number]>();
-    for (const d of decisionsList) {
-      if (!decisionsByFlw.has(d.flw_id)) {
-        // sorted desc — first seen = latest
-        decisionsByFlw.set(d.flw_id, d);
+      .sort((a, b) =>
+        (b.flagged_at || '').localeCompare(a.flagged_at || ''),
+      );
+    const flagsByFlw = new Map<string, Flag[]>();
+    for (const f of flagsList) {
+      const list = flagsByFlw.get(f.flw_id);
+      if (list) {
+        list.push(f);
+      } else {
+        flagsByFlw.set(f.flw_id, [f]);
       }
     }
-    const decisionsFor = (username: string) =>
-      decisionsByFlw.get(username) ?? null;
+    const flagsFor = (username: string) => flagsByFlw.get(username) ?? [];
+
+    // Dedup key for ensureAutoFlags. We track in a closure-scoped Set so
+    // repeated render-effect calls within the same page load are no-ops
+    // after the first POST, even before the BE reflects the new flag.
+    const persistedKeys = new Set<string>(
+      flagsList.map((f) => `${f.flw_id}::${f.flag_key}`),
+    );
+    const inflightKeys = new Set<string>();
+    const ensureAutoFlags = async (
+      computed: Array<{
+        flw_id: string;
+        flag_key: string;
+        flag_label?: string;
+        evidence?: Record<string, unknown>;
+      }>,
+    ): Promise<Flag[]> => {
+      if (isCompleted) return [];
+      const runId = initialData.instance.id;
+      const oppId =
+        initialData.instance.opportunity_id || initialData.opportunity_id;
+      if (!runId || !oppId) return [];
+      const toPost = computed.filter((c) => {
+        const k = `${c.flw_id}::${c.flag_key}`;
+        if (persistedKeys.has(k) || inflightKeys.has(k)) return false;
+        inflightKeys.add(k);
+        return true;
+      });
+      if (!toPost.length) return [];
+      const created: Flag[] = [];
+      await Promise.all(
+        toPost.map(async (c) => {
+          try {
+            const res = await fetch(
+              `/labs/workflow/api/run/${runId}/flags/`,
+              {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                  opportunity_id: oppId,
+                  flw_id: c.flw_id,
+                  flag_key: c.flag_key,
+                  flag_label: c.flag_label || c.flag_key,
+                  evidence: c.evidence || {},
+                  source: 'auto',
+                }),
+              },
+            );
+            if (res.ok) {
+              const body = (await res.json()) as Flag;
+              persistedKeys.add(`${c.flw_id}::${c.flag_key}`);
+              created.push(body);
+            } else {
+              console.warn(
+                `ensureAutoFlags: POST failed for ${c.flw_id}/${c.flag_key} (${res.status})`,
+              );
+            }
+          } catch (e) {
+            console.warn('ensureAutoFlags: network error', e);
+          }
+        }),
+      );
+      return created;
+    };
 
     if (isCompleted && snapshot) {
       return {
@@ -1377,8 +1447,9 @@ function WorkflowRunner({
         isCompleted: true,
         asOf: inst.completed_at ?? null,
         complete: completeFn,
-        decisions: decisionsList,
-        decisionsFor,
+        flags: flagsList,
+        flagsFor,
+        ensureAutoFlags,
       };
     }
 
@@ -1389,17 +1460,19 @@ function WorkflowRunner({
       isCompleted: false,
       asOf: null,
       complete: completeFn,
-      decisions: decisionsList,
-      decisionsFor,
+      flags: flagsList,
+      flagsFor,
+      ensureAutoFlags,
     };
   }, [
     initialData.instance,
     initialData.workers,
-    initialData.decisions,
+    initialData.flags,
     initialData.apiEndpoints.completeRun,
     pipelineData,
     instanceState,
     actions,
+    csrfToken,
   ]);
 
   // Create props for workflow component
