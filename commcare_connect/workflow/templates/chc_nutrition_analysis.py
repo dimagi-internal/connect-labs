@@ -430,19 +430,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         });
     }
 
-    function coachingPromptForLowRates(name) {
-        return 'Hi ' + name + ', your nutrition numbers this week look unusually low — very few SAM or MAM cases relative to ' +
-               'what we\'d expect from a representative sample of households in your area. Sometimes this happens when only ' +
-               'easier-to-reach households get visited and the more vulnerable ones get skipped. Can we walk through the ' +
-               'households you visited this week and identify any that you weren\'t able to reach?';
-    }
-
-    function coachingPromptForGenderSkew(name, pct) {
-        var direction = (pct !== null && pct > 60) ? 'more girls than boys' : 'more boys than girls';
-        return 'Hi ' + name + ', your gender split this week shows ' + direction + ' — outside the typical 40-60% band. ' +
-               'Is there a reason for this? Make sure the households you visit are representative of your area.';
-    }
-
     // ── State ───────────────────────────────────────────────────
     var _sort = React.useState('total_visits');
     var sortKey = _sort[0]; var setSortKey = _sort[1];
@@ -599,25 +586,23 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
             ),
             open
                 ? React.createElement('div', {
-                    className: 'absolute right-0 z-20 mt-1 w-72 rounded-lg bg-white shadow-lg py-2 px-2 border border-gray-200'
+                    className: 'absolute right-0 z-20 mt-1 w-56 rounded-lg bg-white shadow-lg py-2 px-2 border border-gray-200'
                   },
                     props.items.map(function(item, i) {
+                        // Each item renders as a visibly-outlined button so the
+                        // dropdown reads as a row of clickable buttons rather
+                        // than a hover-only menu list.
                         return React.createElement('button', {
                             key: i,
                             type: 'button',
                             disabled: !!item.disabled,
                             onClick: function() { setOpen(false); item.onClick(); },
-                            className: 'block w-full text-left px-3 py-2 rounded ' +
+                            className: 'block w-full text-left text-sm font-medium px-3 py-2 mb-1 last:mb-0 rounded-md border transition-colors ' +
                                 (item.disabled
-                                    ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-gray-700 hover:bg-slate-100 cursor-pointer'),
-                            title: item.title || '',
-                        },
-                            React.createElement('div', {className: 'text-sm font-medium'}, item.label),
-                            item.description
-                                ? React.createElement('div', {className: 'text-xs text-gray-500 mt-0.5'}, item.description)
-                                : null
-                        );
+                                    ? 'border-gray-200 text-gray-400 cursor-not-allowed bg-gray-50'
+                                    : 'border-gray-300 bg-white text-gray-700 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-700 cursor-pointer'),
+                            title: item.title || item.label || '',
+                        }, item.label);
                     })
                   )
                 : null
@@ -804,7 +789,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                     }).join(' · ') : '';
                                                     return React.createElement('span', {
                                                         key: f.id || f.flag_key,
-                                                        className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800',
+                                                        className: 'inline-block whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800',
                                                         title: f.flag_label + (ev ? ' (' + ev + ')' : ''),
                                                     }, f.flag_label || f.flag_key);
                                                 })
@@ -820,64 +805,45 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm align-top'},
                                         (function() {
                                             var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
-                                            var flagKeys = rowFlags.map(function(f) { return f.flag_key; });
-                                            var hasLowMUAC = (flagKeys.indexOf('sam_low') >= 0) || (flagKeys.indexOf('mam_low') >= 0);
-                                            var hasGenderSkew = flagKeys.indexOf('gender_skew') >= 0;
-                                            var gPct = genderPct(r);
+                                            var hasAnyFlag = rowFlags.length > 0;
 
                                             var auditItems = [
                                                 {
-                                                    label: 'Audit 5 recent visits',
-                                                    description: 'Standard random sample of recent submissions',
+                                                    label: 'New Audit',
                                                     onClick: function() { createAudit(r, {count: 5}); },
                                                 },
+                                                {
+                                                    label: 'Audit Last 7 days',
+                                                    onClick: function() { createAudit(r, {count: 5, filter: 'last_7_days'}); },
+                                                },
                                             ];
-                                            if (hasLowMUAC) {
-                                                auditItems.push({
-                                                    label: 'Audit low-MUAC visits',
-                                                    description: 'Pre-filtered for the cases this FLW may be missing',
-                                                    onClick: function() { createAudit(r, {count: 5, filter: 'low_muac'}); },
-                                                });
-                                            }
-                                            if (hasGenderSkew) {
-                                                auditItems.push({
-                                                    label: 'Audit underrepresented gender',
-                                                    description: 'Pre-filtered for the gender below the typical band',
-                                                    onClick: function() { createAudit(r, {count: 5, filter: 'underrep_gender'}); },
-                                                });
-                                            }
 
                                             var taskItems = [
                                                 {
-                                                    label: 'Generic follow-up task',
-                                                    description: 'Empty task for the manager to fill in',
-                                                    onClick: function() {
-                                                        createTask(r, {title: 'Follow-up: ' + name});
-                                                    },
+                                                    label: 'New Task',
+                                                    onClick: function() { createTask(r, {title: 'Follow-up: ' + name}); },
                                                 },
                                             ];
-                                            if (hasLowMUAC) {
+                                            // "Coach on Flag implications" only when there's a flag to
+                                            // coach on. Prompt is composed from the row's actual flag
+                                            // labels, so it stays specific regardless of which flag(s)
+                                            // tripped.
+                                            if (hasAnyFlag) {
                                                 taskItems.push({
-                                                    label: 'Coaching: reach harder households',
-                                                    description: 'Pre-filled prompt about cherry-picking easy visits',
+                                                    label: 'Coach on Flag implications',
                                                     onClick: function() {
+                                                        var flagLabels = rowFlags.map(function(f) { return f.flag_label || f.flag_key; });
+                                                        var flagList = flagLabels.join(', ');
+                                                        var prompt =
+                                                            'Hi ' + name + ', I wanted to discuss this week\'s metrics with you. ' +
+                                                            'The report flagged: ' + flagList + '. ' +
+                                                            'Can you walk me through what you\'re seeing on the ground? ' +
+                                                            'I\'d like to understand whether this is a data-collection issue, ' +
+                                                            'a household-selection issue, or something else, and what we can do together to address it.';
                                                         createTask(r, {
-                                                            title: 'Coaching — reach harder households: ' + name,
-                                                            description: 'Coach ' + name + ' on reaching harder-to-access households. SAM/MAM rates are below the expected band, suggesting the easier households are getting visited disproportionately.',
-                                                            coaching_prompt: coachingPromptForLowRates(name),
-                                                        });
-                                                    },
-                                                });
-                                            }
-                                            if (hasGenderSkew) {
-                                                taskItems.push({
-                                                    label: 'Coaching: gender balance',
-                                                    description: 'Pre-filled prompt about uneven gender split',
-                                                    onClick: function() {
-                                                        createTask(r, {
-                                                            title: 'Coaching — gender balance: ' + name,
-                                                            description: 'Coach ' + name + ' on gender-representative household selection. This week\'s split fell outside the 40-60% band.',
-                                                            coaching_prompt: coachingPromptForGenderSkew(name, gPct),
+                                                            title: 'Coaching: ' + flagList + ' — ' + name,
+                                                            description: 'Coach ' + name + ' on the report\'s flags: ' + flagList + '.',
+                                                            coaching_prompt: prompt,
                                                         });
                                                     },
                                                 });
