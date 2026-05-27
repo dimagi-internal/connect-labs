@@ -132,7 +132,16 @@ Synthetic opportunities now support the complete program management loop, not ju
 
 This makes synthetic data suitable for full stakeholder and funder demonstrations without any real patient data being used.
 
-To use this capability, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
+#### Live manager-flow demos
+
+If you want to record a walkthrough that shows a network manager actually conducting a weekly review — rather than clicking through a pre-decided run — you can request the **in-progress last week** seed flag when setting up a synthetic opportunity. When this flag is enabled:
+
+- The most recent week's run is left in an **in-progress** state with no decisions, audits, or tasks already filled in.
+- The manager performing the walkthrough makes real decisions during the recording, so the demo looks and feels like a genuine live review rather than a replay.
+
+This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in **#connect-labs** and specify that you need an in-progress run for the most recent week.
+
+To use synthetic data capabilities, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
 !!! note "No real data is used in the output"
     The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
@@ -261,16 +270,4 @@ The **Prev** column shows the performance category assigned to each field worker
 
 **Completed runs are preserved.** V5 opts into the saved-runs framework. When you conclude a V5 run, it becomes read-only and permanently shows the data and decisions that were live at the moment you concluded. If you reopen last Monday's review, you see last Monday's numbers — not today's recalculated figures. V4 does not preserve runs in this way.
 
-**Faster dashboard load.** The dashboard renders directly from pipeline rows as soon as they are available, with no background job to wait for. In V4 a celery job must spin up before the dashboard can display; in V5 you can start reviewing as soon as the pipeline has finished running.
-
-### Which version should I use?
-
-If you are starting a new MBW audit workflow, use **V5**. If you already have a V4 instance running mid-review, there is no need to switch — finish that review in V4 and consider V5 for the next cycle.
-
----
-
-## CHC Nutrition Analysis Dashboard
-
-The **CHC Nutrition Analysis** template now surfaces the same per-FLW metrics as the legacy custom_analysis nutrition dashboard, making it a drop-in replacement as custom_analysis is retired. If you were previously using the custom_analysis view for nutrition reporting, the workflow dashboard will show the same figures in the same columns.
-
-### What changed
+**Faster dashboard load.** The dashboard renders directly from pipeline rows as soon as they are available,
