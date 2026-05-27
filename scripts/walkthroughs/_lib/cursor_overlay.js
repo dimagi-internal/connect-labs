@@ -9,7 +9,8 @@
   if (window.__synthCursorReady) return;
   window.__synthCursorReady = true;
 
-  let lastX = 200, lastY = 100;
+  let lastX = 200,
+    lastY = 100;
 
   function ensure() {
     let cursor = document.getElementById('__synthCursor');
@@ -48,8 +49,8 @@
     const ring = document.createElement('div');
     const s = ring.style;
     s.position = 'fixed';
-    s.left = (x - 10) + 'px';
-    s.top = (y - 10) + 'px';
+    s.left = x - 10 + 'px';
+    s.top = y - 10 + 'px';
     s.width = '20px';
     s.height = '20px';
     s.borderRadius = '50%';
@@ -70,8 +71,16 @@
 
   function attach() {
     ensure();
-    document.addEventListener('mousemove', e => place(e.clientX, e.clientY), true);
-    document.addEventListener('mousedown', e => spawnRipple(e.clientX, e.clientY), true);
+    document.addEventListener(
+      'mousemove',
+      (e) => place(e.clientX, e.clientY),
+      true,
+    );
+    document.addEventListener(
+      'mousedown',
+      (e) => spawnRipple(e.clientX, e.clientY),
+      true,
+    );
 
     // Self-heal: if anything detaches the cursor, recreate it.
     const obs = new MutationObserver(() => {
