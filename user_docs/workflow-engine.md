@@ -194,10 +194,13 @@ This is useful for training videos, funder demonstrations, or onboarding walkthr
 To use synthetic data capabilities, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
 !!! note "No real data is used in the output"
-The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
+    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
 !!! note "Nutrition metrics and other program-specific fields in synthetic data"
-Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
+    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
+
+!!! note "CHC Nutrition Analysis synthetic data and flag direction"
+    Synthetic datasets for the CHC Nutrition Analysis dashboard now generate realistic SAM and MAM distributions that match the flag direction used in the live dashboard. Clean FLWs receive baseline SAM/MAM rates that sit comfortably above the flag thresholds, while FLWs meant to represent cherry-picking behaviour receive near-zero SAM/MAM rates that trigger the **SAM rate < 1%** and **MAM rate < 3%** flags as expected. If you re-seed an older CHC Nutrition Analysis demo, the FLW flagging pattern will change to reflect this corrected logic — the previously clean-looking FLWs will no longer auto-flag, and the intended problem FLWs will now flag correctly.
 
 ### Creating a New Workflow with Claude Code
 
@@ -249,17 +252,4 @@ This has a useful implication: **resetting or redeploying the Labs environment n
 
 ### How the Program Admin Report rolls up data
 
-The **Program Admin Report** is a cross-opportunity summary that gives program administrators a single view across all opportunities. It queries flags, audits, and tasks independently — each by workflow run — and then groups the results per FLW. This means the counts for each of those three columns reflect only records tied to the current run, not a combined or joined total from an earlier decision-based calculation.
-
-If you notice a figure in the Program Admin Report that differs from what you see inside an individual opportunity's dashboard, check whether you are comparing the same run period in both views.
-
----
-
-## MBW Monitoring Dashboard
-
-The **MBW Monitoring** template has five tabs. The sections below describe what each tab shows and how its numbers are calculated, so you know what to expect when reviewing data.
-
-### Overview tab
-
-- **Eligible mothers** counts only mothers who qualify for the full intervention bonus — this is the same eligibility rule used in the Performance tab and the drilldown, so all three figures stay consistent with each other.
-- **Expected visits** (shown as
+The **Program Admin Report** is a cross-opportunity summary that gives program administrators a single view across all opportunities. It queries flags, audits, and tasks independently — each by workflow run — and then groups the results
