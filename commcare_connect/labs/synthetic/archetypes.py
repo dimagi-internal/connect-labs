@@ -655,8 +655,8 @@ def build_flw_pipeline_row(
         # severity=2 puts the MUAC sparkline distinctly into SAM territory
         # (SAM ~22%), which trips the chc_nutrition render's "isFailing" gate
         # so the row is visibly flagged and bulk "Mark No Issue" correctly
-        # skips it. severity=1 (the previous value) produced SAM ~3%, below
-        # the 5% gate, and the bulk-mark would include this FLW.
+        # skips it. severity=1 produced SAM ~3%, below the 5% gate, and the
+        # bulk-mark would include this FLW.
         severity = 2 if (flagged_this_week and kpi_issue == "muac") else 0
     elif archetype == "suspended_repeat_offense":
         severity = 2 if flagged_this_week else 1
