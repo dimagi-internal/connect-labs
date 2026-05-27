@@ -23,56 +23,82 @@ personas:
     color: "#4f46e5"
     intro: "Priya runs a child-nutrition program through two network managers and ~20 frontline workers. She needs to know — without reading eight separate weekly reviews — which network manager is on top of things and which workers need attention."
 
+# Each scene declares one ``target`` keyword that capture_walkthrough.py maps
+# to (a) a URL built from the discovered drill IDs + (b) any post-load
+# interaction (click_cell, scroll_to_text). The YAML is the single source
+# of truth for scene order; the Python side only owns the target→url+action
+# mapping.
+#
+# Supported targets:
+#   par_grid                 — just load the PAR run URL
+#   par_detail_good          — PAR URL + click the "good run" grid cell
+#   par_detail_incomplete    — PAR URL + click the "incomplete run" grid cell
+#   par_aggregate            — PAR URL (no click)
+#   chc_good                 — CHC Nutrition weekly review for the good run
+#   audit_good               — Audit page for the good run's audit
+#   task_good                — Task page for the good run's task + scroll to
+#                              "Coaching Conversation"
+#   audit_incomplete         — Audit page for the incomplete run's audit
+#   task_incomplete          — Task page for the incomplete run's task + scroll
 scenes:
-  - persona: priya
+  - target: par_grid
+    persona: priya
     title: "The whole program at a glance"
-    show: "Program Admin Report (/labs/workflow/65/run/?run_id={PAR_RUN_ID}&opportunity_id=10000). Two opportunity rows × four week columns + pinned aggregate. Each cell shows FLW-decision, Audits, Tasks KPI bars and a completion-status pill (✓ Clean run · ✓ All resolved · ⏳ N open · ⚠ NO RUN)."
+    show: "Program Admin Report. Two opportunity rows × four week columns + pinned aggregate. Each cell shows FLW-decision, Audits, Tasks KPI bars and a completion-status pill (✓ Clean run · ✓ All resolved · ⏳ N open · ⚠ NO RUN)."
     impressive_because: "Eight weekly reviews compressed into one grid. Northern Cluster ran all 4 weeks (all green, ✓ SOP MET on the aggregate); Southern Cluster missed a week (red ⚠ NO RUN card) and has unresolved actions in Wk 3 (⏳ 2 open) — Priya sees both stories before reading a single number."
     video_hold_seconds: 5
 
-  - persona: priya
+  - target: par_detail_good
+    persona: priya
     title: "Click Northern Wk 2 — what was flagged that week?"
     show: "The inline detail panel slides out under the row. Single FLW flagged this week — hawa_n with 'Bad MUAC distribution' — and the row shows the linked Audit #N + Task #N with their resolution (closed · satisfactory)."
     impressive_because: "No new page load, no scroll, no breadcrumb. Click cell → see who got flagged, what happened, in two seconds."
     video_hold_seconds: 4
 
-  - persona: priya
+  - target: chc_good
+    persona: priya
     title: "Open the run — see the underlying weekly review"
     show: "The CHC Nutrition weekly review page. Per-FLW table with MUAC distribution sparklines, SAM/MAM rates, gender split — and a state-aware Actions column: 'View audit #N (pass)' / 'View task #N (closed · satisfactory)' for hawa_n; 'Confirmed No Issue' for everyone else."
     impressive_because: "The reviewer's column tells the story at a glance. Outcome is baked into the button label — no need to open each one to know what happened. Failing-KPI rows can't be marked No Issue; they must be audited first."
     video_hold_seconds: 6
 
-  - persona: priya
+  - target: audit_good
+    persona: priya
     title: "Drill into the audit — see the photos that were reviewed"
     show: "Bulk Assessment view for the linked audit session. 5 MUAC photo thumbnails, each labeled PASS or FAIL, with the auditor's overall pass/fail verdict and notes."
     impressive_because: "Priya can verify the auditor's call in seconds — the photos are right there, not buried two clicks deep behind a generic audit page."
     video_hold_seconds: 6
 
-  - persona: priya
+  - target: task_good
+    persona: priya
     title: "Drill into the task — see the AI coaching conversation"
     show: "Task detail page for the linked follow-up task. ✓ Closed · satisfactory badge in the Status field, and below the FLW Actions section, the synthetic OCS Coaching Conversation panel with the full bot/FLW back-and-forth that closed the loop."
     impressive_because: "The Program Admin Report doesn't stop at 'a task was created'. They can see the actual coaching conversation — what the AI said, what the FLW responded — and confirm the resolution is real."
     video_hold_seconds: 8
 
-  - persona: priya
+  - target: par_detail_incomplete
+    persona: priya
     title: "Now the harder case — Southern Wk 3, where things are still open"
     show: "Back to the PAR. Click Southern Wk 3 cell (the amber-bordered '⏳ 2 open' one). Detail panel shows three FLWs flagged: ola_s mid-investigation, pinda_s and rina_s suspended after repeat failure."
     impressive_because: "Priya now sees the network manager is doing the right things (catching repeat offenders, suspending fraud) — but one FLW (ola_s) still has unresolved audits + tasks. That's the one to follow up on."
     video_hold_seconds: 5
 
-  - persona: priya
+  - target: audit_incomplete
+    persona: priya
     title: "Open the in-review audit — work in progress"
     show: "Audit page for ola_s. 5 photo cards — 1 PASS, 1 FAIL, 3 pending. 'Save Progress' button (not 'Complete Image Review') because the auditor hasn't finished."
     impressive_because: "Priya can see how far the auditor has gotten and what's left. No ambiguity between 'no decision yet' vs 'decision in progress'."
     video_hold_seconds: 5
 
-  - persona: priya
+  - target: task_incomplete
+    persona: priya
     title: "Open the investigating task — coaching still happening"
     show: "Task page for ola_s. Status dropdown shows 'Investigating' (active, not closed). Coaching Conversation panel below shows the bot's opening 5 messages — mid-conversation, no resolution yet."
     impressive_because: "Priya knows exactly where the coach is in the loop. She can see the conversation history and decide whether to nudge the coach to wrap up or let the conversation continue."
     video_hold_seconds: 6
 
-  - persona: priya
+  - target: par_aggregate
+    persona: priya
     title: "Back to the aggregate — Continuum Health is healthy"
     show: "The Program Admin Report aggregate column on the right. Northern Cluster: ✓ SOP MET, 100%/100%/100%. Southern Cluster: ⚠ BELOW with 3/4 runs and unresolved work — but Priya now knows it's manageable (just ola_s)."
     impressive_because: "One screen — Priya can run this report weekly and know in 60 seconds whether her network managers are doing the work, and whether anyone needs her to intervene."

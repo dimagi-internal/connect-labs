@@ -89,4 +89,4 @@ which specific failure modes you see.
 - `commcare_connect/labs/synthetic/generator/images.py` — assigns blob_ids to live synthetic visits
 - `commcare_connect/labs/synthetic/generator/muac_reasons.json` — bad-photo catalog
 - `commcare_connect/audit/views.py:BulkAssessmentDataView` — reads `visit_images` and renders thumbnails
-- `commcare_connect/mcp/tools/program_admin_demo_v2.py` — driver that calls `build_audit_data` per FLW
+- `commcare_connect/labs/synthetic/program_admin_demo.py` — driver that calls `build_audit_data` per FLW
