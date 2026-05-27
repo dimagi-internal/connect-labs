@@ -2901,15 +2901,27 @@ function WorkflowUI({
                   tab2PrevOverride[col.key] = flw[col.key];
                 });
               }
-              return React.createElement(MetricRow, {
-                key: flw.username,
-                flw: displayFlw,
-                showChange: !!postTask,
-                prevOverride: tab2PrevOverride,
-                followupRateAtTrigger: followupRateAtTrigger,
-                metricCols: effectiveTab2MetricCols,
-                taskTriggeredAt: flw.taskTriggeredAt,
-              });
+              var tab2Rows = [
+                React.createElement(MetricRow, {
+                  key: flw.username,
+                  flw: displayFlw,
+                  showChange: !!postTask,
+                  prevOverride: tab2PrevOverride,
+                  followupRateAtTrigger: followupRateAtTrigger,
+                  metricCols: effectiveTab2MetricCols,
+                  taskTriggeredAt: flw.taskTriggeredAt,
+                }),
+              ];
+              if (expandedTaskFlw === flw.username) {
+                tab2Rows.push(
+                  React.createElement(TaskDetailPanel, {
+                    key: flw.username + '-detail',
+                    username: flw.username,
+                    colCount: effectiveTab2MetricCols.length + 9,
+                  }),
+                );
+              }
+              return tab2Rows;
             }),
             tab2FilteredRows.length === 0 &&
               React.createElement(
