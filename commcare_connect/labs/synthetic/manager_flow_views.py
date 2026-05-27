@@ -198,6 +198,9 @@ def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonRespon
         updated_data = dict(task.data or {})
         updated_data["ocs_conversation"] = _coaching_conversation(prompt_text)
         updated_data["ocs_status"] = "in_progress"
+        # Once the manager has fired the coaching prompt, the "Start AI
+        # Coaching" panel on the task page should disappear.
+        updated_data.pop("coaching_pending", None)
 
         # Persist via the raw labs_api (same pattern the synthetic seed uses)
         # — TaskDataAccess.save_task wraps a write of the whole record.
