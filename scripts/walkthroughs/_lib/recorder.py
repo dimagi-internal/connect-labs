@@ -190,6 +190,76 @@ def snap(session: RecorderSession, key: str) -> None:
 
 
 # ---------------------------------------------------------------------- #
+# Page navigation primitives (tolerant of slow labs prod)
+# ---------------------------------------------------------------------- #
+
+
+def goto_and_settle(
+    page: Page,
+    url: str,
+    *,
+    timeout: int = 30_000,
+    wait_for_selector: str | None = None,
+    settle_seconds: float = 1.5,
+) -> None:
+    """Navigate to ``url`` and wait for the page to be meaningfully ready,
+    without depending on ``networkidle`` (which doesn't settle on labs
+    because of PAR snapshot polling + bulk-assessment image streaming).
+
+    The contract:
+
+    1. ``page.goto(url, wait_until="domcontentloaded")`` — HTML is parsed
+       and the document is ready for selector queries.
+    2. ``page.wait_for_load_state("load", timeout=10_000)`` — best-effort
+       wait for window.load. Tolerates timeout (some labs pages never
+       fully fire load because of long-poll connections).
+    3. Optional ``wait_for_selector`` for the page's content marker, e.g.
+       ``"text=FLW Name"`` on a chc_nutrition page. Use to pin the
+       recorder to the moment when the meaningful content is on screen.
+    4. ``page.wait_for_timeout(settle_seconds * 1000)`` so the React app
+       has a beat to hydrate.
+
+    Returns silently on success. Raises only if the initial ``goto`` or
+    the ``wait_for_selector`` exceed their timeouts — never on the
+    tolerant ``load`` wait.
+
+    Use this instead of ``page.goto(url, wait_until='networkidle')`` —
+    the latter regularly hangs the recorder past its 30s timeout on slow
+    labs days, even when the page is visibly fully rendered.
+    """
+    page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+    try:
+        page.wait_for_load_state("load", timeout=10_000)
+    except Exception:
+        # Networkidle / load can hang forever on pages with long-poll or
+        # streaming endpoints (PAR snapshot SSE, GDrive image streams).
+        # The recorder doesn't need them fully idle — just visible.
+        pass
+    if wait_for_selector:
+        page.wait_for_selector(wait_for_selector, timeout=timeout)
+    if settle_seconds > 0:
+        page.wait_for_timeout(int(settle_seconds * 1000))
+
+
+def wait_for_content(
+    page: Page,
+    selector: str,
+    *,
+    timeout: int = 15_000,
+    settle_seconds: float = 0.5,
+) -> None:
+    """Wait for a specific content marker to appear, then settle briefly.
+
+    Wraps ``page.wait_for_selector`` with a follow-up settle pause so the
+    recording captures the content rendered rather than a half-hydrated
+    intermediate state. Use after a click that triggers in-page rerender.
+    """
+    page.wait_for_selector(selector, timeout=timeout)
+    if settle_seconds > 0:
+        page.wait_for_timeout(int(settle_seconds * 1000))
+
+
+# ---------------------------------------------------------------------- #
 # Page interaction primitives
 # ---------------------------------------------------------------------- #
 
