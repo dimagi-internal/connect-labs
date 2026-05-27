@@ -213,9 +213,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     // Falls back to the live top-level `pipelines` prop for in-progress
     // runs. The pipeline alias is configured per-workflow on
     // pipeline_sources — accept either "data" or "default".
-    var pipelinesEff = (view && view.pipelines) || pipelines || {};
-    var pipeData = pipelinesEff.data || pipelinesEff.default || null;
-    var rows = (pipeData && pipeData.rows) || [];
+    //
+    // For synthetic in-progress runs (no real CSV behind the pipeline), the
+    // BE stashes a preview snapshot on `instance.snapshot.pipelines`. Use
+    // that as a third fallback so the table renders before the manager has
+    // clicked "Complete Review" — without this the demo's first scene would
+    // be a "No data available" placeholder.
+    function _rowsFrom(p) {
+        var d = p && (p.data || p.default);
+        return (d && d.rows) || [];
+    }
+    var rows = _rowsFrom((view && view.pipelines) || null);
+    if (!rows.length) rows = _rowsFrom(pipelines);
+    if (!rows.length) rows = _rowsFrom(instance && instance.snapshot && instance.snapshot.pipelines);
 
     // ── Histogram bin names ─────────────────────────────────────
     var BINS = [
@@ -257,6 +267,137 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     var mamRate = totalMuac > 0 ? Math.round(totalMam / totalMuac * 1000) / 10 : 0;
     var totalUnwell = rows.reduce(function(s, r) { return s + (r.children_unwell_count || 0); }, 0);
     var totalTreatment = rows.reduce(function(s, r) { return s + (r.under_malnutrition_treatment_count || 0); }, 0);
+
+    // ── KPI failure check ───────────────────────────────────────
+    // Used by Actions cell (block "Mark No Issue" for failing FLWs) AND
+    // by the column-header bulk action (skip failing FLWs).
+    function rowIsFailingKPI(r) {
+        var mc = muacCount(r);
+        var sPct = mc > 0 ? (samCount(r) / mc) * 100 : 0;
+        var mPct = mc > 0 ? (mamCount(r) / mc) * 100 : 0;
+        var gPct = genderPct(r);
+        return (sPct > 5) || (mPct > 15) || (gPct !== null && (gPct < 40 || gPct > 60));
+    }
+
+    // ── apiPost helper ──────────────────────────────────────────
+    // Render-code-local fetch wrapper. Grabs CSRF off the workflow-root
+    // dataset (where workflow-runner.tsx sets it on page mount) and posts
+    // JSON. Use full URLs so the call sites self-document which endpoint
+    // they hit — no JS rebuild needed for new endpoints.
+    function apiPost(url, body) {
+        var root = document.getElementById('workflow-root');
+        var csrf = (root && root.dataset && root.dataset.csrfToken) || '';
+        return fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrf,
+            },
+            body: JSON.stringify(body || {}),
+        }).then(function(r) {
+            return r.json().then(function(data) { return {ok: r.ok, status: r.status, data: data}; },
+                                 function() { return {ok: r.ok, status: r.status, data: null}; });
+        });
+    }
+
+    // ── Bulk decision helpers ───────────────────────────────────
+    var runId = (instance && instance.id) || null;
+    var oppId = (instance && instance.opportunity_id) || null;
+    var runIsLive = !(view && view.isCompleted);
+    var decisionsBase = runId ? ('/labs/workflow/api/run/' + runId + '/decisions/') : null;
+
+    function postNoIssueDecision(row, kpiSnapshot) {
+        // POST one no_issues decision. Returns the fetch promise so callers
+        // can chain refresh logic. Surfaces server-side errors via alert().
+        return apiPost(decisionsBase, {
+            opportunity_id: oppId,
+            flw_id: row.username,
+            decision_type: 'no_issues',
+            kpi_snapshot: kpiSnapshot || null,
+        }).then(function(res) {
+            if (!res.ok) {
+                var msg = (res.data && (res.data.error || res.data.detail)) || ('HTTP ' + res.status);
+                window.alert('Failed to mark ' + row.username + ' as no issue: ' + msg);
+            }
+            return res;
+        });
+    }
+
+    function markAllNoIssue() {
+        // Header action — bulk-mark every FLW that has no existing decision
+        // AND isn't failing any KPI (KPI failures need a real audit first).
+        if (!decisionsBase) {
+            window.alert('Cannot record decisions: run id is unknown.');
+            return;
+        }
+        var eligible = rows.filter(function(r) {
+            var d = (view && typeof view.decisionsFor === 'function') ? view.decisionsFor(r.username) : null;
+            return !d && !rowIsFailingKPI(r);
+        });
+        if (!eligible.length) {
+            window.alert('No FLWs eligible for bulk "Mark No Issue" (everyone is either flagged or already decided).');
+            return;
+        }
+        if (!window.confirm('Mark ' + eligible.length + ' FLWs as having no issues? Flagged FLWs are skipped.')) {
+            return;
+        }
+        Promise.all(eligible.map(function(r) {
+            return postNoIssueDecision(r, {sam_pct: muacCount(r) > 0 ? (samCount(r) / muacCount(r)) * 100 : 0,
+                                          mam_pct: muacCount(r) > 0 ? (mamCount(r) / muacCount(r)) * 100 : 0,
+                                          gender_pct: genderPct(r)});
+        })).then(function() { window.location.reload(); });
+    }
+
+    function createTaskWithCoaching(row) {
+        // Build a coaching prompt from FLW context (bad-MUAC + passing audit).
+        // Two-step flow:
+        //   1) POST /tasks/api/single-create/ — create the task record. The
+        //      Django view reads opportunity_id from request.labs_context
+        //      (set by the labs middleware off the URL's opportunity_id
+        //      query param), so the page must carry ?opportunity_id=.
+        //   2) POST /labs/workflow/api/run/<id>/manager-coaching/ —
+        //      synthetic-only endpoint that attaches a believable
+        //      coaching conversation onto the task AND writes the decision
+        //      linking it back to the FLW. Skips the real OCS round-trip
+        //      because labs synthetic opps don't have a bot wired up.
+        var name = displayName(row);
+        var prompt =
+            'Hi ' + name + ', your visit photos this week looked good — well-framed and the children appeared properly positioned. ' +
+            'But the MUAC distribution shows something unusual: more measurements are clustered toward the low end than we\'d expect ' +
+            'for a healthy population. This is the kind of pattern that often points at a measurement-technique issue rather than ' +
+            'malpractice. Can we walk through how you\'re applying the MUAC tape — where on the arm, whether it\'s snug but not tight, ' +
+            'and whether the arm is fully relaxed when you measure?';
+
+        return apiPost('/tasks/api/single-create/', {
+            username: row.username,
+            flw_name: name,
+            title: 'MUAC technique coaching: ' + name,
+            description: prompt,
+            priority: 'medium',
+            workflow_run_id: runId,
+        }).then(function(taskRes) {
+            if (!taskRes.ok || !taskRes.data || !taskRes.data.success) {
+                var emsg = (taskRes.data && (taskRes.data.error || taskRes.data.detail)) || ('HTTP ' + taskRes.status);
+                window.alert('Failed to create task: ' + emsg);
+                return null;
+            }
+            var taskId = taskRes.data.task_id;
+            return apiPost('/labs/workflow/api/run/' + runId + '/manager-coaching/', {
+                opportunity_id: oppId,
+                flw_id: row.username,
+                task_id: taskId,
+                reason_key: 'bad_muac_distribution',
+                reason_label: 'Bad MUAC distribution',
+                prompt_text: prompt,
+            }).then(function(coachRes) {
+                if (!coachRes.ok) {
+                    console.warn('manager-coaching attach failed for task ' + taskId + ':', coachRes);
+                }
+                window.location.reload();
+            });
+        });
+    }
 
     // ── State ───────────────────────────────────────────────────
     var _sort = React.useState('total_visits');
@@ -443,7 +584,21 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                             React.createElement(SortTh, {skey: 'mam', label: 'MAM', title: 'Moderate Acute Malnutrition (MUAC 11.5-12.5 cm)'}),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'MUAC Distribution'),
                             React.createElement(SortTh, {skey: 'gender', label: 'Gender Split', title: 'Female % of (Male + Female)'}),
-                            React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Decision'),
+                            React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'},
+                                React.createElement('div', {className: 'flex items-center gap-2'},
+                                    React.createElement('span', null, 'Decision'),
+                                    // Bulk header action — only meaningful while the run is open.
+                                    // Once completed, decisions are read-only and the endpoint refuses.
+                                    runIsLive && decisionsBase
+                                        ? React.createElement('button', {
+                                            type: 'button',
+                                            onClick: markAllNoIssue,
+                                            className: 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 normal-case',
+                                            title: 'Mark every non-flagged FLW with no decision yet as "No Issue"',
+                                          }, 'Mark all No Issue')
+                                        : null
+                                )
+                            ),
                             React.createElement('th', {className: 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'}, 'Actions')
                         )
                     ),
@@ -594,19 +749,65 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                             if (!d) {
                                                 // Only allow "Mark no issues" when KPIs are within thresholds.
                                                 // FLWs failing any KPI need a real review (audit) before any sign-off.
-                                                if (!isFailing) {
-                                                    buttons.push(React.createElement('span', {
+                                                if (!isFailing && runIsLive) {
+                                                    buttons.push(React.createElement('button', {
                                                         key: 'mark',
-                                                        className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200 cursor-default',
+                                                        type: 'button',
+                                                        onClick: function() {
+                                                            postNoIssueDecision(r, {sam_pct: sPct, mam_pct: mPct, gender_pct: gPct})
+                                                                .then(function(res) { if (res.ok) window.location.reload(); });
+                                                        },
+                                                        className: 'inline-flex items-center px-3 py-1 rounded-md text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100',
                                                         title: 'Mark this FLW as no issues',
                                                     }, 'Mark No Issue'));
                                                 }
-                                                buttons.push(React.createElement('a', {
-                                                    key: 'create-audit',
-                                                    href: links.auditUrl({username: r.username, count: 5}),
-                                                    className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors' + (isFailing ? '' : ' ml-2'),
-                                                    title: 'Create audit for ' + name,
-                                                }, 'Create Audit'));
+                                                // Manager-flow shortcut: when the run is in_progress, "Create
+                                                // Audit" hits the synthetic helper that atomically writes a
+                                                // pass-clean audit + linking decision and returns a redirect
+                                                // URL to the audit detail page. Once the run is completed,
+                                                // fall back to the regular audit wizard.
+                                                if (runIsLive && runId && oppId) {
+                                                    buttons.push(React.createElement('button', {
+                                                        key: 'create-audit',
+                                                        type: 'button',
+                                                        onClick: function() {
+                                                            apiPost('/labs/workflow/api/run/' + runId + '/manager-audit/', {
+                                                                opportunity_id: oppId,
+                                                                flw_id: r.username,
+                                                            }).then(function(res) {
+                                                                if (!res.ok || !res.data) {
+                                                                    var emsg = (res.data && (res.data.error || res.data.detail)) || ('HTTP ' + res.status);
+                                                                    window.alert('Failed to create audit: ' + emsg);
+                                                                    return;
+                                                                }
+                                                                window.location.href = res.data.redirect_url;
+                                                            });
+                                                        },
+                                                        className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors' + ((!isFailing && runIsLive) ? ' ml-2' : ''),
+                                                        title: 'Create audit for ' + name,
+                                                    }, 'Create Audit'));
+                                                } else {
+                                                    buttons.push(React.createElement('a', {
+                                                        key: 'create-audit',
+                                                        href: links.auditUrl({username: r.username, count: 5}),
+                                                        className: 'inline-flex items-center px-3 py-1 border border-blue-300 rounded-md text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors' + ((!isFailing && runIsLive) ? ' ml-2' : ''),
+                                                        title: 'Create audit for ' + name,
+                                                    }, 'Create Audit'));
+                                                }
+                                            }
+                                            // If a decision exists with an audit (passed) but no task yet,
+                                            // expose a "Create Task with Coaching" button. This is the
+                                            // manager-flow second-step: audit passed → still need coaching
+                                            // task because the underlying KPI is bad (e.g. bad MUAC dist).
+                                            if (runIsLive && d && d.audit_session_ids && d.audit_session_ids.length &&
+                                                (!d.task_ids || !d.task_ids.length)) {
+                                                buttons.push(React.createElement('button', {
+                                                    key: 'create-task-ocs',
+                                                    type: 'button',
+                                                    onClick: function() { createTaskWithCoaching(r); },
+                                                    className: 'inline-flex items-center px-3 py-1 border border-purple-300 rounded-md text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 transition-colors ml-2',
+                                                    title: 'Create a follow-up task and start an OCS coaching conversation for ' + name,
+                                                }, 'Create Task with Coaching'));
                                             }
                                             return React.createElement('div', {className: 'flex flex-wrap items-center gap-y-1'}, buttons);
                                         })()
