@@ -721,17 +721,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#gps-tab" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        GPS tab
-      
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1278,17 +1267,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#gps-tab" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        GPS tab
-      
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1373,10 +1351,11 @@
 <h3 id="flags-column">Flags column<a class="headerlink" href="#flags-column" title="Permanent link">&para;</a></h3>
 <p>Many per-opportunity reports include a <strong>Flags</strong> column. Flags are findings the system raises automatically based on the metrics — they represent concerns surfaced from the data, not judgments that a manager records manually.</p>
 <p>When you open a report, the system reads the data and applies all relevant flags immediately on page load. There is nothing to click to trigger this — flags are already present by the time the dashboard is visible. A row with no concerns shows an em-dash (—).</p>
-<p>Each active concern appears as a coloured pill in the Flags cell. A row can carry more than one flag at the same time.</p>
+<p>Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same time.</p>
 <h3 id="actions-column">Actions column<a class="headerlink" href="#actions-column" title="Permanent link">&para;</a></h3>
-<p>Every row has an <strong>Actions</strong> column with two menu buttons: <strong>Create Audit ▾</strong> and <strong>Send Task ▾</strong>. Both buttons are always available regardless of whether the row carries a flag.</p>
-<p>When a row does carry a flag, opening either menu surfaces a flag-context-aware quick action — for example, an audit filter or a coaching prompt that is already pre-filled based on the specific concern raised for that worker.</p>
+<p>Every row has an <strong>Actions</strong> column with two menu buttons: <strong>Create Audit ▾</strong> and <strong>Create Task ▾</strong>. Both buttons are always available regardless of whether the row carries a flag.</p>
+<p>When a row does carry a flag, opening either menu surfaces a flag-context-aware quick action — for example, an audit filter or a coaching prompt that is already pre-filled based on the specific concern raised for that worker. These menu items use the same styling as all other menu items; they have no special icon or background tint. The label describes what the action does (for example, "Audit low-MUAC visits" or "Coaching: reach harder households").</p>
+<p>The action dropdown menus use a white background with a soft shadow and gray border. Each menu item is clearly clickable, with a highlighted background on hover.</p>
 <h3 id="chc-nutrition-analysis-flags">CHC Nutrition Analysis flags<a class="headerlink" href="#chc-nutrition-analysis-flags" title="Permanent link">&para;</a></h3>
 <p>The CHC Nutrition Analysis dashboard uses the following flag catalog:</p>
 <table>
@@ -1388,15 +1367,15 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>sam_low</strong></td>
-<td>The FLW's SAM case rate is lower than expected — a signal they may be visiting easier-to-reach households and missing the most at-risk cases</td>
+<td><strong>SAM rate &lt; 1%</strong></td>
+<td>The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases</td>
 </tr>
 <tr>
-<td><strong>mam_low</strong></td>
-<td>The FLW's MAM case rate is lower than expected — same pattern as sam_low but for moderate acute malnutrition</td>
+<td><strong>MAM rate &lt; 3%</strong></td>
+<td>The FLW's MAM case rate is below 3% — same pattern as the SAM flag but for moderate acute malnutrition</td>
 </tr>
 <tr>
-<td><strong>gender_skew</strong></td>
+<td><strong>Gender split outside 40–60%</strong></td>
 <td>The gender split of the FLW's caseload falls outside the 40–60% range, in either direction</td>
 </tr>
 </tbody>
@@ -1586,14 +1565,7 @@
 </ul>
 <h3 id="followups-tab">Followups tab<a class="headerlink" href="#followups-tab" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Completion rate</strong> is calculated using the same eligibility filter as MBW v1, and includes a 5-day grace window so visits completed slightly after their due date are not counted as missed.</li>
-<li><strong>Worker attribution</strong>: if no visits have been recorded for a mother yet, the dashboard attributes her to the field worker who submitted her registration form, rather than leaving the row blank.</li>
-<li><strong>Visit status</strong> uses six categories: <em>Completed – On Time</em>, <em>Completed – Late</em>, <em>Due – On Time</em>, <em>Due – Late</em>, <em>Missed</em>, and <em>Not Due Yet</em>. The visit-type breakdown chart will render correctly with this data.</li>
-</ul>
-<h3 id="gps-tab">GPS tab<a class="headerlink" href="#gps-tab" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Flagged visits</strong> and <strong>total flagged</strong> are now calculated using the 5 km distance threshold.</li>
-<li>**Cases with revis</li>
+<li><strong>Completion rate</strong> is calculated using the same eligibility filter as MBW v1, and includes a 5-day grace window so visits completed slightly after their due date are not counted as missed</li>
 </ul>
 
 
