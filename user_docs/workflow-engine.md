@@ -77,11 +77,11 @@ The action dropdown menus use a white background with a soft shadow and gray bor
 
 The CHC Nutrition Analysis dashboard uses the following flag catalog:
 
-| Flag            | What it means                                                                                                                                |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **SAM rate < 1%** | The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
-| **MAM rate < 3%** | The FLW's MAM case rate is below 3% — same pattern as the SAM flag but for moderate acute malnutrition                                 |
-| **Gender split outside 40–60%** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                                   |
+| Flag                            | What it means                                                                                                                     |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **SAM rate < 1%**               | The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
+| **MAM rate < 3%**               | The FLW's MAM case rate is below 3% — same pattern as the SAM flag but for moderate acute malnutrition                            |
+| **Gender split outside 40–60%** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                        |
 
 !!! note "SAM/MAM flags signal too few at-risk cases, not too many"
 These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
