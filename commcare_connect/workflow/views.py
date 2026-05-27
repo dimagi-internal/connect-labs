@@ -18,7 +18,9 @@ from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
+from commcare_connect.audit.data_access import AuditDataAccess
 from commcare_connect.flags.data_access import FlagsDataAccess
+from commcare_connect.tasks.data_access import TaskDataAccess
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
@@ -380,6 +382,14 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
             # query — never frozen on the watched workflow's snapshot, per
             # spec §3.3). For edit mode and the picker branch, this stays [].
             flags_for_run: list[dict] = []
+            # Audits + Tasks created against this run. Same live-query
+            # philosophy as flags: the source of truth lives on the
+            # AuditSession / Task records, not on the workflow_run
+            # snapshot. Render code reads via `view.auditsFor(username)`
+            # / `view.tasksFor(username)` to know whether a per-row
+            # "View" affordance should replace the "Create" menus.
+            audits_for_run: list[dict] = []
+            tasks_for_run: list[dict] = []
 
             # Get or create run based on mode
             if is_edit_mode:
@@ -452,6 +462,50 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                         )
                 except Exception:
                     logger.warning("Failed to load flags for run %s", run_id, exc_info=True)
+
+                # Load Audits + Tasks for this run. Read-side mirror of
+                # the flags pattern so any template that wants to flip
+                # per-row Actions to View/Create depending on what's
+                # already been created can read view.auditsFor(username)
+                # / view.tasksFor(username). Live-queried — the
+                # workflow_run snapshot never freezes these (the
+                # underlying records live their own lifecycle and may
+                # transition status after the run completes).
+                try:
+                    ada = AuditDataAccess(request=self.request, opportunity_id=opportunity_id)
+                    for a in ada.get_sessions_by_workflow_run(int(run_id)):
+                        # Match the per-FLW shape PAR's build_snapshot uses
+                        # so template render code can read both surfaces
+                        # without diverging field names.
+                        img = a.data.get("image_results") or {}
+                        audits_for_run.append(
+                            {
+                                "id": a.id,
+                                "flw_id": a.username or (a.data.get("flw_id") or ""),
+                                "status": a.status,
+                                "overall_result": a.overall_result,
+                                "pass_count": img.get("pass", 0),
+                                "fail_count": img.get("fail", 0),
+                                "pending_count": img.get("pending", 0),
+                            }
+                        )
+                except Exception:
+                    logger.warning("Failed to load audits for run %s", run_id, exc_info=True)
+                try:
+                    tda = TaskDataAccess(request=self.request, opportunity_id=opportunity_id)
+                    for t in tda.get_tasks_for_run(int(run_id)):
+                        tasks_for_run.append(
+                            {
+                                "id": t.id,
+                                "flw_id": t.username or (t.data.get("username") or ""),
+                                "status": t.status,
+                                "title": t.title,
+                                "priority": t.priority,
+                                "official_action": (t.resolution_details or {}).get("official_action"),
+                            }
+                        )
+                except Exception:
+                    logger.warning("Failed to load tasks for run %s", run_id, exc_info=True)
             else:
                 # No run_id and not edit mode — render the run picker. Past runs
                 # are listed; user clicks "Open" to load one or "Start Run" to
@@ -496,6 +550,8 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "workers": workers,
                 "pipeline_data": pipeline_data,
                 "flags": flags_for_run,
+                "audits": audits_for_run,
+                "tasks": tasks_for_run,
                 "links": {
                     "auditUrlBase": "/audit/create/",
                     "taskUrlBase": "/tasks/new/",
