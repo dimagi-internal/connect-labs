@@ -378,8 +378,14 @@ registry_password.sh
 # Doc generation dry-run output
 docs/.dry-run/
 
-# Local debug/utility scripts
-scripts/
+# Local debug/utility scripts. The ``scripts/`` directory is for ad-hoc tooling
+# that doesn't belong in any app; nothing here is loaded at runtime. Most
+# subfolders are personal scratch space and should not be committed.
+# EXCEPTIONS live under ``scripts/walkthroughs/`` — those are versioned
+# demo recorders + per-demo configs and DO ship in-repo.
+scripts/*
+!scripts/walkthroughs/
+!scripts/walkthroughs/**
 .gstack/
 .claude/settings.local.json
 .superpowers/
