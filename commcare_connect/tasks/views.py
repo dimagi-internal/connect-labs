@@ -247,6 +247,12 @@ class TaskCreateEditView(LoginRequiredMixin, TemplateView):
                         # session_id, but synthetic coaching arcs carry the
                         # conversation inline so demos work without an OCS round-trip.
                         "ocs_conversation": task.data.get("ocs_conversation") or [],
+                        # Coaching prompt — the long instructions that get fed to
+                        # the OCS bot. Stored separately from `description` (which
+                        # is the human-readable task summary) so the AI modal can
+                        # pre-fill with the right text. Set by chc_nutrition's
+                        # Create Task with Coaching flow.
+                        "coaching_prompt": task.data.get("coaching_prompt") or "",
                     }
                 data_access.close()
             except Exception as e:
@@ -458,7 +464,16 @@ def task_bulk_create(request):
 @csrf_exempt
 @require_POST
 def task_single_create(request):
-    """Create a single task for one FLW. Used by combined create/edit page."""
+    """Create a single task for one FLW. Used by combined create/edit page.
+
+    Body fields:
+        username, flw_name, priority, title, description, workflow_run_id —
+        standard task fields.
+        extra_data (optional dict) — arbitrary key/value pairs merged into
+        ``task.data`` after creation. Used by chc_nutrition's "Create Task
+        with Coaching" flow to attach the long OCS prompt separately from
+        the short human-readable ``description``.
+    """
     try:
         body = json.loads(request.body)
         username = body.get("username")
@@ -467,6 +482,9 @@ def task_single_create(request):
         title = body.get("title", "")
         description = body.get("description", "")
         workflow_run_id = body.get("workflow_run_id")
+        extra_data = body.get("extra_data") or {}
+        if not isinstance(extra_data, dict):
+            return JsonResponse({"success": False, "error": "extra_data must be an object"}, status=400)
 
         if not username:
             return JsonResponse({"success": False, "error": "username is required"}, status=400)
@@ -497,6 +515,13 @@ def task_single_create(request):
                 creator_name=creator_name,
                 workflow_run_id=workflow_run_id,
             )
+
+            # Merge any extra data into the task record (e.g. coaching_prompt).
+            if extra_data:
+                merged = dict(task.data or {})
+                merged.update(extra_data)
+                task.data = merged
+                data_access.save_task(task)
 
             return JsonResponse(
                 {

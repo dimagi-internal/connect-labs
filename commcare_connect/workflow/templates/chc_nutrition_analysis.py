@@ -351,21 +351,25 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
 
     function createTaskWithCoaching(row) {
         // Two-step flow:
-        //   1) POST /tasks/api/single-create/ — create the task with a coaching
-        //      prompt as description. The Django view reads opportunity_id
-        //      from request.labs_context (set by the labs middleware off the
+        //   1) POST /tasks/api/single-create/ — create the task with a short
+        //      description (scannable on the task UI) plus a long-form
+        //      coaching prompt stashed in extra_data.coaching_prompt. The
+        //      task page's "Initiate AI Assistant" modal pre-fills from
+        //      coaching_prompt when present (see task_create_edit.html
+        //      showAIModal). The Django view reads opportunity_id from
+        //      request.labs_context (set by the labs middleware off the
         //      URL's opportunity_id query param), so the page must carry
         //      ?opportunity_id=.
         //   2) POST /labs/workflow/api/run/<id>/decisions/ — record the
         //      decision linking the new task back to the FLW so the row
         //      shows the "View task" button on reload. We carry forward
         //      audit_session_ids if a prior manager-audit decision exists.
-        // Navigate the manager to the task page so they can fire the OCS
-        // chat via the existing "Initiate AI Assistant" modal (which uses
-        // the description as the pre-filled prompt). No synthetic conversation
-        // is auto-attached here; that's the manager's call.
         var name = displayName(row);
-        var prompt =
+        var shortDescription =
+            'Coach ' + name + ' on MUAC measurement technique. Audit photos ' +
+            'passed cleanly but the MUAC distribution suggests a technique issue ' +
+            'worth talking through.';
+        var coachingPrompt =
             'Hi ' + name + ', your visit photos this week looked good — well-framed and the children appeared properly positioned. ' +
             'But the MUAC distribution shows something unusual: more measurements are clustered toward the low end than we\'d expect ' +
             'for a healthy population. This is the kind of pattern that often points at a measurement-technique issue rather than ' +
@@ -376,9 +380,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
             username: row.username,
             flw_name: name,
             title: 'MUAC technique coaching: ' + name,
-            description: prompt,
+            description: shortDescription,
             priority: 'medium',
             workflow_run_id: runId,
+            extra_data: { coaching_prompt: coachingPrompt },
         }).then(function(taskRes) {
             if (!taskRes.ok || !taskRes.data || !taskRes.data.success) {
                 var emsg = (taskRes.data && (taskRes.data.error || taskRes.data.detail)) || ('HTTP ' + taskRes.status);
