@@ -29,7 +29,7 @@ from ..tool_registry import register
         "(see commcare_connect/labs/synthetic/archetypes.py), and creates a "
         "final program_admin_report run watching all opps. Audits attach real "
         "MUAC stock images so the bulk-assessment view renders thumbnails. "
-        "Pass cleanup_first=true (default) to wipe prior runs/decisions/tasks/"
+        "Pass cleanup_first=true (default) to wipe prior runs/flags/tasks/"
         "audits for the opps before regenerating (idempotent)."
     ),
     input_schema={
@@ -59,7 +59,7 @@ from ..tool_registry import register
                             "default": False,
                             "description": (
                                 "If True, leave the LAST week's run as status=in_progress "
-                                "with no decisions/audits/tasks generated. Used to set up "
+                                "with no audits/tasks generated. Used to set up "
                                 "manager-flow walkthroughs where the demo recording drives "
                                 "the manager doing the review live."
                             ),

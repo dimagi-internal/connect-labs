@@ -1,9 +1,10 @@
 """Program Admin Report Workflow Template.
 
 Multi-opp + saved-runs template that gives a program admin a window-scoped
-view of which network managers ran the SOP and what happened to FLWs they
-flagged. Reads from any "watched" workflow whose decisions are recorded
-via the Phase 1 Decision contract (spec §3).
+view of which network managers ran the SOP and what happened to FLWs that
+the per-opp reports raised concerns about. Reads from any "watched"
+workflow whose findings are recorded as Flag records (auto-applied by
+that workflow's render code via view.ensureAutoFlags).
 
 See docs/superpowers/specs/2026-05-25-program-admin-report-design.md.
 """
@@ -11,7 +12,7 @@ See docs/superpowers/specs/2026-05-25-program-admin-report-design.md.
 import logging
 from datetime import datetime
 
-from commcare_connect.decisions.data_access import DecisionsDataAccess
+from commcare_connect.flags.data_access import FlagsDataAccess
 from commcare_connect.tasks.data_access import TaskDataAccess
 from commcare_connect.workflow.data_access import get_saved_runs_for_program_report  # noqa: F401
 
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 DEFINITION = {
     "name": "Program Admin Report",
-    "description": "Cross-opportunity rollup of weekly SOP compliance + per-FLW decision/audit/task outcomes.",
+    "description": "Cross-opportunity rollup of weekly SOP compliance + per-FLW flags/audits/tasks.",
     "version": 1,
     "templateType": "program_admin_report",
     "statuses": [],
@@ -64,8 +65,8 @@ def build_snapshot(
     access_token=None,
     **_,
 ):
-    """Freeze a window-scoped rollup of decisions + their live task/audit
-    status at run completion time. See spec §5.3.
+    """Freeze a window-scoped rollup of per-FLW flags + their associated
+    audit/task records at run completion time. See spec §5.3.
 
     `state` must contain ``window_start``, ``window_end``, ``watched_sources``.
 
@@ -105,84 +106,96 @@ def build_snapshot(
     watched_summary = []
     for src in sources:
         src_opp_id = src["opportunity_id"]
-        dda = DecisionsDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
+        fda = FlagsDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
         tda = TaskDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
         ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
 
         try:
-            # Preload all audits for this opp once; lookups per decision are
-            # then dict reads. The labs API has no batch-get-by-id so the
-            # alternative is N+1 round-trips.
-            try:
-                all_audits = ada.get_audit_sessions()
-                audit_by_id = {a.id: a for a in all_audits}
-            except Exception:
-                logger.warning("Failed to preload audits for opp %s", src_opp_id, exc_info=True)
-                audit_by_id = {}
-
             run_summaries = []
             for run in src["runs"]:
-                decisions = []
-                for d in dda.get_decisions_for_run(run.id):
-                    task_outcomes = []
-                    for tid in d.task_ids:
-                        try:
-                            t = tda.get_task(tid)
-                        except Exception:
-                            logger.warning("Failed to fetch task %s for decision %s", tid, d.id)
-                            continue
-                        if t is None:
-                            continue
-                        task_outcomes.append(
-                            {
-                                "id": t.id,
-                                "status": t.status,
-                                "official_action": (t.resolution_details or {}).get("official_action"),
-                                "closed_at": next(
-                                    (e.get("timestamp") for e in (t.events or []) if e.get("event_type") == "closed"),
-                                    None,
-                                ),
-                            }
-                        )
-                    audit_outcomes = []
-                    for aid in d.audit_session_ids:
-                        a = audit_by_id.get(aid)
-                        if a is None:
-                            continue
-                        img = a.data.get("image_results") or {}
-                        audit_outcomes.append(
-                            {
-                                "id": a.id,
-                                "status": a.status,
-                                "overall_result": a.overall_result,
-                                "pass_count": img.get("pass", 0),
-                                "fail_count": img.get("fail", 0),
-                                "pending_count": img.get("pending", 0),
-                            }
-                        )
-                    decisions.append(
+                # Pull all three artifact sets for this run, then group by
+                # flw_id. Audits and tasks are no longer linked through a
+                # Decision record — each artifact carries workflow_run_id
+                # directly. One FLW row per (flw_id) appears here if any
+                # of {flags, audits, tasks} is non-empty for them.
+                try:
+                    run_flags = fda.get_flags_for_run(run.id)
+                except Exception:
+                    logger.warning("Failed to fetch flags for run %s", run.id, exc_info=True)
+                    run_flags = []
+                try:
+                    run_audits = ada.get_sessions_by_workflow_run(run.id)
+                except Exception:
+                    logger.warning("Failed to fetch audits for run %s", run.id, exc_info=True)
+                    run_audits = []
+                try:
+                    run_tasks = tda.get_tasks_for_run(run.id)
+                except Exception:
+                    logger.warning("Failed to fetch tasks for run %s", run.id, exc_info=True)
+                    run_tasks = []
+
+                by_flw: dict[str, dict] = {}
+
+                def _row(flw_id: str) -> dict:
+                    if flw_id not in by_flw:
+                        by_flw[flw_id] = {"flw_id": flw_id, "flags": [], "audits": [], "tasks": []}
+                    return by_flw[flw_id]
+
+                for f in run_flags:
+                    if not f.flw_id:
+                        continue
+                    _row(f.flw_id)["flags"].append(
                         {
-                            "id": d.id,
-                            "flw_id": d.flw_id,
-                            "decision_type": d.decision_type,
-                            "reason_key": d.reason_key,
-                            "reason_label": d.reason_label,
-                            "audit_session_ids": d.audit_session_ids,
-                            "task_ids": d.task_ids,
-                            "audit_outcomes": audit_outcomes,
-                            "task_outcomes": task_outcomes,
-                            "decided_at": d.decided_at,
+                            "id": f.id,
+                            "flag_key": f.flag_key,
+                            "flag_label": f.flag_label,
+                            "evidence": f.evidence,
+                            "source": f.source,
+                            "flagged_at": f.flagged_at,
                         }
                     )
+
+                for a in run_audits:
+                    flw_id = a.username or a.data.get("flw_id")
+                    if not flw_id:
+                        continue
+                    img = a.data.get("image_results") or {}
+                    _row(flw_id)["audits"].append(
+                        {
+                            "id": a.id,
+                            "status": a.status,
+                            "overall_result": a.overall_result,
+                            "pass_count": img.get("pass", 0),
+                            "fail_count": img.get("fail", 0),
+                            "pending_count": img.get("pending", 0),
+                        }
+                    )
+
+                for t in run_tasks:
+                    flw_id = t.username or t.data.get("username")
+                    if not flw_id:
+                        continue
+                    _row(flw_id)["tasks"].append(
+                        {
+                            "id": t.id,
+                            "status": t.status,
+                            "official_action": (t.resolution_details or {}).get("official_action"),
+                            "closed_at": next(
+                                (e.get("timestamp") for e in (t.events or []) if e.get("event_type") == "closed"),
+                                None,
+                            ),
+                        }
+                    )
+
                 run_summaries.append(
                     {
                         "id": run.id,
                         "completed_at": run.completed_at,
-                        "decisions": decisions,
+                        "flw_rows": list(by_flw.values()),
                     }
                 )
         finally:
-            dda.close()
+            fda.close()
             tda.close()
             ada.close()
 
@@ -269,20 +282,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
     }
 
     function computeRunKpis(run) {
-        // 3 KPIs: % FLWs with decision, % audits closed, % tasks closed
-        var decisions = run.decisions || [];
-        var activeFlws = decisions.length;  // every decision = one FLW reviewed this run
-        var flwDenom = run.active_flws || activeFlws;
-        var flwDec = {num: activeFlws, denom: flwDenom};
+        // 3 KPIs: % flagged FLWs, % audits closed, % tasks closed.
+        // A "flagged FLW" is one where the per-opp report's
+        // ensureAutoFlags raised at least one concern.
+        var flwRows = run.flw_rows || [];
+        var flaggedFlws = flwRows.filter(function(r) { return (r.flags || []).length > 0; }).length;
+        var flwDenom = run.active_flws || flwRows.length;
+        var flwDec = {num: flaggedFlws, denom: flwDenom};
 
         var auditTotal = 0, auditClosed = 0;
         var taskTotal = 0, taskClosed = 0;
-        decisions.forEach(function(d) {
-            (d.audit_outcomes || []).forEach(function(a) {
+        flwRows.forEach(function(r) {
+            (r.audits || []).forEach(function(a) {
                 auditTotal++;
                 if (a.status === 'completed') auditClosed++;
             });
-            (d.task_outcomes || []).forEach(function(t) {
+            (r.tasks || []).forEach(function(t) {
                 taskTotal++;
                 if (t.status === 'closed') taskClosed++;
             });
@@ -303,8 +318,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
             totalDec += k.flwDec.num; totalRoster += k.flwDec.denom;
             totalAuditDone += k.audits.num; totalAudit += k.audits.denom;
             totalTaskDone += k.tasks.num; totalTask += k.tasks.denom;
-            (r.decisions || []).forEach(function(d) {
-                (d.task_outcomes || []).forEach(function(t) {
+            (r.flw_rows || []).forEach(function(fr) {
+                (fr.tasks || []).forEach(function(t) {
                     if (t.status === 'closed') {
                         var oa = t.official_action || 'none';
                         if (outcomes[oa] === undefined) outcomes[oa] = 0;
@@ -393,7 +408,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
                 React.createElement('span', {style: {fontSize: 10, color: '#6b7280'}}, fmtDate(run.completed_at))
             ),
             React.createElement('div', {style: {marginTop: -2}}, statusPill),
-            kpiBar('FLW dec.', k.flwDec.num, k.flwDec.denom),
+            kpiBar('Flagged', k.flwDec.num, k.flwDec.denom),
             kpiBar('Audits', k.audits.num, k.audits.denom),
             kpiBar('Tasks', k.tasks.num, k.tasks.denom)
         );
@@ -442,7 +457,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
             React.createElement('div', {style: {display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, textAlign: 'center', fontSize: 10}},
                 React.createElement('div', null,
                     React.createElement('div', {style: {fontWeight: 600, color: '#111827', fontSize: 13}}, (agg.flwDec.denom > 0 ? Math.round(agg.flwDec.num / agg.flwDec.denom * 100) : 0) + '%'),
-                    React.createElement('div', {style: {color: '#6b7280'}}, 'FLW dec')
+                    React.createElement('div', {style: {color: '#6b7280'}}, 'Flagged')
                 ),
                 React.createElement('div', null,
                     React.createElement('div', {style: {fontWeight: 600, color: agg.audits.denom > 0 && agg.audits.num < agg.audits.denom ? '#dc2626' : '#111827', fontSize: 13}}, (agg.audits.denom > 0 ? Math.round(agg.audits.num / agg.audits.denom * 100) : 0) + '%'),
@@ -462,8 +477,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
         );
     }
 
-    function flwRow(decision, source) {
-        var d = decision;
+    function flwRow(fr, source) {
         // Cross-opp links: every link out of the PAR detail panel needs to
         // carry the watched source's opportunity_id, otherwise labs scopes
         // the lookup to whatever opp the PAR run itself lives in (the
@@ -472,16 +486,31 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
         var oppScope = source && source.opportunity_id
             ? '?opportunity_id=' + source.opportunity_id
             : '';
-        var decisionCell = d.decision_type === 'no_issues'
-            ? pill('✓ No issues', 'green')
-            : pill('⚠ ' + (d.reason_label || d.reason_key || 'Action'), 'red');
-        var auditCell = d.audit_session_ids && d.audit_session_ids.length
-            ? React.createElement('a', {
-                href: '/audit/' + d.audit_session_ids[0] + '/' + oppScope,
-                className: 'text-indigo-600 underline text-xs'
-            }, 'Audit #' + d.audit_session_ids[0])
+
+        var flagCells = (fr.flags || []).map(function(f) {
+            return React.createElement('span', {
+                key: f.id || f.flag_key,
+                className: 'inline-flex items-center gap-1 mr-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800',
+                title: f.flag_label,
+            }, f.flag_label || f.flag_key);
+        });
+        var flagCell = flagCells.length
+            ? React.createElement('div', {className: 'flex flex-wrap gap-y-1'}, flagCells)
             : React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
-        var taskCells = (d.task_outcomes || []).map(function(t) {
+
+        var auditCells = (fr.audits || []).map(function(a) {
+            return React.createElement('a', {
+                key: a.id,
+                href: '/audit/' + a.id + '/' + oppScope,
+                className: 'inline-block mr-2 text-indigo-600 underline text-xs',
+                title: a.overall_result || a.status,
+            }, 'Audit #' + a.id);
+        });
+        var auditCell = auditCells.length
+            ? React.createElement('div', null, auditCells)
+            : React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
+
+        var taskCells = (fr.tasks || []).map(function(t) {
             var c = t.status === 'closed' ? 'green' : (t.status === 'review_needed' ? 'yellow' : 'gray');
             var actionLabel = t.official_action ? ' · ' + t.official_action : '';
             return React.createElement('div', {key: t.id, className: 'flex items-center gap-2'},
@@ -495,9 +524,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
         var taskCell = taskCells.length ? React.createElement('div', null, taskCells) :
             React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
 
-        return React.createElement('tr', {key: d.id, className: d.decision_type === 'action_taken' ? 'bg-amber-50' : ''},
-            React.createElement('td', {className: 'px-3 py-2 text-sm font-medium'}, d.flw_id),
-            React.createElement('td', {className: 'px-3 py-2 text-sm'}, decisionCell),
+        return React.createElement('tr', {key: fr.flw_id, className: (fr.flags || []).length ? 'bg-amber-50' : ''},
+            React.createElement('td', {className: 'px-3 py-2 text-sm font-medium'}, fr.flw_id),
+            React.createElement('td', {className: 'px-3 py-2 text-sm'}, flagCell),
             React.createElement('td', {className: 'px-3 py-2 text-sm'}, auditCell),
             React.createElement('td', {className: 'px-3 py-2 text-sm'}, taskCell)
         );
@@ -508,8 +537,8 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
             selectedCell.opportunity_id === source.opportunity_id &&
             selectedCell.run_id === run.id;
         var border = isSelected ? 'border-2 border-indigo-500' : 'border border-gray-200';
-        var totalDecisions = (run.decisions || []).length;
-        var actionDecisions = (run.decisions || []).filter(function(d) { return d.decision_type === 'action_taken'; }).length;
+        var flwRows = run.flw_rows || [];
+        var flaggedRows = flwRows.filter(function(r) { return (r.flags || []).length > 0; }).length;
         return React.createElement('div', {
             key: run.id,
             onClick: function() {
@@ -522,7 +551,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
                 React.createElement('span', {className: 'text-xs text-gray-500'}, fmtDate(run.completed_at))
             ),
             React.createElement('div', {className: 'text-xs text-gray-600'},
-                totalDecisions + ' decisions · ' + actionDecisions + ' action')
+                flwRows.length + ' FLWs · ' + flaggedRows + ' flagged')
         );
     }
 
@@ -534,19 +563,19 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
 
     function aggregateCell(source) {
         var runs = source.runs || [];
-        var allDecisions = runs.reduce(function(acc, r) { return acc.concat(r.decisions || []); }, []);
-        var actionCount = allDecisions.filter(function(d) { return d.decision_type === 'action_taken'; }).length;
+        var allRows = runs.reduce(function(acc, r) { return acc.concat(r.flw_rows || []); }, []);
+        var flaggedCount = allRows.filter(function(r) { return (r.flags || []).length > 0; }).length;
         var openTasks = 0;
         var closedTasks = 0;
-        allDecisions.forEach(function(d) {
-            (d.task_outcomes || []).forEach(function(t) {
+        allRows.forEach(function(r) {
+            (r.tasks || []).forEach(function(t) {
                 if (t.status === 'closed') closedTasks++;
                 else openTasks++;
             });
         });
         return React.createElement('div', {className: 'bg-gray-50 border border-gray-200 rounded-lg p-3'},
             React.createElement('div', {className: 'text-xs text-gray-500 uppercase'}, runs.length + ' runs'),
-            React.createElement('div', {className: 'text-xs mt-2'}, actionCount + ' action decisions'),
+            React.createElement('div', {className: 'text-xs mt-2'}, flaggedCount + ' flagged FLWs'),
             React.createElement('div', {className: 'text-xs'}, closedTasks + ' closed · ' + openTasks + ' open')
         );
     }
@@ -608,8 +637,11 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
             if (selectedCell && selectedCell.opportunity_id === source.opportunity_id) {
                 var run = (source.runs || []).filter(function(r) { return r.id === selectedCell.run_id; })[0];
                 if (run) {
-                    var decisions = (run.decisions || []).slice().sort(function(a, b) {
-                        return (a.decision_type === 'action_taken' ? 0 : 1) - (b.decision_type === 'action_taken' ? 0 : 1);
+                    // Show flagged FLWs first; then those with only actions; then any silent rows.
+                    var flwRows = (run.flw_rows || []).slice().sort(function(a, b) {
+                        var aHas = (a.flags || []).length > 0 ? 0 : 1;
+                        var bHas = (b.flags || []).length > 0 ? 0 : 1;
+                        return aHas - bHas;
                     });
                     detail = React.createElement('div', {style: {background: 'white', borderRadius: '0 0 12px 12px', border: '2px solid #4f46e5', borderTop: 'none', overflow: 'hidden'}},
                         React.createElement('div', {style: {padding: '14px 20px', background: '#eef2ff', borderBottom: '1px solid #c7d2fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}},
@@ -632,16 +664,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
                             React.createElement('thead', {style: {background: '#f9fafb'}},
                                 React.createElement('tr', null,
                                     React.createElement('th', {style: {textAlign: 'left', padding: '10px 16px', fontSize: 11, textTransform: 'uppercase', color: '#6b7280', fontWeight: 500, width: 170}}, 'FLW'),
-                                    React.createElement('th', {style: {textAlign: 'left', padding: '10px 16px', fontSize: 11, textTransform: 'uppercase', color: '#6b7280', fontWeight: 500}}, 'Decision'),
+                                    React.createElement('th', {style: {textAlign: 'left', padding: '10px 16px', fontSize: 11, textTransform: 'uppercase', color: '#6b7280', fontWeight: 500}}, 'Flags'),
                                     React.createElement('th', {style: {textAlign: 'left', padding: '10px 16px', fontSize: 11, textTransform: 'uppercase', color: '#6b7280', fontWeight: 500, width: 240}}, 'Audits'),
                                     React.createElement('th', {style: {textAlign: 'left', padding: '10px 16px', fontSize: 11, textTransform: 'uppercase', color: '#6b7280', fontWeight: 500, width: 280}}, 'Tasks')
                                 )
                             ),
                             React.createElement('tbody', null,
-                                decisions.length === 0
+                                flwRows.length === 0
                                     ? React.createElement('tr', null,
-                                        React.createElement('td', {colSpan: 4, style: {padding: '24px', textAlign: 'center', color: '#9ca3af'}}, 'No decisions recorded'))
-                                    : decisions.map(function(d) { return flwRow(d, source); })
+                                        React.createElement('td', {colSpan: 4, style: {padding: '24px', textAlign: 'center', color: '#9ca3af'}}, 'No FLW activity for this run'))
+                                    : flwRows.map(function(fr) { return flwRow(fr, source); })
                             )
                         )
                     );

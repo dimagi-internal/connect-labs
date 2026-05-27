@@ -15,8 +15,11 @@ What's generic vs walkthrough-specific:
       * ``generate_audit_from_archetype`` / ``generate_task_from_archetype``
         — thin wrappers over ``archetypes.build_audit_data`` /
         ``build_task_data``.
-      * ``apply_decision_spec`` — materialize one (run, flw) decision
-        spec into Decision + (optional) Audit + (optional) Task records.
+      * ``apply_action_spec`` — materialize one (run, flw) action spec
+        into (optional) Audit + (optional) Task records. Flags are NOT
+        seeded by the synthetic flow: per-opp report render code computes
+        them at render time from the pipeline data and persists them via
+        view.ensureAutoFlags.
 
   - Walkthrough-specific (in the per-demo orchestrator):
       * The archetype trajectory ("solid does no_issues every week,
@@ -79,26 +82,26 @@ class VisitIdSequence:
 def cleanup_opportunity_workflows(
     *,
     wda,
-    dda,
+    fda,
     tda,
     ada,
     opportunity_id: int,
     template_types: list[str],
 ) -> dict[str, int]:
-    """Delete prior workflow_runs + decisions + tasks + audits tied to an opp's
+    """Delete prior workflow_runs + flags + tasks + audits tied to an opp's
     workflow definitions whose ``template_type`` is in ``template_types``.
 
-    Idempotent. Returns counts deleted (workflow_runs, decisions, tasks,
+    Idempotent. Returns counts deleted (workflow_runs, flags, tasks,
     audits, definitions). The "definitions" entry is always 0 — we
     intentionally keep the WorkflowDefinition records so subsequent
     regenerations reuse them rather than churning IDs.
     """
     from commcare_connect.audit.models import AuditSessionRecord
-    from commcare_connect.decisions.models import DecisionRecord
+    from commcare_connect.flags.models import FlagRecord
 
     deleted = {
         "workflow_runs": 0,
-        "decisions": 0,
+        "flags": 0,
         "tasks": 0,
         "audits": 0,
         "definitions": 0,
@@ -117,16 +120,16 @@ def cleanup_opportunity_workflows(
     if not run_ids:
         return deleted
 
-    # Decisions
-    decisions = dda.labs_api.get_records(
-        experiment="decisions",
-        type="Decision",
-        model_class=DecisionRecord,
+    # Flags
+    flags = fda.labs_api.get_records(
+        experiment="flags",
+        type="Flag",
+        model_class=FlagRecord,
     )
-    for d in decisions:
-        if d.workflow_run_id in run_ids:
-            wda.labs_api.delete_records([d.id])
-            deleted["decisions"] += 1
+    for f in flags:
+        if f.workflow_run_id in run_ids:
+            wda.labs_api.delete_records([f.id])
+            deleted["flags"] += 1
 
     # Tasks
     for t in tda.get_tasks():
@@ -301,13 +304,16 @@ def generate_task_from_archetype(
 
 
 # ---------------------------------------------------------------------- #
-# Decision spec application
+# Action spec application — synthetic generator for per-(run, flw) audits
+# and tasks. Flags are not seeded here; per-opp report render code
+# computes them from the pipeline data at render time via
+# view.ensureAutoFlags. The synthetic flow only needs to produce the
+# artifacts that the manager would have created as actions in response.
 # ---------------------------------------------------------------------- #
 
 
-def apply_decision_spec(
+def apply_action_spec(
     *,
-    dda,
     tda,
     ada,
     spec: dict,
@@ -319,61 +325,39 @@ def apply_decision_spec(
     creator_name: str,
     visit_id_seq: VisitIdSequence,
 ) -> None:
-    """Materialize one (run, flw) decision spec into Decision + linked records.
+    """Materialize one (run, flw) action spec into Audit + Task records.
 
-    ``spec`` dict keys:
-        - ``decision_type``: "no_issues" | "action_taken"
-        - ``reason_key`` / ``reason_label`` (action_taken only)
-        - ``audit_archetype`` / ``task_archetype`` (optional, only for
-          action_taken — names in archetypes.py)
+    ``spec`` dict keys (all optional — empty spec is a no-op):
+        - ``audit_archetype``: name of an audit archetype from archetypes.py
+        - ``task_archetype``: name of a task archetype from archetypes.py
+        - ``reason_label`` / ``reason_key``: only used as the task title hint
     """
-    decision_type = spec["decision_type"]
-    audit_ids: list[int] = []
-    task_ids: list[int] = []
+    audit_archetype = spec.get("audit_archetype")
+    task_archetype = spec.get("task_archetype")
+    spawned_audit_id: int | None = None
 
-    if decision_type == "action_taken":
-        audit_archetype = spec.get("audit_archetype")
-        task_archetype = spec.get("task_archetype")
-        spawned_audit_id: int | None = None
-        if audit_archetype:
-            spawned_audit_id = generate_audit_from_archetype(
-                ada=ada,
-                opportunity_id=opportunity_id,
-                opportunity_name=opportunity_name,
-                workflow_run_id=workflow_run_id,
-                flw_id=flw_id,
-                monday_iso=monday_iso,
-                audit_archetype=audit_archetype,
-                visit_id=visit_id_seq.next(),
-            )
-            audit_ids.append(spawned_audit_id)
-        if task_archetype:
-            task_title = f"[{spec.get('reason_label', spec.get('reason_key', 'Action'))}] {flw_id}"
-            task_ids.append(
-                generate_task_from_archetype(
-                    tda=tda,
-                    opportunity_id=opportunity_id,
-                    workflow_run_id=workflow_run_id,
-                    audit_session_id=spawned_audit_id,
-                    flw_id=flw_id,
-                    monday_iso=monday_iso,
-                    title=task_title,
-                    task_archetype=task_archetype,
-                    creator_name=creator_name,
-                )
-            )
+    if audit_archetype:
+        spawned_audit_id = generate_audit_from_archetype(
+            ada=ada,
+            opportunity_id=opportunity_id,
+            opportunity_name=opportunity_name,
+            workflow_run_id=workflow_run_id,
+            flw_id=flw_id,
+            monday_iso=monday_iso,
+            audit_archetype=audit_archetype,
+            visit_id=visit_id_seq.next(),
+        )
 
-    decided_at = monday_dt(monday_iso, hour=11).isoformat()
-    dda.create_decision(
-        workflow_run_id=workflow_run_id,
-        opportunity_id=opportunity_id,
-        flw_id=flw_id,
-        decision_type=decision_type,
-        reason_key=spec.get("reason_key"),
-        reason_label=spec.get("reason_label"),
-        audit_session_ids=audit_ids,
-        task_ids=task_ids,
-        decided_at=decided_at,
-        decided_by=creator_name,
-        notes=f"Synthetic week {monday_iso}",
-    )
+    if task_archetype:
+        task_title = f"[{spec.get('reason_label', spec.get('reason_key', 'Action'))}] {flw_id}"
+        generate_task_from_archetype(
+            tda=tda,
+            opportunity_id=opportunity_id,
+            workflow_run_id=workflow_run_id,
+            audit_session_id=spawned_audit_id,
+            flw_id=flw_id,
+            monday_iso=monday_iso,
+            title=task_title,
+            task_archetype=task_archetype,
+            creator_name=creator_name,
+        )
