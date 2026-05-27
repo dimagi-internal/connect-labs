@@ -210,8 +210,8 @@ DEFINITION = {
     # SAM/MAM rates (FLW cherry-picking easier households) rather than too-
     # high; gender skew is symmetric (either side of 40-60% triggers).
     "flags": [
-        {"key": "sam_low", "label": "SAM rate suspiciously low", "auto": True},
-        {"key": "mam_low", "label": "MAM rate suspiciously low", "auto": True},
+        {"key": "sam_low", "label": "SAM rate < 1%", "auto": True},
+        {"key": "mam_low", "label": "MAM rate < 3%", "auto": True},
         {"key": "gender_skew", "label": "Gender split outside 40-60%", "auto": True},
     ],
     # Action catalog — all available regardless of flag status. If a row
@@ -220,7 +220,7 @@ DEFINITION = {
     # prompt.
     "actions": [
         {"key": "create_audit", "label": "Create Audit"},
-        {"key": "send_task", "label": "Send Task"},
+        {"key": "create_task", "label": "Create Task"},
     ],
 }
 
@@ -329,7 +329,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     var FLAG_CATALOG = [
         {
             key: 'sam_low',
-            label: 'SAM rate suspiciously low',
+            label: 'SAM rate < 1%',
             predicate: function(r) {
                 var mc = muacCount(r);
                 if (mc < 10) return false;
@@ -342,7 +342,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         },
         {
             key: 'mam_low',
-            label: 'MAM rate suspiciously low',
+            label: 'MAM rate < 3%',
             predicate: function(r) {
                 var mc = muacCount(r);
                 if (mc < 10) return false;
@@ -562,11 +562,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     }
 
     // ── MenuButton (split-button dropdown) ─────────────────────
-    // A button with a caret that opens a popover of quick actions. Each
-    // item is {label, description?, highlight?, onClick}. Items marked
-    // highlight render with an accent (used for flag-context-aware
-    // shortcuts so the manager's eye is drawn to the relevant variant).
-    // Closes on outside click or escape.
+    // Trigger button + popover of quick-action items. Visual styling
+    // mirrors the project's text_button_dropdown component
+    // (commcare_connect/templates/components/dropdowns/text_button_dropdown.html):
+    // rounded-lg shadow-lg bg-white border-gray-200, items use the
+    // hover:bg-slate-100 row pattern. Each item is
+    // {label, description?, onClick} — no icons. Closes on outside click
+    // or Escape.
     function MenuButton(props) {
         var _open = React.useState(false);
         var open = _open[0]; var setOpen = _open[1];
@@ -593,36 +595,30 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 title: props.title || '',
             },
                 React.createElement('span', null, props.label),
-                React.createElement('i', {className: 'fa-solid fa-caret-down text-[10px] opacity-70'})
+                React.createElement('i', {className: 'fa-solid fa-chevron-down text-[10px] opacity-70'})
             ),
             open
                 ? React.createElement('div', {
-                    className: 'absolute right-0 z-20 mt-1 w-72 origin-top-right rounded-md bg-white shadow-lg border border-gray-200 ring-1 ring-black ring-opacity-5'
+                    className: 'absolute right-0 z-20 mt-1 w-72 rounded-lg bg-white shadow-lg py-2 px-2 border border-gray-200'
                   },
-                    React.createElement('div', {className: 'py-1'}, props.items.map(function(item, i) {
+                    props.items.map(function(item, i) {
                         return React.createElement('button', {
                             key: i,
                             type: 'button',
                             disabled: !!item.disabled,
                             onClick: function() { setOpen(false); item.onClick(); },
-                            className: 'w-full text-left block px-3 py-2 text-xs ' +
+                            className: 'block w-full text-left px-3 py-2 rounded ' +
                                 (item.disabled
                                     ? 'text-gray-400 cursor-not-allowed'
-                                    : 'text-gray-700 hover:bg-gray-50') +
-                                (item.highlight ? ' bg-amber-50/60' : ''),
+                                    : 'text-gray-700 hover:bg-slate-100 cursor-pointer'),
                             title: item.title || '',
                         },
-                            React.createElement('div', {className: 'flex items-center gap-1.5'},
-                                item.highlight
-                                    ? React.createElement('i', {className: 'fa-solid fa-bolt text-amber-500 text-[10px]'})
-                                    : null,
-                                React.createElement('span', {className: 'font-medium'}, item.label)
-                            ),
+                            React.createElement('div', {className: 'text-sm font-medium'}, item.label),
                             item.description
-                                ? React.createElement('div', {className: 'text-[11px] text-gray-500 mt-0.5 ml-' + (item.highlight ? '4' : '0')}, item.description)
+                                ? React.createElement('div', {className: 'text-xs text-gray-500 mt-0.5'}, item.description)
                                 : null
                         );
-                    }))
+                    })
                   )
                 : null
         );
@@ -808,12 +804,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                     }).join(' · ') : '';
                                                     return React.createElement('span', {
                                                         key: f.id || f.flag_key,
-                                                        className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800',
+                                                        className: 'inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800',
                                                         title: f.flag_label + (ev ? ' (' + ev + ')' : ''),
-                                                    },
-                                                        React.createElement('i', {className: 'fa-solid fa-flag text-amber-600 text-[10px]'}),
-                                                        f.flag_label || f.flag_key
-                                                    );
+                                                    }, f.flag_label || f.flag_key);
                                                 })
                                             );
                                         })()
@@ -821,8 +814,9 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // Actions — two split-button menus, always rendered. Each
                                     // menu opens to a list of quick actions. When a row carries
                                     // a flag, the relevant flag-context quick action is added
-                                    // to the menu and rendered with an amber highlight so the
-                                    // manager's eye lands on the recommended variant.
+                                    // to the menu (no visual highlight — the label itself is
+                                    // self-explanatory and the project's dropdown convention
+                                    // doesn't decorate items with icons).
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm align-top'},
                                         (function() {
                                             var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
@@ -842,7 +836,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                 auditItems.push({
                                                     label: 'Audit low-MUAC visits',
                                                     description: 'Pre-filtered for the cases this FLW may be missing',
-                                                    highlight: true,
                                                     onClick: function() { createAudit(r, {count: 5, filter: 'low_muac'}); },
                                                 });
                                             }
@@ -850,7 +843,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                 auditItems.push({
                                                     label: 'Audit underrepresented gender',
                                                     description: 'Pre-filtered for the gender below the typical band',
-                                                    highlight: true,
                                                     onClick: function() { createAudit(r, {count: 5, filter: 'underrep_gender'}); },
                                                 });
                                             }
@@ -868,7 +860,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                 taskItems.push({
                                                     label: 'Coaching: reach harder households',
                                                     description: 'Pre-filled prompt about cherry-picking easy visits',
-                                                    highlight: true,
                                                     onClick: function() {
                                                         createTask(r, {
                                                             title: 'Coaching — reach harder households: ' + name,
@@ -882,7 +873,6 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                 taskItems.push({
                                                     label: 'Coaching: gender balance',
                                                     description: 'Pre-filled prompt about uneven gender split',
-                                                    highlight: true,
                                                     onClick: function() {
                                                         createTask(r, {
                                                             title: 'Coaching — gender balance: ' + name,
@@ -901,7 +891,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                     items: auditItems,
                                                 }),
                                                 React.createElement(MenuButton, {
-                                                    label: 'Send Task',
+                                                    label: 'Create Task',
                                                     className: 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
                                                     title: 'Task options for ' + name,
                                                     items: taskItems,
