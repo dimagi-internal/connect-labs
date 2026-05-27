@@ -18,7 +18,7 @@ Two endpoints, both scoped to an in_progress workflow run:
     from a prior manager-audit call so the row shows both).
 
 Both endpoints mirror the synthetic generator's direct-labs_api write style
-(see commcare_connect/mcp/tools/program_admin_demo_v2.py) so the records
+(see commcare_connect/labs/synthetic/program_admin_demo.py) so the records
 they produce are indistinguishable from seeded ones.
 """
 
