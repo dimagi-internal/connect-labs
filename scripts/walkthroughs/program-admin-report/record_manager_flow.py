@@ -1,21 +1,26 @@
 """Record the manager-flow prepend: Northern Wk4 in_progress → auto-flags
-appear on mount → Create Audit (flag-context quick action) on the flagged
-FLW → audit detail → back to review → Send Task (flag-context coaching
-quick action) → task detail w/ OCS conversation.
+appear on mount → Create Audit (Audit Last 7 days) on the flagged FLW →
+audit detail → back to review → Create Task (Coach on Flag implications)
+→ task detail w/ OCS conversation.
 
 Output: a single ``.webm`` in /tmp/par_preview/video_manager/ that's
 later encoded + concatenated with the drill-through recording.
 
-The UI shape changed in PR #281 (Decisions → Flags):
+UI history:
 
-  - There's no longer a "Mark all non-flagged FLWs as No Issue" toolbar
-    button. Flags are auto-applied by the framework on mount (via
-    view.ensureAutoFlags), so the manager arrives at a fully-flagged
-    page; there is nothing to bulk-mark.
-  - Actions are two split-button menus per row (``Create Audit ▾`` /
-    ``Send Task ▾``). When a row carries a flag, the menu surfaces a
-    highlighted flag-context-aware quick action. The recorder picks the
-    highlighted item to mirror what a manager would actually do.
+  - PR #281 (Decisions → Flags) removed the "Mark all non-flagged FLWs
+    as No Issue" toolbar button. Flags now auto-apply on mount via
+    view.ensureAutoFlags, so the manager arrives at a fully-flagged
+    page; nothing to bulk-mark. Per-row actions became two split-button
+    menus.
+  - PRs #285 + #286 simplified those menus to a small fixed catalog:
+    Create Audit has {New Audit, Audit Last 7 days}; Create Task has
+    {New Task, plus Coach on Flag implications when the row carries any
+    flag}. There's no longer a flag-specific audit variant. The
+    recorder picks ``Audit Last 7 days`` (mirrors a manager scoping the
+    audit to recent visits during the live review) and ``Coach on Flag
+    implications`` (the prompt is composed from the row's actual
+    flag_label values, so it stays specific to whatever flags tripped).
 
 All Playwright primitives + the cursor overlay live in
 ``scripts/walkthroughs/_lib/``; this file is just the scene sequence.
@@ -45,11 +50,12 @@ OUT_DIR = Path("/tmp/par_preview/video_manager")
 MANIFEST = Path("/tmp/par_preview/manager_snapshot_manifest.json")
 FLAGGED_FLW = "jumoke_n"
 
-# Highlighted (flag-context-aware) menu-item labels from chc_nutrition's
-# Actions cell. These are the items the recorder picks because they're
-# what a manager seeing a sam_low/mam_low flag would actually click.
-LOW_MUAC_AUDIT_ITEM = "Audit low-MUAC visits"
-LOW_MUAC_COACHING_ITEM = "Coaching: reach harder households"
+# Menu-item labels from chc_nutrition's Actions cell (post PR #286).
+# `Audit Last 7 days` is the non-default audit option; `Coach on Flag
+# implications` only appears when the row carries any flag, which it
+# does for FLAGGED_FLW by mount-time (auto-flag for sam_low/mam_low).
+AUDIT_MENU_ITEM = "Audit Last 7 days"
+COACHING_MENU_ITEM = "Coach on Flag implications"
 
 
 def main() -> None:
@@ -84,23 +90,23 @@ def main() -> None:
 
         # Scene 1: wait for the auto-applied flag pills to render. The
         # framework calls view.ensureAutoFlags on mount and the table
-        # re-renders with one pill per active flag. Wait for the first
-        # canonical label to appear so we capture the post-mount state.
+        # re-renders with one pill per active flag. Wait for any of the
+        # current canonical labels (PR #285) to appear so we capture
+        # the post-mount state.
         print("Scene 1: Auto-flags appear on mount")
         page.wait_for_function(
-            "() => /SAM rate suspiciously low|MAM rate suspiciously low|"
-            "Gender split outside 40-60%/.test(document.body.innerText)",
+            "() => /SAM rate < 1%|MAM rate < 3%|Gender split outside 40-60%/.test("
+            "document.body.innerText)",
             timeout=20_000,
         )
         page.wait_for_timeout(1_500)
         snap(rec, "flags_auto_applied")
 
-        # Scene 2: scroll to flagged FLW, open Create Audit menu, click the
-        # highlighted low-MUAC quick action. The menu trigger is a
-        # MenuButton with label "Create Audit"; the highlighted item for a
-        # sam_low/mam_low flag is "Audit low-MUAC visits" (per
-        # chc_nutrition_analysis.py).
-        print(f"Scene 2: Create Audit (low-MUAC quick action) for {FLAGGED_FLW}")
+        # Scene 2: scroll to flagged FLW, open Create Audit menu, click
+        # `Audit Last 7 days`. The menu trigger is a MenuButton with
+        # label "Create Audit"; the items are the fixed catalog from
+        # PR #286 — {New Audit, Audit Last 7 days}.
+        print(f"Scene 2: Create Audit → {AUDIT_MENU_ITEM} for {FLAGGED_FLW}")
         page.wait_for_selector(f"text={FLAGGED_FLW}", timeout=15_000)
         page.wait_for_timeout(800)
         scroll_row_into_view(page, FLAGGED_FLW)
@@ -115,11 +121,10 @@ def main() -> None:
         # The menu opens as an absolute-positioned panel — give it a beat
         # to mount before we look inside.
         page.wait_for_timeout(600)
-        if not click_menu_item(page, LOW_MUAC_AUDIT_ITEM):
+        if not click_menu_item(page, AUDIT_MENU_ITEM):
             raise RuntimeError(
-                f"Menu item {LOW_MUAC_AUDIT_ITEM!r} not found after opening "
-                f"Create Audit menu for {FLAGGED_FLW}. Auto-flags may not "
-                "have populated the flag-context quick actions."
+                f"Menu item {AUDIT_MENU_ITEM!r} not found after opening "
+                f"Create Audit menu for {FLAGGED_FLW}."
             )
         page.wait_for_url("**/audit/**", timeout=30_000)
         # Wait for the audit's assessment count header instead of networkidle —
@@ -144,23 +149,25 @@ def main() -> None:
         )
         snap(rec, "back_after_audit")
 
-        # Scene 5: open Send Task menu, click the highlighted coaching quick
-        # action. Per PR #281 the coaching task is now under the Send Task
-        # menu (no top-level "Create Task with Coaching" button). The
-        # render-time onClick builds {description, coaching_prompt} from
-        # the FLW's flag set; task_single_create stores coaching_prompt in
-        # task.data and the AI modal pre-fills from there (PR #282).
-        print(f"Scene 5: Send Task (coaching quick action) for {FLAGGED_FLW}")
+        # Scene 5: open Create Task menu, click `Coach on Flag implications`.
+        # Per PR #286 the coaching item only shows up when the row carries
+        # any flag — for FLAGGED_FLW the auto-flag is sam_low/mam_low.
+        # The render-time onClick builds {description, coaching_prompt}
+        # from the row's actual flag_label values; task_single_create stores
+        # coaching_prompt in task.data and the AI modal pre-fills from
+        # there (PR #282). Note: trigger label is "Create Task" (not "Send
+        # Task" — renamed in PR #285).
+        print(f"Scene 5: Create Task → {COACHING_MENU_ITEM} for {FLAGGED_FLW}")
         scroll_row_into_view(page, FLAGGED_FLW)
         page.wait_for_timeout(1_200)
-        if not click_row_button(page, FLAGGED_FLW, "Send Task"):
-            raise RuntimeError(f"Send Task menu trigger not found on {FLAGGED_FLW}'s row.")
+        if not click_row_button(page, FLAGGED_FLW, "Create Task"):
+            raise RuntimeError(f"Create Task menu trigger not found on {FLAGGED_FLW}'s row.")
         page.wait_for_timeout(600)
-        if not click_menu_item(page, LOW_MUAC_COACHING_ITEM):
+        if not click_menu_item(page, COACHING_MENU_ITEM):
             raise RuntimeError(
-                f"Menu item {LOW_MUAC_COACHING_ITEM!r} not found after opening "
-                f"Send Task menu for {FLAGGED_FLW}. Auto-flags may not have "
-                "populated the flag-context quick actions."
+                f"Menu item {COACHING_MENU_ITEM!r} not found after opening "
+                f"Create Task menu for {FLAGGED_FLW}. Auto-flags may not have "
+                "populated the row, so the conditional coaching item never rendered."
             )
         page.wait_for_url("**/tasks/**", timeout=30_000)
         # Wait for the task page header — networkidle won't fire because of
