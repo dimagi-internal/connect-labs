@@ -137,7 +137,10 @@ TEMPLATES: dict[str, list[dict]] = {
             "role": "bot",
             "text": "I'll walk through what we found. Of your last five MUAC photos, three were unreadable due to framing and two looked like the tape was applied loosely. That kind of clustering tells us the issue isn't an off day — it's a habit that needs to change.",
         },
-        {"role": "flw", "text": "I see. I've been doing the visits very quickly because there are so many in my area."},
+        {
+            "role": "flw",
+            "text": "I see. I've been doing the visits very quickly because there are so many in my area.",
+        },
         {
             "role": "bot",
             "text": "I understand the pressure. But these measurements drive referrals for severe acute malnutrition — if we miss them, real children miss treatment. Speed matters less than accuracy here.",
