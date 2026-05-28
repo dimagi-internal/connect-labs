@@ -37,9 +37,9 @@ function v5_round(x) {
 // extractor have specific canonical names; raw form names from CCHQ submissions
 // may differ. Match v4 _FORM_NAME_ALIASES exactly.
 var V5_FORM_NAME_ALIASES = {
-  // None today — v4 reads form.@name which already matches visit_type for the
-  // standard MBW deployment. Kept as an extension point if a downstream opp
-  // needs renaming.
+  // Matches v4 _FORM_NAME_ALIASES exactly. Some CommCare deployments submit
+  // "Post delivery visit" as form.@name; the schedule uses "Postnatal Delivery Visit".
+  'Post delivery visit': 'Postnatal Delivery Visit',
 };
 
 function v5_normFormName(rawName) {
