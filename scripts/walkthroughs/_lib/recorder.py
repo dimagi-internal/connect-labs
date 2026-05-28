@@ -635,29 +635,70 @@ def dwell_on_menu_item(page: Page, item_text: str, *, timeout_ms: int = 5_000) -
     return True
 
 
-def pass_each_audit_image(page: Page, *, dwell_ms: int = 550, max_images: int = 12) -> int:
+def pass_each_audit_image(
+    page: Page, *, dwell_ms: int = 550, max_images: int = 12, per_image_load_ms: int = 8_000
+) -> int:
     """Click the per-photo **Pass** button on each assessment widget, in order.
 
     The bulk-assessment page renders one ``.assessment-widget`` per photo,
     each with a "Pass" button (`updateResult('pass')`). This walks them
-    top-to-bottom — scrolling each into view, gliding the cursor to its
-    Pass button, clicking, and dwelling — so the recording shows the
-    manager actually working through the audit photo by photo rather than
-    a single "Pass All" shortcut.
+    top-to-bottom — scrolling each into view, **waiting for that photo to
+    decode**, gliding the cursor to its Pass button, clicking, and dwelling
+    — so the recording shows the manager working through the audit photo by
+    photo on loaded images.
 
-    Skips a widget that's already marked pass. Returns the number of Pass
-    clicks issued. ``max_images`` caps the walk (the demo audits are 5).
+    Waiting per-image (instead of one upfront "all N images decoded" gate)
+    is deliberate: the photos stream from GDrive on a cold cache, and
+    blocking on all of them at once is what produced the ~30s mid-audit
+    stall. Scrolling each widget into view also triggers its
+    ``loading="lazy"`` fetch, so the wait both paces the scene and
+    guarantees the photo is visible before it's passed. Each per-image
+    wait is capped at ``per_image_load_ms`` so one genuinely-slow photo
+    can't hang the whole walk.
+
+    Skips a widget already marked pass. Returns the number of Pass clicks.
     """
+    import time as _time
+
     count = page.evaluate("() => document.querySelectorAll('.assessment-widget').length")
     clicked = 0
     for idx in range(min(count, max_images)):
+        # Scroll the widget into view (also kicks off its lazy image load).
+        scrolled = page.evaluate(
+            """(idx) => {
+                const w = document.querySelectorAll('.assessment-widget')[idx];
+                if (!w) return false;
+                w.scrollIntoView({behavior: 'instant', block: 'center'});
+                return true;
+            }""",
+            idx,
+        )
+        if not scrolled:
+            continue
+        page.wait_for_timeout(250)  # let the scroll settle
+
+        # Wait for THIS widget's photo to decode before passing it, so the
+        # recording never shows a Pass click landing on a spinner. Capped.
+        deadline = _time.time() + per_image_load_ms / 1000
+        while _time.time() < deadline:
+            decoded = page.evaluate(
+                """(idx) => {
+                    const w = document.querySelectorAll('.assessment-widget')[idx];
+                    if (!w) return false;
+                    const img = w.querySelector('img');
+                    return !!(img && img.complete && img.naturalWidth > 0);
+                }""",
+                idx,
+            )
+            if decoded:
+                break
+            page.wait_for_timeout(250)
+
         box = page.evaluate(
             """(idx) => {
                 const w = document.querySelectorAll('.assessment-widget')[idx];
                 if (!w) return null;
-                w.scrollIntoView({behavior: 'instant', block: 'center'});
-                // Already passed? (green PASS badge present) — skip.
-                const badge = w.querySelector('.bg-green-600');
+                const badge = w.querySelector('.bg-green-600');  // already-pass
                 const btn = [...w.querySelectorAll('button')].find(b => b.innerText.trim() === 'Pass');
                 if (!btn) return null;
                 const r = btn.getBoundingClientRect();
@@ -665,10 +706,7 @@ def pass_each_audit_image(page: Page, *, dwell_ms: int = 550, max_images: int = 
             }""",
             idx,
         )
-        if not box:
-            continue
-        page.wait_for_timeout(200)  # let the scroll settle before the cursor move
-        if box.get("already"):
+        if not box or box.get("already"):
             continue
         slow_move(page, box["x"], box["y"], steps=16)
         page.wait_for_timeout(120)
