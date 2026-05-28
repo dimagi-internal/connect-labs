@@ -1202,16 +1202,12 @@ function WorkflowUI({
               var merged = Object.assign({}, prev);
               Object.keys(fetchedTasks).forEach(function (u) {
                 var t = fetchedTasks[u];
-                // Don't clobber locally-set task state for tasks the user has
-                // already interacted with this session.
-                if (!merged[u] || !merged[u].triggered_at) {
-                  merged[u] = {
-                    status: t.status,
-                    triggered_at: t.triggered_at,
-                    task_id: t.task_id,
-                    title: t.title,
-                  };
-                }
+                merged[u] = {
+                  status: t.status,
+                  triggered_at: t.triggered_at,
+                  task_id: t.task_id,
+                  title: t.title,
+                };
               });
               if (!isCompleted) {
                 onUpdateState({ task_states: merged }).catch(function (e) {
@@ -1785,15 +1781,6 @@ function WorkflowUI({
       description: flagDesc,
       priority: flw.flags.type === 'red' ? 'high' : 'medium',
       workflow_instance_id: instance.id,
-    });
-    var updated = Object.assign({}, taskStates);
-    updated[flw.username] = {
-      status: 'open',
-      triggered_at: new Date().toISOString(),
-    };
-    setTaskStates(updated);
-    onUpdateState({ task_states: updated }).catch(function (e) {
-      console.warn('task state save failed:', e);
     });
   };
 
