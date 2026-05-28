@@ -1483,7 +1483,7 @@ function WorkflowRunner({
           pipelineData,
         state: (snapshot.state as WorkflowState) ?? instanceState,
         isCompleted,
-        asOf: isCompleted ? (inst.completed_at ?? null) : null,
+        asOf: isCompleted ? inst.completed_at ?? null : null,
         complete: completeFn,
         flags: flagsList,
         flagsFor,
