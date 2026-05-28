@@ -903,6 +903,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                             var latestAudit = rowAudits.length ? rowAudits[rowAudits.length - 1] : null;
                                             var latestTask = rowTasks.length ? rowTasks[rowTasks.length - 1] : null;
                                             var viewBtnBase = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium border transition-colors no-underline ';
+                                            // Disabled-button styling for the completed-run case: a
+                                            // saved run is a frozen historical record, so you can't
+                                            // start NEW work from it. Rows that never got an audit/task
+                                            // show a greyed, non-interactive button instead of a live
+                                            // Create menu. (Rows that DO have an audit/task still get a
+                                            // working "View" link — viewing history is always allowed.)
+                                            var disabledBtn = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed';
 
                                             var auditAffordance = latestAudit
                                                 ? React.createElement('a', {
@@ -910,26 +917,46 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                     className: viewBtnBase + 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
                                                     title: 'Open audit #' + latestAudit.id + ' (' + (latestAudit.status || 'unknown') + ')',
                                                   }, 'View Audit')
-                                                : React.createElement(MenuButton, {
-                                                    label: 'Create Audit',
-                                                    accent: 'blue',
-                                                    className: 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
-                                                    title: 'Audit options for ' + name,
-                                                    items: auditItems,
-                                                  });
+                                                : (runIsLive
+                                                    ? React.createElement(MenuButton, {
+                                                        label: 'Create Audit',
+                                                        accent: 'blue',
+                                                        className: 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
+                                                        title: 'Audit options for ' + name,
+                                                        items: auditItems,
+                                                      })
+                                                    : React.createElement('button', {
+                                                        type: 'button',
+                                                        disabled: true,
+                                                        className: disabledBtn,
+                                                        title: 'This run is complete — no new audits can be created',
+                                                      },
+                                                        React.createElement('span', null, 'Create Audit'),
+                                                        React.createElement('i', {className: 'fa-solid fa-chevron-down text-[10px] opacity-50'})
+                                                      ));
                                             var taskAffordance = latestTask
                                                 ? React.createElement('a', {
                                                     href: '/tasks/' + latestTask.id + '/edit/' + oppScope,
                                                     className: viewBtnBase + 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
                                                     title: 'Open task #' + latestTask.id + ' (' + (latestTask.status || 'unknown') + ')',
                                                   }, 'View Task')
-                                                : React.createElement(MenuButton, {
-                                                    label: 'Create Task',
-                                                    accent: 'purple',
-                                                    className: 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
-                                                    title: 'Task options for ' + name,
-                                                    items: taskItems,
-                                                  });
+                                                : (runIsLive
+                                                    ? React.createElement(MenuButton, {
+                                                        label: 'Create Task',
+                                                        accent: 'purple',
+                                                        className: 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
+                                                        title: 'Task options for ' + name,
+                                                        items: taskItems,
+                                                      })
+                                                    : React.createElement('button', {
+                                                        type: 'button',
+                                                        disabled: true,
+                                                        className: disabledBtn,
+                                                        title: 'This run is complete — no new tasks can be created',
+                                                      },
+                                                        React.createElement('span', null, 'Create Task'),
+                                                        React.createElement('i', {className: 'fa-solid fa-chevron-down text-[10px] opacity-50'})
+                                                      ));
 
                                             return React.createElement('div', {className: 'flex gap-2'},
                                                 auditAffordance,
