@@ -1,4 +1,4 @@
-"""Proxy models for rooftop_surveys LocalLabsRecords.
+"""Proxy models for microplans LocalLabsRecords.
 
 Persistence rides the production LabsRecord API (no Django models / tables) per
 the labs convention: every record carries experiment=<opportunity_id> and a
@@ -31,15 +31,26 @@ class RooftopAreaRecord(LocalLabsRecord):
         return self.data.get("config", {})
 
     @property
+    def mode(self) -> str:
+        """ "sampling" (PPS subset) | "coverage" (visit every household)."""
+        return self.data.get("mode", "sampling")
+
+    @property
     def created_at(self) -> str:
         return self.data.get("created_at", "")
 
 
 class RooftopFrameRecord(LocalLabsRecord):
-    """A generated sampling frame: pins + cluster hulls + per-arm stats.
+    """A generated frame.
 
-    Parented (labs_record_id) to the RooftopAreaRecord it was generated from.
+    Sampling mode: pins + cluster hulls + per-arm stats. Coverage mode: the
+    cluster polygons live in `hulls` (pins is empty). Parented (labs_record_id)
+    to the RooftopAreaRecord it was generated from.
     """
+
+    @property
+    def mode(self) -> str:
+        return self.data.get("mode", "sampling")
 
     @property
     def pins(self) -> dict:

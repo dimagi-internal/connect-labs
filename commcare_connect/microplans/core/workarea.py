@@ -23,10 +23,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from pyproj import Transformer
-from shapely.geometry import box
+from shapely.geometry import box, shape
 from shapely.ops import transform
 
-from commcare_connect.rooftop_surveys.sampling.geo import utm_epsg_for
+from commcare_connect.microplans.core.geo import utm_epsg_for
 
 # Connect's WorkAreaCSVImporter column labels.
 CSV_HEADERS = {
@@ -103,6 +103,44 @@ def build_work_areas(
                     "lga": lga,
                     "state": state,
                 },
+            )
+        )
+    return out
+
+
+def build_coverage_work_areas(
+    area_features: dict,
+    *,
+    ward_for_arm: dict | None = None,
+    lga: str = "",
+    state: str = "",
+) -> list[WorkAreaPayload]:
+    """Cluster-as-WorkArea (coverage mode): each cluster polygon → one WorkArea.
+
+    Unlike sampling (one tiny WorkArea per pinned building), coverage assigns a
+    whole cluster to an FLW: boundary = the cluster hull, expected_visit_count =
+    building_count (visit every household in the area).
+    """
+    ward_for_arm = ward_for_arm or {}
+    out: list[WorkAreaPayload] = []
+    for feat in area_features.get("features", []):
+        geom = shape(feat["geometry"])
+        centroid = geom.centroid
+        props = feat.get("properties", {})
+        arm = props.get("arm", "intervention")
+        cluster = props.get("cluster", "C0")
+        building_count = int(props.get("building_count", 0))
+        out.append(
+            WorkAreaPayload(
+                slug=f"{arm[:3]}-{cluster}".lower(),
+                ward=ward_for_arm.get(arm, arm),
+                centroid_lon=float(centroid.x),
+                centroid_lat=float(centroid.y),
+                boundary_wkt=geom.wkt,
+                building_count=building_count,
+                expected_visit_count=building_count,  # coverage: visit every household
+                target_population=0,
+                case_properties={"cluster": cluster, "arm": arm, "mode": "coverage", "lga": lga, "state": state},
             )
         )
     return out
