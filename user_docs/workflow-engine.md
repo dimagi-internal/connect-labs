@@ -105,6 +105,9 @@ The CHC Nutrition Analysis dashboard uses the following flag catalog:
 !!! note "SAM/MAM flags signal too few at-risk cases, not too many"
 These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
 
+!!! note "Flags appear immediately when opening a new weekly run"
+    When you open a brand-new CHC Nutrition weekly review, auto-detected flags (SAM rate < 1%, MAM rate < 3%, gender split) appear on each row the moment the table loads. You do not need to reload the page to see the system's findings — they are ready as soon as the dashboard is visible.
+
 ---
 
 ## Workflow Statuses
@@ -235,6 +238,4 @@ For all workflow work, deploy directly to Labs prod. The deployment cycle is fas
 
 ### Tips for Working with Claude Code
 
-**Treat the design doc as a temporary input, not a living document.** Write your requirements — what metrics you want, what CommCare fields to pull, what the UI should look like — and give that to Claude Code as initial context. Once the workflow is built, the code is the source of truth. Don't try to keep the design doc in sync.
-
-**Start fresh if the session goes off track.** If Claude has started writing Python aggregation, referencing old custom-analysis code you don't want to replicate, or producing output that doesn't follow the SQL pipeline pattern, don't try to correct it in the
+**Treat the design doc as a temporary input, not a living document.** Write your requirements — what metrics you want, what CommCare fields to pull, what the UI should look like — and
