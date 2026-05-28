@@ -153,15 +153,21 @@ def test_save_frame_persists_area_and_frame(client, django_user_model, monkeypat
         def __init__(self, rid):
             self.id = rid
 
+    captured = {}
+
     class FakeDA:
         def __init__(self, *a, **k):
             pass
 
-        def save_area(self, areas, config, name=""):
+        def save_area(self, areas, config, name="", mode="sampling"):
+            captured["area_mode"] = mode
             return FakeRecord(11)
 
-        def save_frame(self, area_record_id, pins, hulls, stats):
+        def save_frame(self, area_record_id, pins, hulls, stats, mode="sampling"):
             assert area_record_id == 11
+            captured["frame_mode"] = mode
+            captured["pins"] = pins
+            captured["hulls"] = hulls
             return FakeRecord(22)
 
     monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
@@ -182,6 +188,121 @@ def test_save_frame_persists_area_and_frame(client, django_user_model, monkeypat
     body = resp.json()
     assert body["area_record_id"] == 11
     assert body["frame_record_id"] == 22
+    assert captured["area_mode"] == "sampling" and captured["frame_mode"] == "sampling"
+
+
+def test_save_coverage_routes_areas_to_hulls(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+
+    class FakeRecord:
+        def __init__(self, rid):
+            self.id = rid
+
+    captured = {}
+
+    class FakeDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def save_area(self, areas, config, name="", mode="sampling"):
+            captured["area_mode"] = mode
+            return FakeRecord(1)
+
+        def save_frame(self, area_record_id, pins, hulls, stats, mode="sampling"):
+            captured.update(frame_mode=mode, pins=pins, hulls=hulls)
+            return FakeRecord(2)
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
+    cov = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"building_count": 5}}]}
+    resp = client.post(
+        reverse("microplans:save_frame", kwargs={"opp_id": 123}),
+        data=json.dumps({"mode": "coverage", "areas": [], "coverage_areas": cov, "stats": [], "config": {}}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert captured["frame_mode"] == "coverage" and captured["area_mode"] == "coverage"
+    # coverage polygons land in hulls; pins stays empty
+    assert captured["hulls"] == cov
+    assert captured["pins"]["features"] == []
+
+
+def test_preview_coverage_happy_path(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.coverage.frame import CoverageFrameResult
+
+    fake = CoverageFrameResult(
+        areas_geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Polygon", "coordinates": []},
+                    "properties": {"building_count": 42, "expected_visit_count": 42},
+                }
+            ],
+        },
+        stats=[
+            {
+                "arm": "coverage",
+                "strategy": "balanced",
+                "after_filters": 42,
+                "work_areas": 1,
+                "min_buildings": 42,
+                "median_buildings": 42,
+                "max_buildings": 42,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "commcare_connect.microplans.coverage.frame.generate_coverage_frame", lambda areas, config: fake
+    )
+    resp = client.post(
+        reverse("microplans:preview_coverage", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "areas": [
+                    {
+                        "arm": "coverage",
+                        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]},
+                    }
+                ],
+                "config": {"strategy": "balanced"},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["areas"]["features"][0]["properties"]["building_count"] == 42
+    assert body["stats"][0]["strategy"] == "balanced"
+
+
+def test_coverage_csv_export(client, django_user_model):
+    _login(client, django_user_model)
+    cov = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[13.0, 11.0], [13.1, 11.0], [13.1, 11.1], [13.0, 11.1], [13.0, 11.0]]],
+                },
+                "properties": {"arm": "coverage", "cluster": "C1", "building_count": 80},
+            }
+        ],
+    }
+    resp = client.post(
+        reverse("microplans:work_areas_csv", kwargs={"opp_id": 123}),
+        data=json.dumps({"mode": "coverage", "coverage_areas": cov, "lga": "Maiduguri", "state": "Borno"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Area Slug" in body and "Boundary" in body
+    assert "POLYGON" in body  # cluster hull WKT
+    assert "80" in body  # building/expected-visit count
 
 
 def test_save_frame_rejects_missing_pins(client, django_user_model):

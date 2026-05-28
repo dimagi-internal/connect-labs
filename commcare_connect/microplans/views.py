@@ -78,6 +78,39 @@ class PreviewFrameView(LoginRequiredMixin, View):
         )
 
 
+class PreviewCoverageView(LoginRequiredMixin, View):
+    """Coverage-mode preview: balanced/grid clusters → cluster polygons.
+
+    Same footprint fetch as sampling, but instead of PPS-sampling pins it returns
+    the cluster hulls (each = one WorkArea covering every household within it).
+    """
+
+    def post(self, request, opp_id):
+        from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
+
+        try:
+            payload = json.loads(request.body)
+            areas = payload["areas"]
+            if not areas:
+                raise ValueError("no areas drawn")
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        config = CoverageConfig.from_payload(payload.get("config", {}))
+        try:
+            result = generate_coverage_frame(areas, config)
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans preview_coverage failed (opp=%s)", opp_id)
+            return JsonResponse(
+                {"status": "error", "detail": "Coverage generation failed. Check server logs."},
+                status=502,
+            )
+
+        return JsonResponse({"status": "ok", "areas": result.areas_geojson, "stats": result.stats})
+
+
 class SaveFrameView(LoginRequiredMixin, View):
     """Persist a previewed frame (area + pins) as LabsRecords for this opp.
 
@@ -88,11 +121,18 @@ class SaveFrameView(LoginRequiredMixin, View):
     def post(self, request, opp_id):
         from commcare_connect.microplans.core.data_access import RooftopDataAccess
 
+        empty_fc = {"type": "FeatureCollection", "features": []}
         try:
             payload = json.loads(request.body)
             areas = payload["areas"]
-            pins = payload["pins"]
-            hulls = payload.get("hulls", {"type": "FeatureCollection", "features": []})
+            mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
+            # Coverage stores its cluster polygons in `hulls` (pins stays empty).
+            if mode == "coverage":
+                pins = empty_fc
+                hulls = payload.get("coverage_areas") or payload.get("hulls", empty_fc)
+            else:
+                pins = payload["pins"]
+                hulls = payload.get("hulls", empty_fc)
             stats = payload.get("stats", [])
             config = payload.get("config", {})
         except (json.JSONDecodeError, KeyError) as e:
@@ -100,10 +140,10 @@ class SaveFrameView(LoginRequiredMixin, View):
 
         da = RooftopDataAccess(opportunity_id=opp_id, request=request)
         try:
-            area_record = da.save_area(areas=areas, config=config, name=payload.get("name", ""))
-            frame_record = da.save_frame(area_record_id=area_record.id, pins=pins, hulls=hulls, stats=stats)
+            area_record = da.save_area(areas=areas, config=config, name=payload.get("name", ""), mode=mode)
+            frame_record = da.save_frame(area_record_id=area_record.id, pins=pins, hulls=hulls, stats=stats, mode=mode)
         except Exception:  # noqa: BLE001
-            logger.exception("rooftop save_frame failed (opp=%s)", opp_id)
+            logger.exception("microplans save_frame failed (opp=%s)", opp_id)
             return JsonResponse(
                 {"status": "error", "detail": "Saving the frame failed. Check server logs."},
                 status=502,
@@ -194,24 +234,31 @@ class AdminAreaGeometryView(LoginRequiredMixin, View):
 
 
 class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
-    """Render the previewed pins as a Connect microplanning work-area import CSV.
+    """Render the previewed frame as a Connect microplanning work-area import CSV.
 
     Lets a frame be pushed to Connect *today* via the existing org-admin web
-    importer (no prod write API needed). Each pin → one tiny WorkArea row.
+    importer (no prod write API needed). Sampling: each pin → one tiny WorkArea.
+    Coverage: each cluster polygon → one WorkArea (visit every household).
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.core.workarea import build_work_areas, to_csv_rows
+        from commcare_connect.microplans.core.workarea import (
+            build_coverage_work_areas,
+            build_work_areas,
+            to_csv_rows,
+        )
 
         try:
             payload = json.loads(request.body)
-            pins = payload["pins"]
+            mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
+            geojson = payload["coverage_areas"] if mode == "coverage" else payload["pins"]
         except (json.JSONDecodeError, KeyError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
+        builder = build_coverage_work_areas if mode == "coverage" else build_work_areas
         rows = to_csv_rows(
-            build_work_areas(
-                pins,
+            builder(
+                geojson,
                 ward_for_arm=payload.get("ward_for_arm"),
                 lga=payload.get("lga", ""),
                 state=payload.get("state", ""),
