@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import pickle
+import tempfile
 
 import pandas as pd
 from django.core.cache import cache
@@ -67,6 +69,13 @@ def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.Data
     wkt = area.wkt
 
     con = duckdb.connect()
+    # The labs container runs as a hardened user with HOME=/nonexistent, so DuckDB
+    # can't find a home dir to install/cache its extensions. Point it at a writable
+    # temp dir before INSTALL.
+    ext_dir = os.path.join(tempfile.gettempdir(), "duckdb_ext")
+    os.makedirs(ext_dir, exist_ok=True)
+    con.execute(f"SET home_directory='{tempfile.gettempdir()}';")
+    con.execute(f"SET extension_directory='{ext_dir}';")
     con.execute("INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;")
     con.execute("SET s3_region='us-west-2';")
 
