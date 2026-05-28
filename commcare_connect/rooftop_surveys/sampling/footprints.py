@@ -28,11 +28,26 @@ logger = logging.getLogger(__name__)
 
 OVERTURE_BUILDINGS = overture.theme_path("buildings", "building")
 CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days — building stock barely moves.
+# Reject absurdly large areas before they pull gigabytes from S3 and OOM the
+# worker. A survey area is a ward/LGA (Maiduguri LGA ≈ 107 km²); 2000 km² is a
+# generous ceiling that still blocks "the whole country" mistakes.
+MAX_AREA_KM2 = 2000.0
 
 
 def _area_cache_key(wkt: str, min_confidence: float | None) -> str:
-    h = hashlib.sha256(f"{overture.OVERTURE_RELEASE}|{min_confidence}|{wkt}".encode()).hexdigest()[:24]
+    h = hashlib.sha256(f"{overture.OVERTURE_RELEASE}|{min_confidence}|{wkt}".encode()).hexdigest()
     return f"rooftop:footprints:{h}"
+
+
+def _approx_area_km2(area: BaseGeometry) -> float:
+    """Cheap bbox-based area estimate in km² (upper bound; no projection needed)."""
+    import math
+
+    minx, miny, maxx, maxy = area.bounds
+    mid_lat = math.radians((miny + maxy) / 2)
+    width_km = (maxx - minx) * 111.32 * max(math.cos(mid_lat), 0.01)
+    height_km = (maxy - miny) * 110.57
+    return abs(width_km * height_km)
 
 
 def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> pd.DataFrame:
@@ -46,7 +61,16 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> 
 
     Returns:
         DataFrame[lon, lat, area_m2, confidence].
+
+    Raises:
+        ValueError: if the area's bounding box exceeds MAX_AREA_KM2.
     """
+    approx_km2 = _approx_area_km2(area)
+    if approx_km2 > MAX_AREA_KM2:
+        raise ValueError(
+            f"Area is too large (~{approx_km2:,.0f} km² bounding box; max {MAX_AREA_KM2:,.0f}). "
+            "Draw a smaller area (a ward or LGA)."
+        )
     wkt = area.wkt
     key = _area_cache_key(wkt, min_confidence)
     cached = cache.get(key)
@@ -66,9 +90,13 @@ def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.Data
 
     con = overture.connect()
 
+    # Parameterized: all caller-derived values bind as `?` (no string interpolation
+    # of user-drawn geometry into SQL). The read_parquet path is a constant.
     conf_clause = ""
+    params = [minx, maxx, miny, maxy, wkt]
     if min_confidence is not None:
-        conf_clause = f"AND sources[1].confidence >= {float(min_confidence)}"
+        conf_clause = "AND sources[1].confidence >= ?"
+        params.append(float(min_confidence))
 
     query = f"""
         SELECT
@@ -77,9 +105,9 @@ def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.Data
             ST_Area_Spheroid(geometry)  AS area_m2,
             sources[1].confidence       AS confidence
         FROM read_parquet('{OVERTURE_BUILDINGS}', filename=false, hive_partitioning=true)
-        WHERE bbox.xmin >= {minx} AND bbox.xmax <= {maxx}
-          AND bbox.ymin >= {miny} AND bbox.ymax <= {maxy}
-          AND ST_Within(ST_Centroid(geometry), ST_GeomFromText('{wkt}'))
+        WHERE bbox.xmin >= ? AND bbox.xmax <= ?
+          AND bbox.ymin >= ? AND bbox.ymax <= ?
+          AND ST_Within(ST_Centroid(geometry), ST_GeomFromText(?))
           {conf_clause}
     """
-    return con.execute(query).df()
+    return con.execute(query, params).df()

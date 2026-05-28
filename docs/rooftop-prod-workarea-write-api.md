@@ -41,7 +41,8 @@ class WorkAreaDataView(BaseDataExportView, ListCreateAPIView):
         serializer = self.get_serializer(data=request.data, many=True)
         serializer.is_valid(raise_exception=True)
         objs = [WorkArea(opportunity_id=opp_id, **vd) for vd in serializer.validated_data]
-        WorkArea.objects.bulk_create(objs)
+        with transaction.atomic():  # all-or-nothing: a constraint failure on row N rolls back the batch
+            WorkArea.objects.bulk_create(objs)
         return Response({"created": len(objs)}, status=201)
 ```
 

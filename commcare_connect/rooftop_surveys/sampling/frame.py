@@ -22,6 +22,14 @@ from commcare_connect.rooftop_surveys.sampling.sample import PinConfig, sample_p
 logger = logging.getLogger(__name__)
 
 
+def _clamp(v: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, v))
+
+
+def _clampf(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
 @dataclass
 class FrameConfig:
     target_clusters: int = 25
@@ -37,13 +45,15 @@ class FrameConfig:
     @classmethod
     def from_payload(cls, d: dict) -> FrameConfig:
         rp = d.get("reference_point")
+        conf = d.get("min_confidence")
         return cls(
-            target_clusters=int(d.get("target_clusters", 25)),
-            primary_per_psu=int(d.get("primary_per_psu", 8)),
-            alternates_per_psu=int(d.get("alternates_per_psu", 8)),
-            min_confidence=(None if d.get("min_confidence") in (None, "", 0) else float(d["min_confidence"])),
-            area_min_m2=float(d.get("area_min_m2", 9)),
-            area_max_m2=float(d.get("area_max_m2", 330)),
+            # clamp to sane bounds so a malformed payload can't crash or stall sampling
+            target_clusters=_clamp(int(d.get("target_clusters", 25)), 1, 500),
+            primary_per_psu=_clamp(int(d.get("primary_per_psu", 8)), 1, 100),
+            alternates_per_psu=_clamp(int(d.get("alternates_per_psu", 8)), 0, 100),
+            min_confidence=(None if conf in (None, "", 0) else _clampf(float(conf), 0.0, 1.0)),
+            area_min_m2=_clampf(float(d.get("area_min_m2", 9)), 0.0, 1e6),
+            area_max_m2=_clampf(float(d.get("area_max_m2", 330)), 1.0, 1e7),
             reference_point=(float(rp[0]), float(rp[1])) if rp else None,
         )
 

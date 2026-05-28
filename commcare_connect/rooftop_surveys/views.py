@@ -57,9 +57,16 @@ class PreviewFrameView(LoginRequiredMixin, View):
         config = FrameConfig.from_payload(payload.get("config", {}))
         try:
             result = generate_frame(areas, config)
-        except Exception as e:  # noqa: BLE001 — surface the failure to the UI rather than 500
+        except ValueError as e:
+            # Expected, actionable user errors (e.g. area too large) — safe to surface.
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            # Unexpected — log server-side, return a generic message (no internal leak).
             logger.exception("rooftop preview_frame failed (opp=%s)", opp_id)
-            return JsonResponse({"status": "error", "detail": str(e)}, status=502)
+            return JsonResponse(
+                {"status": "error", "detail": "Frame generation failed. Check server logs."},
+                status=502,
+            )
 
         return JsonResponse(
             {
@@ -95,9 +102,12 @@ class SaveFrameView(LoginRequiredMixin, View):
         try:
             area_record = da.save_area(areas=areas, config=config, name=payload.get("name", ""))
             frame_record = da.save_frame(area_record_id=area_record.id, pins=pins, hulls=hulls, stats=stats)
-        except Exception as e:  # noqa: BLE001 — surface to UI
+        except Exception:  # noqa: BLE001
             logger.exception("rooftop save_frame failed (opp=%s)", opp_id)
-            return JsonResponse({"status": "error", "detail": str(e)}, status=502)
+            return JsonResponse(
+                {"status": "error", "detail": "Saving the frame failed. Check server logs."},
+                status=502,
+            )
 
         return JsonResponse({"status": "ok", "area_record_id": area_record.id, "frame_record_id": frame_record.id})
 
