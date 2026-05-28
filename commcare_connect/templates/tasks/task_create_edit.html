@@ -1044,6 +1044,9 @@ function taskCreateEditPage() {
       if (this.quickParams.description) {
         this.taskForm.description = this.quickParams.description;
       }
+      if (this.quickParams.coaching_prompt) {
+        this.taskForm.coaching_prompt = this.quickParams.coaching_prompt;
+      }
       if (this.quickParams.audit_session_id) {
         this.auditSessionId = parseInt(this.quickParams.audit_session_id, 10);
       }

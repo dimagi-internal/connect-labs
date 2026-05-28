@@ -1092,6 +1092,75 @@ function WorkflowUI({
       });
   };
 
+  var buildFLWCoachingPrompt = function (flw) {
+    var flagReasons = flw.flags.reasons;
+    var behavior =
+      flagReasons.length > 0
+        ? flagReasons.join(', ')
+        : 'General Performance Review';
+    var lines = [];
+    lines.push('FLW Name: ' + (flw.display_name || flw.username));
+    lines.push('Username: ' + flw.username);
+    lines.push('Last Active: ' + (flw.last_active || '—'));
+    lines.push('');
+    lines.push('Behavior Being Investigated: ' + behavior);
+    lines.push('');
+    lines.push('Performance Summary:');
+    lines.push(
+      '- Mothers: ' +
+        (flw.num_mothers != null ? flw.num_mothers : '—') +
+        (flw.num_mothers_eligible != null
+          ? ' (' + flw.num_mothers_eligible + ' eligible)'
+          : ''),
+    );
+    lines.push(
+      '- Visits Completed: ' +
+        (flw.visits_completed != null ? flw.visits_completed : '—'),
+    );
+    lines.push(
+      '- GS Score: ' + (flw.gs_score != null ? flw.gs_score + '%' : '—'),
+    );
+    lines.push(
+      '- Follow-up Rate: ' +
+        (flw.followup_rate != null
+          ? flw.followup_rate +
+            '%' +
+            (flw.followup_rate_denom != null
+              ? ' (' + flw.followup_rate_denom + ' visits in window)'
+              : '')
+          : '—'),
+    );
+    lines.push(
+      '- % Still Eligible: ' +
+        (flw.pct_still_eligible != null ? flw.pct_still_eligible + '%' : '—'),
+    );
+    lines.push(
+      '- EBF Rate: ' + (flw.ebf_pct != null ? flw.ebf_pct + '%' : '—'),
+    );
+    lines.push(
+      '- GPS Dist Ratio: ' +
+        (flw.dist_ratio != null ? flw.dist_ratio : '—'),
+    );
+    lines.push(
+      '- Revisit Distance: ' +
+        (flw.revisit_dist != null ? flw.revisit_dist + ' m' : '—'),
+    );
+    lines.push(
+      '- Median Visit Duration: ' +
+        (flw.minute_per_visit != null ? flw.minute_per_visit + ' min' : '—'),
+    );
+    lines.push('');
+    if (flagReasons.length > 0) {
+      lines.push('Flag Indicators:');
+      flagReasons.forEach(function (r) {
+        lines.push('- ' + r);
+      });
+    } else {
+      lines.push('Flag Indicators: None detected.');
+    }
+    return lines.join('\n');
+  };
+
   var handleTriggerTask = function (flw) {
     var flagDesc =
       flw.flags.reasons.join('; ') || 'Performance review required';
@@ -1099,6 +1168,7 @@ function WorkflowUI({
       username: flw.username,
       title: 'MBW Audit: ' + flw.display_name,
       description: flagDesc,
+      coaching_prompt: buildFLWCoachingPrompt(flw),
       priority: flw.flags.type === 'red' ? 'high' : 'medium',
       workflow_instance_id: instance.id,
     });
