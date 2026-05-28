@@ -145,10 +145,12 @@ def main() -> None:
         # Wait for the audit's assessment count header instead of networkidle —
         # bulk-assessment images stream from GDrive and never let networkidle fire.
         page.wait_for_selector("text=Total Assessments", timeout=30_000)
-        # The manager-audit endpoint now seeds a `pending_all_clean` audit —
-        # 5 unreviewed clean photos — so wait for the photo widgets to render.
-        wait_for_audit_images(page, at_least=5, timeout_ms=30_000)
-        page.wait_for_timeout(1_500)
+        # Only confirm the FIRST photo has rendered — do NOT block on all 5.
+        # The photos cold-fetch from GDrive; an upfront "all 5 decoded" gate
+        # is what stalled the recording ~30s mid-audit. pass_each_audit_image
+        # waits for each photo individually as it scrolls to it.
+        wait_for_audit_images(page, at_least=1, timeout_ms=20_000)
+        page.wait_for_timeout(1_200)
         snap(rec, "audit_pending")
 
         # Scene 3: actually DO the audit — pass each photo one by one, then
