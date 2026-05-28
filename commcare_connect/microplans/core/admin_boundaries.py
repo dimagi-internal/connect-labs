@@ -44,6 +44,12 @@ _OVERTURE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_OVERTURE.items()}
 
 DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "overture")
 
+# Friendly labels for the UI source picker. New sources just add an entry.
+SOURCE_LABELS: dict[str, str] = {
+    "labs": "Local data (bespoke)",
+    "overture": "Overture (global)",
+}
+
 
 @dataclass(frozen=True)
 class AdminArea:
@@ -60,6 +66,7 @@ class AdminArea:
     country: str  # alpha-3
     region: str = ""
     area_km2: float | None = None
+    population: float | None = None
     ref: dict = field(default_factory=dict)
 
     def to_json(self) -> dict:
@@ -71,6 +78,7 @@ class AdminArea:
             "country": self.country,
             "region": self.region,
             "area_km2": self.area_km2,
+            "population": self.population,
             "ref": self.ref,
         }
 
@@ -85,6 +93,7 @@ class AdminArea:
             country=str(d.get("country", "")),
             region=str(d.get("region", "")),
             area_km2=d.get("area_km2"),
+            population=d.get("population"),
             ref=ref if isinstance(ref, dict) else {},
         )
 
@@ -101,7 +110,7 @@ class BoundarySource:
         level: int,
         *,
         name_contains: str | None = None,
-        region: str = "",
+        parent: AdminArea | None = None,
         parent_geom=None,
         limit: int = 500,
     ) -> list[AdminArea]:
@@ -120,11 +129,13 @@ class OvertureBoundarySource(BoundarySource):
     def covers(self, country3: str, level: int) -> bool:
         return level in _LEVEL_TO_OVERTURE and iso.to_alpha2(country3) is not None
 
-    def list_areas(self, country3, level, *, name_contains=None, region="", parent_geom=None, limit=500):
+    def list_areas(self, country3, level, *, name_contains=None, parent=None, parent_geom=None, limit=500):
         a2 = iso.to_alpha2(country3)
         if not a2 or level not in _LEVEL_TO_OVERTURE:
             return []
         subtype = _LEVEL_TO_OVERTURE[level]
+        # Same-source children narrow cheaply by the parent's Overture region code.
+        region = parent.region if (parent is not None and parent.source == self.name) else ""
         rows = boundaries.list_admin_areas(
             a2, subtype=subtype, region=region or None, name_contains=name_contains, limit=limit
         )
@@ -167,16 +178,21 @@ class LabsAdminBoundarySource(BoundarySource):
         a3 = iso.to_alpha3(country3) or country3
         return self._model().objects.filter(iso_code=a3, admin_level=level).exists()
 
-    def list_areas(self, country3, level, *, name_contains=None, region="", parent_geom=None, limit=500):
+    def list_areas(self, country3, level, *, name_contains=None, parent=None, parent_geom=None, limit=500):
         a3 = iso.to_alpha3(country3) or country3
         qs = self._model().objects.filter(iso_code=a3, admin_level=level)
         if name_contains:
             qs = qs.filter(name__icontains=name_contains)
-        if parent_geom is not None:
+        # Same-source children narrow by the indexed parent_boundary_id (exact, no
+        # spatial work). Cross-source (parent from Overture) falls back to the
+        # parent polygon via centroid-within.
+        if parent is not None and parent.source == self.name and parent.ref.get("boundary_id"):
+            qs = qs.filter(parent_boundary_id=parent.ref["boundary_id"])
+        elif parent_geom is not None:
             from django.contrib.gis.db.models.functions import Centroid
 
             qs = qs.annotate(_centroid=Centroid("geometry")).filter(_centroid__within=parent_geom)
-        rows = qs.order_by("name").values("name", "boundary_id")[: int(limit)]
+        rows = qs.order_by("name").values("name", "boundary_id", "population")[: int(limit)]
         return [
             AdminArea(
                 name=r["name"],
@@ -184,6 +200,7 @@ class LabsAdminBoundarySource(BoundarySource):
                 source=self.name,
                 country=a3,
                 region=r["boundary_id"],
+                population=r.get("population"),
                 ref={"boundary_id": r["boundary_id"]},
             )
             for r in rows
@@ -222,7 +239,17 @@ class BoundaryResolver:
         order = self._country_order.get(a3, DEFAULT_SOURCE_ORDER)
         return tuple(order)
 
-    def source_for(self, country3: str, level: int) -> BoundarySource:
+    def sources_for(self, country3: str, level: int) -> list[str]:
+        """Names of every source that has data for this (country, level), in
+        preference order (the default is first)."""
+        ordered = list(self._order_for(country3)) + [n for n in self._sources if n not in self._order_for(country3)]
+        return [n for n in ordered if (s := self._sources.get(n)) and s.covers(country3, level)]
+
+    def source_for(self, country3: str, level: int, prefer: str | None = None) -> BoundarySource:
+        """The source to use. ``prefer`` (a user pick) wins if it covers the level;
+        otherwise fall back to the country's preference order, then Overture."""
+        if prefer and (s := self._sources.get(prefer)) and s.covers(country3, level):
+            return s
         for name in self._order_for(country3):
             s = self._sources.get(name)
             if s and s.covers(country3, level):
@@ -230,14 +257,19 @@ class BoundaryResolver:
         return self._sources.get("overture") or next(iter(self._sources.values()))
 
     def describe(self, country3: str) -> dict:
-        """Which source serves each level for this country (for a UI badge)."""
+        """Per-level default source + the full pickable-source list, for the UI."""
         a3 = iso.to_alpha3(country3) or (country3 or "").upper()
         return {
             "country": a3,
             "name": iso.country_name(a3),
             "order": list(self._order_for(country3)),
+            "source_labels": {n: SOURCE_LABELS.get(n, n) for n in self._sources},
             "levels": {
-                level: {"label": LEVEL_LABELS[level], "source": self.source_for(a3, level).name}
+                level: {
+                    "label": LEVEL_LABELS[level],
+                    "default_source": self.source_for(a3, level).name,
+                    "available_sources": self.sources_for(a3, level),
+                }
                 for level in (LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY)
             },
         }
@@ -249,21 +281,19 @@ class BoundaryResolver:
         *,
         name_contains: str | None = None,
         parent: AdminArea | None = None,
+        source: str | None = None,
         limit: int = 500,
     ) -> list[AdminArea]:
         limit = max(1, min(int(limit), 10000))  # bound user-supplied page size
-        source = self.source_for(country3, level)
-        region = ""
+        src = self.source_for(country3, level, prefer=source)
+        # Cross-source narrowing (parent from a different source) needs the parent
+        # polygon; same-source narrowing is handled inside the source (region code
+        # for Overture, parent_boundary_id for labs).
         parent_geom = None
-        if parent is not None:
-            # Same-source Overture children narrow cheaply by region code.
-            if source.name == "overture" and parent.source == "overture":
-                region = parent.region
-            else:
-                # Spatial narrowing (labs, or cross-source) via the parent polygon.
-                parent_geom = _geos_from_geojson(self.geometry(parent))
-        return source.list_areas(
-            country3, level, name_contains=name_contains, region=region, parent_geom=parent_geom, limit=limit
+        if parent is not None and parent.source != src.name:
+            parent_geom = _geos_from_geojson(self.geometry(parent))
+        return src.list_areas(
+            country3, level, name_contains=name_contains, parent=parent, parent_geom=parent_geom, limit=limit
         )
 
     def geometry(self, area: AdminArea) -> dict | None:

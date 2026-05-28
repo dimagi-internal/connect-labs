@@ -171,13 +171,15 @@ class CountriesView(LoginRequiredMixin, View):
 class AdminAreasView(LoginRequiredMixin, View):
     """List admin areas for a country/level via the boundary resolver.
 
-    POST body: {country, level, q?, parent?}. `parent` is an AdminArea (as
-    returned by a previous call) used to narrow children. Response reports which
-    source served the level so the UI can show "using GRID3 (bespoke)" etc.
+    POST body: {country, level, q?, parent?, source?}. `parent` is an AdminArea
+    (as returned by a previous call) used to narrow children; `source` lets the
+    user pick a specific boundary source (falls back to the default if it can't
+    serve the level). Response reports the source used + the pickable sources so
+    the UI can offer a source dropdown.
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.core.admin_boundaries import AdminArea, get_resolver
+        from commcare_connect.microplans.core.admin_boundaries import SOURCE_LABELS, AdminArea, get_resolver
 
         try:
             payload = json.loads(request.body)
@@ -187,6 +189,7 @@ class AdminAreasView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         parent = AdminArea.from_json(payload["parent"]) if isinstance(payload.get("parent"), dict) else None
+        prefer = payload.get("source") or None
         resolver = get_resolver()
         try:
             areas = resolver.list_areas(
@@ -194,8 +197,11 @@ class AdminAreasView(LoginRequiredMixin, View):
                 level,
                 name_contains=(payload.get("q") or None),
                 parent=parent,
+                source=prefer,
                 limit=int(payload.get("limit", 500)),
             )
+            used = resolver.source_for(country, level, prefer=prefer).name
+            available = resolver.sources_for(country, level)
         except Exception:  # noqa: BLE001
             logger.exception("microplans admin areas lookup failed (country=%s level=%s)", country, level)
             return JsonResponse(
@@ -205,7 +211,9 @@ class AdminAreasView(LoginRequiredMixin, View):
         return JsonResponse(
             {
                 "status": "ok",
-                "source": resolver.source_for(country, level).name,
+                "source": used,
+                "available_sources": available,
+                "source_labels": {n: SOURCE_LABELS.get(n, n) for n in available},
                 "areas": [a.to_json() for a in areas],
             }
         )

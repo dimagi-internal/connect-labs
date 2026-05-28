@@ -51,8 +51,8 @@ class _FakeSource(BoundarySource):
     def covers(self, country3, level):
         return level in self._covered
 
-    def list_areas(self, country3, level, *, name_contains=None, region="", parent_geom=None, limit=500):
-        self.calls.append({"region": region, "parent_geom": parent_geom, "q": name_contains})
+    def list_areas(self, country3, level, *, name_contains=None, parent=None, parent_geom=None, limit=500):
+        self.calls.append({"parent": parent, "parent_geom": parent_geom, "q": name_contains})
         return [AdminArea(name=f"{self.name}-{level}", level=level, source=self.name, country=country3)]
 
     def get_geometry(self, area):
@@ -76,22 +76,51 @@ class TestResolverSelection:
         assert r.source_for("NGA", 2).name == "overture"
         assert r.source_for("KEN", 2).name == "labs"  # default order elsewhere
 
-    def test_describe_reports_source_per_level(self):
+    def test_describe_reports_default_and_available_per_level(self):
         labs = _FakeSource("labs", [1, 2])
         ovr = _FakeSource("overture", [1, 2, 3])
         r = BoundaryResolver(sources=[labs, ovr])
         d = r.describe("NG")  # accepts alpha-2 too
         assert d["country"] == "NGA"
-        assert d["levels"][2]["source"] == "labs"
-        assert d["levels"][3]["source"] == "overture"
+        assert d["levels"][2]["default_source"] == "labs"
+        assert d["levels"][2]["available_sources"] == ["labs", "overture"]
+        assert d["levels"][3]["default_source"] == "overture"
+        assert d["levels"][3]["available_sources"] == ["overture"]  # labs has no level 3
 
-    def test_overture_same_source_narrows_by_region_code(self):
+    def test_sources_for_lists_only_covering(self):
+        labs = _FakeSource("labs", [1])
+        ovr = _FakeSource("overture", [1, 2, 3])
+        r = BoundaryResolver(sources=[labs, ovr])
+        assert r.sources_for("NGA", 1) == ["labs", "overture"]
+        assert r.sources_for("NGA", 2) == ["overture"]
+
+    def test_user_can_pick_a_source(self):
+        labs = _FakeSource("labs", [1, 2])
+        ovr = _FakeSource("overture", [1, 2])
+        r = BoundaryResolver(sources=[labs, ovr])
+        # default is labs (preference order), but the user can force overture
+        assert r.source_for("NGA", 2).name == "labs"
+        assert r.source_for("NGA", 2, prefer="overture").name == "overture"
+        # an un-covering pick falls back to the default
+        labs_only = BoundaryResolver(sources=[_FakeSource("labs", [1]), _FakeSource("overture", [1, 2])])
+        assert labs_only.source_for("NGA", 2, prefer="labs").name == "overture"
+
+    def test_same_source_narrows_without_spatial_roundtrip(self):
         ovr = _FakeSource("overture", [1, 2])
         r = BoundaryResolver(sources=[ovr])
         parent = AdminArea(name="Borno", level=1, source="overture", country="NGA", region="NG-BO")
         r.list_areas("NGA", 2, parent=parent)
-        assert ovr.calls[-1]["region"] == "NG-BO"
-        assert ovr.calls[-1]["parent_geom"] is None  # no spatial round-trip needed
+        # parent is passed through; no geometry fetch for same-source narrowing
+        assert ovr.calls[-1]["parent"] is parent
+        assert ovr.calls[-1]["parent_geom"] is None
+
+    def test_cross_source_narrowing_passes_parent_geom(self):
+        labs = _FakeSource("labs", [2])
+        ovr = _FakeSource("overture", [1])
+        r = BoundaryResolver(sources=[labs, ovr])
+        parent = AdminArea(name="Borno", level=1, source="overture", country="NGA")
+        r.list_areas("NGA", 2, parent=parent)  # child=labs, parent=overture -> spatial
+        assert labs.calls[-1]["parent_geom"] is not None
 
 
 class TestOvertureSource:
@@ -138,7 +167,7 @@ _INSIDE = "POLYGON((13.05 11.05, 13.06 11.05, 13.06 11.06, 13.05 11.06, 13.05 11
 _OUTSIDE = "POLYGON((20.0 20.0, 20.1 20.0, 20.1 20.1, 20.0 20.1, 20.0 20.0))"
 
 
-def _make_boundary(name, level, wkt, bid):
+def _make_boundary(name, level, wkt, bid, *, parent_boundary_id="", population=None, source="grid3"):
     from django.contrib.gis.geos import GEOSGeometry, MultiPolygon
 
     from commcare_connect.labs.admin_boundaries.models import AdminBoundary
@@ -150,7 +179,9 @@ def _make_boundary(name, level, wkt, bid):
         name=name,
         boundary_id=bid,
         geometry=MultiPolygon(geom, srid=4326),
-        source="grid3",
+        source=source,
+        parent_boundary_id=parent_boundary_id,
+        population=population,
     )
 
 
@@ -184,6 +215,17 @@ class TestLabsSource:
         parent = GEOSGeometry(_SQUARE, srid=4326)
         areas = src.list_areas("NGA", 2, parent_geom=parent)
         assert [a.name for a in areas] == ["Inside-LGA"]
+
+    def test_parent_boundary_id_narrowing_and_population(self):
+        # Two LGAs; only one is a child of the chosen state by parent_boundary_id.
+        _make_boundary("Borno", 1, _SQUARE, "ng-bo", population=5_000_000)
+        _make_boundary("Jere", 2, _INSIDE, "ng-bo-jere", parent_boundary_id="ng-bo", population=120_000)
+        _make_boundary("Other", 2, _OUTSIDE, "ng-ot-other", parent_boundary_id="ng-ot")
+        src = LabsAdminBoundarySource()
+        parent = AdminArea(name="Borno", level=1, source="labs", country="NGA", ref={"boundary_id": "ng-bo"})
+        areas = src.list_areas("NGA", 2, parent=parent)
+        assert [a.name for a in areas] == ["Jere"]  # exact, indexed — no spatial work
+        assert areas[0].population == 120_000
 
 
 @pytest.mark.django_db

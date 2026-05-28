@@ -79,6 +79,10 @@
           </label>
         </div>
         <button type="button" id="btn-area-search" class="button button-sm w-full">Find areas</button>
+        <label class="block hidden" id="wrap-source">
+          <span class="text-gray-600">Boundary source</span>
+          <select id="sel-source" class="mt-1 w-full rounded border-gray-300"></select>
+        </label>
         <div id="area-source" class="text-xs text-gray-500"></div>
         <div id="list-areas" class="max-h-48 overflow-y-auto border border-gray-100 rounded divide-y"></div>
       </div>
@@ -314,15 +318,38 @@
       });
     } catch (e) { $("area-source").textContent = "Could not load countries: " + e; }
   }
-  $("btn-area-search").addEventListener("click", () => { parentArea = null; searchAreas(); });
+  // null = use the resolver's default source; otherwise the user's explicit pick.
+  let chosenSource = null;
+  $("btn-area-search").addEventListener("click", () => { parentArea = null; chosenSource = null; searchAreas(); });
+  $("sel-source").addEventListener("change", () => { chosenSource = $("sel-source").value || null; searchAreas(); });
+
+  function syncSourcePicker(data) {
+    const sel = $("sel-source");
+    const avail = data.available_sources || [];
+    const labels = data.source_labels || {};
+    // Only show the picker when there's a real choice.
+    $("wrap-source").classList.toggle("hidden", avail.length < 2);
+    sel.innerHTML = "";
+    avail.forEach((name) => {
+      const o = document.createElement("option");
+      o.value = name; o.textContent = labels[name] || name;
+      if (name === data.source) o.selected = true;
+      sel.appendChild(o);
+    });
+    chosenSource = data.source;
+  }
+
   async function searchAreas() {
     const body = { country: $("sel-country").value, level: +$("sel-level").value, q: $("inp-area-search").value || null };
     if (parentArea) body.parent = parentArea;
+    if (chosenSource) body.source = chosenSource;
     $("area-source").textContent = "Searching…";
     try {
       const data = await (await post(URLS.areas, body)).json();
       if (data.status !== "ok") { $("area-source").textContent = data.detail || "lookup failed"; return; }
-      $("area-source").innerHTML = `source: <span class="font-medium">${data.source === "labs" ? "bespoke (labs)" : "Overture"}</span> · ${data.areas.length} areas`;
+      syncSourcePicker(data);
+      const label = (data.source_labels || {})[data.source] || data.source;
+      $("area-source").innerHTML = `source: <span class="font-medium">${label}</span> · ${data.areas.length} areas`;
       renderAreaList(data.areas);
     } catch (e) { $("area-source").textContent = "Request failed: " + e; }
   }
@@ -335,7 +362,8 @@
       const name = document.createElement("button");
       name.type = "button";
       name.className = "text-left flex-1 truncate text-emerald-700";
-      name.textContent = a.name + (a.area_km2 ? ` · ${a.area_km2} km²` : "");
+      const meta = [a.area_km2 ? `${a.area_km2} km²` : null, a.population ? `pop ${Math.round(a.population).toLocaleString()}` : null].filter(Boolean).join(" · ");
+      name.textContent = a.name + (meta ? ` · ${meta}` : "");
       name.title = "Use as area";
       name.addEventListener("click", () => useArea(a));
       row.appendChild(name);
