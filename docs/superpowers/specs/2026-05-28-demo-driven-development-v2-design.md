@@ -192,6 +192,8 @@ The first real output is **Phase 0 for rooftop sampling itself** — not just fr
 
 This means building the Phase 0 tooling and using it for genuine rooftop discovery in the same pass — the tool and its first real product output get built together. Where the synthetic chain and recorder rig already exist, reuse them for the render/promote stages.
 
+**Rooftop narrative seed (to be iterated before we dive in).** The compelling story starts a step *before* sampling rooftops — with **how to choose which areas to target at all**, for either a one-time survey or a **difference-in-differences (DiD) continuous-monitoring** design (treatment vs comparison areas tracked over time). The arc that motivates it: **visualize existing Connect service-delivery data** → inspect the **administrative boundaries** that the visualization suggests are worth targeting → select boundaries → *then* rooftop-sample within them. This already implies candidate `CAPABILITY` gaps (visualize Connect delivery data; browse/select admin boundaries; support a DiD treatment/comparison design) and `DECISION` gaps (survey-only vs DiD; which boundaries) — exactly the kind of gaps Phase 0 is built to surface. Per the user's direction: **build the framework generically first; iterate this specific rooftop example before diving into the rooftop build.**
+
 **Success =** (a) Phase 0 produces a grounded, evidence-backed why-brief for rooftop sampling that exposes at least one real research-or-capability gap we then close; (b) the loop surfaces at least one real rooftop design finding we fix; (c) it emits a shippable explainer at convergence.
 
 ## Open questions
