@@ -26,6 +26,7 @@ urlpatterns = [
     path("tasks/", include("commcare_connect.tasks.urls", namespace="tasks")),
     path("audit/", include("commcare_connect.audit.urls", namespace="audit")),
     path("coverage/", include("commcare_connect.coverage.urls", namespace="coverage")),
+    path("rooftop-surveys/", include("commcare_connect.rooftop_surveys.urls", namespace="rooftop_surveys")),
     path("mcp/", include("commcare_connect.mcp.urls", namespace="mcp")),
     path("labs/explorer/", include("commcare_connect.labs.explorer.urls", namespace="explorer")),
     path("labs/", include("commcare_connect.labs.urls", namespace="labs")),
