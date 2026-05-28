@@ -49,3 +49,26 @@ class TestBalancedKmeans:
         # 100/25 = 4 clusters of ~25
         assert len(out.psu_frame) == 4
         assert out.psu_frame["n_buildings"].max() <= 28
+
+
+class TestGridClusters:
+    def test_assigns_all_and_is_deterministic(self):
+        df = _scatter(300, spread_m=500, seed=4)
+        out = clustering.grid_clusters(df, cell_size_m=200)
+        again = clustering.grid_clusters(df, cell_size_m=200)
+        assert len(out.buildings) == 300
+        assert out.buildings["cluster"].notna().all()
+        # every building counted once across cells
+        assert int(out.psu_frame["n_buildings"].sum()) == 300
+        # deterministic: same cells, same sizes (no random seed)
+        assert out.psu_frame["n_buildings"].tolist() == again.psu_frame["n_buildings"].tolist()
+
+    def test_smaller_cells_make_more_clusters(self):
+        df = _scatter(300, spread_m=600, seed=5)
+        coarse = clustering.grid_clusters(df, cell_size_m=400)
+        fine = clustering.grid_clusters(df, cell_size_m=100)
+        assert len(fine.psu_frame) > len(coarse.psu_frame)
+
+    def test_empty(self):
+        out = clustering.grid_clusters(pd.DataFrame(columns=["lon", "lat"]), cell_size_m=200)
+        assert out.k_used == 0 and out.psu_frame.empty

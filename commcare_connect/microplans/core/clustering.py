@@ -10,6 +10,9 @@ Strategies:
   surviving centroid. The sampling default (clusters can be uneven).
 - `balanced_kmeans` — equal-sized clusters via KMeansConstrained. Even FLW
   workloads → the coverage default (ported from connect-gis).
+- `grid_clusters`  — fixed-size square grid cells (each occupied cell = one
+  cluster). Deterministic, contiguous, no solver. A coverage alternative when
+  you want predictable square work areas (also from connect-gis).
 """
 
 from __future__ import annotations
@@ -103,6 +106,26 @@ def balanced_kmeans(
     ).fit_predict(coords)
     work["cluster"] = [f"C{lbl}" for lbl in labels]
     return ClusterOutput(work, _base_psu_frame(work, coords, labels), n_clusters)
+
+
+def grid_clusters(df: pd.DataFrame, cell_size_m: float = 200.0) -> ClusterOutput:
+    """Tile the area into `cell_size_m` square cells; each occupied cell is a cluster.
+
+    Deterministic and contiguous — no random seed. Cells are anchored on the
+    min x/y corner of the projected points so the grid is stable for a given area.
+    """
+    if len(df) == 0:
+        return _empty_output(df)
+    work, coords, _ = _project(df)
+    size = max(1.0, float(cell_size_m))
+    x0, y0 = coords[:, 0].min(), coords[:, 1].min()
+    col = np.floor((coords[:, 0] - x0) / size).astype(int)
+    row = np.floor((coords[:, 1] - y0) / size).astype(int)
+    # one integer label per occupied (row, col) cell
+    keys = row.astype(np.int64) * (col.max() + 1) + col
+    _, labels = np.unique(keys, return_inverse=True)
+    work["cluster"] = [f"C{lbl}" for lbl in labels]
+    return ClusterOutput(work, _base_psu_frame(work, coords, labels), int(labels.max()) + 1)
 
 
 def _balanced_size_bounds(n_samples: int, n_clusters: int, balance_tolerance: float) -> tuple[int, int]:

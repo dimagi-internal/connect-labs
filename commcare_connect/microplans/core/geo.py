@@ -26,3 +26,21 @@ def project_to_meters(lon: np.ndarray, lat: np.ndarray) -> tuple[np.ndarray, np.
     transformer = Transformer.from_crs(4326, epsg, always_xy=True)
     x, y = transformer.transform(lon, lat)
     return np.asarray(x), np.asarray(y), epsg
+
+
+def point_buffer(lon: float, lat: float, radius_m: float, quad_segs: int = 32):
+    """A circular WGS84 polygon: the point buffered by `radius_m` meters.
+
+    Used by the "buildings around a pin" area input — drop a pin + radius and the
+    buffer becomes the sampling area. Buffering is done in the local UTM zone
+    (meters) then reprojected, so the circle is metrically accurate.
+    """
+    from shapely.geometry import Point
+    from shapely.ops import transform as shp_transform
+
+    epsg = utm_epsg_for(lon, lat)
+    fwd = Transformer.from_crs(4326, epsg, always_xy=True)
+    inv = Transformer.from_crs(epsg, 4326, always_xy=True)
+    x, y = fwd.transform(lon, lat)
+    circle_m = Point(x, y).buffer(max(1.0, float(radius_m)), quad_segs=quad_segs)
+    return shp_transform(lambda xs, ys, z=None: inv.transform(xs, ys), circle_m)
