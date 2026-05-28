@@ -173,15 +173,15 @@ of demo-specific seeder.
   CSV pipeline returns nothing in the synthetic env.
 - **MUAC severity is INVERTED vs intuition** (post PR #281/#287): the
   flag direction is `sam_low` (SAM < 1%) / `mam_low` (MAM < 3%) — a
-  *suspiciously low* rate means the FLW is cherry-picking easy,
+  _suspiciously low_ rate means the FLW is cherry-picking easy,
   well-fed households and missing at-risk kids. So a "flagged"
   archetype's distribution has **zero** SAM/MAM mass (severity 2+ →
-  truncated left tail), and a *clean* FLW has a realistic baseline of
+  truncated left tail), and a _clean_ FLW has a realistic baseline of
   SAM/MAM cases (~3-7% SAM). If you ever change the FLAG_CATALOG
   thresholds in `chc_nutrition_analysis.py`, the generator's
-  `_muac_distribution` must move in lockstep — `test_archetypes.py::
-  test_flagged_muac_archetypes_actually_trip_a_flag` is the guard that
-  fails loudly when they drift.
+  `_muac_distribution` must move in lockstep — the
+  `test_flagged_muac_archetypes_actually_trip_a_flag` guard in
+  `test_archetypes.py` fails loudly when they drift.
 - **OCS bot list short-circuit**: synthetic opps return a single canned
   "MUAC Coaching (Synthetic Demo Bot)" so the existing "Initiate AI
   Assistant" modal renders with a selectable bot — without requiring a
@@ -225,8 +225,8 @@ from skipping a step here.
 
 Re-seed does NOT delete workflow definitions (only runs/flags/tasks/
 audits), so a def survives across seeds. The seed's `_refresh_render_code`
-(PR #290) rewrites the reused def's `render_code` from the *currently
-running* template — so **re-seeding after a deploy is how new render code
+(PR #290) rewrites the reused def's `render_code` from the _currently
+running_ template — so **re-seeding after a deploy is how new render code
 reaches an existing def**. There is no separate "push template" step in the
 golden path. (You CAN hot-push with the `connect_labs` MCP
 `workflow_sync_from_template_file`, but DON'T — see the gotcha below.)
@@ -237,7 +237,7 @@ golden path. (You CAN hot-push with the `connect_labs` MCP
   rewrites `config` and `pipeline_sources`, which strips
   `config.templateType` and the pipeline link. A def that loses its
   `templateType` becomes invisible to the seed's reuse filter
-  (`template_type == "<key>"`), so the next seed creates a *brand-new* def
+  (`template_type == "<key>"`), so the next seed creates a _brand-new_ def
   → unbounded accumulation. We deleted **11 orphan CHC defs** on opp 10000
   that this produced. Don't hot-push to a def you intend to keep re-seeding
   against; deploy + re-seed instead.
