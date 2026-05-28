@@ -1102,15 +1102,6 @@ function WorkflowUI({
       priority: flw.flags.type === 'red' ? 'high' : 'medium',
       workflow_instance_id: instance.id,
     });
-    var updated = Object.assign({}, taskStates);
-    updated[flw.username] = {
-      status: 'open',
-      triggered_at: new Date().toISOString(),
-    };
-    setTaskStates(updated);
-    onUpdateState({ task_states: updated }).catch(function (e) {
-      console.warn('task state save failed:', e);
-    });
   };
 
   var handleMarkTaskResolved = function (username) {
