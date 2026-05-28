@@ -600,9 +600,26 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     function MenuButton(props) {
         var _open = React.useState(false);
         var open = _open[0]; var setOpen = _open[1];
+        // dropUp flips the panel above the trigger when there isn't room
+        // below it in the viewport — otherwise the menu for a row near the
+        // bottom of the table opens off-screen (you can't see the options
+        // or where the cursor clicks). Standard dropdown behavior; also
+        // what makes the walkthrough recording legible for the last row.
+        var _dropUp = React.useState(false);
+        var dropUp = _dropUp[0]; var setDropUp = _dropUp[1];
         var ref = React.useRef(null);
         React.useEffect(function() {
             if (!open) return;
+            // Decide direction at open time from the trigger's viewport
+            // position. Estimate the panel height from the item count
+            // (header + items + padding) and flip up if it wouldn't fit
+            // below.
+            if (ref.current) {
+                var rect = ref.current.getBoundingClientRect();
+                var estPanelH = 60 + (props.items ? props.items.length : 2) * 48;
+                var roomBelow = window.innerHeight - rect.bottom;
+                setDropUp(roomBelow < estPanelH && rect.top > estPanelH);
+            }
             function onDocClick(e) {
                 if (ref.current && !ref.current.contains(e.target)) setOpen(false);
             }
@@ -645,7 +662,10 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 ? React.createElement('div', {
                     // 2px accent-colored border + matching header band so the
                     // panel reads as an extension of the colored trigger.
-                    className: 'absolute right-0 z-20 mt-1 w-64 rounded-lg bg-white shadow-xl border-2 overflow-hidden ' + accent.panel
+                    // dropUp positions the panel above the trigger (bottom-full
+                    // + mb-1) when there's no room below.
+                    className: 'absolute right-0 z-20 w-64 rounded-lg bg-white shadow-xl border-2 overflow-hidden ' +
+                        (dropUp ? 'bottom-full mb-1 ' : 'mt-1 ') + accent.panel
                   },
                     // Header: repeats the trigger label so it's unambiguous
                     // which button this menu belongs to.

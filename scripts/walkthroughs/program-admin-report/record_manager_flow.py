@@ -34,16 +34,19 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from walkthroughs._lib import config as wcfg  # noqa: E402
+from walkthroughs._lib.freshness import assert_page_current  # noqa: E402
 from walkthroughs._lib.recorder import (  # noqa: E402
     RecorderSession,
     click_menu_item,
     click_row_button,
+    click_text_exact,
     dwell_on_menu_item,
     goto_and_settle,
+    pass_each_audit_image,
     row_button_labels,
     scroll_row_into_view,
-    scroll_through_page,
     snap,
+    wait_for_audit_images,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -87,6 +90,11 @@ def main() -> None:
             wait_for_selector=f"text={FLAGGED_FLW}",
             settle_seconds=2.5,
         )
+        # Preflight: refuse to record if labs is serving a stale
+        # chc_nutrition render_code (deploy still rolling out, or local
+        # checkout ahead of what's deployed). Catches the cutover-lag
+        # footgun before it produces a confusing mid-scene failure.
+        assert_page_current(page, "chc_nutrition_analysis", label="wk4 weekly review")
         snap(rec, "wk4_in_progress")
 
         # Scene 1: wait for the auto-applied flag pills to render. The
@@ -137,13 +145,30 @@ def main() -> None:
         # Wait for the audit's assessment count header instead of networkidle —
         # bulk-assessment images stream from GDrive and never let networkidle fire.
         page.wait_for_selector("text=Total Assessments", timeout=30_000)
-        page.wait_for_timeout(2_500)
-        snap(rec, "audit_pass_clean")
-
-        # Scene 3: smooth-scroll through audit page so all 5 pass thumbnails read.
-        print("Scene 3: Audit detail — 5 good-pool pass images")
-        scroll_through_page(page)
+        # The manager-audit endpoint now seeds a `pending_all_clean` audit —
+        # 5 unreviewed clean photos — so wait for the photo widgets to render.
+        wait_for_audit_images(page, at_least=5, timeout_ms=30_000)
         page.wait_for_timeout(1_500)
+        snap(rec, "audit_pending")
+
+        # Scene 3: actually DO the audit — pass each photo one by one, then
+        # complete the review so it resolves to an all-pass. Shows the
+        # manager working through the photos rather than landing on a
+        # pre-finished audit.
+        print("Scene 3: Pass each photo, then Complete Image Review")
+        passed = pass_each_audit_image(page, dwell_ms=600)
+        print(f"  passed {passed} photos")
+        page.wait_for_timeout(800)
+        # The "Complete Image Review" button (saveImageReview) reads
+        # "Save Progress" while photos are pending and flips to "Complete
+        # Image Review" once all 5 are reviewed. Click it to record the
+        # all-pass verdict.
+        if not click_text_exact(page, "Complete Image Review", timeout_ms=8_000):
+            print("  ! 'Complete Image Review' not found — photos may not all be reviewed")
+        else:
+            page.wait_for_timeout(2_000)
+        snap(rec, "audit_passed")
+        page.wait_for_timeout(1_200)
 
         # Scene 4: back to Wk4 review.
         print("Scene 4: Back to Wk4 weekly review")

@@ -188,6 +188,19 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         overall_result=None,
         image_spec=AuditImageSpec(good_count=1, bad_count=1, pending_count=3, pending_good_ratio=0.4),
     ),
+    "pending_all_clean": AuditArchetype(
+        name="pending_all_clean",
+        description=(
+            "Fresh audit — all 5 photos are clean (good pool) but UNREVIEWED. "
+            "Used by the manager-flow demo so the manager can be filmed passing "
+            "each photo on camera; ends up an all-pass once reviewed."
+        ),
+        status="in_progress",
+        overall_result=None,
+        # All 5 from the good pool, all pending (no result yet). pending_good_ratio=1.0
+        # so every pending photo is a clean one — passing them all is the honest call.
+        image_spec=AuditImageSpec(good_count=0, bad_count=0, pending_count=5, pending_good_ratio=1.0),
+    ),
 }
 
 

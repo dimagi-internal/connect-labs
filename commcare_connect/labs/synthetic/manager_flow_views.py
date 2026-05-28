@@ -6,10 +6,11 @@ Two endpoints, both scoped to an in_progress workflow run:
 
 - POST /labs/workflow/api/run/<run_id>/manager-audit/
     Body: {opportunity_id, flw_id, filter?}
-    Atomically creates a `completed_pass_clean` AuditSession (5/5 good-pool
-    photos, overall_result=pass). Returns {audit_id, redirect_url}. The
-    audit carries ``labs_record_id = workflow_run_id`` so the program-admin
-    rollup can find it by run.
+    Atomically creates a `pending_all_clean` AuditSession (5 good-pool
+    photos, all UNREVIEWED) so the walkthrough can film the manager passing
+    each one. Returns {audit_id, redirect_url}. The audit carries
+    ``labs_record_id = workflow_run_id`` so the program-admin rollup can
+    find it by run.
 
 - POST /labs/workflow/api/run/<run_id>/manager-coaching/
     Body: {opportunity_id, flw_id, task_id, prompt_text}
@@ -95,7 +96,13 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
 @csrf_exempt
 @require_http_methods(["POST"])
 def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
-    """Create a completed_pass_clean audit for the manager-flow demo.
+    """Create a fresh (all-pending, clean-pool) audit for the manager-flow demo.
+
+    Uses the ``pending_all_clean`` archetype so the audit lands with 5
+    unreviewed clean photos — the walkthrough then films the manager
+    passing each one on camera and the audit resolves to an all-pass.
+    (It used to seed ``completed_pass_clean``, which arrived already
+    reviewed, leaving nothing for the manager to actually do.)
 
     The audit is linked back to the run via ``labs_record_id = run_id`` so
     the program-admin rollup can find it. No Flag is created here — flags
@@ -139,7 +146,7 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
         visit_id_base = int(time.time() * 1000) & 0x7FFFFFFF
         opp_name = run.data.get("opportunity_name") or ""  # cosmetic only
         audit_data = build_audit_data(
-            archetype_name="completed_pass_clean",
+            archetype_name="pending_all_clean",
             flw_id=flw_id,
             monday_iso=monday_iso,
             opportunity_id=opportunity_id,
