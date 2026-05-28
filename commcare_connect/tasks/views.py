@@ -831,7 +831,9 @@ def task_initiate_ai(request, task_id):
         )
         if is_synthetic:
             updated_data = dict(task.data or {})
-            updated_data["ocs_conversation"] = _coaching_conversation(prompt_text)
+            updated_data["ocs_conversation"] = _coaching_conversation(
+                prompt_text, flw_name=task.flw_name or task.username or "there"
+            )
             updated_data["ocs_status"] = "in_progress"
             updated_data.pop("coaching_pending", None)
             task.data = updated_data
