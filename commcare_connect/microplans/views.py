@@ -24,7 +24,7 @@ class SetupView(LoginRequiredMixin, TemplateView):
     and optional comparison polygons.
     """
 
-    template_name = "rooftop_surveys/setup.html"
+    template_name = "microplans/setup.html"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -44,7 +44,7 @@ class PreviewFrameView(LoginRequiredMixin, View):
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.rooftop_surveys.sampling.frame import FrameConfig, generate_frame
+        from commcare_connect.microplans.sampling.frame import FrameConfig, generate_frame
 
         try:
             payload = json.loads(request.body)
@@ -86,7 +86,7 @@ class SaveFrameView(LoginRequiredMixin, View):
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.rooftop_surveys.data_access import RooftopDataAccess
+        from commcare_connect.microplans.data_access import RooftopDataAccess
 
         try:
             payload = json.loads(request.body)
@@ -120,7 +120,7 @@ class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.rooftop_surveys.workarea import build_work_areas, to_csv_rows
+        from commcare_connect.microplans.workarea import build_work_areas, to_csv_rows
 
         try:
             payload = json.loads(request.body)

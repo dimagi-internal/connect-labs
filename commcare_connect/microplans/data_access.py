@@ -1,4 +1,4 @@
-"""Data access for rooftop_surveys — wraps LabsRecordAPIClient.
+"""Data access for microplans — wraps LabsRecordAPIClient.
 
 Persists the drawn area + generated frame as LabsRecords scoped by
 experiment=<opportunity_id>. No Django models; reads/writes go to the
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from commcare_connect.rooftop_surveys.models import TYPE_AREA, TYPE_FRAME, RooftopAreaRecord, RooftopFrameRecord
+from commcare_connect.microplans.models import TYPE_AREA, TYPE_FRAME, RooftopAreaRecord, RooftopFrameRecord
 from commcare_connect.workflow.data_access import BaseDataAccess
 
 # Bump when the rooftop_area / rooftop_frame `data` shape changes, so readers

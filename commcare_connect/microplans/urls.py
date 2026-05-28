@@ -1,8 +1,8 @@
 from django.urls import path
 
-from commcare_connect.rooftop_surveys import views
+from commcare_connect.microplans import views
 
-app_name = "rooftop_surveys"
+app_name = "microplans"
 
 urlpatterns = [
     path("<int:opp_id>/setup/", views.SetupView.as_view(), name="setup"),

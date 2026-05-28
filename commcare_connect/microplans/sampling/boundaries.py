@@ -23,7 +23,7 @@ import logging
 
 from django.core.cache import cache
 
-from commcare_connect.rooftop_surveys.sampling import overture
+from commcare_connect.microplans.sampling import overture
 
 logger = logging.getLogger(__name__)
 

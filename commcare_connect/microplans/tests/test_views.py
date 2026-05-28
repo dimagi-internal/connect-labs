@@ -1,4 +1,4 @@
-"""View tests for the rooftop_surveys setup flow.
+"""View tests for the microplans setup flow.
 
 generate_frame is patched out — it hits Overture S3, which isn't a unit-test
 dependency. We assert the view's request handling: auth gate, payload
@@ -13,7 +13,7 @@ import time
 import pytest
 from django.urls import reverse
 
-from commcare_connect.rooftop_surveys.sampling.frame import FrameResult
+from commcare_connect.microplans.sampling.frame import FrameResult
 
 pytestmark = pytest.mark.django_db
 
@@ -28,7 +28,7 @@ def _login(client, django_user_model):
 
 
 def test_setup_requires_login(client):
-    resp = client.get(reverse("rooftop_surveys:setup", kwargs={"opp_id": 123}))
+    resp = client.get(reverse("microplans:setup", kwargs={"opp_id": 123}))
     assert resp.status_code == 302
     assert "/labs/login/" in resp["Location"]
 
@@ -36,7 +36,7 @@ def test_setup_requires_login(client):
 def test_setup_renders_with_context(client, django_user_model, settings):
     settings.MAPBOX_TOKEN = "pk.test"
     _login(client, django_user_model)
-    resp = client.get(reverse("rooftop_surveys:setup", kwargs={"opp_id": 123}))
+    resp = client.get(reverse("microplans:setup", kwargs={"opp_id": 123}))
     assert resp.status_code == 200
     assert resp.context["opp_id"] == 123
     assert resp.context["mapbox_token"] == "pk.test"
@@ -46,7 +46,7 @@ def test_setup_renders_with_context(client, django_user_model, settings):
 def test_preview_rejects_empty_areas(client, django_user_model):
     _login(client, django_user_model)
     resp = client.post(
-        reverse("rooftop_surveys:preview_frame", kwargs={"opp_id": 123}),
+        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
         data=json.dumps({"areas": [], "config": {}}),
         content_type="application/json",
     )
@@ -57,7 +57,7 @@ def test_preview_rejects_empty_areas(client, django_user_model):
 def test_preview_rejects_malformed_body(client, django_user_model):
     _login(client, django_user_model)
     resp = client.post(
-        reverse("rooftop_surveys:preview_frame", kwargs={"opp_id": 123}),
+        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
         data="not json",
         content_type="application/json",
     )
@@ -70,9 +70,9 @@ def test_preview_maps_sampling_failure_to_502(client, django_user_model, monkeyp
     def boom(*a, **k):
         raise RuntimeError("overture down")
 
-    monkeypatch.setattr("commcare_connect.rooftop_surveys.sampling.frame.generate_frame", boom)
+    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", boom)
     resp = client.post(
-        reverse("rooftop_surveys:preview_frame", kwargs={"opp_id": 123}),
+        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
         data=json.dumps({"areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}]}),
         content_type="application/json",
     )
@@ -88,9 +88,9 @@ def test_preview_maps_value_error_to_400(client, django_user_model, monkeypatch)
     def too_big(*a, **k):
         raise ValueError("Area is too large (~5,000 km²); draw a smaller area.")
 
-    monkeypatch.setattr("commcare_connect.rooftop_surveys.sampling.frame.generate_frame", too_big)
+    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", too_big)
     resp = client.post(
-        reverse("rooftop_surveys:preview_frame", kwargs={"opp_id": 123}),
+        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
         data=json.dumps({"areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}]}),
         content_type="application/json",
     )
@@ -123,9 +123,9 @@ def test_preview_happy_path(client, django_user_model, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr("commcare_connect.rooftop_surveys.sampling.frame.generate_frame", lambda areas, config: fake)
+    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", lambda areas, config: fake)
     resp = client.post(
-        reverse("rooftop_surveys:preview_frame", kwargs={"opp_id": 123}),
+        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
         data=json.dumps(
             {
                 "areas": [
@@ -164,9 +164,9 @@ def test_save_frame_persists_area_and_frame(client, django_user_model, monkeypat
             assert area_record_id == 11
             return FakeRecord(22)
 
-    monkeypatch.setattr("commcare_connect.rooftop_surveys.data_access.RooftopDataAccess", FakeDA)
+    monkeypatch.setattr("commcare_connect.microplans.data_access.RooftopDataAccess", FakeDA)
     resp = client.post(
-        reverse("rooftop_surveys:save_frame", kwargs={"opp_id": 123}),
+        reverse("microplans:save_frame", kwargs={"opp_id": 123}),
         data=json.dumps(
             {
                 "areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}],
@@ -187,7 +187,7 @@ def test_save_frame_persists_area_and_frame(client, django_user_model, monkeypat
 def test_save_frame_rejects_missing_pins(client, django_user_model):
     _login(client, django_user_model)
     resp = client.post(
-        reverse("rooftop_surveys:save_frame", kwargs={"opp_id": 123}),
+        reverse("microplans:save_frame", kwargs={"opp_id": 123}),
         data=json.dumps({"areas": []}),  # no "pins"
         content_type="application/json",
     )
@@ -207,7 +207,7 @@ def test_work_areas_csv_export(client, django_user_model):
         ],
     }
     resp = client.post(
-        reverse("rooftop_surveys:work_areas_csv", kwargs={"opp_id": 123}),
+        reverse("microplans:work_areas_csv", kwargs={"opp_id": 123}),
         data=json.dumps({"pins": pins, "lga": "Maiduguri", "state": "Borno"}),
         content_type="application/json",
     )

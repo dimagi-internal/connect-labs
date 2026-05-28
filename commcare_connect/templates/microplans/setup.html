@@ -111,9 +111,9 @@
 (function () {
   const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   const OPP_ID = "{{ opp_id|escapejs }}";
-  const PREVIEW_URL = "{% url 'rooftop_surveys:preview_frame' opp_id=opp_id %}";
-  const SAVE_URL = "{% url 'rooftop_surveys:save_frame' opp_id=opp_id %}";
-  const CSV_URL = "{% url 'rooftop_surveys:work_areas_csv' opp_id=opp_id %}";
+  const PREVIEW_URL = "{% url 'microplans:preview_frame' opp_id=opp_id %}";
+  const SAVE_URL = "{% url 'microplans:save_frame' opp_id=opp_id %}";
+  const CSV_URL = "{% url 'microplans:work_areas_csv' opp_id=opp_id %}";
   const CSRF_TOKEN = "{{ csrf_token }}";  // CSRF_USE_SESSIONS=True → token comes from the template, not a cookie
   if (!MAPBOX_TOKEN) { return; }
 
