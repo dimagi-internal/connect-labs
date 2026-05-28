@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Rooftop Surveys — Setup{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
+<style>
+  #rooftop-map { position: absolute; inset: 0; }
+  .arm-intervention .mapbox-gl-draw_polygon { /* hint only */ }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-4rem)]" x-data>
+  <!-- Control panel -->
+  <aside class="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-5 space-y-6">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Rooftop Surveys</h1>
+      <p class="text-sm text-gray-500 mt-1">Opportunity #{{ opp_id }} — define sampling area</p>
+    </div>
+
+    {% if error %}
+    <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
+    {% endif %}
+
+    <!-- Step 1: Area -->
+    <section>
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">1 · Area</h2>
+      <div class="flex gap-2 mb-3">
+        <button type="button" id="btn-arm-intervention"
+                class="button button-sm flex-1 ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800">
+          Intervention
+        </button>
+        <button type="button" id="btn-arm-comparison"
+                class="button button-sm flex-1 outline-style">
+          Comparison
+        </button>
+      </div>
+      <p class="text-xs text-gray-500">
+        Pick an arm, then use the polygon tool (top-right of the map) to draw it.
+        Comparison is optional.
+      </p>
+      <dl class="mt-3 text-sm space-y-1">
+        <div class="flex justify-between"><dt class="text-gray-500">Intervention polys</dt><dd id="stat-intervention" class="font-medium">0</dd></div>
+        <div class="flex justify-between"><dt class="text-gray-500">Comparison polys</dt><dd id="stat-comparison" class="font-medium">0</dd></div>
+        <div class="flex justify-between"><dt class="text-gray-500">Approx. area</dt><dd id="stat-area" class="font-medium">—</dd></div>
+      </dl>
+    </section>
+
+    <!-- Step 2: Frame config (R-pipeline defaults) -->
+    <section>
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Frame config</h2>
+      <div class="space-y-3 text-sm">
+        <label class="block">
+          <span class="text-gray-600">Target clusters (PSUs)</span>
+          <input id="cfg-clusters" type="number" value="25" min="1" class="mt-1 w-full rounded border-gray-300">
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="block">
+            <span class="text-gray-600">Primary / PSU</span>
+            <input id="cfg-primary" type="number" value="8" min="1" class="mt-1 w-full rounded border-gray-300">
+          </label>
+          <label class="block">
+            <span class="text-gray-600">Alternates / PSU</span>
+            <input id="cfg-alternate" type="number" value="8" min="0" class="mt-1 w-full rounded border-gray-300">
+          </label>
+        </div>
+        <label class="block">
+          <span class="text-gray-600">Min roof confidence</span>
+          <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300">
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="block">
+            <span class="text-gray-600">Min area m²</span>
+            <input id="cfg-area-min" type="number" value="9" min="0" class="mt-1 w-full rounded border-gray-300">
+          </label>
+          <label class="block">
+            <span class="text-gray-600">Max area m²</span>
+            <input id="cfg-area-max" type="number" value="330" min="0" class="mt-1 w-full rounded border-gray-300">
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3: Preview -->
+    <section>
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Preview</h2>
+      <button type="button" id="btn-preview" class="button w-full">Preview frame</button>
+      <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
+    </section>
+  </aside>
+
+  <!-- Map -->
+  <div class="relative flex-1">
+    <div id="rooftop-map"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+<script>
+(function () {
+  const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+  const OPP_ID = "{{ opp_id|escapejs }}";
+  const PREVIEW_URL = "{% url 'rooftop_surveys:preview_frame' opp_id=opp_id %}";
+  const CSRF_TOKEN = "{{ csrf_token }}";  // CSRF_USE_SESSIONS=True → token comes from the template, not a cookie
+  if (!MAPBOX_TOKEN) { return; }
+
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+
+  // Satellite imagery — the methodology is pinning actual rooftops.
+  const map = new mapboxgl.Map({
+    container: "rooftop-map",
+    style: "mapbox://styles/mapbox/satellite-streets-v12",
+    center: [8.6753, 9.0820], // Nigeria centroid as a sensible default
+    zoom: 5,
+  });
+
+  // Color drawn polygons by arm via a custom user_arm property.
+  const ARM_COLORS = { intervention: "#10b981", comparison: "#3b82f6" };
+  const drawStyles = [
+    { id: "gl-draw-polygon-fill", type: "fill", filter: ["all", ["==", "$type", "Polygon"]],
+      paint: { "fill-color": ["case", ["==", ["get", "user_arm"], "comparison"], ARM_COLORS.comparison, ARM_COLORS.intervention], "fill-opacity": 0.18 } },
+    { id: "gl-draw-polygon-stroke", type: "line", filter: ["all", ["==", "$type", "Polygon"]],
+      paint: { "line-color": ["case", ["==", ["get", "user_arm"], "comparison"], ARM_COLORS.comparison, ARM_COLORS.intervention], "line-width": 2 } },
+    { id: "gl-draw-vertex", type: "circle", filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
+      paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": "#111", "circle-stroke-width": 1 } },
+  ];
+
+  const draw = new MapboxDraw({
+    displayControlsDefault: false,
+    controls: { polygon: true, trash: true },
+    styles: drawStyles,
+  });
+  map.addControl(draw, "top-right");
+  map.addControl(new mapboxgl.NavigationControl(), "top-right");
+
+  let currentArm = "intervention";
+  const btnInt = document.getElementById("btn-arm-intervention");
+  const btnCmp = document.getElementById("btn-arm-comparison");
+
+  function setArm(arm) {
+    currentArm = arm;
+    const active = "ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800";
+    const activeCmp = "ring-2 ring-blue-500 bg-blue-50 text-blue-800";
+    btnInt.className = "button button-sm flex-1 " + (arm === "intervention" ? active : "outline-style");
+    btnCmp.className = "button button-sm flex-1 " + (arm === "comparison" ? activeCmp : "outline-style");
+  }
+  btnInt.addEventListener("click", () => setArm("intervention"));
+  btnCmp.addEventListener("click", () => setArm("comparison"));
+
+  function tagFeature(id) {
+    draw.setFeatureProperty(id, "arm", currentArm);
+    // Re-set the feature so custom styles repaint with the new property.
+    const f = draw.get(id);
+    if (f) { draw.add(f); }
+  }
+
+  function refreshStats() {
+    const fc = draw.getAll();
+    let intervention = 0, comparison = 0, areaM2 = 0;
+    fc.features.forEach((f) => {
+      const arm = (f.properties && f.properties.arm) || "intervention";
+      if (arm === "comparison") comparison++; else intervention++;
+      try { areaM2 += turfArea(f); } catch (e) { /* turf optional */ }
+    });
+    document.getElementById("stat-intervention").textContent = intervention;
+    document.getElementById("stat-comparison").textContent = comparison;
+    const km2 = areaM2 / 1e6;
+    document.getElementById("stat-area").textContent = km2 ? km2.toFixed(2) + " km²" : "—";
+  }
+
+  // Minimal spherical polygon area (m²) so we don't pull in turf for one number.
+  function turfArea(feature) {
+    const R = 6378137;
+    function ringArea(coords) {
+      let total = 0;
+      for (let i = 0; i < coords.length; i++) {
+        const [lon1, lat1] = coords[i];
+        const [lon2, lat2] = coords[(i + 1) % coords.length];
+        total += (toRad(lon2) - toRad(lon1)) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
+      }
+      return Math.abs(total * R * R / 2);
+    }
+    const toRad = (d) => (d * Math.PI) / 180;
+    const g = feature.geometry;
+    if (!g || g.type !== "Polygon") return 0;
+    return ringArea(g.coordinates[0]);
+  }
+
+  map.on("draw.create", (e) => { e.features.forEach((f) => tagFeature(f.id)); refreshStats(); });
+  map.on("draw.update", refreshStats);
+  map.on("draw.delete", refreshStats);
+
+  setArm("intervention");
+
+  // Add-or-update a GeoJSON source on the map.
+  function upsertSource(id, data) {
+    const src = map.getSource(id);
+    if (src) { src.setData(data); } else { map.addSource(id, { type: "geojson", data }); }
+  }
+
+  function renderPreview(data) {
+    upsertSource("rooftop-hulls", data.hulls);
+    upsertSource("rooftop-pins", data.pins);
+    if (!map.getLayer("rooftop-hulls-fill")) {
+      map.addLayer({ id: "rooftop-hulls-fill", type: "fill", source: "rooftop-hulls",
+        paint: { "fill-color": "#f59e0b", "fill-opacity": 0.12 } });
+      map.addLayer({ id: "rooftop-hulls-line", type: "line", source: "rooftop-hulls",
+        paint: { "line-color": "#f59e0b", "line-width": 1.5 } });
+      map.addLayer({ id: "rooftop-pins-circle", type: "circle", source: "rooftop-pins",
+        paint: {
+          "circle-radius": ["case", ["==", ["get", "role"], "primary"], 5, 3.5],
+          "circle-color": ["case", ["==", ["get", "role"], "primary"], "#ef4444", "#fbbf24"],
+          "circle-stroke-color": "#fff", "circle-stroke-width": 1,
+        } });
+    }
+    // Fit to pins.
+    const feats = data.pins.features;
+    if (feats.length) {
+      const b = new mapboxgl.LngLatBounds();
+      feats.forEach((f) => b.extend(f.geometry.coordinates));
+      map.fitBounds(b, { padding: 60, maxZoom: 17 });
+    }
+  }
+
+  function renderStats(stats) {
+    const el = document.getElementById("preview-status");
+    el.innerHTML = stats.map((s) =>
+      `<div class="mt-2 p-2 rounded bg-gray-50 border border-gray-200">
+         <div class="font-semibold capitalize">${s.arm}</div>
+         <div>${s.after_filters.toLocaleString()} buildings · ${s.psus_selected} PSUs</div>
+         <div><span class="text-red-600 font-medium">${s.primaries}</span> primary ·
+              <span class="text-amber-600 font-medium">${s.alternates}</span> alternate pins</div>
+       </div>`).join("");
+  }
+
+  document.getElementById("btn-preview").addEventListener("click", async () => {
+    const statusEl = document.getElementById("preview-status");
+    const features = draw.getAll().features;
+    if (!features.length) { statusEl.textContent = "Draw an intervention area first."; return; }
+    statusEl.textContent = "Sampling… (first run fetches buildings, ~20s)";
+    const payload = {
+      areas: features.map((f) => ({ arm: (f.properties && f.properties.arm) || "intervention", geometry: f.geometry })),
+      config: {
+        target_clusters: +document.getElementById("cfg-clusters").value,
+        primary_per_psu: +document.getElementById("cfg-primary").value,
+        alternates_per_psu: +document.getElementById("cfg-alternate").value,
+        min_confidence: +document.getElementById("cfg-confidence").value,
+        area_min_m2: +document.getElementById("cfg-area-min").value,
+        area_max_m2: +document.getElementById("cfg-area-max").value,
+      },
+    };
+    try {
+      const resp = await fetch(PREVIEW_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.status === "ok") {
+        renderPreview(data);
+        renderStats(data.stats);
+      } else {
+        statusEl.textContent = data.detail || ("HTTP " + resp.status);
+      }
+    } catch (err) {
+      statusEl.textContent = "Request failed: " + err;
+    }
+  });
+
+  function getCookie(name) {
+    const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+    return m ? m.pop() : "";
+  }
+
+  // Exposed for browser automation / debugging.
+  window.__rooftop = { map, draw, renderPreview, renderStats };
+})();
+</script>
+{% endblock %}
