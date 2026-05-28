@@ -27,6 +27,27 @@ Every run produces **two independently-scored verdicts**:
 
 At convergence the same spec is promoted to the polished shareable video.
 
+## Review model — what needs you, and how you get it
+
+*This is the load-bearing part. The framework exists to do great work autonomously and pull the primary user in only where their judgment is irreplaceable.*
+
+**Principle: review fires on taste, never on correctness.** For anything correctness-shaped (renders cleanly, well-paced, fixes pass tests, spec is valid) the **eval loop is the proxy** — it decides and reports in a digest that can be read but never blocks. The human is pulled in only where an LLM judge is no substitute. (Rationale from the user: review today is skipped because it fires when they're either *trusting* — "you're close enough" — or *indifferent* — "no opinion." So fire only on irreplaceable taste.)
+
+**The only two blocking gates:**
+1. **Concept definition / change** — the direction fork: "is this the right product, framed the right way?" Concentrated up front; a later `design_finding` re-summons the user *only if it implies a concept change*, not an execution gap. (This is why PRs can be skipped: the fork was decided upstream.)
+2. **External release** — a video going to other humans. Glance + go.
+
+Everything else runs autonomously. **Framing/voice** is editable but non-blocking — the user rewrites a narration line in place rather than approving it.
+
+**Dual-channel surface — same decisions both ways:**
+- **Inline** (`AskUserQuestion`) when the user is live at the keyboard.
+- **Async**: overnight run → email digest ("N things need you") → **one editable web review page**: the current cut plays; ≤3 forked decisions with the system's pick pre-selected (accept / redirect); narration inline-editable; a collapsed "what I did autonomously" audit; one **Approve & continue** that resumes the loop.
+- Both render from a shared `review_request` artifact per pause, so terminal and web never diverge.
+
+**The flywheel (review shrinks over time):**
+- Edits/redirects calibrate the concept judge and teach the narration author the user's *voice* → next draft lands closer.
+- **Suggest-then-confirm self-tuning**: track accept-vs-redirect per decision *class*; when a class is rubber-stamped, *propose* downgrading it to digest-only ("you've accepted this 5× — stop asking?") and let the user approve the tuning. Never auto-applied. (Mirrors gstack `plan-tune`.) Net: fewer asks each run, on the user's terms.
+
 ## Locked decisions
 
 | Decision | Choice |
@@ -37,6 +58,9 @@ At convergence the same spec is promoted to the polished shareable video.
 | Home | **New cross-cutting framework identity, built on canopy** ("1 done in 2"); first run in connect-labs |
 | Claim↔reality gate | **Scored + surfaced, non-blocking** — findings route to fixers; human decides at pause point |
 | Iterating renderer | **Screenshots while iterating, motion only at convergence** |
+| Blocking review gates | **Only concept definition/change + external release** block; everything else is autonomous + digest |
+| Review surface | **Dual channel** — inline `AskUserQuestion` when live; email digest → editable web review page when async (same decision set) |
+| Self-tuning asks | **Suggest-then-confirm** — proposes downgrading rubber-stamped decision classes; user approves the tuning |
 
 ## The loop
 
@@ -78,6 +102,7 @@ route PRODUCT fixes (TDD)                 route RENDER/SPEC fixes
 | Polished final video | connect-labs Playwright recorder rig (narrated MP4); ACE Remotion as the glossy option (deferred) |
 | Verdict shape, QA-gates-eval, run state, pause points | ACE verdict schema + `run_state.yaml` + Pause Points convention |
 | Autonomy, digest email, cross-run learnings | canopy PM autonomous loop (`scout→propose→implement→learn`, `.canopy/` persistence) |
+| Editable web review page | ACE clip-explorer (already an editable web video editor) + canopy-web hosting |
 | Share/host the artifact | `walkthrough-share` → canopy-web |
 
 ### Build new (the real gaps)
@@ -91,6 +116,8 @@ route PRODUCT fixes (TDD)                 route RENDER/SPEC fixes
 4. **Unified-spec QA gate** — binary structural checks (every scene has a falsifiable `concept_claim`, personas resolve, etc.) that gate the judges. Mirrors ACE `-qa`.
 
 5. **Promotion adapter** — at convergence, transform the converged unified spec into a render spec for the polished video (narrated recording for live features). Mostly glue.
+
+6. **Review surface + escalation policy** — *the most important new piece for the primary user.* A shared `review_request` artifact per pause, rendered two ways: inline `AskUserQuestion` and an **editable web review page** (the playing cut + ≤3 forked decisions with the pick pre-selected + inline-editable narration + a collapsed autonomous-audit + Approve-&-continue). Enforces the two-gate blocking policy (concept change, external release) and the suggest-then-confirm self-tuning. Reuses the ACE clip-explorer / canopy-web editable surfaces + PM-loop digest email. *See Review model above.*
 
 ### Deferred (YAGNI for v1)
 
@@ -120,7 +147,7 @@ Both follow the ACE verdict schema (`overall_score`, `dimensions{}`, `verdict`, 
 
 ## Autonomy & pause points
 
-Autonomous overnight per the PM loop, halting at hard gates: (a) concept not yet approved, (b) a `→ PRODUCT`/`→ CONCEPT` finding above severity needs a human call, (c) converged and ready to promote/ship. Each pause emits an email digest (both verdicts, top findings, what it changed, what it's asking). Cross-run learnings persist so resolved findings aren't re-raised.
+See **Review model** for the full policy. In short: the loop runs autonomously overnight per the PM loop and halts at only two gates — **concept definition/change** and **external release**. A `design_finding` re-summons the user only if it implies a concept change, not an execution gap. Every pause emits the email digest + editable review page; everything autonomous lands in the digest's audit, non-blocking. Cross-run learnings persist so resolved findings aren't re-raised, and rubber-stamped decision classes are proposed for downgrade.
 
 ## First run: Rooftop Surveys
 
@@ -131,3 +158,5 @@ Exercise the *new* parts against a feature under active design, where the synthe
 - Concept-verdict threshold + max-iteration count (start: ≥4/5 both, 3 iters — match walkthrough `improve`).
 - Exact home/namespace for the new skill family on canopy.
 - Whether the unified spec replaces or wraps the existing `docs/walkthroughs/*.yaml`.
+- `review_request` schema, and how web-page edits (narration rewrites, fork redirects) flow back into `run_state.yaml` and the cross-run learnings.
+- Self-tuning threshold N (how many rubber-stamps before proposing a downgrade).
