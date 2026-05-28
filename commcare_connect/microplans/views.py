@@ -164,7 +164,10 @@ class CountriesView(LoginRequiredMixin, View):
         from commcare_connect.labs.admin_boundaries.models import AdminBoundary
         from commcare_connect.microplans.core import iso
 
-        bespoke = sorted(AdminBoundary.objects.values_list("iso_code", flat=True).distinct())
+        # .order_by() clears AdminBoundary's Meta.ordering — without it Django adds
+        # the ordering columns to the SELECT, so .distinct() dedupes whole rows
+        # (12k) instead of iso_code (returning one entry per country).
+        bespoke = sorted(AdminBoundary.objects.order_by().values_list("iso_code", flat=True).distinct())
         return JsonResponse({"status": "ok", "countries": iso.all_countries(), "bespoke": bespoke})
 
 
