@@ -39,3 +39,12 @@ class TestResolveArea:
     def test_missing_both_raises(self):
         with pytest.raises(ValueError):
             resolve_area({"arm": "intervention"})
+
+    def test_malformed_geometry_raises_valueerror(self):
+        # not a 500: a bad GeoJSON must surface as ValueError (→ 400 at the view)
+        with pytest.raises(ValueError):
+            resolve_area({"geometry": {"type": "Nonsense", "coordinates": "oops"}})
+
+    def test_malformed_circle_raises_valueerror(self):
+        with pytest.raises(ValueError):
+            resolve_area({"circle": {"lon": "abc", "lat": LAT0, "radius_m": 100}})

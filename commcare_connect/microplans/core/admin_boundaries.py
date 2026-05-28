@@ -108,6 +108,7 @@ class BoundarySource:
         raise NotImplementedError
 
     def get_geometry(self, area: AdminArea) -> dict | None:
+        """Return the GeoJSON geometry (WGS84) for one area, using its ``ref`` keys."""
         raise NotImplementedError
 
 
@@ -250,6 +251,7 @@ class BoundaryResolver:
         parent: AdminArea | None = None,
         limit: int = 500,
     ) -> list[AdminArea]:
+        limit = max(1, min(int(limit), 10000))  # bound user-supplied page size
         source = self.source_for(country3, level)
         region = ""
         parent_geom = None

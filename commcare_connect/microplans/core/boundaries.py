@@ -57,16 +57,22 @@ def list_admin_areas(
     if cached is not None:
         return cached
 
-    where = [f"country = '{_sql(country_iso2)}'"]
-    where.append(
-        f"subtype = '{_sql(subtype)}'"
-        if subtype
-        else "subtype IN (" + ",".join(f"'{s}'" for s in PICKABLE_SUBTYPES) + ")"
-    )
+    # Parameterised binds for all user-influenced values (the parquet path is a
+    # module constant; LIMIT is an int cast). Same `?`-bind pattern as footprints.
+    where = ["country = ?"]
+    params: list = [country_iso2]
+    if subtype:
+        where.append("subtype = ?")
+        params.append(subtype)
+    else:
+        where.append("subtype IN (" + ",".join("?" for _ in PICKABLE_SUBTYPES) + ")")
+        params.extend(PICKABLE_SUBTYPES)
     if region:
-        where.append(f"region = '{_sql(region)}'")
+        where.append("region = ?")
+        params.append(region)
     if name_contains:
-        where.append(f"lower(names.primary) LIKE '%{_sql(name_contains.lower())}%'")
+        where.append("lower(names.primary) LIKE ?")
+        params.append(f"%{name_contains.lower()}%")
 
     con = overture.connect()
     rows = con.execute(
@@ -77,7 +83,8 @@ def list_admin_areas(
         WHERE {' AND '.join(where)} AND names.primary IS NOT NULL
         ORDER BY subtype, name
         LIMIT {int(limit)}
-        """
+        """,
+        params,
     ).df()
     result = rows.to_dict("records")
     cache.set(key, result, CACHE_TTL_SECONDS)
@@ -92,13 +99,11 @@ def get_admin_area_geojson(country_iso2: str, name: str, subtype: str, region: s
     if cached is not None:
         return cached
 
-    where = [
-        f"country = '{_sql(country_iso2)}'",
-        f"subtype = '{_sql(subtype)}'",
-        f"names.primary = '{_sql(name)}'",
-    ]
+    where = ["country = ?", "subtype = ?", "names.primary = ?"]
+    params: list = [country_iso2, subtype, name]
     if region:
-        where.append(f"region = '{_sql(region)}'")
+        where.append("region = ?")
+        params.append(region)
 
     con = overture.connect()
     rows = con.execute(
@@ -107,13 +112,9 @@ def get_admin_area_geojson(country_iso2: str, name: str, subtype: str, region: s
         FROM read_parquet('{DIVISION_AREA}', filename=false, hive_partitioning=true)
         WHERE {' AND '.join(where)}
         LIMIT 1
-        """
+        """,
+        params,
     ).fetchall()
     geom = json.loads(rows[0][0]) if rows else None
     cache.set(key, geom, CACHE_TTL_SECONDS)
     return geom
-
-
-def _sql(value: str) -> str:
-    """Escape single quotes for inlining into a DuckDB string literal."""
-    return str(value).replace("'", "''")
