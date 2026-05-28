@@ -16,24 +16,22 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import pickle
-import tempfile
 
 import pandas as pd
 from django.core.cache import cache
 from shapely.geometry.base import BaseGeometry
 
+from commcare_connect.rooftop_surveys.sampling import overture
+
 logger = logging.getLogger(__name__)
 
-# Overture release. Bump as Overture cuts monthly releases; the S3 layout is stable.
-OVERTURE_RELEASE = "2026-05-20.0"
-OVERTURE_BUILDINGS = f"s3://overturemaps-us-west-2/release/{OVERTURE_RELEASE}/theme=buildings/type=building/*"
+OVERTURE_BUILDINGS = overture.theme_path("buildings", "building")
 CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days — building stock barely moves.
 
 
 def _area_cache_key(wkt: str, min_confidence: float | None) -> str:
-    h = hashlib.sha256(f"{OVERTURE_RELEASE}|{min_confidence}|{wkt}".encode()).hexdigest()[:24]
+    h = hashlib.sha256(f"{overture.OVERTURE_RELEASE}|{min_confidence}|{wkt}".encode()).hexdigest()[:24]
     return f"rooftop:footprints:{h}"
 
 
@@ -63,21 +61,10 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> 
 
 
 def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
-    import duckdb
-
     minx, miny, maxx, maxy = area.bounds
     wkt = area.wkt
 
-    con = duckdb.connect()
-    # The labs container runs as a hardened user with HOME=/nonexistent, so DuckDB
-    # can't find a home dir to install/cache its extensions. Point it at a writable
-    # temp dir before INSTALL.
-    ext_dir = os.path.join(tempfile.gettempdir(), "duckdb_ext")
-    os.makedirs(ext_dir, exist_ok=True)
-    con.execute(f"SET home_directory='{tempfile.gettempdir()}';")
-    con.execute(f"SET extension_directory='{ext_dir}';")
-    con.execute("INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;")
-    con.execute("SET s3_region='us-west-2';")
+    con = overture.connect()
 
     conf_clause = ""
     if min_confidence is not None:
