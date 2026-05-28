@@ -22,7 +22,7 @@ import pandas as pd
 from django.core.cache import cache
 from shapely.geometry.base import BaseGeometry
 
-from commcare_connect.microplans.sampling import overture
+from commcare_connect.microplans.core import overture
 
 logger = logging.getLogger(__name__)
 

@@ -86,7 +86,7 @@ class SaveFrameView(LoginRequiredMixin, View):
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.data_access import RooftopDataAccess
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
 
         try:
             payload = json.loads(request.body)
@@ -120,7 +120,7 @@ class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.workarea import build_work_areas, to_csv_rows
+        from commcare_connect.microplans.core.workarea import build_work_areas, to_csv_rows
 
         try:
             payload = json.loads(request.body)

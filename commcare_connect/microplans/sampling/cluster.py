@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 
-from commcare_connect.microplans.sampling.geo import project_to_meters
+from commcare_connect.microplans.core.geo import project_to_meters
 
 
 @dataclass(frozen=True)
