@@ -183,6 +183,50 @@ class TestNormalize:
         assert out["date_local"].iloc[0].isoformat() == "2026-05-20"
 
 
+class TestIngest:
+    def test_flatten_visits_merges_form_json(self):
+        from commcare_connect.rooftop_surveys.monitoring.ingest import flatten_visits
+
+        rows = [
+            {
+                "username": "alice",
+                "visit_date": "2026-05-20T09:00:00Z",
+                "form_json": {"distance_target_pin_from_arrival_point": 5, "pin_inhabited_residential": "yes"},
+            },
+            {
+                "username": "bob",
+                "visit_date": "2026-05-20T09:05:00Z",
+                "form_json": {"distance_target_pin_from_arrival_point": 30},
+            },
+        ]
+        df = flatten_visits(rows)
+        assert "form_json" not in df.columns
+        assert df["username"].tolist() == ["alice", "bob"]
+        assert df["form.distance_target_pin_from_arrival_point"].tolist() == [5, 30]
+
+    def test_load_canonical_composes_fetch_flatten_normalize(self, monkeypatch):
+        from commcare_connect.rooftop_surveys.monitoring import ingest
+
+        rows = [
+            {
+                "username": "alice",
+                "visit_date": "2026-05-20T09:00:00Z",
+                "form_json": {"dist": 5, "outcome": "complete"},
+            },
+        ]
+        monkeypatch.setattr(ingest, "fetch_user_visits", lambda *a, **k: rows)
+        field_map = {
+            "enumerator": "username",
+            "submission_time": "visit_date",
+            "distance_m": "form.dist",
+            "survey_completed_flag": "form.outcome",
+        }
+        canonical = ingest.load_canonical(123, "tok", field_map=field_map)
+        assert canonical["enumerator"].iloc[0] == "alice"
+        assert canonical["distance_m"].iloc[0] == 5
+        assert canonical["survey_completed_flag"].iloc[0] == "complete"
+
+
 class TestPipeline:
     def test_compute_monitoring_payload(self):
         payload = compute_monitoring(_visits(), field_map=_IDENTITY_MAP)
