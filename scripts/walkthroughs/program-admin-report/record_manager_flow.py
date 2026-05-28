@@ -38,6 +38,7 @@ from walkthroughs._lib.recorder import (  # noqa: E402
     RecorderSession,
     click_menu_item,
     click_row_button,
+    dwell_on_menu_item,
     goto_and_settle,
     row_button_labels,
     scroll_row_into_view,
@@ -120,9 +121,14 @@ def main() -> None:
                 "Did a previous recorder run already create the audit? "
                 "Re-run regenerate.py with cleanup_first=true."
             )
-        # The menu opens as an absolute-positioned panel — give it a beat
-        # to mount before we look inside.
-        page.wait_for_timeout(600)
+        # Let the open menu sit on screen long enough to read the options,
+        # snap it for the deck, glide the cursor onto the target item and
+        # pause, THEN click. Without the dwell the dropdown flashes past
+        # too fast to see in the recording.
+        page.wait_for_timeout(1_800)
+        snap(rec, "create_audit_menu_open")
+        dwell_on_menu_item(page, AUDIT_MENU_ITEM)
+        page.wait_for_timeout(900)
         if not click_menu_item(page, AUDIT_MENU_ITEM):
             raise RuntimeError(
                 f"Menu item {AUDIT_MENU_ITEM!r} not found after opening Create Audit menu for {FLAGGED_FLW}."
@@ -163,7 +169,12 @@ def main() -> None:
         page.wait_for_timeout(1_200)
         if not click_row_button(page, FLAGGED_FLW, "Create Task"):
             raise RuntimeError(f"Create Task menu trigger not found on {FLAGGED_FLW}'s row.")
-        page.wait_for_timeout(600)
+        # Same dwell treatment as the audit menu — read the options, snap,
+        # glide to the coaching item, pause, click.
+        page.wait_for_timeout(1_800)
+        snap(rec, "create_task_menu_open")
+        dwell_on_menu_item(page, COACHING_MENU_ITEM)
+        page.wait_for_timeout(900)
         if not click_menu_item(page, COACHING_MENU_ITEM):
             raise RuntimeError(
                 f"Menu item {COACHING_MENU_ITEM!r} not found after opening "
