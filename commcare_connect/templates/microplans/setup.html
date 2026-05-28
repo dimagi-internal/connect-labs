@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Rooftop Surveys — Setup{% endblock %}
+{% block title %}Microplans — Setup{% endblock %}
 
 {% block css %}
 {{ block.super }}
@@ -9,87 +9,146 @@
 <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
 <style>
   #rooftop-map { position: absolute; inset: 0; }
-  .arm-intervention .mapbox-gl-draw_polygon { /* hint only */ }
+  .seg-on { box-shadow: inset 0 0 0 2px #059669; background: #ecfdf5; color: #065f46; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="flex h-[calc(100vh-4rem)]" x-data>
   <!-- Control panel -->
-  <aside class="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-5 space-y-6">
+  <aside class="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-5 space-y-5">
     <div>
-      <h1 class="text-xl font-bold text-gray-900">Rooftop Surveys</h1>
-      <p class="text-sm text-gray-500 mt-1">Opportunity #{{ opp_id }} — define sampling area</p>
+      <h1 class="text-xl font-bold text-gray-900">Microplans</h1>
+      <p class="text-sm text-gray-500 mt-1">Opportunity #{{ opp_id }} — define the work areas</p>
     </div>
 
     {% if error %}
     <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
     {% endif %}
 
+    <!-- Mode -->
+    <section>
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Mode</h2>
+      <div class="flex gap-2">
+        <button type="button" id="btn-mode-sampling" class="button button-sm flex-1">Sampling</button>
+        <button type="button" id="btn-mode-coverage" class="button button-sm flex-1 outline-style">Coverage</button>
+      </div>
+      <p id="mode-help" class="text-xs text-gray-500 mt-2"></p>
+    </section>
+
     <!-- Step 1: Area -->
     <section>
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">1 · Area</h2>
+      <div class="flex gap-1 mb-3 text-xs">
+        <button type="button" id="btn-input-draw" class="button button-sm flex-1">Draw</button>
+        <button type="button" id="btn-input-admin" class="button button-sm flex-1 outline-style">Admin area</button>
+        <button type="button" id="btn-input-pin" class="button button-sm flex-1 outline-style">Pin + radius</button>
+      </div>
+
+      <!-- Arm selector (shared by all inputs) -->
       <div class="flex gap-2 mb-3">
         <button type="button" id="btn-arm-intervention"
-                class="button button-sm flex-1 ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800">
-          Intervention
-        </button>
+                class="button button-sm flex-1 ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800">Intervention</button>
         <button type="button" id="btn-arm-comparison"
-                class="button button-sm flex-1 outline-style">
-          Comparison
-        </button>
+                class="button button-sm flex-1 outline-style">Comparison</button>
       </div>
-      <p class="text-xs text-gray-500">
-        Pick an arm, then use the polygon tool (top-right of the map) to draw it.
-        Comparison is optional.
-      </p>
+
+      <!-- Draw input -->
+      <div id="input-draw">
+        <p class="text-xs text-gray-500">Use the polygon tool (top-right of the map) to draw the area.</p>
+      </div>
+
+      <!-- Admin-area input -->
+      <div id="input-admin" class="hidden space-y-2 text-sm">
+        <label class="block">
+          <span class="text-gray-600">Country</span>
+          <select id="sel-country" class="mt-1 w-full rounded border-gray-300"></select>
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="block">
+            <span class="text-gray-600">Level</span>
+            <select id="sel-level" class="mt-1 w-full rounded border-gray-300">
+              <option value="1">Region / State</option>
+              <option value="2" selected>County / District / LGA</option>
+              <option value="3">Locality / Ward</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-gray-600">Search</span>
+            <input id="inp-area-search" type="text" placeholder="name…" class="mt-1 w-full rounded border-gray-300">
+          </label>
+        </div>
+        <button type="button" id="btn-area-search" class="button button-sm w-full">Find areas</button>
+        <div id="area-source" class="text-xs text-gray-500"></div>
+        <div id="list-areas" class="max-h-48 overflow-y-auto border border-gray-100 rounded divide-y"></div>
+      </div>
+
+      <!-- Pin + radius input -->
+      <div id="input-pin" class="hidden space-y-2 text-sm">
+        <p class="text-xs text-gray-500">Click "Drop pin", then click the map to place it. The circle becomes the area.</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" id="btn-drop-pin" class="button button-sm">Drop pin</button>
+          <label class="block">
+            <span class="text-gray-600">Radius (m)</span>
+            <input id="inp-pin-radius" type="number" value="500" min="20" step="50" class="mt-1 w-full rounded border-gray-300">
+          </label>
+        </div>
+        <div id="pin-status" class="text-xs text-gray-500"></div>
+      </div>
+
       <dl class="mt-3 text-sm space-y-1">
-        <div class="flex justify-between"><dt class="text-gray-500">Intervention polys</dt><dd id="stat-intervention" class="font-medium">0</dd></div>
-        <div class="flex justify-between"><dt class="text-gray-500">Comparison polys</dt><dd id="stat-comparison" class="font-medium">0</dd></div>
+        <div class="flex justify-between"><dt class="text-gray-500">Areas (intervention)</dt><dd id="stat-intervention" class="font-medium">0</dd></div>
+        <div class="flex justify-between"><dt class="text-gray-500">Areas (comparison)</dt><dd id="stat-comparison" class="font-medium">0</dd></div>
         <div class="flex justify-between"><dt class="text-gray-500">Approx. area</dt><dd id="stat-area" class="font-medium">—</dd></div>
       </dl>
     </section>
 
-    <!-- Step 2: Frame config (R-pipeline defaults) -->
-    <section>
-      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Frame config</h2>
+    <!-- Step 2: config (sampling) -->
+    <section id="cfg-sampling">
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Sampling config</h2>
       <div class="space-y-3 text-sm">
-        <label class="block">
-          <span class="text-gray-600">Target clusters (PSUs)</span>
-          <input id="cfg-clusters" type="number" value="25" min="1" class="mt-1 w-full rounded border-gray-300">
-        </label>
+        <label class="block"><span class="text-gray-600">Target clusters (PSUs)</span>
+          <input id="cfg-clusters" type="number" value="25" min="1" class="mt-1 w-full rounded border-gray-300"></label>
         <div class="grid grid-cols-2 gap-2">
-          <label class="block">
-            <span class="text-gray-600">Primary / PSU</span>
-            <input id="cfg-primary" type="number" value="8" min="1" class="mt-1 w-full rounded border-gray-300">
-          </label>
-          <label class="block">
-            <span class="text-gray-600">Alternates / PSU</span>
-            <input id="cfg-alternate" type="number" value="8" min="0" class="mt-1 w-full rounded border-gray-300">
-          </label>
+          <label class="block"><span class="text-gray-600">Primary / PSU</span>
+            <input id="cfg-primary" type="number" value="8" min="1" class="mt-1 w-full rounded border-gray-300"></label>
+          <label class="block"><span class="text-gray-600">Alternates / PSU</span>
+            <input id="cfg-alternate" type="number" value="8" min="0" class="mt-1 w-full rounded border-gray-300"></label>
         </div>
-        <label class="block">
-          <span class="text-gray-600">Min roof confidence</span>
-          <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300">
-        </label>
+        <label class="block"><span class="text-gray-600">Min roof confidence</span>
+          <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300"></label>
         <div class="grid grid-cols-2 gap-2">
-          <label class="block">
-            <span class="text-gray-600">Min area m²</span>
-            <input id="cfg-area-min" type="number" value="9" min="0" class="mt-1 w-full rounded border-gray-300">
-          </label>
-          <label class="block">
-            <span class="text-gray-600">Max area m²</span>
-            <input id="cfg-area-max" type="number" value="330" min="0" class="mt-1 w-full rounded border-gray-300">
-          </label>
+          <label class="block"><span class="text-gray-600">Min area m²</span>
+            <input id="cfg-area-min" type="number" value="9" min="0" class="mt-1 w-full rounded border-gray-300"></label>
+          <label class="block"><span class="text-gray-600">Max area m²</span>
+            <input id="cfg-area-max" type="number" value="330" min="0" class="mt-1 w-full rounded border-gray-300"></label>
         </div>
+      </div>
+    </section>
+
+    <!-- Step 2: config (coverage) -->
+    <section id="cfg-coverage" class="hidden">
+      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Coverage config</h2>
+      <div class="space-y-3 text-sm">
+        <label class="block"><span class="text-gray-600">Strategy</span>
+          <select id="cfg-strategy" class="mt-1 w-full rounded border-gray-300">
+            <option value="balanced" selected>Balanced (even workloads)</option>
+            <option value="grid">Grid (square cells)</option>
+          </select></label>
+        <label class="block" id="wrap-bpc"><span class="text-gray-600">Buildings / work area</span>
+          <input id="cfg-bpc" type="number" value="100" min="1" class="mt-1 w-full rounded border-gray-300"></label>
+        <label class="block hidden" id="wrap-cell"><span class="text-gray-600">Grid cell edge (m)</span>
+          <input id="cfg-cellsize" type="number" value="200" min="10" step="10" class="mt-1 w-full rounded border-gray-300"></label>
+        <label class="block" id="wrap-balance"><span class="text-gray-600">Balance tolerance (±)</span>
+          <input id="cfg-balance" type="number" value="0.1" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300"></label>
       </div>
     </section>
 
     <!-- Step 3: Preview -->
     <section>
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Preview</h2>
-      <button type="button" id="btn-preview" class="button w-full">Preview frame</button>
-      <button type="button" id="btn-save" class="button w-full mt-2 hidden">Save frame</button>
+      <button type="button" id="btn-preview" class="button w-full">Preview</button>
+      <button type="button" id="btn-save" class="button w-full mt-2 hidden">Save</button>
       <button type="button" id="btn-csv" class="button button-sm outline-style w-full mt-2 hidden">Download Connect import CSV</button>
       <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
       <div id="save-status" class="mt-1 text-xs text-gray-500"></div>
@@ -110,24 +169,30 @@
 <script>
 (function () {
   const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
-  const OPP_ID = "{{ opp_id|escapejs }}";
-  const PREVIEW_URL = "{% url 'microplans:preview_frame' opp_id=opp_id %}";
-  const SAVE_URL = "{% url 'microplans:save_frame' opp_id=opp_id %}";
-  const CSV_URL = "{% url 'microplans:work_areas_csv' opp_id=opp_id %}";
-  const CSRF_TOKEN = "{{ csrf_token }}";  // CSRF_USE_SESSIONS=True → token comes from the template, not a cookie
+  const URLS = {
+    sampling: "{% url 'microplans:preview_frame' opp_id=opp_id %}",
+    coverage: "{% url 'microplans:preview_coverage' opp_id=opp_id %}",
+    save: "{% url 'microplans:save_frame' opp_id=opp_id %}",
+    csv: "{% url 'microplans:work_areas_csv' opp_id=opp_id %}",
+    countries: "{% url 'microplans:countries' %}",
+    areas: "{% url 'microplans:admin_areas' opp_id=opp_id %}",
+    geometry: "{% url 'microplans:admin_area_geometry' opp_id=opp_id %}",
+  };
+  const CSRF = "{{ csrf_token }}";
   if (!MAPBOX_TOKEN) { return; }
-
   mapboxgl.accessToken = MAPBOX_TOKEN;
 
-  // Satellite imagery — the methodology is pinning actual rooftops.
+  const $ = (id) => document.getElementById(id);
+  const post = (url, body) => fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body),
+  });
+
   const map = new mapboxgl.Map({
     container: "rooftop-map",
     style: "mapbox://styles/mapbox/satellite-streets-v12",
-    center: [8.6753, 9.0820], // Nigeria centroid as a sensible default
-    zoom: 5,
+    center: [8.6753, 9.0820], zoom: 5,
   });
 
-  // Color drawn polygons by arm via a custom user_arm property.
   const ARM_COLORS = { intervention: "#10b981", comparison: "#3b82f6" };
   const drawStyles = [
     { id: "gl-draw-polygon-fill", type: "fill", filter: ["all", ["==", "$type", "Polygon"]],
@@ -137,195 +202,311 @@
     { id: "gl-draw-vertex", type: "circle", filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
       paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": "#111", "circle-stroke-width": 1 } },
   ];
-
-  const draw = new MapboxDraw({
-    displayControlsDefault: false,
-    controls: { polygon: true, trash: true },
-    styles: drawStyles,
-  });
+  const draw = new MapboxDraw({ displayControlsDefault: false, controls: { polygon: true, trash: true }, styles: drawStyles });
   map.addControl(draw, "top-right");
   map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
+  // ---- state ----
+  let mode = "sampling";      // sampling | coverage
+  let input = "draw";         // draw | admin | pin
   let currentArm = "intervention";
-  const btnInt = document.getElementById("btn-arm-intervention");
-  const btnCmp = document.getElementById("btn-arm-comparison");
+  let circleAreas = [];       // [{arm, circle:{lon,lat,radius_m}}]
+  let dropPinArmed = false;
+  let lastPreview = null;
 
+  // ---- mode toggle ----
+  function setMode(m) {
+    mode = m;
+    $("btn-mode-sampling").className = "button button-sm flex-1 " + (m === "sampling" ? "" : "outline-style");
+    $("btn-mode-coverage").className = "button button-sm flex-1 " + (m === "coverage" ? "" : "outline-style");
+    $("cfg-sampling").classList.toggle("hidden", m !== "sampling");
+    $("cfg-coverage").classList.toggle("hidden", m !== "coverage");
+    $("mode-help").textContent = m === "sampling"
+      ? "PPS sample of GPS-pinned households for inference."
+      : "Divide the area into work areas covering every household.";
+    resetPreviewButtons();
+  }
+  $("btn-mode-sampling").addEventListener("click", () => setMode("sampling"));
+  $("btn-mode-coverage").addEventListener("click", () => setMode("coverage"));
+
+  // ---- area-input tabs ----
+  function setInput(i) {
+    input = i;
+    [["draw", "input-draw"], ["admin", "input-admin"], ["pin", "input-pin"]].forEach(([k, el]) =>
+      $(el).classList.toggle("hidden", k !== i));
+    ["draw", "admin", "pin"].forEach((k) =>
+      $("btn-input-" + k).className = "button button-sm flex-1 " + (k === i ? "" : "outline-style"));
+    if (i !== "pin") disarmPin();
+  }
+  $("btn-input-draw").addEventListener("click", () => setInput("draw"));
+  $("btn-input-admin").addEventListener("click", () => { setInput("admin"); loadCountries(); });
+  $("btn-input-pin").addEventListener("click", () => setInput("pin"));
+
+  // ---- arm ----
   function setArm(arm) {
     currentArm = arm;
-    const active = "ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800";
-    const activeCmp = "ring-2 ring-blue-500 bg-blue-50 text-blue-800";
-    btnInt.className = "button button-sm flex-1 " + (arm === "intervention" ? active : "outline-style");
-    btnCmp.className = "button button-sm flex-1 " + (arm === "comparison" ? activeCmp : "outline-style");
+    $("btn-arm-intervention").className = "button button-sm flex-1 " + (arm === "intervention" ? "ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800" : "outline-style");
+    $("btn-arm-comparison").className = "button button-sm flex-1 " + (arm === "comparison" ? "ring-2 ring-blue-500 bg-blue-50 text-blue-800" : "outline-style");
   }
-  btnInt.addEventListener("click", () => setArm("intervention"));
-  btnCmp.addEventListener("click", () => setArm("comparison"));
+  $("btn-arm-intervention").addEventListener("click", () => setArm("intervention"));
+  $("btn-arm-comparison").addEventListener("click", () => setArm("comparison"));
 
   function tagFeature(id) {
     draw.setFeatureProperty(id, "arm", currentArm);
-    // Re-set the feature so custom styles repaint with the new property.
-    const f = draw.get(id);
-    if (f) { draw.add(f); }
+    const f = draw.get(id); if (f) draw.add(f);
   }
 
+  // ---- circle (pin) display ----
+  function circlePolygon(lon, lat, radiusM, steps = 48) {
+    const coords = [];
+    const dLat = radiusM / 111320;
+    const dLon = radiusM / (111320 * Math.cos(lat * Math.PI / 180));
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * 2 * Math.PI;
+      coords.push([lon + dLon * Math.cos(t), lat + dLat * Math.sin(t)]);
+    }
+    return { type: "Feature", geometry: { type: "Polygon", coordinates: [coords] }, properties: { arm: currentArm } };
+  }
+  function renderCircles() {
+    const fc = { type: "FeatureCollection", features: circleAreas.map((c) => circlePolygon(c.circle.lon, c.circle.lat, c.circle.radius_m)) };
+    upsertSource("rooftop-circles", fc);
+    if (!map.getLayer("rooftop-circles-fill")) {
+      map.addLayer({ id: "rooftop-circles-fill", type: "fill", source: "rooftop-circles",
+        paint: { "fill-color": "#8b5cf6", "fill-opacity": 0.15 } });
+      map.addLayer({ id: "rooftop-circles-line", type: "line", source: "rooftop-circles",
+        paint: { "line-color": "#8b5cf6", "line-width": 2 } });
+    }
+    refreshStats();
+  }
+
+  function disarmPin() { dropPinArmed = false; map.getCanvas().style.cursor = ""; $("btn-drop-pin").classList.remove("seg-on"); }
+  $("btn-drop-pin").addEventListener("click", () => {
+    dropPinArmed = !dropPinArmed;
+    $("btn-drop-pin").classList.toggle("seg-on", dropPinArmed);
+    map.getCanvas().style.cursor = dropPinArmed ? "crosshair" : "";
+    $("pin-status").textContent = dropPinArmed ? "Click the map to place the pin." : "";
+  });
+  map.on("click", (e) => {
+    if (!dropPinArmed) return;
+    const r = Math.max(20, +$("inp-pin-radius").value || 500);
+    circleAreas.push({ arm: currentArm, circle: { lon: e.lngLat.lng, lat: e.lngLat.lat, radius_m: r } });
+    renderCircles();
+    $("pin-status").textContent = `${circleAreas.length} pin area(s). Click to add more, or Preview.`;
+  });
+
+  // ---- admin-area picker ----
+  let countriesLoaded = false;
+  let parentArea = null;
+  async function loadCountries() {
+    if (countriesLoaded) return;
+    countriesLoaded = true;
+    try {
+      const data = await (await fetch(URLS.countries)).json();
+      const bespoke = new Set(data.bespoke || []);
+      const sel = $("sel-country");
+      sel.innerHTML = "";
+      (data.countries || []).forEach((c) => {
+        const o = document.createElement("option");
+        o.value = c.alpha3;
+        o.textContent = (bespoke.has(c.alpha3) ? "★ " : "") + c.name;
+        if (c.alpha3 === "NGA") o.selected = true;
+        sel.appendChild(o);
+      });
+    } catch (e) { $("area-source").textContent = "Could not load countries: " + e; }
+  }
+  $("btn-area-search").addEventListener("click", () => { parentArea = null; searchAreas(); });
+  async function searchAreas() {
+    const body = { country: $("sel-country").value, level: +$("sel-level").value, q: $("inp-area-search").value || null };
+    if (parentArea) body.parent = parentArea;
+    $("area-source").textContent = "Searching…";
+    try {
+      const data = await (await post(URLS.areas, body)).json();
+      if (data.status !== "ok") { $("area-source").textContent = data.detail || "lookup failed"; return; }
+      $("area-source").innerHTML = `source: <span class="font-medium">${data.source === "labs" ? "bespoke (labs)" : "Overture"}</span> · ${data.areas.length} areas`;
+      renderAreaList(data.areas);
+    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
+  }
+  function renderAreaList(areas) {
+    const box = $("list-areas");
+    box.innerHTML = "";
+    areas.forEach((a) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between gap-2 px-2 py-1 text-sm hover:bg-gray-50";
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "text-left flex-1 truncate text-emerald-700";
+      name.textContent = a.name + (a.area_km2 ? ` · ${a.area_km2} km²` : "");
+      name.title = "Use as area";
+      name.addEventListener("click", () => useArea(a));
+      row.appendChild(name);
+      if (a.level < 3) {
+        const drill = document.createElement("button");
+        drill.type = "button";
+        drill.className = "text-xs text-gray-400 hover:text-gray-700";
+        drill.textContent = "drill ↓";
+        drill.title = "List areas inside this one";
+        drill.addEventListener("click", () => { parentArea = a; $("sel-level").value = String(a.level + 1); searchAreas(); });
+        row.appendChild(drill);
+      }
+      box.appendChild(row);
+    });
+  }
+  async function useArea(a) {
+    $("area-source").textContent = `Loading ${a.name}…`;
+    try {
+      const data = await (await post(URLS.geometry, { area: a })).json();
+      if (data.status !== "ok") { $("area-source").textContent = data.detail || "geometry failed"; return; }
+      const ids = draw.add({ type: "Feature", geometry: data.geometry, properties: { arm: currentArm } });
+      ids.forEach((id) => tagFeature(id));
+      fitTo(data.geometry);
+      refreshStats();
+      $("area-source").textContent = `Added "${a.name}" as a ${currentArm} area.`;
+    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
+  }
+
+  // ---- stats / area ----
   function refreshStats() {
     const fc = draw.getAll();
     let intervention = 0, comparison = 0, areaM2 = 0;
-    fc.features.forEach((f) => {
-      const arm = (f.properties && f.properties.arm) || "intervention";
-      if (arm === "comparison") comparison++; else intervention++;
-      try { areaM2 += turfArea(f); } catch (e) { /* turf optional */ }
-    });
-    document.getElementById("stat-intervention").textContent = intervention;
-    document.getElementById("stat-comparison").textContent = comparison;
+    const bump = (arm) => { if (arm === "comparison") comparison++; else intervention++; };
+    fc.features.forEach((f) => { const arm = (f.properties && f.properties.arm) || "intervention"; bump(arm); try { areaM2 += polyArea(f.geometry); } catch (e) {} });
+    circleAreas.forEach((c) => { bump(c.arm); areaM2 += Math.PI * c.circle.radius_m * c.circle.radius_m; });
+    $("stat-intervention").textContent = intervention;
+    $("stat-comparison").textContent = comparison;
     const km2 = areaM2 / 1e6;
-    document.getElementById("stat-area").textContent = km2 ? km2.toFixed(2) + " km²" : "—";
+    $("stat-area").textContent = km2 ? km2.toFixed(2) + " km²" : "—";
   }
-
-  // Minimal spherical polygon area (m²) so we don't pull in turf for one number.
-  function turfArea(feature) {
-    const R = 6378137;
-    function ringArea(coords) {
-      let total = 0;
-      for (let i = 0; i < coords.length; i++) {
-        const [lon1, lat1] = coords[i];
-        const [lon2, lat2] = coords[(i + 1) % coords.length];
-        total += (toRad(lon2) - toRad(lon1)) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
-      }
-      return Math.abs(total * R * R / 2);
-    }
-    const toRad = (d) => (d * Math.PI) / 180;
-    const g = feature.geometry;
+  function polyArea(g) {
     if (!g || g.type !== "Polygon") return 0;
-    return ringArea(g.coordinates[0]);
+    const R = 6378137, toRad = (d) => (d * Math.PI) / 180, coords = g.coordinates[0];
+    let total = 0;
+    for (let i = 0; i < coords.length; i++) {
+      const [lon1, lat1] = coords[i], [lon2, lat2] = coords[(i + 1) % coords.length];
+      total += (toRad(lon2) - toRad(lon1)) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
+    }
+    return Math.abs(total * R * R / 2);
+  }
+  function fitTo(geom) {
+    const b = new mapboxgl.LngLatBounds();
+    const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c);
+    walk(geom.coordinates);
+    if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 16 });
   }
 
   map.on("draw.create", (e) => { e.features.forEach((f) => tagFeature(f.id)); refreshStats(); });
   map.on("draw.update", refreshStats);
   map.on("draw.delete", refreshStats);
 
-  setArm("intervention");
+  function upsertSource(id, data) { const s = map.getSource(id); if (s) s.setData(data); else map.addSource(id, { type: "geojson", data }); }
 
-  // Add-or-update a GeoJSON source on the map.
-  function upsertSource(id, data) {
-    const src = map.getSource(id);
-    if (src) { src.setData(data); } else { map.addSource(id, { type: "geojson", data }); }
+  // ---- collect areas for preview ----
+  function collectAreas() {
+    const polys = draw.getAll().features.map((f) => ({ arm: (f.properties && f.properties.arm) || "intervention", geometry: f.geometry }));
+    return polys.concat(circleAreas);
   }
 
-  function renderPreview(data) {
+  // ---- render: sampling ----
+  function renderSampling(data) {
     upsertSource("rooftop-hulls", data.hulls);
     upsertSource("rooftop-pins", data.pins);
     if (!map.getLayer("rooftop-hulls-fill")) {
-      map.addLayer({ id: "rooftop-hulls-fill", type: "fill", source: "rooftop-hulls",
-        paint: { "fill-color": "#f59e0b", "fill-opacity": 0.12 } });
-      map.addLayer({ id: "rooftop-hulls-line", type: "line", source: "rooftop-hulls",
-        paint: { "line-color": "#f59e0b", "line-width": 1.5 } });
+      map.addLayer({ id: "rooftop-hulls-fill", type: "fill", source: "rooftop-hulls", paint: { "fill-color": "#f59e0b", "fill-opacity": 0.12 } });
+      map.addLayer({ id: "rooftop-hulls-line", type: "line", source: "rooftop-hulls", paint: { "line-color": "#f59e0b", "line-width": 1.5 } });
       map.addLayer({ id: "rooftop-pins-circle", type: "circle", source: "rooftop-pins",
-        paint: {
-          "circle-radius": ["case", ["==", ["get", "role"], "primary"], 5, 3.5],
-          "circle-color": ["case", ["==", ["get", "role"], "primary"], "#ef4444", "#fbbf24"],
-          "circle-stroke-color": "#fff", "circle-stroke-width": 1,
-        } });
+        paint: { "circle-radius": ["case", ["==", ["get", "role"], "primary"], 5, 3.5], "circle-color": ["case", ["==", ["get", "role"], "primary"], "#ef4444", "#fbbf24"], "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
     }
-    // Fit to pins.
     const feats = data.pins.features;
-    if (feats.length) {
-      const b = new mapboxgl.LngLatBounds();
-      feats.forEach((f) => b.extend(f.geometry.coordinates));
-      map.fitBounds(b, { padding: 60, maxZoom: 17 });
+    if (feats.length) { const b = new mapboxgl.LngLatBounds(); feats.forEach((f) => b.extend(f.geometry.coordinates)); map.fitBounds(b, { padding: 60, maxZoom: 17 }); }
+    $("preview-status").innerHTML = data.stats.map((s) =>
+      `<div class="mt-2 p-2 rounded bg-gray-50 border"><div class="font-semibold capitalize">${s.arm}</div>
+       <div>${(s.after_filters||0).toLocaleString()} buildings · ${s.psus_selected} PSUs</div>
+       <div><span class="text-red-600 font-medium">${s.primaries}</span> primary · <span class="text-amber-600 font-medium">${s.alternates}</span> alternate</div></div>`).join("");
+  }
+
+  // ---- render: coverage ----
+  function renderCoverage(data) {
+    upsertSource("rooftop-cov", data.areas);
+    if (!map.getLayer("rooftop-cov-fill")) {
+      map.addLayer({ id: "rooftop-cov-fill", type: "fill", source: "rooftop-cov", paint: { "fill-color": "#06b6d4", "fill-opacity": 0.18 } });
+      map.addLayer({ id: "rooftop-cov-line", type: "line", source: "rooftop-cov", paint: { "line-color": "#0891b2", "line-width": 1.5 } });
+      map.addLayer({ id: "rooftop-cov-label", type: "symbol", source: "rooftop-cov",
+        layout: { "text-field": ["to-string", ["get", "building_count"]], "text-size": 11 },
+        paint: { "text-color": "#0e7490", "text-halo-color": "#fff", "text-halo-width": 1 } });
     }
+    const b = new mapboxgl.LngLatBounds();
+    (data.areas.features || []).forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
+    if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 16 });
+    $("preview-status").innerHTML = data.stats.map((s) =>
+      `<div class="mt-2 p-2 rounded bg-gray-50 border"><div class="font-semibold capitalize">${s.arm} · ${s.strategy}</div>
+       <div>${(s.after_filters||0).toLocaleString()} buildings · ${s.work_areas} work areas</div>
+       <div>per-area buildings: min ${s.min_buildings} · med ${s.median_buildings} · max ${s.max_buildings}</div></div>`).join("");
   }
 
-  function renderStats(stats) {
-    const el = document.getElementById("preview-status");
-    el.innerHTML = stats.map((s) =>
-      `<div class="mt-2 p-2 rounded bg-gray-50 border border-gray-200">
-         <div class="font-semibold capitalize">${s.arm}</div>
-         <div>${s.after_filters.toLocaleString()} buildings · ${s.psus_selected} PSUs</div>
-         <div><span class="text-red-600 font-medium">${s.primaries}</span> primary ·
-              <span class="text-amber-600 font-medium">${s.alternates}</span> alternate pins</div>
-       </div>`).join("");
-  }
-
-  document.getElementById("btn-preview").addEventListener("click", async () => {
-    const statusEl = document.getElementById("preview-status");
-    const features = draw.getAll().features;
-    if (!features.length) { statusEl.textContent = "Draw an intervention area first."; return; }
-    statusEl.textContent = "Sampling… (first run fetches buildings, ~20s)";
-    const payload = {
-      areas: features.map((f) => ({ arm: (f.properties && f.properties.arm) || "intervention", geometry: f.geometry })),
-      config: {
-        target_clusters: +document.getElementById("cfg-clusters").value,
-        primary_per_psu: +document.getElementById("cfg-primary").value,
-        alternates_per_psu: +document.getElementById("cfg-alternate").value,
-        min_confidence: +document.getElementById("cfg-confidence").value,
-        area_min_m2: +document.getElementById("cfg-area-min").value,
-        area_max_m2: +document.getElementById("cfg-area-max").value,
-      },
+  // ---- config payloads ----
+  function samplingConfig() {
+    return {
+      target_clusters: +$("cfg-clusters").value, primary_per_psu: +$("cfg-primary").value,
+      alternates_per_psu: +$("cfg-alternate").value, min_confidence: +$("cfg-confidence").value,
+      area_min_m2: +$("cfg-area-min").value, area_max_m2: +$("cfg-area-max").value,
     };
-    try {
-      const resp = await fetch(PREVIEW_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json();
-      if (resp.ok && data.status === "ok") {
-        renderPreview(data);
-        renderStats(data.stats);
-        lastPreview = { areas: payload.areas, config: payload.config, pins: data.pins, hulls: data.hulls, stats: data.stats };
-        document.getElementById("btn-save").classList.remove("hidden");
-        document.getElementById("btn-csv").classList.remove("hidden");
-      } else {
-        statusEl.textContent = data.detail || ("HTTP " + resp.status);
-      }
-    } catch (err) {
-      statusEl.textContent = "Request failed: " + err;
-    }
-  });
-
-  let lastPreview = null;
-  document.getElementById("btn-save").addEventListener("click", async () => {
-    if (!lastPreview) { return; }
-    const saveEl = document.getElementById("save-status");
-    saveEl.textContent = "Saving frame…";
-    try {
-      const resp = await fetch(SAVE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
-        body: JSON.stringify(lastPreview),
-      });
-      const data = await resp.json();
-      saveEl.textContent = (resp.ok && data.status === "ok")
-        ? `Saved (frame #${data.frame_record_id}).`
-        : (data.detail || ("HTTP " + resp.status));
-    } catch (err) {
-      saveEl.textContent = "Save failed: " + err;
-    }
-  });
-
-  function getCookie(name) {
-    const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
-    return m ? m.pop() : "";
   }
+  function coverageConfig() {
+    const strategy = $("cfg-strategy").value;
+    return { strategy, buildings_per_cluster: +$("cfg-bpc").value, cell_size_m: +$("cfg-cellsize").value, balance_tolerance: +$("cfg-balance").value };
+  }
+  $("cfg-strategy").addEventListener("change", () => {
+    const grid = $("cfg-strategy").value === "grid";
+    $("wrap-cell").classList.toggle("hidden", !grid);
+    $("wrap-bpc").classList.toggle("hidden", grid);
+    $("wrap-balance").classList.toggle("hidden", grid);
+  });
 
-  document.getElementById("btn-csv").addEventListener("click", async () => {
-    if (!lastPreview) { return; }
-    const resp = await fetch(CSV_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
-      body: JSON.stringify({ pins: lastPreview.pins }),
-    });
-    if (!resp.ok) { document.getElementById("save-status").textContent = "CSV failed: HTTP " + resp.status; return; }
+  function resetPreviewButtons() { $("btn-save").classList.add("hidden"); $("btn-csv").classList.add("hidden"); }
+
+  // ---- preview ----
+  $("btn-preview").addEventListener("click", async () => {
+    const areas = collectAreas();
+    if (!areas.length) { $("preview-status").textContent = "Add an area first (draw, admin, or pin)."; return; }
+    $("preview-status").textContent = "Computing… (first run fetches buildings, ~20s)";
+    const config = mode === "sampling" ? samplingConfig() : coverageConfig();
+    try {
+      const resp = await post(URLS[mode], { areas, config });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { $("preview-status").textContent = data.detail || ("HTTP " + resp.status); return; }
+      if (mode === "sampling") { renderSampling(data); lastPreview = { mode, areas, config, pins: data.pins, hulls: data.hulls, stats: data.stats }; }
+      else { renderCoverage(data); lastPreview = { mode, areas, config, coverage_areas: data.areas, stats: data.stats }; }
+      $("btn-save").classList.remove("hidden");
+      $("btn-csv").classList.remove("hidden");
+    } catch (err) { $("preview-status").textContent = "Request failed: " + err; }
+  });
+
+  // ---- save ----
+  $("btn-save").addEventListener("click", async () => {
+    if (!lastPreview) return;
+    $("save-status").textContent = "Saving…";
+    try {
+      const resp = await post(URLS.save, lastPreview);
+      const data = await resp.json();
+      $("save-status").textContent = (resp.ok && data.status === "ok") ? `Saved (frame #${data.frame_record_id}).` : (data.detail || ("HTTP " + resp.status));
+    } catch (err) { $("save-status").textContent = "Save failed: " + err; }
+  });
+
+  // ---- CSV ----
+  $("btn-csv").addEventListener("click", async () => {
+    if (!lastPreview) return;
+    const body = mode === "coverage" ? { mode, coverage_areas: lastPreview.coverage_areas } : { mode, pins: lastPreview.pins };
+    const resp = await post(URLS.csv, body);
+    if (!resp.ok) { $("save-status").textContent = "CSV failed: HTTP " + resp.status; return; }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "rooftop_work_areas.csv";
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = `microplan_work_areas_opp{{ opp_id }}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
 
-  // Exposed for browser automation / debugging.
-  window.__rooftop = { map, draw, renderPreview, renderStats };
+  // init
+  setMode("sampling"); setInput("draw"); setArm("intervention");
+  window.__rooftop = { map, draw, get circleAreas() { return circleAreas; }, get lastPreview() { return lastPreview; }, setMode, setInput };
 })();
 </script>
 {% endblock %}
