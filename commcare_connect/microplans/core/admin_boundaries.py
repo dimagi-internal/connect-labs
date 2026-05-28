@@ -75,7 +75,7 @@ class AdminArea:
         }
 
     @classmethod
-    def from_json(cls, d: dict) -> "AdminArea":
+    def from_json(cls, d: dict) -> AdminArea:
         """Rebuild from a (client-supplied) dict, whitelisting fields."""
         ref = d.get("ref")
         return cls(
