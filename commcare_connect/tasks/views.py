@@ -486,6 +486,11 @@ def task_single_create(request):
         extra_data = body.get("extra_data") or {}
         if not isinstance(extra_data, dict):
             return JsonResponse({"success": False, "error": "extra_data must be an object"}, status=400)
+        # coaching_prompt may arrive as a top-level field (spread from taskForm)
+        # or inside extra_data — merge either way so it's always persisted.
+        coaching_prompt = body.get("coaching_prompt") or extra_data.get("coaching_prompt") or ""
+        if coaching_prompt:
+            extra_data = {**extra_data, "coaching_prompt": coaching_prompt}
 
         if not username:
             return JsonResponse({"success": False, "error": "username is required"}, status=400)
