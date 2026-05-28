@@ -90,6 +90,7 @@
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Preview</h2>
       <button type="button" id="btn-preview" class="button w-full">Preview frame</button>
       <button type="button" id="btn-save" class="button w-full mt-2 hidden">Save frame</button>
+      <button type="button" id="btn-csv" class="button button-sm outline-style w-full mt-2 hidden">Download Connect import CSV</button>
       <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
       <div id="save-status" class="mt-1 text-xs text-gray-500"></div>
     </section>
@@ -112,6 +113,7 @@
   const OPP_ID = "{{ opp_id|escapejs }}";
   const PREVIEW_URL = "{% url 'rooftop_surveys:preview_frame' opp_id=opp_id %}";
   const SAVE_URL = "{% url 'rooftop_surveys:save_frame' opp_id=opp_id %}";
+  const CSV_URL = "{% url 'rooftop_surveys:work_areas_csv' opp_id=opp_id %}";
   const CSRF_TOKEN = "{{ csrf_token }}";  // CSRF_USE_SESSIONS=True → token comes from the template, not a cookie
   if (!MAPBOX_TOKEN) { return; }
 
@@ -272,6 +274,7 @@
         renderStats(data.stats);
         lastPreview = { areas: payload.areas, config: payload.config, pins: data.pins, hulls: data.hulls, stats: data.stats };
         document.getElementById("btn-save").classList.remove("hidden");
+        document.getElementById("btn-csv").classList.remove("hidden");
       } else {
         statusEl.textContent = data.detail || ("HTTP " + resp.status);
       }
@@ -304,6 +307,22 @@
     const m = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
     return m ? m.pop() : "";
   }
+
+  document.getElementById("btn-csv").addEventListener("click", async () => {
+    if (!lastPreview) { return; }
+    const resp = await fetch(CSV_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
+      body: JSON.stringify({ pins: lastPreview.pins }),
+    });
+    if (!resp.ok) { document.getElementById("save-status").textContent = "CSV failed: HTTP " + resp.status; return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "rooftop_work_areas.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
 
   // Exposed for browser automation / debugging.
   window.__rooftop = { map, draw, renderPreview, renderStats };
