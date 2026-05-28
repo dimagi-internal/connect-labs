@@ -488,3 +488,38 @@ def click_menu_item(page: Page, item_text: str, *, timeout_ms: int = 5_000) -> b
             return True
         page.wait_for_timeout(150)
     return False
+
+
+def dwell_on_menu_item(page: Page, item_text: str, *, timeout_ms: int = 5_000) -> bool:
+    """Glide the synthetic cursor onto an open-menu item and rest on it.
+
+    Used right after opening a MenuButton dropdown so the recording shows
+    the cursor travelling to the chosen option (reads as deliberate) and
+    pausing on it before the click. Does NOT click — call
+    ``click_menu_item`` afterwards. Returns True if the item was found and
+    the cursor moved, False otherwise (caller can still attempt the click).
+    """
+    import time as _time
+
+    deadline = _time.time() + timeout_ms / 1000
+    box = None
+    while _time.time() < deadline:
+        box = page.evaluate(
+            """(label) => {
+                const items = [...document.querySelectorAll('div.absolute.z-20 button')];
+                const exact = items.find(b => b.innerText.trim() === label);
+                const fuzzy = items.find(b => b.innerText.includes(label));
+                const target = exact || fuzzy;
+                if (!target) return null;
+                const r = target.getBoundingClientRect();
+                return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+            }""",
+            item_text,
+        )
+        if box:
+            break
+        page.wait_for_timeout(150)
+    if not box:
+        return False
+    slow_move(page, box["x"], box["y"], steps=22)
+    return True

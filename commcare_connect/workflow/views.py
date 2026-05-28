@@ -441,71 +441,88 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 }
                 context["is_edit_mode"] = False
 
-                # Load Flags for this run (queried live; not stored on the
-                # run snapshot). Render code reads these via `view.flagsFor
-                # (username)` to render the Flag column pills and to dedup
-                # writes from `view.ensureAutoFlags(...)` on mount.
-                try:
-                    fda = FlagsDataAccess(request=self.request, opportunity_id=opportunity_id)
-                    for f in fda.get_flags_for_run(int(run_id)):
-                        flags_for_run.append(
-                            {
-                                "id": f.id,
-                                "flw_id": f.flw_id,
-                                "flag_key": f.flag_key,
-                                "flag_label": f.flag_label,
-                                "evidence": f.evidence,
-                                "source": f.source,
-                                "flagged_at": f.flagged_at,
-                                "flagged_by": f.flagged_by,
-                            }
-                        )
-                except Exception:
-                    logger.warning("Failed to load flags for run %s", run_id, exc_info=True)
+                # Flags / Audits / Tasks are surfaced to render code via
+                # view.flagsFor / view.auditsFor / view.tasksFor. Each is a
+                # FULL-table scan of the relevant LabsRecord type (the
+                # export API can't filter by labs_record_id / workflow_run_id
+                # server-side), so loading all three on every run-detail
+                # page is expensive — and pointless for a template that
+                # doesn't read that surface. The Program Admin Report, for
+                # instance, builds its own per-FLW rollup from its snapshot
+                # and never touches view.flagsFor/auditsFor/tasksFor; loading
+                # them just added three wasted scans to its (already heavy
+                # multi-opp) page load, which showed up as a multi-second
+                # blank screen at the top of the recorded drill-through.
+                #
+                # Gate each load on whether the render code actually
+                # references the helper. Self-maintaining: a template that
+                # starts using view.auditsFor automatically gets the data.
+                # Match the call form (".flagsFor(") rather than the bare
+                # word so a prose comment that merely mentions a helper
+                # (e.g. PAR's render code has a comment about
+                # "ensureAutoFlags") doesn't trigger a needless scan.
+                render_code_str = context.get("render_code") or ""
+                wants_flags = ".flagsFor(" in render_code_str or ".ensureAutoFlags(" in render_code_str
+                wants_audits = ".auditsFor(" in render_code_str
+                wants_tasks = ".tasksFor(" in render_code_str
 
-                # Load Audits + Tasks for this run. Read-side mirror of
-                # the flags pattern so any template that wants to flip
-                # per-row Actions to View/Create depending on what's
-                # already been created can read view.auditsFor(username)
-                # / view.tasksFor(username). Live-queried — the
-                # workflow_run snapshot never freezes these (the
-                # underlying records live their own lifecycle and may
-                # transition status after the run completes).
-                try:
-                    ada = AuditDataAccess(request=self.request, opportunity_id=opportunity_id)
-                    for a in ada.get_sessions_by_workflow_run(int(run_id)):
-                        # Match the per-FLW shape PAR's build_snapshot uses
-                        # so template render code can read both surfaces
-                        # without diverging field names.
-                        img = a.data.get("image_results") or {}
-                        audits_for_run.append(
-                            {
-                                "id": a.id,
-                                "flw_id": a.username or (a.data.get("flw_id") or ""),
-                                "status": a.status,
-                                "overall_result": a.overall_result,
-                                "pass_count": img.get("pass", 0),
-                                "fail_count": img.get("fail", 0),
-                                "pending_count": img.get("pending", 0),
-                            }
-                        )
-                except Exception:
-                    logger.warning("Failed to load audits for run %s", run_id, exc_info=True)
-                try:
-                    tda = TaskDataAccess(request=self.request, opportunity_id=opportunity_id)
-                    for t in tda.get_tasks_for_run(int(run_id)):
-                        tasks_for_run.append(
-                            {
-                                "id": t.id,
-                                "flw_id": t.username or (t.data.get("username") or ""),
-                                "status": t.status,
-                                "title": t.title,
-                                "priority": t.priority,
-                                "official_action": (t.resolution_details or {}).get("official_action"),
-                            }
-                        )
-                except Exception:
-                    logger.warning("Failed to load tasks for run %s", run_id, exc_info=True)
+                if wants_flags:
+                    try:
+                        fda = FlagsDataAccess(request=self.request, opportunity_id=opportunity_id)
+                        for f in fda.get_flags_for_run(int(run_id)):
+                            flags_for_run.append(
+                                {
+                                    "id": f.id,
+                                    "flw_id": f.flw_id,
+                                    "flag_key": f.flag_key,
+                                    "flag_label": f.flag_label,
+                                    "evidence": f.evidence,
+                                    "source": f.source,
+                                    "flagged_at": f.flagged_at,
+                                    "flagged_by": f.flagged_by,
+                                }
+                            )
+                    except Exception:
+                        logger.warning("Failed to load flags for run %s", run_id, exc_info=True)
+
+                if wants_audits:
+                    try:
+                        ada = AuditDataAccess(request=self.request, opportunity_id=opportunity_id)
+                        for a in ada.get_sessions_by_workflow_run(int(run_id)):
+                            # Match the per-FLW shape PAR's build_snapshot uses
+                            # so template render code can read both surfaces
+                            # without diverging field names.
+                            img = a.data.get("image_results") or {}
+                            audits_for_run.append(
+                                {
+                                    "id": a.id,
+                                    "flw_id": a.username or (a.data.get("flw_id") or ""),
+                                    "status": a.status,
+                                    "overall_result": a.overall_result,
+                                    "pass_count": img.get("pass", 0),
+                                    "fail_count": img.get("fail", 0),
+                                    "pending_count": img.get("pending", 0),
+                                }
+                            )
+                    except Exception:
+                        logger.warning("Failed to load audits for run %s", run_id, exc_info=True)
+
+                if wants_tasks:
+                    try:
+                        tda = TaskDataAccess(request=self.request, opportunity_id=opportunity_id)
+                        for t in tda.get_tasks_for_run(int(run_id)):
+                            tasks_for_run.append(
+                                {
+                                    "id": t.id,
+                                    "flw_id": t.username or (t.data.get("username") or ""),
+                                    "status": t.status,
+                                    "title": t.title,
+                                    "priority": t.priority,
+                                    "official_action": (t.resolution_details or {}).get("official_action"),
+                                }
+                            )
+                    except Exception:
+                        logger.warning("Failed to load tasks for run %s", run_id, exc_info=True)
             else:
                 # No run_id and not edit mode — render the run picker. Past runs
                 # are listed; user clicks "Open" to load one or "Start Run" to
