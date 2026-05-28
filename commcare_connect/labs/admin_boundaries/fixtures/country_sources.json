@@ -10,38 +10,15 @@
       "osm": {
         "type": "api",
         "max_level": 4
-      },
-      "grid3": {
-        "type": "url",
-        "max_level": 3,
-        "levels": {
-          "1": {
-            "url": "https://data.grid3.org/datasets/GRID3::nigeria-state-boundaries/explore",
-            "name_field": "statename",
-            "id_field": "statecode",
-            "note": "PLACEHOLDER - need actual GeoJSON download URL"
-          },
-          "2": {
-            "url": "https://data.grid3.org/datasets/GRID3::nigeria-local-government-area-boundaries/explore",
-            "name_field": "lganame",
-            "id_field": "lgacode",
-            "note": "PLACEHOLDER - need actual GeoJSON download URL"
-          },
-          "3": {
-            "url": "https://data.grid3.org/datasets/GRID3::nigeria-ward-boundaries/explore",
-            "name_field": "wardname",
-            "id_field": "wardcode",
-            "note": "PLACEHOLDER - need actual GeoJSON download URL"
-          }
-        }
       }
     },
     "recommended": {
       "0": "geoboundaries",
       "1": "geoboundaries",
       "2": "geoboundaries",
-      "3": "grid3"
-    }
+      "3": "geopode"
+    },
+    "_note": "Ward (ADM3) boundaries load via GeoPoDe — see fixtures/geopode_sources.json + `manage.py load_geopode_from_drive --iso NGA`. The old GRID3 'explore' URLs were never direct GeoJSON downloads, so that path was removed."
   },
   {
     "iso_code": "KEN",
