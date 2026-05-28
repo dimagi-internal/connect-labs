@@ -49,6 +49,30 @@ class TestCoverageFrame:
         # coverage wants completeness (MS/OSM roofs too), unlike sampling's 0.7
         assert CoverageConfig().min_confidence is None
 
+    def test_grid_strategy_covers_all_buildings(self, monkeypatch):
+        monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(120, seed=7))
+        res = generate_coverage_frame(_AREA, CoverageConfig(strategy="grid", cell_size_m=150))
+        feats = res.areas_geojson["features"]
+        # grid is deterministic; every building lands in exactly one cell
+        assert sum(f["properties"]["building_count"] for f in feats) == 120
+        for f in feats:
+            assert f["properties"]["expected_visit_count"] == f["properties"]["building_count"]
+        assert res.stats[0]["strategy"] == "grid"
+
+    def test_circle_area_input(self, monkeypatch):
+        seen = {}
+
+        def fake_fetch(area, min_confidence=None):
+            seen["area"] = area
+            return _scatter(40, seed=8)
+
+        monkeypatch.setattr(coverage_frame, "fetch_buildings", fake_fetch)
+        circle_area = [{"arm": "coverage", "circle": {"lon": LON0, "lat": LAT0, "radius_m": 300}}]
+        res = generate_coverage_frame(circle_area, CoverageConfig(buildings_per_cluster=20))
+        # the area passed to fetch is the buffered circle (a polygon), not empty
+        assert seen["area"].geom_type in ("Polygon", "MultiPolygon")
+        assert sum(f["properties"]["building_count"] for f in res.areas_geojson["features"]) == 40
+
 
 class TestCoverageWorkAreas:
     def test_cluster_as_workarea(self):

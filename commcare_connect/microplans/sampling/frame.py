@@ -11,9 +11,10 @@ import logging
 from dataclasses import dataclass, field
 
 import pandas as pd
-from shapely.geometry import MultiPoint, mapping, shape
+from shapely.geometry import MultiPoint, mapping
 from shapely.ops import unary_union
 
+from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
 from commcare_connect.microplans.core.footprints import fetch_buildings
 from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
@@ -66,10 +67,14 @@ class FrameResult:
 
 
 def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
-    """areas: [{"arm": "intervention"|"comparison", "geometry": <GeoJSON geom>}, ...]"""
+    """areas: [{"arm": "intervention"|"comparison", "geometry": <GeoJSON>}, ...].
+
+    Each area may supply a ``geometry`` (drawn polygon or resolved admin area) or
+    a ``circle`` ({lon, lat, radius_m}); see core.area_input.resolve_area.
+    """
     by_arm: dict[str, list] = {}
     for a in areas:
-        by_arm.setdefault(a.get("arm", "intervention"), []).append(shape(a["geometry"]))
+        by_arm.setdefault(a.get("arm", "intervention"), []).append(resolve_area(a))
 
     pin_features: list[dict] = []
     hull_features: list[dict] = []
