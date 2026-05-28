@@ -66,6 +66,7 @@ class RecorderSession:
         accept_dialogs: bool = True,
         with_cursor: bool = True,
         record: bool = True,
+        defer_record: bool = False,
     ) -> None:
         self.out_dir = Path(out_dir)
         self.manifest_path = Path(manifest_path) if manifest_path else None
@@ -74,6 +75,11 @@ class RecorderSession:
         self.accept_dialogs = accept_dialogs
         self.with_cursor = with_cursor
         self.record = record
+        # When True, the video context is NOT created in __enter__; the
+        # caller invokes start_recording() after any pre-record setup so the
+        # clip doesn't open on a blank screen. See start_recording().
+        self.defer_record = defer_record
+        self._storage_state: str | None = None
 
         self._pw = None
         self.browser = None
@@ -108,6 +114,26 @@ class RecorderSession:
             )
             self.warm_page = self.warm_context.new_page()
 
+        self._storage_state = storage_state
+        if not self.defer_record:
+            self.start_recording()
+        return self
+
+    def start_recording(self) -> Page:
+        """Create the recorded (video) context + page and return the page.
+
+        Split out of ``__enter__`` so a caller that needs to do slow setup
+        first — discovery, server-side cache pre-warming — can run that work
+        BEFORE the video starts. Playwright begins capturing the moment a
+        context with ``record_video_dir`` is created, so any navigation that
+        happens before this call would otherwise be recorded as a blank
+        ``about:blank`` screen at the head of the clip. Pass
+        ``defer_record=True`` and call this once you're ready for the first
+        real scene. Idempotent-ish: calling twice returns the existing page.
+        """
+        if self.page is not None:
+            return self.page
+
         record_kwargs: dict[str, Any] = {}
         if self.record:
             record_kwargs = {
@@ -117,7 +143,7 @@ class RecorderSession:
         self.context = self.browser.new_context(
             viewport=self.viewport,
             device_scale_factor=2,
-            storage_state=storage_state,
+            storage_state=self._storage_state,
             **record_kwargs,
         )
         if self.with_cursor:
@@ -141,7 +167,7 @@ class RecorderSession:
             "pageerror",
             lambda e: self.console_log.append(f"[pageerror] {str(e)[:200]}"),
         )
-        return self
+        return self.page
 
     def __exit__(self, exc_type, exc, tb) -> None:
         try:
