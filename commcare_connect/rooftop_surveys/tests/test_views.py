@@ -126,3 +126,51 @@ def test_preview_happy_path(client, django_user_model, monkeypatch):
     assert body["status"] == "ok"
     assert body["pins"]["features"][0]["properties"]["role"] == "primary"
     assert body["stats"][0]["psus_selected"] == 1
+
+
+def test_save_frame_persists_area_and_frame(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+
+    class FakeRecord:
+        def __init__(self, rid):
+            self.id = rid
+
+    class FakeDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def save_area(self, areas, config, name=""):
+            return FakeRecord(11)
+
+        def save_frame(self, area_record_id, pins, hulls, stats):
+            assert area_record_id == 11
+            return FakeRecord(22)
+
+    monkeypatch.setattr("commcare_connect.rooftop_surveys.data_access.RooftopDataAccess", FakeDA)
+    resp = client.post(
+        reverse("rooftop_surveys:save_frame", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}],
+                "pins": {"type": "FeatureCollection", "features": []},
+                "hulls": {"type": "FeatureCollection", "features": []},
+                "stats": [],
+                "config": {},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["area_record_id"] == 11
+    assert body["frame_record_id"] == 22
+
+
+def test_save_frame_rejects_missing_pins(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("rooftop_surveys:save_frame", kwargs={"opp_id": 123}),
+        data=json.dumps({"areas": []}),  # no "pins"
+        content_type="application/json",
+    )
+    assert resp.status_code == 400

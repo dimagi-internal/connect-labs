@@ -68,3 +68,34 @@ class PreviewFrameView(LoginRequiredMixin, View):
                 "stats": result.stats,
             }
         )
+
+
+class SaveFrameView(LoginRequiredMixin, View):
+    """Persist a previewed frame (area + pins) as LabsRecords for this opp.
+
+    The client posts the already-generated pins/hulls/stats from the preview so
+    we don't recompute. Returns the new record ids.
+    """
+
+    def post(self, request, opp_id):
+        from commcare_connect.rooftop_surveys.data_access import RooftopDataAccess
+
+        try:
+            payload = json.loads(request.body)
+            areas = payload["areas"]
+            pins = payload["pins"]
+            hulls = payload.get("hulls", {"type": "FeatureCollection", "features": []})
+            stats = payload.get("stats", [])
+            config = payload.get("config", {})
+        except (json.JSONDecodeError, KeyError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            area_record = da.save_area(areas=areas, config=config, name=payload.get("name", ""))
+            frame_record = da.save_frame(area_record_id=area_record.id, pins=pins, hulls=hulls, stats=stats)
+        except Exception as e:  # noqa: BLE001 — surface to UI
+            logger.exception("rooftop save_frame failed (opp=%s)", opp_id)
+            return JsonResponse({"status": "error", "detail": str(e)}, status=502)
+
+        return JsonResponse({"status": "ok", "area_record_id": area_record.id, "frame_record_id": frame_record.id})
