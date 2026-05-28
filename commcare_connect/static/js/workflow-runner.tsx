@@ -505,6 +505,8 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
       if (params.username) urlParams.set('username', params.username);
       if (params.title) urlParams.set('title', params.title);
       if (params.description) urlParams.set('description', params.description);
+      if (params.coaching_prompt)
+        urlParams.set('coaching_prompt', params.coaching_prompt);
       if (params.workflow_instance_id)
         urlParams.set(
           'workflow_instance_id',

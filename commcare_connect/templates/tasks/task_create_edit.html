@@ -307,7 +307,15 @@
         </div>
         <div class="p-6 space-y-3">
           {% for msg in task.ocs_conversation %}
-            {% if msg.role == "bot" %}
+            {% if msg.role == "system" %}
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div class="flex items-center gap-2 mb-1">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-600 text-xs"></i>
+                <span class="text-xs font-semibold uppercase tracking-wide text-amber-700">Instructions to assistant</span>
+              </div>
+              <div class="text-sm text-gray-700">{{ msg.text }}</div>
+            </div>
+            {% elif msg.role == "bot" %}
             <div class="flex gap-3">
               <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
                 <i class="fa-solid fa-robot text-indigo-600 text-sm"></i>
@@ -993,7 +1001,7 @@ function taskCreateEditPage() {
           priority: taskData.priority || 'medium',
           title: taskData.title || '',
           description: taskData.description || '',
-          coaching_prompt: taskData.coaching_prompt || '',
+          coaching_prompt: taskData.coaching_prompt || this.quickParams.coaching_prompt || '',
           status: taskData.status || 'investigating',
           assigned_to_type: taskData.assigned_to_type || 'self',
           assigned_to_name: taskData.assigned_to_name || '',
@@ -1035,6 +1043,9 @@ function taskCreateEditPage() {
       }
       if (this.quickParams.description) {
         this.taskForm.description = this.quickParams.description;
+      }
+      if (this.quickParams.coaching_prompt) {
+        this.taskForm.coaching_prompt = this.quickParams.coaching_prompt;
       }
       if (this.quickParams.audit_session_id) {
         this.auditSessionId = parseInt(this.quickParams.audit_session_id, 10);
@@ -1079,8 +1090,13 @@ function taskCreateEditPage() {
           this.taskCreated = true;
           this.showToastMessage('Task created successfully!');
 
-          // Redirect to edit mode for the new task
-          window.location.href = `/tasks/${data.task_id}/edit/`;
+          // Redirect to edit mode. Pass coaching_prompt in URL so the edit
+          // page can pre-fill the OCS modal even if the task was just
+          // created and the server save hasn't propagated yet.
+          const editUrl = new URL(`/tasks/${data.task_id}/edit/`, window.location.origin);
+          if (this.taskForm.coaching_prompt)
+            editUrl.searchParams.set('coaching_prompt', this.taskForm.coaching_prompt);
+          window.location.href = editUrl.toString();
         } else {
           this.error = data.error || 'Failed to create task';
         }

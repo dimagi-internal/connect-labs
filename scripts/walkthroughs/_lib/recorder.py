@@ -66,6 +66,7 @@ class RecorderSession:
         accept_dialogs: bool = True,
         with_cursor: bool = True,
         record: bool = True,
+        defer_record: bool = False,
     ) -> None:
         self.out_dir = Path(out_dir)
         self.manifest_path = Path(manifest_path) if manifest_path else None
@@ -74,6 +75,11 @@ class RecorderSession:
         self.accept_dialogs = accept_dialogs
         self.with_cursor = with_cursor
         self.record = record
+        # When True, the video context is NOT created in __enter__; the
+        # caller invokes start_recording() after any pre-record setup so the
+        # clip doesn't open on a blank screen. See start_recording().
+        self.defer_record = defer_record
+        self._storage_state: str | None = None
 
         self._pw = None
         self.browser = None
@@ -108,6 +114,26 @@ class RecorderSession:
             )
             self.warm_page = self.warm_context.new_page()
 
+        self._storage_state = storage_state
+        if not self.defer_record:
+            self.start_recording()
+        return self
+
+    def start_recording(self) -> Page:
+        """Create the recorded (video) context + page and return the page.
+
+        Split out of ``__enter__`` so a caller that needs to do slow setup
+        first — discovery, server-side cache pre-warming — can run that work
+        BEFORE the video starts. Playwright begins capturing the moment a
+        context with ``record_video_dir`` is created, so any navigation that
+        happens before this call would otherwise be recorded as a blank
+        ``about:blank`` screen at the head of the clip. Pass
+        ``defer_record=True`` and call this once you're ready for the first
+        real scene. Idempotent-ish: calling twice returns the existing page.
+        """
+        if self.page is not None:
+            return self.page
+
         record_kwargs: dict[str, Any] = {}
         if self.record:
             record_kwargs = {
@@ -117,7 +143,7 @@ class RecorderSession:
         self.context = self.browser.new_context(
             viewport=self.viewport,
             device_scale_factor=2,
-            storage_state=storage_state,
+            storage_state=self._storage_state,
             **record_kwargs,
         )
         if self.with_cursor:
@@ -141,7 +167,7 @@ class RecorderSession:
             "pageerror",
             lambda e: self.console_log.append(f"[pageerror] {str(e)[:200]}"),
         )
-        return self
+        return self.page
 
     def __exit__(self, exc_type, exc, tb) -> None:
         try:
@@ -310,6 +336,41 @@ def click_text(
     return True
 
 
+def click_text_exact(page: Page, text: str, *, timeout_ms: int = 5_000) -> bool:
+    """Click the element whose trimmed innerText exactly equals ``text``.
+
+    Unlike ``click_text`` this does an exact (not substring) match and does
+    NOT wait for networkidle afterward — use it for in-page actions that
+    submit via JS without navigating (e.g. the bulk-assessment "Complete
+    Image Review" button, on a page whose GDrive image streaming means
+    networkidle never fires). Glides the cursor onto the target first so
+    the click reads naturally in the recording. Returns False if no exact
+    match appears within the timeout.
+    """
+    import time as _time
+
+    deadline = _time.time() + timeout_ms / 1000
+    while _time.time() < deadline:
+        box = page.evaluate(
+            """(label) => {
+                const els = [...document.querySelectorAll('button, a')];
+                const t = els.find(e => e.innerText.trim() === label && !e.disabled);
+                if (!t) return null;
+                t.scrollIntoView({behavior: 'instant', block: 'center'});
+                const r = t.getBoundingClientRect();
+                return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+            }""",
+            text,
+        )
+        if box:
+            slow_move(page, box["x"], box["y"], steps=20)
+            page.wait_for_timeout(150)
+            page.mouse.click(box["x"], box["y"])
+            return True
+        page.wait_for_timeout(150)
+    return False
+
+
 def smooth_scroll_to_text(page: Page, text: str, *, header_tag: str = "h3") -> bool:
     """Smooth-scroll the page so the element containing ``text`` is in view.
 
@@ -451,6 +512,30 @@ def row_button_labels(page: Page, username: str) -> list[str]:
     )
 
 
+def ensure_in_viewport(page: Page, box: dict | None, *, label: str = "") -> dict | None:
+    """If ``box`` (a {x, y} in viewport coords) is off the recorded viewport,
+    scroll to bring it in and return its new position; otherwise return it
+    unchanged. Loudly flags an off-screen target either way.
+
+    The recording only shows what's in the viewport, so a click whose target
+    sits below the fold is invisible AND lands on nothing the viewer can see.
+    This is the "flag if the click is off the recorded UI and adjust" guard:
+    we scroll the element toward the vertical centre, re-read its box, and
+    warn if it still can't be brought on-screen.
+    """
+    if not box:
+        return box
+    vp = page.viewport_size or {"width": 1440, "height": 900}
+    vh = vp["height"]
+    y = box.get("y", 0)
+    if 0 <= y <= vh - 8 and box.get("x", 0) >= 0:
+        return box  # already visible
+    print(f"  ! off-viewport target{' (' + label + ')' if label else ''}: y={y:.0f} vh={vh} — scrolling in")
+    page.mouse.wheel(0, y - vh * 0.45)
+    page.wait_for_timeout(400)
+    return box  # caller should re-measure if it needs the post-scroll box
+
+
 def click_menu_item(page: Page, item_text: str, *, timeout_ms: int = 5_000) -> bool:
     """Click an item inside the currently-open MenuButton dropdown.
 
@@ -465,26 +550,167 @@ def click_menu_item(page: Page, item_text: str, *, timeout_ms: int = 5_000) -> b
     so e.g. ``click_menu_item(page, "Audit low-MUAC visits")`` is the
     canonical way to fire the sam_low/mam_low quick action.
 
+    Before clicking, verifies the target sits inside the recorded viewport
+    and warns if it doesn't — a click the viewer can't see is a recording
+    bug, not just a functional one.
+
     Returns True if a click was issued, False if the item never appeared.
     Caller waits on the resulting navigation/network themselves.
     """
     import time as _time
 
     deadline = _time.time() + timeout_ms / 1000
+    vp = page.viewport_size or {"width": 1440, "height": 900}
     while _time.time() < deadline:
-        clicked = page.evaluate(
+        # Find the target's viewport box first so we can flag/adjust an
+        # off-screen click rather than clicking blind.
+        box = page.evaluate(
             """(label) => {
                 const items = [...document.querySelectorAll('div.absolute.z-20 button')];
                 const exact = items.find(b => b.innerText.trim() === label);
                 const fuzzy = items.find(b => b.innerText.includes(label));
                 const target = exact || fuzzy;
-                if (!target || target.disabled) return false;
-                target.click();
-                return true;
+                if (!target || target.disabled) return null;
+                const r = target.getBoundingClientRect();
+                return {x: r.x + r.width / 2, y: r.y + r.height / 2};
             }""",
             item_text,
         )
-        if clicked:
-            return True
+        if box:
+            if not (0 <= box["y"] <= vp["height"] - 8):
+                print(
+                    f"  ! menu item {item_text!r} off-viewport (y={box['y']:.0f}) "
+                    "— menu should flip up; check template"
+                )
+            clicked = page.evaluate(
+                """(label) => {
+                    const items = [...document.querySelectorAll('div.absolute.z-20 button')];
+                    const exact = items.find(b => b.innerText.trim() === label);
+                    const fuzzy = items.find(b => b.innerText.includes(label));
+                    const target = exact || fuzzy;
+                    if (!target || target.disabled) return false;
+                    target.click();
+                    return true;
+                }""",
+                item_text,
+            )
+            if clicked:
+                return True
         page.wait_for_timeout(150)
     return False
+
+
+def dwell_on_menu_item(page: Page, item_text: str, *, timeout_ms: int = 5_000) -> bool:
+    """Glide the synthetic cursor onto an open-menu item and rest on it.
+
+    Used right after opening a MenuButton dropdown so the recording shows
+    the cursor travelling to the chosen option (reads as deliberate) and
+    pausing on it before the click. Does NOT click — call
+    ``click_menu_item`` afterwards. Returns True if the item was found and
+    the cursor moved, False otherwise (caller can still attempt the click).
+    """
+    import time as _time
+
+    deadline = _time.time() + timeout_ms / 1000
+    box = None
+    while _time.time() < deadline:
+        box = page.evaluate(
+            """(label) => {
+                const items = [...document.querySelectorAll('div.absolute.z-20 button')];
+                const exact = items.find(b => b.innerText.trim() === label);
+                const fuzzy = items.find(b => b.innerText.includes(label));
+                const target = exact || fuzzy;
+                if (!target) return null;
+                const r = target.getBoundingClientRect();
+                return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+            }""",
+            item_text,
+        )
+        if box:
+            break
+        page.wait_for_timeout(150)
+    if not box:
+        return False
+    slow_move(page, box["x"], box["y"], steps=22)
+    return True
+
+
+def pass_each_audit_image(
+    page: Page, *, dwell_ms: int = 550, max_images: int = 12, per_image_load_ms: int = 8_000
+) -> int:
+    """Click the per-photo **Pass** button on each assessment widget, in order.
+
+    The bulk-assessment page renders one ``.assessment-widget`` per photo,
+    each with a "Pass" button (`updateResult('pass')`). This walks them
+    top-to-bottom — scrolling each into view, **waiting for that photo to
+    decode**, gliding the cursor to its Pass button, clicking, and dwelling
+    — so the recording shows the manager working through the audit photo by
+    photo on loaded images.
+
+    Waiting per-image (instead of one upfront "all N images decoded" gate)
+    is deliberate: the photos stream from GDrive on a cold cache, and
+    blocking on all of them at once is what produced the ~30s mid-audit
+    stall. Scrolling each widget into view also triggers its
+    ``loading="lazy"`` fetch, so the wait both paces the scene and
+    guarantees the photo is visible before it's passed. Each per-image
+    wait is capped at ``per_image_load_ms`` so one genuinely-slow photo
+    can't hang the whole walk.
+
+    Skips a widget already marked pass. Returns the number of Pass clicks.
+    """
+    import time as _time
+
+    count = page.evaluate("() => document.querySelectorAll('.assessment-widget').length")
+    clicked = 0
+    for idx in range(min(count, max_images)):
+        # Scroll the widget into view (also kicks off its lazy image load).
+        scrolled = page.evaluate(
+            """(idx) => {
+                const w = document.querySelectorAll('.assessment-widget')[idx];
+                if (!w) return false;
+                w.scrollIntoView({behavior: 'instant', block: 'center'});
+                return true;
+            }""",
+            idx,
+        )
+        if not scrolled:
+            continue
+        page.wait_for_timeout(250)  # let the scroll settle
+
+        # Wait for THIS widget's photo to decode before passing it, so the
+        # recording never shows a Pass click landing on a spinner. Capped.
+        deadline = _time.time() + per_image_load_ms / 1000
+        while _time.time() < deadline:
+            decoded = page.evaluate(
+                """(idx) => {
+                    const w = document.querySelectorAll('.assessment-widget')[idx];
+                    if (!w) return false;
+                    const img = w.querySelector('img');
+                    return !!(img && img.complete && img.naturalWidth > 0);
+                }""",
+                idx,
+            )
+            if decoded:
+                break
+            page.wait_for_timeout(250)
+
+        box = page.evaluate(
+            """(idx) => {
+                const w = document.querySelectorAll('.assessment-widget')[idx];
+                if (!w) return null;
+                const badge = w.querySelector('.bg-green-600');  // already-pass
+                const btn = [...w.querySelectorAll('button')].find(b => b.innerText.trim() === 'Pass');
+                if (!btn) return null;
+                const r = btn.getBoundingClientRect();
+                return {x: r.x + r.width / 2, y: r.y + r.height / 2, already: !!badge};
+            }""",
+            idx,
+        )
+        if not box or box.get("already"):
+            continue
+        slow_move(page, box["x"], box["y"], steps=16)
+        page.wait_for_timeout(120)
+        page.mouse.click(box["x"], box["y"])
+        clicked += 1
+        page.wait_for_timeout(dwell_ms)
+    return clicked

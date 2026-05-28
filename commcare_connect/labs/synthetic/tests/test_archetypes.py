@@ -303,6 +303,77 @@ def test_flw_pipeline_row_suspended_fraudulent_skews_low():
     assert fraud["avg_muac_cm"] >= solid["avg_muac_cm"]
 
 
+# --------------------------------------------------------------------------- #
+# Flag-coupling guard
+# --------------------------------------------------------------------------- #
+#
+# These predicates MIRROR the FLAG_CATALOG in
+# ``commcare_connect/workflow/templates/chc_nutrition_analysis.py`` (the JSX
+# render code). They are duplicated here in Python on purpose: the synthetic
+# generator and the flag predicates are two halves of the same contract — the
+# generator must produce rows that actually trip the flags the demo narrative
+# says they trip. When PR #281 flipped the flag DIRECTION (sam_low went from
+# "SAM too high" to "SAM < 1%"), nothing caught that the generator now produced
+# the inverse of what it intended — we only found it by watching a recording.
+#
+# If you change the thresholds in chc_nutrition_analysis.py's FLAG_CATALOG,
+# update these constants too; this test will fail loudly if the generator and
+# the flag predicates drift out of agreement.
+_SAM_LOW_PCT = 1.0  # FLAG_CATALOG sam_low: (samCount/muacCount)*100 < 1
+_MAM_LOW_PCT = 3.0  # FLAG_CATALOG mam_low: (mamCount/muacCount)*100 < 3
+_MIN_MUAC_FOR_FLAG = 10  # predicate floor: rows with < 10 measurements never flag
+
+
+def _sam_count(r):
+    return (r.get("muac_9_5_10_5_visits") or 0) + (r.get("muac_10_5_11_5_visits") or 0)
+
+
+def _mam_count(r):
+    return r.get("muac_11_5_12_5_visits") or 0
+
+
+def _muac_count(r):
+    return r.get("muac_distribution_count") or r.get("muac_measurements_count") or 0
+
+
+def _trips_low_muac_flag(r) -> bool:
+    """True if the row would trip sam_low OR mam_low under chc's FLAG_CATALOG."""
+    mc = _muac_count(r)
+    if mc < _MIN_MUAC_FOR_FLAG:
+        return False
+    sam_pct = (_sam_count(r) / mc) * 100
+    mam_pct = (_mam_count(r) / mc) * 100
+    return sam_pct < _SAM_LOW_PCT or mam_pct < _MAM_LOW_PCT
+
+
+def test_flagged_muac_archetypes_actually_trip_a_flag():
+    """A 'muac-flagged' archetype in its flag week must produce a row that
+    trips sam_low/mam_low; a clean (solid) archetype must NOT.
+
+    This is the guard that would have caught the PR #281 flag-direction
+    inversion at the source instead of in a recording: it couples the
+    synthetic generator to the live flag thresholds.
+    """
+    from commcare_connect.labs.synthetic.archetypes import build_flw_pipeline_row
+
+    # Clean baseline — must sit safely on the un-flagged side.
+    for seed in range(20):
+        solid = build_flw_pipeline_row(flw_id="s", archetype="solid", flagged_this_week=False, rng_seed=seed)
+        assert not _trips_low_muac_flag(solid), f"solid row tripped a low-MUAC flag (seed={seed}): {solid}"
+
+    # Each muac-flagging archetype, in its flag week, must trip a flag.
+    flagged_cases = [
+        ("improver_warned", {"flagged_this_week": True, "kpi_issue": "muac"}),
+        ("improver_closed_satisfactory", {"flagged_this_week": True, "kpi_issue": "muac"}),
+        ("suspended_repeat_offense", {"flagged_this_week": True}),
+        ("suspended_fraudulent", {"flagged_this_week": True}),
+    ]
+    for archetype, kwargs in flagged_cases:
+        for seed in range(20):
+            row = build_flw_pipeline_row(flw_id="f", archetype=archetype, rng_seed=seed, **kwargs)
+            assert _trips_low_muac_flag(row), f"{archetype} flag-week row did NOT trip a flag (seed={seed}): {row}"
+
+
 def test_flw_pipeline_row_deterministic():
     """Same seed → same row, regenerations stable."""
     from commcare_connect.labs.synthetic.archetypes import build_flw_pipeline_row

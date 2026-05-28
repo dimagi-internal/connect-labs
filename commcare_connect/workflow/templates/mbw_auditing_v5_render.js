@@ -9,12 +9,12 @@
 //     attribution matches v4's `mother_to_flw[mid] = username`.
 //   - form_name normalized via _FORM_NAME_ALIASES before keying into the
 //     visits_by_mother map (matches v4 line 224-225).
-//   - grace_cutoff = now - 7 days (matches v4 _GRACE_PERIOD_DAYS = 7).
+//   - grace_cutoff = now - 5 days (matches v4 _GRACE_PERIOD_DAYS = 5).
 //   - All date comparisons use YYYY-MM-DD string slices to avoid timezone
 //     drift between Python's tz-aware datetime and JS Date.
 // =========================================================================
 
-var V5_GRACE_PERIOD_DAYS = 7;
+var V5_GRACE_PERIOD_DAYS = 5;
 
 // Banker's rounding to match Python's round() behavior. JS's Math.round
 // rounds .5 away from zero (16.5 → 17); Python's round rounds .5 to nearest
@@ -37,9 +37,9 @@ function v5_round(x) {
 // extractor have specific canonical names; raw form names from CCHQ submissions
 // may differ. Match v4 _FORM_NAME_ALIASES exactly.
 var V5_FORM_NAME_ALIASES = {
-  // None today — v4 reads form.@name which already matches visit_type for the
-  // standard MBW deployment. Kept as an extension point if a downstream opp
-  // needs renaming.
+  // Matches v4 _FORM_NAME_ALIASES exactly. Some CommCare deployments submit
+  // "Post delivery visit" as form.@name; the schedule uses "Postnatal Delivery Visit".
+  'Post delivery visit': 'Postnatal Delivery Visit',
 };
 
 function v5_normFormName(rawName) {
@@ -1202,16 +1202,12 @@ function WorkflowUI({
               var merged = Object.assign({}, prev);
               Object.keys(fetchedTasks).forEach(function (u) {
                 var t = fetchedTasks[u];
-                // Don't clobber locally-set task state for tasks the user has
-                // already interacted with this session.
-                if (!merged[u] || !merged[u].triggered_at) {
-                  merged[u] = {
-                    status: t.status,
-                    triggered_at: t.triggered_at,
-                    task_id: t.task_id,
-                    title: t.title,
-                  };
-                }
+                merged[u] = {
+                  status: t.status,
+                  triggered_at: t.triggered_at,
+                  task_id: t.task_id,
+                  title: t.title,
+                };
               });
               if (!isCompleted) {
                 onUpdateState({ task_states: merged }).catch(function (e) {
@@ -1775,6 +1771,75 @@ function WorkflowUI({
       });
   };
 
+  var buildFLWCoachingPrompt = function (flw) {
+    var flagReasons = flw.flags.reasons;
+    var behavior =
+      flagReasons.length > 0
+        ? flagReasons.join(', ')
+        : 'General Performance Review';
+    var lines = [];
+    lines.push('FLW Name: ' + (flw.display_name || flw.username));
+    lines.push('Username: ' + flw.username);
+    lines.push('Last Active: ' + (flw.last_active || '—'));
+    lines.push('');
+    lines.push('Behavior Being Investigated: ' + behavior);
+    lines.push('');
+    lines.push('Performance Summary:');
+    lines.push(
+      '- Mothers: ' +
+        (flw.num_mothers != null ? flw.num_mothers : '—') +
+        (flw.num_mothers_eligible != null
+          ? ' (' + flw.num_mothers_eligible + ' eligible)'
+          : ''),
+    );
+    lines.push(
+      '- Visits Completed: ' +
+        (flw.visits_completed != null ? flw.visits_completed : '—'),
+    );
+    lines.push(
+      '- GS Score: ' + (flw.gs_score != null ? flw.gs_score + '%' : '—'),
+    );
+    lines.push(
+      '- Follow-up Rate: ' +
+        (flw.followup_rate != null
+          ? flw.followup_rate +
+            '%' +
+            (flw.followup_rate_denom != null
+              ? ' (' + flw.followup_rate_denom + ' visits in window)'
+              : '')
+          : '—'),
+    );
+    lines.push(
+      '- % Still Eligible: ' +
+        (flw.pct_still_eligible != null ? flw.pct_still_eligible + '%' : '—'),
+    );
+    lines.push(
+      '- EBF Rate: ' + (flw.ebf_pct != null ? flw.ebf_pct + '%' : '—'),
+    );
+    lines.push(
+      '- GPS Dist Ratio: ' +
+        (flw.dist_ratio != null ? flw.dist_ratio : '—'),
+    );
+    lines.push(
+      '- Revisit Distance: ' +
+        (flw.revisit_dist != null ? flw.revisit_dist + ' m' : '—'),
+    );
+    lines.push(
+      '- Median Visit Duration: ' +
+        (flw.minute_per_visit != null ? flw.minute_per_visit + ' min' : '—'),
+    );
+    lines.push('');
+    if (flagReasons.length > 0) {
+      lines.push('Flag Indicators:');
+      flagReasons.forEach(function (r) {
+        lines.push('- ' + r);
+      });
+    } else {
+      lines.push('Flag Indicators: None detected.');
+    }
+    return lines.join('\n');
+  };
+
   var handleTriggerTask = function (flw) {
     if (isCompleted) return;
     var flagDesc =
@@ -1783,17 +1848,9 @@ function WorkflowUI({
       username: flw.username,
       title: 'MBW Audit: ' + flw.display_name,
       description: flagDesc,
+      coaching_prompt: buildFLWCoachingPrompt(flw),
       priority: flw.flags.type === 'red' ? 'high' : 'medium',
       workflow_instance_id: instance.id,
-    });
-    var updated = Object.assign({}, taskStates);
-    updated[flw.username] = {
-      status: 'open',
-      triggered_at: new Date().toISOString(),
-    };
-    setTaskStates(updated);
-    onUpdateState({ task_states: updated }).catch(function (e) {
-      console.warn('task state save failed:', e);
     });
   };
 

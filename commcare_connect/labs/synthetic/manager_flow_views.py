@@ -6,10 +6,11 @@ Two endpoints, both scoped to an in_progress workflow run:
 
 - POST /labs/workflow/api/run/<run_id>/manager-audit/
     Body: {opportunity_id, flw_id, filter?}
-    Atomically creates a `completed_pass_clean` AuditSession (5/5 good-pool
-    photos, overall_result=pass). Returns {audit_id, redirect_url}. The
-    audit carries ``labs_record_id = workflow_run_id`` so the program-admin
-    rollup can find it by run.
+    Atomically creates a `pending_all_clean` AuditSession (5 good-pool
+    photos, all UNREVIEWED) so the walkthrough can film the manager passing
+    each one. Returns {audit_id, redirect_url}. The audit carries
+    ``labs_record_id = workflow_run_id`` so the program-admin rollup can
+    find it by run.
 
 - POST /labs/workflow/api/run/<run_id>/manager-coaching/
     Body: {opportunity_id, flw_id, task_id, prompt_text}
@@ -35,36 +36,59 @@ from django.views.decorators.http import require_http_methods
 logger = logging.getLogger(__name__)
 
 
-def _coaching_conversation(prompt_text: str) -> list[dict]:
-    """A 4-message in-progress coaching transcript suitable for the task page.
+def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[dict]:
+    """An in-progress coaching transcript suitable for the task page.
 
-    The structure mirrors what ``task.data["ocs_conversation"]`` looks like
-    for seeded archetype tasks, so the task detail template renders the
-    same way. The conversation deliberately stops mid-flow (no closing
-    message) to convey "still open" — matching the demo narrative.
+    Structure:
+      1. A ``system`` entry holding the manager's *instruction* to the
+         assistant (the "Prompt Instructions" the manager typed). This
+         is rendered as a distinct setup banner — NOT as the assistant's
+         first chat message — so viewers see "here's what the assistant
+         was told to do" separately from the conversation it then had.
+      2. The assistant's own opening message (generated from, but not
+         echoing, the instruction).
+      3. The worker's reply, the assistant's coaching, and the worker's
+         acknowledgement.
+
+    The conversation deliberately stops mid-flow (no closing message) to
+    convey "still open" — matching the demo narrative. It's written to be
+    coherent with the cherry-picking flag (low SAM/MAM = only visiting
+    easier, better-nourished households), which is what the post-PR-281
+    flag direction means.
     """
     return [
-        {"role": "bot", "text": prompt_text},
+        {"role": "system", "text": prompt_text},
+        {
+            "role": "bot",
+            "text": (
+                "Hi " + flw_name + "! Your supervisor asked me to check in about this week's "
+                "visits. The screening numbers came in lower than we'd usually expect for your "
+                "area — almost no children flagged as malnourished. Can you tell me a bit about "
+                "which households you were able to reach this week?"
+            ),
+        },
         {
             "role": "flw",
             "text": (
-                "Thanks for reaching out. I usually wrap the tape near the elbow because "
-                "it's easier to keep the arm steady there. Is that wrong?"
+                "Mostly the ones close to the health post and along the main road — they're "
+                "quickest to get to and the families are usually expecting me."
             ),
         },
         {
             "role": "bot",
             "text": (
-                "Good catch — that's likely the source of the skew. The MUAC tape should sit "
-                "at the midpoint between the shoulder tip and the elbow, on a relaxed arm hanging "
-                "by the child's side. Measuring near the elbow gives you a wider reading because "
-                "the muscle is thicker there. Could you try the midpoint position on your next 3 "
-                "visits and let me know what readings you get?"
+                "That's a sensible way to cover a lot of visits, but those closer households tend "
+                "to be better off — the children most at risk of malnutrition are often in the "
+                "harder-to-reach homes further out. If we only see the easy ones, we can miss the "
+                "kids who most need screening. Could you plan next week's route to include a few "
+                "of the further households you'd normally skip?"
             ),
         },
         {
             "role": "flw",
-            "text": "Okay, I'll try the midpoint and circle back after my next shift.",
+            "text": (
+                "Okay, that's fair. I'll map out the homes on the far side and include them in " "next week's visits."
+            ),
         },
     ]
 
@@ -72,7 +96,13 @@ def _coaching_conversation(prompt_text: str) -> list[dict]:
 @csrf_exempt
 @require_http_methods(["POST"])
 def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
-    """Create a completed_pass_clean audit for the manager-flow demo.
+    """Create a fresh (all-pending, clean-pool) audit for the manager-flow demo.
+
+    Uses the ``pending_all_clean`` archetype so the audit lands with 5
+    unreviewed clean photos — the walkthrough then films the manager
+    passing each one on camera and the audit resolves to an all-pass.
+    (It used to seed ``completed_pass_clean``, which arrived already
+    reviewed, leaving nothing for the manager to actually do.)
 
     The audit is linked back to the run via ``labs_record_id = run_id`` so
     the program-admin rollup can find it. No Flag is created here — flags
@@ -116,7 +146,7 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
         visit_id_base = int(time.time() * 1000) & 0x7FFFFFFF
         opp_name = run.data.get("opportunity_name") or ""  # cosmetic only
         audit_data = build_audit_data(
-            archetype_name="completed_pass_clean",
+            archetype_name="pending_all_clean",
             flw_id=flw_id,
             monday_iso=monday_iso,
             opportunity_id=opportunity_id,
@@ -181,7 +211,9 @@ def manager_coaching_attach_api(request: HttpRequest, run_id: int) -> JsonRespon
         # (commcare_connect/tasks/views.py:249), so this is the only field
         # the FE needs to render the coaching transcript.
         updated_data = dict(task.data or {})
-        updated_data["ocs_conversation"] = _coaching_conversation(prompt_text)
+        updated_data["ocs_conversation"] = _coaching_conversation(
+            prompt_text, flw_name=task.flw_name or task.username or "there"
+        )
         updated_data["ocs_status"] = "in_progress"
         # Once the manager has fired the coaching prompt, the "Start AI
         # Coaching" panel on the task page should disappear.

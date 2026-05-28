@@ -508,6 +508,7 @@ export interface TaskUrlParams {
   username?: string;
   title?: string;
   description?: string;
+  coaching_prompt?: string;
   audit_session_id?: number;
   workflow_instance_id?: number;
   priority?: string;
