@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from commcare_connect.microplans.models import TYPE_AREA, TYPE_FRAME, RooftopAreaRecord, RooftopFrameRecord
+from commcare_connect.microplans.core.models import TYPE_AREA, TYPE_FRAME, RooftopAreaRecord, RooftopFrameRecord
 from commcare_connect.workflow.data_access import BaseDataAccess
 
 # Bump when the rooftop_area / rooftop_frame `data` shape changes, so readers

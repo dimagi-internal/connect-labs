@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 
 from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
-from commcare_connect.microplans.sampling.filters import FilterConfig, apply_frame_filters
-from commcare_connect.microplans.sampling.geo import project_to_meters
+from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
+from commcare_connect.microplans.core.geo import project_to_meters
 from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
 
 # Maiduguri-ish anchor so UTM projection picks a sane zone.
@@ -179,7 +179,7 @@ class TestConfigAndGuards:
         import pytest
         from shapely.geometry import box
 
-        from commcare_connect.microplans.sampling import footprints
+        from commcare_connect.microplans.core import footprints
 
         huge = box(0, 0, 40, 40)  # ~tens of millions of km² bbox — way over the cap
         with pytest.raises(ValueError, match="too large"):

@@ -15,8 +15,8 @@ from shapely.geometry import MultiPoint, mapping, shape
 from shapely.ops import unary_union
 
 from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
-from commcare_connect.microplans.sampling.filters import FilterConfig, apply_frame_filters
-from commcare_connect.microplans.sampling.footprints import fetch_buildings
+from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
+from commcare_connect.microplans.core.footprints import fetch_buildings
 from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
 
 logger = logging.getLogger(__name__)

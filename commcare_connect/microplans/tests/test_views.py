@@ -164,7 +164,7 @@ def test_save_frame_persists_area_and_frame(client, django_user_model, monkeypat
             assert area_record_id == 11
             return FakeRecord(22)
 
-    monkeypatch.setattr("commcare_connect.microplans.data_access.RooftopDataAccess", FakeDA)
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
     resp = client.post(
         reverse("microplans:save_frame", kwargs={"opp_id": 123}),
         data=json.dumps(
