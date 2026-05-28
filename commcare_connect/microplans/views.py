@@ -51,10 +51,10 @@ class PreviewFrameView(LoginRequiredMixin, View):
             areas = payload["areas"]
             if not areas:
                 raise ValueError("no areas drawn")
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            config = FrameConfig.from_payload(payload.get("config", {}))
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        config = FrameConfig.from_payload(payload.get("config", {}))
         try:
             result = generate_frame(areas, config)
         except ValueError as e:
@@ -93,10 +93,10 @@ class PreviewCoverageView(LoginRequiredMixin, View):
             areas = payload["areas"]
             if not areas:
                 raise ValueError("no areas drawn")
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            config = CoverageConfig.from_payload(payload.get("config", {}))
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        config = CoverageConfig.from_payload(payload.get("config", {}))
         try:
             result = generate_coverage_frame(areas, config)
         except ValueError as e:

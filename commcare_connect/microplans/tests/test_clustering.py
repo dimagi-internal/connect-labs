@@ -72,3 +72,25 @@ class TestGridClusters:
     def test_empty(self):
         out = clustering.grid_clusters(pd.DataFrame(columns=["lon", "lat"]), cell_size_m=200)
         assert out.k_used == 0 and out.psu_frame.empty
+
+
+class TestEdgeCases:
+    def test_single_point_each_strategy(self):
+        one = pd.DataFrame({"lon": [LON0], "lat": [LAT0], "area_m2": [40.0]})
+        for out in (
+            clustering.kmeans_merge(one, k=15, min_cluster_size=16),
+            clustering.balanced_kmeans(one, n_clusters=5),
+            clustering.grid_clusters(one, cell_size_m=200),
+        ):
+            assert len(out.buildings) == 1
+            assert len(out.psu_frame) == 1
+            assert int(out.psu_frame["n_buildings"].iloc[0]) == 1
+            assert out.psu_frame["radius95_m"].iloc[0] == 0.0  # no spread → zero radius
+
+    def test_duplicate_coordinates(self):
+        # 50 buildings stacked on one point — projection + clustering must not blow up
+        dup = pd.DataFrame({"lon": [LON0] * 50, "lat": [LAT0] * 50, "area_m2": 40.0})
+        out = clustering.grid_clusters(dup, cell_size_m=200)
+        assert len(out.buildings) == 50
+        assert int(out.psu_frame["n_buildings"].sum()) == 50
+        assert len(out.psu_frame) == 1  # all in one cell

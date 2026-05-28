@@ -22,6 +22,12 @@ from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
 from commcare_connect.microplans.core.footprints import fetch_buildings
 
+# Degenerate hulls (a cluster of 1-2 buildings) collapse to a point/line; buffer
+# them into a tiny polygon so every WorkArea has an area. Units are degrees
+# (~11 m at the equator) — purely cosmetic, the cluster's building_count is what
+# matters downstream.
+_DEGENERATE_HULL_BUFFER_DEG = 0.0001
+
 
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -90,7 +96,7 @@ def generate_coverage_frame(areas: list[dict], config: CoverageConfig) -> Covera
             pts = out.buildings[out.buildings["cluster"] == cluster]
             hull = MultiPoint(list(zip(pts["lon"], pts["lat"]))).convex_hull
             if hull.geom_type != "Polygon":
-                hull = hull.buffer(0.0001)  # 1-2 points → tiny polygon
+                hull = hull.buffer(_DEGENERATE_HULL_BUFFER_DEG)  # 1-2 points → tiny polygon
             features.append(
                 {
                     "type": "Feature",

@@ -129,6 +129,8 @@ def grid_clusters(df: pd.DataFrame, cell_size_m: float = 200.0) -> ClusterOutput
 
 
 def _balanced_size_bounds(n_samples: int, n_clusters: int, balance_tolerance: float) -> tuple[int, int]:
+    """(size_min, size_max) per cluster for KMeansConstrained — the even split
+    widened by ±balance_tolerance (0 = exactly even)."""
     base = math.ceil(n_samples / n_clusters)
     if n_clusters == 1 or balance_tolerance == 0:
         return math.floor(n_samples / n_clusters), base

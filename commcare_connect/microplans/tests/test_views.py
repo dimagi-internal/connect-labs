@@ -82,6 +82,38 @@ def test_preview_maps_sampling_failure_to_502(client, django_user_model, monkeyp
     assert "server logs" in resp.json()["detail"].lower()
 
 
+def test_preview_bad_config_is_400_not_500(client, django_user_model):
+    # A non-numeric config value must surface as 400 (config parsing is inside the
+    # request-validation try), not crash with a 500.
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}],
+                "config": {"target_clusters": "abc"},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_preview_coverage_bad_config_is_400(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:preview_coverage", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "areas": [{"arm": "coverage", "geometry": {"type": "Point", "coordinates": [0, 0]}}],
+                "config": {"buildings_per_cluster": "abc"},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
 def test_preview_maps_value_error_to_400(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
 
