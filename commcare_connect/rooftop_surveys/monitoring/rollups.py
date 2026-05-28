@@ -12,7 +12,6 @@ derive.derive_attempt_flags (+ add_attempt_index for enum_daily).
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 
