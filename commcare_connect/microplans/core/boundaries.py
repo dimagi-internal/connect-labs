@@ -69,16 +69,14 @@ def list_admin_areas(
         where.append(f"lower(names.primary) LIKE '%{_sql(name_contains.lower())}%'")
 
     con = overture.connect()
-    rows = con.execute(
-        f"""
+    rows = con.execute(f"""
         SELECT names.primary AS name, subtype, region,
                round(ST_Area_Spheroid(geometry)/1e6, 1) AS area_km2
         FROM read_parquet('{DIVISION_AREA}', filename=false, hive_partitioning=true)
         WHERE {' AND '.join(where)} AND names.primary IS NOT NULL
         ORDER BY subtype, name
         LIMIT {int(limit)}
-        """
-    ).df()
+        """).df()
     result = rows.to_dict("records")
     cache.set(key, result, CACHE_TTL_SECONDS)
     logger.info("rooftop boundaries listed: %d areas (%s/%s)", len(result), country_iso2, subtype)
@@ -101,14 +99,12 @@ def get_admin_area_geojson(country_iso2: str, name: str, subtype: str, region: s
         where.append(f"region = '{_sql(region)}'")
 
     con = overture.connect()
-    rows = con.execute(
-        f"""
+    rows = con.execute(f"""
         SELECT ST_AsGeoJSON(geometry) AS geojson
         FROM read_parquet('{DIVISION_AREA}', filename=false, hive_partitioning=true)
         WHERE {' AND '.join(where)}
         LIMIT 1
-        """
-    ).fetchall()
+        """).fetchall()
     geom = json.loads(rows[0][0]) if rows else None
     cache.set(key, geom, CACHE_TTL_SECONDS)
     return geom
