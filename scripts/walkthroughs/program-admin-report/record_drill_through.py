@@ -124,15 +124,20 @@ def main() -> None:
         # Scene 2b: drill through "Open the run" → CHC Nutrition table.
         click_text(page, "Open the run", post_wait_selector="text=FLW-Level Analysis")
         wait_for_row_count(page, at_least=5, timeout_ms=12_000)
-        # Scroll to the flagged row + park the cursor on View audit.
+        # Scroll to the flagged row + park the cursor on View Audit.
+        # The chc_nutrition Actions cell now flips per-row to "View Audit"
+        # (title-case) when the row already has an audit — that's what we
+        # want to click here for the drill-through scenario. PR #289
+        # added the state-aware flip via view.auditsFor(); pre-#289 builds
+        # rendered the lowercase "View audit" button.
         page.evaluate(
             """() => {
                 const flagged = Array.from(document.querySelectorAll('tr'))
-                    .find(tr => tr.textContent.includes('View audit'));
+                    .find(tr => tr.textContent.includes('View Audit'));
                 if (flagged) flagged.scrollIntoView({behavior: 'smooth', block: 'center'});
             }"""
         )
-        view_audit = page.locator("text=View audit").first
+        view_audit = page.locator("text=View Audit").first
         if view_audit.count() > 0:
             box = view_audit.bounding_box()
             if box:
@@ -160,11 +165,14 @@ def main() -> None:
         time.sleep(4.0)
         snap(rec, "audit_good_run")
 
-        # Scene 4: back to CHC Nutrition table, click View task → coaching transcript.
+        # Scene 4: back to CHC Nutrition table, click View Task → coaching transcript.
+        # Same state-aware flip — when the row has an existing task, the
+        # Actions cell renders "View Task" (title-case) in place of the
+        # "Create Task ▾" menu (post PR #289).
         page.go_back(wait_until="domcontentloaded")
         wait_for_row_count(page, at_least=5, timeout_ms=8_000)
         time.sleep(0.6)
-        view_task = page.locator("text=View task").first
+        view_task = page.locator("text=View Task").first
         if view_task.count() > 0:
             box = view_task.bounding_box()
             if box:
