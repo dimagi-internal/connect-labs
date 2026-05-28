@@ -9,12 +9,12 @@
 //     attribution matches v4's `mother_to_flw[mid] = username`.
 //   - form_name normalized via _FORM_NAME_ALIASES before keying into the
 //     visits_by_mother map (matches v4 line 224-225).
-//   - grace_cutoff = now - 7 days (matches v4 _GRACE_PERIOD_DAYS = 7).
+//   - grace_cutoff = now - 5 days (matches v4 _GRACE_PERIOD_DAYS = 5).
 //   - All date comparisons use YYYY-MM-DD string slices to avoid timezone
 //     drift between Python's tz-aware datetime and JS Date.
 // =========================================================================
 
-var V5_GRACE_PERIOD_DAYS = 7;
+var V5_GRACE_PERIOD_DAYS = 5;
 
 // Banker's rounding to match Python's round() behavior. JS's Math.round
 // rounds .5 away from zero (16.5 → 17); Python's round rounds .5 to nearest
