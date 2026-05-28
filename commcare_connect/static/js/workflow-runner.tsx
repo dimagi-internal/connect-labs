@@ -1464,15 +1464,26 @@ function WorkflowRunner({
       return created;
     };
 
-    if (isCompleted && snapshot) {
+    // Snapshot preference: serve the stamped snapshot whenever one
+    // exists, not just on completed runs. The framework only writes a
+    // snapshot at completion in production (`commcare_connect/workflow/
+    // views.py:430` comment: "Snapshot is null while in_progress;
+    // populated on completion"), so the only time an in_progress run
+    // has a snapshot is when something explicitly seeded one — currently
+    // the synthetic generator, which stamps a preview snapshot onto its
+    // backdated in_progress run so the manager-flow demo doesn't open
+    // on a real-data live pipeline that happens to back the synthetic
+    // opp's CSV folder. Templates can still read `instance.snapshot`
+    // directly if they want even finer control.
+    if (snapshot) {
       return {
         workers: (snapshot.workers as WorkerData[]) ?? initialData.workers,
         pipelines:
           (snapshot.pipelines as Record<string, PipelineResult>) ??
           pipelineData,
         state: (snapshot.state as WorkflowState) ?? instanceState,
-        isCompleted: true,
-        asOf: inst.completed_at ?? null,
+        isCompleted,
+        asOf: isCompleted ? inst.completed_at ?? null : null,
         complete: completeFn,
         flags: flagsList,
         flagsFor,
