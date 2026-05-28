@@ -258,12 +258,15 @@ class TestBoundaryEndpoints:
     def test_countries_flags_bespoke(self, client, django_user_model):
         from django.urls import reverse
 
+        # Two levels of the same country: bespoke must report NGA exactly once
+        # (regression — Meta.ordering used to defeat .distinct(), echoing every row).
         _make_boundary("Borno", 1, _SQUARE, "ng-bo")
+        _make_boundary("Jere", 2, _INSIDE, "ng-bo-jere", parent_boundary_id="ng-bo")
         self._login(client, django_user_model)
         resp = client.get(reverse("microplans:countries"))
         data = resp.json()
         assert data["status"] == "ok"
-        assert "NGA" in data["bespoke"]
+        assert data["bespoke"] == ["NGA"]  # de-duplicated
         assert any(c["alpha3"] == "NGA" for c in data["countries"])
 
     def test_areas_endpoint_uses_labs(self, client, django_user_model):
