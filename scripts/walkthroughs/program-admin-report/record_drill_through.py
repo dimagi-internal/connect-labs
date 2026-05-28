@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from walkthroughs._lib import config as wcfg  # noqa: E402
 from walkthroughs._lib.discovery import find_drill_targets  # noqa: E402
+from walkthroughs._lib.freshness import assert_page_current  # noqa: E402
 from walkthroughs._lib.grid import click_cell  # noqa: E402
 from walkthroughs._lib.recorder import (  # noqa: E402
     RecorderSession,
@@ -117,6 +118,9 @@ def main() -> None:
             wait_for_selector="text=Window aggregate",
             settle_seconds=0,
         )
+        # Preflight: PAR must be serving the local checkout's render_code.
+        # Guards against recording a drill-through against a stale deploy.
+        assert_page_current(page, "program_admin_report", label="PAR grid")
         slow_move(page, 50, 60, steps=20)
         time.sleep(1.0)
 
