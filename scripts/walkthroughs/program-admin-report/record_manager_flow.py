@@ -34,15 +34,19 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from walkthroughs._lib import config as wcfg  # noqa: E402
+from walkthroughs._lib.freshness import assert_page_current  # noqa: E402
 from walkthroughs._lib.recorder import (  # noqa: E402
     RecorderSession,
     click_menu_item,
     click_row_button,
+    click_text_exact,
+    dwell_on_menu_item,
     goto_and_settle,
+    pass_each_audit_image,
     row_button_labels,
     scroll_row_into_view,
-    scroll_through_page,
     snap,
+    wait_for_audit_images,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -86,6 +90,11 @@ def main() -> None:
             wait_for_selector=f"text={FLAGGED_FLW}",
             settle_seconds=2.5,
         )
+        # Preflight: refuse to record if labs is serving a stale
+        # chc_nutrition render_code (deploy still rolling out, or local
+        # checkout ahead of what's deployed). Catches the cutover-lag
+        # footgun before it produces a confusing mid-scene failure.
+        assert_page_current(page, "chc_nutrition_analysis", label="wk4 weekly review")
         snap(rec, "wk4_in_progress")
 
         # Scene 1: wait for the auto-applied flag pills to render. The
@@ -120,9 +129,14 @@ def main() -> None:
                 "Did a previous recorder run already create the audit? "
                 "Re-run regenerate.py with cleanup_first=true."
             )
-        # The menu opens as an absolute-positioned panel — give it a beat
-        # to mount before we look inside.
-        page.wait_for_timeout(600)
+        # Let the open menu sit on screen long enough to read the options,
+        # snap it for the deck, glide the cursor onto the target item and
+        # pause, THEN click. Without the dwell the dropdown flashes past
+        # too fast to see in the recording.
+        page.wait_for_timeout(1_800)
+        snap(rec, "create_audit_menu_open")
+        dwell_on_menu_item(page, AUDIT_MENU_ITEM)
+        page.wait_for_timeout(900)
         if not click_menu_item(page, AUDIT_MENU_ITEM):
             raise RuntimeError(
                 f"Menu item {AUDIT_MENU_ITEM!r} not found after opening Create Audit menu for {FLAGGED_FLW}."
@@ -131,13 +145,32 @@ def main() -> None:
         # Wait for the audit's assessment count header instead of networkidle —
         # bulk-assessment images stream from GDrive and never let networkidle fire.
         page.wait_for_selector("text=Total Assessments", timeout=30_000)
-        page.wait_for_timeout(2_500)
-        snap(rec, "audit_pass_clean")
+        # Only confirm the FIRST photo has rendered — do NOT block on all 5.
+        # The photos cold-fetch from GDrive; an upfront "all 5 decoded" gate
+        # is what stalled the recording ~30s mid-audit. pass_each_audit_image
+        # waits for each photo individually as it scrolls to it.
+        wait_for_audit_images(page, at_least=1, timeout_ms=20_000)
+        page.wait_for_timeout(1_200)
+        snap(rec, "audit_pending")
 
-        # Scene 3: smooth-scroll through audit page so all 5 pass thumbnails read.
-        print("Scene 3: Audit detail — 5 good-pool pass images")
-        scroll_through_page(page)
-        page.wait_for_timeout(1_500)
+        # Scene 3: actually DO the audit — pass each photo one by one, then
+        # complete the review so it resolves to an all-pass. Shows the
+        # manager working through the photos rather than landing on a
+        # pre-finished audit.
+        print("Scene 3: Pass each photo, then Complete Image Review")
+        passed = pass_each_audit_image(page, dwell_ms=600)
+        print(f"  passed {passed} photos")
+        page.wait_for_timeout(800)
+        # The "Complete Image Review" button (saveImageReview) reads
+        # "Save Progress" while photos are pending and flips to "Complete
+        # Image Review" once all 5 are reviewed. Click it to record the
+        # all-pass verdict.
+        if not click_text_exact(page, "Complete Image Review", timeout_ms=8_000):
+            print("  ! 'Complete Image Review' not found — photos may not all be reviewed")
+        else:
+            page.wait_for_timeout(2_000)
+        snap(rec, "audit_passed")
+        page.wait_for_timeout(1_200)
 
         # Scene 4: back to Wk4 review.
         print("Scene 4: Back to Wk4 weekly review")
@@ -163,7 +196,12 @@ def main() -> None:
         page.wait_for_timeout(1_200)
         if not click_row_button(page, FLAGGED_FLW, "Create Task"):
             raise RuntimeError(f"Create Task menu trigger not found on {FLAGGED_FLW}'s row.")
-        page.wait_for_timeout(600)
+        # Same dwell treatment as the audit menu — read the options, snap,
+        # glide to the coaching item, pause, click.
+        page.wait_for_timeout(1_800)
+        snap(rec, "create_task_menu_open")
+        dwell_on_menu_item(page, COACHING_MENU_ITEM)
+        page.wait_for_timeout(900)
         if not click_menu_item(page, COACHING_MENU_ITEM):
             raise RuntimeError(
                 f"Menu item {COACHING_MENU_ITEM!r} not found after opening "

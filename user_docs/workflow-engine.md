@@ -67,11 +67,13 @@ Each active concern appears as a coloured pill in the Flags cell. The pill displ
 
 ### Actions column
 
-Every row has an **Actions** column. What the Actions cell shows depends on whether an audit or task has already been created for that worker in the current run.
+Every row has an **Actions** column. What the Actions cell shows depends on whether an audit or task has already been created for that worker in the current run, and whether the run is still in progress or has been saved as completed.
 
 **When no audit or task exists yet**, the cell shows two menu buttons: **Create Audit ▾** and **Create Task ▾**.
 
-The dropdown menus display each option as an outlined button (gray border, white background, blue hover highlight) so every option is clearly clickable.
+The dropdown menus display each option as an outlined button so every option is clearly clickable. The open menu has a coloured border and header band matching its trigger button — blue for **Create Audit**, purple for **Create Task** — so the menu is visually connected to the button that opened it.
+
+**Menu positioning:** When a row is near the bottom of the screen, the Create Audit and Create Task dropdown menus open upward instead of downward, so the options are always fully visible and never hidden below the edge of the screen.
 
 **Create Audit menu** always contains exactly two options:
 
@@ -88,7 +90,9 @@ The dropdown menus display each option as an outlined button (gray border, white
 - **View Audit** — appears in place of the Create Audit menu when an audit already exists for that worker in this run; clicking it opens that audit record directly
 - **View Task** — appears in place of the Create Task menu when a task already exists for that worker in this run; clicking it opens that task record directly
 
-This means the Actions cell always reflects the current state of the row: rows with no prior action offer the create menus, and rows where action has already been taken show direct links to those records. This applies whether you are viewing the current week's run or replaying a historical run.
+**On a completed (saved) run**, rows that have no existing audit or task show greyed-out, non-interactive Create Audit and Create Task buttons. A saved run is a historical record — no new work can be started from it. Rows that already produced an audit or task still show working **View Audit / View Task** links so you can always navigate back to those records.
+
+This means the Actions cell always reflects the current state of the row: rows with no prior action offer the create menus (on an in-progress run) or greyed-out buttons (on a completed run), and rows where action has already been taken show direct links to those records. This applies whether you are viewing the current week's run or replaying a historical run.
 
 ### CHC Nutrition Analysis flags
 
@@ -102,6 +106,9 @@ The CHC Nutrition Analysis dashboard uses the following flag catalog:
 
 !!! note "SAM/MAM flags signal too few at-risk cases, not too many"
 These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
+
+!!! note "Flags appear immediately when opening a new weekly run"
+    When you open a brand-new CHC Nutrition weekly review, auto-detected flags (SAM rate < 1%, MAM rate < 3%, gender split) appear on each row the moment the table loads. You do not need to reload the page to see the system's findings — they are ready as soon as the dashboard is visible.
 
 ---
 
@@ -193,10 +200,10 @@ While the run is in progress, the manager has access to the full set of live act
 
 - **Mark all No Issue** — a toolbar button displayed above the table (next to the table title) that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.
 - **Mark No Issue** — a per-row button to approve an individual field worker without raising a flag. After clicking either the bulk or per-row button, the Decision column fills in with a green **No Issues** pill and the Actions cell for that row is cleared.
-- **Create Audit** — creates a real audit record immediately on click, linked to that worker's visit data.
-- **Create Task with Coaching** — opens the **Initiate AI Assistant** modal on the task page, the same modal a real OCS user sees. The task page shows a short, readable description of what the coaching task is about; the full OCS bot prompt is pre-filled separately in the modal's prompt field, where the manager can read or edit it before clicking **Initiate AI** to start the coaching conversation.
+- **Create Audit** — opens an audit record with 5 unreviewed photos for that worker. The manager reviews each photo, passes or flags it, and then clicks **Complete Image Review** to record the verdict. The audit opens in an unreviewed state so the walkthrough shows the full review process rather than landing on an already-finished record.
+- **Create Task with Coaching** — opens the **Initiate AI Assistant** modal on the task page, the same modal a real OCS user sees. The task page shows a short, readable description of what the coaching task is about. The prompt is framed as an instruction to the assistant — for example, "Coach [worker] about this week's nutrition screening. The report flagged: … A suspiciously low SAM/MAM rate usually means …" — and is rendered as a distinct **Instructions to assistant** banner above the conversation, separate from the assistant's own opening line. The full prompt is also pre-filled in the modal's prompt field, where the manager can read or edit it before clicking **Initiate AI** to start the coaching conversation.
 
-All four actions are only available while the run is in an **in-progress** state. Once the run is concluded it becomes read-only, so the buttons are no longer shown.
+All four actions are only available while the run is in an **in-progress** state. Once the run is concluded it becomes read-only, so the buttons are no longer shown — rows without an existing audit or task show greyed-out, non-interactive buttons, while rows that already produced an audit or task still show working **View Audit / View Task** links.
 
 This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in **#connect-labs** and specify that you need an in-progress run for the most recent week.
 
@@ -227,28 +234,4 @@ To use synthetic data capabilities, ask your program administrator or raise a re
 
 ### You Don't Need a Local Instance
 
-For workflow development, **do not run Connect Labs locally.** Even when running locally, data is still fetched from Connect prod — so there is no isolation benefit. The only reason to run locally is if you are modifying the core Connect Labs application code (the Django app itself).
-
-For all workflow work, deploy directly to Labs prod. The deployment cycle is fast. If you push something wrong, reverting it is straightforward. Get comfortable with this loop: describe change → Claude pushes → reload browser → verify.
-
-### Tips for Working with Claude Code
-
-**Treat the design doc as a temporary input, not a living document.** Write your requirements — what metrics you want, what CommCare fields to pull, what the UI should look like — and give that to Claude Code as initial context. Once the workflow is built, the code is the source of truth. Don't try to keep the design doc in sync.
-
-**Start fresh if the session goes off track.** If Claude has started writing Python aggregation, referencing old custom-analysis code you don't want to replicate, or producing output that doesn't follow the SQL pipeline pattern, don't try to correct it in the same session. Ask Claude to summarize what it knows about your requirements and design decisions into a new Markdown file, then open a fresh Claude Code session and feed in only that summary.
-
-**Use the `/workflow-author` skill.** Running `/workflow-author` before describing changes loads workflow-specific guidance that prevents the most common mistakes.
-
-### When Workflows Are the Right Tool
-
-Use a workflow for nearly all program dashboards and reporting tasks:
-
-- One row per FLW with performance indicators
-- Visit completion rates and status by period
-- Case status summaries and flags
-- GPS anomaly or audit flags surfaced in a sortable table
-- Reports that trigger an audit or task with a single click
-
-Workflows are also more powerful than Superset because they can call other Labs APIs — creating audits, tasks, or conversations directly from a button on the dashboard.
-
-Design workflows to be simple and action-oriented. A good workflow has a clear rule for what "done" looks like for each row. If you are building something that requires an LLO to follow a complex 10-step process with judgment at each step, reconsider the design — ideally those steps map to separate workflows with obvious success criteria at each stage
+For workflow development, **do not run Connect Labs locally.** Even when running locally, data is still fetched from Connect prod — so there is no isolation benefit. The only reason to run locally is if you are modifying the core Connect Labs application code (the Django app

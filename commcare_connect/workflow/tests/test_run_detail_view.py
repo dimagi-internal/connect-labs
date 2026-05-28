@@ -6,6 +6,23 @@ import pytest
 from django.test import RequestFactory
 
 
+def _render_code(*helpers: str) -> MagicMock:
+    """Build a get_render_code() return value whose component_code
+    references the given view helpers.
+
+    WorkflowRunView gates the flags / audits / tasks loads on whether the
+    render code actually uses view.flagsFor / view.auditsFor /
+    view.tasksFor (loading each is a full-table scan, pointless for a
+    template that doesn't read that surface). Tests that want a given
+    surface populated must therefore present render code that mentions
+    the corresponding helper.
+    """
+    body = " ".join(f"view.{h}(r.username)" for h in helpers)
+    rc = MagicMock()
+    rc.data = {"component_code": f"function WorkflowUI() {{ {body} }}"}
+    return rc
+
+
 @pytest.fixture
 def rf():
     return RequestFactory()
@@ -41,7 +58,7 @@ def test_workflow_run_view_injects_flags(mock_org, MockWDA, MockFDA, MockADA, Mo
             "data": {"name": "CHC", "opportunity_ids": [], "config": {}},
         }
     )
-    wda.get_render_code.return_value = None
+    wda.get_render_code.return_value = _render_code("flagsFor")
     wda.get_run.return_value = WorkflowRunRecord(
         {
             "id": 503,
@@ -134,7 +151,7 @@ def test_workflow_run_view_flags_empty_when_load_fails(mock_org, MockWDA, MockFD
             "data": {"name": "CHC", "opportunity_ids": [], "config": {}},
         }
     )
-    wda.get_render_code.return_value = None
+    wda.get_render_code.return_value = _render_code("flagsFor", "auditsFor", "tasksFor")
     wda.get_run.return_value = WorkflowRunRecord(
         {
             "id": 503,
@@ -188,7 +205,7 @@ def test_workflow_run_view_injects_audits_and_tasks(mock_org, MockWDA, MockFDA, 
             "data": {"name": "CHC", "opportunity_ids": [], "config": {}},
         }
     )
-    wda.get_render_code.return_value = None
+    wda.get_render_code.return_value = _render_code("auditsFor", "tasksFor")
     wda.get_run.return_value = WorkflowRunRecord(
         {
             "id": 503,
@@ -259,3 +276,63 @@ def test_workflow_run_view_injects_audits_and_tasks(mock_org, MockWDA, MockFDA, 
     assert tasks[0]["flw_id"] == "amina"
     assert tasks[0]["status"] == "closed"
     assert tasks[0]["official_action"] == "satisfactory"
+
+
+@patch("commcare_connect.workflow.views.TaskDataAccess")
+@patch("commcare_connect.workflow.views.AuditDataAccess")
+@patch("commcare_connect.workflow.views.FlagsDataAccess")
+@patch("commcare_connect.workflow.views.WorkflowDataAccess")
+@patch("commcare_connect.workflow.views.get_org_data", return_value={})
+def test_workflow_run_view_skips_loads_when_render_code_doesnt_use_helpers(
+    mock_org, MockWDA, MockFDA, MockADA, MockTDA, rf
+):
+    """A template whose render code never references view.flagsFor /
+    auditsFor / tasksFor (e.g. the Program Admin Report, which builds its
+    own rollup from its snapshot) must NOT trigger the full-table scans.
+    Each scan is expensive; loading data the template can't read is pure
+    waste and was the cause of the multi-second blank screen at the top
+    of the recorded PAR drill-through.
+    """
+    from commcare_connect.workflow.data_access import WorkflowDefinitionRecord, WorkflowRunRecord
+    from commcare_connect.workflow.views import WorkflowRunView
+
+    wda = MockWDA.return_value
+    wda.get_definition.return_value = WorkflowDefinitionRecord(
+        {
+            "id": 65,
+            "experiment": "workflows",
+            "type": "WorkflowDefinition",
+            "opportunity_id": 10001,
+            "data": {"name": "PAR", "opportunity_ids": [], "config": {}},
+        }
+    )
+    # Render code that reads its own snapshot rows (fr.flags / fr.audits)
+    # but never calls the view.*For helpers.
+    rc = MagicMock()
+    rc.data = {"component_code": "function WorkflowUI() { return (run.flw_rows || []).map(fr => fr.audits); }"}
+    wda.get_render_code.return_value = rc
+    wda.get_run.return_value = WorkflowRunRecord(
+        {
+            "id": 901,
+            "experiment": "workflow_runs",
+            "type": "WorkflowRun",
+            "opportunity_id": 10001,
+            "data": {"status": "completed", "definition_id": 65, "state": {}},
+        }
+    )
+    wda.get_workers.return_value = []
+
+    view = WorkflowRunView()
+    view.request = _request_for(rf, 901)
+    view.kwargs = {"definition_id": 65}
+
+    context = view.get_context_data()
+
+    # All three surfaces ship as empty lists...
+    assert context["workflow_data"]["flags"] == []
+    assert context["workflow_data"]["audits"] == []
+    assert context["workflow_data"]["tasks"] == []
+    # ...and crucially the expensive scans were never issued.
+    MockFDA.return_value.get_flags_for_run.assert_not_called()
+    MockADA.return_value.get_sessions_by_workflow_run.assert_not_called()
+    MockTDA.return_value.get_tasks_for_run.assert_not_called()

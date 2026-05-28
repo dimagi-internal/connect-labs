@@ -460,6 +460,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     // we don't fire while the SSE pipeline-data stream is still warming up
     // (initial render with empty rows would create zero flags anyway, but
     // explicit is better than implicit).
+    // Flags created by ensureAutoFlags on THIS page load. view.flagsFor
+    // only knows about flags that existed when the page was served, so on
+    // a brand-new run the auto-applied flags wouldn't render until a
+    // reload. We capture the created flags here and merge them into the
+    // per-row lookup so the pills (and the flag-context Action items)
+    // appear immediately — no reload, which is both better UX and what
+    // lets the walkthrough recorder see flags on a freshly-seeded run.
+    var _localFlags = React.useState([]);
+    var localFlags = _localFlags[0]; var setLocalFlags = _localFlags[1];
+
     React.useEffect(function() {
         if (!view || !view.ensureAutoFlags || !runIsLive || !rows.length) return;
         var computed = [];
@@ -474,9 +484,30 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
             });
         });
         if (computed.length) {
-            view.ensureAutoFlags(computed);
+            Promise.resolve(view.ensureAutoFlags(computed)).then(function(created) {
+                if (created && created.length) setLocalFlags(function(prev) { return prev.concat(created); });
+            });
         }
     }, [rows.length, runIsLive]);
+
+    // Per-row flag lookup that unions server-known flags (view.flagsFor)
+    // with any created this page load (localFlags), deduped by
+    // (flw_id, flag_key) so a reload that re-serves the now-persisted
+    // flags doesn't double-render.
+    function flagsForRow(username) {
+        var base = (view && typeof view.flagsFor === 'function') ? view.flagsFor(username) : [];
+        var extra = localFlags.filter(function(f) { return f.flw_id === username; });
+        if (!extra.length) return base;
+        var seen = {};
+        var out = [];
+        base.concat(extra).forEach(function(f) {
+            var k = (f.flw_id || username) + '::' + f.flag_key;
+            if (seen[k]) return;
+            seen[k] = true;
+            out.push(f);
+        });
+        return out;
+    }
 
     // ── Worker name lookup ──────────────────────────────────────
     var workerMap = React.useMemo(function() {
@@ -569,9 +600,26 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     function MenuButton(props) {
         var _open = React.useState(false);
         var open = _open[0]; var setOpen = _open[1];
+        // dropUp flips the panel above the trigger when there isn't room
+        // below it in the viewport — otherwise the menu for a row near the
+        // bottom of the table opens off-screen (you can't see the options
+        // or where the cursor clicks). Standard dropdown behavior; also
+        // what makes the walkthrough recording legible for the last row.
+        var _dropUp = React.useState(false);
+        var dropUp = _dropUp[0]; var setDropUp = _dropUp[1];
         var ref = React.useRef(null);
         React.useEffect(function() {
             if (!open) return;
+            // Decide direction at open time from the trigger's viewport
+            // position. Estimate the panel height from the item count
+            // (header + items + padding) and flip up if it wouldn't fit
+            // below.
+            if (ref.current) {
+                var rect = ref.current.getBoundingClientRect();
+                var estPanelH = 60 + (props.items ? props.items.length : 2) * 48;
+                var roomBelow = window.innerHeight - rect.bottom;
+                setDropUp(roomBelow < estPanelH && rect.top > estPanelH);
+            }
             function onDocClick(e) {
                 if (ref.current && !ref.current.contains(e.target)) setOpen(false);
             }
@@ -583,6 +631,22 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 document.removeEventListener('keydown', onKey);
             };
         }, [open]);
+        // Accent palette ties the open dropdown to its trigger so the
+        // panel visibly belongs to "Create Audit" (blue) vs "Create Task"
+        // (purple) rather than reading as a free-floating white box.
+        var ACCENTS = {
+            blue: {
+                panel: 'border-blue-300',
+                header: 'bg-blue-50 text-blue-700 border-blue-200',
+                item: 'border-blue-200 bg-white text-blue-800 hover:bg-blue-100 hover:border-blue-400 cursor-pointer',
+            },
+            purple: {
+                panel: 'border-purple-300',
+                header: 'bg-purple-50 text-purple-700 border-purple-200',
+                item: 'border-purple-200 bg-white text-purple-800 hover:bg-purple-100 hover:border-purple-400 cursor-pointer',
+            },
+        };
+        var accent = ACCENTS[props.accent] || ACCENTS.blue;
         var btnClass = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium border transition-colors ' + (props.className || '');
         return React.createElement('div', {ref: ref, className: 'relative inline-block'},
             React.createElement('button', {
@@ -596,24 +660,36 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
             ),
             open
                 ? React.createElement('div', {
-                    className: 'absolute right-0 z-20 mt-1 w-56 rounded-lg bg-white shadow-lg py-2 px-2 border border-gray-200'
+                    // 2px accent-colored border + matching header band so the
+                    // panel reads as an extension of the colored trigger.
+                    // dropUp positions the panel above the trigger (bottom-full
+                    // + mb-1) when there's no room below.
+                    className: 'absolute right-0 z-20 w-64 rounded-lg bg-white shadow-xl border-2 overflow-hidden ' +
+                        (dropUp ? 'bottom-full mb-1 ' : 'mt-1 ') + accent.panel
                   },
-                    props.items.map(function(item, i) {
-                        // Each item renders as a visibly-outlined button so the
-                        // dropdown reads as a row of clickable buttons rather
-                        // than a hover-only menu list.
-                        return React.createElement('button', {
-                            key: i,
-                            type: 'button',
-                            disabled: !!item.disabled,
-                            onClick: function() { setOpen(false); item.onClick(); },
-                            className: 'block w-full text-left text-sm font-medium px-3 py-2 mb-1 last:mb-0 rounded-md border transition-colors ' +
-                                (item.disabled
-                                    ? 'border-gray-200 text-gray-400 cursor-not-allowed bg-gray-50'
-                                    : 'border-gray-300 bg-white text-gray-700 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-700 cursor-pointer'),
-                            title: item.title || item.label || '',
-                        }, item.label);
-                    })
+                    // Header: repeats the trigger label so it's unambiguous
+                    // which button this menu belongs to.
+                    React.createElement('div', {
+                        className: 'px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide border-b ' + accent.header,
+                    }, props.label),
+                    React.createElement('div', {className: 'py-2 px-2'},
+                        props.items.map(function(item, i) {
+                            // Each item renders as a visibly-outlined button in
+                            // the accent color so the dropdown reads as a row of
+                            // clickable buttons that clearly belong to the trigger.
+                            return React.createElement('button', {
+                                key: i,
+                                type: 'button',
+                                disabled: !!item.disabled,
+                                onClick: function() { setOpen(false); item.onClick(); },
+                                className: 'block w-full text-left text-sm font-medium px-3 py-2 mb-1 last:mb-0 rounded-md border transition-colors ' +
+                                    (item.disabled
+                                        ? 'border-gray-200 text-gray-400 cursor-not-allowed bg-gray-50'
+                                        : accent.item),
+                                title: item.title || item.label || '',
+                            }, item.label);
+                        })
+                    )
                   )
                 : null
         );
@@ -783,7 +859,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // the same slot.
                                     React.createElement('td', {className: 'px-4 py-3 text-sm align-top'},
                                         (function() {
-                                            var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
+                                            var rowFlags = flagsForRow(r.username);
                                             rowFlags = rowFlags.slice().sort(function(a, b) {
                                                 return (a.flag_key || '').localeCompare(b.flag_key || '');
                                             });
@@ -814,7 +890,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // doesn't decorate items with icons).
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm align-top'},
                                         (function() {
-                                            var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
+                                            var rowFlags = flagsForRow(r.username);
                                             var hasAnyFlag = rowFlags.length > 0;
 
                                             var auditItems = [
@@ -844,12 +920,20 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                     onClick: function() {
                                                         var flagLabels = rowFlags.map(function(f) { return f.flag_label || f.flag_key; });
                                                         var flagList = flagLabels.join(', ');
+                                                        // This is the INSTRUCTION handed to the OCS coaching
+                                                        // assistant (the "Prompt Instructions" field), not the
+                                                        // assistant's opening line. It's written as a directive
+                                                        // — what to discuss and why — so the bot generates its
+                                                        // own natural opener from it.
                                                         var prompt =
-                                                            'Hi ' + name + ', I wanted to discuss this week\'s metrics with you. ' +
+                                                            'Coach ' + name + ' about this week\'s nutrition screening. ' +
                                                             'The report flagged: ' + flagList + '. ' +
-                                                            'Can you walk me through what you\'re seeing on the ground? ' +
-                                                            'I\'d like to understand whether this is a data-collection issue, ' +
-                                                            'a household-selection issue, or something else, and what we can do together to address it.';
+                                                            'A suspiciously low SAM/MAM rate usually means the worker is only visiting ' +
+                                                            'easier-to-reach, better-nourished households and missing the at-risk children ' +
+                                                            'who most need screening. Open by acknowledging their effort, explain in plain ' +
+                                                            'language what the metric suggests, ask which households they were able to reach ' +
+                                                            'this week, and agree on one concrete change for next week. Keep it supportive ' +
+                                                            'and specific, never accusatory.';
                                                         createTask(r, {
                                                             title: 'Coaching: ' + flagList + ' — ' + name,
                                                             description: 'Coach ' + name + ' on the report\'s flags: ' + flagList + '.',
@@ -870,6 +954,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                             var latestAudit = rowAudits.length ? rowAudits[rowAudits.length - 1] : null;
                                             var latestTask = rowTasks.length ? rowTasks[rowTasks.length - 1] : null;
                                             var viewBtnBase = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium border transition-colors no-underline ';
+                                            // Disabled-button styling for the completed-run case: a
+                                            // saved run is a frozen historical record, so you can't
+                                            // start NEW work from it. Rows that never got an audit/task
+                                            // show a greyed, non-interactive button instead of a live
+                                            // Create menu. (Rows that DO have an audit/task still get a
+                                            // working "View" link — viewing history is always allowed.)
+                                            var disabledBtn = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed';
 
                                             var auditAffordance = latestAudit
                                                 ? React.createElement('a', {
@@ -877,24 +968,46 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                                     className: viewBtnBase + 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
                                                     title: 'Open audit #' + latestAudit.id + ' (' + (latestAudit.status || 'unknown') + ')',
                                                   }, 'View Audit')
-                                                : React.createElement(MenuButton, {
-                                                    label: 'Create Audit',
-                                                    className: 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
-                                                    title: 'Audit options for ' + name,
-                                                    items: auditItems,
-                                                  });
+                                                : (runIsLive
+                                                    ? React.createElement(MenuButton, {
+                                                        label: 'Create Audit',
+                                                        accent: 'blue',
+                                                        className: 'border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100',
+                                                        title: 'Audit options for ' + name,
+                                                        items: auditItems,
+                                                      })
+                                                    : React.createElement('button', {
+                                                        type: 'button',
+                                                        disabled: true,
+                                                        className: disabledBtn,
+                                                        title: 'This run is complete — no new audits can be created',
+                                                      },
+                                                        React.createElement('span', null, 'Create Audit'),
+                                                        React.createElement('i', {className: 'fa-solid fa-chevron-down text-[10px] opacity-50'})
+                                                      ));
                                             var taskAffordance = latestTask
                                                 ? React.createElement('a', {
                                                     href: '/tasks/' + latestTask.id + '/edit/' + oppScope,
                                                     className: viewBtnBase + 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
                                                     title: 'Open task #' + latestTask.id + ' (' + (latestTask.status || 'unknown') + ')',
                                                   }, 'View Task')
-                                                : React.createElement(MenuButton, {
-                                                    label: 'Create Task',
-                                                    className: 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
-                                                    title: 'Task options for ' + name,
-                                                    items: taskItems,
-                                                  });
+                                                : (runIsLive
+                                                    ? React.createElement(MenuButton, {
+                                                        label: 'Create Task',
+                                                        accent: 'purple',
+                                                        className: 'border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100',
+                                                        title: 'Task options for ' + name,
+                                                        items: taskItems,
+                                                      })
+                                                    : React.createElement('button', {
+                                                        type: 'button',
+                                                        disabled: true,
+                                                        className: disabledBtn,
+                                                        title: 'This run is complete — no new tasks can be created',
+                                                      },
+                                                        React.createElement('span', null, 'Create Task'),
+                                                        React.createElement('i', {className: 'fa-solid fa-chevron-down text-[10px] opacity-50'})
+                                                      ));
 
                                             return React.createElement('div', {className: 'flex gap-2'},
                                                 auditAffordance,
