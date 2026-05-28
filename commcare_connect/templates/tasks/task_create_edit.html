@@ -1001,7 +1001,7 @@ function taskCreateEditPage() {
           priority: taskData.priority || 'medium',
           title: taskData.title || '',
           description: taskData.description || '',
-          coaching_prompt: taskData.coaching_prompt || '',
+          coaching_prompt: taskData.coaching_prompt || this.quickParams.coaching_prompt || '',
           status: taskData.status || 'investigating',
           assigned_to_type: taskData.assigned_to_type || 'self',
           assigned_to_name: taskData.assigned_to_name || '',
@@ -1090,8 +1090,13 @@ function taskCreateEditPage() {
           this.taskCreated = true;
           this.showToastMessage('Task created successfully!');
 
-          // Redirect to edit mode for the new task
-          window.location.href = `/tasks/${data.task_id}/edit/`;
+          // Redirect to edit mode. Pass coaching_prompt in URL so the edit
+          // page can pre-fill the OCS modal even if the task was just
+          // created and the server save hasn't propagated yet.
+          const editUrl = new URL(`/tasks/${data.task_id}/edit/`, window.location.origin);
+          if (this.taskForm.coaching_prompt)
+            editUrl.searchParams.set('coaching_prompt', this.taskForm.coaching_prompt);
+          window.location.href = editUrl.toString();
         } else {
           this.error = data.error || 'Failed to create task';
         }
