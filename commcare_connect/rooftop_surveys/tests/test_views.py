@@ -77,7 +77,25 @@ def test_preview_maps_sampling_failure_to_502(client, django_user_model, monkeyp
         content_type="application/json",
     )
     assert resp.status_code == 502
-    assert "overture down" in resp.json()["detail"]
+    # generic message — the internal exception text must NOT leak to the client
+    assert "overture down" not in resp.json()["detail"]
+    assert "server logs" in resp.json()["detail"].lower()
+
+
+def test_preview_maps_value_error_to_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+
+    def too_big(*a, **k):
+        raise ValueError("Area is too large (~5,000 km²); draw a smaller area.")
+
+    monkeypatch.setattr("commcare_connect.rooftop_surveys.sampling.frame.generate_frame", too_big)
+    resp = client.post(
+        reverse("rooftop_surveys:preview_frame", kwargs={"opp_id": 123}),
+        data=json.dumps({"areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}]}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400  # actionable user error surfaces
+    assert "too large" in resp.json()["detail"]
 
 
 def test_preview_happy_path(client, django_user_model, monkeypatch):

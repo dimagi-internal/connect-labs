@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 from commcare_connect.rooftop_surveys.models import TYPE_AREA, TYPE_FRAME, RooftopAreaRecord, RooftopFrameRecord
 from commcare_connect.workflow.data_access import BaseDataAccess
 
+# Bump when the rooftop_area / rooftop_frame `data` shape changes, so readers
+# can branch on schema_version instead of guessing (cheap migration insurance).
+SCHEMA_VERSION = 1
+
 
 class RooftopDataAccess(BaseDataAccess):
     """CRUD for rooftop_area + rooftop_frame records, scoped to one opportunity."""
@@ -25,6 +29,7 @@ class RooftopDataAccess(BaseDataAccess):
             experiment=self._experiment,
             type=TYPE_AREA,
             data={
+                "schema_version": SCHEMA_VERSION,
                 "name": name,
                 "areas": areas,
                 "config": config,
@@ -44,6 +49,7 @@ class RooftopDataAccess(BaseDataAccess):
             experiment=self._experiment,
             type=TYPE_FRAME,
             data={
+                "schema_version": SCHEMA_VERSION,
                 "pins": pins,
                 "hulls": hulls,
                 "stats": stats,

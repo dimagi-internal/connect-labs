@@ -156,6 +156,36 @@ class TestSamplePins:
         assert len(pins) == 3
 
 
+class TestConfigAndGuards:
+    def test_frame_config_clamps_bad_inputs(self):
+        from commcare_connect.rooftop_surveys.sampling.frame import FrameConfig
+
+        cfg = FrameConfig.from_payload(
+            {
+                "target_clusters": -5,
+                "primary_per_psu": 0,
+                "alternates_per_psu": -3,
+                "min_confidence": 2.5,
+                "area_min_m2": -10,
+            }
+        )
+        assert cfg.target_clusters == 1  # clamped up from -5
+        assert cfg.primary_per_psu == 1  # clamped up from 0
+        assert cfg.alternates_per_psu == 0  # clamped up from -3
+        assert cfg.min_confidence == 1.0  # clamped down from 2.5
+        assert cfg.area_min_m2 == 0.0  # clamped up from -10
+
+    def test_fetch_buildings_rejects_oversized_area(self):
+        import pytest
+        from shapely.geometry import box
+
+        from commcare_connect.rooftop_surveys.sampling import footprints
+
+        huge = box(0, 0, 40, 40)  # ~tens of millions of km² bbox — way over the cap
+        with pytest.raises(ValueError, match="too large"):
+            footprints.fetch_buildings(huge)  # raises before any S3 query
+
+
 class TestStratification:
     def _grid(self, n_side, spacing_m, area_m2=40.0):
         # a regular grid of buildings around the anchor, in a single dense block
