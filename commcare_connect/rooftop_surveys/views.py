@@ -1,11 +1,12 @@
 """Views for the Rooftop Surveys setup flow (Stage A: area → frame → push)."""
 
+import csv
 import json
 import logging
 
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -99,3 +100,36 @@ class SaveFrameView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": str(e)}, status=502)
 
         return JsonResponse({"status": "ok", "area_record_id": area_record.id, "frame_record_id": frame_record.id})
+
+
+class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
+    """Render the previewed pins as a Connect microplanning work-area import CSV.
+
+    Lets a frame be pushed to Connect *today* via the existing org-admin web
+    importer (no prod write API needed). Each pin → one tiny WorkArea row.
+    """
+
+    def post(self, request, opp_id):
+        from commcare_connect.rooftop_surveys.workarea import build_work_areas, to_csv_rows
+
+        try:
+            payload = json.loads(request.body)
+            pins = payload["pins"]
+        except (json.JSONDecodeError, KeyError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        rows = to_csv_rows(
+            build_work_areas(
+                pins,
+                ward_for_arm=payload.get("ward_for_arm"),
+                lga=payload.get("lga", ""),
+                state=payload.get("state", ""),
+            )
+        )
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="rooftop_work_areas_opp{opp_id}.csv"'
+        if rows:
+            writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        return response

@@ -8,4 +8,5 @@ urlpatterns = [
     path("<int:opp_id>/setup/", views.SetupView.as_view(), name="setup"),
     path("<int:opp_id>/preview_frame/", views.PreviewFrameView.as_view(), name="preview_frame"),
     path("<int:opp_id>/save_frame/", views.SaveFrameView.as_view(), name="save_frame"),
+    path("<int:opp_id>/work_areas.csv", views.DownloadWorkAreaCSVView.as_view(), name="work_areas_csv"),
 ]

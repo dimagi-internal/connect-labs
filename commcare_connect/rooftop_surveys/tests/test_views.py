@@ -174,3 +174,28 @@ def test_save_frame_rejects_missing_pins(client, django_user_model):
         content_type="application/json",
     )
     assert resp.status_code == 400
+
+
+def test_work_areas_csv_export(client, django_user_model):
+    _login(client, django_user_model)
+    pins = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [13.155, 11.832]},
+                "properties": {"arm": "intervention", "cluster": "C1", "role": "primary", "order_in_cluster": 1},
+            }
+        ],
+    }
+    resp = client.post(
+        reverse("rooftop_surveys:work_areas_csv", kwargs={"opp_id": 123}),
+        data=json.dumps({"pins": pins, "lga": "Maiduguri", "state": "Borno"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == "text/csv"
+    body = resp.content.decode()
+    assert "Area Slug" in body and "Centroid" in body and "Boundary" in body
+    assert "13.155 11.832" in body
+    assert "Maiduguri" in body
