@@ -171,15 +171,17 @@ of demo-specific seeder.
   `view.pipelines` and the top-level `pipelines` prop. Without this,
   in_progress synthetic runs show "No data available" because the live
   CSV pipeline returns nothing in the synthetic env.
-- **Severity 2 for muac-flagged FLWs**: severity 1 produces SAM ~3.6%
-  which doesn't trip the chc_nutrition flag thresholds (`sam_low`
-  predicate fires when SAM/MUAC ratio is below the expected band).
-  Severity 2 (~22% SAM) makes the flag visually obvious and ensures
-  the auto-flag system catches it on mount.
-- **Clean FLWs no upward SAM-bin jitter**: ±1 jitter on the first two
-  bins of severity-0 distributions can accidentally push to 7% SAM,
-  tripping the sam_low predicate. Jitter clamped to `[-1, 0]` on
-  those bins.
+- **MUAC severity is INVERTED vs intuition** (post PR #281/#287): the
+  flag direction is `sam_low` (SAM < 1%) / `mam_low` (MAM < 3%) — a
+  _suspiciously low_ rate means the FLW is cherry-picking easy,
+  well-fed households and missing at-risk kids. So a "flagged"
+  archetype's distribution has **zero** SAM/MAM mass (severity 2+ →
+  truncated left tail), and a _clean_ FLW has a realistic baseline of
+  SAM/MAM cases (~3-7% SAM). If you ever change the FLAG_CATALOG
+  thresholds in `chc_nutrition_analysis.py`, the generator's
+  `_muac_distribution` must move in lockstep — the
+  `test_flagged_muac_archetypes_actually_trip_a_flag` guard in
+  `test_archetypes.py` fails loudly when they drift.
 - **OCS bot list short-circuit**: synthetic opps return a single canned
   "MUAC Coaching (Synthetic Demo Bot)" so the existing "Initiate AI
   Assistant" modal renders with a selectable bot — without requiring a
@@ -189,7 +191,78 @@ of demo-specific seeder.
   run id must come from `.run_ids.json`, written by `regenerate.py`.
 - **Audit + task leftovers wedge the recorder**: if a previous recorder
   run created an audit + task for the bad-MUAC FLW, the next run's
-  Create Audit/Send Task menu items navigate to the existing artifacts
-  instead of creating fresh ones. Always regenerate (which cleans first)
-  before re-recording. The verify checks in `regenerate.py` catch most
-  of these post-seed.
+  Create Audit/Create Task menu items flip to "View Audit"/"View Task"
+  (state-aware, PR #289) instead of offering a fresh create. Always
+  regenerate (which cleans first) before re-recording. The verify
+  checks in `regenerate.py` catch most of these post-seed.
+
+## Operating playbook (read this before recording after a deploy)
+
+Hard-won order of operations. Most of the pain in building this demo came
+from skipping a step here.
+
+### The golden path
+
+1. **Land your code** (PR merged to `main`).
+2. **Deploy labs** (`gh workflow run deploy-labs.yml --ref main`) and wait
+   for it to report success.
+3. **Wait for worker cutover, then re-seed.** The deploy "succeeding" does
+   NOT mean the new code is live — ECS workers serve the OLD image for
+   **2-4 more minutes** (hard-cutover task replacement + gunicorn warm-up).
+   Re-seeding immediately writes stale template code (see "re-seed is the
+   upgrade path" below). Poll: re-seed in a loop, fetch the def via
+   `workflow_get`, and grep the served `render_code` for a string unique to
+   your change; only proceed once it appears.
+4. **Record.** Both recorders run a **freshness preflight**
+   (`_lib/freshness.py`) right after loading their first run page: they
+   compare the server's shipped `render_code` (from the `#workflow-data`
+   json_script) to your local checkout's template (AST-extracted) and
+   **abort loudly on mismatch**. So if you skipped step 3, the recorder
+   tells you instead of silently filming stale UI.
+5. **Concat + upload** (see "Running it end-to-end").
+
+### Why re-seeding is the upgrade path
+
+Re-seed does NOT delete workflow definitions (only runs/flags/tasks/
+audits), so a def survives across seeds. The seed's `_refresh_render_code`
+(PR #290) rewrites the reused def's `render_code` from the _currently
+running_ template — so **re-seeding after a deploy is how new render code
+reaches an existing def**. There is no separate "push template" step in the
+golden path. (You CAN hot-push with the `connect_labs` MCP
+`workflow_sync_from_template_file`, but DON'T — see the gotcha below.)
+
+### Gotchas that cost real time
+
+- **`workflow_sync_from_template_file` is destructive to a live def.** It
+  rewrites `config` and `pipeline_sources`, which strips
+  `config.templateType` and the pipeline link. A def that loses its
+  `templateType` becomes invisible to the seed's reuse filter
+  (`template_type == "<key>"`), so the next seed creates a _brand-new_ def
+  → unbounded accumulation. We deleted **11 orphan CHC defs** on opp 10000
+  that this produced. Don't hot-push to a def you intend to keep re-seeding
+  against; deploy + re-seed instead.
+- **Deploy-cutover lag** — see step 3. This bit us three times before the
+  freshness guard existed.
+- **Auto-flags need no reload (PR #294)** — chc merges `ensureAutoFlags`'s
+  created flags into local state via `flagsForRow`, so pills appear on a
+  fresh run's first mount. Before this, every "working" recording had been
+  silently primed by an earlier load; a truly fresh run showed no flags
+  until reload.
+- **Defer the video past pre-warm (PR #294)** — the drill-through pre-warms
+  ~20s on a warm page; `RecorderSession(defer_record=True)` +
+  `start_recording()` keeps that out of the clip so it doesn't open on a
+  blank screen.
+- **Don't gate the audit scene on all photos decoding (PR #296)** — photos
+  cold-fetch from GDrive; an upfront "wait for all 5" gate stalls the full
+  timeout if one is slow. Confirm only the first photo, then
+  `pass_each_audit_image` waits per-photo as it scrolls to each.
+- **Menus flip up near the viewport bottom (PR #295)** — the flagged FLW is
+  the last table row; its action dropdown opens above the trigger when
+  there's no room below, so the options + the click are on-screen (and in
+  the recording).
+- **`image_results` is stale after audit completion** — a completed audit's
+  persisted pass/fail/pending aggregate is NOT recomputed from the final
+  per-photo results. The bulk page recomputes client-side so the UI is
+  correct, but downstream reads (audit detail, PAR rollup) see stale
+  counts. Latent backend bug, tracked separately; harmless for this demo
+  (the manager-flow audit lives on an in_progress run no rollup reads).
