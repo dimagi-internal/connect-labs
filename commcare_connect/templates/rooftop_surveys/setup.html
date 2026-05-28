@@ -89,7 +89,9 @@
     <section>
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Preview</h2>
       <button type="button" id="btn-preview" class="button w-full">Preview frame</button>
+      <button type="button" id="btn-save" class="button w-full mt-2 hidden">Save frame</button>
       <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
+      <div id="save-status" class="mt-1 text-xs text-gray-500"></div>
     </section>
   </aside>
 
@@ -109,6 +111,7 @@
   const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
   const OPP_ID = "{{ opp_id|escapejs }}";
   const PREVIEW_URL = "{% url 'rooftop_surveys:preview_frame' opp_id=opp_id %}";
+  const SAVE_URL = "{% url 'rooftop_surveys:save_frame' opp_id=opp_id %}";
   const CSRF_TOKEN = "{{ csrf_token }}";  // CSRF_USE_SESSIONS=True → token comes from the template, not a cookie
   if (!MAPBOX_TOKEN) { return; }
 
@@ -267,11 +270,33 @@
       if (resp.ok && data.status === "ok") {
         renderPreview(data);
         renderStats(data.stats);
+        lastPreview = { areas: payload.areas, config: payload.config, pins: data.pins, hulls: data.hulls, stats: data.stats };
+        document.getElementById("btn-save").classList.remove("hidden");
       } else {
         statusEl.textContent = data.detail || ("HTTP " + resp.status);
       }
     } catch (err) {
       statusEl.textContent = "Request failed: " + err;
+    }
+  });
+
+  let lastPreview = null;
+  document.getElementById("btn-save").addEventListener("click", async () => {
+    if (!lastPreview) { return; }
+    const saveEl = document.getElementById("save-status");
+    saveEl.textContent = "Saving frame…";
+    try {
+      const resp = await fetch(SAVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN },
+        body: JSON.stringify(lastPreview),
+      });
+      const data = await resp.json();
+      saveEl.textContent = (resp.ok && data.status === "ok")
+        ? `Saved (frame #${data.frame_record_id}).`
+        : (data.detail || ("HTTP " + resp.status));
+    } catch (err) {
+      saveEl.textContent = "Save failed: " + err;
     }
   });
 
