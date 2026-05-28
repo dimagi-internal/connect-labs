@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from commcare_connect.microplans.monitoring.coverage import (
-    compute_coverage_monitoring,
-    expected_from_areas,
-)
+from commcare_connect.microplans.monitoring.coverage import compute_coverage_monitoring, expected_from_areas
 
 _MAP = {c: c for c in ["sample_id", "cluster", "submission_time"]}
 

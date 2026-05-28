@@ -40,7 +40,7 @@ class CoverageConfig:
     area_max_m2: float = 330.0
 
     @classmethod
-    def from_payload(cls, d: dict) -> "CoverageConfig":
+    def from_payload(cls, d: dict) -> CoverageConfig:
         conf = d.get("min_confidence")
         nc = d.get("n_clusters")
         strategy = d.get("strategy", "balanced")

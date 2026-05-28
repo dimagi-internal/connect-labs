@@ -242,11 +242,7 @@ class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.core.workarea import (
-            build_coverage_work_areas,
-            build_work_areas,
-            to_csv_rows,
-        )
+        from commcare_connect.microplans.core.workarea import build_coverage_work_areas, build_work_areas, to_csv_rows
 
         try:
             payload = json.loads(request.body)
