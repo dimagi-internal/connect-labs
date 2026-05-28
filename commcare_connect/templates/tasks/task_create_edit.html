@@ -307,7 +307,15 @@
         </div>
         <div class="p-6 space-y-3">
           {% for msg in task.ocs_conversation %}
-            {% if msg.role == "bot" %}
+            {% if msg.role == "system" %}
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div class="flex items-center gap-2 mb-1">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-600 text-xs"></i>
+                <span class="text-xs font-semibold uppercase tracking-wide text-amber-700">Instructions to assistant</span>
+              </div>
+              <div class="text-sm text-gray-700">{{ msg.text }}</div>
+            </div>
+            {% elif msg.role == "bot" %}
             <div class="flex gap-3">
               <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
                 <i class="fa-solid fa-robot text-indigo-600 text-sm"></i>
