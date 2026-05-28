@@ -11,9 +11,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
 from commcare_connect.microplans.core.geo import project_to_meters
+from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
 from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
 
 # Maiduguri-ish anchor so UTM projection picks a sane zone.
