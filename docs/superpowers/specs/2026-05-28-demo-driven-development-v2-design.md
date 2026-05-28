@@ -204,3 +204,15 @@ This means building the Phase 0 tooling and using it for genuine rooftop discove
 - `review_request` schema, and how web-page edits (narration rewrites, fork redirects) flow back into `run_state.yaml` and the cross-run learnings.
 - Self-tuning threshold N (how many rubber-stamps before proposing a downgrade).
 - Where the docs page lives and how it's published (connect-labs docs site? ace-web? a dedicated capabilities page?), and the why-brief schema + evidence-link format that feeds narration, video, and page from one source.
+
+## v3 evolution: actionable narratives (2026-05-28, from dogfooding)
+
+The first rooftop dogfood surfaced that the unified spec's per-scene `concept_claim` is *marketing prose, not buildable* — "you couldn't act on it." Three changes make the narrative the actual build spec:
+
+1. **A narrative chunk is a self-composed, verifiable feature set.** Each scene gains `features[]`: each feature is a concrete buildable unit `{id, description, verify}` where `verify` is how you validate it's done (an API assertion, a UI state, a test). The narration stays the human story; the features are the actionable spec. The union of all scenes' features = the demo's **burn-down list** — build a feature → run its `verify` → check it off; the demo is done when the list burns down and the walkthrough renders + judges pass.
+
+2. **Actionability eval (`ddd-narrative-actionability-eval`) — the load-bearing new gate.** Tests "how well can an AI understand what to build next from this narrative?" Method (chosen): **cold-derive vs declared features + self-consistency** — a fresh AI reads ONLY a chunk's narration, writes the build plan it infers, and we score that against the chunk's declared `features[]` (coverage / specificity / correctness); run N times so divergence flags ambiguity. Low score ⇒ the narrative is too vague to act on ⇒ revise *before* the human reviews it. Runs every iteration; **gates the narrative-review** (the user only reviews narratives that are buildable by construction).
+
+3. **Clearer review UI.** The `agree / edit / rethink` triple was incoherent (inline-edit made "edit" redundant; "rethink" was undefined). Collapse to: inline-edit narration (always) + ONE decision — **Approve & continue** (lock, applying edits) vs **Send back to re-draft** (the framing/approach is wrong — the AI re-authors, not just rewords). The review page also shows each chunk's `features[]` and its actionability score.
+
+Loop becomes: `ddd-spec` (author with features) → `ddd-spec-qa` → **`ddd-narrative-actionability-eval`** (buildable?) → narrative-review (user agrees) → build + burn down features (each `verify`) → render → judges.
