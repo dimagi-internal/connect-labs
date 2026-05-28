@@ -26,7 +26,7 @@ from pyproj import Transformer
 from shapely.geometry import box
 from shapely.ops import transform
 
-from commcare_connect.rooftop_surveys.sampling.geo import utm_epsg_for
+from commcare_connect.microplans.sampling.geo import utm_epsg_for
 
 # Connect's WorkAreaCSVImporter column labels.
 CSV_HEADERS = {

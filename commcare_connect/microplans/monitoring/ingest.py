@@ -21,7 +21,7 @@ import httpx
 import pandas as pd
 from django.conf import settings
 
-from commcare_connect.rooftop_surveys.monitoring.normalize import normalize_visits
+from commcare_connect.microplans.monitoring.normalize import normalize_visits
 
 logger = logging.getLogger(__name__)
 

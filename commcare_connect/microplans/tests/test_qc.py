@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from commcare_connect.rooftop_surveys.qc.cascade import (
+from commcare_connect.microplans.qc.cascade import (
     apply_cascade,
     cascade_report_by,
     older_services_violations,
@@ -102,7 +102,7 @@ def test_older_services_violations_from_members():
 
 
 def test_generic_engine_supports_flag_severity():
-    from commcare_connect.rooftop_surveys.qc.cascade import FilterRule
+    from commcare_connect.microplans.qc.cascade import FilterRule
 
     df = pd.DataFrame([dict(flw_visit="yes", x=1), dict(flw_visit="yes", x=0)])
     rules = [FilterRule("x_flag", "x is zero", lambda d: d["x"].eq(0), severity="flag")]

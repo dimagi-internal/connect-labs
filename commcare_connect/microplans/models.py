@@ -1,4 +1,4 @@
-"""Proxy models for rooftop_surveys LocalLabsRecords.
+"""Proxy models for microplans LocalLabsRecords.
 
 Persistence rides the production LabsRecord API (no Django models / tables) per
 the labs convention: every record carries experiment=<opportunity_id> and a

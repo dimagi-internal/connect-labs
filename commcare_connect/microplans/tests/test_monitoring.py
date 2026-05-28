@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from commcare_connect.rooftop_surveys.monitoring.derive import add_attempt_index, derive_attempt_flags
-from commcare_connect.rooftop_surveys.monitoring.duration import time_to_completion
-from commcare_connect.rooftop_surveys.monitoring.gps_issue import build_gps_issue_report
-from commcare_connect.rooftop_surveys.monitoring.normalize import normalize_visits
-from commcare_connect.rooftop_surveys.monitoring.pipeline import compute_monitoring
-from commcare_connect.rooftop_surveys.monitoring.rollups import build_cluster_rollup, build_enum_daily
+from commcare_connect.microplans.monitoring.derive import add_attempt_index, derive_attempt_flags
+from commcare_connect.microplans.monitoring.duration import time_to_completion
+from commcare_connect.microplans.monitoring.gps_issue import build_gps_issue_report
+from commcare_connect.microplans.monitoring.normalize import normalize_visits
+from commcare_connect.microplans.monitoring.pipeline import compute_monitoring
+from commcare_connect.microplans.monitoring.rollups import build_cluster_rollup, build_enum_daily
 
 # canonical-named fixture columns → identity field map for the pipeline
 _IDENTITY_MAP = {
@@ -185,7 +185,7 @@ class TestNormalize:
 
 class TestIngest:
     def test_flatten_visits_merges_form_json(self):
-        from commcare_connect.rooftop_surveys.monitoring.ingest import flatten_visits
+        from commcare_connect.microplans.monitoring.ingest import flatten_visits
 
         rows = [
             {
@@ -205,7 +205,7 @@ class TestIngest:
         assert df["form.distance_target_pin_from_arrival_point"].tolist() == [5, 30]
 
     def test_load_canonical_composes_fetch_flatten_normalize(self, monkeypatch):
-        from commcare_connect.rooftop_surveys.monitoring import ingest
+        from commcare_connect.microplans.monitoring import ingest
 
         rows = [
             {
