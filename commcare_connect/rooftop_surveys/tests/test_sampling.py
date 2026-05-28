@@ -83,20 +83,34 @@ class TestCluster:
         assert res.psu_frame.empty
 
 
+def _psu_df(clusters, n_buildings, stratum="Low", p_psu=0.5):
+    return pd.DataFrame(
+        {
+            "cluster": clusters,
+            "n_buildings": n_buildings,
+            "stratum": [stratum] * len(clusters),
+            "P_psu": [p_psu] * len(clusters),
+        }
+    )
+
+
 class TestSelectPSUs:
-    def test_selects_requested_count(self):
-        psu = pd.DataFrame({"cluster": [f"C{i}" for i in range(10)], "n_buildings": [20] * 10})
+    def test_selects_requested_count_with_inclusion_prob(self):
+        psu = _psu_df([f"C{i}" for i in range(10)], [20] * 10)
         sel = select_psus(psu, n_take=4, seed=42)
         assert len(sel) == 4
-        assert len(set(sel)) == 4  # no dupes
-        assert set(sel).issubset(set(psu["cluster"]))
+        assert sel["cluster"].nunique() == 4  # no dupes
+        assert set(sel["cluster"]).issubset(set(psu["cluster"]))
+        # equal sizes, take 4 of 10 → each inclusion prob ~0.4
+        assert np.allclose(sel["P_psu"], 0.4, atol=1e-6)
 
     def test_returns_all_when_take_exceeds_available(self):
-        psu = pd.DataFrame({"cluster": ["C0", "C1"], "n_buildings": [20, 30]})
-        assert set(select_psus(psu, n_take=5)) == {"C0", "C1"}
+        sel = select_psus(_psu_df(["C0", "C1"], [20, 30]), n_take=5)
+        assert set(sel["cluster"]) == {"C0", "C1"}
+        assert (sel["P_psu"] == 1.0).all()  # census → inclusion prob 1
 
     def test_empty(self):
-        assert select_psus(pd.DataFrame(columns=["cluster", "n_buildings"]), n_take=5) == []
+        assert select_psus(pd.DataFrame(columns=["cluster", "n_buildings", "stratum"]), n_take=5).empty
 
 
 class TestSamplePins:
@@ -109,15 +123,14 @@ class TestSamplePins:
 
     def test_role_counts(self):
         df = self._clustered(60)
-        pins = sample_pins(df, ["C0"], PinConfig(n_primary=8, n_alternate=8, min_sep_m=15))
-        assert (pins["role"] == "primary").sum() <= 8
+        sel = _psu_df(["C0"], [60])
+        pins = sample_pins(df, sel, PinConfig(n_primary=8, n_alternate=8, min_sep_m=15))
         assert len(pins) <= 16
-        # With 60 buildings over 300m there's room for 16 at >=15m apart.
         assert (pins["role"] == "primary").sum() == 8
 
     def test_min_separation_enforced(self):
         df = self._clustered(80, seed=7)
-        pins = sample_pins(df, ["C0"], PinConfig(min_sep_m=15))
+        pins = sample_pins(df, _psu_df(["C0"], [80]), PinConfig(min_sep_m=15))
         pts = pins[["lon", "lat"]].to_numpy()
         x, y, _ = project_to_meters(pts[:, 0], pts[:, 1])
         P = np.column_stack([x, y])
@@ -125,10 +138,42 @@ class TestSamplePins:
         np.fill_diagonal(d, np.inf)
         assert d.min() >= 15.0 - 1e-6
 
+    def test_design_weights_on_primaries_only(self):
+        df = self._clustered(60)
+        # P_psu = 0.5, N_buildings = 60, m_eff = 8 → Pi = 0.5*8/60, weight = 1/Pi = 15
+        sel = pd.DataFrame({"cluster": ["C0"], "n_buildings": [60], "stratum": ["Low"], "P_psu": [0.5]})
+        pins = sample_pins(df, sel, PinConfig(n_primary=8, n_alternate=8, min_sep_m=15))
+        primaries = pins[pins["role"] == "primary"]
+        alternates = pins[pins["role"] == "alternate"]
+        assert np.allclose(primaries["weight"], 15.0, atol=1e-6)
+        assert alternates["weight"].isna().all()  # alternates carry no inclusion weight
+
     def test_handles_sparse_cluster(self):
-        # Only 3 buildings, all far apart → at most 3 pins, no crash.
         df = pd.DataFrame([_at(0, 0, 40), _at(0, 200, 40), _at(200, 0, 40)])
         x, y, _ = project_to_meters(df["lon"].to_numpy(), df["lat"].to_numpy())
         df["x_m"], df["y_m"], df["cluster"] = x, y, "C0"
-        pins = sample_pins(df, ["C0"], PinConfig(min_sep_m=15))
+        pins = sample_pins(df, _psu_df(["C0"], [3]), PinConfig(min_sep_m=15))
         assert len(pins) == 3
+
+
+class TestStratification:
+    def _grid(self, n_side, spacing_m, area_m2=40.0):
+        # a regular grid of buildings around the anchor, in a single dense block
+        rows = []
+        for i in range(n_side):
+            for j in range(n_side):
+                rows.append(_at(i * spacing_m, j * spacing_m, area_m2))
+        return pd.DataFrame(rows)
+
+    def test_no_reference_point_means_single_low_pool(self):
+        res = cluster_buildings(_scatter(200, seed=5), ClusterConfig(target_psus=4, seed=5))
+        assert (res.psu_frame["stratum"] == "Low").all()
+        assert "pct_50" not in res.psu_frame.columns  # no coverage metrics without distance
+
+    def test_reference_point_computes_distance_and_strata(self):
+        df = self._grid(20, 6)  # 400 buildings, ~6m apart, tight block
+        # reference point right at the anchor → buildings are very close to it
+        res = cluster_buildings(df, ClusterConfig(target_psus=3, seed=1), reference_point=(LON0, LAT0))
+        assert "distance_to_visit" in res.buildings.columns
+        assert {"pct_50", "pct_75", "pct_le_400"}.issubset(res.psu_frame.columns)
+        assert res.psu_frame["stratum"].isin({"High", "Medium", "Low"}).all()

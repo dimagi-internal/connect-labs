@@ -1,12 +1,18 @@
 """PPS selection + within-PSU pin sampling — port of the R selection stage.
 
 1. `select_psus`: systematic PPS draw of PSUs with probability proportional to
-   building count (UPsystematic, with a weighted-without-replacement fallback if
-   the systematic pass lands off the requested count).
-2. `sample_pins`: inside each selected PSU, iteratively pick buildings that are
-   at least `min_sep_m` apart (spatial thinning), taking `n_primary` then
-   `n_alternate`. Primaries are the targets; alternates are the 15m-substitution
-   fallbacks the FLW uses when a primary is non-residential/unreachable.
+   building count (UPsystematic, with a weighted-without-replacement fallback).
+   Returns the selected PSUs *with* their inclusion probability `P_psu`.
+2. `sample_pins`: inside each selected PSU, iteratively pick buildings ≥ min_sep_m
+   apart (spatial thinning), taking `n_primary` then `n_alternate`. Primaries are
+   the targets; alternates are the 15m-substitution fallbacks.
+
+Design-based inclusion weights (primaries only), matching the R pipeline so
+downstream coverage estimates are unbiased:
+    P_build_given_psu = m_eff / N_buildings
+    Pi                = P_psu * P_build_given_psu
+    weight            = 1 / Pi
+where `m_eff` is the effective number of primaries actually placed in the PSU.
 """
 
 from __future__ import annotations
@@ -17,26 +23,36 @@ import numpy as np
 import pandas as pd
 
 
-def select_psus(psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926) -> list[str]:
+def select_psus(psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926) -> pd.DataFrame:
+    """Return selected PSUs as a DataFrame [cluster, n_buildings, stratum, P_psu].
+
+    `P_psu` is the PSU's inclusion probability (proportional to building count).
+    """
+    cols = ["cluster", "n_buildings", "stratum", "P_psu"]
     if psu_frame.empty or n_take <= 0:
-        return []
+        return pd.DataFrame(columns=cols)
+
     sizes = psu_frame["n_buildings"].to_numpy(dtype=float)
-    clusters = psu_frame["cluster"].tolist()
     n = len(sizes)
+    pi = np.clip(n_take * sizes / sizes.sum(), 1e-9, 1 - 1e-9) if n_take < n else np.ones(n)
+
     if n_take >= n:
-        return clusters
+        chosen = np.arange(n)
+    else:
+        rng = np.random.default_rng(seed)
+        u = rng.random()
+        cs = np.concatenate([[0.0], np.cumsum(pi)])
+        sel = np.floor(cs[1:] + u) > np.floor(cs[:-1] + u)
+        if int(sel.sum()) != n_take:
+            chosen = np.sort(rng.choice(n, size=n_take, replace=False, p=sizes / sizes.sum()))
+        else:
+            chosen = np.flatnonzero(sel)
 
-    rng = np.random.default_rng(seed)
-    pi = n_take * sizes / sizes.sum()
-    pi = np.clip(pi, 1e-9, 1 - 1e-9)
-    u = rng.random()
-    cs = np.concatenate([[0.0], np.cumsum(pi)])
-    sel = np.floor(cs[1:] + u) > np.floor(cs[:-1] + u)
-
-    if int(sel.sum()) != n_take:
-        idx = rng.choice(n, size=n_take, replace=False, p=sizes / sizes.sum())
-        return [clusters[i] for i in sorted(idx)]
-    return [clusters[i] for i in np.flatnonzero(sel)]
+    out = psu_frame.iloc[chosen].copy()
+    out["P_psu"] = pi[chosen]
+    if "stratum" not in out.columns:
+        out["stratum"] = "Low"
+    return out[cols].reset_index(drop=True)
 
 
 @dataclass(frozen=True)
@@ -47,33 +63,45 @@ class PinConfig:
     seed: int = 20250927
 
 
-def sample_pins(
-    buildings: pd.DataFrame, selected_clusters: list[str], config: PinConfig | None = None
-) -> pd.DataFrame:
-    """Return one row per sampled pin: cluster, lon, lat, area_m2, role, order_in_cluster."""
+def sample_pins(buildings: pd.DataFrame, selected_psus: pd.DataFrame, config: PinConfig | None = None) -> pd.DataFrame:
+    """One row per sampled pin: cluster, lon, lat, area_m2, role, order_in_cluster, weight.
+
+    `selected_psus` is the DataFrame from `select_psus` (carries n_buildings + P_psu).
+    """
     config = config or PinConfig()
     out = []
     rng = np.random.default_rng(config.seed)
     target_n = config.n_primary + config.n_alternate
+    meta = {r["cluster"]: (int(r["n_buildings"]), float(r["P_psu"])) for _, r in selected_psus.iterrows()}
 
-    for cluster in selected_clusters:
+    for cluster in selected_psus["cluster"].tolist():
         sub = buildings[buildings["cluster"] == cluster].reset_index(drop=True)
         if sub.empty:
             continue
         pts = sub[["x_m", "y_m"]].to_numpy()
         picked = _thin_to_separated(pts, target_n, config.min_sep_m, rng)
+        n_buildings, p_psu = meta[cluster]
+        m_eff = min(config.n_primary, len(picked))
         for rank, i in enumerate(picked, start=1):
+            is_primary = rank <= config.n_primary
+            if is_primary and n_buildings > 0 and p_psu > 0:
+                p_build = m_eff / n_buildings
+                pi = p_psu * p_build
+                weight = 1.0 / pi if pi > 0 else np.nan
+            else:
+                weight = np.nan  # alternates have no inclusion weight
             out.append(
                 {
                     "cluster": cluster,
                     "lon": float(sub.loc[i, "lon"]),
                     "lat": float(sub.loc[i, "lat"]),
                     "area_m2": float(sub.loc[i, "area_m2"]) if "area_m2" in sub.columns else None,
-                    "role": "primary" if rank <= config.n_primary else "alternate",
+                    "role": "primary" if is_primary else "alternate",
                     "order_in_cluster": rank,
+                    "weight": weight,
                 }
             )
-    return pd.DataFrame(out, columns=["cluster", "lon", "lat", "area_m2", "role", "order_in_cluster"])
+    return pd.DataFrame(out, columns=["cluster", "lon", "lat", "area_m2", "role", "order_in_cluster", "weight"])
 
 
 def _thin_to_separated(pts: np.ndarray, target_n: int, min_sep_m: float, rng: np.random.Generator) -> list[int]:
@@ -88,7 +116,6 @@ def _thin_to_separated(pts: np.ndarray, target_n: int, min_sep_m: float, rng: np
         if len(selected) > 0 and available.size > 0:
             sel_pts = pts[selected]
             avail_pts = pts[available]
-            # min distance from each available point to any selected point
             d = np.sqrt(((avail_pts[:, None, :] - sel_pts[None, :, :]) ** 2).sum(axis=2)).min(axis=1)
             available = available[d >= min_sep_m]
     return selected
