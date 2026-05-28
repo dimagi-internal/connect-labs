@@ -8,7 +8,6 @@ from commcare_connect.rooftop_surveys.qc.cascade import (
     apply_cascade,
     cascade_report_by,
     older_services_violations,
-    rooftop_rules,
     validation_cascade,
 )
 
