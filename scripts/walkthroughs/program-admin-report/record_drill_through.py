@@ -55,11 +55,16 @@ def main() -> None:
         out_dir=OUT_DIR,
         manifest_path=MANIFEST,
         prewarm=True,
+        # Defer video until after discovery + pre-warm. Both run on the
+        # warm page and take ~20s (PAR snapshot walk + GDrive image cache
+        # warming); without deferral the recorded clip would open on a
+        # blank about:blank screen for that whole window. start_recording()
+        # below creates the video context once we're ready for scene 1.
+        defer_record=True,
         # The drill-through doesn't need confirm() dialogs (no bulk mark),
         # but accepting is harmless and matches the warm-then-record convention.
     ) as rec:
         warm = rec.warm_page
-        page = rec.page
 
         # ---------- Discovery (NOT recorded) ----------
         goto_and_settle(warm, f"{wcfg.LABS_BASE_URL}/labs/workflow/", timeout=30_000, settle_seconds=0)
@@ -102,6 +107,9 @@ def main() -> None:
         print("  pre-warm done\n")
 
         # ---------- Recording ----------
+        # Now that discovery + pre-warm are done, start the video. Anything
+        # above this line ran on the warm page and is NOT in the clip.
+        page = rec.start_recording()
         goto_and_settle(
             page,
             par_url,

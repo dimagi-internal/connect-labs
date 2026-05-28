@@ -460,6 +460,16 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
     // we don't fire while the SSE pipeline-data stream is still warming up
     // (initial render with empty rows would create zero flags anyway, but
     // explicit is better than implicit).
+    // Flags created by ensureAutoFlags on THIS page load. view.flagsFor
+    // only knows about flags that existed when the page was served, so on
+    // a brand-new run the auto-applied flags wouldn't render until a
+    // reload. We capture the created flags here and merge them into the
+    // per-row lookup so the pills (and the flag-context Action items)
+    // appear immediately — no reload, which is both better UX and what
+    // lets the walkthrough recorder see flags on a freshly-seeded run.
+    var _localFlags = React.useState([]);
+    var localFlags = _localFlags[0]; var setLocalFlags = _localFlags[1];
+
     React.useEffect(function() {
         if (!view || !view.ensureAutoFlags || !runIsLive || !rows.length) return;
         var computed = [];
@@ -474,9 +484,30 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
             });
         });
         if (computed.length) {
-            view.ensureAutoFlags(computed);
+            Promise.resolve(view.ensureAutoFlags(computed)).then(function(created) {
+                if (created && created.length) setLocalFlags(function(prev) { return prev.concat(created); });
+            });
         }
     }, [rows.length, runIsLive]);
+
+    // Per-row flag lookup that unions server-known flags (view.flagsFor)
+    // with any created this page load (localFlags), deduped by
+    // (flw_id, flag_key) so a reload that re-serves the now-persisted
+    // flags doesn't double-render.
+    function flagsForRow(username) {
+        var base = (view && typeof view.flagsFor === 'function') ? view.flagsFor(username) : [];
+        var extra = localFlags.filter(function(f) { return f.flw_id === username; });
+        if (!extra.length) return base;
+        var seen = {};
+        var out = [];
+        base.concat(extra).forEach(function(f) {
+            var k = (f.flw_id || username) + '::' + f.flag_key;
+            if (seen[k]) return;
+            seen[k] = true;
+            out.push(f);
+        });
+        return out;
+    }
 
     // ── Worker name lookup ──────────────────────────────────────
     var workerMap = React.useMemo(function() {
@@ -808,7 +839,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // the same slot.
                                     React.createElement('td', {className: 'px-4 py-3 text-sm align-top'},
                                         (function() {
-                                            var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
+                                            var rowFlags = flagsForRow(r.username);
                                             rowFlags = rowFlags.slice().sort(function(a, b) {
                                                 return (a.flag_key || '').localeCompare(b.flag_key || '');
                                             });
@@ -839,7 +870,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // doesn't decorate items with icons).
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm align-top'},
                                         (function() {
-                                            var rowFlags = (view && typeof view.flagsFor === 'function') ? view.flagsFor(r.username) : [];
+                                            var rowFlags = flagsForRow(r.username);
                                             var hasAnyFlag = rowFlags.length > 0;
 
                                             var auditItems = [
