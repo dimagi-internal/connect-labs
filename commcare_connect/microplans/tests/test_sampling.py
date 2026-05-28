@@ -11,10 +11,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from commcare_connect.rooftop_surveys.sampling.cluster import ClusterConfig, cluster_buildings
-from commcare_connect.rooftop_surveys.sampling.filters import FilterConfig, apply_frame_filters
-from commcare_connect.rooftop_surveys.sampling.geo import project_to_meters
-from commcare_connect.rooftop_surveys.sampling.sample import PinConfig, sample_pins, select_psus
+from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
+from commcare_connect.microplans.core.geo import project_to_meters
+from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
+from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
 
 # Maiduguri-ish anchor so UTM projection picks a sane zone.
 LON0, LAT0 = 13.155, 11.832
@@ -158,7 +158,7 @@ class TestSamplePins:
 
 class TestConfigAndGuards:
     def test_frame_config_clamps_bad_inputs(self):
-        from commcare_connect.rooftop_surveys.sampling.frame import FrameConfig
+        from commcare_connect.microplans.sampling.frame import FrameConfig
 
         cfg = FrameConfig.from_payload(
             {
@@ -179,7 +179,7 @@ class TestConfigAndGuards:
         import pytest
         from shapely.geometry import box
 
-        from commcare_connect.rooftop_surveys.sampling import footprints
+        from commcare_connect.microplans.core import footprints
 
         huge = box(0, 0, 40, 40)  # ~tens of millions of km² bbox — way over the cap
         with pytest.raises(ValueError, match="too large"):

@@ -1,4 +1,4 @@
-"""Data access for rooftop_surveys — wraps LabsRecordAPIClient.
+"""Data access for microplans — wraps LabsRecordAPIClient.
 
 Persists the drawn area + generated frame as LabsRecords scoped by
 experiment=<opportunity_id>. No Django models; reads/writes go to the
@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from commcare_connect.rooftop_surveys.models import TYPE_AREA, TYPE_FRAME, RooftopAreaRecord, RooftopFrameRecord
+from commcare_connect.microplans.core.models import TYPE_AREA, TYPE_FRAME, RooftopAreaRecord, RooftopFrameRecord
 from commcare_connect.workflow.data_access import BaseDataAccess
 
 # Bump when the rooftop_area / rooftop_frame `data` shape changes, so readers
 # can branch on schema_version instead of guessing (cheap migration insurance).
-SCHEMA_VERSION = 1
+# v2 added `mode` ("sampling" | "coverage").
+SCHEMA_VERSION = 2
 
 
 class RooftopDataAccess(BaseDataAccess):
@@ -24,13 +25,14 @@ class RooftopDataAccess(BaseDataAccess):
     def _experiment(self) -> str:
         return str(self.opportunity_id)
 
-    def save_area(self, areas: list[dict], config: dict, name: str = "") -> RooftopAreaRecord:
+    def save_area(self, areas: list[dict], config: dict, name: str = "", mode: str = "sampling") -> RooftopAreaRecord:
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_AREA,
             data={
                 "schema_version": SCHEMA_VERSION,
                 "name": name,
+                "mode": mode,
                 "areas": areas,
                 "config": config,
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -44,12 +46,14 @@ class RooftopDataAccess(BaseDataAccess):
         pins: dict,
         hulls: dict,
         stats: list[dict],
+        mode: str = "sampling",
     ) -> RooftopFrameRecord:
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_FRAME,
             data={
                 "schema_version": SCHEMA_VERSION,
+                "mode": mode,
                 "pins": pins,
                 "hulls": hulls,
                 "stats": stats,

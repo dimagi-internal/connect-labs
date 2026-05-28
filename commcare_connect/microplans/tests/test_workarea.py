@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from shapely import wkt
 
-from commcare_connect.rooftop_surveys.sampling.geo import project_to_meters
-from commcare_connect.rooftop_surveys.workarea import build_work_areas, to_api_payload, to_csv_rows
+from commcare_connect.microplans.core.geo import project_to_meters
+from commcare_connect.microplans.core.workarea import build_work_areas, to_api_payload, to_csv_rows
 
 PINS = {
     "type": "FeatureCollection",

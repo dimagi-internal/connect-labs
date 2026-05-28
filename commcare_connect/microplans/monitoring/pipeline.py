@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from commcare_connect.rooftop_surveys.monitoring.derive import add_attempt_index, derive_attempt_flags
-from commcare_connect.rooftop_surveys.monitoring.duration import time_to_completion
-from commcare_connect.rooftop_surveys.monitoring.gps_issue import build_gps_issue_report
-from commcare_connect.rooftop_surveys.monitoring.normalize import normalize_visits
-from commcare_connect.rooftop_surveys.monitoring.rollups import build_cluster_rollup, build_enum_daily
+from commcare_connect.microplans.monitoring.derive import add_attempt_index, derive_attempt_flags
+from commcare_connect.microplans.monitoring.duration import time_to_completion
+from commcare_connect.microplans.monitoring.gps_issue import build_gps_issue_report
+from commcare_connect.microplans.monitoring.normalize import normalize_visits
+from commcare_connect.microplans.monitoring.rollups import build_cluster_rollup, build_enum_daily
 
 
 def compute_monitoring(raw_visits: pd.DataFrame, field_map: dict | None = None) -> dict:
