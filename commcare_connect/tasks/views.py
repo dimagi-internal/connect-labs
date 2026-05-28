@@ -289,6 +289,7 @@ class TaskCreateEditView(LoginRequiredMixin, TemplateView):
             "username": self.request.GET.get("username", ""),
             "title": self.request.GET.get("title", ""),
             "description": self.request.GET.get("description", ""),
+            "coaching_prompt": self.request.GET.get("coaching_prompt", ""),
         }
         # Filter out empty values
         quick_params = {k: v for k, v in quick_params.items() if v}
