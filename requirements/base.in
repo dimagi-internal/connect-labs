@@ -50,3 +50,5 @@ shapely>=2.0.0  # For coverage maps WKT parsing
 geopandas>=0.14.0  # For coverage maps spatial operations
 markdown  # For solicitation markdown rendering
 mcp>=1.0.0  # MCP server (remote labs MCP)
+duckdb>=1.1.0  # Overture Maps building footprints via S3 parquet (rooftop_surveys sampling)
+scikit-learn>=1.3.0  # k-means clustering for rooftop_surveys sampling

@@ -154,6 +154,7 @@ LOCAL_APPS = [
     "commcare_connect.organization",
     "commcare_connect.prelogin",
     "commcare_connect.program",
+    "commcare_connect.rooftop_surveys",
     "commcare_connect.solicitations",
     "commcare_connect.users",
     "commcare_connect.web",
