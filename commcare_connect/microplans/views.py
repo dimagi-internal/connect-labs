@@ -112,6 +112,87 @@ class SaveFrameView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "area_record_id": area_record.id, "frame_record_id": frame_record.id})
 
 
+class CountriesView(LoginRequiredMixin, View):
+    """List ISO countries for the area picker, flagging those with bespoke data.
+
+    `bespoke` = countries that have curated `labs.admin_boundaries` polygons
+    loaded (so the resolver will prefer them over Overture). The UI can badge
+    these as higher-quality.
+    """
+
+    def get(self, request):
+        from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+        from commcare_connect.microplans.core import iso
+
+        bespoke = sorted(AdminBoundary.objects.values_list("iso_code", flat=True).distinct())
+        return JsonResponse({"status": "ok", "countries": iso.all_countries(), "bespoke": bespoke})
+
+
+class AdminAreasView(LoginRequiredMixin, View):
+    """List admin areas for a country/level via the boundary resolver.
+
+    POST body: {country, level, q?, parent?}. `parent` is an AdminArea (as
+    returned by a previous call) used to narrow children. Response reports which
+    source served the level so the UI can show "using GRID3 (bespoke)" etc.
+    """
+
+    def post(self, request, opp_id):
+        from commcare_connect.microplans.core.admin_boundaries import AdminArea, get_resolver
+
+        try:
+            payload = json.loads(request.body)
+            country = payload["country"]
+            level = int(payload["level"])
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        parent = AdminArea.from_json(payload["parent"]) if isinstance(payload.get("parent"), dict) else None
+        resolver = get_resolver()
+        try:
+            areas = resolver.list_areas(
+                country,
+                level,
+                name_contains=(payload.get("q") or None),
+                parent=parent,
+                limit=int(payload.get("limit", 500)),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans admin areas lookup failed (country=%s level=%s)", country, level)
+            return JsonResponse(
+                {"status": "error", "detail": "Boundary lookup failed. Check server logs."}, status=502
+            )
+
+        return JsonResponse(
+            {
+                "status": "ok",
+                "source": resolver.source_for(country, level).name,
+                "areas": [a.to_json() for a in areas],
+            }
+        )
+
+
+class AdminAreaGeometryView(LoginRequiredMixin, View):
+    """Resolve one chosen admin area to its GeoJSON geometry (the sampling boundary)."""
+
+    def post(self, request, opp_id):
+        from commcare_connect.microplans.core.admin_boundaries import AdminArea, get_resolver
+
+        try:
+            area = AdminArea.from_json(json.loads(request.body)["area"])
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        try:
+            geom = get_resolver().geometry(area)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans admin area geometry failed (%s/%s)", area.country, area.name)
+            return JsonResponse({"status": "error", "detail": "Boundary geometry lookup failed."}, status=502)
+
+        if not geom:
+            return JsonResponse({"status": "error", "detail": "Area not found."}, status=404)
+        return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
+
+
 class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
     """Render the previewed pins as a Connect microplanning work-area import CSV.
 
