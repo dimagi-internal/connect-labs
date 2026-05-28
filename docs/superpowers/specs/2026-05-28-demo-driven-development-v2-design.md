@@ -1,8 +1,8 @@
-# Video-Driven Design (VDD): a repeatable concept-to-video product loop
+# Demo-Driven Development v2: a repeatable concept-to-video product loop
 
 **Date:** 2026-05-28
-**Status:** Design — pending review
-**Evolves:** [`2026-03-23-demo-driven-development-design.md`](2026-03-23-demo-driven-development-design.md)
+**Status:** Design — approved in conversation
+**Evolves:** [`2026-03-23-demo-driven-development-design.md`](2026-03-23-demo-driven-development-design.md) — this is v2 of demo-driven development (same name, expanded into a self-improving loop)
 **First exercise:** Rooftop Surveys (this repo) — see [`2026-05-27-rooftop-surveys-app-design.md`](2026-05-27-rooftop-surveys-app-design.md)
 
 ## Problem / the insight
@@ -11,7 +11,7 @@ Building the rooftop-surveys video walkthrough did something a design doc couldn
 
 Today nothing turns that into a repeatable instrument. Demo-driven development (the predecessor) and the canopy walkthrough loop both optimize *"is the video good?"*. The walkthrough `improve` agent does route fixes to product code, but it chases *slide impressiveness*, not *conceptual soundness*. No tool grades **"did watching this reveal a design flaw / is the concept sound?"** as a first-class output.
 
-VDD is the framework that makes video a design instrument with its own QA/eval self-improvement loop, and ends with a polished explainer you can ship to others.
+Demo-driven development v2 makes video a design instrument with its own QA/eval self-improvement loop, and ends with a polished explainer you can ship to others.
 
 ## Core model
 
