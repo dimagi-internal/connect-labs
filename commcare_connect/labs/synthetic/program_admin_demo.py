@@ -218,6 +218,48 @@ def _connect_token(user):
     return require_connect_token(user)
 
 
+def _refresh_render_code(wda, definition, template_key: str) -> bool:
+    """Replace `definition`'s render_code with the current template source.
+
+    Returns True if the render_code was written (or the version bumped),
+    False if the def already has the latest code byte-for-byte.
+
+    Why this exists: when a synthetic seed re-runs against opps that
+    already have a workflow definition (the cleanup step does NOT delete
+    definitions, so `existing_defs[0]` re-uses them), the def carries
+    forward whatever render_code was captured at original creation
+    time. Post-deploy template edits land in
+    ``commcare_connect/workflow/templates/<name>.py`` source, but the
+    runner reads the LabsRecord-stored render_code that was set when the
+    def was first written — so re-seeding alone never refreshes the JSX.
+
+    We used to fix this manually after every deploy by calling the MCP's
+    ``workflow_sync_from_template_file`` / ``workflow_update_render_code``
+    per opportunity. Doing the same thing in-line as part of the seed
+    means re-seeding IS the upgrade path: post-deploy you re-seed and
+    every def comes back with the current render code.
+
+    save_render_code is an upsert + repoint, so unconditional calls are
+    cheap and safe even when nothing changed.
+    """
+    from commcare_connect.workflow.templates import get_template
+
+    template = get_template(template_key)
+    if not template:
+        return False
+    component_code = template.get("render_code")
+    if not component_code:
+        return False
+
+    existing = wda.get_render_code(definition.id)
+    if existing and existing.data.get("component_code") == component_code:
+        return False  # Already up to date.
+
+    next_version = (existing.data.get("version") if existing else 0) + 1
+    wda.save_render_code(definition_id=definition.id, component_code=component_code, version=next_version)
+    return True
+
+
 # ---------------------------------------------------------------------- #
 # Orchestrator
 # ---------------------------------------------------------------------- #
@@ -314,6 +356,15 @@ def program_admin_demo_seed(
                 definition = existing_defs[0]
             else:
                 definition, _, _ = create_workflow_from_template(wda, template_key="chc_nutrition_analysis")
+            # Refresh the def's render_code to whatever the current template
+            # source has. Without this, an existing def carries forward the
+            # render_code captured at creation time and never picks up
+            # post-deploy template updates — which means re-seeding after a
+            # template change still serves stale JSX (the manual
+            # workflow_sync_from_template_file dance we kept doing). save_
+            # render_code is an upsert + repoint, so this is safe to call
+            # unconditionally.
+            _refresh_render_code(wda, definition, "chc_nutrition_analysis")
 
             watched_sources.append({"opportunity_id": opp_id, "workflow_definition_id": definition.id})
 
@@ -427,6 +478,10 @@ def program_admin_demo_seed(
             updated["config"]["watched_sources"] = watched_sources
             par_wda.update_definition(definition_id=par_def.id, data=updated)
             par_def = par_wda.get_definition(par_def.id)
+        # Same render_code refresh as the per-opp chc_nutrition def — a
+        # PAR def that survives across re-seeds needs to pick up
+        # post-deploy template changes too.
+        _refresh_render_code(par_wda, par_def, "program_admin_report")
 
         last_monday = weeks[-1]
         par_completed_at = (monday_dt(last_monday) + dt.timedelta(days=1)).isoformat()
