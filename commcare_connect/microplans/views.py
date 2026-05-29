@@ -747,6 +747,19 @@ class ProgramGroupShareView(LoginRequiredMixin, TemplateView):
                     }
                 )
             plan_lib.score_plans(entries)
+            # Present best-first with a relative fit BAR + a "Best fit" mark on the
+            # top plan. The composite is min-max relative, so a 2-plan set yields a
+            # bare "0.0" that misreads as "broken" to a partner — a bar (floored to a
+            # visible sliver) + ranking communicates relative standing honestly.
+            scored = sorted(
+                (e for e in entries if e.get("composite") is not None), key=lambda e: e["composite"], reverse=True
+            )
+            unscored = [e for e in entries if e.get("composite") is None]
+            entries = scored + unscored
+            for i, e in enumerate(entries):
+                c = e.get("composite")
+                e["bar_width"] = max(int(round(c)), 4) if c is not None else 0
+                e["recommended"] = i == 0 and c is not None and len(scored) > 1
             context["group_name"] = group.name
             context["offered_to"] = group.offered_to
             context["entries"] = entries
