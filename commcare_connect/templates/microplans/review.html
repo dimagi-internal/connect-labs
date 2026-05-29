@@ -70,7 +70,7 @@
         <table class="min-w-full text-xs">
           <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
             <th class="p-1.5" id="flw-dim">Worker</th><th class="p-1.5">Areas</th><th class="p-1.5">Buildings</th>
-            <th class="p-1.5">Population</th><th class="p-1.5">Expected visits</th><th class="p-1.5">Spread (km)</th>
+            <th class="p-1.5" id="flw-pop-col">Population</th><th class="p-1.5">Expected visits</th><th class="p-1.5">Spread (km)</th>
           </tr></thead>
           <tbody id="flw-body"></tbody>
         </table>
@@ -179,11 +179,15 @@
       chip(k.dimension === "worker" ? "Workers" : "Groups", p.territory_count ?? 0, k.dimension === "worker" ? "" : "No workers assigned yet — metrics shown by group"),
     ].join("");
     $("flw-dim").textContent = k.dimension === "worker" ? "Worker" : "Group";
+    // Population comes from admin-boundary data, which footprint-only frames don't
+    // have — hide the column entirely rather than show a full column of "—".
+    const showPop = !!p.has_population;
+    $("flw-pop-col").style.display = showPop ? "" : "none";
     $("flw-body").innerHTML = (k.territories || []).map((t) =>
       `<tr class="border-b"><td class="p-1.5 font-medium">${esc(t.name)}</td>
         <td class="p-1.5">${t.work_areas}</td>
         <td class="p-1.5">${(t.buildings || 0).toLocaleString()}</td>
-        <td class="p-1.5">${t.population ? t.population.toLocaleString() : "—"}</td>
+        ${showPop ? `<td class="p-1.5">${t.population ? t.population.toLocaleString() : "—"}</td>` : ""}
         <td class="p-1.5">${(t.expected_visits || 0).toLocaleString()}</td>
         <td class="p-1.5">${t.spread_km}</td></tr>`).join("");
   }
