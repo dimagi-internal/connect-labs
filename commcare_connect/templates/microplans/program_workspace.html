@@ -8,7 +8,10 @@
       <h1 class="text-2xl font-bold text-gray-900">Microplan portfolio</h1>
       <p class="text-sm text-gray-500">Program #{{ program_id }} — candidate plans across regions, before any opportunity is live.</p>
     </div>
-    <a href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button">+ New plan</a>
+    <div class="flex items-center gap-2">
+      <button type="button" id="compare-sel" class="button button-sm outline-style" disabled title="Tick 2+ plans to compare">Compare selected</button>
+      <a href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button">+ New plan</a>
+    </div>
   </div>
 
   <div id="status" class="text-sm text-gray-500"></div>
@@ -41,6 +44,7 @@
   const transitionUrl = (pid) => base + "plan/" + pid + "/transition/";
   const groupShareUrl = (gid) => base + "group/" + gid + "/share/";
   const groupUpdateUrl = (gid) => base + "group/" + gid + "/";
+  const compareUrl = () => base + "compare/?plans=" + [...selected].join(",");
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body || {}) });
@@ -122,6 +126,7 @@
     document.querySelectorAll(".plan-sel").forEach((cb) => cb.addEventListener("change", () => {
       const id = +cb.value; if (cb.checked) selected.add(id); else selected.delete(id);
       $("new-group").disabled = selected.size === 0;
+      $("compare-sel").disabled = selected.size < 2;
     }));
   }
 
@@ -165,6 +170,9 @@
     const r = await post(groupUpdateUrl(b.dataset.share), { shared: b.dataset.shared !== "true" });
     if (r.ok) load();
   });
+
+  // compare the ticked plans head-to-head
+  $("compare-sel").addEventListener("click", () => { if (selected.size >= 2) window.location = compareUrl(); });
 
   load();
 })();
