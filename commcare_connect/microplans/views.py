@@ -515,6 +515,13 @@ class ComparePageView(LoginRequiredMixin, TemplateView):
 # ============================================================================
 # Program layer: a program owns a portfolio of candidate plans + plan groups.
 # Plans are program-scoped; an opportunity is bound only at Deploy.
+#
+# Authorization: ProgramPlanDataAccess sends program_id on every read/write, so
+# the production LabsRecord API enforces program membership (a non-member gets an
+# empty/404 result — see CLAUDE.md "Permission Model"). Labs has no local program
+# membership table to check against, so this is the only auth boundary; the HTML
+# shell views render for any logged-in user, but their data fetches return nothing
+# unless the user is a member. No program data leaks from rendering the shell.
 # ============================================================================
 
 

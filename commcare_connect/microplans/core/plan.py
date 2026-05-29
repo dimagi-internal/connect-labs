@@ -232,7 +232,12 @@ _EARTH_KM = 6371.0088
 
 
 def _haversine_km(p: list[float], q: list[float]) -> float:
-    lon1, lat1, lon2, lat2 = map(math.radians, [p[0], p[1], q[0], q[1]])
+    # Centroids are server-computed [lon, lat] floats, but guard malformed/short
+    # input so one bad work area can't blow up the whole plan's KPI computation.
+    try:
+        lon1, lat1, lon2, lat2 = map(math.radians, [float(p[0]), float(p[1]), float(q[0]), float(q[1])])
+    except (TypeError, ValueError, IndexError):
+        return 0.0
     a = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
     a = min(1.0, max(0.0, a))  # guard float error so asin(sqrt) can't domain-error
     return 2 * _EARTH_KM * math.asin(math.sqrt(a))
@@ -366,7 +371,7 @@ def score_plans(entries: list[dict]) -> list[dict]:
     covs = [t[2] for t in triplets]
 
     def norm(val, lo, hi, higher_better):
-        if val is None or hi == lo:
+        if val is None or abs(hi - lo) < 1e-9:
             return 1.0  # all tied (or missing) → neutral-best, don't penalise
         frac = (val - lo) / (hi - lo)
         return frac if higher_better else 1 - frac
