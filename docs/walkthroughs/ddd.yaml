@@ -1,7 +1,8 @@
 # Unified spec for demo-driven-development — DDD run on DDD ITSELF (the self-loop test).
 # The demo's subject is the DDD loop; its renderable artifact is the canopy-web review surface
-# (a real web app). Personas: Dana (a product lead, the human taste/approval) + DDD (the loop).
-# Each sentence of `narrative` is one scene, in order, naming its actor. Scenes 1-5 are grounded
+# (a real web app). Persona: Dana, the product lead who USES DDD (one person — DDD is the tool,
+# not a character; personas are people only).
+# Each sentence of `narrative` is one scene, in order. Scenes 1-5 are grounded
 # in shipped machinery; scenes 6-7 (render+judge, promote) are honestly tagged frontier — running
 # THIS demo through the loop is what would flip them to built.
 
@@ -9,7 +10,7 @@ name: demo-driven-development
 narrative: >-
   Dana, a product lead, hands DDD a half-formed feature idea, and DDD grounds it — auditing the
   docs and code into a why-brief where every claim is tagged built or a frontier gap so the story
-  can't drift into fiction. From that grounding DDD writes one cohesive multi-persona narrative and
+  can't drift into fiction. From that grounding DDD writes one cohesive narrative and
   splits it, sentence by sentence, into numbered story-beat scenes. Each scene commits to a feature
   set that says exactly what to build and how to confirm it, so the story is also the build plan. A
   machine gate then cold-reads the narration and tries to rebuild the plan from the story alone,
@@ -24,19 +25,15 @@ auth:
   type: session
 why_brief: ../superpowers/ddd/ddd/why-brief.yaml
 
+# Personas are PEOPLE only — never the tool/system. DDD is the product Dana uses,
+# not a character. Single persona until there's a genuine second human role.
 personas:
   lead:
     name: Dana
-    role: Product lead
+    role: Product lead (the DDD user)
     org: the builder
     color: "#3B82F6"
-    intro: Dana brings a half-formed feature idea and supplies the one thing AI can't — taste on the story's framing and the call to ship.
-  ddd:
-    name: DDD
-    role: The demo-driven-development loop
-    org: canopy
-    color: "#F97316"
-    intro: DDD grounds the why, writes and judges the demo, and self-improves it until it's a shippable explainer.
+    intro: Dana brings a half-formed feature idea and supplies the one thing AI can't — taste on the story's framing and the call to ship. DDD is the tool she drives.
 
 scenes:
   # Sentence 1.
@@ -59,7 +56,7 @@ scenes:
         verify: validate(why_brief) rejects a Gap whose claim_ref matches no spine id (test).
 
   # Sentence 2.
-  - persona: ddd
+  - persona: lead
     title: DDD writes the story and splits it into beats
     show: >-
       on the surface, read the cohesive narrative in the demo banner, then scroll the numbered scene
@@ -78,7 +75,7 @@ scenes:
         verify: spec_qa fails a scene whose title contains "(frontier)" (test).
 
   # Sentence 3.
-  - persona: ddd
+  - persona: lead
     title: Every beat says what to build and how to check it
     show: >-
       expand a scene card's Features list and read the labeled "What to build" and "Verify — how
@@ -97,7 +94,7 @@ scenes:
         verify: spec_qa fails a feature whose verify is fewer than 3 words (test).
 
   # Sentence 4.
-  - persona: ddd
+  - persona: lead
     title: A machine asks — could you build it from the story alone?
     show: >-
       read the actionability score on the surface header and the per-scene actionability badges.
@@ -134,7 +131,7 @@ scenes:
         verify: the narrative ReviewRequest carries gate=concept_change with options [approve, redraft] (test).
 
   # Sentence 6 — frontier: the back half we are testing right now.
-  - persona: ddd
+  - persona: lead
     title: DDD renders the demo and two judges grade it
     show: >-
       open the Cuts tab — the home for the rendered walkthrough and, once DDD has run, the two
@@ -153,7 +150,7 @@ scenes:
         verify: run_pipeline.assemble_run_state records two independent verdicts with a weakest-link overall (run artifact).
 
   # Sentence 7 — frontier: the terminal artifact.
-  - persona: ddd
+  - persona: lead
     title: Out comes an explainer video Dana can ship
     show: >-
       open the Cuts tab — once the loop converges, the promoted explainer video and its docs page
