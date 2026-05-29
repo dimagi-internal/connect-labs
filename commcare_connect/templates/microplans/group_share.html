@@ -42,12 +42,17 @@
         <tr class="hover:bg-gray-50">
           <td class="px-3 py-2">
             <div class="font-medium text-gray-900">{{ e.name|default:"Untitled plan" }}</div>
-            <div class="text-xs text-gray-500">{{ e.region|default:"—" }}</div>
+            <div class="text-xs text-gray-500">{{ e.region|default:"—" }}{% if not e.assigned %} · <span class="text-amber-600">workers not yet assigned</span>{% endif %}</div>
           </td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.plan.territory_count }}</td>
-          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.plan.max_spread_km }} km</td>
           <td class="px-3 py-2 text-right tabular-nums">
-            {% if e.kpis.plan.has_population %}
+            {% if e.assigned %}{{ e.kpis.plan.territory_count }}{% else %}<span class="text-gray-400">{{ e.work_areas }} areas</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if e.assigned %}{{ e.kpis.plan.max_spread_km }} km{% else %}<span class="text-gray-400">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if not e.assigned %}<span class="text-gray-400">—</span>
+            {% elif e.kpis.plan.has_population %}
               {% if e.kpis.plan.pop_imbalance_pct is not None %}{{ e.kpis.plan.pop_imbalance_pct }}%{% else %}—{% endif %}
             {% else %}
               {% if e.kpis.plan.building_imbalance_pct is not None %}{{ e.kpis.plan.building_imbalance_pct }}%{% else %}—{% endif %}
