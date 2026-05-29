@@ -31,6 +31,7 @@
   const LIST_URL = "{% url 'microplans:plan_list' opp_id=opp_id %}";
   const COMPARE_URL = "{% url 'microplans:plan_compare' opp_id=opp_id %}";
   const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   const params = new URLSearchParams(window.location.search);
   const selected = new Set((params.get("plans") || "").split(",").filter(Boolean));
@@ -62,7 +63,7 @@
       if (!d.plans || !d.plans.length) { box.innerHTML = '<span class="text-gray-400">No saved plans yet.</span>'; return; }
       box.innerHTML = d.plans.map((p) =>
         `<label class="flex items-center gap-2"><input type="checkbox" class="psel" value="${p.plan_id}" ${selected.has(String(p.plan_id)) ? "checked" : ""}>
-          <span>${p.name} <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} areas</span></span></label>`).join("");
+          <span>${esc(p.name)} <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} areas</span></span></label>`).join("");
       box.querySelectorAll(".psel").forEach((cb) => cb.addEventListener("change", () => {
         if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
         syncUrl(); renderCompare();
@@ -84,7 +85,7 @@
       const plans = d.plans;
       const base = plans[0];
       let html = `<thead><tr><th class="text-left p-2"></th>${plans.map((e) =>
-        `<th class="p-2 text-left">${e.name}<div class="text-xs font-normal text-gray-400">${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
+        `<th class="p-2 text-left">${esc(e.name)}<div class="text-xs font-normal text-gray-400">${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
       ROWS.forEach((row) => {
         const baseVal = row.get(base);
         html += `<tr class="${row.head ? "bg-emerald-50 font-semibold" : "border-t"}"><td class="p-2 text-gray-600">${row.label}</td>`;

@@ -135,7 +135,12 @@ class RooftopDataAccess(BaseDataAccess):
     ) -> RooftopPlanRecord:
         """Apply one edit to one or more work areas in a single read-modify-write
         (audit appended per area, phase=planning). Loading once + saving once avoids
-        the lost-update race a per-id loop would create on the shared plan record."""
+        the lost-update race a per-id loop would create within a request.
+
+        Across concurrent requests this is last-write-wins (no version check) — an
+        accepted tradeoff for planning, which is a single-reviewer activity before
+        upload, not the concurrent operational editing Connect handles post-upload.
+        """
         plan = self.get_plan(plan_id)
         work_areas = [dict(w) for w in plan.work_areas]
         for wa_id in wa_ids:

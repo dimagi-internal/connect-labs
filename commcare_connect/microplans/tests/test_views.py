@@ -596,3 +596,14 @@ def test_compare_page_renders(client, django_user_model):
     resp = client.get(reverse("microplans:compare", kwargs={"opp_id": 1}))
     assert resp.status_code == 200
     assert "Compare plans" in resp.content.decode()
+
+
+def test_plan_edit_batch_cap_is_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_da(monkeypatch, {})
+    resp = client.post(
+        reverse("microplans:plan_edit", kwargs={"opp_id": 1, "plan_id": 1}),
+        data=json.dumps({"action": "exclude", "wa_ids": [str(i) for i in range(5001)], "reason": "x"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400

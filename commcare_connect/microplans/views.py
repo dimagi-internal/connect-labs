@@ -375,6 +375,8 @@ class PlanEditView(LoginRequiredMixin, View):
                 raise ValueError(f"unknown action {action}")
             if not wa_ids:
                 raise ValueError("no work area specified")
+            if len(wa_ids) > 5000:  # bound the batch (a plan never has this many areas)
+                raise ValueError("too many work areas in one request")
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
