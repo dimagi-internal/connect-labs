@@ -41,7 +41,7 @@
         {% for e in entries %}
         <tr class="hover:bg-gray-50">
           <td class="px-3 py-2">
-            <div class="font-medium text-gray-900">{{ e.name|default:"Untitled plan" }}</div>
+            <div class="font-medium text-gray-900">{{ e.name|default:"Untitled plan" }}{% if e.recommended %} <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 align-middle">★ Best fit</span>{% endif %}</div>
             <div class="text-xs text-gray-500">{{ e.region|default:"—" }}{% if not e.assigned %} · <span class="text-amber-600">workers not yet assigned</span>{% endif %}</div>
           </td>
           <td class="px-3 py-2 text-right tabular-nums">
@@ -60,10 +60,13 @@
           </td>
           <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.coverage_pct }}%</td>
           <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.excluded.count }}</td>
-          <td class="px-3 py-2 text-right">
+          <td class="px-3 py-2">
             {% if e.composite is not None %}
-            <span class="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold tabular-nums">{{ e.composite }}</span>
-            {% else %}<span class="text-gray-400">—</span>{% endif %}
+            <div class="flex items-center justify-end gap-2" title="Relative fit: {{ e.composite }}/100 across the plans shown">
+              <div class="w-20 h-1.5 rounded bg-gray-100 overflow-hidden"><div class="h-full bg-emerald-500" style="width: {{ e.bar_width }}%"></div></div>
+              <span class="text-xs text-gray-500 tabular-nums w-8 text-right">{{ e.composite }}</span>
+            </div>
+            {% else %}<span class="text-gray-400 block text-right">—</span>{% endif %}
           </td>
         </tr>
         {% endfor %}
