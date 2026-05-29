@@ -35,10 +35,22 @@ class _LabsContextSyncMixin:
             elif "opp_id" in kwargs:
                 ctx["opportunity_id"] = int(kwargs["opp_id"])
             if ctx:
-                validated = validate_context_access(request, ctx)
-                if validated:
-                    request.labs_context = validated
-                    save_context_to_session(request, ctx)
+                validated = validate_context_access(request, ctx) or {}
+                # If the cached OAuth org_data didn't include this program/opp,
+                # validate gives us the id but no display object — synthesize a
+                # minimal one so the picker pill at least shows the URL's program
+                # rather than leaving the previous selection stuck on screen.
+                if "program_id" in ctx and "program" not in validated:
+                    validated["program_id"] = ctx["program_id"]
+                    validated["program"] = {"id": ctx["program_id"], "name": f"Program #{ctx['program_id']}"}
+                if "opportunity_id" in ctx and "opportunity" not in validated:
+                    validated["opportunity_id"] = ctx["opportunity_id"]
+                    validated["opportunity"] = {
+                        "id": ctx["opportunity_id"],
+                        "name": f"Opportunity #{ctx['opportunity_id']}",
+                    }
+                request.labs_context = validated
+                save_context_to_session(request, ctx)
         return super().dispatch(request, *args, **kwargs)
 
 
