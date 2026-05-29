@@ -519,3 +519,13 @@ def test_plan_csv_skips_excluded(client, django_user_model, monkeypatch):
     body = resp.content.decode()
     assert "Area Slug" in body
     assert body.count("POLYGON") == 1  # only the non-excluded area exported
+
+
+def test_review_page_renders(client, django_user_model, settings):
+    settings.MAPBOX_TOKEN = "pk.test"
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:review", kwargs={"opp_id": 1, "plan_id": 7}))
+    assert resp.status_code == 200
+    assert resp.context["plan_id"] == 7
+    body = resp.content.decode()
+    assert "Microplan review" in body and "review-map" in body

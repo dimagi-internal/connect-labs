@@ -35,6 +35,24 @@ class SetupView(LoginRequiredMixin, TemplateView):
         return context
 
 
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ReviewView(LoginRequiredMixin, TemplateView):
+    """LLO review/edit page for a materialised plan.
+
+    Renders the work areas on a map + an editable list (exclude, resize, regroup,
+    reassign, bulk-exclude) backed by the plan edit endpoints. Planning-phase only.
+    """
+
+    template_name = "microplans/review.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["opp_id"] = kwargs.get("opp_id")
+        context["plan_id"] = kwargs.get("plan_id")
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        return context
+
+
 class PreviewFrameView(LoginRequiredMixin, View):
     """Fetch building footprints for the drawn area(s) and run the sampling preview.
 

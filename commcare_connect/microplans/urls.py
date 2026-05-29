@@ -14,6 +14,7 @@ urlpatterns = [
     path("<int:opp_id>/boundaries/geometry/", views.AdminAreaGeometryView.as_view(), name="admin_area_geometry"),
     path("boundaries/countries/", views.CountriesView.as_view(), name="countries"),
     # Planning-phase plan review/edit (LLO validation, pre-upload)
+    path("<int:opp_id>/review/<int:plan_id>/", views.ReviewView.as_view(), name="review"),
     path("<int:opp_id>/plan/materialize/", views.MaterializePlanView.as_view(), name="plan_materialize"),
     path("<int:opp_id>/plan/<int:plan_id>/", views.PlanView.as_view(), name="plan"),
     path("<int:opp_id>/plan/<int:plan_id>/edit/", views.PlanEditView.as_view(), name="plan_edit"),
