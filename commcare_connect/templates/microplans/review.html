@@ -54,9 +54,28 @@
     </section>
   </aside>
 
-  <!-- Center: map + table -->
+  <!-- Center: map + metrics + table -->
   <div class="flex-1 flex flex-col min-w-0">
-    <div class="relative" style="height: 45%"><div id="review-map"></div></div>
+    <div class="relative" style="height: 36%"><div id="review-map"></div></div>
+
+    <!-- Plan metrics (composite strip + per-FLW table) -->
+    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Plan metrics</h2>
+        <a id="compare-link" class="text-xs text-emerald-700" href="#">Compare plans…</a>
+      </div>
+      <div id="kpi-strip" class="flex flex-wrap gap-3 mb-2"></div>
+      <div class="max-h-40 overflow-auto border border-gray-100 rounded">
+        <table class="min-w-full text-xs">
+          <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
+            <th class="p-1.5" id="flw-dim">Worker</th><th class="p-1.5">Areas</th><th class="p-1.5">Buildings</th>
+            <th class="p-1.5">Population</th><th class="p-1.5">Expected visits</th><th class="p-1.5">Spread (km)</th>
+          </tr></thead>
+          <tbody id="flw-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <div class="flex-1 overflow-auto border-t border-gray-200">
       <table class="min-w-full text-sm">
         <thead class="bg-gray-50 sticky top-0">
@@ -84,6 +103,8 @@
   const PLAN_URL = "{% url 'microplans:plan' opp_id=opp_id plan_id=plan_id %}";
   const EDIT_URL = "{% url 'microplans:plan_edit' opp_id=opp_id plan_id=plan_id %}";
   const CSV_URL = "{% url 'microplans:plan_csv' opp_id=opp_id plan_id=plan_id %}";
+  const COMPARE_URL = "{% url 'microplans:compare' opp_id=opp_id %}?plans={{ plan_id }}";
+  document.getElementById("compare-link").href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
 
@@ -132,8 +153,36 @@
   function render(data) {
     WAS = data.work_areas || [];
     renderSummary(data.summary || {});
+    renderKpis(data.kpis || {});
     renderTable();
     refreshMap(); setSelState();
+  }
+  function chip(label, value, hint) {
+    return `<div class="px-2 py-1 rounded bg-gray-50 border" title="${hint || ""}">
+      <div class="text-[10px] uppercase tracking-wide text-gray-400">${label}</div>
+      <div class="font-semibold text-gray-800">${value}</div></div>`;
+  }
+  function renderKpis(k) {
+    const p = k.plan || {};
+    const balLabel = p.has_population ? "Pop imbalance" : "Bldg imbalance";
+    const balVal = p.has_population ? p.pop_imbalance_pct : p.building_imbalance_pct;
+    $("kpi-strip").innerHTML = [
+      chip("Worst travel", (p.max_spread_km ?? 0) + " km", "Largest FLW territory diameter — the minimax objective"),
+      chip("Mean travel", (p.mean_spread_km ?? 0) + " km", "Mean FLW territory diameter (±std " + (p.std_spread_km ?? 0) + ")"),
+      chip(balLabel, balVal == null ? "—" : balVal + " %", "(max − min) / target × 100"),
+      chip(p.has_population ? "Pop std" : "Bldg std", (p.has_population ? p.pop_std : p.building_std) ?? "—", "Std of per-FLW " + (p.has_population ? "population" : "buildings")),
+      chip("Coverage", (k.coverage_pct ?? 100) + " %", "Active buildings / (active + excluded)"),
+      chip("Excluded", (k.excluded ? k.excluded.count : 0) + " areas", (k.excluded ? k.excluded.buildings : 0) + " buildings dropped"),
+      chip(k.dimension === "worker" ? "Workers" : "Groups", p.territory_count ?? 0, k.dimension === "worker" ? "" : "No workers assigned yet — metrics shown by group"),
+    ].join("");
+    $("flw-dim").textContent = k.dimension === "worker" ? "Worker" : "Group";
+    $("flw-body").innerHTML = (k.territories || []).map((t) =>
+      `<tr class="border-b"><td class="p-1.5 font-medium">${t.name}</td>
+        <td class="p-1.5">${t.work_areas}</td>
+        <td class="p-1.5">${(t.buildings || 0).toLocaleString()}</td>
+        <td class="p-1.5">${t.population ? t.population.toLocaleString() : "—"}</td>
+        <td class="p-1.5">${(t.expected_visits || 0).toLocaleString()}</td>
+        <td class="p-1.5">${t.spread_km}</td></tr>`).join("");
   }
   function renderSummary(s) {
     $("summary").innerHTML =

@@ -399,8 +399,9 @@ _EMPTY_FC = {"type": "FeatureCollection", "features": []}
 
 
 class _FakePlan:
-    def __init__(self, pid, mode, work_areas):
+    def __init__(self, pid, mode, work_areas, name="", created_at="2026-05-28T00:00:00Z"):
         self.id, self.mode, self.work_areas = pid, mode, work_areas
+        self.name, self.created_at = name or f"Plan {pid}", created_at
         self.data = {"work_areas": work_areas}
 
 
@@ -435,6 +436,9 @@ def _make_fake_da(monkeypatch, store):
                     raise ValueError(f"work area {wa_id!r} not found")
                 plan_lib.apply_action(wa, action, params, actor)
             return p
+
+        def list_plans(self):
+            return list(store.values())
 
     monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
     return store
@@ -545,3 +549,50 @@ def test_plan_edit_bad_resize_is_400(client, django_user_model, monkeypatch):
         content_type="application/json",
     )
     assert resp.status_code == 400  # non-numeric -> client error, not 502
+
+
+def test_plan_view_includes_kpis(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    store = _make_fake_da(monkeypatch, {})
+    store[1] = _FakePlan(1, "coverage", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC))
+    resp = client.get(reverse("microplans:plan", kwargs={"opp_id": 1, "plan_id": 1}))
+    assert resp.status_code == 200
+    k = resp.json()["kpis"]
+    assert "plan" in k and "territories" in k and "coverage_pct" in k
+
+
+def test_plan_list_and_compare(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    store = _make_fake_da(monkeypatch, {})
+    # two plans; plan 2 excludes one area (worse coverage) so composites differ
+    store[1] = _FakePlan(1, "coverage", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="A")
+    was2 = plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC)
+    plan_lib.apply_action(was2[0], "reassign", {"opportunity_access": "flw-1"}, "u")
+    plan_lib.apply_action(was2[1], "reassign", {"opportunity_access": "flw-2"}, "u")
+    store[2] = _FakePlan(2, "coverage", was2, name="B")
+
+    lst = client.get(reverse("microplans:plan_list", kwargs={"opp_id": 1})).json()
+    assert lst["status"] == "ok" and len(lst["plans"]) == 2
+
+    cmp = client.get(reverse("microplans:plan_compare", kwargs={"opp_id": 1}) + "?plans=1,2").json()
+    assert cmp["status"] == "ok" and len(cmp["plans"]) == 2
+    assert all("composite" in p and "kpis" in p for p in cmp["plans"])
+    assert "weights" in cmp
+
+
+def test_compare_endpoint_bad_ids_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_da(monkeypatch, {})
+    resp = client.get(reverse("microplans:plan_compare", kwargs={"opp_id": 1}) + "?plans=abc")
+    assert resp.status_code == 400
+
+
+def test_compare_page_renders(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:compare", kwargs={"opp_id": 1}))
+    assert resp.status_code == 200
+    assert "Compare plans" in resp.content.decode()

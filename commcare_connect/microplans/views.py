@@ -311,6 +311,7 @@ def _plan_json(plan):
         "mode": plan.mode,
         "work_areas": plan.work_areas,
         "summary": plan_lib.summarize(plan.work_areas),
+        "kpis": plan_lib.plan_kpis(plan.work_areas),
     }
 
 
@@ -418,3 +419,85 @@ class PlanCSVView(LoginRequiredMixin, View):
             writer.writeheader()
             writer.writerows(rows)
         return response
+
+
+class PlanListView(LoginRequiredMixin, View):
+    """List this opportunity's plans (for the comparison picker)."""
+
+    def get(self, request, opp_id):
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            plans = da.list_plans()
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans list_plans failed (opp=%s)", opp_id)
+            return JsonResponse({"status": "error", "detail": "Could not list plans."}, status=502)
+        return JsonResponse(
+            {
+                "status": "ok",
+                "plans": [
+                    {
+                        "plan_id": p.id,
+                        "name": p.name or f"Plan {p.id}",
+                        "mode": p.mode,
+                        "created_at": p.created_at,
+                        "work_areas": len(p.work_areas),
+                    }
+                    for p in plans
+                ],
+            }
+        )
+
+
+class ComparePlansView(LoginRequiredMixin, View):
+    """Compare N plans' KPIs side by side with a normalized composite score.
+
+    GET ?plans=<id>,<id>,... — loads each plan, computes its KPIs, and adds a
+    cross-plan composite (only meaningful relative to the compared set).
+    """
+
+    def get(self, request, opp_id):
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+
+        try:
+            ids = [int(x) for x in (request.GET.get("plans", "")).split(",") if x.strip()]
+        except ValueError:
+            return JsonResponse({"status": "error", "detail": "plans must be comma-separated ids"}, status=400)
+        if not ids:
+            return JsonResponse({"status": "error", "detail": "no plans selected"}, status=400)
+
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        entries = []
+        for pid in ids:
+            try:
+                p = da.get_plan(pid)
+            except Exception:  # noqa: BLE001
+                logger.exception("microplans compare: plan %s load failed", pid)
+                continue
+            entries.append(
+                {
+                    "plan_id": p.id,
+                    "name": p.name or f"Plan {p.id}",
+                    "mode": p.mode,
+                    "created_at": p.created_at,
+                    "kpis": plan_lib.plan_kpis(p.work_areas),
+                }
+            )
+        if not entries:
+            return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
+        plan_lib.score_plans(entries)
+        return JsonResponse({"status": "ok", "plans": entries, "weights": plan_lib.COMPOSITE_WEIGHTS})
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ComparePageView(LoginRequiredMixin, TemplateView):
+    """Plan comparison page: pick plans, see KPIs stacked with deltas + composite."""
+
+    template_name = "microplans/compare.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["opp_id"] = kwargs.get("opp_id")
+        return context
