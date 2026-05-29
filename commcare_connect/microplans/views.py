@@ -46,10 +46,17 @@ class ReviewView(LoginRequiredMixin, TemplateView):
     template_name = "microplans/review.html"
 
     def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
         context = super().get_context_data(**kwargs)
-        context["opp_id"] = kwargs.get("opp_id")
-        context["plan_id"] = kwargs.get("plan_id")
+        opp_id, plan_id = kwargs.get("opp_id"), kwargs.get("plan_id")
+        context["opp_id"] = opp_id
+        context["plan_id"] = plan_id
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        context["plan_url"] = reverse("microplans:plan", args=[opp_id, plan_id])
+        context["edit_url"] = reverse("microplans:plan_edit", args=[opp_id, plan_id])
+        context["csv_url"] = reverse("microplans:plan_csv", args=[opp_id, plan_id])
+        context["compare_url"] = reverse("microplans:compare", args=[opp_id]) + f"?plans={plan_id}"
         return context
 
 
@@ -311,6 +318,7 @@ def _plan_json(plan):
         "mode": plan.mode,
         "work_areas": plan.work_areas,
         "summary": plan_lib.summarize(plan.work_areas),
+        "kpis": plan_lib.plan_kpis(plan.work_areas),
     }
 
 
@@ -374,6 +382,8 @@ class PlanEditView(LoginRequiredMixin, View):
                 raise ValueError(f"unknown action {action}")
             if not wa_ids:
                 raise ValueError("no work area specified")
+            if len(wa_ids) > 5000:  # bound the batch (a plan never has this many areas)
+                raise ValueError("too many work areas in one request")
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
@@ -418,3 +428,426 @@ class PlanCSVView(LoginRequiredMixin, View):
             writer.writeheader()
             writer.writerows(rows)
         return response
+
+
+class PlanListView(LoginRequiredMixin, View):
+    """List this opportunity's plans (for the comparison picker)."""
+
+    def get(self, request, opp_id):
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            plans = da.list_plans()
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans list_plans failed (opp=%s)", opp_id)
+            return JsonResponse({"status": "error", "detail": "Could not list plans."}, status=502)
+        return JsonResponse(
+            {
+                "status": "ok",
+                "plans": [
+                    {
+                        "plan_id": p.id,
+                        "name": p.name or f"Plan {p.id}",
+                        "mode": p.mode,
+                        "created_at": p.created_at,
+                        "work_areas": len(p.work_areas),
+                    }
+                    for p in plans
+                ],
+            }
+        )
+
+
+class ComparePlansView(LoginRequiredMixin, View):
+    """Compare N plans' KPIs side by side with a normalized composite score.
+
+    GET ?plans=<id>,<id>,... — loads each plan, computes its KPIs, and adds a
+    cross-plan composite (only meaningful relative to the compared set).
+    """
+
+    def get(self, request, opp_id):
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+
+        try:
+            ids = [int(x) for x in (request.GET.get("plans", "")).split(",") if x.strip()]
+        except ValueError:
+            return JsonResponse({"status": "error", "detail": "plans must be comma-separated ids"}, status=400)
+        if not ids:
+            return JsonResponse({"status": "error", "detail": "no plans selected"}, status=400)
+
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        entries = []
+        for pid in ids:
+            try:
+                p = da.get_plan(pid)
+            except Exception:  # noqa: BLE001
+                logger.exception("microplans compare: plan %s load failed", pid)
+                continue
+            entries.append(
+                {
+                    "plan_id": p.id,
+                    "name": p.name or f"Plan {p.id}",
+                    "mode": p.mode,
+                    "created_at": p.created_at,
+                    "kpis": plan_lib.plan_kpis(p.work_areas),
+                }
+            )
+        if not entries:
+            return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
+        plan_lib.score_plans(entries)
+        return JsonResponse({"status": "ok", "plans": entries, "weights": plan_lib.COMPOSITE_WEIGHTS})
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ComparePageView(LoginRequiredMixin, TemplateView):
+    """Plan comparison page: pick plans, see KPIs stacked with deltas + composite."""
+
+    template_name = "microplans/compare.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["opp_id"] = kwargs.get("opp_id")
+        return context
+
+
+# ============================================================================
+# Program layer: a program owns a portfolio of candidate plans + plan groups.
+# Plans are program-scoped; an opportunity is bound only at Deploy.
+#
+# Authorization: ProgramPlanDataAccess sends program_id on every read/write, so
+# the production LabsRecord API enforces program membership (a non-member gets an
+# empty/404 result — see CLAUDE.md "Permission Model"). Labs has no local program
+# membership table to check against, so this is the only auth boundary; the HTML
+# shell views render for any logged-in user, but their data fetches return nothing
+# unless the user is a member. No program data leaks from rendering the shell.
+# ============================================================================
+
+
+def _plan_summary_row(plan):
+    """Compact per-plan row for the workspace (status, region, headline KPIs)."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    k = plan_lib.plan_kpis(plan.work_areas)
+    return {
+        "plan_id": plan.id,
+        "name": plan.name or f"Plan {plan.id}",
+        "region": plan.region,
+        "mode": plan.mode,
+        "status": plan.status,
+        "status_label": plan_lib.PLAN_STATUS_LABELS.get(plan.status, plan.status),
+        "opportunity_id": plan.opportunity_id,
+        "work_areas": len(plan.work_areas),
+        "max_spread_km": k["plan"]["max_spread_km"],
+        "coverage_pct": k["coverage_pct"],
+        "excluded": k["excluded"]["count"],
+        "territory_count": k["plan"]["territory_count"],
+        "created_at": plan.created_at,
+    }
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ProgramWorkspaceView(LoginRequiredMixin, TemplateView):
+    """Program workspace: the portfolio of candidate plans + plan groups."""
+
+    template_name = "microplans/program_workspace.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["program_id"] = kwargs.get("program_id")
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        return context
+
+
+class ProgramPlansAPIView(LoginRequiredMixin, View):
+    """JSON: the program's plans (+ headline KPIs) and groups, for the workspace."""
+
+    def get(self, request, program_id):
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plans = [_plan_summary_row(p) for p in da.list_plans()]
+            groups = [
+                {
+                    "group_id": g.id,
+                    "name": g.name,
+                    "plan_ids": g.plan_ids,
+                    "offered_to": g.offered_to,
+                    "shared": g.shared,
+                }
+                for g in da.list_groups()
+            ]
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans program plans failed (program=%s)", program_id)
+            return JsonResponse({"status": "error", "detail": "Could not load program plans."}, status=502)
+        return JsonResponse(
+            {
+                "status": "ok",
+                "plans": plans,
+                "groups": groups,
+                "statuses": list(plan_lib.PLAN_STATUSES),
+                "status_labels": plan_lib.PLAN_STATUS_LABELS,
+                "transitions": {k: sorted(v) for k, v in plan_lib.PLAN_TRANSITIONS.items()},
+            }
+        )
+
+
+class ProgramCreatePlanView(LoginRequiredMixin, View):
+    """Create a Draft plan in the program from a generated frame (region + geometry)."""
+
+    def post(self, request, program_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        empty_fc = {"type": "FeatureCollection", "features": []}
+        try:
+            payload = json.loads(request.body)
+            region = str(payload.get("region", "")).strip()[:255]
+            name = str(payload.get("name", "") or region or "Untitled plan").strip()[:255]
+            mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
+            pins = payload.get("pins") or empty_fc
+            hulls = (payload.get("coverage_areas") or payload.get("hulls")) or empty_fc
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.create_plan(region=region, name=name, mode=mode, pins=pins, hulls=hulls)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans create_plan failed (program=%s)", program_id)
+            return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
+        return JsonResponse({"status": "ok", "plan_id": plan.id})
+
+
+class ProgramPlanTransitionView(LoginRequiredMixin, View):
+    """Advance a plan's lifecycle status (Deploy binds the live opportunity_id)."""
+
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            payload = json.loads(request.body)
+            to = payload["to"]
+        except (json.JSONDecodeError, KeyError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.transition_plan(
+                int(plan_id), to, request.user.get_username(), opportunity_id=payload.get("opportunity_id")
+            )
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans transition failed (program=%s plan=%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Transition failed."}, status=502)
+        return JsonResponse(
+            {"status": "ok", "plan_id": plan.id, "plan_status": plan.status, "opportunity_id": plan.opportunity_id}
+        )
+
+
+class ProgramGroupsAPIView(LoginRequiredMixin, View):
+    """Create a plan group (a shareable subset offered to an LLO)."""
+
+    def post(self, request, program_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            payload = json.loads(request.body)
+            name = str(payload["name"]).strip()[:255]
+            plan_ids = [int(p) for p in payload.get("plan_ids", [])]
+            offered_to = str(payload.get("offered_to", "")).strip()[:255]
+            if not name or not plan_ids:
+                raise ValueError("name and at least one plan are required")
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            group = da.create_group(name=name, plan_ids=plan_ids, offered_to=offered_to)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans create_group failed (program=%s)", program_id)
+            return JsonResponse({"status": "error", "detail": "Could not create the group."}, status=502)
+        return JsonResponse({"status": "ok", "group_id": group.id})
+
+
+class ProgramGroupUpdateView(LoginRequiredMixin, View):
+    """Update a plan group (rename, change plans, set offered_to, share)."""
+
+    def post(self, request, program_id, group_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            payload = json.loads(request.body)
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            group = da.update_group(
+                int(group_id),
+                name=payload.get("name"),
+                plan_ids=payload.get("plan_ids"),
+                offered_to=payload.get("offered_to"),
+                shared=payload.get("shared"),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans update_group failed (program=%s group=%s)", program_id, group_id)
+            return JsonResponse({"status": "error", "detail": "Could not update the group."}, status=502)
+        return JsonResponse({"status": "ok", "group_id": group.id, "shared": group.shared})
+
+
+class ProgramGroupShareView(LoginRequiredMixin, TemplateView):
+    """LLO-facing page for a plan group: its subset of plans + their KPIs."""
+
+    template_name = "microplans/group_share.html"
+
+    def get_context_data(self, **kwargs):
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        group_id = kwargs.get("group_id")
+        context["program_id"] = program_id
+        context["group_id"] = group_id
+        da = ProgramPlanDataAccess(program_id, request=self.request)
+        try:
+            group = da.get_group(int(group_id))
+            plans_by_id = {p.id: p for p in da.list_plans()}
+            entries = [
+                {
+                    "plan_id": pid,
+                    "name": plans_by_id[pid].name,
+                    "region": plans_by_id[pid].region,
+                    "kpis": plan_lib.plan_kpis(plans_by_id[pid].work_areas),
+                }
+                for pid in group.plan_ids
+                if pid in plans_by_id
+            ]
+            plan_lib.score_plans(entries)
+            context["group_name"] = group.name
+            context["offered_to"] = group.offered_to
+            context["entries"] = entries
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans group share failed (program=%s group=%s)", program_id, group_id)
+            context["error"] = "Could not load the group."
+        return context
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ProgramReviewView(LoginRequiredMixin, TemplateView):
+    """Program-scoped per-plan review page (reuses review.html via context URLs)."""
+
+    template_name = "microplans/review.html"
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        context = super().get_context_data(**kwargs)
+        program_id, plan_id = kwargs.get("program_id"), kwargs.get("plan_id")
+        context["program_id"] = program_id
+        context["plan_id"] = plan_id
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        context["plan_url"] = reverse("microplans:program_plan", args=[program_id, plan_id])
+        context["edit_url"] = reverse("microplans:program_plan_edit", args=[program_id, plan_id])
+        context["csv_url"] = reverse("microplans:program_plan_csv", args=[program_id, plan_id])
+        context["compare_url"] = reverse("microplans:program_workspace", args=[program_id])
+        context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
+        return context
+
+
+class ProgramPlanView(LoginRequiredMixin, View):
+    def get(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.get_plan(int(plan_id))
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans program plan get failed (%s/%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+        return JsonResponse(_plan_json(plan))
+
+
+class ProgramPlanEditView(LoginRequiredMixin, View):
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.plan import ACTIONS
+
+        try:
+            payload = json.loads(request.body)
+            action = payload["action"]
+            wa_ids = payload.get("wa_ids") or ([payload["wa_id"]] if payload.get("wa_id") else [])
+            if action not in ACTIONS:
+                raise ValueError(f"unknown action {action}")
+            if not wa_ids:
+                raise ValueError("no work area specified")
+            if len(wa_ids) > 5000:
+                raise ValueError("too many work areas in one request")
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        params = {k: v for k, v in payload.items() if k not in ("action", "wa_id", "wa_ids")}
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.apply_plan_edits(
+                int(plan_id), [str(w) for w in wa_ids], action, params, request.user.get_username()
+            )
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans program plan edit failed (%s/%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Edit failed."}, status=502)
+        return JsonResponse(_plan_json(plan))
+
+
+class ProgramPlanCSVView(LoginRequiredMixin, View):
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.workarea import to_csv_rows
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            payload = {}
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.get_plan(int(plan_id))
+        except Exception:  # noqa: BLE001
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+        rows = to_csv_rows(
+            plan_lib.to_workarea_payloads(plan.work_areas, lga=payload.get("lga", ""), state=payload.get("state", ""))
+        )
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="microplan_program{program_id}_plan{plan_id}.csv"'
+        if rows:
+            writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        return response
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ProgramSetupView(LoginRequiredMixin, TemplateView):
+    """Create a plan in a program: reuses the setup/generation page, but the save
+    step creates a program-scoped Draft plan (rather than an opp-scoped frame).
+
+    The preview/boundary endpoints are stateless generation that ignore the id in
+    their URL, so we reuse them by passing opp_id=program_id."""
+
+    template_name = "microplans/setup.html"
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        context["opp_id"] = program_id  # harmless: preview/boundary views ignore the id
+        context["program_id"] = program_id
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        if not settings.MAPBOX_TOKEN:
+            context["error"] = "MAPBOX_TOKEN is not configured; the map cannot load."
+        context["create_plan_url"] = reverse("microplans:program_create_plan", args=[program_id])
+        context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
+        return context
