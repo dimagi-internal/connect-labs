@@ -35,6 +35,24 @@ class SetupView(LoginRequiredMixin, TemplateView):
         return context
 
 
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ReviewView(LoginRequiredMixin, TemplateView):
+    """LLO review/edit page for a materialised plan.
+
+    Renders the work areas on a map + an editable list (exclude, resize, regroup,
+    reassign, bulk-exclude) backed by the plan edit endpoints. Planning-phase only.
+    """
+
+    template_name = "microplans/review.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["opp_id"] = kwargs.get("opp_id")
+        context["plan_id"] = kwargs.get("plan_id")
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        return context
+
+
 class PreviewFrameView(LoginRequiredMixin, View):
     """Fetch building footprints for the drawn area(s) and run the sampling preview.
 
@@ -273,6 +291,128 @@ class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
         )
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="rooftop_work_areas_opp{opp_id}.csv"'
+        if rows:
+            writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        return response
+
+
+# --- Planning-phase plan review/edit (the LLO validation layer; pre-upload) ---
+
+
+def _plan_json(plan):
+    """Serialize a plan for the review UI: work areas + headline summary."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    return {
+        "status": "ok",
+        "plan_id": plan.id,
+        "mode": plan.mode,
+        "work_areas": plan.work_areas,
+        "summary": plan_lib.summarize(plan.work_areas),
+    }
+
+
+class MaterializePlanView(LoginRequiredMixin, View):
+    """Create an editable plan from a saved frame (one work area per cluster/pin)."""
+
+    def post(self, request, opp_id):
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+
+        try:
+            payload = json.loads(request.body)
+            frame_record_id = int(payload["frame_record_id"])
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        from commcare_connect.microplans.core.models import RooftopFrameRecord
+
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            frame = da.labs_api.get_record_by_id(frame_record_id, model_class=RooftopFrameRecord)
+            plan = da.materialize_plan(frame, name=payload.get("name", ""))
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans materialize_plan failed (opp=%s frame=%s)", opp_id, frame_record_id)
+            return JsonResponse(
+                {"status": "error", "detail": "Could not build the plan. Check server logs."}, status=502
+            )
+        return JsonResponse(_plan_json(plan))
+
+
+class PlanView(LoginRequiredMixin, View):
+    """Load a plan (work areas + summary) for review."""
+
+    def get(self, request, opp_id, plan_id):
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            plan = da.get_plan(int(plan_id))
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans get_plan failed (opp=%s plan=%s)", opp_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+        return JsonResponse(_plan_json(plan))
+
+
+class PlanEditView(LoginRequiredMixin, View):
+    """Apply one LLO edit (exclude/unexclude/resize/regroup/reassign) to a work area.
+
+    Supports a single `wa_id` or a list `wa_ids` (bulk, e.g. lasso-exclude). The
+    action + its params are recorded as a phase=planning audit event.
+    """
+
+    def post(self, request, opp_id, plan_id):
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+        from commcare_connect.microplans.core.plan import ACTIONS
+
+        try:
+            payload = json.loads(request.body)
+            action = payload["action"]
+            wa_ids = payload.get("wa_ids") or ([payload["wa_id"]] if payload.get("wa_id") else [])
+            if action not in ACTIONS:
+                raise ValueError(f"unknown action {action}")
+            if not wa_ids:
+                raise ValueError("no work area specified")
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        params = {k: v for k, v in payload.items() if k not in ("action", "wa_id", "wa_ids")}
+        actor = request.user.get_username()
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            plan = da.apply_plan_edits(int(plan_id), [str(w) for w in wa_ids], action, params, actor)
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans plan edit failed (opp=%s plan=%s)", opp_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Edit failed. Check server logs."}, status=502)
+        return JsonResponse(_plan_json(plan))
+
+
+class PlanCSVView(LoginRequiredMixin, View):
+    """Export the edited plan as a Connect work-area import CSV (skips EXCLUDED)."""
+
+    def post(self, request, opp_id, plan_id):
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import RooftopDataAccess
+        from commcare_connect.microplans.core.workarea import to_csv_rows
+
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            payload = {}
+        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
+        try:
+            plan = da.get_plan(int(plan_id))
+        except Exception:  # noqa: BLE001
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+
+        rows = to_csv_rows(
+            plan_lib.to_workarea_payloads(plan.work_areas, lga=payload.get("lga", ""), state=payload.get("state", ""))
+        )
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="microplan_work_areas_opp{opp_id}.csv"'
         if rows:
             writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
             writer.writeheader()

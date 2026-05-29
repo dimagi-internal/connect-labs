@@ -153,6 +153,7 @@
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Preview</h2>
       <button type="button" id="btn-preview" class="button w-full">Preview</button>
       <button type="button" id="btn-save" class="button w-full mt-2 hidden">Save</button>
+      <button type="button" id="btn-review" class="button w-full mt-2 hidden">Review &amp; edit plan</button>
       <button type="button" id="btn-csv" class="button button-sm outline-style w-full mt-2 hidden">Download Connect import CSV</button>
       <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
       <div id="save-status" class="mt-1 text-xs text-gray-500"></div>
@@ -178,6 +179,8 @@
     coverage: "{% url 'microplans:preview_coverage' opp_id=opp_id %}",
     save: "{% url 'microplans:save_frame' opp_id=opp_id %}",
     csv: "{% url 'microplans:work_areas_csv' opp_id=opp_id %}",
+    materialize: "{% url 'microplans:plan_materialize' opp_id=opp_id %}",
+    reviewBase: "/microplans/{{ opp_id }}/review/",
     countries: "{% url 'microplans:countries' %}",
     areas: "{% url 'microplans:admin_areas' opp_id=opp_id %}",
     geometry: "{% url 'microplans:admin_area_geometry' opp_id=opp_id %}",
@@ -489,7 +492,8 @@
     $("wrap-balance").classList.toggle("hidden", grid);
   });
 
-  function resetPreviewButtons() { $("btn-save").classList.add("hidden"); $("btn-csv").classList.add("hidden"); }
+  function resetPreviewButtons() { $("btn-save").classList.add("hidden"); $("btn-review").classList.add("hidden"); $("btn-csv").classList.add("hidden"); }
+  let savedFrameId = null;
 
   // ---- preview ----
   $("btn-preview").addEventListener("click", async () => {
@@ -515,8 +519,26 @@
     try {
       const resp = await post(URLS.save, lastPreview);
       const data = await resp.json();
-      $("save-status").textContent = (resp.ok && data.status === "ok") ? `Saved (frame #${data.frame_record_id}).` : (data.detail || ("HTTP " + resp.status));
+      if (resp.ok && data.status === "ok") {
+        savedFrameId = data.frame_record_id;
+        $("save-status").textContent = `Saved (frame #${data.frame_record_id}).`;
+        $("btn-review").classList.remove("hidden");
+      } else {
+        $("save-status").textContent = data.detail || ("HTTP " + resp.status);
+      }
     } catch (err) { $("save-status").textContent = "Save failed: " + err; }
+  });
+
+  // ---- review: materialize an editable plan from the saved frame, then open it ----
+  $("btn-review").addEventListener("click", async () => {
+    if (!savedFrameId) return;
+    $("save-status").textContent = "Building plan…";
+    try {
+      const resp = await post(URLS.materialize, { frame_record_id: savedFrameId });
+      const data = await resp.json();
+      if (resp.ok && data.status === "ok") { window.location = URLS.reviewBase + data.plan_id + "/"; }
+      else { $("save-status").textContent = data.detail || ("HTTP " + resp.status); }
+    } catch (err) { $("save-status").textContent = "Could not build plan: " + err; }
   });
 
   // ---- CSV ----

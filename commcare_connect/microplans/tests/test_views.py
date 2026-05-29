@@ -370,3 +370,178 @@ def test_work_areas_csv_export(client, django_user_model):
     assert "Area Slug" in body and "Centroid" in body and "Boundary" in body
     assert "13.155 11.832" in body
     assert "Maiduguri" in body
+
+
+# ---- planning-phase plan review/edit endpoints ----
+
+_HULL_FC = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.1], [3.0, 6.0]]],
+            },
+            "properties": {"arm": "coverage", "cluster": "C0", "building_count": 100, "expected_visit_count": 100},
+        },
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[3.2, 6.0], [3.3, 6.0], [3.3, 6.1], [3.2, 6.1], [3.2, 6.0]]],
+            },
+            "properties": {"arm": "coverage", "cluster": "C1", "building_count": 80, "expected_visit_count": 80},
+        },
+    ],
+}
+_EMPTY_FC = {"type": "FeatureCollection", "features": []}
+
+
+class _FakePlan:
+    def __init__(self, pid, mode, work_areas):
+        self.id, self.mode, self.work_areas = pid, mode, work_areas
+        self.data = {"work_areas": work_areas}
+
+
+def _make_fake_da(monkeypatch, store):
+    """A RooftopDataAccess stand-in that runs the real plan logic over an in-memory store."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    class _Frame:
+        mode, pins, hulls = "coverage", _EMPTY_FC, _HULL_FC
+
+    class _Api:
+        def get_record_by_id(self, rid, model_class=None):
+            return _Frame()
+
+    class FakeDA:
+        def __init__(self, *a, **k):
+            self.labs_api = _Api()
+
+        def materialize_plan(self, frame, name=""):
+            was = plan_lib.materialize_work_areas(frame.mode, frame.pins, frame.hulls)
+            store[1] = _FakePlan(1, frame.mode, was)
+            return store[1]
+
+        def get_plan(self, pid):
+            return store[int(pid)]
+
+        def apply_plan_edits(self, pid, wa_ids, action, params, actor):
+            p = store[int(pid)]
+            for wa_id in wa_ids:
+                wa = plan_lib.find(p.work_areas, wa_id)
+                if wa is None:
+                    raise ValueError(f"work area {wa_id!r} not found")
+                plan_lib.apply_action(wa, action, params, actor)
+            return p
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
+    return store
+
+
+def test_materialize_plan(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_da(monkeypatch, {})
+    resp = client.post(
+        reverse("microplans:plan_materialize", kwargs={"opp_id": 1}),
+        data=json.dumps({"frame_record_id": 42}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok" and body["plan_id"] == 1
+    assert len(body["work_areas"]) == 2
+    assert body["summary"]["active"] == 2 and body["summary"]["excluded"] == 0
+
+
+def test_plan_edit_exclude_with_reason(client, django_user_model, monkeypatch):
+    user = _login(client, django_user_model)
+    store = _make_fake_da(monkeypatch, {})
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    store[1] = _FakePlan(1, "coverage", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC))
+    wa_id = store[1].work_areas[0]["id"]
+    resp = client.post(
+        reverse("microplans:plan_edit", kwargs={"opp_id": 1, "plan_id": 1}),
+        data=json.dumps({"action": "exclude", "wa_id": wa_id, "reason": "lake"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["summary"]["excluded"] == 1
+    wa = next(w for w in body["work_areas"] if w["id"] == wa_id)
+    assert wa["status"] == "EXCLUDED" and wa["excluded_reason"] == "lake"
+    ev = wa["audit"][-1]
+    assert ev["phase"] == "planning" and ev["actor"] == user.username and ev["action"] == "exclude"
+
+
+def test_plan_edit_bulk_reassign(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    store = _make_fake_da(monkeypatch, {})
+    store[1] = _FakePlan(1, "coverage", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC))
+    ids = [w["id"] for w in store[1].work_areas]
+    resp = client.post(
+        reverse("microplans:plan_edit", kwargs={"opp_id": 1, "plan_id": 1}),
+        data=json.dumps({"action": "reassign", "wa_ids": ids, "opportunity_access": "flw-3"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert all(w["opportunity_access"] == "flw-3" for w in resp.json()["work_areas"])
+
+
+def test_plan_edit_bad_action_is_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_da(monkeypatch, {})
+    resp = client.post(
+        reverse("microplans:plan_edit", kwargs={"opp_id": 1, "plan_id": 1}),
+        data=json.dumps({"action": "delete_everything", "wa_id": "x"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_plan_csv_skips_excluded(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    store = _make_fake_da(monkeypatch, {})
+    was = plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC)
+    plan_lib.apply_action(was[1], "exclude", {"reason": "invalid"}, "u")
+    store[1] = _FakePlan(1, "coverage", was)
+    resp = client.post(
+        reverse("microplans:plan_csv", kwargs={"opp_id": 1, "plan_id": 1}),
+        data=json.dumps({"lga": "Eti Osa", "state": "Lagos"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200 and resp["Content-Type"] == "text/csv"
+    body = resp.content.decode()
+    assert "Area Slug" in body
+    assert body.count("POLYGON") == 1  # only the non-excluded area exported
+
+
+def test_review_page_renders(client, django_user_model, settings):
+    settings.MAPBOX_TOKEN = "pk.test"
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:review", kwargs={"opp_id": 1, "plan_id": 7}))
+    assert resp.status_code == 200
+    assert resp.context["plan_id"] == 7
+    body = resp.content.decode()
+    assert "Microplan review" in body and "review-map" in body
+
+
+def test_plan_edit_bad_resize_is_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    store = _make_fake_da(monkeypatch, {})
+    store[1] = _FakePlan(1, "coverage", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC))
+    wa_id = store[1].work_areas[0]["id"]
+    resp = client.post(
+        reverse("microplans:plan_edit", kwargs={"opp_id": 1, "plan_id": 1}),
+        data=json.dumps({"action": "resize", "wa_id": wa_id, "expected_visit_count": "abc"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400  # non-numeric -> client error, not 502
