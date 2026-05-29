@@ -852,6 +852,29 @@ def test_program_group_create_and_share(client, django_user_model, monkeypatch):
     assert all("composite" in e for e in share.context["entries"])
 
 
+def test_program_group_share_escapes_plan_names(client, django_user_model, monkeypatch):
+    # A malicious plan name must be HTML-escaped in the server-rendered share page.
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        1: _FakeProgramPlan(
+            1,
+            "coverage",
+            plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
+            name="<script>alert('xss')</script>",
+            region="<b>R</b>",
+        )
+    }
+    groups = {3: _FakeGroup(3, "G", [1], offered_to="Acme")}
+    _make_fake_program_da(monkeypatch, plans, groups)
+    resp = client.get(reverse("microplans:program_group_share", kwargs={"program_id": 25, "group_id": 3}))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "<script>alert('xss')</script>" not in body
+    assert "&lt;script&gt;" in body
+
+
 def test_program_group_create_requires_name_and_plans(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     _make_fake_program_da(monkeypatch, {}, {})
