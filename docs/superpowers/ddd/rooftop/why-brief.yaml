@@ -1,0 +1,107 @@
+schema_version: 1
+feature: rooftop-surveys
+# Dogfood run of demo-driven-development v2 — Phase 0 (ground the why) — 2026-05-28.
+# Authored from the evidence audit of commcare_connect/rooftop_surveys + coverage + design doc.
+#
+# CONCEPT-GATE DECISIONS (user, 2026-05-28) — resolves gap-mode-decision + gap-bridge-coverage-rooftop:
+#   * MODE = difference-in-differences continuous monitoring (treatment vs comparison areas over time).
+#   * AREA ARC = build the FULL arc: overlay coverage delivery-data viz on the rooftop area-picker
+#     AND wire the boundary picker. (Reverses design-doc §5 separation; aligns with the
+#     microplans-generalization direction: sampling + coverage on a shared core.)
+# => The CAPABILITY gaps below (boundary-picker wiring, delivery-data overlay, longitudinal/DiD layer)
+#    and the RESEARCH gap (DiD estimator design) are now the COMMITTED build/research plan the demo drives.
+problem: >
+  To run a rooftop survey you must first decide WHERE to survey. Today the product can
+  rigorously sample rooftops *within an area you've already drawn*, but the steps before
+  that — figuring out which areas are worth targeting, and (for impact work) which areas
+  are treatment vs comparison — are unsupported. The compelling story we want to tell a
+  user ("look at where delivery is happening, pick the admin boundaries that matter,
+  then sample") does not yet exist end to end.
+
+spine:
+  - id: within-area-sampling
+    claim: >
+      Within a chosen area, rooftops are selected by PPS-systematic sampling over building
+      footprints, clustered into primary sampling units, with pilot-tuned size/confidence filters.
+    rationale: >
+      Produces a statistically defensible, field-workable sample frame BEFORE any visits exist —
+      the thing coverage-after-the-fact can't give you.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/rooftop_surveys/sampling/frame.py:generate_frame"}
+      - {kind: implemented, ref: "commcare_connect/rooftop_surveys/sampling/sample.py:select_psus"}
+      - {kind: implemented, ref: "commcare_connect/rooftop_surveys/sampling/cluster.py:cluster_buildings"}
+      - {kind: documented, ref: "docs/rooftop-r-parity.md (R-source parity, marked built)"}
+    status: grounded
+
+  - id: pilot-params
+    claim: >
+      The sampling settings (≈25 clusters, 8 primary + 8 alternates/PSU, roof-confidence 0.7,
+      structures 9–330 m²) are the working defaults.
+    rationale: >
+      Calibrated to the Fall-2025 Nigeria pilot's observed roof-detection confidence and
+      structure-size distribution.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/rooftop_surveys/sampling/frame.py:FrameConfig"}
+      - {kind: documented, ref: "docs/superpowers/specs/2026-05-27-rooftop-surveys-app-design.md#3 (pilot rationale)"}
+    status: grounded   # grounded as empirical defaults, but see gap-sampling-rationale
+
+  - id: area-selection
+    claim: >
+      Target areas are chosen by visualizing existing Connect service-delivery data, then
+      selecting the administrative boundaries that visualization shows are worth targeting.
+    rationale: >
+      Anchors the survey to where field work is actually happening / where gaps are, instead of
+      a blind hand-drawn polygon on satellite imagery.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/coverage/data_loader.py:build_du_geojson (delivery viz EXISTS, in the coverage app)"}
+      - {kind: implemented, ref: "commcare_connect/rooftop_surveys/sampling/boundaries.py:list_admin_areas (boundary picker EXISTS but is unwired dead code)"}
+      - {kind: assumed, ref: "the arc itself — coverage viz and the boundary picker are NOT connected to the rooftop setup flow"}
+    status: gap
+
+  - id: two-arm-did
+    claim: >
+      Areas can be designated treatment vs comparison and tracked over time to measure impact
+      via difference-in-differences.
+    rationale: >
+      Lets a program show causal impact (Δtreatment − Δcomparison), not just descriptive coverage.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/rooftop_surveys/monitoring/pipeline.py:compute_monitoring (by_arm split — DESCRIPTIVE only)"}
+      - {kind: assumed, ref: "no DiD estimator and no longitudinal/multi-round data model exist anywhere"}
+    status: gap
+
+gaps:
+  - id: gap-boundary-picker-unwired
+    type: CAPABILITY
+    claim_ref: area-selection
+    detail: "boundaries.py:list_admin_areas/get_admin_area_geojson work but are wired to no view/URL/template; the setup UI is freehand-polygon only."
+    proposed_action: "Wire the boundary picker into SetupView + setup.html as the area-selection entry point."
+
+  - id: gap-visualize-delivery
+    type: CAPABILITY
+    claim_ref: area-selection
+    detail: "coverage/ already renders Connect delivery DUs + visit points, but rooftop is fully decoupled (design §5 separated them on purpose)."
+    proposed_action: "Overlay coverage build_du_geojson/build_enriched_points_geojson on the rooftop area-picker map."
+
+  - id: gap-did-estimator
+    type: RESEARCH
+    claim_ref: two-arm-did
+    detail: "by_arm is a side-by-side descriptive split, not a DiD estimator; there is no round/wave (time) dimension."
+    proposed_action: "Design the longitudinal data model + the Δtreatment−Δcomparison estimator (and its assumptions)."
+
+  - id: gap-sampling-rationale
+    type: RESEARCH
+    claim_ref: pilot-params
+    detail: "The 25/8/8/0.7/9/330 values are pilot constants with no documented MDE/power derivation; k-tuning/allocation tools are deferred."
+    proposed_action: "Document the power/MDE basis (or an explicit 'pilot-derived, tuning deferred' rationale) so the why isn't asserted on air."
+
+  - id: gap-mode-decision
+    type: DECISION
+    claim_ref: two-arm-did
+    detail: "One-time survey vs DiD continuous-monitoring is unresolved (design §15 Q5); the comparison-arm framing only fully applies in continuous mode."
+    proposed_action: "USER decides: survey-only, DiD-continuous, or support both."
+
+  - id: gap-bridge-coverage-rooftop
+    type: DECISION
+    claim_ref: area-selection
+    detail: "Design §5 deliberately separated coverage (verify-after) from rooftop (frame-before); the visualize-delivery-first narrative reverses that. Aligns with the microplans-generalization direction (sampling+coverage on a shared core)."
+    proposed_action: "USER decides: bridge coverage delivery-viz into the rooftop area-picker, or keep them separate."
