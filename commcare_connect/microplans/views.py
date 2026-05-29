@@ -541,7 +541,7 @@ def _plan_summary_row(plan):
         "mode": plan.mode,
         "status": plan.status,
         "status_label": plan_lib.PLAN_STATUS_LABELS.get(plan.status, plan.status),
-        "opportunity_id": plan.opportunity_id,
+        "opportunity_id": plan.data.get("opportunity_id"),
         "assigned": assigned,
         "work_areas": len(plan.work_areas),
         "max_spread_km": k["plan"]["max_spread_km"],
@@ -648,7 +648,12 @@ class ProgramPlanTransitionView(LoginRequiredMixin, View):
             logger.exception("microplans transition failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Transition failed."}, status=502)
         return JsonResponse(
-            {"status": "ok", "plan_id": plan.id, "plan_status": plan.status, "opportunity_id": plan.opportunity_id}
+            {
+                "status": "ok",
+                "plan_id": plan.id,
+                "plan_status": plan.status,
+                "opportunity_id": plan.data.get("opportunity_id"),
+            }
         )
 
 

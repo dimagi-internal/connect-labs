@@ -50,7 +50,7 @@ class RooftopDataAccess(BaseDataAccess):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        return RooftopAreaRecord(record.to_dict())
+        return RooftopAreaRecord(record.to_api_dict())
 
     def save_frame(
         self,
@@ -73,7 +73,7 @@ class RooftopDataAccess(BaseDataAccess):
             },
             labs_record_id=area_record_id,
         )
-        return RooftopFrameRecord(record.to_dict())
+        return RooftopFrameRecord(record.to_api_dict())
 
     def list_frames(self) -> list[RooftopFrameRecord]:
         return self.labs_api.get_records(
@@ -108,7 +108,7 @@ class RooftopDataAccess(BaseDataAccess):
             },
             labs_record_id=frame.id,
         )
-        return RooftopPlanRecord(record.to_dict())
+        return RooftopPlanRecord(record.to_api_dict())
 
     def get_plan(self, plan_id: int) -> RooftopPlanRecord:
         record = self.labs_api.get_record_by_id(plan_id, model_class=RooftopPlanRecord)
@@ -131,7 +131,7 @@ class RooftopDataAccess(BaseDataAccess):
             data=data,
             current_record=plan,
         )
-        return RooftopPlanRecord(record.to_dict())
+        return RooftopPlanRecord(record.to_api_dict())
 
     def apply_plan_edits(
         self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str
@@ -192,7 +192,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        return RooftopPlanRecord(record.to_dict())
+        return RooftopPlanRecord(record.to_api_dict())
 
     def list_plans(self) -> list[RooftopPlanRecord]:
         return self.labs_api.get_records(
@@ -216,7 +216,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
             data=data,
             current_record=plan,
         )
-        return RooftopPlanRecord(record.to_dict())
+        return RooftopPlanRecord(record.to_api_dict())
 
     def apply_plan_edits(
         self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str
@@ -260,7 +260,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        return RooftopPlanGroupRecord(record.to_dict())
+        return RooftopPlanGroupRecord(record.to_api_dict())
 
     def list_groups(self) -> list[RooftopPlanGroupRecord]:
         return self.labs_api.get_records(
@@ -291,4 +291,4 @@ class ProgramPlanDataAccess(BaseDataAccess):
             data=data,
             current_record=group,
         )
-        return RooftopPlanGroupRecord(record.to_dict())
+        return RooftopPlanGroupRecord(record.to_api_dict())
