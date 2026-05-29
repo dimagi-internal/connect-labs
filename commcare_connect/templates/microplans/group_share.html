@@ -20,9 +20,15 @@
 
   <p class="text-sm text-gray-600">
     Each plan below covers one candidate region. The metrics summarise how the work splits across
-    field workers — lower travel and a more even workload are better. The <b>fit score</b> ranks the
-    plans against each other (0–100, higher is better).
+    field workers — lower travel and a more even workload are better.
   </p>
+
+  <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
+    <span class="font-semibold text-gray-800">What's the fit score?</span>
+    A single 0–100 number ranking the plans <em>against each other</em> — the strongest plan in this set gets <b>100</b>, the weakest <b>0</b>.
+    It's a weighted blend of <b>worst travel</b> (50%), <b>workload balance</b> (30%), and <b>coverage</b> (20%) — so a lower-travel,
+    more-evenly-distributed, higher-coverage plan scores higher. Use it to compare plans here; the absolute number isn't meaningful on its own.
+  </div>
 
   <div class="overflow-x-auto border border-gray-200 rounded-lg">
     <table class="min-w-full text-sm">
@@ -34,14 +40,23 @@
           <th class="text-right font-semibold px-3 py-2" title="Spread of workload across workers (lower is more even)">Imbalance</th>
           <th class="text-right font-semibold px-3 py-2" title="Share of buildings still included after exclusions">Coverage</th>
           <th class="text-right font-semibold px-3 py-2" title="Work areas the reviewer removed">Excluded</th>
-          <th class="text-right font-semibold px-3 py-2">Fit score</th>
+          <th class="text-right font-semibold px-3 py-2" title="Relative 0–100 across the plans shown — 100 = strongest. Travel (50%) + balance (30%) + coverage (20%).">Fit score</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for e in entries %}
         <tr class="hover:bg-gray-50">
           <td class="px-3 py-2">
-            <div class="font-medium text-gray-900">{{ e.name|default:"Untitled plan" }}{% if e.recommended %} <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800 align-middle">★ Best fit</span>{% endif %}</div>
+            <div class="font-medium">
+              {% if e.review_url %}<a class="text-brand-cornflower-blue hover:underline" href="{{ e.review_url }}">{{ e.name|default:"Untitled plan" }}</a>
+              {% else %}<span class="text-gray-900">{{ e.name|default:"Untitled plan" }}</span>{% endif %}
+              {% if e.status_label %}<span class="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded
+                {% if e.status == 'approved' %}bg-green-100 text-green-800
+                {% elif e.status == 'in_review' %}bg-amber-100 text-amber-800
+                {% elif e.status == 'deployed' %}bg-cyan-100 text-cyan-800
+                {% else %}bg-gray-100 text-gray-600{% endif %} align-middle">{{ e.status_label }}</span>{% endif %}
+              {% if e.recommended %} <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800 align-middle">★ Best fit</span>{% endif %}
+            </div>
             <div class="text-xs text-gray-500">{{ e.region|default:"—" }}{% if not e.assigned %} · <span class="text-amber-600">workers not yet assigned</span>{% endif %}</div>
           </td>
           <td class="px-3 py-2 text-right tabular-nums">
