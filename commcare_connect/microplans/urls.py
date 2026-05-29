@@ -25,6 +25,10 @@ urlpatterns = [
     # Program layer: a program owns a portfolio of candidate plans + plan groups.
     path("program/<int:program_id>/", views.ProgramWorkspaceView.as_view(), name="program_workspace"),
     path("program/<int:program_id>/plans.json", views.ProgramPlansAPIView.as_view(), name="program_plans"),
+    path("program/<int:program_id>/compare/", views.ProgramComparePageView.as_view(), name="program_compare_page"),
+    path(
+        "program/<int:program_id>/plan/compare/", views.ProgramComparePlansView.as_view(), name="program_plan_compare"
+    ),
     path("program/<int:program_id>/new/", views.ProgramSetupView.as_view(), name="program_create_plan_page"),
     path("program/<int:program_id>/plan/create/", views.ProgramCreatePlanView.as_view(), name="program_create_plan"),
     path("program/<int:program_id>/plan/<int:plan_id>/", views.ProgramPlanView.as_view(), name="program_plan"),
