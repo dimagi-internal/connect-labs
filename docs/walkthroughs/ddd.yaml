@@ -21,15 +21,26 @@ narrative: >-
   The loop self-improves until the judges are satisfied, then promotes the result into an explainer
   video embedded atop a docs page Dana can ship.
 tagline: >-
-  DDD turns one agreed demo story into the design doc, the video script, and the build plan at
-  once — so AI builds the right thing and you review a story, not a wall of code. For anyone
-  building software with AI.
+  Demo-driven development (DDD) makes one agreed demo story — a short, scene-by-scene walkthrough of
+  the working product — the plan for what AI builds. You review the story in minutes instead of a
+  wall of code, and the AI builds exactly that. For anyone building software with AI.
+why_summary: >-
+  Building with AI is fast but drifts from what you actually meant — you approve a big diff, miss
+  that it solved the wrong problem, and only find out after it ships. Reviewing a wall of generated
+  code to catch that is slow and unreliable. DDD has you agree to a short demo story first — so the
+  AI builds the right thing, and your review is quick and high-leverage instead of a code slog.
+capabilities:
+  - Hand off a rough idea and get back a clear demo story you can edit.
+  - Approve the plan as a story you read in minutes, not a code review.
+  - Catch overclaims before they ship — every scene is marked built or not-yet.
+  - Have the demo graded by two independent AI reviewers, never its own author.
+  - Ship a finished explainer — a short video plus this docs page — once it's good enough.
 getting_started:
-  - Hand DDD a rough feature idea.
+  - Install the canopy plugin (the toolkit DDD ships in), then run /ddd in your project with a rough feature idea.
   - It grounds the idea and drafts a demo story, split into small scenes you can check.
   - Open the review link, edit the story, and approve it — before any code is written.
-  - DDD builds it, records a demo, and two independent reviewers grade that demo.
-  - It self-improves until the reviewers pass, then ships the explainer — this page and its video.
+  - DDD builds it, records a demo, and two independent AI reviewers grade that demo.
+  - It self-improves until both reviewers pass (or flags the gaps for your call), then ships the explainer — this page and its video.
 base_url: https://canopy-web-ujpz2cuyxq-uc.a.run.app
 auth:
   type: session
