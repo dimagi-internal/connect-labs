@@ -107,6 +107,9 @@
   document.getElementById("compare-link").href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
+  // Escape user-controlled values before interpolating into innerHTML (group,
+  // worker, reason are LLO-typed and could carry HTML). Covers attribute + text.
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   let WAS = [];                 // current work areas
   const selected = new Set();   // selected wa ids
@@ -177,7 +180,7 @@
     ].join("");
     $("flw-dim").textContent = k.dimension === "worker" ? "Worker" : "Group";
     $("flw-body").innerHTML = (k.territories || []).map((t) =>
-      `<tr class="border-b"><td class="p-1.5 font-medium">${t.name}</td>
+      `<tr class="border-b"><td class="p-1.5 font-medium">${esc(t.name)}</td>
         <td class="p-1.5">${t.work_areas}</td>
         <td class="p-1.5">${(t.buildings || 0).toLocaleString()}</td>
         <td class="p-1.5">${t.population ? t.population.toLocaleString() : "—"}</td>
@@ -191,7 +194,7 @@
        <div class="flex justify-between"><dt class="text-gray-500">Buildings (active)</dt><dd class="font-medium">${(s.buildings_active ?? 0).toLocaleString()}</dd></div>`;
     const bw = s.by_worker || {};
     $("by-worker").innerHTML = Object.keys(bw).sort().map((k) =>
-      `<div class="flex justify-between"><span>${k}</span><span>${bw[k].work_areas} areas · ${bw[k].buildings.toLocaleString()} bldg</span></div>`).join("") || '<span class="text-gray-400">none</span>';
+      `<div class="flex justify-between"><span>${esc(k)}</span><span>${bw[k].work_areas} areas · ${bw[k].buildings.toLocaleString()} bldg</span></div>`).join("") || '<span class="text-gray-400">none</span>';
   }
   function renderTable() {
     const body = $("wa-body");
@@ -200,17 +203,18 @@
       const tr = document.createElement("tr");
       tr.className = "wa-row border-b " + (w.status === "EXCLUDED" ? "excluded " : "") + (selected.has(w.id) ? "sel" : "");
       const excluded = w.status === "EXCLUDED";
+      const id = esc(w.id);
       tr.innerHTML = `
-        <td class="p-2"><input type="checkbox" class="rowsel" data-id="${w.id}" ${selected.has(w.id) ? "checked" : ""}></td>
-        <td class="p-2 font-mono text-xs">${w.id}</td>
-        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="regroup" data-field="work_area_group" data-id="${w.id}" value="${w.work_area_group || ""}"></td>
-        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${w.id}" value="${w.opportunity_access || ""}"></td>
+        <td class="p-2"><input type="checkbox" class="rowsel" data-id="${id}" ${selected.has(w.id) ? "checked" : ""}></td>
+        <td class="p-2 font-mono text-xs">${id}</td>
+        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="regroup" data-field="work_area_group" data-id="${id}" value="${esc(w.work_area_group || "")}"></td>
+        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${id}" value="${esc(w.opportunity_access || "")}"></td>
         <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
-        <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${w.id}" value="${w.expected_visit_count ?? 0}"></td>
-        <td class="p-2 text-xs">${excluded ? `<span title="${(w.excluded_reason || "").replace(/"/g, "&quot;")}">EXCLUDED</span>` : (w.status || "")}</td>
+        <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${id}" value="${w.expected_visit_count ?? 0}"></td>
+        <td class="p-2 text-xs">${excluded ? `<span title="${esc(w.excluded_reason || "")}">EXCLUDED</span>` : esc(w.status || "")}</td>
         <td class="p-2">${excluded
-          ? `<button class="text-xs text-emerald-600" data-restore="${w.id}">restore</button>`
-          : `<button class="text-xs text-red-600" data-exclude="${w.id}">exclude</button>`}</td>`;
+          ? `<button class="text-xs text-emerald-600" data-restore="${id}">restore</button>`
+          : `<button class="text-xs text-red-600" data-exclude="${id}">exclude</button>`}</td>`;
       body.appendChild(tr);
     });
     $("sel-count").textContent = `${selected.size} selected`;

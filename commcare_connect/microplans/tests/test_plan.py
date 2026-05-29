@@ -246,3 +246,15 @@ class TestScorePlans:
         plan.score_plans([a, b])
         # a: travel norm 1*0.5 + balance 0 + coverage 0 = 50; b: 0 + 0.3 + 0.2 = 50
         assert a["composite"] == 50.0 and b["composite"] == 50.0
+
+
+class TestHaversine:
+    def test_identical_is_zero_and_known_distance(self):
+        assert plan._haversine_km([3.0, 6.0], [3.0, 6.0]) == 0.0
+        # 1 degree of latitude ~ 111 km
+        d = plan._haversine_km([3.0, 6.0], [3.0, 7.0])
+        assert 110 < d < 112
+
+    def test_diameter_no_domain_error_on_dense_points(self):
+        cents = [[3.0 + i * 1e-7, 6.0] for i in range(50)]  # near-identical points
+        assert plan._territory_diameter_km(cents) >= 0.0  # must not raise math domain error
