@@ -2,24 +2,31 @@ schema_version: 1
 feature: microplans
 # REBUILT 2026-05-29 against the CURRENT microplans code (after PRs #299 shared-core,
 # #301 GeoPoDe selectable boundary source, #304 LLO planning-phase plan review/edit).
-# The prior narrative was inverted — it over-weighted unbuilt impact (DiD) and missed the
-# shipped hero (the LLO plan review/edit). This grounds the story in what's actually built.
+# Reframed around the difference-in-differences setup the demo opens with: Dimagi reads an
+# existing opportunity's delivery to pick the INTERVENTION boundary, then picks a comparable
+# neighbor as the CONTROL, before generating + cleaning + pushing the plan. The arm concept
+# (intervention/control) and the DiD measurement are the committed frontier; the selection,
+# generation, LLO cleaning, and CSV push are grounded in shipped code.
 problem: >
-  A program needs to turn "we want to work in this region" into a clean, field-ready
-  microplan that a local partner (LLO) trusts and can run — choosing where to work from real
-  administrative boundaries, generating a sampling or coverage plan, letting the LLO clean it
-  (drop the lake that isn't a settlement, rebalance workloads) with a full audit trail, and
-  pushing it to Connect. Measuring impact afterward is the open frontier.
+  A program needs to turn "we want to work in this region — and prove it worked" into a clean,
+  field-ready microplan that a local partner (LLO) trusts and can run. That means: read where
+  Connect delivery is already happening to choose an intervention administrative boundary, pick a
+  comparable neighboring boundary as a control so impact can be estimated by difference-in-
+  differences, generate a sampling or coverage plan, let the LLO clean it (drop the lake that
+  isn't a settlement, rebalance workloads) with a full audit trail, push it to Connect, and later
+  compare completion in the intervention against the control. The delivery overlay, the
+  intervention/control arm concept, and the DiD measurement are the open frontier.
 
 spine:
   - id: area-selection
     claim: >
-      The user picks where to work from real administrative boundaries — choosing the boundary
-      SOURCE per level (bespoke GeoPoDe where loaded, Overture global elsewhere), drilling the
-      hierarchy with population shown — or by drawing a polygon, or a pin + radius.
+      The user picks the intervention boundary and a comparable neighboring boundary as the control
+      from real administrative boundaries — choosing the boundary SOURCE per level (bespoke GeoPoDe
+      where loaded, Overture global elsewhere), drilling the hierarchy with population shown.
     rationale: >
       Named, source-attributed boundaries (with population) are reproducible and defensible, and
-      bespoke GeoPoDe data beats generic Overture where a country has it.
+      bespoke GeoPoDe data beats generic Overture where a country has it; an adjacent, comparable
+      control boundary is what makes a later difference-in-differences credible.
     evidence:
       - {kind: implemented, ref: "commcare_connect/microplans/core/admin_boundaries.py (BoundarySource: Labs/GeoPoDe + Overture, sources_for/source_for)"}
       - {kind: implemented, ref: "commcare_connect/microplans/core/area_input.py:resolve_area (draw | admin-area | pin+radius)"}
@@ -65,9 +72,9 @@ spine:
 
   - id: delivery-viz
     claim: >
-      Before choosing an area, the user sees where Connect delivery is already happening, to target
-      the boundaries that matter.
-    rationale: Anchors area choice to real field activity instead of guessing.
+      The user opens an existing Connect opportunity and sees where its delivery is already
+      happening on a map, reading the density to choose the intervention boundary.
+    rationale: Anchors the intervention choice to real field activity instead of guessing.
     evidence:
       - {kind: implemented, ref: "commcare_connect/coverage/data_loader.py:build_du_geojson (delivery viz exists in the coverage app)"}
       - {kind: assumed, ref: "no delivery overlay is wired into the microplans setup map"}
@@ -75,9 +82,10 @@ spine:
 
   - id: monitoring-impact
     claim: >
-      As field work proceeds, a dashboard shows per-work-area completion by arm, and across rounds
-      reports the difference-in-differences between treatment and comparison areas.
-    rationale: The payoff — proving the program changed outcomes, not just that work happened.
+      As field work proceeds, a dashboard shows per-work-area completion in the intervention vs the
+      control arm, and across rounds reports the difference-in-differences between them.
+    rationale: The payoff — proving the program changed outcomes against a comparable control, not
+      just that work happened.
     evidence:
       - {kind: implemented, ref: "commcare_connect/microplans/monitoring/pipeline.py + coverage.py (completion + by_arm — as libraries)"}
       - {kind: assumed, ref: "monitoring is NOT wired (no view/url/template); no round/longitudinal model; no DiD estimator"}
@@ -98,7 +106,12 @@ gaps:
     type: RESEARCH
     claim_ref: monitoring-impact
     detail: "No longitudinal round model and no difference-in-differences estimator; by_arm is side-by-side only."
-    proposed_action: "Design the round/wave model + the DiD estimator (Δtreatment − Δcomparison on completion-rate)."
+    proposed_action: "Design the round/wave model + the DiD estimator (Δintervention − Δcontrol on completion-rate)."
+  - id: gap-arm-designation
+    type: CAPABILITY
+    claim_ref: area-selection
+    detail: "Selection picks areas, but there is no intervention/control 'arm' concept on a plan's areas — the pair can't be tagged or persisted for later DiD."
+    proposed_action: "Add an arm field (intervention | control) to plan areas + UI to designate the two selected boundaries as the pair."
   - id: gap-population-aware-sampling
     type: CAPABILITY
     claim_ref: area-selection
