@@ -530,6 +530,10 @@ def _plan_summary_row(plan):
     from commcare_connect.microplans.core import plan as plan_lib
 
     k = plan_lib.plan_kpis(plan.work_areas)
+    # Travel/balance KPIs are only meaningful once areas are split across workers.
+    # Pre-assignment everything collapses to one territory, so flag it so the UI can
+    # show the area count instead of a misleading "1 worker / whole-region travel".
+    assigned = k["dimension"] == "worker"
     return {
         "plan_id": plan.id,
         "name": plan.name or f"Plan {plan.id}",
@@ -538,6 +542,7 @@ def _plan_summary_row(plan):
         "status": plan.status,
         "status_label": plan_lib.PLAN_STATUS_LABELS.get(plan.status, plan.status),
         "opportunity_id": plan.opportunity_id,
+        "assigned": assigned,
         "work_areas": len(plan.work_areas),
         "max_spread_km": k["plan"]["max_spread_km"],
         "coverage_pct": k["coverage_pct"],
@@ -714,16 +719,22 @@ class ProgramGroupShareView(LoginRequiredMixin, TemplateView):
         try:
             group = da.get_group(int(group_id))
             plans_by_id = {p.id: p for p in da.list_plans()}
-            entries = [
-                {
-                    "plan_id": pid,
-                    "name": plans_by_id[pid].name,
-                    "region": plans_by_id[pid].region,
-                    "kpis": plan_lib.plan_kpis(plans_by_id[pid].work_areas),
-                }
-                for pid in group.plan_ids
-                if pid in plans_by_id
-            ]
+            entries = []
+            for pid in group.plan_ids:
+                p = plans_by_id.get(pid)
+                if p is None:
+                    continue
+                kpis = plan_lib.plan_kpis(p.work_areas)
+                entries.append(
+                    {
+                        "plan_id": pid,
+                        "name": p.name,
+                        "region": p.region,
+                        "kpis": kpis,
+                        "assigned": kpis["dimension"] == "worker",
+                        "work_areas": len(p.work_areas),
+                    }
+                )
             plan_lib.score_plans(entries)
             context["group_name"] = group.name
             context["offered_to"] = group.offered_to
