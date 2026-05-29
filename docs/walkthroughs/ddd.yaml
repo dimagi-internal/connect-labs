@@ -20,6 +20,16 @@ narrative: >-
   walkthrough of the real product and has two independent judges grade the demo against its claims.
   The loop self-improves until the judges are satisfied, then promotes the result into an explainer
   video embedded atop a docs page Dana can ship.
+tagline: >-
+  DDD turns one agreed demo story into the design doc, the video script, and the build plan at
+  once — so AI builds the right thing and you review a story, not a wall of code. For anyone
+  building software with AI.
+getting_started:
+  - Hand DDD a rough feature idea.
+  - It grounds the idea and drafts a demo story, split into small scenes you can check.
+  - Open the review link, edit the story, and approve it — before any code is written.
+  - DDD builds it, records a demo, and two independent reviewers grade that demo.
+  - It self-improves until the reviewers pass, then ships the explainer — this page and its video.
 base_url: https://canopy-web-ujpz2cuyxq-uc.a.run.app
 auth:
   type: session
@@ -151,13 +161,13 @@ scenes:
 
   # Sentence 7 — frontier: the terminal artifact.
   - persona: lead
-    title: Out comes an explainer video Dana can ship
+    title: DDD packages the demo as a shippable explainer
     show: >-
-      open the Cuts tab — once the loop converges, the promoted explainer video and its docs page
-      (hero video atop the capabilities, the why, and the how) land here to ship.
+      DDD's promote step packages the run into a self-contained docs page — the hero demo video atop
+      the capabilities, the why, and the how — behind an external-release gate; it ships once the loop converges.
     concept_claim: >-
-      On convergence DDD promotes the run into a self-contained docs page with the hero video,
-      published behind an external-release gate.
+      DDD's promote step builds a self-contained docs page with the hero demo video behind an
+      external-release gate, ready to ship once the loop converges.
     provenance: converge-and-promote
     design_intent: The terminal deliverable was always a great explainer video atop a docs page; a loop that never ships that has not closed.
     features:

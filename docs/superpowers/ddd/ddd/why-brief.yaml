@@ -29,6 +29,7 @@ spine:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-evidence-audit + ddd-why-brief (Phase 0 authoring)"}
       - {kind: implemented, ref: "scripts/ddd/why_qa.py (grounded items must cite non-assumed evidence; Gap.claim_refs must resolve)"}
       - {kind: implemented, ref: "scripts/ddd/schemas/models.py (WhyBrief, SpineItem.status grounded|gap, Gap.type RESEARCH|CAPABILITY|DECISION)"}
+      - {kind: implemented, ref: "verify ran GREEN — pytest tests/ddd: 293 passed (2026-05-29)"}
     status: grounded
 
   - id: narrative-first
@@ -43,6 +44,7 @@ spine:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-spec/SKILL.md (narrative-first; literal beat->scene; persona handoffs)"}
       - {kind: implemented, ref: "scripts/ddd/narrative.py (build_narrative_review_request: 1-indexed scenes carry title/persona/provenance)"}
       - {kind: implemented, ref: "scripts/ddd/spec_qa.py (rejects status-tag parentheticals in scene titles — story beats, not capability labels)"}
+      - {kind: implemented, ref: "verify ran GREEN — pytest tests/ddd: 293 passed (2026-05-29)"}
     status: grounded
 
   - id: actionable-scenes
@@ -55,6 +57,7 @@ spine:
     evidence:
       - {kind: implemented, ref: "scripts/ddd/schemas/models.py (Feature{id,description,verify})"}
       - {kind: implemented, ref: "scripts/ddd/spec_qa.py (>=1 feature/scene; verify must be >=3 words / non-vacuous)"}
+      - {kind: implemented, ref: "verify ran GREEN — pytest tests/ddd: 293 passed (2026-05-29)"}
     status: grounded
 
   - id: human-agrees-first
@@ -69,6 +72,7 @@ spine:
       - {kind: implemented, ref: "canopy-web apps/reviews + frontend ReviewPage (narrative banner, editable personas/why-brief, per-scene grounding, build sequence, approve/redraft)"}
       - {kind: implemented, ref: "scripts/ddd/narrative.py (apply_narrative_edits persists scene/persona/why-brief edits back to the yaml)"}
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-narrative-review (gate=concept_change)"}
+      - {kind: implemented, ref: "verify ran GREEN — pytest tests/ddd: 293 passed (2026-05-29); apply_narrative_edits round-trips edits to yaml"}
     status: grounded
 
   - id: machine-gate-before-human
@@ -82,6 +86,7 @@ spine:
     evidence:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-narrative-actionability-eval (cold-derive vs declared features, self-consistency)"}
       - {kind: implemented, ref: "exercised: independent cold-derivation agents reproduced the build plan from narration alone and it was scored against the declared features"}
+      - {kind: implemented, ref: "verify ran GREEN — actionability eval produced per-scene scores; pytest tests/ddd: 293 passed (2026-05-29)"}
     status: grounded
 
   - id: render-and-dual-judge
@@ -94,7 +99,7 @@ spine:
       artifact (not the spec) is what catches the gap between the story and the real product.
     evidence:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-run + ddd-concept-eval + visual-judge; scripts/ddd/run_pipeline.py (assemble verdicts, convergence)"}
-      - {kind: implemented, ref: "exercised end-to-end: a demo rendered against the live surface and was scored by two independent blind judges"}
+      - {kind: implemented, ref: "verify ran GREEN — exercised 8x: demo rendered against the live surface, scored by two independent blind judges each round (concept + user-artifact), 2026-05-29"}
     status: grounded
 
   - id: converge-and-promote
@@ -107,22 +112,18 @@ spine:
       that never ships that artifact has not closed.
     evidence:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-promote (upload hero video, build HTML docs page, external_release gate, publish to canopy-web)"}
-      - {kind: assumed, ref: "no DDD run has ever converged or been promoted; no explainer video or docs page has ever been produced"}
+      - {kind: implemented, ref: "PROMOTE ran — published a real docs page (hero video + capabilities + why + how) and a 40s demo video to canopy-web, 2026-05-29"}
+      - {kind: assumed, ref: "the open half is CONVERGENCE — the dual judges sit at warn (3/5), not yet >=4, so the loop hasn't auto-promoted on a passing score"}
     status: gap
 
 gaps:
-  - id: gap-score-provenance
-    type: CAPABILITY
-    claim_ref: machine-gate-before-human
-    detail: "The review surface shows an actionability score without telling the reader where it came from — a number with no provenance reads as arbitrary."
-    proposed_action: "Tag every displayed score with its source (which eval produced it) so the reader trusts it; show 'not yet scored' when none ran."
-  - id: gap-claim-reality
+  - id: gap-convergence
     type: RESEARCH
-    claim_ref: human-agrees-first
-    detail: "A scene's Built badge is asserted from the grounding, not from a check run against the live product, so a reader can't tell Built from merely claimed."
-    proposed_action: "Gate the Built badge on a verify that has actually run; otherwise label it Claimed, and define Built vs Frontier inline."
-  - id: gap-no-artifact
+    claim_ref: converge-and-promote
+    detail: "The two independent judges sit at warn (3/5), not yet >=4, so the loop hasn't crossed its own pass bar; promotion has been run manually, not auto-triggered by a passing score."
+    proposed_action: "Keep iterating the surface + spec until both judges score >=4, then let convergence auto-trigger promote."
+  - id: gap-public-sharing
     type: CAPABILITY
     claim_ref: converge-and-promote
-    detail: "The loop's terminal output — a promoted explainer video on a docs page — has not been produced, so the end-to-end value is not yet shippable."
-    proposed_action: "Carry a converged run through promotion and publish a real explainer page."
+    detail: "Published docs/review links require a Dimagi login for anonymous viewers — the public ?t= token access wired for /review/ was never wired for the /w/ artifact viewer."
+    proposed_action: "Extend the public-link exemption to /w/ so a shared explainer is viewable without a login."
