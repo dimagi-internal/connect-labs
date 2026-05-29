@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
 <style>
   #rooftop-map { position: absolute; inset: 0; }
-  .seg-on { box-shadow: inset 0 0 0 2px #059669; background: #ecfdf5; color: #065f46; }
+  .seg-on { box-shadow: inset 0 0 0 2px #3843d0; background: #eef0ff; color: #3a42c7; }
 </style>
 {% endblock %}
 
@@ -21,7 +21,7 @@
       <h1 class="text-xl font-bold text-gray-900">Microplans</h1>
       {% if program_id %}
       <p class="text-sm text-gray-500 mt-1">Program #{{ program_id }} — create a candidate plan
-        · <a href="{{ program_url }}" class="text-emerald-700">← portfolio</a></p>
+        · <a href="{{ program_url }}" class="text-brand-cornflower-blue">← portfolio</a></p>
       {% else %}
       <p class="text-sm text-gray-500 mt-1">Opportunity #{{ opp_id }} — define the work areas</p>
       {% endif %}
@@ -35,7 +35,7 @@
     <section>
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Mode</h2>
       <div class="flex gap-2">
-        <button type="button" id="btn-mode-sampling" class="button button-sm flex-1">Sampling</button>
+        <button type="button" id="btn-mode-sampling" class="button button-sm flex-1 primary-dark">Sampling</button>
         <button type="button" id="btn-mode-coverage" class="button button-sm flex-1 outline-style">Coverage</button>
       </div>
       <p id="mode-help" class="text-xs text-gray-500 mt-2"></p>
@@ -45,7 +45,7 @@
     <section>
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">1 · Area</h2>
       <div class="flex gap-1 mb-3 text-xs">
-        <button type="button" id="btn-input-draw" class="button button-sm flex-1">Draw</button>
+        <button type="button" id="btn-input-draw" class="button button-sm flex-1 primary-dark">Draw</button>
         <button type="button" id="btn-input-admin" class="button button-sm flex-1 outline-style">Admin area</button>
         <button type="button" id="btn-input-pin" class="button button-sm flex-1 outline-style">Pin + radius</button>
       </div>
@@ -67,12 +67,12 @@
       <div id="input-admin" class="hidden space-y-2 text-sm">
         <label class="block">
           <span class="text-gray-600">Country</span>
-          <select id="sel-country" class="mt-1 w-full rounded border-gray-300"></select>
+          <select id="sel-country" class="base-input mt-1"></select>
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="block">
             <span class="text-gray-600">Level</span>
-            <select id="sel-level" class="mt-1 w-full rounded border-gray-300">
+            <select id="sel-level" class="base-input mt-1">
               <option value="1">Region / State</option>
               <option value="2" selected>County / District / LGA</option>
               <option value="3">Locality / Ward</option>
@@ -80,13 +80,13 @@
           </label>
           <label class="block">
             <span class="text-gray-600">Search</span>
-            <input id="inp-area-search" type="text" placeholder="name…" class="mt-1 w-full rounded border-gray-300">
+            <input id="inp-area-search" type="text" placeholder="name…" class="base-input mt-1">
           </label>
         </div>
-        <button type="button" id="btn-area-search" class="button button-sm w-full">Find areas</button>
+        <button type="button" id="btn-area-search" class="button button-sm primary-dark w-full">Find areas</button>
         <label class="block hidden" id="wrap-source">
           <span class="text-gray-600">Boundary source</span>
-          <select id="sel-source" class="mt-1 w-full rounded border-gray-300"></select>
+          <select id="sel-source" class="base-input mt-1"></select>
         </label>
         <div id="area-source" class="text-xs text-gray-500"></div>
         <div id="list-areas" class="max-h-48 overflow-y-auto border border-gray-100 rounded divide-y"></div>
@@ -96,10 +96,10 @@
       <div id="input-pin" class="hidden space-y-2 text-sm">
         <p class="text-xs text-gray-500">Click "Drop pin", then click the map to place it. The circle becomes the area.</p>
         <div class="grid grid-cols-2 gap-2">
-          <button type="button" id="btn-drop-pin" class="button button-sm">Drop pin</button>
+          <button type="button" id="btn-drop-pin" class="button button-sm outline-style">Drop pin</button>
           <label class="block">
             <span class="text-gray-600">Radius (m)</span>
-            <input id="inp-pin-radius" type="number" value="500" min="20" step="50" class="mt-1 w-full rounded border-gray-300">
+            <input id="inp-pin-radius" type="number" value="500" min="20" step="50" class="base-input mt-1">
           </label>
         </div>
         <div id="pin-status" class="text-xs text-gray-500"></div>
@@ -117,20 +117,20 @@
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Sampling config</h2>
       <div class="space-y-3 text-sm">
         <label class="block"><span class="text-gray-600">Target clusters (PSUs)</span>
-          <input id="cfg-clusters" type="number" value="25" min="1" class="mt-1 w-full rounded border-gray-300"></label>
+          <input id="cfg-clusters" type="number" value="25" min="1" class="base-input mt-1"></label>
         <div class="grid grid-cols-2 gap-2">
           <label class="block"><span class="text-gray-600">Primary / PSU</span>
-            <input id="cfg-primary" type="number" value="8" min="1" class="mt-1 w-full rounded border-gray-300"></label>
+            <input id="cfg-primary" type="number" value="8" min="1" class="base-input mt-1"></label>
           <label class="block"><span class="text-gray-600">Alternates / PSU</span>
-            <input id="cfg-alternate" type="number" value="8" min="0" class="mt-1 w-full rounded border-gray-300"></label>
+            <input id="cfg-alternate" type="number" value="8" min="0" class="base-input mt-1"></label>
         </div>
         <label class="block"><span class="text-gray-600">Min roof confidence</span>
-          <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300"></label>
+          <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="base-input mt-1"></label>
         <div class="grid grid-cols-2 gap-2">
           <label class="block"><span class="text-gray-600">Min area m²</span>
-            <input id="cfg-area-min" type="number" value="9" min="0" class="mt-1 w-full rounded border-gray-300"></label>
+            <input id="cfg-area-min" type="number" value="9" min="0" class="base-input mt-1"></label>
           <label class="block"><span class="text-gray-600">Max area m²</span>
-            <input id="cfg-area-max" type="number" value="330" min="0" class="mt-1 w-full rounded border-gray-300"></label>
+            <input id="cfg-area-max" type="number" value="330" min="0" class="base-input mt-1"></label>
         </div>
       </div>
     </section>
@@ -140,34 +140,34 @@
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Coverage config</h2>
       <div class="space-y-3 text-sm">
         <label class="block"><span class="text-gray-600">Strategy</span>
-          <select id="cfg-strategy" class="mt-1 w-full rounded border-gray-300">
+          <select id="cfg-strategy" class="base-input mt-1">
             <option value="balanced" selected>Balanced (even workloads)</option>
             <option value="grid">Grid (square cells)</option>
           </select></label>
         <label class="block" id="wrap-bpc"><span class="text-gray-600">Buildings / work area</span>
-          <input id="cfg-bpc" type="number" value="100" min="1" class="mt-1 w-full rounded border-gray-300"></label>
+          <input id="cfg-bpc" type="number" value="100" min="1" class="base-input mt-1"></label>
         <label class="block hidden" id="wrap-cell"><span class="text-gray-600">Grid cell edge (m)</span>
-          <input id="cfg-cellsize" type="number" value="200" min="10" step="10" class="mt-1 w-full rounded border-gray-300"></label>
+          <input id="cfg-cellsize" type="number" value="200" min="10" step="10" class="base-input mt-1"></label>
         <label class="block" id="wrap-balance"><span class="text-gray-600">Balance tolerance (±)</span>
-          <input id="cfg-balance" type="number" value="0.1" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300"></label>
+          <input id="cfg-balance" type="number" value="0.1" step="0.05" min="0" max="1" class="base-input mt-1"></label>
       </div>
     </section>
 
     <!-- Step 3: Preview -->
     <section>
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Preview</h2>
-      <button type="button" id="btn-preview" class="button w-full">Preview</button>
+      <button type="button" id="btn-preview" class="button button-md primary-dark w-full">Preview</button>
       {% if program_id %}
       <div id="program-create-fields" class="space-y-2 mt-2 hidden">
         <label class="block text-sm"><span class="text-gray-600">Plan name</span>
-          <input id="inp-plan-name" type="text" placeholder="e.g. Kano North — coverage v1" class="mt-1 w-full rounded border-gray-300"></label>
+          <input id="inp-plan-name" type="text" placeholder="e.g. Kano North — coverage v1" class="base-input mt-1"></label>
         <label class="block text-sm"><span class="text-gray-600">Region / area label</span>
-          <input id="inp-plan-region" type="text" placeholder="e.g. Kano North LGA" class="mt-1 w-full rounded border-gray-300"></label>
+          <input id="inp-plan-region" type="text" placeholder="e.g. Kano North LGA" class="base-input mt-1"></label>
       </div>
-      <button type="button" id="btn-create-plan" class="button w-full mt-2 hidden">Create plan in program →</button>
+      <button type="button" id="btn-create-plan" class="button button-md primary-dark w-full mt-2 hidden">Create plan in program →</button>
       {% else %}
-      <button type="button" id="btn-save" class="button w-full mt-2 hidden">Save</button>
-      <button type="button" id="btn-review" class="button w-full mt-2 hidden">Review &amp; edit plan</button>
+      <button type="button" id="btn-save" class="button button-md primary-dark w-full mt-2 hidden">Save</button>
+      <button type="button" id="btn-review" class="button button-md primary-dark w-full mt-2 hidden">Review &amp; edit plan</button>
       {% endif %}
       <button type="button" id="btn-csv" class="button button-sm outline-style w-full mt-2 hidden">Download Connect import CSV</button>
       <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
@@ -244,8 +244,8 @@
   // ---- mode toggle ----
   function setMode(m) {
     mode = m;
-    $("btn-mode-sampling").className = "button button-sm flex-1 " + (m === "sampling" ? "" : "outline-style");
-    $("btn-mode-coverage").className = "button button-sm flex-1 " + (m === "coverage" ? "" : "outline-style");
+    $("btn-mode-sampling").className = "button button-sm flex-1 " + (m === "sampling" ? "primary-dark" : "outline-style");
+    $("btn-mode-coverage").className = "button button-sm flex-1 " + (m === "coverage" ? "primary-dark" : "outline-style");
     $("cfg-sampling").classList.toggle("hidden", m !== "sampling");
     $("cfg-coverage").classList.toggle("hidden", m !== "coverage");
     $("mode-help").textContent = m === "sampling"
@@ -262,7 +262,7 @@
     [["draw", "input-draw"], ["admin", "input-admin"], ["pin", "input-pin"]].forEach(([k, el]) =>
       $(el).classList.toggle("hidden", k !== i));
     ["draw", "admin", "pin"].forEach((k) =>
-      $("btn-input-" + k).className = "button button-sm flex-1 " + (k === i ? "" : "outline-style"));
+      $("btn-input-" + k).className = "button button-sm flex-1 " + (k === i ? "primary-dark" : "outline-style"));
     if (i !== "pin") disarmPin();
   }
   $("btn-input-draw").addEventListener("click", () => setInput("draw"));
