@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ group_name|default:"Plan group" }} — microplans{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6 space-y-6">
+  <header class="border-b border-gray-200 pb-4">
+    <p class="text-xs uppercase tracking-wide text-gray-400">Microplan proposal</p>
+    <h1 class="text-2xl font-bold text-gray-900">{{ group_name|default:"Plan group" }}</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      {% if offered_to %}Prepared for <span class="font-medium text-gray-700">{{ offered_to }}</span> · {% endif %}
+      {{ entries|length }} candidate plan{{ entries|length|pluralize }} · Program #{{ program_id }}
+    </p>
+  </header>
+
+  {% if error %}
+  <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
+  {% elif not entries %}
+  <p class="text-sm text-gray-400">No plans in this group yet.</p>
+  {% else %}
+
+  <p class="text-sm text-gray-600">
+    Each plan below covers one candidate region. The metrics summarise how the work splits across
+    field workers — lower travel and a more even workload are better. The <b>fit score</b> ranks the
+    plans against each other (0–100, higher is better).
+  </p>
+
+  <div class="overflow-x-auto border border-gray-200 rounded-lg">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600">
+        <tr>
+          <th class="text-left font-semibold px-3 py-2">Plan</th>
+          <th class="text-right font-semibold px-3 py-2" title="Number of field-worker territories">Workers</th>
+          <th class="text-right font-semibold px-3 py-2" title="Largest single worker's travel diameter">Worst travel</th>
+          <th class="text-right font-semibold px-3 py-2" title="Spread of workload across workers (lower is more even)">Imbalance</th>
+          <th class="text-right font-semibold px-3 py-2" title="Share of buildings still included after exclusions">Coverage</th>
+          <th class="text-right font-semibold px-3 py-2" title="Work areas the reviewer removed">Excluded</th>
+          <th class="text-right font-semibold px-3 py-2">Fit score</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for e in entries %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-3 py-2">
+            <div class="font-medium text-gray-900">{{ e.name|default:"Untitled plan" }}</div>
+            <div class="text-xs text-gray-500">{{ e.region|default:"—" }}</div>
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.plan.territory_count }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.plan.max_spread_km }} km</td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if e.kpis.plan.has_population %}
+              {% if e.kpis.plan.pop_imbalance_pct is not None %}{{ e.kpis.plan.pop_imbalance_pct }}%{% else %}—{% endif %}
+            {% else %}
+              {% if e.kpis.plan.building_imbalance_pct is not None %}{{ e.kpis.plan.building_imbalance_pct }}%{% else %}—{% endif %}
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.coverage_pct }}%</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.excluded.count }}</td>
+          <td class="px-3 py-2 text-right">
+            {% if e.composite is not None %}
+            <span class="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold tabular-nums">{{ e.composite }}</span>
+            {% else %}<span class="text-gray-400">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-gray-400">
+    Imbalance is measured on population where available, otherwise on building counts.
+    Fit score weights travel (50%), workload balance (30%) and coverage (20%), normalised across the plans shown here.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}
