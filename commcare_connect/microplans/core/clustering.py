@@ -108,24 +108,48 @@ def balanced_kmeans(
     return ClusterOutput(work, _base_psu_frame(work, coords, labels), n_clusters)
 
 
-def grid_clusters(df: pd.DataFrame, cell_size_m: float = 200.0) -> ClusterOutput:
+def grid_clusters(df: pd.DataFrame, cell_size_m: float = 100.0) -> ClusterOutput:
     """Tile the area into `cell_size_m` square cells; each occupied cell is a cluster.
 
     Deterministic and contiguous — no random seed. Cells are anchored on the
     min x/y corner of the projected points so the grid is stable for a given area.
+
+    Each row of psu_frame carries `cell_polygon` — the cell box in WGS84 lat/lon
+    as a list of [lon, lat] corners (5 entries, closed ring). Callers should use
+    that as the work-area boundary instead of a convex hull of cluster points.
     """
+    from pyproj import Transformer
+
     if len(df) == 0:
         return _empty_output(df)
-    work, coords, _ = _project(df)
+    work, coords, epsg = _project(df)
     size = max(1.0, float(cell_size_m))
     x0, y0 = coords[:, 0].min(), coords[:, 1].min()
     col = np.floor((coords[:, 0] - x0) / size).astype(int)
     row = np.floor((coords[:, 1] - y0) / size).astype(int)
     # one integer label per occupied (row, col) cell
-    keys = row.astype(np.int64) * (col.max() + 1) + col
-    _, labels = np.unique(keys, return_inverse=True)
+    width = int(col.max()) + 1
+    keys = row.astype(np.int64) * width + col
+    unique_keys, labels = np.unique(keys, return_inverse=True)
     work["cluster"] = [f"C{lbl}" for lbl in labels]
-    return ClusterOutput(work, _base_psu_frame(work, coords, labels), int(labels.max()) + 1)
+
+    # Compute the cell-box polygon (in projected UTM, then reproject to lat/lon)
+    # for each occupied cell. The cell, not the hull of points inside it, is the
+    # actual work-area boundary — uniform 100m × 100m squares.
+    inv = Transformer.from_crs(epsg, 4326, always_xy=True)
+    cell_polygons: dict[str, list[list[float]]] = {}
+    for k, lbl in zip(unique_keys, range(len(unique_keys))):
+        r, c = int(k // width), int(k % width)
+        x_lo = x0 + c * size
+        y_lo = y0 + r * size
+        xs = [x_lo, x_lo + size, x_lo + size, x_lo, x_lo]
+        ys = [y_lo, y_lo, y_lo + size, y_lo + size, y_lo]
+        lons, lats = inv.transform(xs, ys)
+        cell_polygons[f"C{lbl}"] = [[float(lo), float(la)] for lo, la in zip(lons, lats)]
+
+    psu = _base_psu_frame(work, coords, labels)
+    psu["cell_polygon"] = psu["cluster"].map(cell_polygons)
+    return ClusterOutput(work, psu, int(labels.max()) + 1)
 
 
 def _balanced_size_bounds(n_samples: int, n_clusters: int, balance_tolerance: float) -> tuple[int, int]:

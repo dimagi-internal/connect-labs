@@ -115,11 +115,11 @@ def build_coverage_work_areas(
     lga: str = "",
     state: str = "",
 ) -> list[WorkAreaPayload]:
-    """Cluster-as-WorkArea (coverage mode): each cluster polygon → one WorkArea.
+    """Grid-cell-as-WorkArea (coverage mode): each occupied grid cell → one WorkArea.
 
     Unlike sampling (one tiny WorkArea per pinned building), coverage assigns a
-    whole cluster to an FLW: boundary = the cluster hull, expected_visit_count =
-    building_count (visit every household in the area).
+    whole grid cell to an FLW: boundary = the cell box itself,
+    expected_visit_count = building_count (visit every household in the cell).
     """
     ward_for_arm = ward_for_arm or {}
     out: list[WorkAreaPayload] = []
@@ -127,7 +127,9 @@ def build_coverage_work_areas(
         geom = shape(feat["geometry"])
         centroid = geom.centroid
         props = feat.get("properties", {})
-        arm = props.get("arm", "intervention")
+        # Coverage has no intervention/comparison split — default to "coverage".
+        # (Legacy snapshots may still carry "intervention" from the hull era.)
+        arm = props.get("arm", "coverage")
         cluster = props.get("cluster", "C0")
         building_count = int(props.get("building_count", 0))
         out.append(
