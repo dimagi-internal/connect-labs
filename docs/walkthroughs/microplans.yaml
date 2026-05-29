@@ -1,53 +1,55 @@
 # Unified spec for microplans — demo-driven-development v3 (cohesive narrative).
 # REBUILT 2026-05-29 as ONE continuous demo whose LITERAL narrative defines the scenes:
 # each sentence of `narrative` below is exactly one scene, in order, naming its persona.
-# Personas are explicit and org-level: Dimagi creates the map, the LLO reviews it.
-# Story = the difference-in-differences setup: Dimagi reads an existing opportunity's delivery
-# to pick the INTERVENTION boundary, picks a comparable neighbor as the CONTROL, generates the
-# plan; the LLO cleans it (the hero) and pushes it to Connect; Dimagi later reads the DiD.
+# Personas are named individuals at their orgs: Maya (Dimagi) creates the map, Sam (the LLO)
+# reviews it. Story = the difference-in-differences setup: Maya reads an existing opportunity's
+# delivery to pick the INTERVENTION boundary, picks a comparable neighbor as the CONTROL,
+# generates the plan; Sam cleans it (the hero) and pushes it to Connect; Maya later reads the DiD.
 # Built scenes' `verify` assert current behavior; the delivery overlay, the intervention/control
 # arm concept, and the DiD payoff are the committed frontier — see the why-brief for status.
 
 name: microplans
 narrative: >-
-  Dimagi opens an existing Connect opportunity and visualizes its service delivery on a map,
-  reading where activity is concentrated to choose the intervention administrative boundary.
-  Viewing the neighboring administrative boundaries beside it, Dimagi selects a comparable area
-  as the control so the program's effect can later be measured as a difference-in-differences.
-  For the intervention boundary, Dimagi generates the field plan — a representative sample or
-  full household coverage — on the shared clustering engine. Dimagi hands the draft map to the
-  LLO, the local partner who knows the ground, and the LLO cleans it — excluding areas that
+  Maya, at Dimagi, opens an existing Connect opportunity and visualizes its service delivery on a
+  map, reading where activity is concentrated to choose the intervention administrative boundary.
+  Viewing the neighboring administrative boundaries beside it, Maya selects a comparable area as
+  the control so the program's effect can later be measured as a difference-in-differences. For
+  the intervention boundary, Maya generates the field plan — a representative sample or full
+  household coverage — on the shared clustering engine. Maya hands the draft map to Sam, the local
+  partner (LLO) field coordinator who knows the ground, and Sam cleans it — excluding areas that
   aren't real settlements with a reason and rebalancing lopsided workloads — with every edit
-  logged as a planning-phase audit before anything touches Connect. The LLO exports the cleaned
-  plan as a work-area CSV and imports it into Connect's microplanning importer. Weeks later
-  Dimagi returns to compare completion in the intervention boundary against the control and read
-  the difference-in-differences the program actually produced.
+  logged as a planning-phase audit before anything touches Connect. Sam exports the cleaned plan
+  as a work-area CSV and imports it into Connect's microplanning importer. Weeks later Maya
+  returns to compare completion in the intervention boundary against the control and read the
+  difference-in-differences the program actually produced.
 base_url: https://labs.connect.dimagi.com
 auth:
   type: session
 why_brief: ../superpowers/ddd/microplans/why-brief.yaml
 
 personas:
-  dimagi:
-    name: Dimagi
-    role: Program designer (creates the map)
+  maya:
+    name: Maya
+    role: Program / M&E lead
+    org: Dimagi
     color: "#3B82F6"
-    intro: Dimagi designs where the program works — picking the intervention and control areas and generating the plan — and later proves it worked.
-  llo:
-    name: LLO
-    role: Local partner (reviews the map)
+    intro: Maya, at Dimagi, designs where the program works — picking the intervention and control areas and generating the plan — and later proves it worked.
+  sam:
+    name: Sam
+    role: Field coordinator
+    org: LLO (local partner)
     color: "#10B981"
-    intro: The LLO runs the field work and must trust the plan before sending teams out, so it reviews and cleans the map.
+    intro: Sam, at the local partner (LLO), runs the field work and must trust the plan before sending teams out, so Sam reviews and cleans the map.
 
 scenes:
   # Sentence 1 of the narrative.
-  - persona: dimagi
-    title: Dimagi reads where delivery is already happening
+  - persona: maya
+    title: Maya reads where delivery is already happening
     show: >-
       open an existing Connect opportunity's microplans map, toggle the "Connect delivery data"
       layer on, and read the delivery density to choose the intervention administrative boundary.
     concept_claim: >-
-      The setup map overlays an existing opportunity's Connect delivery points so Dimagi picks the
+      The setup map overlays an existing opportunity's Connect delivery points so Maya picks the
       intervention boundary where activity is real instead of guessing.
     provenance: delivery-viz
     design_intent: Anchor the intervention choice to real delivery density — the opening capability still to wire.
@@ -63,13 +65,13 @@ scenes:
         verify: Selecting a boundary persists arm="intervention" on the plan's area record (test).
 
   # Sentence 2 of the narrative.
-  - persona: dimagi
-    title: Dimagi picks a neighbor as the control
+  - persona: maya
+    title: Maya picks a neighbor as the control
     show: >-
       with the intervention boundary chosen, view the adjacent administrative boundaries (population
       shown), pick a comparable one, and designate it the control.
     concept_claim: >-
-      Dimagi selects a comparable neighboring administrative boundary as the control arm so the
+      Maya selects a comparable neighboring administrative boundary as the control arm so the
       program effect can be estimated by difference-in-differences.
     provenance: area-selection
     design_intent: An adjacent, comparable control is what makes the later DiD credible; boundaries are source-attributed and population-bearing.
@@ -85,13 +87,13 @@ scenes:
         verify: Selecting a neighbor and confirming control yields a plan with exactly one intervention area and one control area (test).
 
   # Sentence 3 of the narrative.
-  - persona: dimagi
-    title: Dimagi turns the intervention area into a draft plan
+  - persona: maya
+    title: Maya turns the intervention area into a draft plan
     show: >-
       choose sampling or coverage mode and Generate; watch PPS clusters + pins (sampling) or cluster
       work-area polygons covering every household (coverage) draw over the intervention boundary.
     concept_claim: >-
-      For the intervention boundary Dimagi generates a sampling plan (PPS rooftop frame) or a coverage
+      For the intervention boundary Maya generates a sampling plan (PPS rooftop frame) or a coverage
       plan (cluster-as-WorkArea, every household) on one shared clustering core.
     provenance: plan-generation
     design_intent: One engine, two intents; clustering strategy chosen per mode (kmeans_merge / balanced_kmeans / grid).
@@ -106,15 +108,15 @@ scenes:
         description: The shared core offers kmeans_merge (sampling), balanced_kmeans (even workloads), and grid_clusters.
         verify: core/clustering.py exposes all three strategies and each returns clusters for a test footprint set (unit test).
 
-  # Sentence 4 of the narrative (the hero — the handoff to the LLO).
-  - persona: llo
-    title: The LLO cleans the map
+  # Sentence 4 of the narrative (the hero — the handoff to Sam at the LLO).
+  - persona: sam
+    title: Sam cleans the map
     show: >-
-      the LLO opens the draft, materializes editable work areas, then on the map + table excludes the
+      Sam opens the draft, materializes editable work areas, then on the map + table excludes the
       lake that isn't a settlement (with a reason), lasso-selects to bulk-exclude, resizes/regroups/
       reassigns the rest, and watches the per-worker workload rebalance live.
     concept_claim: >-
-      Before anything touches Connect, the LLO excludes invalid work areas with a reason and
+      Before anything touches Connect, Sam excludes invalid work areas with a reason and
       resizes/regroups/reassigns the rest on a map, and every edit is recorded as a planning-phase
       audit event in Connect's own history shape.
     provenance: plan-review
@@ -127,21 +129,21 @@ scenes:
         description: Exclude (required reason), unexclude, resize (expected_visit_count), regroup, reassign — single or bulk via lasso (wa_ids).
         verify: core/plan.py:apply_action applies each ACTION; a bulk exclude over wa_ids marks all selected EXCLUDED (test_plan.py).
       - id: workload-readout
-        description: A live per-worker / per-group workload summary updates as the LLO edits.
+        description: A live per-worker / per-group workload summary updates as Sam edits.
         verify: core/plan.py:summarize returns per-worker expected-visit totals that change after a resize/reassign (unit test).
       - id: phase-tagged-audit
         description: Every edit appends an event in Connect's pghistory shape (TRACKED_FIELDS) stamped phase="planning"; Connect itself is untouched.
         verify: apply_action records an audit event whose tracked fields match Connect's WorkArea history shape and phase=="planning" (test_plan.py).
 
   # Sentence 5 of the narrative.
-  - persona: llo
+  - persona: sam
     title: The cleaned plan lands in Connect
     show: >-
-      the LLO exports the cleaned plan as a work-area CSV and imports it into Connect's microplanning
+      Sam exports the cleaned plan as a work-area CSV and imports it into Connect's microplanning
       importer.
     concept_claim: >-
       The cleaned plan exports as a Connect microplanning work-area CSV that excludes dropped areas and
-      honors the LLO's edits, matching Connect's importer headers.
+      honors Sam's edits, matching Connect's importer headers.
     provenance: connect-push
     design_intent: A plan only matters once it's in Connect; CSV import works today without a prod write API.
     features:
@@ -150,8 +152,8 @@ scenes:
         verify: GET the plan CSV — its header row matches Connect's WorkAreaCSVImporter columns and EXCLUDED work areas are absent.
 
   # Sentence 6 of the narrative.
-  - persona: dimagi
-    title: Dimagi measures the difference it made
+  - persona: maya
+    title: Maya measures the difference it made
     show: >-
       open the monitoring dashboard, compare per-work-area completion in the intervention arm against
       the control, and across rounds read the difference-in-differences estimate.
