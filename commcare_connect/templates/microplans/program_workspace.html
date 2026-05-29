@@ -51,17 +51,32 @@
     { key: "archived", label: "Archived", statuses: ["archived"], hint: "candidate regions not chosen" },
   ];
   const BADGE = { draft: "bg-gray-100 text-gray-700", in_review: "bg-amber-100 text-amber-800", approved: "bg-emerald-100 text-emerald-800", deployed: "bg-cyan-100 text-cyan-800", archived: "bg-gray-100 text-gray-400" };
-  const NEXT_LABEL = { in_review: "Submit for review", approved: "Approve", deployed: "Deploy →", draft: "Back to draft", archived: "Archive" };
+  // Lifecycle ordering so we can render forward moves as the primary (solid) action
+  // and backward moves as muted "← back" controls.
+  const ORDER = { draft: 0, in_review: 1, approved: 2, deployed: 3 };
+  const FWD_LABEL = { in_review: "Submit for review", approved: "Approve", deployed: "Deploy →" };
 
   const selected = new Set();
   let DATA = { plans: [], groups: [], transitions: {}, status_labels: {} };
 
   function chip(label, val) { return `<span class="text-xs px-1.5 py-0.5 rounded bg-gray-50 border text-gray-600">${label} <b>${val}</b></span>`; }
 
+  function transitionBtn(p, to) {
+    let label, cls;
+    if (to === "archived") { label = "Archive"; cls = "outline-style"; }
+    else if (p.status === "archived" && to === "draft") { label = "Restore to draft"; cls = "outline-style"; }
+    else if ((ORDER[to] ?? 0) > (ORDER[p.status] ?? 0)) { label = FWD_LABEL[to] || to; cls = ""; }   // forward → primary
+    else { label = "← " + (DATA.status_labels[to] || to); cls = "outline-style"; }                    // backward → muted
+    return `<button class="button button-sm ${cls}" data-transition="${p.plan_id}" data-to="${to}">${esc(label)}</button>`;
+  }
+
   function planCard(p) {
-    const t = (DATA.transitions[p.status] || []);
-    const actions = t.map((to) =>
-      `<button class="button button-sm ${to === 'archived' ? 'outline-style' : ''}" data-transition="${p.plan_id}" data-to="${to}">${esc(NEXT_LABEL[to] || to)}</button>`).join(" ");
+    const actions = (DATA.transitions[p.status] || []).map((to) => transitionBtn(p, to)).join(" ");
+    // Pre-assignment, "workers/worst travel" are degenerate (one territory), so show
+    // the work-area count and omit travel until the plan is split across workers.
+    const countChip = p.assigned ? chip("workers", p.territory_count) : chip("areas", p.work_areas);
+    const travelChip = p.assigned ? chip("worst travel", p.max_spread_km + " km") : "";
+    const exclChip = p.excluded ? chip("excluded", p.excluded) : "";
     return `<div class="border rounded-lg p-3 bg-white">
       <div class="flex items-start justify-between gap-2">
         <label class="flex items-start gap-2">
@@ -71,12 +86,12 @@
             <div class="text-xs text-gray-500">${esc(p.region || "—")} · ${esc(p.mode)}${p.opportunity_id ? " · opp " + esc(p.opportunity_id) : ""}</div>
           </span>
         </label>
-        <span class="text-xs px-2 py-0.5 rounded ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
+        <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
       </div>
       <div class="flex flex-wrap gap-1 mt-2">
-        ${chip("workers", p.territory_count)}${chip("worst travel", p.max_spread_km + " km")}${chip("coverage", p.coverage_pct + "%")}${chip("excluded", p.excluded)}
+        ${countChip}${travelChip}${chip("coverage", p.coverage_pct + "%")}${exclChip}
       </div>
-      <div class="flex flex-wrap gap-1 mt-2">${actions}</div>
+      <div class="flex flex-wrap gap-1 mt-3">${actions}</div>
     </div>`;
   }
 
