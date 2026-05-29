@@ -15,8 +15,35 @@ from django.views.generic import TemplateView
 logger = logging.getLogger(__name__)
 
 
+class _LabsContextSyncMixin:
+    """Sync the labs context picker pill to the program_id / opp_id in this view's
+    URL kwargs. Without it, the picker stays on "Select Context" on every
+    microplans page because the labs middleware reads context from query params
+    only — but these routes use path params (e.g. /microplans/program/135/).
+    Result: users had to manually pick the program in the context picker even
+    though the URL already says which program they're on. Now the picker just
+    reflects the page on first load.
+    """
+
+    def dispatch(self, request, *args, **kwargs):
+        if getattr(request, "user", None) is not None and request.user.is_authenticated:
+            from commcare_connect.labs.context import save_context_to_session, validate_context_access
+
+            ctx = {}
+            if "program_id" in kwargs:
+                ctx["program_id"] = int(kwargs["program_id"])
+            elif "opp_id" in kwargs:
+                ctx["opportunity_id"] = int(kwargs["opp_id"])
+            if ctx:
+                validated = validate_context_access(request, ctx)
+                if validated:
+                    request.labs_context = validated
+                    save_context_to_session(request, ctx)
+        return super().dispatch(request, *args, **kwargs)
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class SetupView(LoginRequiredMixin, TemplateView):
+class SetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Area picker → frame config → preview → push-to-Connect.
 
     Stage A entry point. Renders a Mapbox GL JS map (matching Connect's
@@ -36,7 +63,7 @@ class SetupView(LoginRequiredMixin, TemplateView):
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ReviewView(LoginRequiredMixin, TemplateView):
+class ReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """LLO review/edit page for a materialised plan.
 
     Renders the work areas on a map + an editable list (exclude, resize, regroup,
@@ -460,11 +487,10 @@ class PlanListView(LoginRequiredMixin, View):
 
 
 class ComparePlansView(LoginRequiredMixin, View):
-    """Compare N plans' KPIs side by side with a normalized composite score.
-
-    GET ?plans=<id>,<id>,... — loads each plan, computes its KPIs, and adds a
-    cross-plan composite (only meaningful relative to the compared set).
-    """
+    """Compare N plans' KPIs side by side. GET ?plans=<id>,<id>,... — loads each
+    plan and returns its KPIs so the UI can stack them with deltas. The honest
+    comparison is the metrics themselves (worst travel, imbalance, coverage); no
+    weighted composite — that read as a black box and was removed."""
 
     def get(self, request, opp_id):
         from commcare_connect.microplans.core import plan as plan_lib
@@ -496,12 +522,11 @@ class ComparePlansView(LoginRequiredMixin, View):
             )
         if not entries:
             return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
-        plan_lib.score_plans(entries)
-        return JsonResponse({"status": "ok", "plans": entries, "weights": plan_lib.COMPOSITE_WEIGHTS})
+        return JsonResponse({"status": "ok", "plans": entries})
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ComparePageView(LoginRequiredMixin, TemplateView):
+class ComparePageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Plan comparison page: pick plans, see KPIs stacked with deltas + composite."""
 
     template_name = "microplans/compare.html"
@@ -559,7 +584,7 @@ def _plan_summary_row(plan):
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ProgramWorkspaceView(LoginRequiredMixin, TemplateView):
+class ProgramWorkspaceView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Program workspace: the portfolio of candidate plans + plan groups."""
 
     template_name = "microplans/program_workspace.html"
@@ -712,12 +737,14 @@ class ProgramGroupUpdateView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "group_id": group.id, "shared": group.shared})
 
 
-class ProgramGroupShareView(LoginRequiredMixin, TemplateView):
+class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """LLO-facing page for a plan group: its subset of plans + their KPIs."""
 
     template_name = "microplans/group_share.html"
 
     def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
         from commcare_connect.microplans.core import plan as plan_lib
         from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
 
@@ -730,6 +757,9 @@ class ProgramGroupShareView(LoginRequiredMixin, TemplateView):
         try:
             group = da.get_group(int(group_id))
             plans_by_id = {p.id: p for p in da.list_plans()}
+            # Preserve the group's plan order — no synthetic "fit score" ranking.
+            # The LLO reads the actual metrics (worst travel, imbalance, coverage)
+            # and decides for themselves.
             entries = []
             for pid in group.plan_ids:
                 p = plans_by_id.get(pid)
@@ -744,22 +774,11 @@ class ProgramGroupShareView(LoginRequiredMixin, TemplateView):
                         "kpis": kpis,
                         "assigned": kpis["dimension"] == "worker",
                         "work_areas": len(p.work_areas),
+                        "status": p.status,
+                        "status_label": plan_lib.PLAN_STATUS_LABELS.get(p.status, p.status),
+                        "review_url": reverse("microplans:program_review", args=[program_id, pid]),
                     }
                 )
-            plan_lib.score_plans(entries)
-            # Present best-first with a relative fit BAR + a "Best fit" mark on the
-            # top plan. The composite is min-max relative, so a 2-plan set yields a
-            # bare "0.0" that misreads as "broken" to a partner — a bar (floored to a
-            # visible sliver) + ranking communicates relative standing honestly.
-            scored = sorted(
-                (e for e in entries if e.get("composite") is not None), key=lambda e: e["composite"], reverse=True
-            )
-            unscored = [e for e in entries if e.get("composite") is None]
-            entries = scored + unscored
-            for i, e in enumerate(entries):
-                c = e.get("composite")
-                e["bar_width"] = max(int(round(c)), 4) if c is not None else 0
-                e["recommended"] = i == 0 and c is not None and len(scored) > 1
             context["group_name"] = group.name
             context["offered_to"] = group.offered_to
             context["entries"] = entries
@@ -770,7 +789,7 @@ class ProgramGroupShareView(LoginRequiredMixin, TemplateView):
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ProgramReviewView(LoginRequiredMixin, TemplateView):
+class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Program-scoped per-plan review page (reuses review.html via context URLs)."""
 
     template_name = "microplans/review.html"
@@ -864,7 +883,7 @@ class ProgramPlanCSVView(LoginRequiredMixin, View):
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ProgramSetupView(LoginRequiredMixin, TemplateView):
+class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Create a plan in a program: reuses the setup/generation page, but the save
     step creates a program-scoped Draft plan (rather than an opp-scoped frame).
 
@@ -889,10 +908,9 @@ class ProgramSetupView(LoginRequiredMixin, TemplateView):
 
 
 class ProgramComparePlansView(LoginRequiredMixin, View):
-    """Compare N program plans' KPIs side by side with a normalized composite score.
-
-    GET ?plans=<id>,<id>,... — program-scoped sibling of ComparePlansView.
-    """
+    """Compare N program plans' KPIs side by side — program-scoped sibling of
+    ComparePlansView. Returns per-plan KPIs so the UI can stack them with deltas;
+    no composite score (the metrics themselves are the comparison)."""
 
     def get(self, request, program_id):
         from commcare_connect.microplans.core import plan as plan_lib
@@ -925,12 +943,11 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
             )
         if not entries:
             return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
-        plan_lib.score_plans(entries)
-        return JsonResponse({"status": "ok", "plans": entries, "weights": plan_lib.COMPOSITE_WEIGHTS})
+        return JsonResponse({"status": "ok", "plans": entries})
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
-class ProgramComparePageView(LoginRequiredMixin, TemplateView):
+class ProgramComparePageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Program-scoped plan comparison page (reuses compare.html via context URLs)."""
 
     template_name = "microplans/compare.html"

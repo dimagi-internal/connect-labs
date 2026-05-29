@@ -568,7 +568,6 @@ def test_plan_list_and_compare(client, django_user_model, monkeypatch):
     from commcare_connect.microplans.core import plan as plan_lib
 
     store = _make_fake_da(monkeypatch, {})
-    # two plans; plan 2 excludes one area (worse coverage) so composites differ
     store[1] = _FakePlan(1, "coverage", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="A")
     was2 = plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC)
     plan_lib.apply_action(was2[0], "reassign", {"opportunity_access": "flw-1"}, "u")
@@ -580,8 +579,9 @@ def test_plan_list_and_compare(client, django_user_model, monkeypatch):
 
     cmp = client.get(reverse("microplans:plan_compare", kwargs={"opp_id": 1}) + "?plans=1,2").json()
     assert cmp["status"] == "ok" and len(cmp["plans"]) == 2
-    assert all("composite" in p and "kpis" in p for p in cmp["plans"])
-    assert "weights" in cmp
+    assert all("kpis" in p for p in cmp["plans"])
+    # No "composite" / "weights" — the metrics themselves are the comparison.
+    assert "weights" not in cmp and all("composite" not in p for p in cmp["plans"])
 
 
 def test_compare_endpoint_bad_ids_400(client, django_user_model, monkeypatch):
@@ -849,7 +849,8 @@ def test_program_group_create_and_share(client, django_user_model, monkeypatch):
     body = share.content.decode()
     assert "For Acme LLO" in body and "Acme" in body
     assert len(share.context["entries"]) == 2
-    assert all("composite" in e for e in share.context["entries"])
+    assert all("kpis" in e and "status_label" in e and "review_url" in e for e in share.context["entries"])
+    assert all("composite" not in e for e in share.context["entries"])
 
 
 def test_program_group_share_escapes_plan_names(client, django_user_model, monkeypatch):
@@ -916,7 +917,8 @@ def test_program_compare_json(client, django_user_model, monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok" and len(body["plans"]) == 2
-    assert all("composite" in p and "kpis" in p for p in body["plans"]) and "weights" in body
+    assert all("kpis" in p for p in body["plans"])
+    assert "weights" not in body and all("composite" not in p for p in body["plans"])
 
 
 def test_program_compare_json_bad_ids_400(client, django_user_model, monkeypatch):
