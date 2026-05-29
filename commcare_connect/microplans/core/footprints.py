@@ -16,10 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import pickle
 
 import pandas as pd
-from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from shapely.geometry.base import BaseGeometry
 
 from commcare_connect.microplans.core import overture
@@ -27,16 +26,26 @@ from commcare_connect.microplans.core import overture
 logger = logging.getLogger(__name__)
 
 OVERTURE_BUILDINGS = overture.theme_path("buildings", "building")
-CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days — building stock barely moves.
+_COLUMNS = ["lon", "lat", "area_m2", "confidence"]
 # Reject absurdly large areas before they pull gigabytes from S3 and OOM the
 # worker. A survey area is a ward/LGA (Maiduguri LGA ≈ 107 km²); 2000 km² is a
 # generous ceiling that still blocks "the whole country" mistakes.
 MAX_AREA_KM2 = 2000.0
 
 
-def _area_cache_key(wkt: str, min_confidence: float | None) -> str:
-    h = hashlib.sha256(f"{overture.OVERTURE_RELEASE}|{min_confidence}|{wkt}".encode()).hexdigest()
-    return f"rooftop:footprints:{h}"
+def _area_cache_key(wkt: str) -> str:
+    # Geometry-only (confidence-agnostic): we store every building + filter by
+    # confidence at read, so a ward is fetched once for both sampling and coverage.
+    return hashlib.sha256(f"{overture.OVERTURE_RELEASE}|{wkt}".encode()).hexdigest()
+
+
+def _apply_confidence(df: pd.DataFrame, min_confidence: float | None) -> pd.DataFrame:
+    """Drop low/null-confidence buildings when a threshold is set (matches the
+    pilot's Google-Open-Buildings input). No-op when min_confidence is None."""
+    if min_confidence is None or df.empty:
+        return df
+    keep = df["confidence"].notna() & (df["confidence"] >= float(min_confidence))
+    return df[keep].reset_index(drop=True)
 
 
 def _approx_area_km2(area: BaseGeometry) -> float:
@@ -65,23 +74,49 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> 
     Raises:
         ValueError: if the area's bounding box exceeds MAX_AREA_KM2.
     """
+    from commcare_connect.microplans.models import FootprintArea, FootprintBuilding
+
     approx_km2 = _approx_area_km2(area)
     if approx_km2 > MAX_AREA_KM2:
         raise ValueError(
             f"Area is too large (~{approx_km2:,.0f} km² bounding box; max {MAX_AREA_KM2:,.0f}). "
             "Draw a smaller area (a ward or LGA)."
         )
-    wkt = area.wkt
-    key = _area_cache_key(wkt, min_confidence)
-    cached = cache.get(key)
-    if cached is not None:
-        logger.info("rooftop footprints cache hit (%s)", key)
-        return pickle.loads(cached)
+    area_hash = _area_cache_key(area.wkt)
 
-    df = _query_overture(area, min_confidence)
-    cache.set(key, pickle.dumps(df, protocol=pickle.HIGHEST_PROTOCOL), CACHE_TTL_SECONDS)
-    logger.info("rooftop footprints fetched + cached: %d buildings (%s)", len(df), key)
-    return df
+    cached = FootprintArea.objects.filter(area_hash=area_hash).first()
+    if cached is not None:
+        df = pd.DataFrame(list(cached.buildings.values(*_COLUMNS)), columns=_COLUMNS)
+        logger.info("microplans footprints cache hit (%s, %d buildings)", area_hash[:12], len(df))
+        return _apply_confidence(df, min_confidence)
+
+    # Miss: fetch every building once (confidence-agnostic) and persist as rows.
+    df_all = _query_overture(area, min_confidence=None)
+    try:
+        with transaction.atomic():
+            fa = FootprintArea.objects.create(
+                area_hash=area_hash, overture_release=overture.OVERTURE_RELEASE, n_buildings=len(df_all)
+            )
+            FootprintBuilding.objects.bulk_create(
+                [
+                    FootprintBuilding(
+                        area=fa,
+                        lon=r.lon,
+                        lat=r.lat,
+                        area_m2=(None if pd.isna(r.area_m2) else r.area_m2),
+                        confidence=(None if pd.isna(r.confidence) else r.confidence),
+                    )
+                    for r in df_all.itertuples(index=False)
+                ],
+                batch_size=2000,
+            )
+        logger.info("microplans footprints fetched + cached: %d buildings (%s)", len(df_all), area_hash[:12])
+    except IntegrityError:
+        # Concurrent miss for the same area beat us to it — read what they wrote.
+        logger.info("microplans footprints concurrent fill (%s); using stored rows", area_hash[:12])
+        fa = FootprintArea.objects.get(area_hash=area_hash)
+        df_all = pd.DataFrame(list(fa.buildings.values(*_COLUMNS)), columns=_COLUMNS)
+    return _apply_confidence(df_all, min_confidence)
 
 
 def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
