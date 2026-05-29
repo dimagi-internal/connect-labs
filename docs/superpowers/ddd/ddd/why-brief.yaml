@@ -81,8 +81,8 @@ spine:
       Human review is the scarce resource; a cheap machine pre-gate keeps un-actionable narratives off the human's desk.
     evidence:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-narrative-actionability-eval (cold-derive vs declared features, self-consistency)"}
-      - {kind: assumed, ref: "NEVER RUN in any real dogfood; the actionability scores shown on the surface so far were fabricated by hand"}
-    status: gap
+      - {kind: implemented, ref: "RAN FOR REAL on this brief 2026-05-29 — 3 independent cold-derivation agents, verdict 4/5; see docs/walkthroughs/verdict-actionability-ddd.yaml. The run also surfaced + fixed a leak (derivation agents were reading the repo) — skill now sandboxes them."}
+    status: grounded
 
   - id: render-and-dual-judge
     claim: >
@@ -94,8 +94,8 @@ spine:
       artifact (not the spec) is what catches the gap between the story and the real product.
     evidence:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-run + ddd-concept-eval + visual-judge; scripts/ddd/run_pipeline.py (assemble verdicts, convergence)"}
-      - {kind: assumed, ref: "the render->judge sequence has NEVER been run end-to-end on any DDD feature; independent judges have never actually scored a DDD demo"}
-    status: gap
+      - {kind: implemented, ref: "RAN FOR REAL 2026-05-29: rendered this demo (prettyscreenshot of the live review surface) + two INDEPENDENT blind judges scored it (concept 2/5, user-artifact 1/5) — see runs/ddd-2026-05-29-001/verdict-concept.yaml + verdict-user.yaml. Both failed it and converged on the same defects, which is the mechanism working."}
+    status: grounded
 
   - id: converge-and-promote
     claim: >
@@ -114,13 +114,13 @@ gaps:
   - id: gap-backhalf-unexercised
     type: RESEARCH
     claim_ref: render-and-dual-judge
-    detail: "The render->judge->converge spine has never run end-to-end. Unknown whether canopy:walkthrough can render an abstract dev-framework demo and whether the judges produce a usable verdict on it."
-    proposed_action: "Run ddd-run on this very brief: render a walkthrough of the canopy-web review surface, dispatch concept-eval + visual-judge as independent agents, and inspect the verdict."
+    detail: "RESOLVED 2026-05-29: render + dual independent judge ran end-to-end. Rendering used prettyscreenshot of the live review surface (the full canopy:walkthrough recorder rig was not needed for a web-surface demo). Both judges produced usable, harsh, convergent verdicts. What remains open: the loop has not yet CONVERGED (judges failed the demo 1-2/5) — iteration on their findings is in progress."
+    proposed_action: "Iterate the surface + spec on the judges' punch list (honest scores, honest Built/Claimed badges, de-jargon, visible edit affordance, decision below the arc, cast-key leak, narrative chunking), then re-render + re-judge until both judges >= 4."
   - id: gap-eval-not-run
     type: CAPABILITY
     claim_ref: machine-gate-before-human
-    detail: "The actionability + concept evals exist but were bypassed; the review surface even displayed hand-fabricated actionability scores, which is an integrity failure."
-    proposed_action: "Invoke the real ddd-narrative-actionability-eval and surface its actual verdict; never post fabricated scores again."
+    detail: "RESOLVED 2026-05-29: the real ddd-narrative-actionability-eval was run (3 independent agents, 4/5) and the concept + user-artifact judges were run for real. No more fabricated scores. Follow-on the run surfaced: the surface must not show authoritative-looking scores without provenance (the independent judges flagged the leftover 'scores were fabricated' confession text as a trust-killer next to live scores)."
+    proposed_action: "Mark displayed scores with their provenance (real eval vs none); keep eval verdicts attached to the run."
   - id: gap-no-artifact
     type: CAPABILITY
     claim_ref: converge-and-promote
@@ -129,8 +129,8 @@ gaps:
   - id: gap-independent-judge
     type: DECISION
     claim_ref: render-and-dual-judge
-    detail: "Author and judge have been the same agent (me), which the design explicitly forbids; self-scoring is not a verdict."
-    proposed_action: "Dispatch the judges as separate subagents with only the rubric + rendered artifact, blind to the authoring rationale."
+    detail: "RESOLVED 2026-05-29: the concept judge and user-artifact judge were dispatched as separate subagents given only the rendered screenshot + rubric, blind to the authoring rationale. They independently converged on the same defects — evidence the independence is real."
+    proposed_action: "Keep dispatching judges blind; never let the author score."
   - id: gap-claim-reality
     type: RESEARCH
     claim_ref: human-agrees-first
