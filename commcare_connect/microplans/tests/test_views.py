@@ -909,6 +909,33 @@ def test_program_review_page_uses_program_urls(client, django_user_model, settin
     assert resp.context["edit_url"] == reverse("microplans:program_plan_edit", kwargs={"program_id": 25, "plan_id": 3})
 
 
+def test_program_compare_json(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _seed_program_plans(monkeypatch)  # plans 1 (approved/assigned) + 2 (approved/unassigned)
+    resp = client.get(reverse("microplans:program_plan_compare", kwargs={"program_id": 25}) + "?plans=1,2")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok" and len(body["plans"]) == 2
+    assert all("composite" in p and "kpis" in p for p in body["plans"]) and "weights" in body
+
+
+def test_program_compare_json_bad_ids_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_program_da(monkeypatch, {}, {})
+    resp = client.get(reverse("microplans:program_plan_compare", kwargs={"program_id": 25}) + "?plans=abc")
+    assert resp.status_code == 400
+
+
+def test_program_compare_page_renders(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:program_compare_page", kwargs={"program_id": 25}))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Compare plans" in body and "Program #25" in body
+    # the page wires its data fetches to the program-scoped endpoints
+    assert resp.context["compare_url"] == reverse("microplans:program_plan_compare", kwargs={"program_id": 25})
+
+
 def test_program_plan_get_and_edit(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     plans, _ = _seed_program_plans(monkeypatch)

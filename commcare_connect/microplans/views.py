@@ -507,8 +507,14 @@ class ComparePageView(LoginRequiredMixin, TemplateView):
     template_name = "microplans/compare.html"
 
     def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
         context = super().get_context_data(**kwargs)
-        context["opp_id"] = kwargs.get("opp_id")
+        opp_id = kwargs.get("opp_id")
+        context["opp_id"] = opp_id
+        context["scope_label"] = f"Opportunity #{opp_id}"
+        context["list_url"] = reverse("microplans:plan_list", args=[opp_id])
+        context["compare_url"] = reverse("microplans:plan_compare", args=[opp_id])
         return context
 
 
@@ -767,7 +773,7 @@ class ProgramReviewView(LoginRequiredMixin, TemplateView):
         context["plan_url"] = reverse("microplans:program_plan", args=[program_id, plan_id])
         context["edit_url"] = reverse("microplans:program_plan_edit", args=[program_id, plan_id])
         context["csv_url"] = reverse("microplans:program_plan_csv", args=[program_id, plan_id])
-        context["compare_url"] = reverse("microplans:program_workspace", args=[program_id])
+        context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + f"?plans={plan_id}"
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
 
@@ -866,4 +872,64 @@ class ProgramSetupView(LoginRequiredMixin, TemplateView):
             context["error"] = "MAPBOX_TOKEN is not configured; the map cannot load."
         context["create_plan_url"] = reverse("microplans:program_create_plan", args=[program_id])
         context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
+        return context
+
+
+class ProgramComparePlansView(LoginRequiredMixin, View):
+    """Compare N program plans' KPIs side by side with a normalized composite score.
+
+    GET ?plans=<id>,<id>,... — program-scoped sibling of ComparePlansView.
+    """
+
+    def get(self, request, program_id):
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            ids = [int(x) for x in (request.GET.get("plans", "")).split(",") if x.strip()]
+        except ValueError:
+            return JsonResponse({"status": "error", "detail": "plans must be comma-separated ids"}, status=400)
+        if not ids:
+            return JsonResponse({"status": "error", "detail": "no plans selected"}, status=400)
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        entries = []
+        for pid in ids:
+            try:
+                p = da.get_plan(pid)
+            except Exception:  # noqa: BLE001
+                logger.exception("microplans program compare: plan %s load failed", pid)
+                continue
+            entries.append(
+                {
+                    "plan_id": p.id,
+                    "name": p.name or f"Plan {p.id}",
+                    "region": p.region,
+                    "mode": p.mode,
+                    "created_at": p.created_at,
+                    "kpis": plan_lib.plan_kpis(p.work_areas),
+                }
+            )
+        if not entries:
+            return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
+        plan_lib.score_plans(entries)
+        return JsonResponse({"status": "ok", "plans": entries, "weights": plan_lib.COMPOSITE_WEIGHTS})
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ProgramComparePageView(LoginRequiredMixin, TemplateView):
+    """Program-scoped plan comparison page (reuses compare.html via context URLs)."""
+
+    template_name = "microplans/compare.html"
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        context["program_id"] = program_id
+        context["scope_label"] = f"Program #{program_id}"
+        context["list_url"] = reverse("microplans:program_plans", args=[program_id])
+        context["compare_url"] = reverse("microplans:program_plan_compare", args=[program_id])
+        context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
