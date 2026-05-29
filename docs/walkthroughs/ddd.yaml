@@ -63,7 +63,7 @@ scenes:
       cards — each a single story beat with its persona chip.
     concept_claim: >-
       DDD authors one cohesive narrative and decomposes it into numbered story-beat scenes, one per
-      sentence, each naming the persona on screen.
+      sentence, each tied to the persona on screen.
     provenance: narrative-first
     design_intent: A story a viewer follows top to bottom beats a feature catalog; literal decomposition keeps narrative and scenes in lockstep.
     features:
