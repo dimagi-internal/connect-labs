@@ -487,11 +487,10 @@ class PlanListView(LoginRequiredMixin, View):
 
 
 class ComparePlansView(LoginRequiredMixin, View):
-    """Compare N plans' KPIs side by side with a normalized composite score.
-
-    GET ?plans=<id>,<id>,... — loads each plan, computes its KPIs, and adds a
-    cross-plan composite (only meaningful relative to the compared set).
-    """
+    """Compare N plans' KPIs side by side. GET ?plans=<id>,<id>,... — loads each
+    plan and returns its KPIs so the UI can stack them with deltas. The honest
+    comparison is the metrics themselves (worst travel, imbalance, coverage); no
+    weighted composite — that read as a black box and was removed."""
 
     def get(self, request, opp_id):
         from commcare_connect.microplans.core import plan as plan_lib
@@ -523,8 +522,7 @@ class ComparePlansView(LoginRequiredMixin, View):
             )
         if not entries:
             return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
-        plan_lib.score_plans(entries)
-        return JsonResponse({"status": "ok", "plans": entries, "weights": plan_lib.COMPOSITE_WEIGHTS})
+        return JsonResponse({"status": "ok", "plans": entries})
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -755,11 +753,13 @@ class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateV
         group_id = kwargs.get("group_id")
         context["program_id"] = program_id
         context["group_id"] = group_id
-        context["composite_weights"] = plan_lib.COMPOSITE_WEIGHTS
         da = ProgramPlanDataAccess(program_id, request=self.request)
         try:
             group = da.get_group(int(group_id))
             plans_by_id = {p.id: p for p in da.list_plans()}
+            # Preserve the group's plan order — no synthetic "fit score" ranking.
+            # The LLO reads the actual metrics (worst travel, imbalance, coverage)
+            # and decides for themselves.
             entries = []
             for pid in group.plan_ids:
                 p = plans_by_id.get(pid)
@@ -779,20 +779,6 @@ class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateV
                         "review_url": reverse("microplans:program_review", args=[program_id, pid]),
                     }
                 )
-            plan_lib.score_plans(entries)
-            # Present best-first with a relative fit BAR + a "Best fit" mark on the
-            # top plan. The composite is min-max relative, so a 2-plan set yields a
-            # bare "0.0" that misreads as "broken" to a partner — a bar (floored to a
-            # visible sliver) + ranking communicates relative standing honestly.
-            scored = sorted(
-                (e for e in entries if e.get("composite") is not None), key=lambda e: e["composite"], reverse=True
-            )
-            unscored = [e for e in entries if e.get("composite") is None]
-            entries = scored + unscored
-            for i, e in enumerate(entries):
-                c = e.get("composite")
-                e["bar_width"] = max(int(round(c)), 4) if c is not None else 0
-                e["recommended"] = i == 0 and c is not None and len(scored) > 1
             context["group_name"] = group.name
             context["offered_to"] = group.offered_to
             context["entries"] = entries
@@ -922,10 +908,9 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
 
 
 class ProgramComparePlansView(LoginRequiredMixin, View):
-    """Compare N program plans' KPIs side by side with a normalized composite score.
-
-    GET ?plans=<id>,<id>,... — program-scoped sibling of ComparePlansView.
-    """
+    """Compare N program plans' KPIs side by side — program-scoped sibling of
+    ComparePlansView. Returns per-plan KPIs so the UI can stack them with deltas;
+    no composite score (the metrics themselves are the comparison)."""
 
     def get(self, request, program_id):
         from commcare_connect.microplans.core import plan as plan_lib
@@ -958,8 +943,7 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
             )
         if not entries:
             return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
-        plan_lib.score_plans(entries)
-        return JsonResponse({"status": "ok", "plans": entries, "weights": plan_lib.COMPOSITE_WEIGHTS})
+        return JsonResponse({"status": "ok", "plans": entries})
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
