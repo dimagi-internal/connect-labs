@@ -103,19 +103,22 @@ def apply_action(wa: dict, action: str, params: dict, actor: str, now: str | Non
 
     if action == "exclude":
         wa["status"] = STATUS_EXCLUDED
-        wa["excluded_reason"] = str(params.get("reason", "")).strip()
+        wa["excluded_reason"] = str(params.get("reason", "")).strip()[:500]  # match Connect max_length
         wa["excluded_by"] = actor
     elif action == "unexclude":
         wa["status"] = STATUS_UNASSIGNED
         wa["excluded_reason"] = ""
         wa["excluded_by"] = ""
     elif action == "resize":
-        wa["expected_visit_count"] = max(0, int(params["expected_visit_count"]))
+        try:
+            wa["expected_visit_count"] = max(0, int(params["expected_visit_count"]))
+        except (KeyError, TypeError, ValueError) as e:
+            raise ValueError("resize requires a numeric expected_visit_count") from e
     elif action == "regroup":
-        wa["work_area_group"] = str(params.get("work_area_group") or "").strip()
+        wa["work_area_group"] = str(params.get("work_area_group") or "").strip()[:255]
     elif action == "reassign":
         worker = params.get("opportunity_access")
-        wa["opportunity_access"] = str(worker) if worker not in (None, "") else None
+        wa["opportunity_access"] = str(worker)[:255] if worker not in (None, "") else None
 
     after = _tracked(wa)
     changes = {f: [before[f], after[f]] for f in TRACKED_FIELDS if before[f] != after[f]}

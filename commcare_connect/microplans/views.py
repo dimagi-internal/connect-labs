@@ -381,9 +381,7 @@ class PlanEditView(LoginRequiredMixin, View):
         actor = request.user.get_username()
         da = RooftopDataAccess(opportunity_id=opp_id, request=request)
         try:
-            plan = None
-            for wa_id in wa_ids:
-                plan = da.apply_plan_edit(int(plan_id), str(wa_id), action, params, actor)
+            plan = da.apply_plan_edits(int(plan_id), [str(w) for w in wa_ids], action, params, actor)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001

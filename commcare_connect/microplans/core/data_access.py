@@ -130,12 +130,17 @@ class RooftopDataAccess(BaseDataAccess):
         )
         return RooftopPlanRecord(record.to_dict())
 
-    def apply_plan_edit(self, plan_id: int, wa_id: str, action: str, params: dict, actor: str) -> RooftopPlanRecord:
-        """Apply one LLO edit to a work area and persist (audit appended, phase=planning)."""
+    def apply_plan_edits(
+        self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str
+    ) -> RooftopPlanRecord:
+        """Apply one edit to one or more work areas in a single read-modify-write
+        (audit appended per area, phase=planning). Loading once + saving once avoids
+        the lost-update race a per-id loop would create on the shared plan record."""
         plan = self.get_plan(plan_id)
         work_areas = [dict(w) for w in plan.work_areas]
-        wa = plan_lib.find(work_areas, wa_id)
-        if wa is None:
-            raise ValueError(f"work area {wa_id!r} not in plan {plan_id}")
-        plan_lib.apply_action(wa, action, params, actor)
+        for wa_id in wa_ids:
+            wa = plan_lib.find(work_areas, wa_id)
+            if wa is None:
+                raise ValueError(f"work area {wa_id!r} not in plan {plan_id}")
+            plan_lib.apply_action(wa, action, params, actor)
         return self._save_work_areas(plan, work_areas)

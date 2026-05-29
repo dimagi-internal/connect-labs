@@ -131,3 +131,21 @@ class TestSummaryAndExport:
         assert p.expected_visit_count == 55
         assert "POLYGON" in p.boundary_wkt
         assert p.case_properties["lga"] == "Eti Osa"
+
+
+class TestHardening:
+    def test_resize_rejects_non_numeric(self):
+        import pytest
+
+        wa = _materialize()[0]
+        with pytest.raises(ValueError):
+            plan.apply_action(wa, "resize", {"expected_visit_count": "abc"}, "u")
+        with pytest.raises(ValueError):
+            plan.apply_action(wa, "resize", {}, "u")  # missing key
+
+    def test_string_fields_capped(self):
+        wa = _materialize()[0]
+        plan.apply_action(wa, "exclude", {"reason": "x" * 900}, "u")
+        plan.apply_action(wa, "regroup", {"work_area_group": "g" * 400}, "u")
+        assert len(wa["excluded_reason"]) == 500  # Connect max_length
+        assert len(wa["work_area_group"]) == 255
