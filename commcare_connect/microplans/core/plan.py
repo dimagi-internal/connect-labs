@@ -36,9 +36,70 @@ TRACKED_FIELDS = ("expected_visit_count", "work_area_group", "status", "opportun
 
 ACTIONS = {"exclude", "unexclude", "resize", "regroup", "reassign"}
 
+# ---- plan-level lifecycle (distinct from the per-work-area status above) ----
+# A plan is a candidate region within a program. It moves through Planning
+# (draft → in_review → approved) — labs owns this — and becomes Live (deployed)
+# when pushed to a Connect opp, which Connect then executes. Archived = a
+# candidate region not chosen.
+PLAN_DRAFT = "draft"
+PLAN_IN_REVIEW = "in_review"
+PLAN_APPROVED = "approved"
+PLAN_DEPLOYED = "deployed"
+PLAN_ARCHIVED = "archived"
+PLAN_STATUSES = (PLAN_DRAFT, PLAN_IN_REVIEW, PLAN_APPROVED, PLAN_DEPLOYED, PLAN_ARCHIVED)
+PLANNING_STATUSES = (PLAN_DRAFT, PLAN_IN_REVIEW, PLAN_APPROVED)
+PLAN_STATUS_LABELS = {
+    PLAN_DRAFT: "Draft",
+    PLAN_IN_REVIEW: "In review",
+    PLAN_APPROVED: "Approved",
+    PLAN_DEPLOYED: "Live (deployed)",
+    PLAN_ARCHIVED: "Archived",
+}
+# Allowed transitions. Planning states move freely among themselves; archive is
+# reachable from any planning state and reversible to draft; deploy is the
+# one-way Planning→Live handoff (and requires a bound opportunity).
+PLAN_TRANSITIONS = {
+    PLAN_DRAFT: {PLAN_IN_REVIEW, PLAN_ARCHIVED},
+    PLAN_IN_REVIEW: {PLAN_DRAFT, PLAN_APPROVED, PLAN_ARCHIVED},
+    PLAN_APPROVED: {PLAN_IN_REVIEW, PLAN_DEPLOYED, PLAN_ARCHIVED},
+    PLAN_DEPLOYED: set(),  # terminal in labs — execution lives in Connect
+    PLAN_ARCHIVED: {PLAN_DRAFT},
+}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def can_transition(frm: str, to: str) -> bool:
+    return to in PLAN_TRANSITIONS.get(frm, set())
+
+
+def transition_plan(plan_data: dict, to: str, actor: str, opportunity_id=None, now: str | None = None) -> dict:
+    """Move a plan to status ``to`` in place, appending a status_log entry.
+    Deploying requires an opportunity_id (the live Connect opp the plan binds to).
+    Raises ValueError on an illegal transition."""
+    frm = plan_data.get("status", PLAN_DRAFT)
+    if to not in PLAN_STATUSES:
+        raise ValueError(f"unknown status: {to}")
+    if to != frm and not can_transition(frm, to):
+        raise ValueError(f"illegal transition {frm} -> {to}")
+    if to == PLAN_DEPLOYED:
+        opp = opportunity_id or plan_data.get("opportunity_id")
+        if not opp:
+            raise ValueError("deploying requires an opportunity_id (the live Connect opp)")
+        plan_data["opportunity_id"] = opp
+    plan_data["status"] = to
+    plan_data.setdefault("status_log", []).append(
+        {
+            "ts": now or _now(),
+            "actor": actor,
+            "from": frm,
+            "to": to,
+            "phase": PLANNING_PHASE if to in PLANNING_STATUSES else ("deploy" if to == PLAN_DEPLOYED else to),
+        }
+    )
+    return plan_data
 
 
 def _centroid(geometry: dict) -> list[float]:
