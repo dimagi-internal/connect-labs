@@ -9,7 +9,7 @@
       <h1 class="text-lg font-bold text-gray-900">Compare plans</h1>
       <p class="text-xs text-gray-500">{{ scope_label }}</p>
       <p class="text-xs text-gray-400 mt-1">Pick two or more plans (or versions) to stack their KPIs.</p>
-      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-emerald-700">← Back to portfolio</a>{% endif %}
+      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to portfolio</a>{% endif %}
     </div>
     <div id="plan-picker" class="space-y-1"></div>
     <div id="picker-status" class="text-xs text-gray-500"></div>
@@ -88,10 +88,10 @@
       let bestIdx = -1, bestC = -Infinity;
       plans.forEach((e, i) => { if (e.composite != null && e.composite > bestC) { bestC = e.composite; bestIdx = i; } });
       let html = `<thead><tr><th class="text-left p-2"></th>${plans.map((e, i) =>
-        `<th class="p-2 text-left ${i === bestIdx ? "bg-emerald-50" : ""}">${esc(e.name)}${i === bestIdx ? ' <span class="text-emerald-700" title="Best relative fit">★</span>' : ""}<div class="text-xs font-normal text-gray-400">${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
+        `<th class="p-2 text-left ${i === bestIdx ? "bg-green-50" : ""}">${esc(e.name)}${i === bestIdx ? ' <span class="text-brand-cornflower-blue" title="Best relative fit">★</span>' : ""}<div class="text-xs font-normal text-gray-400">${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
       ROWS.forEach((row) => {
         const baseVal = row.get(base);
-        html += `<tr class="${row.head ? "bg-emerald-50 font-semibold" : "border-t"}"><td class="p-2 text-gray-600">${row.label}</td>`;
+        html += `<tr class="${row.head ? "bg-green-50 font-semibold" : "border-t"}"><td class="p-2 text-gray-600">${row.label}</td>`;
         plans.forEach((e, i) => {
           const v = row.get(e);
           let delta = "";
@@ -99,7 +99,7 @@
             const diff = +(v - baseVal).toFixed(2);
             if (diff !== 0) {
               const good = (row.better === "lower") ? diff < 0 : diff > 0;
-              delta = ` <span class="text-xs ${good ? "text-emerald-600" : "text-red-500"}">(${diff > 0 ? "+" : ""}${diff})</span>`;
+              delta = ` <span class="text-xs ${good ? "text-green-600" : "text-red-500"}">(${diff > 0 ? "+" : ""}${diff})</span>`;
             }
           }
           html += `<td class="p-2">${row.fmt(v)}${delta}</td>`;

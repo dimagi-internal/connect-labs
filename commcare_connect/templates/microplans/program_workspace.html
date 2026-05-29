@@ -10,7 +10,7 @@
     </div>
     <div class="flex items-center gap-2">
       <button type="button" id="compare-sel" class="button button-sm outline-style" disabled title="Tick 2+ plans to compare">Compare selected</button>
-      <a href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button">+ New plan</a>
+      <a href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button button-sm primary-dark">+ New plan</a>
     </div>
   </div>
 
@@ -54,7 +54,7 @@
     { key: "live", label: "Live", statuses: ["deployed"], hint: "pushed to a Connect opportunity — Connect runs execution" },
     { key: "archived", label: "Archived", statuses: ["archived"], hint: "candidate regions not chosen" },
   ];
-  const BADGE = { draft: "bg-gray-100 text-gray-700", in_review: "bg-amber-100 text-amber-800", approved: "bg-emerald-100 text-emerald-800", deployed: "bg-cyan-100 text-cyan-800", archived: "bg-gray-100 text-gray-400" };
+  const BADGE = { draft: "bg-gray-100 text-gray-700", in_review: "bg-amber-100 text-amber-800", approved: "bg-green-100 text-green-800", deployed: "bg-cyan-100 text-cyan-800", archived: "bg-gray-100 text-gray-400" };
   // Lifecycle ordering so we can render forward moves as the primary (solid) action
   // and backward moves as muted "← back" controls.
   const ORDER = { draft: 0, in_review: 1, approved: 2, deployed: 3 };
@@ -69,7 +69,7 @@
     let label, cls;
     if (to === "archived") { label = "Archive"; cls = "outline-style"; }
     else if (p.status === "archived" && to === "draft") { label = "Restore to draft"; cls = "outline-style"; }
-    else if ((ORDER[to] ?? 0) > (ORDER[p.status] ?? 0)) { label = FWD_LABEL[to] || to; cls = ""; }   // forward → primary
+    else if ((ORDER[to] ?? 0) > (ORDER[p.status] ?? 0)) { label = FWD_LABEL[to] || to; cls = "primary-dark"; }   // forward → primary
     else { label = "← " + (DATA.status_labels[to] || to); cls = "outline-style"; }                    // backward → muted
     return `<button class="button button-sm ${cls}" data-transition="${p.plan_id}" data-to="${to}">${esc(label)}</button>`;
   }
@@ -86,7 +86,7 @@
         <label class="flex items-start gap-2">
           <input type="checkbox" class="plan-sel mt-1" value="${p.plan_id}" ${selected.has(p.plan_id) ? "checked" : ""}>
           <span>
-            <a class="font-semibold text-emerald-700" href="${reviewUrl(p.plan_id)}">${esc(p.name)}</a>
+            <a class="font-semibold text-brand-cornflower-blue" href="${reviewUrl(p.plan_id)}">${esc(p.name)}</a>
             <div class="text-xs text-gray-500">${esc(p.region || "—")} · ${esc(p.mode)}${p.opportunity_id ? " · opp " + esc(p.opportunity_id) : ""}</div>
           </span>
         </label>
@@ -114,8 +114,8 @@
     $("groups").innerHTML = (DATA.groups || []).map((g) =>
       `<div class="border rounded-lg p-3 bg-white">
         <div class="flex items-center justify-between">
-          <a class="font-semibold text-emerald-700" href="${groupShareUrl(g.group_id)}">${esc(g.name)}</a>
-          <span class="text-xs ${g.shared ? "text-emerald-600" : "text-gray-400"}">${g.shared ? "shared" : "not shared"}</span>
+          <a class="font-semibold text-brand-cornflower-blue" href="${groupShareUrl(g.group_id)}">${esc(g.name)}</a>
+          <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${g.shared ? "shared" : "not shared"}</span>
         </div>
         <div class="text-xs text-gray-500">${g.plan_ids.length} plans${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
         <div class="mt-2 flex gap-2">
