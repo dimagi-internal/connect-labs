@@ -20,8 +20,9 @@
   <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-4 text-sm">
     <div>
       <h1 class="text-lg font-bold text-gray-900">Microplan review</h1>
-      <p class="text-xs text-gray-500">Opportunity #{{ opp_id }} · plan #{{ plan_id }}</p>
+      <p class="text-xs text-gray-500">Plan #{{ plan_id }}</p>
       <p class="text-xs text-gray-400 mt-1">Planning phase — edits here happen before upload to Connect.</p>
+      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-emerald-700">← Back to program</a>{% endif %}
     </div>
 
     <section>
@@ -98,12 +99,11 @@
 <script>
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
-  const OPP = "{{ opp_id|escapejs }}", PLAN = "{{ plan_id|escapejs }}";
   const CSRF = "{{ csrf_token }}";
-  const PLAN_URL = "{% url 'microplans:plan' opp_id=opp_id plan_id=plan_id %}";
-  const EDIT_URL = "{% url 'microplans:plan_edit' opp_id=opp_id plan_id=plan_id %}";
-  const CSV_URL = "{% url 'microplans:plan_csv' opp_id=opp_id plan_id=plan_id %}";
-  const COMPARE_URL = "{% url 'microplans:compare' opp_id=opp_id %}?plans={{ plan_id }}";
+  const PLAN_URL = "{{ plan_url|escapejs }}";
+  const EDIT_URL = "{{ edit_url|escapejs }}";
+  const CSV_URL = "{{ csv_url|escapejs }}";
+  const COMPARE_URL = "{{ compare_url|escapejs }}";
   document.getElementById("compare-link").href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });

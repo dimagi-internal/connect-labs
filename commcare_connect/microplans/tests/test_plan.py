@@ -258,3 +258,36 @@ class TestHaversine:
     def test_diameter_no_domain_error_on_dense_points(self):
         cents = [[3.0 + i * 1e-7, 6.0] for i in range(50)]  # near-identical points
         assert plan._territory_diameter_km(cents) >= 0.0  # must not raise math domain error
+
+
+class TestLifecycle:
+    def test_valid_path_draft_to_deployed(self):
+        d = {"status": plan.PLAN_DRAFT}
+        plan.transition_plan(d, plan.PLAN_IN_REVIEW, "u")
+        plan.transition_plan(d, plan.PLAN_APPROVED, "u")
+        plan.transition_plan(d, plan.PLAN_DEPLOYED, "u", opportunity_id=1882)
+        assert d["status"] == plan.PLAN_DEPLOYED and d["opportunity_id"] == 1882
+        assert [e["to"] for e in d["status_log"]] == ["in_review", "approved", "deployed"]
+        assert d["status_log"][-1]["phase"] == "deploy"
+        assert d["status_log"][0]["phase"] == "planning"
+
+    def test_illegal_transition_raises(self):
+        import pytest
+
+        d = {"status": plan.PLAN_DRAFT}
+        with pytest.raises(ValueError):
+            plan.transition_plan(d, plan.PLAN_DEPLOYED, "u", opportunity_id=1)  # draft can't jump to deployed
+
+    def test_deploy_requires_opportunity(self):
+        import pytest
+
+        d = {"status": plan.PLAN_APPROVED}
+        with pytest.raises(ValueError):
+            plan.transition_plan(d, plan.PLAN_DEPLOYED, "u")  # no opp bound
+
+    def test_archive_and_restore(self):
+        d = {"status": plan.PLAN_IN_REVIEW}
+        plan.transition_plan(d, plan.PLAN_ARCHIVED, "u")
+        assert d["status"] == plan.PLAN_ARCHIVED
+        plan.transition_plan(d, plan.PLAN_DRAFT, "u")
+        assert d["status"] == plan.PLAN_DRAFT

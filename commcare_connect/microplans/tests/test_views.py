@@ -607,3 +607,296 @@ def test_plan_edit_batch_cap_is_400(client, django_user_model, monkeypatch):
         content_type="application/json",
     )
     assert resp.status_code == 400
+
+
+# ============================================================================
+# Program layer: portfolio workspace, program-scoped creation/review, lifecycle
+# transitions, and plan groups. Fakes run the real plan_lib logic over a store.
+# ============================================================================
+
+
+class _FakeProgramPlan:
+    def __init__(self, pid, mode, work_areas, name="", region="", status="draft", opportunity_id=None):
+        self.id, self.mode, self.work_areas = pid, mode, work_areas
+        self.name = name or f"Plan {pid}"
+        self.region, self.status, self.opportunity_id = region, status, opportunity_id
+        self.status_log = []
+        self.created_at = "2026-05-28T00:00:00Z"
+
+    @property
+    def data(self):
+        return {
+            "work_areas": self.work_areas,
+            "status": self.status,
+            "region": self.region,
+            "opportunity_id": self.opportunity_id,
+            "status_log": self.status_log,
+            "mode": self.mode,
+            "name": self.name,
+        }
+
+
+class _FakeGroup:
+    def __init__(self, gid, name, plan_ids, offered_to="", shared=False):
+        self.id, self.name, self.plan_ids = gid, name, list(plan_ids)
+        self.offered_to, self.shared = offered_to, shared
+
+
+def _make_fake_program_da(monkeypatch, plans=None, groups=None):
+    """A ProgramPlanDataAccess stand-in over an in-memory store, using real plan_lib."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    plans = plans if plans is not None else {}
+    groups = groups if groups is not None else {}
+    seq = {"plan": (max(plans) if plans else 0) + 1, "group": (max(groups) if groups else 0) + 1}
+
+    class FakeDA:
+        def __init__(self, program_id, *a, **k):
+            self.program_id = int(program_id)
+
+        def list_plans(self):
+            return list(plans.values())
+
+        def get_plan(self, pid):
+            return plans[int(pid)]
+
+        def create_plan(self, region, name, mode, pins, hulls):
+            was = plan_lib.materialize_work_areas(mode, pins, hulls)
+            pid = seq["plan"]
+            seq["plan"] += 1
+            plans[pid] = _FakeProgramPlan(pid, mode, was, name=name, region=region)
+            return plans[pid]
+
+        def apply_plan_edits(self, pid, wa_ids, action, params, actor):
+            p = plans[int(pid)]
+            for wa_id in wa_ids:
+                wa = plan_lib.find(p.work_areas, wa_id)
+                if wa is None:
+                    raise ValueError(f"work area {wa_id!r} not found")
+                plan_lib.apply_action(wa, action, params, actor)
+            return p
+
+        def transition_plan(self, pid, to, actor, opportunity_id=None):
+            p = plans[int(pid)]
+            data = dict(p.data)
+            plan_lib.transition_plan(data, to, actor, opportunity_id=opportunity_id)
+            p.status = data["status"]
+            p.opportunity_id = data.get("opportunity_id")
+            p.status_log = data.get("status_log", [])
+            return p
+
+        def create_group(self, name, plan_ids, offered_to=""):
+            gid = seq["group"]
+            seq["group"] += 1
+            groups[gid] = _FakeGroup(gid, name, plan_ids, offered_to)
+            return groups[gid]
+
+        def list_groups(self):
+            return list(groups.values())
+
+        def get_group(self, gid):
+            return groups[int(gid)]
+
+        def update_group(self, gid, **fields):
+            g = groups[int(gid)]
+            for key in ("name", "offered_to", "shared"):
+                if fields.get(key) is not None:
+                    setattr(g, key, fields[key])
+            if fields.get("plan_ids") is not None:
+                g.plan_ids = [int(x) for x in fields["plan_ids"]]
+            return g
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", FakeDA)
+    return plans, groups
+
+
+def _seed_program_plans(monkeypatch):
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    plans = {
+        1: _FakeProgramPlan(
+            1,
+            "coverage",
+            plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
+            name="Kano North",
+            region="Kano North LGA",
+        ),
+        2: _FakeProgramPlan(
+            2,
+            "coverage",
+            plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
+            name="Kano South",
+            region="Kano South LGA",
+            status="approved",
+        ),
+    }
+    return _make_fake_program_da(monkeypatch, plans, {})
+
+
+def test_program_workspace_requires_login(client):
+    resp = client.get(reverse("microplans:program_workspace", kwargs={"program_id": 25}))
+    assert resp.status_code == 302 and "/labs/login/" in resp["Location"]
+
+
+def test_program_workspace_renders(client, django_user_model, settings):
+    settings.MAPBOX_TOKEN = "pk.test"
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:program_workspace", kwargs={"program_id": 25}))
+    assert resp.status_code == 200
+    assert resp.context["program_id"] == 25
+    assert "Microplan portfolio" in resp.content.decode()
+
+
+def test_program_plans_json(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _seed_program_plans(monkeypatch)
+    resp = client.get(reverse("microplans:program_plans", kwargs={"program_id": 25}))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok" and len(body["plans"]) == 2
+    row = next(p for p in body["plans"] if p["plan_id"] == 2)
+    assert row["status"] == "approved" and row["region"] == "Kano South LGA"
+    assert "max_spread_km" in row and "coverage_pct" in row
+    assert "draft" in body["transitions"] and "status_labels" in body
+
+
+def test_program_create_plan(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    plans, _ = _make_fake_program_da(monkeypatch, {}, {})
+    resp = client.post(
+        reverse("microplans:program_create_plan", kwargs={"program_id": 25}),
+        data=json.dumps({"region": "Zaria", "name": "Zaria v1", "mode": "coverage", "coverage_areas": _HULL_FC}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    pid = resp.json()["plan_id"]
+    assert plans[pid].region == "Zaria" and plans[pid].status == "draft"
+    assert len(plans[pid].work_areas) == 2
+
+
+def test_program_create_plan_page_renders(client, django_user_model, settings):
+    settings.MAPBOX_TOKEN = "pk.test"
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:program_create_plan_page", kwargs={"program_id": 25}))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert resp.context["program_id"] == 25
+    assert "Create plan in program" in body  # program-mode button present
+
+
+def test_program_transition_advances_status(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    plans, _ = _seed_program_plans(monkeypatch)
+    resp = client.post(
+        reverse("microplans:program_plan_transition", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"to": "in_review"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok" and body["plan_status"] == "in_review" and plans[1].status == "in_review"
+
+
+def test_program_deploy_requires_opportunity(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _seed_program_plans(monkeypatch)  # plan 2 is approved
+    resp = client.post(
+        reverse("microplans:program_plan_transition", kwargs={"program_id": 25, "plan_id": 2}),
+        data=json.dumps({"to": "deployed"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400  # deploy without an opportunity_id is rejected
+
+
+def test_program_deploy_binds_opportunity(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    plans, _ = _seed_program_plans(monkeypatch)  # plan 2 is approved
+    resp = client.post(
+        reverse("microplans:program_plan_transition", kwargs={"program_id": 25, "plan_id": 2}),
+        data=json.dumps({"to": "deployed", "opportunity_id": "555"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok" and body["plan_status"] == "deployed" and body["opportunity_id"] == "555"
+
+
+def test_program_illegal_transition_is_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _seed_program_plans(monkeypatch)  # plan 1 is draft; draft->deployed is illegal
+    resp = client.post(
+        reverse("microplans:program_plan_transition", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"to": "deployed", "opportunity_id": "9"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_program_group_create_and_share(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    plans, groups = _seed_program_plans(monkeypatch)
+    resp = client.post(
+        reverse("microplans:program_group_create", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "For Acme LLO", "plan_ids": [1, 2], "offered_to": "Acme"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    gid = resp.json()["group_id"]
+    assert groups[gid].name == "For Acme LLO" and groups[gid].plan_ids == [1, 2]
+
+    share = client.get(reverse("microplans:program_group_share", kwargs={"program_id": 25, "group_id": gid}))
+    assert share.status_code == 200
+    body = share.content.decode()
+    assert "For Acme LLO" in body and "Acme" in body
+    assert len(share.context["entries"]) == 2
+    assert all("composite" in e for e in share.context["entries"])
+
+
+def test_program_group_create_requires_name_and_plans(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _make_fake_program_da(monkeypatch, {}, {})
+    resp = client.post(
+        reverse("microplans:program_group_create", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "", "plan_ids": []}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_program_group_share_toggle(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    groups = {7: _FakeGroup(7, "G", [1], shared=False)}
+    _make_fake_program_da(monkeypatch, {}, groups)
+    resp = client.post(
+        reverse("microplans:program_group_update", kwargs={"program_id": 25, "group_id": 7}),
+        data=json.dumps({"shared": True}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["shared"] is True and groups[7].shared is True
+
+
+def test_program_review_page_uses_program_urls(client, django_user_model, settings):
+    settings.MAPBOX_TOKEN = "pk.test"
+    _login(client, django_user_model)
+    resp = client.get(reverse("microplans:program_review", kwargs={"program_id": 25, "plan_id": 3}))
+    assert resp.status_code == 200
+    assert resp.context["plan_id"] == 3
+    # the edit URL the page posts to must be the program-scoped route
+    assert resp.context["edit_url"] == reverse("microplans:program_plan_edit", kwargs={"program_id": 25, "plan_id": 3})
+
+
+def test_program_plan_get_and_edit(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    plans, _ = _seed_program_plans(monkeypatch)
+    got = client.get(reverse("microplans:program_plan", kwargs={"program_id": 25, "plan_id": 1}))
+    assert got.status_code == 200 and "kpis" in got.json()
+    wa_id = plans[1].work_areas[0]["id"]
+    edited = client.post(
+        reverse("microplans:program_plan_edit", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"action": "exclude", "wa_id": wa_id, "reason": "river"}),
+        content_type="application/json",
+    )
+    assert edited.status_code == 200
+    wa = next(w for w in edited.json()["work_areas"] if w["id"] == wa_id)
+    assert wa["status"] == "EXCLUDED" and wa["audit"][-1]["phase"] == "planning"

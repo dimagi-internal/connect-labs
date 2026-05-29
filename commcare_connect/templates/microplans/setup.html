@@ -19,7 +19,12 @@
   <aside class="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-5 space-y-5">
     <div>
       <h1 class="text-xl font-bold text-gray-900">Microplans</h1>
+      {% if program_id %}
+      <p class="text-sm text-gray-500 mt-1">Program #{{ program_id }} — create a candidate plan
+        · <a href="{{ program_url }}" class="text-emerald-700">← portfolio</a></p>
+      {% else %}
       <p class="text-sm text-gray-500 mt-1">Opportunity #{{ opp_id }} — define the work areas</p>
+      {% endif %}
     </div>
 
     {% if error %}
@@ -152,8 +157,18 @@
     <section>
       <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Preview</h2>
       <button type="button" id="btn-preview" class="button w-full">Preview</button>
+      {% if program_id %}
+      <div id="program-create-fields" class="space-y-2 mt-2 hidden">
+        <label class="block text-sm"><span class="text-gray-600">Plan name</span>
+          <input id="inp-plan-name" type="text" placeholder="e.g. Kano North — coverage v1" class="mt-1 w-full rounded border-gray-300"></label>
+        <label class="block text-sm"><span class="text-gray-600">Region / area label</span>
+          <input id="inp-plan-region" type="text" placeholder="e.g. Kano North LGA" class="mt-1 w-full rounded border-gray-300"></label>
+      </div>
+      <button type="button" id="btn-create-plan" class="button w-full mt-2 hidden">Create plan in program →</button>
+      {% else %}
       <button type="button" id="btn-save" class="button w-full mt-2 hidden">Save</button>
       <button type="button" id="btn-review" class="button w-full mt-2 hidden">Review &amp; edit plan</button>
+      {% endif %}
       <button type="button" id="btn-csv" class="button button-sm outline-style w-full mt-2 hidden">Download Connect import CSV</button>
       <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
       <div id="save-status" class="mt-1 text-xs text-gray-500"></div>
@@ -186,6 +201,11 @@
     geometry: "{% url 'microplans:admin_area_geometry' opp_id=opp_id %}",
   };
   const CSRF = "{{ csrf_token }}";
+  // Program mode: this setup page creates a program-scoped candidate plan instead
+  // of an opp-scoped frame. PROGRAM is "" for the opp-scoped page.
+  const PROGRAM = "{{ program_id|default:''|escapejs }}";
+  const CREATE_PLAN_URL = "{{ create_plan_url|default:''|escapejs }}";
+  const PROGRAM_URL = "{{ program_url|default:''|escapejs }}";
   if (!MAPBOX_TOKEN) { return; }
   mapboxgl.accessToken = MAPBOX_TOKEN;
 
@@ -492,7 +512,11 @@
     $("wrap-balance").classList.toggle("hidden", grid);
   });
 
-  function resetPreviewButtons() { $("btn-save").classList.add("hidden"); $("btn-review").classList.add("hidden"); $("btn-csv").classList.add("hidden"); }
+  function resetPreviewButtons() {
+    ["btn-save", "btn-review", "btn-csv", "btn-create-plan", "program-create-fields"].forEach((id) => {
+      const el = $(id); if (el) el.classList.add("hidden");
+    });
+  }
   let savedFrameId = null;
 
   // ---- preview ----
@@ -507,39 +531,63 @@
       if (!resp.ok || data.status !== "ok") { $("preview-status").textContent = data.detail || ("HTTP " + resp.status); return; }
       if (mode === "sampling") { renderSampling(data); lastPreview = { mode, areas, config, pins: data.pins, hulls: data.hulls, stats: data.stats }; }
       else { renderCoverage(data); lastPreview = { mode, areas, config, coverage_areas: data.areas, stats: data.stats }; }
-      $("btn-save").classList.remove("hidden");
-      $("btn-csv").classList.remove("hidden");
+      const show = (id) => { const el = $(id); if (el) el.classList.remove("hidden"); };
+      if (PROGRAM) { show("program-create-fields"); show("btn-create-plan"); }
+      else { show("btn-save"); }
+      show("btn-csv");
     } catch (err) { $("preview-status").textContent = "Request failed: " + err; }
   });
 
-  // ---- save ----
-  $("btn-save").addEventListener("click", async () => {
-    if (!lastPreview) return;
-    $("save-status").textContent = "Saving…";
-    try {
-      const resp = await post(URLS.save, lastPreview);
-      const data = await resp.json();
-      if (resp.ok && data.status === "ok") {
-        savedFrameId = data.frame_record_id;
-        $("save-status").textContent = `Saved (frame #${data.frame_record_id}).`;
-        $("btn-review").classList.remove("hidden");
-      } else {
-        $("save-status").textContent = data.detail || ("HTTP " + resp.status);
-      }
-    } catch (err) { $("save-status").textContent = "Save failed: " + err; }
-  });
+  // ---- opp-scoped save / review (only on the opportunity setup page) ----
+  if (!PROGRAM) {
+    $("btn-save").addEventListener("click", async () => {
+      if (!lastPreview) return;
+      $("save-status").textContent = "Saving…";
+      try {
+        const resp = await post(URLS.save, lastPreview);
+        const data = await resp.json();
+        if (resp.ok && data.status === "ok") {
+          savedFrameId = data.frame_record_id;
+          $("save-status").textContent = `Saved (frame #${data.frame_record_id}).`;
+          $("btn-review").classList.remove("hidden");
+        } else {
+          $("save-status").textContent = data.detail || ("HTTP " + resp.status);
+        }
+      } catch (err) { $("save-status").textContent = "Save failed: " + err; }
+    });
 
-  // ---- review: materialize an editable plan from the saved frame, then open it ----
-  $("btn-review").addEventListener("click", async () => {
-    if (!savedFrameId) return;
-    $("save-status").textContent = "Building plan…";
-    try {
-      const resp = await post(URLS.materialize, { frame_record_id: savedFrameId });
-      const data = await resp.json();
-      if (resp.ok && data.status === "ok") { window.location = URLS.reviewBase + data.plan_id + "/"; }
-      else { $("save-status").textContent = data.detail || ("HTTP " + resp.status); }
-    } catch (err) { $("save-status").textContent = "Could not build plan: " + err; }
-  });
+    // review: materialize an editable plan from the saved frame, then open it
+    $("btn-review").addEventListener("click", async () => {
+      if (!savedFrameId) return;
+      $("save-status").textContent = "Building plan…";
+      try {
+        const resp = await post(URLS.materialize, { frame_record_id: savedFrameId });
+        const data = await resp.json();
+        if (resp.ok && data.status === "ok") { window.location = URLS.reviewBase + data.plan_id + "/"; }
+        else { $("save-status").textContent = data.detail || ("HTTP " + resp.status); }
+      } catch (err) { $("save-status").textContent = "Could not build plan: " + err; }
+    });
+  }
+
+  // ---- program-scoped create: persist the previewed frame as a Draft plan, open review ----
+  if (PROGRAM) {
+    $("btn-create-plan").addEventListener("click", async () => {
+      if (!lastPreview) return;
+      const name = ($("inp-plan-name").value || "").trim();
+      const region = ($("inp-plan-region").value || "").trim();
+      if (!region && !name) { $("save-status").textContent = "Give the plan a name or region first."; return; }
+      $("save-status").textContent = "Creating plan…";
+      const body = { region, name, mode: lastPreview.mode };
+      if (lastPreview.mode === "coverage") body.coverage_areas = lastPreview.coverage_areas;
+      else body.pins = lastPreview.pins;
+      try {
+        const resp = await post(CREATE_PLAN_URL, body);
+        const data = await resp.json();
+        if (resp.ok && data.status === "ok") { window.location = PROGRAM_URL + "plan/" + data.plan_id + "/review/"; }
+        else { $("save-status").textContent = data.detail || ("HTTP " + resp.status); }
+      } catch (err) { $("save-status").textContent = "Create failed: " + err; }
+    });
+  }
 
   // ---- CSV ----
   $("btn-csv").addEventListener("click", async () => {
