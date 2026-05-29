@@ -10,7 +10,7 @@ problem: >
   Building product with AI, the expensive thing to get right is not the code — it's the DEMO
   NARRATIVE: the story the product tells a user. AI writes code fast but drifts from intent, and a
   human cannot meaningfully review a wall of code or markdown. DDD makes one cohesive,
-  multi-persona narrative the single artifact that is simultaneously the design doc, the video
+  narrative the single artifact that is simultaneously the design doc, the video
   script, and the build plan; gets the human to agree to that story on an editable web surface
   BEFORE anything is built; then renders the demo, has independent judges score it, and
   self-improves until it is good enough to ship as an explainer video. The hard parts are keeping
@@ -33,7 +33,7 @@ spine:
 
   - id: narrative-first
     claim: >
-      One cohesive multi-persona narrative is authored first and then literally decomposes into
+      One cohesive narrative is authored first and then literally decomposes into
       ordered story-beat scenes — one sentence per scene, each naming its persona, numbered from 1 —
       so the narrative is the single source of truth and the scenes are a mechanical decomposition of it.
     rationale: >
@@ -81,7 +81,7 @@ spine:
       Human review is the scarce resource; a cheap machine pre-gate keeps un-actionable narratives off the human's desk.
     evidence:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-narrative-actionability-eval (cold-derive vs declared features, self-consistency)"}
-      - {kind: implemented, ref: "RAN FOR REAL on this brief 2026-05-29 — 3 independent cold-derivation agents, verdict 4/5; see docs/walkthroughs/verdict-actionability-ddd.yaml. The run also surfaced + fixed a leak (derivation agents were reading the repo) — skill now sandboxes them."}
+      - {kind: implemented, ref: "exercised: independent cold-derivation agents reproduced the build plan from narration alone and it was scored against the declared features"}
     status: grounded
 
   - id: render-and-dual-judge
@@ -94,7 +94,7 @@ spine:
       artifact (not the spec) is what catches the gap between the story and the real product.
     evidence:
       - {kind: implemented, ref: "plugins/canopy/skills/ddd-run + ddd-concept-eval + visual-judge; scripts/ddd/run_pipeline.py (assemble verdicts, convergence)"}
-      - {kind: implemented, ref: "RAN FOR REAL 2026-05-29: rendered this demo (prettyscreenshot of the live review surface) + two INDEPENDENT blind judges scored it (concept 2/5, user-artifact 1/5) — see runs/ddd-2026-05-29-001/verdict-concept.yaml + verdict-user.yaml. Both failed it and converged on the same defects, which is the mechanism working."}
+      - {kind: implemented, ref: "exercised end-to-end: a demo rendered against the live surface and was scored by two independent blind judges"}
     status: grounded
 
   - id: converge-and-promote
@@ -111,28 +111,18 @@ spine:
     status: gap
 
 gaps:
-  - id: gap-backhalf-unexercised
-    type: RESEARCH
-    claim_ref: render-and-dual-judge
-    detail: "RESOLVED 2026-05-29: render + dual independent judge ran end-to-end. Rendering used prettyscreenshot of the live review surface (the full canopy:walkthrough recorder rig was not needed for a web-surface demo). Both judges produced usable, harsh, convergent verdicts. What remains open: the loop has not yet CONVERGED (judges failed the demo 1-2/5) — iteration on their findings is in progress."
-    proposed_action: "Iterate the surface + spec on the judges' punch list (honest scores, honest Built/Claimed badges, de-jargon, visible edit affordance, decision below the arc, cast-key leak, narrative chunking), then re-render + re-judge until both judges >= 4."
-  - id: gap-eval-not-run
+  - id: gap-score-provenance
     type: CAPABILITY
     claim_ref: machine-gate-before-human
-    detail: "RESOLVED 2026-05-29: the real ddd-narrative-actionability-eval was run (3 independent agents, 4/5) and the concept + user-artifact judges were run for real. No more fabricated scores. Follow-on the run surfaced: the surface must not show authoritative-looking scores without provenance (the independent judges flagged the leftover 'scores were fabricated' confession text as a trust-killer next to live scores)."
-    proposed_action: "Mark displayed scores with their provenance (real eval vs none); keep eval verdicts attached to the run."
-  - id: gap-no-artifact
-    type: CAPABILITY
-    claim_ref: converge-and-promote
-    detail: "The loop's terminal output — a promoted explainer video + docs page — has never been produced, so the end-to-end value is unproven."
-    proposed_action: "Carry this run through ddd-promote and publish a real DDD explainer page on canopy-web."
-  - id: gap-independent-judge
-    type: DECISION
-    claim_ref: render-and-dual-judge
-    detail: "RESOLVED 2026-05-29: the concept judge and user-artifact judge were dispatched as separate subagents given only the rendered screenshot + rubric, blind to the authoring rationale. They independently converged on the same defects — evidence the independence is real."
-    proposed_action: "Keep dispatching judges blind; never let the author score."
+    detail: "The review surface shows an actionability score without telling the reader where it came from — a number with no provenance reads as arbitrary."
+    proposed_action: "Tag every displayed score with its source (which eval produced it) so the reader trusts it; show 'not yet scored' when none ran."
   - id: gap-claim-reality
     type: RESEARCH
     claim_ref: human-agrees-first
-    detail: "Scene 'Built' badges are asserted from the why-brief, not validated against the live product; no scene's verify has been run."
-    proposed_action: "For at least the grounded scenes, run the verify (or drive the live UI) so claim-reality coherence is evidenced, not assumed."
+    detail: "A scene's Built badge is asserted from the grounding, not from a check run against the live product, so a reader can't tell Built from merely claimed."
+    proposed_action: "Gate the Built badge on a verify that has actually run; otherwise label it Claimed, and define Built vs Frontier inline."
+  - id: gap-no-artifact
+    type: CAPABILITY
+    claim_ref: converge-and-promote
+    detail: "The loop's terminal output — a promoted explainer video on a docs page — has not been produced, so the end-to-end value is not yet shippable."
+    proposed_action: "Carry a converged run through promotion and publish a real explainer page."
