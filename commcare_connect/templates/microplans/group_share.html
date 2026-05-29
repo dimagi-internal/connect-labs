@@ -20,8 +20,7 @@
 
   <p class="text-sm text-gray-600">
     Each plan below covers one candidate region. The metrics summarise how the work splits across
-    field workers — lower travel and a more even workload are better. The <b>fit score</b> ranks the
-    plans against each other (0–100, higher is better).
+    field workers — lower <b>worst travel</b>, lower <b>workload imbalance</b>, and higher <b>coverage</b> are better.
   </p>
 
   <div class="overflow-x-auto border border-gray-200 rounded-lg">
@@ -34,14 +33,21 @@
           <th class="text-right font-semibold px-3 py-2" title="Spread of workload across workers (lower is more even)">Imbalance</th>
           <th class="text-right font-semibold px-3 py-2" title="Share of buildings still included after exclusions">Coverage</th>
           <th class="text-right font-semibold px-3 py-2" title="Work areas the reviewer removed">Excluded</th>
-          <th class="text-right font-semibold px-3 py-2">Fit score</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for e in entries %}
         <tr class="hover:bg-gray-50">
           <td class="px-3 py-2">
-            <div class="font-medium text-gray-900">{{ e.name|default:"Untitled plan" }}{% if e.recommended %} <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800 align-middle">★ Best fit</span>{% endif %}</div>
+            <div class="font-medium">
+              {% if e.review_url %}<a class="text-brand-cornflower-blue hover:underline" href="{{ e.review_url }}">{{ e.name|default:"Untitled plan" }}</a>
+              {% else %}<span class="text-gray-900">{{ e.name|default:"Untitled plan" }}</span>{% endif %}
+              {% if e.status_label %}<span class="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded
+                {% if e.status == 'approved' %}bg-green-100 text-green-800
+                {% elif e.status == 'in_review' %}bg-amber-100 text-amber-800
+                {% elif e.status == 'deployed' %}bg-cyan-100 text-cyan-800
+                {% else %}bg-gray-100 text-gray-600{% endif %} align-middle">{{ e.status_label }}</span>{% endif %}
+            </div>
             <div class="text-xs text-gray-500">{{ e.region|default:"—" }}{% if not e.assigned %} · <span class="text-amber-600">workers not yet assigned</span>{% endif %}</div>
           </td>
           <td class="px-3 py-2 text-right tabular-nums">
@@ -60,14 +66,6 @@
           </td>
           <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.coverage_pct }}%</td>
           <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.excluded.count }}</td>
-          <td class="px-3 py-2">
-            {% if e.composite is not None %}
-            <div class="flex items-center justify-end gap-2" title="Relative fit: {{ e.composite }}/100 across the plans shown">
-              <div class="w-20 h-1.5 rounded bg-gray-100 overflow-hidden"><div class="h-full bg-green-500" style="width: {{ e.bar_width }}%"></div></div>
-              <span class="text-xs text-gray-500 tabular-nums w-8 text-right">{{ e.composite }}</span>
-            </div>
-            {% else %}<span class="text-gray-400 block text-right">—</span>{% endif %}
-          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -76,7 +74,6 @@
 
   <p class="text-xs text-gray-400">
     Imbalance is measured on population where available, otherwise on building counts.
-    Fit score weights travel (50%), workload balance (30%) and coverage (20%), normalised across the plans shown here.
   </p>
   {% endif %}
 </div>
