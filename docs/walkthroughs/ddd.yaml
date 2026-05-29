@@ -1,0 +1,172 @@
+# Unified spec for demo-driven-development — DDD run on DDD ITSELF (the self-loop test).
+# The demo's subject is the DDD loop; its renderable artifact is the canopy-web review surface
+# (a real web app). Personas: Dana (a product lead, the human taste/approval) + DDD (the loop).
+# Each sentence of `narrative` is one scene, in order, naming its actor. Scenes 1-5 are grounded
+# in shipped machinery; scenes 6-7 (render+judge, promote) are honestly tagged frontier — running
+# THIS demo through the loop is what would flip them to built.
+
+name: demo-driven-development
+narrative: >-
+  Dana, a product lead, hands DDD a half-formed feature idea, and DDD grounds it — auditing the
+  docs and code into a why-brief where every claim is tagged built or a frontier gap so the story
+  can't drift into fiction. From that grounding DDD writes one cohesive multi-persona narrative and
+  splits it, sentence by sentence, into numbered story-beat scenes. Each scene commits to a feature
+  set that says exactly what to build and how to confirm it, so the story is also the build plan. A
+  machine gate then cold-reads the narration and tries to rebuild the plan from the story alone,
+  scoring how actionable it is before any human is bothered. Dana opens the narrative on one
+  editable web page, reads the whole arc, fixes a persona and a scene's framing inline, sets the
+  build order, and approves the story as the plan. DDD renders the agreed narrative into a
+  walkthrough of the real product and has two independent judges grade the demo against its claims.
+  The loop self-improves until the judges are satisfied, then promotes the result into an explainer
+  video embedded atop a docs page Dana can ship.
+base_url: https://canopy-web-ujpz2cuyxq-uc.a.run.app
+auth:
+  type: session
+why_brief: ../superpowers/ddd/ddd/why-brief.yaml
+
+personas:
+  lead:
+    name: Dana
+    role: Product lead
+    org: the builder
+    color: "#3B82F6"
+    intro: Dana brings a half-formed feature idea and supplies the one thing AI can't — taste on the story's framing and the call to ship.
+  ddd:
+    name: DDD
+    role: The demo-driven-development loop
+    org: canopy
+    color: "#F97316"
+    intro: DDD grounds the why, writes and judges the demo, and self-improves it until it's a shippable explainer.
+
+scenes:
+  # Sentence 1.
+  - persona: lead
+    title: Dana hands DDD a half-formed idea
+    show: >-
+      open the review surface and read the demo banner — the problem statement plus the per-scene
+      grounding, each beat tagged Built or Frontier.
+    concept_claim: >-
+      DDD turns a raw idea into a why-brief where every claim is tagged built or frontier, so the
+      story never asserts behavior the product lacks.
+    provenance: ground-the-why
+    design_intent: Grounding-first is what lets the narrative be trusted as a build plan rather than fiction.
+    features:
+      - id: evidence-classification
+        description: Phase 0 classifies every claim as documented / implemented / assumed and flips unsupported ones into typed gaps.
+        verify: why_qa fails a spine item with status=grounded whose only evidence has kind=assumed (test).
+      - id: typed-gaps
+        description: Unsupported claims become Gaps tagged RESEARCH / CAPABILITY / DECISION, each referencing a spine id.
+        verify: validate(why_brief) rejects a Gap whose claim_ref matches no spine id (test).
+
+  # Sentence 2.
+  - persona: ddd
+    title: DDD writes the story and splits it into beats
+    show: >-
+      on the surface, read the cohesive narrative in the demo banner, then scroll the numbered scene
+      cards — each a single story beat with its persona chip.
+    concept_claim: >-
+      DDD authors one cohesive narrative and decomposes it into numbered story-beat scenes, one per
+      sentence, each naming the persona on screen.
+    provenance: narrative-first
+    design_intent: A story a viewer follows top to bottom beats a feature catalog; literal decomposition keeps narrative and scenes in lockstep.
+    features:
+      - id: literal-decomposition
+        description: The narrative builder emits one 1-indexed scene per sentence, carrying title + persona + provenance.
+        verify: build_narrative_review_request returns NarrationItems numbered from 1 each with title/persona/provenance set (test).
+      - id: title-guard
+        description: spec-qa enforces story-beat titles, rejecting build-status parentheticals.
+        verify: spec_qa fails a scene whose title contains "(frontier)" (test).
+
+  # Sentence 3.
+  - persona: ddd
+    title: Every beat says what to build and how to check it
+    show: >-
+      expand a scene card's Features list and read the labeled "What to build" and "Verify — how
+      we'll confirm it's built" fields.
+    concept_claim: >-
+      Each scene commits to a feature set where every feature carries a runnable verify, so the
+      narrative doubles as a build plan.
+    provenance: actionable-scenes
+    design_intent: A scene that merely looks like a good story is insufficient; each beat must name what to build and how to confirm it.
+    features:
+      - id: feature-shape
+        description: Every scene must declare at least one Feature{id, description, verify}.
+        verify: spec_qa fails a scene with features=[] (test).
+      - id: verify-nonvacuous
+        description: A feature's verify must be a concrete check, not a vague phrase.
+        verify: spec_qa fails a feature whose verify is fewer than 3 words (test).
+
+  # Sentence 4.
+  - persona: ddd
+    title: A machine asks — could you build it from the story alone?
+    show: >-
+      read the actionability score on the surface header and the per-scene actionability badges.
+    concept_claim: >-
+      Before a human is asked, DDD cold-derives a build plan from the narration alone and scores how
+      actionable the story is, sending vague narratives back automatically.
+    provenance: machine-gate-before-human
+    design_intent: Human review is the scarce resource; a cheap machine pre-gate keeps un-actionable narratives off the human's desk.
+    features:
+      - id: cold-derive
+        description: The actionability eval derives a build plan from narration only (not the declared features) across several independent passes.
+        verify: ddd-narrative-actionability-eval emits per-scene coverage/specificity/correctness scores computed without reading features[] (eval output).
+      - id: gate-on-score
+        description: A failing actionability verdict blocks the human narrative-review gate.
+        verify: a fail actionability verdict prevents ddd-narrative-review from posting (skill contract).
+
+  # Sentence 5 — the hero: the human-leverage beat.
+  - persona: lead
+    title: Dana shapes the story and signs off
+    show: >-
+      on the review surface, edit a persona's org inline, rewrite a scene's "Why it matters",
+      drag the build sequence into the order Dana will tackle, then choose Approve.
+    concept_claim: >-
+      Dana reads the whole arc on one editable page, fixes framing inline, sets the build order, and
+      approves the story before any code is written.
+    provenance: human-agrees-first
+    design_intent: The irreplaceable human input is taste on framing; an editable URL captures it better than a doc, and the gate prevents wrong-direction work.
+    features:
+      - id: editable-surface
+        description: Personas, why-brief, scenes, and build order are all editable inline and persist back to the yaml on submit.
+        verify: editing a persona field and submitting writes edited_personas, which apply_narrative_edits persists to the spec yaml (test).
+      - id: approve-gate
+        description: The decision tile offers approve or redraft on the concept_change gate before any build.
+        verify: the narrative ReviewRequest carries gate=concept_change with options [approve, redraft] (test).
+
+  # Sentence 6 — frontier: the back half we are testing right now.
+  - persona: ddd
+    title: DDD renders the demo and two judges grade it
+    show: >-
+      open the Cuts tab — the home for the rendered walkthrough and, once DDD has run, the two
+      independent judges' verdicts scoring the demo against its claims.
+    concept_claim: >-
+      DDD renders the agreed narrative into a walkthrough of the real product and two independent
+      judges score it against the claims it makes.
+    provenance: render-and-dual-judge
+    design_intent: Author and judge must be different agents or the score is self-congratulation; judging the rendered artifact catches story-vs-reality gaps.
+    features:
+      - id: render-walkthrough
+        description: The walkthrough engine renders the spec into per-scene screenshots + captured page text against the live product.
+        verify: canopy:walkthrough produces a screenshot + captured text per scene for this spec (run artifact).
+      - id: dual-independent-judge
+        description: ddd-run dispatches the concept judge and the user-artifact judge as separate agents and assembles both verdicts.
+        verify: run_pipeline.assemble_run_state records two independent verdicts with a weakest-link overall (run artifact).
+
+  # Sentence 7 — frontier: the terminal artifact.
+  - persona: ddd
+    title: Out comes an explainer video Dana can ship
+    show: >-
+      open the Cuts tab — once the loop converges, the promoted explainer video and its docs page
+      (hero video atop the capabilities, the why, and the how) land here to ship.
+    concept_claim: >-
+      On convergence DDD promotes the run into a self-contained docs page with the hero video,
+      published behind an external-release gate.
+    provenance: converge-and-promote
+    design_intent: The terminal deliverable was always a great explainer video atop a docs page; a loop that never ships that has not closed.
+    features:
+      - id: promote-page
+        description: Promote builds a self-contained HTML page embedding the hero video + capabilities and publishes it to canopy-web.
+        verify: ddd-promote outputs a published docs-page URL whose HTML contains the hero video element (run artifact).
+      - id: external-release-gate
+        description: Promotion halts on the external_release gate until a human approves the public artifact.
+        verify: ddd-promote does not publish until the external_release decision is approved (skill contract).

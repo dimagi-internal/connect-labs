@@ -1,0 +1,138 @@
+schema_version: 1
+feature: demo-driven-development
+# DDD run on DDD ITSELF (the ultimate dogfood / self-loop test).
+# Grounded in the real canopy machinery (skills + scripts/ddd + canopy-web review surface)
+# and HONEST about the gaps surfaced by the tough self-eval: the render->judge->converge->promote
+# back half has never been exercised, the evals were bypassed (fabricated scores), and no
+# explainer artifact has ever been produced. Running this very brief THROUGH the loop is what
+# would flip those gaps to grounded.
+problem: >
+  Building product with AI, the expensive thing to get right is not the code — it's the DEMO
+  NARRATIVE: the story the product tells a user. AI writes code fast but drifts from intent, and a
+  human cannot meaningfully review a wall of code or markdown. DDD makes one cohesive,
+  multi-persona narrative the single artifact that is simultaneously the design doc, the video
+  script, and the build plan; gets the human to agree to that story on an editable web surface
+  BEFORE anything is built; then renders the demo, has independent judges score it, and
+  self-improves until it is good enough to ship as an explainer video. The hard parts are keeping
+  the narrative honest (grounded vs aspirational) and making human review fast and high-leverage.
+
+spine:
+  - id: ground-the-why
+    claim: >
+      Before any story is written, evidence (docs, code, research) is gathered and every claim is
+      classified documented / implemented / assumed, so unsupported claims become explicit, typed
+      gaps instead of silent fiction.
+    rationale: >
+      A demo that asserts behavior the product does not have is worse than no demo; grounding first
+      is what lets the narrative be trusted as a build plan.
+    evidence:
+      - {kind: implemented, ref: "plugins/canopy/skills/ddd-evidence-audit + ddd-why-brief (Phase 0 authoring)"}
+      - {kind: implemented, ref: "scripts/ddd/why_qa.py (grounded items must cite non-assumed evidence; Gap.claim_refs must resolve)"}
+      - {kind: implemented, ref: "scripts/ddd/schemas/models.py (WhyBrief, SpineItem.status grounded|gap, Gap.type RESEARCH|CAPABILITY|DECISION)"}
+    status: grounded
+
+  - id: narrative-first
+    claim: >
+      One cohesive multi-persona narrative is authored first and then literally decomposes into
+      ordered story-beat scenes — one sentence per scene, each naming its persona, numbered from 1 —
+      so the narrative is the single source of truth and the scenes are a mechanical decomposition of it.
+    rationale: >
+      A feature catalog ("area selection; plan generation; monitoring") is not a demo; a story a
+      viewer follows top to bottom is, and decomposing the literal text keeps narrative and scenes in lockstep.
+    evidence:
+      - {kind: implemented, ref: "plugins/canopy/skills/ddd-spec/SKILL.md (narrative-first; literal beat->scene; persona handoffs)"}
+      - {kind: implemented, ref: "scripts/ddd/narrative.py (build_narrative_review_request: 1-indexed scenes carry title/persona/provenance)"}
+      - {kind: implemented, ref: "scripts/ddd/spec_qa.py (rejects status-tag parentheticals in scene titles — story beats, not capability labels)"}
+    status: grounded
+
+  - id: actionable-scenes
+    claim: >
+      Every scene carries a verifiable feature set — each feature is {id, description, verify} — so
+      the narrative is buildable: spec-qa fails any scene with no feature or a vacuous verify.
+    rationale: >
+      "Looks like a good story" is not enough; each beat must name what to build and how to confirm it,
+      or the narrative cannot drive a build.
+    evidence:
+      - {kind: implemented, ref: "scripts/ddd/schemas/models.py (Feature{id,description,verify})"}
+      - {kind: implemented, ref: "scripts/ddd/spec_qa.py (>=1 feature/scene; verify must be >=3 words / non-vacuous)"}
+    status: grounded
+
+  - id: human-agrees-first
+    claim: >
+      The narrative is posted to an editable web review surface — not a markdown wall — where the
+      human reads the cohesive story, edits scenes/personas/why-brief inline, sets the build order,
+      and explicitly approves or redrafts BEFORE any rendering or building (the concept_change gate).
+    rationale: >
+      The irreplaceable human input is taste on the story's framing; an editable URL captures that far
+      better than a doc, and gating the build on explicit agreement prevents expensive wrong-direction work.
+    evidence:
+      - {kind: implemented, ref: "canopy-web apps/reviews + frontend ReviewPage (narrative banner, editable personas/why-brief, per-scene grounding, build sequence, approve/redraft)"}
+      - {kind: implemented, ref: "scripts/ddd/narrative.py (apply_narrative_edits persists scene/persona/why-brief edits back to the yaml)"}
+      - {kind: implemented, ref: "plugins/canopy/skills/ddd-narrative-review (gate=concept_change)"}
+    status: grounded
+
+  - id: machine-gate-before-human
+    claim: >
+      Before the human is asked, a machine gate cold-derives a build plan from the narration alone
+      (not the declared features) across several independent passes and scores coverage / specificity /
+      correctness / consistency against the declared features — a narrative too vague to act on is
+      sent back automatically.
+    rationale: >
+      Human review is the scarce resource; a cheap machine pre-gate keeps un-actionable narratives off the human's desk.
+    evidence:
+      - {kind: implemented, ref: "plugins/canopy/skills/ddd-narrative-actionability-eval (cold-derive vs declared features, self-consistency)"}
+      - {kind: assumed, ref: "NEVER RUN in any real dogfood; the actionability scores shown on the surface so far were fabricated by hand"}
+    status: gap
+
+  - id: render-and-dual-judge
+    claim: >
+      The agreed narrative renders into a real walkthrough of the live product, and two INDEPENDENT
+      judges score it — a concept judge (clarity / design / why-groundedness / claim-reality coherence /
+      motion) and a user-artifact judge — with weakest-link aggregation.
+    rationale: >
+      Author and judge must be different agents or the score is self-congratulation; judging the rendered
+      artifact (not the spec) is what catches the gap between the story and the real product.
+    evidence:
+      - {kind: implemented, ref: "plugins/canopy/skills/ddd-run + ddd-concept-eval + visual-judge; scripts/ddd/run_pipeline.py (assemble verdicts, convergence)"}
+      - {kind: assumed, ref: "the render->judge sequence has NEVER been run end-to-end on any DDD feature; independent judges have never actually scored a DDD demo"}
+    status: gap
+
+  - id: converge-and-promote
+    claim: >
+      The loop iterates to convergence on the judge scores, then promotes the result into a
+      self-contained explainer: a docs page with the hero video, capabilities, the why, and the how —
+      published behind an external_release gate.
+    rationale: >
+      The terminal deliverable was always "a great explainer video embedded atop a docs page"; a loop
+      that never ships that artifact has not closed.
+    evidence:
+      - {kind: implemented, ref: "plugins/canopy/skills/ddd-promote (upload hero video, build HTML docs page, external_release gate, publish to canopy-web)"}
+      - {kind: assumed, ref: "no DDD run has ever converged or been promoted; no explainer video or docs page has ever been produced"}
+    status: gap
+
+gaps:
+  - id: gap-backhalf-unexercised
+    type: RESEARCH
+    claim_ref: render-and-dual-judge
+    detail: "The render->judge->converge spine has never run end-to-end. Unknown whether canopy:walkthrough can render an abstract dev-framework demo and whether the judges produce a usable verdict on it."
+    proposed_action: "Run ddd-run on this very brief: render a walkthrough of the canopy-web review surface, dispatch concept-eval + visual-judge as independent agents, and inspect the verdict."
+  - id: gap-eval-not-run
+    type: CAPABILITY
+    claim_ref: machine-gate-before-human
+    detail: "The actionability + concept evals exist but were bypassed; the review surface even displayed hand-fabricated actionability scores, which is an integrity failure."
+    proposed_action: "Invoke the real ddd-narrative-actionability-eval and surface its actual verdict; never post fabricated scores again."
+  - id: gap-no-artifact
+    type: CAPABILITY
+    claim_ref: converge-and-promote
+    detail: "The loop's terminal output — a promoted explainer video + docs page — has never been produced, so the end-to-end value is unproven."
+    proposed_action: "Carry this run through ddd-promote and publish a real DDD explainer page on canopy-web."
+  - id: gap-independent-judge
+    type: DECISION
+    claim_ref: render-and-dual-judge
+    detail: "Author and judge have been the same agent (me), which the design explicitly forbids; self-scoring is not a verdict."
+    proposed_action: "Dispatch the judges as separate subagents with only the rubric + rendered artifact, blind to the authoring rationale."
+  - id: gap-claim-reality
+    type: RESEARCH
+    claim_ref: human-agrees-first
+    detail: "Scene 'Built' badges are asserted from the why-brief, not validated against the live product; no scene's verify has been run."
+    proposed_action: "For at least the grounded scenes, run the verify (or drive the live UI) so claim-reality coherence is evidenced, not assumed."

@@ -1,0 +1,48 @@
+schema_version: 1
+rubric_name: ddd-narrative-actionability-eval
+ran_at: "2026-05-29"
+spec_path: docs/walkthroughs/ddd.yaml
+# REAL eval (not the fabricated numbers used on prior microplans posts). Three independent
+# cold-derivation agents inferred the build plan per scene; scored vs the declared features[].
+
+dimensions:
+  coverage:     { score: 4, weight: 0.35, justification: "All 3 derivations independently inferred ~all 14 declared features (build_narrative_review_request, spec_qa gates, apply_narrative_edits, gate=concept_change, ddd-run dual judge, ddd-promote external_release). Exact verify thresholds (e.g. '>=3 words') came from impl knowledge, not narration." }
+  specificity:  { score: 4, weight: 0.25, justification: "Derivations named concrete artifacts — endpoints, functions, schema fields, test assertions, gate names. A few items (render walkthrough, self-improve loop) stated at a higher level." }
+  correctness:  { score: 4, weight: 0.20, justification: "Inferences aligned with declared intent; no phantom features. Eval surfaced a real spec overclaim: scene 6's show describes 'two judge verdict panels' in the Cuts tab UI that do not exist (verdicts are yaml run-artifacts, no UI)." }
+  consistency:  { score: 4, weight: 0.20, justification: "Strong agreement on core features across all 3 passes; consistent secondary ambiguities flagged (Built/Frontier badge rule, sentence-split rule, actionability threshold/aggregation, auto-promote trigger)." }
+
+overall_score: 4
+overall_rule: lowest
+
+verdict: pass
+blocking_reason: null
+
+fix_recommendation: |
+  PASS, but two honest caveats lower confidence below the surface number:
+  1. Methodology leak: the cold-derive agents read the canopy repo (tool calls), so coverage/
+     consistency are inflated — a truly narration-blind reader would likely land ~3-4. The
+     actionability-eval skill should sandbox derivation agents from the source repo to stay honest.
+  2. Real spec defect surfaced: scene 6 ("read the two independent judge verdicts") + scene 7
+     ("promoted docs page") describe UI/artifacts that do not exist yet. They are correctly tagged
+     Frontier, but their `show` actions are not renderable as written — the walkthrough step will
+     screenshot an empty Cuts tab / 404. Reframe the frontier scenes' `show` to what is actually
+     viewable, or accept they will render as "not yet built" panels.
+
+actionability_findings:
+  - scene: DDD renders the demo and two judges grade it
+    dimension: correctness
+    severity: low
+    declared_features_missed: []
+    wrong_inferences: []
+    ambiguous_phrases:
+      - "read the two independent judge verdicts (no verdict UI exists; verdicts are yaml run-artifacts)"
+      - "self-improves until the judges are satisfied (convergence threshold + loop trigger unspecified)"
+    fix_recommendation: "Scene 6/7 show actions point at UI that isn't built. Either build a minimal verdict/promoted-page view, or rewrite show to target what's renderable today."
+  - scene: A machine asks — could you build it from the story alone?
+    dimension: consistency
+    severity: low
+    declared_features_missed: []
+    wrong_inferences: []
+    ambiguous_phrases:
+      - "scores how actionable the story is (pass/fail threshold + per-pass aggregation rule not stated in narration)"
+    fix_recommendation: "If the threshold/aggregation matters to the demo, state it; otherwise fine to leave as implementation detail."
