@@ -80,17 +80,13 @@ class RooftopPlanRecord(LocalLabsRecord):
     LLO reviews before upload (each mirrors Connect's WorkArea mutable fields + a
     phase=planning audit log) plus a plan-level lifecycle ``status``.
 
-    Program-scoped (experiment=<program_id>); ``opportunity_id`` is a late binding
-    set only when the plan is Deployed to a live Connect opp.
+    Program-scoped (experiment=<program_id>); the deploy-bound opportunity id lives
+    in ``data["opportunity_id"]`` (set only when the plan is Deployed). We do NOT
+    redefine ``program_id``/``opportunity_id`` as properties — the base
+    ``LocalLabsRecord.__init__`` assigns them as instance attributes, and a
+    read-only property here would shadow that assignment and break instantiation.
+    Read the deploy-bound opp via ``record.data.get("opportunity_id")``.
     """
-
-    @property
-    def program_id(self):
-        return self.data.get("program_id")
-
-    @property
-    def opportunity_id(self):
-        return self.data.get("opportunity_id")  # None until Deployed
 
     @property
     def status(self) -> str:
@@ -127,11 +123,8 @@ class RooftopPlanRecord(LocalLabsRecord):
 
 class RooftopPlanGroupRecord(LocalLabsRecord):
     """A named, shareable subset of a program's plans — the bundle offered to a
-    particular LLO. Program-scoped (experiment=<program_id>)."""
-
-    @property
-    def program_id(self):
-        return self.data.get("program_id")
+    particular LLO. Program-scoped (experiment=<program_id>). ``program_id`` comes
+    from the base ``LocalLabsRecord`` instance attribute (don't shadow it)."""
 
     @property
     def name(self) -> str:

@@ -309,3 +309,71 @@ class TestLifecycle:
         assert d["status"] == plan.PLAN_ARCHIVED
         plan.transition_plan(d, plan.PLAN_DRAFT, "u")
         assert d["status"] == plan.PLAN_DRAFT
+
+
+class TestRecordModels:
+    """Exercise the REAL proxy-record construction path (no mocking) — the gap that
+    let two prod-only bugs ship: `.to_dict()` (should be `.to_api_dict()`) and a
+    read-only `opportunity_id`/`program_id` property shadowing the base instance
+    attribute (broke instantiation entirely)."""
+
+    def _plan_api_data(self):
+        # Shape returned by the production /export/labs_record/ API for a program-scoped
+        # plan: top-level opportunity_id is null (scoped by program_id); the deploy-bound
+        # opp lives inside data.
+        return {
+            "id": 501,
+            "experiment": "133",
+            "type": "microplan_plan",
+            "opportunity_id": None,
+            "program_id": 133,
+            "data": {
+                "status": "deployed",
+                "region": "Kano North LGA",
+                "name": "Kano North v2",
+                "mode": "coverage",
+                "work_areas": [{"id": "cov-c0", "status": "UNASSIGNED"}],
+                "opportunity_id": "1742",
+                "status_log": [{"to": "deployed"}],
+            },
+        }
+
+    def test_plan_record_instantiates_from_api_data(self):
+        from commcare_connect.microplans.core.models import RooftopPlanRecord
+
+        rec = RooftopPlanRecord(self._plan_api_data())  # must not raise (property-shadow regression)
+        assert rec.id == 501
+        assert rec.program_id == 133  # base instance attr, not shadowed
+        assert rec.opportunity_id is None  # base record-level field
+        assert rec.data.get("opportunity_id") == "1742"  # deploy-bound opp lives in data
+        assert rec.status == "deployed" and rec.region == "Kano North LGA"
+        assert len(rec.work_areas) == 1
+
+    def test_plan_record_round_trips_through_to_api_dict(self):
+        # data_access constructs typed records via `record.to_api_dict()`; verify the
+        # LocalLabsRecord → to_api_dict() → RooftopPlanRecord round-trip works.
+        from commcare_connect.labs.models import LocalLabsRecord
+        from commcare_connect.microplans.core.models import RooftopPlanRecord
+
+        base = LocalLabsRecord(self._plan_api_data())
+        rec = RooftopPlanRecord(base.to_api_dict())
+        assert rec.id == 501 and rec.program_id == 133 and rec.status == "deployed"
+
+    def test_group_record_instantiates_from_api_data(self):
+        from commcare_connect.labs.models import LocalLabsRecord
+        from commcare_connect.microplans.core.models import RooftopPlanGroupRecord
+
+        api_data = {
+            "id": 9,
+            "experiment": "133",
+            "type": "microplan_plan_group",
+            "opportunity_id": None,
+            "program_id": 133,
+            "data": {"name": "For Hilltop Health", "plan_ids": [1, 2], "offered_to": "Hilltop", "shared": True},
+        }
+        rec = RooftopPlanGroupRecord(api_data)  # must not raise
+        assert rec.program_id == 133 and rec.name == "For Hilltop Health"
+        assert rec.plan_ids == [1, 2] and rec.shared is True
+        # round-trip too
+        rec2 = RooftopPlanGroupRecord(LocalLabsRecord(api_data).to_api_dict())
+        assert rec2.plan_ids == [1, 2]
