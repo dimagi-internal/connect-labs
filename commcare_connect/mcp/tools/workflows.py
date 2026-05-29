@@ -1,7 +1,9 @@
 """Workflow tools — live-instance iteration from Claude Code."""
 
 import re
+from pathlib import Path
 
+import commcare_connect.workflow as _workflow_pkg
 from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 
@@ -539,6 +541,158 @@ def workflow_create_from_template(
             wda.close()
 
 
+@register(
+    name="workflow_create",
+    description=(
+        "Create a workflow from scratch — no template, no source workflow. "
+        "Only opportunity_id and name are required; everything else falls back "
+        "to the same defaults a blank workflow gets (statuses → pending/reviewed, "
+        "config → {showSummaryCards, showFilters}, pipeline_sources → [], "
+        "opportunity_ids → []). Optionally author the whole thing in one call by "
+        "passing statuses / config / pipeline_sources / opportunity_ids / "
+        "render_code. If render_code is supplied it is validated (non-empty, "
+        "≤ 512 KB) and saved at version 1; otherwise the workflow starts with no "
+        "render and you fill it later via workflow_update_render_code. The result "
+        "is editable via the existing workflow_update_definition / "
+        "workflow_update_render_code tools. Before authoring render_code, fetch "
+        "workflow_authoring_guide for the current best practices. Returns "
+        "{workflow_id, render_code_version}."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {
+                "type": "integer",
+                "description": "The primary/owning opportunity for the new workflow record.",
+            },
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "statuses": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Optional status list. Omit to get the pending/reviewed default.",
+            },
+            "config": {
+                "type": "object",
+                "description": "Optional config dict. Omit to get {showSummaryCards, showFilters} default.",
+            },
+            "pipeline_sources": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Optional list of {pipeline_id, alias} sources. Defaults to [].",
+            },
+            "opportunity_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "description": (
+                    "Optional multi-opp list. Each id is validated against the caller's "
+                    "access (same check as workflow_update_opportunity_ids). Defaults to []."
+                ),
+            },
+            "render_code": {
+                "type": "string",
+                "description": (
+                    "Optional JSX render code. Validated (non-empty, ≤ 512 KB) and saved at "
+                    "version 1. Real syntax checking happens in the browser via Babel at render time."
+                ),
+            },
+        },
+        "required": ["opportunity_id", "name"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def workflow_create(
+    user,
+    opportunity_id: int,
+    name: str,
+    description: str = "",
+    statuses: list = None,
+    config: dict = None,
+    pipeline_sources: list = None,
+    opportunity_ids: list = None,
+    render_code: str = None,
+):
+    token = require_connect_token(user)
+
+    # Validate render_code up-front so we don't create a definition we can't
+    # complete — mirrors the order in workflow_create_from_template (validate
+    # before any write).
+    if render_code is not None:
+        _validate_render_code(render_code)
+
+    # Validate opportunity_ids the same way workflow_update_opportunity_ids and
+    # workflow_create_from_template do: de-dupe, reject non-ints, and confirm the
+    # caller has access to every id before persisting.
+    cleaned_opp_ids: list[int] = []
+    if opportunity_ids:
+        seen: set[int] = set()
+        for oid in opportunity_ids:
+            if not isinstance(oid, int) or isinstance(oid, bool):
+                raise MCPToolError(
+                    "INVALID_SCHEMA",
+                    f"opportunity_ids must be a list of ints. Got {oid!r}.",
+                )
+            if oid not in seen:
+                seen.add(oid)
+                cleaned_opp_ids.append(oid)
+        user_opp_ids = _collect_user_opportunity_ids(token)
+        if not user_opp_ids:
+            raise MCPToolError(
+                "UPSTREAM_ERROR",
+                "Could not fetch caller's opportunities from production Connect to validate opportunity_ids.",
+            )
+        invalid = [oid for oid in cleaned_opp_ids if oid not in user_opp_ids]
+        if invalid:
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"Caller has no access to opportunity_ids {sorted(invalid)}.",
+                details={"invalid_opportunity_ids": sorted(invalid)},
+            )
+
+    wda = WorkflowDataAccess(access_token=token, opportunity_id=opportunity_id)
+    try:
+        # create_definition supplies sane defaults for any kwarg we don't pass,
+        # so the minimal call (name + opportunity_id) yields a valid blank
+        # workflow. Only forward optional fields that were actually provided so
+        # omitted ones hit those defaults rather than None.
+        create_kwargs: dict = {}
+        if statuses is not None:
+            create_kwargs["statuses"] = statuses
+        if config is not None:
+            create_kwargs["config"] = config
+        if pipeline_sources is not None:
+            create_kwargs["pipeline_sources"] = pipeline_sources
+        if cleaned_opp_ids:
+            create_kwargs["opportunity_ids"] = cleaned_opp_ids
+
+        definition = wda.create_definition(
+            name=name,
+            description=description or "",
+            **create_kwargs,
+        )
+
+        render_code_version = None
+        if render_code is not None:
+            saved = wda.save_render_code(
+                definition_id=definition.id,
+                component_code=render_code,
+                version=1,
+            )
+            render_code_version = saved.version
+
+        return {
+            "workflow_id": definition.id,
+            "render_code_version": render_code_version,
+            "opportunity_ids": list(cleaned_opp_ids),
+            "_version_before": None,
+            "_version_after": 1,
+        }
+    finally:
+        if hasattr(wda, "close"):
+            wda.close()
+
+
 _TEMPLATE_SCOPE_PATTERN = re.compile(r"^(global|org:\d+|program:\d+)$")
 
 
@@ -905,3 +1059,35 @@ def workflow_delete(user, workflow_id: int, opportunity_id: int, delete_linked: 
     finally:
         if hasattr(wda, "close"):
             wda.close()
+
+
+# Resolve the authoring reference relative to the workflow package so it works
+# regardless of where the repo is checked out / deployed (worktrees, ECS image).
+_AUTHORING_GUIDE_PATH = Path(_workflow_pkg.__file__).parent / "WORKFLOW_REFERENCE.md"
+
+
+@register(
+    name="workflow_authoring_guide",
+    description=(
+        "Return the full text of WORKFLOW_REFERENCE.md — the canonical, "
+        "constantly-improving guide to authoring labs workflows (Template "
+        "Anatomy, Pipeline Schema, Render Code Contract, Actions API, UI "
+        "Patterns, Building from External Specs, Validation Checklist). Fetch "
+        "this before authoring or editing render_code so a remote client "
+        "without this repo checked out can follow the latest best practices at "
+        "author-time. Read-only; no auth needed beyond the PAT. Returns "
+        "{content, byte_length}."
+    ),
+    input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+)
+def workflow_authoring_guide(user):  # noqa: ARG001 — PAT auth happens upstream; tool is read-only
+    try:
+        content = _AUTHORING_GUIDE_PATH.read_text(encoding="utf-8")
+    except OSError as e:
+        # The doc ships in the repo, so a missing/unreadable file is a server
+        # deployment problem, not a client error.
+        raise MCPToolError(
+            "UPSTREAM_ERROR",
+            f"Could not read WORKFLOW_REFERENCE.md: {e}",
+        )
+    return {"content": content, "byte_length": len(content.encode("utf-8"))}
