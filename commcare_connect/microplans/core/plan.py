@@ -180,6 +180,9 @@ def apply_action(wa: dict, action: str, params: dict, actor: str, now: str | Non
     elif action == "regroup":
         wa["work_area_group"] = str(params.get("work_area_group") or "").strip()[:255]
     elif action == "reassign":
+        # Reassign only touches opportunity_access. Work-area-group is independent:
+        # the LLO may pre-group cells (regroup) then assign CHWs to groups, or skip
+        # grouping entirely (color-by-CHW falls back to opportunity_access on the map).
         worker = params.get("opportunity_access")
         wa["opportunity_access"] = str(worker)[:255] if worker not in (None, "") else None
 

@@ -105,8 +105,8 @@ def test_preview_coverage_bad_config_is_400(client, django_user_model):
         reverse("microplans:preview_coverage", kwargs={"opp_id": 123}),
         data=json.dumps(
             {
-                "areas": [{"arm": "coverage", "geometry": {"type": "Point", "coordinates": [0, 0]}}],
-                "config": {"buildings_per_cluster": "abc"},
+                "areas": [{"geometry": {"type": "Point", "coordinates": [0, 0]}}],
+                "config": {"cell_size_m": "abc"},  # non-numeric cell size → 400
             }
         ),
         content_type="application/json",

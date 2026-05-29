@@ -63,6 +63,17 @@ class TestGridClusters:
         # deterministic: same cells, same sizes (no random seed)
         assert out.psu_frame["n_buildings"].tolist() == again.psu_frame["n_buildings"].tolist()
 
+    def test_exposes_cell_polygon_for_each_occupied_cell(self):
+        df = _scatter(150, spread_m=400, seed=10)
+        out = clustering.grid_clusters(df, cell_size_m=200)
+        assert "cell_polygon" in out.psu_frame.columns
+        for ring in out.psu_frame["cell_polygon"]:
+            # closed-ring polygon of [lon, lat] corners
+            assert isinstance(ring, list) and len(ring) == 5
+            assert ring[0] == ring[-1]
+            for lon, lat in ring:
+                assert -180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0
+
     def test_smaller_cells_make_more_clusters(self):
         df = _scatter(300, spread_m=600, seed=5)
         coarse = clustering.grid_clusters(df, cell_size_m=400)
