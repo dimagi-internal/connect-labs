@@ -339,66 +339,10 @@ def plan_kpis(work_areas: list[dict]) -> dict:
     }
 
 
-# Composite weights for cross-plan ranking. The source assigner never combined
-# spread + balance (it optimized spread alone), so the weighting is made explicit
-# here. Travel dominates; balance next; coverage rounds it out.
-COMPOSITE_WEIGHTS = {"spread": 0.5, "balance": 0.3, "coverage": 0.2}
-
-
-def _plan_metric_triplet(kpis: dict) -> tuple[float | None, float | None, float]:
-    p = kpis.get("plan", {})
-    # Travel & balance only mean something once areas are split across workers.
-    # Pre-assignment they collapse to one territory (whole-region "spread", zero
-    # imbalance), so return None for both — the normaliser treats None as neutral,
-    # so an unassigned plan is ranked on coverage alone instead of a phantom travel
-    # burden. (Keeps the fit score consistent with the share table's "—".)
-    assigned = kpis.get("dimension") == "worker"
-    balance = p.get("pop_imbalance_pct") if p.get("has_population") else p.get("building_imbalance_pct")
-    return (
-        (float(p.get("max_spread_km") or 0.0) if assigned else None),  # lower better
-        (float(balance) if (assigned and balance is not None) else None),  # lower better
-        float(kpis.get("coverage_pct") or 0.0),  # higher better
-    )
-
-
-def score_plans(entries: list[dict]) -> list[dict]:
-    """Add a 0–100 composite `composite` to each entry by min-max normalising the
-    rankable KPIs across the compared set (so it's only meaningful relative to the
-    others). entries: [{"plan_id", "kpis", ...}]. Higher = better. With <2 plans
-    the composite is None (nothing to normalise against)."""
-    triplets = [_plan_metric_triplet(e.get("kpis", {})) for e in entries]
-    if len(entries) < 2:
-        for e in entries:
-            e["composite"] = None
-        return entries
-
-    # Normalise only across rankable (assigned) plans, so an unscored plan can't
-    # skew the scored ones (its spread/balance are already None; exclude its coverage
-    # too). spread/balance None-filter is redundant now but kept for safety.
-    rankable = [t for e, t in zip(entries, triplets) if e.get("kpis", {}).get("dimension") == "worker"]
-    spreads = [t[0] for t in rankable if t[0] is not None]
-    balances = [t[1] for t in rankable if t[1] is not None]
-    covs = [t[2] for t in rankable]
-
-    def norm(val, lo, hi, higher_better):
-        if val is None or abs(hi - lo) < 1e-9:
-            return 1.0  # all tied (or missing) → neutral-best, don't penalise
-        frac = (val - lo) / (hi - lo)
-        return frac if higher_better else 1 - frac
-
-    for e, (sp, bal, cov) in zip(entries, triplets):
-        # A plan whose areas aren't split across workers has no real travel/balance,
-        # so it can't be fairly ranked on a travel-weighted score — leave it unscored
-        # (the UI shows "—" + "assign workers first") rather than reward the gap.
-        if e.get("kpis", {}).get("dimension") != "worker":
-            e["composite"] = None
-            continue
-        ns = norm(sp, min(spreads), max(spreads), higher_better=False) if spreads else 1.0
-        nb = norm(bal, min(balances), max(balances), higher_better=False) if balances else 1.0
-        nc = norm(cov, min(covs), max(covs), higher_better=True) if covs else 1.0
-        w = COMPOSITE_WEIGHTS
-        e["composite"] = round(100 * (w["spread"] * ns + w["balance"] * nb + w["coverage"] * nc), 1)
-    return entries
+# Composite "fit score" was tried and removed — it forced travel/balance/coverage
+# into a single weighted number that read as a black box. The honest comparison is
+# the metrics themselves: worst travel, workload imbalance, coverage, exclusions.
+# The share + compare UIs show those directly and let the reader decide.
 
 
 def to_workarea_payloads(work_areas: list[dict], lga: str = "", state: str = ""):

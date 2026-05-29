@@ -217,55 +217,6 @@ class TestKpis:
         assert k["coverage_pct"] == round(100 * 190 / 250, 1)
 
 
-class TestScorePlans:
-    def _kpis(self, spread, imbalance, coverage, dimension="worker"):
-        return {
-            "dimension": dimension,
-            "plan": {
-                "max_spread_km": spread,
-                "pop_imbalance_pct": imbalance,
-                "building_imbalance_pct": imbalance,
-                "has_population": True,
-            },
-            "coverage_pct": coverage,
-        }
-
-    def test_better_plan_scores_higher(self):
-        a = {"plan_id": 1, "kpis": self._kpis(10, 10, 95)}  # better on all three
-        b = {"plan_id": 2, "kpis": self._kpis(20, 30, 90)}  # worse on all three
-        plan.score_plans([a, b])
-        assert a["composite"] == 100.0 and b["composite"] == 0.0  # min-max across the pair
-
-    def test_single_plan_has_no_composite(self):
-        a = {"plan_id": 1, "kpis": self._kpis(10, 10, 95)}
-        plan.score_plans([a])
-        assert a["composite"] is None
-
-    def test_mixed_tradeoff_between_extremes(self):
-        a = {"plan_id": 1, "kpis": self._kpis(10, 30, 90)}  # best travel, worst balance
-        b = {"plan_id": 2, "kpis": self._kpis(20, 10, 95)}  # worst travel, best balance+coverage
-        plan.score_plans([a, b])
-        # a: travel norm 1*0.5 + balance 0 + coverage 0 = 50; b: 0 + 0.3 + 0.2 = 50
-        assert a["composite"] == 50.0 and b["composite"] == 50.0
-
-    def test_unassigned_plans_are_unscored(self):
-        # Pre-assignment, travel/balance are degenerate, so a plan can't be fairly
-        # ranked on the travel-weighted composite — it stays unscored ("—" in the UI)
-        # rather than getting a misleading neutral-best score.
-        a = {"plan_id": 1, "kpis": self._kpis(99, 99, 100, dimension="group")}
-        b = {"plan_id": 2, "kpis": self._kpis(1, 1, 80, dimension="group")}
-        plan.score_plans([a, b])
-        assert a["composite"] is None and b["composite"] is None
-
-    def test_mixed_assigned_and_unassigned(self):
-        # Only the assigned plan is scored; the unassigned one is left unscored even
-        # though it would otherwise affect coverage normalisation.
-        a = {"plan_id": 1, "kpis": self._kpis(10, 10, 90, dimension="worker")}
-        b = {"plan_id": 2, "kpis": self._kpis(5, 5, 100, dimension="group")}  # unassigned
-        plan.score_plans([a, b])
-        assert a["composite"] is not None and b["composite"] is None
-
-
 class TestHaversine:
     def test_identical_is_zero_and_known_distance(self):
         assert plan._haversine_km([3.0, 6.0], [3.0, 6.0]) == 0.0
