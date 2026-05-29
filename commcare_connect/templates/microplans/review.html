@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Microplan review{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  #review-map { position: absolute; inset: 0; }
+  .wa-row.excluded { opacity: 0.45; text-decoration: line-through; }
+  .wa-row.sel { background: #ecfdf5; }
+  .cell-input { width: 5.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-4rem)]" x-data>
+  <!-- Left: summary + bulk + export -->
+  <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-4 text-sm">
+    <div>
+      <h1 class="text-lg font-bold text-gray-900">Microplan review</h1>
+      <p class="text-xs text-gray-500">Opportunity #{{ opp_id }} · plan #{{ plan_id }}</p>
+      <p class="text-xs text-gray-400 mt-1">Planning phase — edits here happen before upload to Connect.</p>
+    </div>
+
+    <section>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Summary</h2>
+      <dl id="summary" class="space-y-1 text-sm"></dl>
+    </section>
+
+    <section>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Workload by worker</h2>
+      <div id="by-worker" class="text-xs text-gray-600 space-y-0.5"></div>
+    </section>
+
+    <section class="border-t pt-3">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Bulk (selected)</h2>
+      <div class="flex flex-col gap-2">
+        <button type="button" id="bulk-exclude" class="button button-sm">Exclude selected…</button>
+        <div class="grid grid-cols-2 gap-1">
+          <input id="bulk-group" placeholder="group" class="rounded border-gray-300 text-xs">
+          <button type="button" id="bulk-regroup" class="button button-sm outline-style">Set group</button>
+          <input id="bulk-worker" placeholder="worker" class="rounded border-gray-300 text-xs">
+          <button type="button" id="bulk-reassign" class="button button-sm outline-style">Assign</button>
+        </div>
+        <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
+      </div>
+    </section>
+
+    <section class="border-t pt-3">
+      <button type="button" id="btn-export" class="button button-sm w-full">Download Connect import CSV</button>
+      <div id="status" class="text-xs text-gray-500 mt-2"></div>
+    </section>
+  </aside>
+
+  <!-- Center: map + table -->
+  <div class="flex-1 flex flex-col min-w-0">
+    <div class="relative" style="height: 45%"><div id="review-map"></div></div>
+    <div class="flex-1 overflow-auto border-t border-gray-200">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 sticky top-0">
+          <tr class="text-left text-gray-500">
+            <th class="p-2"><input type="checkbox" id="sel-all"></th>
+            <th class="p-2">Work area</th><th class="p-2">Group</th><th class="p-2">Worker</th>
+            <th class="p-2">Buildings</th><th class="p-2">Expected visits</th><th class="p-2">Status</th><th class="p-2"></th>
+          </tr>
+        </thead>
+        <tbody id="wa-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script>
+(function () {
+  const TOKEN = "{{ mapbox_token|escapejs }}";
+  const OPP = "{{ opp_id|escapejs }}", PLAN = "{{ plan_id|escapejs }}";
+  const CSRF = "{{ csrf_token }}";
+  const PLAN_URL = "{% url 'microplans:plan' opp_id=opp_id plan_id=plan_id %}";
+  const EDIT_URL = "{% url 'microplans:plan_edit' opp_id=opp_id plan_id=plan_id %}";
+  const CSV_URL = "{% url 'microplans:plan_csv' opp_id=opp_id plan_id=plan_id %}";
+  const $ = (id) => document.getElementById(id);
+  const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
+
+  let WAS = [];                 // current work areas
+  const selected = new Set();   // selected wa ids
+
+  // ---- map (best-effort; needs WebGL) ----
+  let map = null, mapReady = false;
+  if (TOKEN) {
+    mapboxgl.accessToken = TOKEN;
+    try {
+      map = new mapboxgl.Map({ container: "review-map", style: "mapbox://styles/mapbox/satellite-streets-v12", center: [8.6753, 9.082], zoom: 5 });
+      map.on("load", () => { mapReady = true; refreshMap(); });
+    } catch (e) { /* headless / no webgl */ }
+  }
+  function colorExpr() {
+    return ["case", ["==", ["get", "status"], "EXCLUDED"], "#9ca3af",
+            ["case", ["boolean", ["feature-state", "sel"], false], "#10b981", "#06b6d4"]];
+  }
+  function fc() {
+    return { type: "FeatureCollection", features: WAS.filter((w) => w.geometry).map((w) => ({
+      type: "Feature", id: w.id, geometry: w.geometry,
+      properties: { id: w.id, status: w.status, group: w.work_area_group, worker: w.opportunity_access || "" } })) };
+  }
+  function refreshMap() {
+    if (!map || !mapReady) return;
+    const data = fc();
+    const src = map.getSource("wa");
+    if (src) { src.setData(data); }
+    else {
+      map.addSource("wa", { type: "geojson", data, promoteId: "id" });
+      map.addLayer({ id: "wa-fill", type: "fill", source: "wa", paint: { "fill-color": colorExpr(), "fill-opacity": 0.35 } });
+      map.addLayer({ id: "wa-line", type: "line", source: "wa", paint: { "line-color": "#0891b2", "line-width": 1 } });
+      map.on("click", "wa-fill", (e) => { const id = e.features[0].properties.id; toggleSelect(id); });
+    }
+    const b = new mapboxgl.LngLatBounds();
+    data.features.forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
+    if (!b.isEmpty()) map.fitBounds(b, { padding: 40, maxZoom: 15, animate: false });
+  }
+  function setSelState() {
+    if (!map || !mapReady) return;
+    WAS.forEach((w) => map.setFeatureState({ source: "wa", id: w.id }, { sel: selected.has(w.id) }));
+  }
+
+  // ---- render ----
+  function render(data) {
+    WAS = data.work_areas || [];
+    renderSummary(data.summary || {});
+    renderTable();
+    refreshMap(); setSelState();
+  }
+  function renderSummary(s) {
+    $("summary").innerHTML =
+      `<div class="flex justify-between"><dt class="text-gray-500">Active areas</dt><dd class="font-medium">${s.active ?? 0}</dd></div>
+       <div class="flex justify-between"><dt class="text-gray-500">Excluded</dt><dd class="font-medium">${s.excluded ?? 0}</dd></div>
+       <div class="flex justify-between"><dt class="text-gray-500">Buildings (active)</dt><dd class="font-medium">${(s.buildings_active ?? 0).toLocaleString()}</dd></div>`;
+    const bw = s.by_worker || {};
+    $("by-worker").innerHTML = Object.keys(bw).sort().map((k) =>
+      `<div class="flex justify-between"><span>${k}</span><span>${bw[k].work_areas} areas · ${bw[k].buildings.toLocaleString()} bldg</span></div>`).join("") || '<span class="text-gray-400">none</span>';
+  }
+  function renderTable() {
+    const body = $("wa-body");
+    body.innerHTML = "";
+    WAS.forEach((w) => {
+      const tr = document.createElement("tr");
+      tr.className = "wa-row border-b " + (w.status === "EXCLUDED" ? "excluded " : "") + (selected.has(w.id) ? "sel" : "");
+      const excluded = w.status === "EXCLUDED";
+      tr.innerHTML = `
+        <td class="p-2"><input type="checkbox" class="rowsel" data-id="${w.id}" ${selected.has(w.id) ? "checked" : ""}></td>
+        <td class="p-2 font-mono text-xs">${w.id}</td>
+        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="regroup" data-field="work_area_group" data-id="${w.id}" value="${w.work_area_group || ""}"></td>
+        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${w.id}" value="${w.opportunity_access || ""}"></td>
+        <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
+        <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${w.id}" value="${w.expected_visit_count ?? 0}"></td>
+        <td class="p-2 text-xs">${excluded ? `<span title="${(w.excluded_reason || "").replace(/"/g, "&quot;")}">EXCLUDED</span>` : (w.status || "")}</td>
+        <td class="p-2">${excluded
+          ? `<button class="text-xs text-emerald-600" data-restore="${w.id}">restore</button>`
+          : `<button class="text-xs text-red-600" data-exclude="${w.id}">exclude</button>`}</td>`;
+      body.appendChild(tr);
+    });
+    $("sel-count").textContent = `${selected.size} selected`;
+  }
+
+  // ---- edits ----
+  async function edit(body) {
+    $("status").textContent = "Saving…";
+    try {
+      const resp = await post(EDIT_URL, body);
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { $("status").textContent = data.detail || ("HTTP " + resp.status); return; }
+      $("status").textContent = "Saved.";
+      render(data);
+    } catch (e) { $("status").textContent = "Failed: " + e; }
+  }
+  function toggleSelect(id) { if (selected.has(id)) selected.delete(id); else selected.add(id); renderTable(); setSelState(); }
+
+  // table interactions (delegated)
+  $("wa-body").addEventListener("click", (e) => {
+    const ex = e.target.closest("[data-exclude]"); const rs = e.target.closest("[data-restore]");
+    if (ex) { const reason = prompt("Reason for excluding this work area?"); if (reason !== null) edit({ action: "exclude", wa_id: ex.dataset.exclude, reason }); }
+    else if (rs) { edit({ action: "unexclude", wa_id: rs.dataset.restore }); }
+    const cb = e.target.closest(".rowsel"); if (cb) { toggleSelect(cb.dataset.id); }
+  });
+  $("wa-body").addEventListener("change", (e) => {
+    const inp = e.target.closest("[data-act]"); if (!inp) return;
+    const body = { action: inp.dataset.act, wa_id: inp.dataset.id };
+    body[inp.dataset.field] = inp.dataset.act === "resize" ? +inp.value : inp.value;
+    edit(body);
+  });
+  $("sel-all").addEventListener("change", (e) => { selected.clear(); if (e.target.checked) WAS.forEach((w) => selected.add(w.id)); renderTable(); setSelState(); });
+
+  // bulk
+  $("bulk-exclude").addEventListener("click", () => {
+    if (!selected.size) return; const reason = prompt(`Reason for excluding ${selected.size} work areas?`);
+    if (reason !== null) edit({ action: "exclude", wa_ids: [...selected], reason });
+  });
+  $("bulk-regroup").addEventListener("click", () => { if (selected.size && $("bulk-group").value) edit({ action: "regroup", wa_ids: [...selected], work_area_group: $("bulk-group").value }); });
+  $("bulk-reassign").addEventListener("click", () => { if (selected.size) edit({ action: "reassign", wa_ids: [...selected], opportunity_access: $("bulk-worker").value }); });
+
+  // export
+  $("btn-export").addEventListener("click", async () => {
+    const resp = await post(CSV_URL, {});
+    if (!resp.ok) { $("status").textContent = "Export failed."; return; }
+    const blob = await resp.blob(); const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `microplan_opp{{ opp_id }}_plan{{ plan_id }}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // initial load
+  fetch(PLAN_URL).then((r) => r.json()).then((d) => { if (d.status === "ok") render(d); else $("status").textContent = d.detail || "load failed"; })
+    .catch((e) => $("status").textContent = "load failed: " + e);
+
+  window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit };
+})();
+</script>
+{% endblock %}
