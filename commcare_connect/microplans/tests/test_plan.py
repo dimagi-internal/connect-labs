@@ -149,3 +149,100 @@ class TestHardening:
         plan.apply_action(wa, "regroup", {"work_area_group": "g" * 400}, "u")
         assert len(wa["excluded_reason"]) == 500  # Connect max_length
         assert len(wa["work_area_group"]) == 255
+
+
+class TestKpis:
+    def _poly(self, lon, lat, d=0.01):
+        return {
+            "type": "Polygon",
+            "coordinates": [[[lon, lat], [lon + d, lat], [lon + d, lat + d], [lon, lat + d], [lon, lat]]],
+        }
+
+    def _was(self):
+        # 3 areas; we'll assign two to flw-A (far apart) and one to flw-B
+        feats = [
+            {
+                "type": "Feature",
+                "geometry": self._poly(3.0, 6.0),
+                "properties": {"arm": "coverage", "cluster": "C0", "building_count": 100, "expected_visit_count": 100},
+            },
+            {
+                "type": "Feature",
+                "geometry": self._poly(3.5, 6.0),
+                "properties": {"arm": "coverage", "cluster": "C1", "building_count": 90, "expected_visit_count": 90},
+            },
+            {
+                "type": "Feature",
+                "geometry": self._poly(3.05, 6.0),
+                "properties": {"arm": "coverage", "cluster": "C2", "building_count": 60, "expected_visit_count": 60},
+            },
+        ]
+        return plan.materialize_work_areas(
+            "coverage", {"type": "FeatureCollection", "features": []}, {"type": "FeatureCollection", "features": feats}
+        )
+
+    def test_dimension_falls_back_to_group_before_assignment(self):
+        k = plan.plan_kpis(self._was())
+        assert k["dimension"] == "group"  # nothing assigned yet
+        assert k["territories"][0]["name"] == "coverage"
+        assert k["plan"]["territory_count"] == 1  # all in the default arm group
+
+    def test_per_worker_spread_is_territory_diameter(self):
+        was = self._was()
+        # flw-A gets C0 (lon 3.0) + C1 (lon 3.5) -> ~55km apart; flw-B gets C2
+        plan.apply_action(was[0], "reassign", {"opportunity_access": "flw-A"}, "u")
+        plan.apply_action(was[1], "reassign", {"opportunity_access": "flw-A"}, "u")
+        plan.apply_action(was[2], "reassign", {"opportunity_access": "flw-B"}, "u")
+        k = plan.plan_kpis(was)
+        assert k["dimension"] == "worker"
+        terr = {t["name"]: t for t in k["territories"]}
+        assert terr["flw-A"]["spread_km"] > 40  # 0.5deg lon at ~6N ~ 55km
+        assert terr["flw-B"]["spread_km"] == 0.0  # single area -> diameter 0
+        assert k["plan"]["max_spread_km"] == terr["flw-A"]["spread_km"]
+        assert terr["flw-A"]["buildings"] == 190 and terr["flw-B"]["buildings"] == 60
+
+    def test_population_balance_and_exclusion(self):
+        was = self._was()
+        for w in was:
+            w["population"] = {"c0": 1000, "c1": 500, "c2": 300}.get(w["properties"]["cluster"].lower(), 0)
+        plan.apply_action(was[0], "reassign", {"opportunity_access": "A"}, "u")
+        plan.apply_action(was[1], "reassign", {"opportunity_access": "B"}, "u")
+        plan.apply_action(was[2], "exclude", {"reason": "lake"}, "u")
+        k = plan.plan_kpis(was)
+        assert k["plan"]["has_population"] is True
+        # active pops: A=1000, B=500; target=750 -> imbalance=(1000-500)/750*100
+        assert k["plan"]["pop_imbalance_pct"] == round((1000 - 500) / 750 * 100, 1)
+        assert k["excluded"]["count"] == 1 and k["excluded"]["buildings"] == 60
+        # coverage = active buildings / (active+excluded) = 190/250
+        assert k["coverage_pct"] == round(100 * 190 / 250, 1)
+
+
+class TestScorePlans:
+    def _kpis(self, spread, imbalance, coverage):
+        return {
+            "plan": {
+                "max_spread_km": spread,
+                "pop_imbalance_pct": imbalance,
+                "building_imbalance_pct": imbalance,
+                "has_population": True,
+            },
+            "coverage_pct": coverage,
+        }
+
+    def test_better_plan_scores_higher(self):
+        a = {"plan_id": 1, "kpis": self._kpis(10, 10, 95)}  # better on all three
+        b = {"plan_id": 2, "kpis": self._kpis(20, 30, 90)}  # worse on all three
+        plan.score_plans([a, b])
+        assert a["composite"] == 100.0 and b["composite"] == 0.0  # min-max across the pair
+
+    def test_single_plan_has_no_composite(self):
+        a = {"plan_id": 1, "kpis": self._kpis(10, 10, 95)}
+        plan.score_plans([a])
+        assert a["composite"] is None
+
+    def test_mixed_tradeoff_between_extremes(self):
+        a = {"plan_id": 1, "kpis": self._kpis(10, 30, 90)}  # best travel, worst balance
+        b = {"plan_id": 2, "kpis": self._kpis(20, 10, 95)}  # worst travel, best balance+coverage
+        plan.score_plans([a, b])
+        # a: travel norm 1*0.5 + balance 0 + coverage 0 = 50; b: 0 + 0.3 + 0.2 = 50
+        assert a["composite"] == 50.0 and b["composite"] == 50.0
