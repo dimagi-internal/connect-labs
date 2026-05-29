@@ -127,3 +127,13 @@ gaps:
     claim_ref: converge-and-promote
     detail: "Published docs/review links require a Dimagi login for anonymous viewers — the public ?t= token access wired for /review/ was never wired for the /w/ artifact viewer."
     proposed_action: "Extend the public-link exemption to /w/ so a shared explainer is viewable without a login."
+  - id: gap-video-aware-judge
+    type: RESEARCH
+    claim_ref: render-and-dual-judge
+    detail: "The visual judge scores from a single static screenshot, so for a video hero it cannot observe playback — motion_friction is structurally capped at ~3 (weakest-link then caps the whole concept score at WARN) no matter how good the video is. Surfaced after ~22 dogfood rounds where motion_friction was the lone residual."
+    proposed_action: "Give the judge the video (or a multi-frame filmstrip over time) so motion can actually be scored; don't judge a video hero from one frame."
+  - id: gap-convergence-detector
+    type: CAPABILITY
+    claim_ref: render-and-dual-judge
+    detail: "The loop has no plateau/convergence detector. Dogfooding DDD on DDD showed two regimes: ~9 rounds of real, monotonic improvement, then ~13 rounds of OSCILLATION (each fix surfaces a comparable fine nit; the weakest-link hovers at 3 and never crosses). With no detector, the loop grinds past the plateau indefinitely — the opposite failure from stopping too early."
+    proposed_action: "Track the per-round floor (min dimension across judges) in run_state; declare converged-enough (or plateaued) when the floor hasn't risen for N consecutive rounds AND new findings contradict/rotate vs prior rounds, and stop."
