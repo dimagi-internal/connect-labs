@@ -427,12 +427,13 @@ def _make_fake_da(monkeypatch, store):
         def get_plan(self, pid):
             return store[int(pid)]
 
-        def apply_plan_edit(self, pid, wa_id, action, params, actor):
+        def apply_plan_edits(self, pid, wa_ids, action, params, actor):
             p = store[int(pid)]
-            wa = plan_lib.find(p.work_areas, wa_id)
-            if wa is None:
-                raise ValueError(f"work area {wa_id!r} not found")
-            plan_lib.apply_action(wa, action, params, actor)
+            for wa_id in wa_ids:
+                wa = plan_lib.find(p.work_areas, wa_id)
+                if wa is None:
+                    raise ValueError(f"work area {wa_id!r} not found")
+                plan_lib.apply_action(wa, action, params, actor)
             return p
 
     monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
@@ -529,3 +530,18 @@ def test_review_page_renders(client, django_user_model, settings):
     assert resp.context["plan_id"] == 7
     body = resp.content.decode()
     assert "Microplan review" in body and "review-map" in body
+
+
+def test_plan_edit_bad_resize_is_400(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    store = _make_fake_da(monkeypatch, {})
+    store[1] = _FakePlan(1, "coverage", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC))
+    wa_id = store[1].work_areas[0]["id"]
+    resp = client.post(
+        reverse("microplans:plan_edit", kwargs={"opp_id": 1, "plan_id": 1}),
+        data=json.dumps({"action": "resize", "wa_id": wa_id, "expected_visit_count": "abc"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400  # non-numeric -> client error, not 502
