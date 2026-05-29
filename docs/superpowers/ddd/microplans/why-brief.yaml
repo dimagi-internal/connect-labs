@@ -1,0 +1,106 @@
+schema_version: 1
+feature: microplans
+# REBUILT 2026-05-29 against the CURRENT microplans code (after PRs #299 shared-core,
+# #301 GeoPoDe selectable boundary source, #304 LLO planning-phase plan review/edit).
+# The prior narrative was inverted — it over-weighted unbuilt impact (DiD) and missed the
+# shipped hero (the LLO plan review/edit). This grounds the story in what's actually built.
+problem: >
+  A program needs to turn "we want to work in this region" into a clean, field-ready
+  microplan that a local partner (LLO) trusts and can run — choosing where to work from real
+  administrative boundaries, generating a sampling or coverage plan, letting the LLO clean it
+  (drop the lake that isn't a settlement, rebalance workloads) with a full audit trail, and
+  pushing it to Connect. Measuring impact afterward is the open frontier.
+
+spine:
+  - id: area-selection
+    claim: >
+      The user picks where to work from real administrative boundaries — choosing the boundary
+      SOURCE per level (bespoke GeoPoDe where loaded, Overture global elsewhere), drilling the
+      hierarchy with population shown — or by drawing a polygon, or a pin + radius.
+    rationale: >
+      Named, source-attributed boundaries (with population) are reproducible and defensible, and
+      bespoke GeoPoDe data beats generic Overture where a country has it.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/microplans/core/admin_boundaries.py (BoundarySource: Labs/GeoPoDe + Overture, sources_for/source_for)"}
+      - {kind: implemented, ref: "commcare_connect/microplans/core/area_input.py:resolve_area (draw | admin-area | pin+radius)"}
+      - {kind: implemented, ref: "commcare_connect/microplans/views.py:AdminAreasView + templates/microplans/setup.html (source picker, pop N, drill-down)"}
+    status: grounded
+
+  - id: plan-generation
+    claim: >
+      For the chosen area the user generates a sampling plan (a representative rooftop frame via
+      PPS clusters) or a coverage plan (cluster-as-WorkArea, visit every household), on one shared core.
+    rationale: One tool, two intents (sample vs census) on a shared footprint→filter→cluster core.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/microplans/sampling/frame.py:generate_frame + coverage/frame.py:generate_coverage_frame"}
+      - {kind: implemented, ref: "commcare_connect/microplans/core/clustering.py (kmeans_merge | balanced_kmeans | grid_clusters)"}
+      - {kind: implemented, ref: "commcare_connect/microplans/views.py:PreviewFrameView + PreviewCoverageView"}
+    status: grounded
+
+  - id: plan-review
+    claim: >
+      Before anything touches Connect, the LLO reviews and CLEANS the generated plan on a map +
+      editable table — exclude invalid work areas with a reason, resize/regroup/reassign, bulk
+      lasso-select — with a live per-worker workload readout; every edit is recorded as a
+      planning-phase audit event in Connect's own history shape.
+    rationale: >
+      The generated frame is never field-ready as-is (lakes, markets, lopsided workloads). Letting
+      the LLO clean it with a Connect-shaped, phase-tagged audit makes the plan trustworthy and the
+      planning history joinable to execution history later — Connect stays untouched until upload.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/microplans/core/plan.py (ACTIONS exclude/resize/regroup/reassign, apply_action, TRACKED_FIELDS, phase=planning)"}
+      - {kind: implemented, ref: "commcare_connect/microplans/views.py:MaterializePlanView + templates/microplans/review.html (map + editable table, bulk select, workload summary)"}
+      - {kind: implemented, ref: "commcare_connect/microplans/tests/test_plan.py + test_views.py"}
+    status: grounded
+
+  - id: connect-push
+    claim: >
+      The cleaned plan exports as a Connect microplanning work-area CSV (matching Connect's importer
+      headers), excluding dropped areas and honoring the LLO's edits.
+    rationale: A plan only matters once it's in Connect; CSV import works today without a prod write API.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/microplans/core/workarea.py (build_work_areas, to_csv_rows) + views.py:PlanCSVView"}
+      - {kind: assumed, ref: "direct prod write API (to_api_payload exists but is proposed/unused)"}
+    status: grounded
+
+  - id: delivery-viz
+    claim: >
+      Before choosing an area, the user sees where Connect delivery is already happening, to target
+      the boundaries that matter.
+    rationale: Anchors area choice to real field activity instead of guessing.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/coverage/data_loader.py:build_du_geojson (delivery viz exists in the coverage app)"}
+      - {kind: assumed, ref: "no delivery overlay is wired into the microplans setup map"}
+    status: gap
+
+  - id: monitoring-impact
+    claim: >
+      As field work proceeds, a dashboard shows per-work-area completion by arm, and across rounds
+      reports the difference-in-differences between treatment and comparison areas.
+    rationale: The payoff — proving the program changed outcomes, not just that work happened.
+    evidence:
+      - {kind: implemented, ref: "commcare_connect/microplans/monitoring/pipeline.py + coverage.py (completion + by_arm — as libraries)"}
+      - {kind: assumed, ref: "monitoring is NOT wired (no view/url/template); no round/longitudinal model; no DiD estimator"}
+    status: gap
+
+gaps:
+  - id: gap-delivery-viz-overlay
+    type: CAPABILITY
+    claim_ref: delivery-viz
+    detail: "coverage delivery-viz exists but isn't overlaid on the microplans setup map to inform area choice."
+    proposed_action: "Surface coverage's build_du_geojson/points layer on the microplans setup map (a toggle)."
+  - id: gap-monitoring-wiring
+    type: CAPABILITY
+    claim_ref: monitoring-impact
+    detail: "monitoring/pipeline.py + coverage.py compute completion + by_arm but are unwired — no view/url/template."
+    proposed_action: "Wire a monitoring view + template that runs the pipeline on the Connect export per work-area."
+  - id: gap-did-impact
+    type: RESEARCH
+    claim_ref: monitoring-impact
+    detail: "No longitudinal round model and no difference-in-differences estimator; by_arm is side-by-side only."
+    proposed_action: "Design the round/wave model + the DiD estimator (Δtreatment − Δcomparison on completion-rate)."
+  - id: gap-population-aware-sampling
+    type: CAPABILITY
+    claim_ref: area-selection
+    detail: "GeoPoDe population is fetched + displayed but target_population always defaults to 0 — never used in plan generation."
+    proposed_action: "Thread the selected area's population into FrameConfig.target_population so sampling can size to it."

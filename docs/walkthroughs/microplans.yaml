@@ -1,0 +1,155 @@
+# Unified spec for microplans — demo-driven-development v3 (actionable narratives).
+# REBUILT 2026-05-29 against the CURRENT microplans code (PRs #299 shared core, #301 GeoPoDe
+# selectable boundary source, #304 LLO planning-phase plan review/edit). The prior narrative was
+# inverted; this centers the shipped flow (selection → generate → LLO review/clean → push) with
+# the #304 plan-review as the hero, and honestly tags delivery-viz + monitoring/DiD as frontier.
+# Each scene = a verifiable feature set. BUILT scenes' `verify` assert current behavior; FRONTIER
+# scenes' `verify` are the build targets.
+
+name: microplans
+narrative: >-
+  Maya turns "work this region" into a clean, field-ready microplan an LLO trusts: she picks the
+  area from real administrative boundaries (bespoke GeoPoDe where available, Overture elsewhere),
+  generates a sampling or coverage plan, and hands it to the LLO — who cleans it on a map (drops
+  the lake that isn't a settlement, rebalances workloads) with a full planning-phase audit before
+  it's pushed to Connect as a work-area import. (Seeing existing delivery first, and measuring
+  difference-in-differences impact after, are the committed frontier.)
+base_url: https://labs.connect.dimagi.com
+auth:
+  type: session
+why_brief: ../superpowers/ddd/microplans/why-brief.yaml
+
+personas:
+  lead:
+    name: Maya
+    role: Program / M&E Lead
+    color: "#3B82F6"
+    intro: Maya designs where the program works and proves it worked.
+  llo:
+    name: Sam
+    role: Local Partner (LLO) field coordinator
+    color: "#10B981"
+    intro: Sam runs the field work and must trust the plan before sending teams out.
+
+scenes:
+  - persona: lead
+    title: See where delivery is already happening (frontier)
+    show: >-
+      on the microplans setup map, toggle the "Connect delivery data" layer on and observe existing
+      service-delivery activity before choosing an area.
+    concept_claim: >-
+      The microplans setup map can overlay the opportunity's existing Connect delivery points so the
+      user targets areas with real activity rather than guessing.
+    provenance: delivery-viz
+    design_intent: Anchor area choice to real delivery density — the one front-half capability still to wire.
+    features:
+      - id: delivery-geojson-endpoint
+        description: A microplans endpoint returning the opp's existing Connect delivery units + visit points as GeoJSON, reusing the coverage app's build_du_geojson.
+        verify: GET /microplans/<opp>/delivery-geojson returns a FeatureCollection with >=1 feature for a seeded opportunity.
+      - id: delivery-layer-toggle
+        description: A "Connect delivery data" toggle on the setup map that adds/removes the delivery layer.
+        verify: Toggling the control adds a Mapbox source+layer for the delivery GeoJSON (assert map.getSource('delivery') defined after toggle).
+
+  - persona: lead
+    title: Pick where to work
+    show: >-
+      open the area picker, choose a country and admin level, pick the boundary SOURCE (bespoke GeoPoDe
+      where shown, else Overture), drill the hierarchy (population displayed) and select an area — or
+      draw a polygon, or drop a pin with a radius.
+    concept_claim: >-
+      The user selects a work area from real administrative boundaries with a per-level source choice
+      (bespoke GeoPoDe or global Overture) and population shown, or by drawing, or by pin plus radius.
+    provenance: area-selection
+    design_intent: Source-attributed, population-bearing boundaries are reproducible and defensible; GeoPoDe beats Overture where loaded.
+    features:
+      - id: boundary-source-picker
+        description: Per-(country,level) boundary source resolver + UI dropdown choosing bespoke GeoPoDe (PostGIS) vs Overture (global).
+        verify: AdminAreasView returns areas with a source name; the setup.html source picker (syncSourcePicker) switches sources per level.
+      - id: admin-hierarchy-drilldown
+        description: Country -> level drill-down listing admin areas with population, narrowable by parent + name.
+        verify: POST /microplans/<opp>/admin-areas {country, level, parent?} returns >=1 area each with a population value.
+      - id: multi-input-area
+        description: Three area-input modes resolve to a geometry — admin-area pick, drawn polygon, and pin+radius.
+        verify: core/area_input.py:resolve_area returns a geometry for each of the three input kinds (unit test).
+
+  - persona: lead
+    title: Generate the plan (sampling or coverage)
+    show: >-
+      choose sampling or coverage mode and Generate; observe PPS clusters + pins (sampling) or
+      cluster work-area polygons covering every household (coverage) drawn on the map.
+    concept_claim: >-
+      For the chosen area the user generates a sampling plan (PPS rooftop frame) or a coverage plan
+      (cluster-as-WorkArea, every household) on one shared footprint-to-cluster core.
+    provenance: plan-generation
+    design_intent: One engine, two intents; clustering strategy chosen per mode (kmeans_merge / balanced_kmeans / grid).
+    features:
+      - id: sampling-preview
+        description: Sampling mode returns PPS clusters + selected pins (8 primary + 8 alternate, design weights) for the area.
+        verify: POST /microplans/<opp>/preview-frame {areas, config} returns pins GeoJSON with >=1 feature and >=1 cluster hull.
+      - id: coverage-preview
+        description: Coverage mode returns cluster work-area polygons (each = visit every household) via balanced_kmeans/grid.
+        verify: POST /microplans/<opp>/preview-coverage {areas, config} returns an areas GeoJSON with >=1 polygon feature.
+      - id: clustering-strategies
+        description: The shared core offers kmeans_merge (sampling), balanced_kmeans (even workloads), and grid_clusters.
+        verify: core/clustering.py exposes all three strategies and each returns clusters for a test footprint set (unit test).
+
+  - persona: llo
+    title: Review and clean the plan (the hero)
+    show: >-
+      click "Review & edit plan" to materialize editable work areas, then on the map + table exclude
+      invalid areas with a reason (lasso-select to bulk-exclude), resize/regroup/reassign others, and
+      watch the live per-worker workload rebalance.
+    concept_claim: >-
+      Before anything touches Connect, the LLO excludes invalid work areas with a reason and
+      resizes/regroups/reassigns the rest on a map, and every edit is recorded as a planning-phase
+      audit event in Connect's own history shape.
+    provenance: plan-review
+    design_intent: The generated frame is never field-ready as-is; a Connect-shaped, phase-tagged audit makes it trustworthy and joinable to execution history later.
+    features:
+      - id: materialize-plan
+        description: The Review-and-edit-plan action materializes a microplan_plan record with one editable work area per cluster/pin.
+        verify: MaterializePlanView creates a microplan_plan record whose work-area count equals the generated cluster count.
+      - id: plan-edit-actions
+        description: Exclude (required reason), unexclude, resize (expected_visit_count), regroup, reassign — single or bulk via lasso (wa_ids).
+        verify: core/plan.py:apply_action applies each ACTION; a bulk exclude over wa_ids marks all selected EXCLUDED (test_plan.py).
+      - id: workload-readout
+        description: A live per-worker / per-group workload summary updates as the LLO edits.
+        verify: core/plan.py:summarize returns per-worker expected-visit totals that change after a resize/reassign (unit test).
+      - id: phase-tagged-audit
+        description: Every edit appends an event in Connect's pghistory shape (TRACKED_FIELDS) stamped phase="planning"; Connect itself is untouched.
+        verify: apply_action records an audit event whose tracked fields match Connect's WorkArea history shape and phase=="planning" (test_plan.py).
+
+  - persona: lead
+    title: Push the cleaned plan to Connect
+    show: >-
+      export the cleaned plan as a work-area CSV and import it into Connect's microplanning importer.
+    concept_claim: >-
+      The cleaned plan exports as a Connect microplanning work-area CSV that excludes dropped areas and
+      honors the LLO's edits, matching Connect's importer headers.
+    provenance: connect-push
+    design_intent: A plan only matters once it's in Connect; CSV import works today without a prod write API.
+    features:
+      - id: cleaned-csv-export
+        description: PlanCSVView exports the reviewed plan as CSV (excludes EXCLUDED, honors edits) with Connect importer headers.
+        verify: GET the plan CSV — its header row matches Connect's WorkAreaCSVImporter columns and EXCLUDED work areas are absent.
+
+  - persona: lead
+    title: Monitor and measure impact (frontier)
+    show: >-
+      open the monitoring dashboard, observe per-work-area completion split by treatment vs comparison
+      arm, and across rounds read the difference-in-differences estimate.
+    concept_claim: >-
+      A wired dashboard shows per-work-area completion by arm and, across monitoring rounds, reports the
+      difference-in-differences between treatment and comparison areas.
+    provenance: monitoring-impact
+    design_intent: The payoff and committed frontier — the monitoring libraries exist but are unwired, and there is no round model or DiD estimator yet.
+    features:
+      - id: monitoring-wiring
+        description: Wire a monitoring view/template that runs monitoring/pipeline.py (+ coverage.py) on the Connect export per work-area, split by arm.
+        verify: GET /microplans/<opp>/monitoring returns per-work-area completion rows grouped into treatment and comparison arms.
+      - id: round-model
+        description: A longitudinal round model storing each monitoring snapshot as a dated round (baseline + follow-ups) per arm.
+        verify: Ingesting two dated exports produces two round records per arm (assert 2 rounds x 2 arms == 4 points).
+      - id: did-estimator
+        description: Compute difference-in-differences on completion-rate — (Δtreatment) − (Δcomparison) between baseline and follow-up.
+        verify: Given synthetic baseline+follow-up per-arm completion, the computed DiD equals the hand-computed value within tolerance (unit test).
