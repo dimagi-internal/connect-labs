@@ -175,6 +175,50 @@ class PreviewCoverageView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "areas": result.areas_geojson, "stats": result.stats})
 
 
+class PreviewFootprintsView(LoginRequiredMixin, View):
+    """Return building footprints (as point features) inside the drawn area(s).
+
+    Used by the setup-page "Show building footprints" toggle so the user can
+    sanity-check what's in their area before generating cells. Reuses the same
+    PG-cached `fetch_buildings` path; cheap on a warm cache.
+    """
+
+    def post(self, request, opp_id):
+        from shapely.ops import unary_union
+
+        from commcare_connect.microplans.core.area_input import resolve_area
+        from commcare_connect.microplans.core.footprints import fetch_buildings
+
+        try:
+            payload = json.loads(request.body)
+            areas = payload["areas"]
+            if not areas:
+                raise ValueError("no areas drawn")
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        try:
+            geom = unary_union([resolve_area(a) for a in areas])
+            df = fetch_buildings(geom, min_confidence=None)
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans preview_footprints failed (opp=%s)", opp_id)
+            return JsonResponse({"status": "error", "detail": "Footprints fetch failed."}, status=502)
+
+        features = [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]},
+                "properties": {},
+            }
+            for _, row in df.iterrows()
+        ]
+        return JsonResponse(
+            {"status": "ok", "footprints": {"type": "FeatureCollection", "features": features}, "count": len(features)}
+        )
+
+
 class SaveFrameView(LoginRequiredMixin, View):
     """Persist a previewed frame (area + pins) as LabsRecords for this opp.
 

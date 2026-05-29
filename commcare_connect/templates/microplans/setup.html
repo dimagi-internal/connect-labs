@@ -9,30 +9,66 @@
 <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
 <style>
   #rooftop-map { position: absolute; inset: 0; }
+  /* .button (in tailwind.css) sets `display: inline-block`, which has higher cascade priority
+     than Tailwind's .hidden. Force !important so JS-toggled .hidden actually hides things. */
+  .hidden { display: none !important; }
   .seg-on { box-shadow: inset 0 0 0 2px #3843d0; background: #eef0ff; color: #3a42c7; }
-  .mode-card { border: 2px solid #e5e7eb; border-radius: 0.5rem; padding: 0.875rem; cursor: pointer; transition: all .15s; background: #fff; }
-  .mode-card:hover { border-color: #c7cbd2; background: #f9fafb; }
-  .mode-card.is-selected { border-color: #3843d0; background: #eef0ff; box-shadow: 0 0 0 1px #3843d0 inset; }
-  .mode-card .mode-title { font-weight: 600; color: #111827; font-size: 0.95rem; }
-  .mode-card .mode-sub { font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; line-height: 1.3; }
+
+  /* Section label — small caps header above each control group */
+  .mp-section-label { font-size: 0.6875rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
+
+  /* Mode cards (top-level plan-type flip) */
+  .mode-card { border: 1.5px solid #e5e7eb; border-radius: 0.5rem; padding: 0.75rem 0.75rem; cursor: pointer; transition: all .12s; background: #fff; display: flex; flex-direction: column; gap: 0.2rem; }
+  .mode-card:hover { border-color: #9ca3af; background: #f9fafb; }
+  .mode-card.is-selected { border-color: #3843d0; background: #eef0ff; }
+  .mode-card .mode-title { font-weight: 600; color: #111827; font-size: 0.9rem; line-height: 1.1; }
   .mode-card.is-selected .mode-title { color: #3843d0; }
-  .chip { padding: 0.25rem 0.6rem; border: 1px solid #d1d5db; border-radius: 9999px; font-size: 0.75rem; color: #4b5563; cursor: pointer; background: #fff; }
+  .mode-card .mode-sub { font-size: 0.7rem; color: #6b7280; line-height: 1.35; }
+
+  /* Segmented tab row (area input + cell-size chips share the visual language) */
+  .seg-row { display: grid; gap: 0.25rem; }
+  .seg-tab { padding: 0.4rem 0.25rem; font-size: 0.75rem; font-weight: 500; text-align: center;
+             border: 1px solid #d1d5db; border-radius: 0.375rem; background: #fff; color: #4b5563;
+             cursor: pointer; transition: all .12s; }
+  .seg-tab:hover { border-color: #9ca3af; }
+  .seg-tab.is-on { border-color: #3843d0; background: #3843d0; color: #fff; }
+
+  /* Cell-size chips */
+  .chip-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.25rem; }
+  .chip { padding: 0.3rem 0.1rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.7rem;
+          color: #4b5563; cursor: pointer; background: #fff; text-align: center; transition: all .12s; }
   .chip:hover { border-color: #9ca3af; }
   .chip.is-on { border-color: #3843d0; color: #3843d0; background: #eef0ff; font-weight: 600; }
+
+  /* Stat row — left-aligned key, right-aligned value */
+  .mp-stat { display: flex; justify-content: space-between; font-size: 0.8125rem; color: #4b5563; }
+  .mp-stat dd { color: #111827; font-weight: 500; }
+
+  /* Action buttons — clearer hierarchy than tailwind's button-md */
+  .mp-action { display: block; width: 100%; padding: 0.55rem 0.75rem; border-radius: 0.375rem;
+               font-size: 0.875rem; font-weight: 600; text-align: center; cursor: pointer;
+               border: 1px solid transparent; transition: all .12s; }
+  .mp-action-primary { background: #3843d0; color: #fff; border-color: #3843d0; }
+  .mp-action-primary:hover { background: #2d36b3; }
+  .mp-action-secondary { background: #fff; color: #3843d0; border-color: #3843d0; }
+  .mp-action-secondary:hover { background: #eef0ff; }
+  .mp-action-link { background: transparent; color: #4b5563; border: none; padding: 0.4rem; font-weight: 500; }
+  .mp-action-link:hover { color: #111827; text-decoration: underline; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="flex h-[calc(100vh-4rem)]" x-data>
   <!-- Control panel -->
-  <aside class="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-5 space-y-5">
+  <aside class="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-4">
     <div>
-      <h1 class="text-xl font-bold text-gray-900">New microplan</h1>
+      <h1 class="text-lg font-bold text-gray-900">New microplan</h1>
       {% if program_id %}
-      <p class="text-sm text-gray-500 mt-1">Program #{{ program_id }}
-        · <a href="{{ program_url }}" class="text-brand-cornflower-blue">← portfolio</a></p>
+      <p class="text-xs text-gray-500 mt-0.5">
+        Program #{{ program_id }} · <a href="{{ program_url }}" class="text-brand-cornflower-blue">← portfolio</a>
+      </p>
       {% else %}
-      <p class="text-sm text-gray-500 mt-1">Opportunity #{{ opp_id }}</p>
+      <p class="text-xs text-gray-500 mt-0.5">Opportunity #{{ opp_id }}</p>
       {% endif %}
     </div>
 
@@ -40,66 +76,64 @@
     <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
     {% endif %}
 
-    <!-- MODE: top-level flip — primary choice for everything below -->
+    <!-- PLAN TYPE: top-level flip -->
     <section>
-      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Plan type</h2>
+      <div class="mp-section-label">Plan type</div>
       <div class="grid grid-cols-2 gap-2">
         <div id="card-coverage" class="mode-card" role="button" tabindex="0">
           <div class="mode-title">Coverage</div>
-          <div class="mode-sub">Visit <em>every</em> household. Tile the area into small grid cells, group cells into CHW territories.</div>
+          <div class="mode-sub">Visit <em>every</em> household. Tile into small grid cells, assign to CHWs.</div>
         </div>
         <div id="card-sampling" class="mode-card" role="button" tabindex="0">
           <div class="mode-title">Sampling</div>
-          <div class="mode-sub">PPS <em>subset</em> of households for inference. Selects primaries + alternates across intervention &amp; comparison arms.</div>
+          <div class="mode-sub">PPS <em>subset</em> for inference. Primaries + alternates across arms.</div>
         </div>
       </div>
     </section>
 
-    <!-- 1 · Area -->
+    <!-- AREA -->
     <section>
-      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">1 · Area</h2>
-      <div class="flex gap-1 mb-3 text-xs">
-        <button type="button" id="btn-input-draw" class="button button-sm flex-1 primary-dark">Draw</button>
-        <button type="button" id="btn-input-admin" class="button button-sm flex-1 outline-style">Admin area</button>
-        <button type="button" id="btn-input-pin" class="button button-sm flex-1 outline-style">Pin + radius</button>
+      <div class="mp-section-label">Area</div>
+      <div class="seg-row mb-3" style="grid-template-columns: repeat(3, 1fr);">
+        <button type="button" id="btn-input-draw" class="seg-tab is-on">Draw</button>
+        <button type="button" id="btn-input-admin" class="seg-tab">Admin</button>
+        <button type="button" id="btn-input-pin" class="seg-tab">Pin</button>
       </div>
 
       <!-- Arm selector — sampling only (RCT intervention/comparison split) -->
-      <div id="arm-row" class="flex gap-2 mb-3">
-        <button type="button" id="btn-arm-intervention"
-                class="button button-sm flex-1 ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800">Intervention</button>
-        <button type="button" id="btn-arm-comparison"
-                class="button button-sm flex-1 outline-style">Comparison</button>
+      <div id="arm-row" class="seg-row mb-3" style="grid-template-columns: repeat(2, 1fr);">
+        <button type="button" id="btn-arm-intervention" class="seg-tab is-on">Intervention</button>
+        <button type="button" id="btn-arm-comparison" class="seg-tab">Comparison</button>
       </div>
 
       <!-- Draw input -->
       <div id="input-draw">
-        <p class="text-xs text-gray-500">Use the polygon tool (top-right of the map) to draw the area.</p>
+        <p class="text-xs text-gray-500">Use the <strong>polygon tool</strong> at the top-right of the map to outline the area.</p>
       </div>
 
       <!-- Admin-area input -->
       <div id="input-admin" class="hidden space-y-2 text-sm">
         <label class="block">
-          <span class="text-gray-600">Country</span>
+          <span class="text-gray-600 text-xs">Country</span>
           <select id="sel-country" class="base-input mt-1"></select>
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="block">
-            <span class="text-gray-600">Level</span>
+            <span class="text-gray-600 text-xs">Level</span>
             <select id="sel-level" class="base-input mt-1">
               <option value="1">Region / State</option>
-              <option value="2" selected>County / District / LGA</option>
-              <option value="3">Locality / Ward</option>
+              <option value="2" selected>County / LGA</option>
+              <option value="3">Ward / Locality</option>
             </select>
           </label>
           <label class="block">
-            <span class="text-gray-600">Search</span>
+            <span class="text-gray-600 text-xs">Search</span>
             <input id="inp-area-search" type="text" placeholder="name…" class="base-input mt-1">
           </label>
         </div>
-        <button type="button" id="btn-area-search" class="button button-sm primary-dark w-full">Find areas</button>
+        <button type="button" id="btn-area-search" class="mp-action mp-action-primary text-sm py-1.5">Find areas</button>
         <label class="block hidden" id="wrap-source">
-          <span class="text-gray-600">Boundary source</span>
+          <span class="text-gray-600 text-xs">Boundary source</span>
           <select id="sel-source" class="base-input mt-1"></select>
         </label>
         <div id="area-source" class="text-xs text-gray-500"></div>
@@ -108,11 +142,11 @@
 
       <!-- Pin + radius input -->
       <div id="input-pin" class="hidden space-y-2 text-sm">
-        <p class="text-xs text-gray-500">Click "Drop pin", then click the map to place it. The circle becomes the area.</p>
+        <p class="text-xs text-gray-500">Click <strong>"Drop pin"</strong>, then click the map. The circle is the area.</p>
         <div class="grid grid-cols-2 gap-2">
-          <button type="button" id="btn-drop-pin" class="button button-sm outline-style">Drop pin</button>
+          <button type="button" id="btn-drop-pin" class="mp-action mp-action-secondary text-xs py-1.5">Drop pin</button>
           <label class="block">
-            <span class="text-gray-600">Radius (m)</span>
+            <span class="text-gray-600 text-xs">Radius (m)</span>
             <input id="inp-pin-radius" type="number" value="500" min="20" step="50" class="base-input mt-1">
           </label>
         </div>
@@ -120,84 +154,88 @@
       </div>
 
       <!-- Stats — labels switch per mode -->
-      <dl class="mt-3 text-sm space-y-1">
-        <div class="flex justify-between" id="stat-row-arm1"><dt class="text-gray-500" id="stat-label-arm1">Areas (intervention)</dt><dd id="stat-intervention" class="font-medium">0</dd></div>
-        <div class="flex justify-between" id="stat-row-arm2"><dt class="text-gray-500" id="stat-label-arm2">Areas (comparison)</dt><dd id="stat-comparison" class="font-medium">0</dd></div>
-        <div class="flex justify-between hidden" id="stat-row-cov"><dt class="text-gray-500">Coverage areas drawn</dt><dd id="stat-coverage" class="font-medium">0</dd></div>
-        <div class="flex justify-between"><dt class="text-gray-500">Approx. area</dt><dd id="stat-area" class="font-medium">—</dd></div>
+      <dl class="mt-3 space-y-1">
+        <div class="mp-stat" id="stat-row-arm1"><dt id="stat-label-arm1">Intervention areas</dt><dd id="stat-intervention">0</dd></div>
+        <div class="mp-stat" id="stat-row-arm2"><dt id="stat-label-arm2">Comparison areas</dt><dd id="stat-comparison">0</dd></div>
+        <div class="mp-stat hidden" id="stat-row-cov"><dt>Coverage areas</dt><dd id="stat-coverage">0</dd></div>
+        <div class="mp-stat"><dt>Approx. area</dt><dd id="stat-area">—</dd></div>
       </dl>
+
+      <!-- Footprints overlay toggle: peek at the buildings before generating -->
+      <label class="flex items-center gap-2 mt-3 text-xs text-gray-600 cursor-pointer">
+        <input id="toggle-footprints" type="checkbox" class="rounded">
+        <span>Show building footprints on map</span>
+      </label>
     </section>
 
-    <!-- 2 · Sampling config -->
+    <!-- SAMPLING CONFIG -->
     <section id="cfg-sampling">
-      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Sampling config</h2>
-      <div class="space-y-3 text-sm">
-        <label class="block"><span class="text-gray-600">Target clusters (PSUs)</span>
+      <div class="mp-section-label">Sampling config</div>
+      <div class="space-y-2 text-sm">
+        <label class="block"><span class="text-gray-600 text-xs">Target clusters (PSUs)</span>
           <input id="cfg-clusters" type="number" value="25" min="1" class="base-input mt-1"></label>
         <div class="grid grid-cols-2 gap-2">
-          <label class="block"><span class="text-gray-600">Primary / PSU</span>
+          <label class="block"><span class="text-gray-600 text-xs">Primary / PSU</span>
             <input id="cfg-primary" type="number" value="8" min="1" class="base-input mt-1"></label>
-          <label class="block"><span class="text-gray-600">Alternates / PSU</span>
+          <label class="block"><span class="text-gray-600 text-xs">Alternates / PSU</span>
             <input id="cfg-alternate" type="number" value="8" min="0" class="base-input mt-1"></label>
         </div>
-        <label class="block"><span class="text-gray-600">Min roof confidence</span>
+        <label class="block"><span class="text-gray-600 text-xs">Min roof confidence</span>
           <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="base-input mt-1"></label>
         <div class="grid grid-cols-2 gap-2">
-          <label class="block"><span class="text-gray-600">Min area m²</span>
+          <label class="block"><span class="text-gray-600 text-xs">Min area m²</span>
             <input id="cfg-area-min" type="number" value="9" min="0" class="base-input mt-1"></label>
-          <label class="block"><span class="text-gray-600">Max area m²</span>
+          <label class="block"><span class="text-gray-600 text-xs">Max area m²</span>
             <input id="cfg-area-max" type="number" value="330" min="0" class="base-input mt-1"></label>
         </div>
       </div>
     </section>
 
-    <!-- 2 · Coverage config -->
+    <!-- COVERAGE CONFIG: just cell size -->
     <section id="cfg-coverage" class="hidden">
-      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">2 · Work-area size</h2>
-      <p class="text-xs text-gray-500 mb-2">
-        The area is tiled into <strong>square grid cells</strong>. Each cell containing a building becomes one work area; CHWs are assigned groups of adjacent cells.
+      <div class="mp-section-label">Work-area size</div>
+      <p class="text-xs text-gray-500 mb-2 leading-snug">
+        Tile the area into <strong>square cells</strong>. Each cell containing a building becomes one work area; CHWs are assigned groups of adjacent cells.
       </p>
-      <div class="space-y-2 text-sm">
-        <div class="flex gap-1 flex-wrap" id="cellsize-chips">
-          <button type="button" class="chip" data-cellsize="50">50 m</button>
-          <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
-          <button type="button" class="chip" data-cellsize="150">150 m</button>
-          <button type="button" class="chip" data-cellsize="200">200 m</button>
-          <button type="button" class="chip" data-cellsize="250">250 m</button>
-        </div>
-        <label class="block">
-          <span class="text-gray-600 text-xs">Or enter a custom size (m)</span>
-          <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input mt-1">
-        </label>
+      <div class="chip-row" id="cellsize-chips">
+        <button type="button" class="chip" data-cellsize="50">50 m</button>
+        <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
+        <button type="button" class="chip" data-cellsize="150">150 m</button>
+        <button type="button" class="chip" data-cellsize="200">200 m</button>
+        <button type="button" class="chip" data-cellsize="250">250 m</button>
       </div>
+      <label class="block mt-2">
+        <span class="text-gray-600 text-xs">Custom (m)</span>
+        <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input mt-1">
+      </label>
     </section>
 
     {% if program_id %}
-    <!-- 3 · Plan name (program scope only) -->
-    <section id="program-create-fields" class="hidden">
-      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">3 · Name &amp; region</h2>
+    <!-- NAME (program scope only) -->
+    <section>
+      <div class="mp-section-label">Name</div>
       <div class="space-y-2 text-sm">
-        <label class="block"><span class="text-gray-600">Plan name</span>
-          <input id="inp-plan-name" type="text" placeholder="e.g. Kano North — Gora ward" class="base-input mt-1"></label>
-        <label class="block"><span class="text-gray-600">Region / area label</span>
-          <input id="inp-plan-region" type="text" placeholder="e.g. Madobi LGA · Gora ward" class="base-input mt-1"></label>
+        <label class="block"><span class="text-gray-600 text-xs">Plan name</span>
+          <input id="inp-plan-name" type="text" placeholder="e.g. Kano · Madobi · Gora ward" class="base-input mt-1"></label>
+        <label class="block"><span class="text-gray-600 text-xs">Region / area label <span class="text-gray-400">(optional)</span></span>
+          <input id="inp-plan-region" type="text" placeholder="Madobi LGA · Gora ward" class="base-input mt-1"></label>
       </div>
     </section>
     {% endif %}
 
-    <!-- Preview + actions -->
+    <!-- ACTIONS -->
     <section>
-      <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2"><span id="step-label">3</span> · Preview</h2>
-      <button type="button" id="btn-preview" class="button button-md primary-dark w-full">Preview</button>
+      <div class="mp-section-label">Generate</div>
+      <button type="button" id="btn-preview" class="mp-action mp-action-primary">Preview</button>
       {% if program_id %}
-      <button type="button" id="btn-create-plan" class="button button-md primary-dark w-full mt-2 hidden">Create plan in program →</button>
+      <button type="button" id="btn-create-plan" class="mp-action mp-action-primary mt-2 hidden">Create plan in program →</button>
       {% else %}
-      <button type="button" id="btn-save" class="button button-md primary-dark w-full mt-2 hidden">Save</button>
-      <button type="button" id="btn-review" class="button button-md primary-dark w-full mt-2 hidden">Review &amp; edit plan</button>
+      <button type="button" id="btn-save" class="mp-action mp-action-primary mt-2 hidden">Save</button>
+      <button type="button" id="btn-review" class="mp-action mp-action-primary mt-2 hidden">Review &amp; edit plan</button>
       {% endif %}
-      <button type="button" id="btn-csv" class="button button-sm outline-style w-full mt-2 hidden">Download Connect import CSV</button>
-      <div id="preview-status" class="mt-2 text-xs text-gray-500"></div>
-      <div id="save-status" class="mt-1 text-xs text-gray-500"></div>
+      <button type="button" id="btn-csv" class="mp-action mp-action-link mt-1 hidden text-xs">Download Connect import CSV</button>
+      <div id="preview-status" class="mt-2 text-xs text-gray-600"></div>
+      <div id="save-status" class="mt-1 text-xs text-gray-600"></div>
     </section>
   </aside>
 
@@ -218,6 +256,7 @@
   const URLS = {
     sampling: "{% url 'microplans:preview_frame' opp_id=opp_id %}",
     coverage: "{% url 'microplans:preview_coverage' opp_id=opp_id %}",
+    footprints: "{% url 'microplans:preview_footprints' opp_id=opp_id %}",
     save: "{% url 'microplans:save_frame' opp_id=opp_id %}",
     csv: "{% url 'microplans:work_areas_csv' opp_id=opp_id %}",
     materialize: "{% url 'microplans:plan_materialize' opp_id=opp_id %}",
@@ -292,8 +331,6 @@
       currentArm = "intervention";
       setArm("intervention");
     }
-    // Step number for preview heading: 3 in opp mode (no plan-name section), 4 in program mode.
-    $("step-label").textContent = PROGRAM ? "4" : "3";
     resetPreviewButtons();
     refreshStats();
   }
@@ -306,7 +343,7 @@
     [["draw", "input-draw"], ["admin", "input-admin"], ["pin", "input-pin"]].forEach(([k, el]) =>
       $(el).classList.toggle("hidden", k !== i));
     ["draw", "admin", "pin"].forEach((k) =>
-      $("btn-input-" + k).className = "button button-sm flex-1 " + (k === i ? "primary-dark" : "outline-style"));
+      $("btn-input-" + k).classList.toggle("is-on", k === i));
     if (i !== "pin") disarmPin();
   }
   $("btn-input-draw").addEventListener("click", () => setInput("draw"));
@@ -317,8 +354,8 @@
   function setArm(arm) {
     if (mode === "coverage") return; // ignored — coverage has no arm split
     currentArm = arm;
-    $("btn-arm-intervention").className = "button button-sm flex-1 " + (arm === "intervention" ? "ring-2 ring-emerald-500 bg-emerald-50 text-emerald-800" : "outline-style");
-    $("btn-arm-comparison").className = "button button-sm flex-1 " + (arm === "comparison" ? "ring-2 ring-blue-500 bg-blue-50 text-blue-800" : "outline-style");
+    $("btn-arm-intervention").classList.toggle("is-on", arm === "intervention");
+    $("btn-arm-comparison").classList.toggle("is-on", arm === "comparison");
   }
   $("btn-arm-intervention").addEventListener("click", () => setArm("intervention"));
   $("btn-arm-comparison").addEventListener("click", () => setArm("comparison"));
@@ -592,8 +629,6 @@
     ["btn-save", "btn-review", "btn-csv", "btn-create-plan"].forEach((id) => {
       const el = $(id); if (el) el.classList.add("hidden");
     });
-    // Plan-name section is always visible in program mode (so the user can fill it before previewing too).
-    if (PROGRAM) $("program-create-fields").classList.remove("hidden");
   }
   let savedFrameId = null;
 
@@ -677,6 +712,37 @@
     const a = document.createElement("a");
     a.href = url; a.download = `microplan_work_areas_opp{{ opp_id }}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // ---- footprints overlay (sanity-check buildings before generating) ----
+  let footprintsLoaded = false;
+  async function loadFootprints() {
+    const areas = collectAreas();
+    if (!areas.length) { $("preview-status").textContent = "Draw / pick an area first to see footprints."; $("toggle-footprints").checked = false; return; }
+    $("preview-status").textContent = "Fetching footprints…";
+    try {
+      const resp = await post(URLS.footprints, { areas });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { $("preview-status").textContent = data.detail || ("HTTP " + resp.status); $("toggle-footprints").checked = false; return; }
+      upsertSource("rooftop-footprints", data.footprints);
+      if (!map.getLayer("rooftop-footprints-dots")) {
+        map.addLayer({
+          id: "rooftop-footprints-dots", type: "circle", source: "rooftop-footprints",
+          paint: { "circle-radius": 1.5, "circle-color": "#f59e0b", "circle-stroke-color": "#fff", "circle-stroke-width": 0.3 },
+        });
+      } else {
+        map.setLayoutProperty("rooftop-footprints-dots", "visibility", "visible");
+      }
+      footprintsLoaded = true;
+      $("preview-status").textContent = `${data.count.toLocaleString()} building footprints loaded.`;
+    } catch (e) { $("preview-status").textContent = "Footprints failed: " + e; $("toggle-footprints").checked = false; }
+  }
+  $("toggle-footprints").addEventListener("change", () => {
+    const on = $("toggle-footprints").checked;
+    if (on && !footprintsLoaded) { loadFootprints(); return; }
+    if (map.getLayer("rooftop-footprints-dots")) {
+      map.setLayoutProperty("rooftop-footprints-dots", "visibility", on ? "visible" : "none");
+    }
   });
 
   // init: coverage is the default (most common workflow for CHC visits)
