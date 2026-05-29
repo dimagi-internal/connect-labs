@@ -32,32 +32,42 @@ _AREA = [
 
 
 class TestCoverageFrame:
-    def test_balanced_areas_cover_all_buildings(self, monkeypatch):
-        monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(100, seed=1))
-        res = generate_coverage_frame(_AREA, CoverageConfig(buildings_per_cluster=20, balance_tolerance=0.1))
-        feats = res.areas_geojson["features"]
-        assert len(feats) == 5  # 100 / 20
-        # every building lands in some work area
-        assert sum(f["properties"]["building_count"] for f in feats) == 100
-        # coverage = visit every household → expected_visit_count == building_count
-        for f in feats:
-            assert f["properties"]["expected_visit_count"] == f["properties"]["building_count"]
-        s = res.stats[0]
-        assert s["work_areas"] == 5 and s["min_buildings"] >= 18 and s["max_buildings"] <= 22
-
-    def test_config_defaults_to_no_confidence_gate(self):
-        # coverage wants completeness (MS/OSM roofs too), unlike sampling's 0.7
-        assert CoverageConfig().min_confidence is None
-
-    def test_grid_strategy_covers_all_buildings(self, monkeypatch):
+    def test_grid_cells_cover_all_buildings(self, monkeypatch):
         monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(120, seed=7))
-        res = generate_coverage_frame(_AREA, CoverageConfig(strategy="grid", cell_size_m=150))
+        res = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=150))
         feats = res.areas_geojson["features"]
         # grid is deterministic; every building lands in exactly one cell
         assert sum(f["properties"]["building_count"] for f in feats) == 120
         for f in feats:
             assert f["properties"]["expected_visit_count"] == f["properties"]["building_count"]
-        assert res.stats[0]["strategy"] == "grid"
+            assert f["properties"]["cell_size_m"] == 150.0
+            # cell geometry is a closed-ring polygon (the cell box)
+            ring = f["geometry"]["coordinates"][0]
+            assert len(ring) == 5 and ring[0] == ring[-1]
+        assert res.stats[0]["cell_size_m"] == 150.0
+        assert res.stats[0]["work_areas"] == len(feats)
+
+    def test_config_defaults(self):
+        # coverage wants completeness (MS/OSM roofs too), unlike sampling's 0.7
+        cfg = CoverageConfig()
+        assert cfg.min_confidence is None
+        assert cfg.cell_size_m == 100.0  # 100m × 100m default
+        # near-pass-through area filters (coverage covers every household)
+        assert cfg.area_min_m2 <= 1.0 and cfg.area_max_m2 >= 1000.0
+
+    def test_smaller_cells_make_more_work_areas(self, monkeypatch):
+        monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(200, seed=9))
+        coarse = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=400))
+        fine = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=50))
+        assert len(fine.areas_geojson["features"]) > len(coarse.areas_geojson["features"])
+
+    def test_no_arms_in_output(self, monkeypatch):
+        # coverage has no intervention/comparison arms — single coverage zone.
+        monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(50, seed=11))
+        res = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=150))
+        for f in res.areas_geojson["features"]:
+            assert "arm" not in f["properties"]
+        assert "arm" not in res.stats[0]
 
     def test_circle_area_input(self, monkeypatch):
         seen = {}
@@ -67,8 +77,8 @@ class TestCoverageFrame:
             return _scatter(40, seed=8)
 
         monkeypatch.setattr(coverage_frame, "fetch_buildings", fake_fetch)
-        circle_area = [{"arm": "coverage", "circle": {"lon": LON0, "lat": LAT0, "radius_m": 300}}]
-        res = generate_coverage_frame(circle_area, CoverageConfig(buildings_per_cluster=20))
+        circle_area = [{"circle": {"lon": LON0, "lat": LAT0, "radius_m": 300}}]
+        res = generate_coverage_frame(circle_area, CoverageConfig(cell_size_m=100))
         # the area passed to fetch is the buffered circle (a polygon), not empty
         assert seen["area"].geom_type in ("Polygon", "MultiPolygon")
         assert sum(f["properties"]["building_count"] for f in res.areas_geojson["features"]) == 40
