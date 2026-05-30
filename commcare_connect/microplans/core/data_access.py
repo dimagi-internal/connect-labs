@@ -179,12 +179,14 @@ class ProgramPlanDataAccess(BaseDataAccess):
         pins: dict,
         hulls: dict,
         input_areas: list | None = None,
+        grouping: dict | None = None,
     ) -> RooftopPlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
-        per cluster/pin). `input_areas` is the original draw/admin/pin payload from
-        setup — stored so downstream features (footprints overlay) can reuse the
-        cached fetch geometry instead of re-fetching by a derived shape."""
-        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls)
+        per cluster/pin). ``input_areas`` is the original draw/admin/pin payload
+        (stored so footprints overlay can reuse the cached fetch geometry).
+        ``grouping`` is the Phase-1 strategy/params for cell→group bucketing
+        (defaults to BFS adjacency — Connect-GIS parity)."""
+        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_PLAN,
@@ -199,11 +201,39 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "mode": mode,
                 "work_areas": work_areas,
                 "input_areas": list(input_areas or []),
+                "grouping": dict(grouping or {}),
                 "status_log": [],
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
         return RooftopPlanRecord(record.to_api_dict())
+
+    def regroup_plan(self, plan_id: int, grouping: dict, actor: str) -> RooftopPlanRecord:
+        """Re-apply grouping (cells → work_area_group) to an existing plan.
+
+        Phase 1 of the two-phase pipeline. Snapshots each cell's old group, runs
+        the strategy, and then routes through ``apply_action("regroup", ...)`` so
+        per-cell audits are appended consistently with manual regrouping.
+        """
+        from commcare_connect.microplans.core import grouping as grouping_lib
+
+        plan = self.get_plan(plan_id)
+        data = dict(plan.data)
+        work_areas = [dict(w) for w in data.get("work_areas", [])]
+        cfg = grouping_lib.GroupingConfig.from_payload(grouping)
+        # Apply to ACTIVE cells; excluded ones keep their old group.
+        active = [w for w in work_areas if w.get("status") != plan_lib.STATUS_EXCLUDED]
+        # Snapshot old groups, then run the strategy + restore them so apply_action
+        # can compute a real before→after diff and emit the audit.
+        old_groups = {w["id"]: w.get("work_area_group", "") for w in active}
+        grouping_lib.group_work_areas(active, cfg)
+        new_groups = {w["id"]: w.get("work_area_group", "") for w in active}
+        for w in active:
+            w["work_area_group"] = old_groups[w["id"]]
+            plan_lib.apply_action(w, "regroup", {"work_area_group": new_groups[w["id"]]}, actor)
+        data["work_areas"] = work_areas
+        data["grouping"] = grouping
+        return self._save_plan(plan, data)
 
     def list_plans(self) -> list[RooftopPlanRecord]:
         return self.labs_api.get_records(

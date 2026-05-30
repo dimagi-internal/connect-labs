@@ -119,14 +119,20 @@ def _wa_id(props: dict, index: int) -> str:
     return "-".join(parts).lower()
 
 
-def materialize_work_areas(mode: str, pins: dict, hulls: dict) -> list[dict]:
+def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | None = None) -> list[dict]:
     """Build the editable work-area list from a generated frame.
 
-    Coverage: one work area per grid cell, auto-grouped into spatial buckets
-    (row-major super-grid sized so each bucket holds ~30 cells). Sampling: one
-    tiny work area per pin, grouped by arm. Each starts UNASSIGNED with an
-    empty audit log.
+    Coverage: one work area per grid cell, auto-grouped via ``grouping`` (default
+    BFS adjacency — Connect-GIS-style, building-balanced). Sampling: one tiny
+    work area per pin, grouped by arm. Each starts UNASSIGNED with an empty
+    audit log.
+
+    ``grouping`` is a config dict consumed by ``grouping.GroupingConfig.from_payload``.
+    Defaults to BFS adjacency for coverage (Connect-GIS parity); ``None`` falls back
+    to that default.
     """
+    from commcare_connect.microplans.core import grouping as grouping_lib
+
     fc = hulls if mode == "coverage" else pins
     out: list[dict] = []
     for i, feat in enumerate(fc.get("features", [])):
@@ -144,7 +150,7 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict) -> list[dict]:
                 "expected_visit_count": expected,
                 "target_population": int(props.get("target_population", 0)),
                 "status": STATUS_UNASSIGNED,
-                "work_area_group": props.get("arm", "intervention"),  # placeholder; overridden below for coverage
+                "work_area_group": props.get("arm", "intervention"),  # placeholder; overridden for coverage
                 "opportunity_access": None,  # unassigned worker at planning time
                 "excluded_by": "",
                 "excluded_reason": "",
@@ -153,33 +159,9 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict) -> list[dict]:
             }
         )
     if mode == "coverage" and out:
-        _assign_spatial_groups(out, target_size=30)
+        cfg = grouping_lib.GroupingConfig.from_payload(grouping or {})
+        grouping_lib.group_work_areas(out, cfg)
     return out
-
-
-def _assign_spatial_groups(work_areas: list[dict], target_size: int = 30) -> None:
-    """Bucket cells into a sqrt(N/target_size)-side super-grid by centroid,
-    so each cell gets a spatially meaningful `work_area_group` label.
-
-    Groups are numbered row-major from south-west: "group-1", "group-2", ...
-    A CHW assigned to one group walks a contiguous super-cell rather than
-    scattered cells.
-    """
-    n = len(work_areas)
-    grid_n = max(1, int(math.ceil(math.sqrt(n / max(1, target_size)))))
-    centroids = [w["centroid"] for w in work_areas]
-    lons = [c[0] for c in centroids]
-    lats = [c[1] for c in centroids]
-    lon_min, lon_max = min(lons), max(lons)
-    lat_min, lat_max = min(lats), max(lats)
-    lon_span = max(lon_max - lon_min, 1e-9)
-    lat_span = max(lat_max - lat_min, 1e-9)
-    # Row-major numbering: i (row) increases south→north, j (col) increases west→east.
-    # group_num = i * grid_n + j + 1 → starts at 1, dense (no gaps for empty buckets).
-    for w, (lon, lat) in zip(work_areas, centroids):
-        i = min(grid_n - 1, int((lat - lat_min) / lat_span * grid_n))
-        j = min(grid_n - 1, int((lon - lon_min) / lon_span * grid_n))
-        w["work_area_group"] = f"group-{i * grid_n + j + 1}"
 
 
 def _tracked(wa: dict) -> dict:

@@ -79,6 +79,35 @@
     </section>
 
     <section class="border-t pt-3">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-group cells</h2>
+      <div class="flex flex-col gap-2 text-xs">
+        <label class="block">
+          <span class="text-gray-600">Strategy</span>
+          <select id="grp-strategy" class="base-input mt-0.5 text-xs">
+            <option value="bfs_adjacency" selected>BFS adjacency (Connect GIS)</option>
+            <option value="bbox">Bbox bucket (fast)</option>
+          </select>
+        </label>
+        <div id="grp-bfs-params" class="grid grid-cols-2 gap-1">
+          <label class="block">
+            <span class="text-gray-600">Max buildings</span>
+            <input id="grp-max-buildings" type="number" value="200" min="1" class="base-input mt-0.5 text-xs">
+          </label>
+          <label class="block">
+            <span class="text-gray-600">Buffer (m)</span>
+            <input id="grp-buffer-m" type="number" value="100" min="0" step="10" class="base-input mt-0.5 text-xs">
+          </label>
+        </div>
+        <label class="block hidden" id="grp-bbox-params">
+          <span class="text-gray-600">Target cells / group</span>
+          <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
+        </label>
+        <button type="button" id="btn-regroup" class="button button-sm primary-dark">Apply grouping</button>
+        <p class="text-[10px] text-gray-400">Re-groups all non-excluded cells. Audited per cell.</p>
+      </div>
+    </section>
+
+    <section class="border-t pt-3">
       <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Bulk (selected)</h2>
       <div class="flex flex-col gap-2">
         <button type="button" id="bulk-exclude" class="button button-sm primary-dark">Exclude selected…</button>
@@ -162,6 +191,7 @@
   const CSV_URL = "{{ csv_url|escapejs }}";
   const COMPARE_URL = "{{ compare_url|escapejs }}";
   const FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
+  const REGROUP_URL = "{{ regroup_url|default:''|escapejs }}";
   document.getElementById("compare-link").href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
@@ -491,6 +521,44 @@
   $("bulk-reassign").addEventListener("click", () => { if (selected.size) edit({ action: "reassign", wa_ids: [...selected], opportunity_access: $("bulk-worker").value }); });
 
   // export
+  // ---- Phase-1: re-group cells ----
+  $("grp-strategy").addEventListener("change", () => {
+    const s = $("grp-strategy").value;
+    $("grp-bfs-params").classList.toggle("hidden", s !== "bfs_adjacency");
+    $("grp-bbox-params").classList.toggle("hidden", s !== "bbox");
+  });
+  $("btn-regroup").addEventListener("click", async () => {
+    if (!REGROUP_URL) { $("status").textContent = "Regroup URL not available."; return; }
+    const strategy = $("grp-strategy").value;
+    const body = { strategy };
+    if (strategy === "bfs_adjacency") {
+      body.max_buildings = +$("grp-max-buildings").value;
+      body.buffer_distance_m = +$("grp-buffer-m").value;
+    } else {
+      body.target_size = +$("grp-target-size").value;
+    }
+    $("btn-regroup").disabled = true;
+    $("status").textContent = `Re-grouping (${strategy})…`;
+    const t0 = performance.now();
+    try {
+      const resp = await post(REGROUP_URL, body);
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") {
+        $("status").textContent = data.detail || ("HTTP " + resp.status);
+      } else {
+        const dt = ((performance.now() - t0) / 1000).toFixed(1);
+        // Count distinct groups from the new work_areas response.
+        const groups = new Set((data.work_areas || []).map((w) => w.work_area_group));
+        $("status").textContent = `Re-grouped into ${groups.size} groups in ${dt}s.`;
+        render(data);
+      }
+    } catch (e) {
+      $("status").textContent = "Re-group failed: " + e;
+    } finally {
+      $("btn-regroup").disabled = false;
+    }
+  });
+
   $("btn-export").addEventListener("click", async () => {
     const resp = await post(CSV_URL, {});
     if (!resp.ok) { $("status").textContent = "Export failed."; return; }
