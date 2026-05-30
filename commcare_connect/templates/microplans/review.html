@@ -8,15 +8,29 @@
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <style>
   #review-map { position: absolute; inset: 0; }
+  .hidden { display: none !important; }
   .wa-row.excluded { opacity: 0.45; text-decoration: line-through; }
   .wa-row.sel { background: #ecfdf5; }
+  .wa-row.hl-worker { background: #fef9c3; }
   .cell-input { width: 5.5rem; }
+  .worker-row { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0.4rem; border-radius: 0.25rem; cursor: pointer; align-items: center; }
+  .worker-row:hover { background: #f9fafb; }
+  .worker-row.is-active { background: #eef0ff; box-shadow: inset 0 0 0 1px #3843d0; }
+  .worker-row .sw { width: 0.6rem; height: 0.6rem; border-radius: 9999px; flex-shrink: 0; }
+  .worker-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .worker-row .ct { color: #6b7280; font-variant-numeric: tabular-nums; font-size: 0.7rem; }
+  .map-overlay { position: absolute; z-index: 5; background: rgba(255,255,255,0.95); border: 1px solid #e5e7eb; border-radius: 0.375rem; padding: 0.4rem 0.6rem; font-size: 0.7rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .map-overlay label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
+  .map-legend { display: flex; flex-direction: column; gap: 0.2rem; min-width: 7rem; }
+  .legend-row { display: flex; align-items: center; gap: 0.4rem; }
+  .legend-row .sw { width: 0.8rem; height: 0.5rem; border-radius: 0.15rem; flex-shrink: 0; }
+  .legend-row .lbl { color: #4b5563; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="flex h-[calc(100vh-4rem)]" x-data>
-  <!-- Left: summary + bulk + export -->
+  <!-- Left: summary + workers + bulk + export -->
   <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-4 text-sm">
     <div>
       <h1 class="text-lg font-bold text-gray-900">Microplan review</h1>
@@ -31,8 +45,12 @@
     </section>
 
     <section>
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Workload by worker</h2>
-      <div id="by-worker" class="text-xs text-gray-600 space-y-0.5"></div>
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Workers</h2>
+        <button type="button" id="worker-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
+      </div>
+      <div id="by-worker" class="space-y-0.5"></div>
+      <p class="text-[10px] text-gray-400 mt-1">Click a worker to filter the map &amp; table.</p>
     </section>
 
     <section class="border-t pt-3">
@@ -57,9 +75,21 @@
 
   <!-- Center: map + metrics + table -->
   <div class="flex-1 flex flex-col min-w-0">
-    <div class="relative" style="height: 36%"><div id="review-map"></div></div>
+    <div class="relative" style="height: 36%">
+      <div id="review-map"></div>
+      <!-- Map overlays: footprints toggle (top-left) + legend (bottom-left) -->
+      <div class="map-overlay" style="top: 0.5rem; left: 0.5rem;">
+        <label><input id="toggle-footprints" type="checkbox" class="rounded"> Show building footprints</label>
+      </div>
+      <div class="map-overlay map-legend" style="bottom: 0.5rem; left: 0.5rem;">
+        <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Status</div>
+        <div class="legend-row"><span class="sw" style="background:#06b6d4;opacity:0.6"></span><span class="lbl">Active (assigned)</span></div>
+        <div class="legend-row"><span class="sw" style="background:#cbd5e1;opacity:0.6"></span><span class="lbl">Unassigned</span></div>
+        <div class="legend-row"><span class="sw" style="background:#9ca3af;opacity:0.25"></span><span class="lbl">Excluded</span></div>
+      </div>
+    </div>
 
-    <!-- Plan metrics (composite strip + per-FLW table) -->
+    <!-- Plan metrics (kpi strip + per-FLW table) -->
     <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
       <div class="flex items-center justify-between mb-1">
         <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Plan metrics</h2>
@@ -104,15 +134,30 @@
   const EDIT_URL = "{{ edit_url|escapejs }}";
   const CSV_URL = "{{ csv_url|escapejs }}";
   const COMPARE_URL = "{{ compare_url|escapejs }}";
+  const FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
   document.getElementById("compare-link").href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
-  // Escape user-controlled values before interpolating into innerHTML (group,
-  // worker, reason are LLO-typed and could carry HTML). Covers attribute + text.
+  // Escape user-controlled values before innerHTML interpolation (group, worker,
+  // reason are LLO-typed and could carry HTML).
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  let WAS = [];                 // current work areas
+  let WAS = [];                 // current work areas (raw plan rows)
   const selected = new Set();   // selected wa ids
+  let activeWorker = null;      // string | null — current click-to-filter
+
+  // ---- color per assignment key (CHW name or group) -----------------------
+  // Golden-angle HSL hash → adjacent territories visually distinct without a
+  // palette lookup. Connect-gis uses the same trick on group_id.
+  function colorFor(key) {
+    if (!key) return "#cbd5e1";  // unassigned = neutral
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = ((h * 31) + key.charCodeAt(i)) | 0;
+    const hue = (Math.abs(h) * 137.508) % 360;
+    return `hsl(${Math.round(hue)}, 65%, 55%)`;
+  }
+  // The aggregation key: prefer worker (opportunity_access), fall back to group.
+  function keyOf(w) { return (w.opportunity_access || w.work_area_group || "").trim(); }
 
   // ---- map (best-effort; needs WebGL) ----
   let map = null, mapReady = false;
@@ -124,13 +169,24 @@
     } catch (e) { /* headless / no webgl */ }
   }
   function colorExpr() {
-    return ["case", ["==", ["get", "status"], "EXCLUDED"], "#9ca3af",
-            ["case", ["boolean", ["feature-state", "sel"], false], "#10b981", "#06b6d4"]];
+    // Color by per-feature "fill" property (computed in fc()); status overrides.
+    return ["case",
+      ["==", ["get", "status"], "EXCLUDED"], "#9ca3af",
+      ["get", "fill"]];
+  }
+  function opacityExpr() {
+    // Excluded = faded; selected = bold; worker-filter inactive matches = dim.
+    return ["case",
+      ["==", ["get", "status"], "EXCLUDED"], 0.18,
+      ["boolean", ["feature-state", "sel"], false], 0.85,
+      ["boolean", ["feature-state", "dim"], false], 0.18,
+      0.55];
   }
   function fc() {
     return { type: "FeatureCollection", features: WAS.filter((w) => w.geometry).map((w) => ({
       type: "Feature", id: w.id, geometry: w.geometry,
-      properties: { id: w.id, status: w.status, group: w.work_area_group, worker: w.opportunity_access || "" } })) };
+      properties: { id: w.id, status: w.status, group: w.work_area_group || "",
+                    worker: w.opportunity_access || "", fill: colorFor(keyOf(w)) } })) };
   }
   function refreshMap() {
     if (!map || !mapReady) return;
@@ -139,18 +195,52 @@
     if (src) { src.setData(data); }
     else {
       map.addSource("wa", { type: "geojson", data, promoteId: "id" });
-      map.addLayer({ id: "wa-fill", type: "fill", source: "wa", paint: { "fill-color": colorExpr(), "fill-opacity": 0.35 } });
-      map.addLayer({ id: "wa-line", type: "line", source: "wa", paint: { "line-color": "#0891b2", "line-width": 1 } });
+      map.addLayer({ id: "wa-fill", type: "fill", source: "wa",
+                     paint: { "fill-color": colorExpr(), "fill-opacity": opacityExpr() } });
+      map.addLayer({ id: "wa-line", type: "line", source: "wa",
+                     paint: { "line-color": "#0f172a", "line-width": 0.5, "line-opacity": 0.4 } });
       map.on("click", "wa-fill", (e) => { const id = e.features[0].properties.id; toggleSelect(id); });
     }
     const b = new mapboxgl.LngLatBounds();
     data.features.forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
-    if (!b.isEmpty()) map.fitBounds(b, { padding: 40, maxZoom: 15, animate: false });
+    if (!b.isEmpty()) map.fitBounds(b, { padding: 40, maxZoom: 16, animate: false });
   }
   function setSelState() {
     if (!map || !mapReady) return;
-    WAS.forEach((w) => map.setFeatureState({ source: "wa", id: w.id }, { sel: selected.has(w.id) }));
+    WAS.forEach((w) => {
+      map.setFeatureState({ source: "wa", id: w.id }, {
+        sel: selected.has(w.id),
+        dim: activeWorker !== null && (w.opportunity_access || "") !== activeWorker,
+      });
+    });
   }
+
+  // ---- footprints overlay ----
+  let footprintsLoaded = false;
+  async function loadFootprints() {
+    if (!FOOTPRINTS_URL) { $("toggle-footprints").checked = false; return; }
+    $("status").textContent = "Fetching footprints…";
+    try {
+      const data = await (await fetch(FOOTPRINTS_URL)).json();
+      if (data.status !== "ok") throw new Error(data.detail || "footprints failed");
+      const src = map.getSource("plan-fp");
+      if (src) { src.setData(data.footprints); }
+      else {
+        map.addSource("plan-fp", { type: "geojson", data: data.footprints });
+        map.addLayer({ id: "plan-fp-dots", type: "circle", source: "plan-fp",
+          paint: { "circle-radius": 1.6, "circle-color": "#f59e0b", "circle-stroke-color": "#fff", "circle-stroke-width": 0.4 } }, "wa-line");
+      }
+      footprintsLoaded = true;
+      $("status").textContent = `${data.count.toLocaleString()} footprints.`;
+    } catch (e) { $("status").textContent = "Footprints failed: " + e.message; $("toggle-footprints").checked = false; }
+  }
+  $("toggle-footprints").addEventListener("change", () => {
+    const on = $("toggle-footprints").checked;
+    if (on && !footprintsLoaded) { loadFootprints(); return; }
+    if (map && mapReady && map.getLayer("plan-fp-dots")) {
+      map.setLayoutProperty("plan-fp-dots", "visibility", on ? "visible" : "none");
+    }
+  });
 
   // ---- render ----
   function render(data) {
@@ -179,8 +269,6 @@
       chip(k.dimension === "worker" ? "Workers" : "Groups", p.territory_count ?? 0, k.dimension === "worker" ? "" : "No workers assigned yet — metrics shown by group"),
     ].join("");
     $("flw-dim").textContent = k.dimension === "worker" ? "Worker" : "Group";
-    // Population comes from admin-boundary data, which footprint-only frames don't
-    // have — hide the column entirely rather than show a full column of "—".
     const showPop = !!p.has_population;
     $("flw-pop-col").style.display = showPop ? "" : "none";
     $("flw-body").innerHTML = (k.territories || []).map((t) =>
@@ -196,16 +284,35 @@
       `<div class="flex justify-between"><dt class="text-gray-500">Active areas</dt><dd class="font-medium">${s.active ?? 0}</dd></div>
        <div class="flex justify-between"><dt class="text-gray-500">Excluded</dt><dd class="font-medium">${s.excluded ?? 0}</dd></div>
        <div class="flex justify-between"><dt class="text-gray-500">Buildings (active)</dt><dd class="font-medium">${(s.buildings_active ?? 0).toLocaleString()}</dd></div>`;
+    // Worker rows — color swatch + click filter. Sort by area count desc so
+    // heaviest territories surface first.
     const bw = s.by_worker || {};
-    $("by-worker").innerHTML = Object.keys(bw).sort().map((k) =>
-      `<div class="flex justify-between"><span>${esc(k)}</span><span>${bw[k].work_areas} areas · ${bw[k].buildings.toLocaleString()} bldg</span></div>`).join("") || '<span class="text-gray-400">none</span>';
+    const rows = Object.keys(bw).sort((a, b) => bw[b].work_areas - bw[a].work_areas);
+    if (!rows.length) { $("by-worker").innerHTML = '<span class="text-gray-400 text-xs">no workers assigned</span>'; return; }
+    $("by-worker").innerHTML = rows.map((name) => {
+      const cls = "worker-row text-xs " + (activeWorker === name ? "is-active" : "");
+      return `<div class="${cls}" data-worker="${esc(name)}">
+        <span class="sw" style="background:${colorFor(name)}"></span>
+        <span class="nm">${esc(name)}</span>
+        <span class="ct">${bw[name].work_areas} · ${bw[name].buildings.toLocaleString()}</span>
+      </div>`;
+    }).join("");
+    $("worker-clear").classList.toggle("hidden", activeWorker === null);
   }
   function renderTable() {
     const body = $("wa-body");
     body.innerHTML = "";
     WAS.forEach((w) => {
       const tr = document.createElement("tr");
-      tr.className = "wa-row border-b " + (w.status === "EXCLUDED" ? "excluded " : "") + (selected.has(w.id) ? "sel" : "");
+      const isHl = activeWorker !== null && (w.opportunity_access || "") === activeWorker;
+      tr.className = "wa-row border-b "
+        + (w.status === "EXCLUDED" ? "excluded " : "")
+        + (selected.has(w.id) ? "sel " : "")
+        + (isHl ? "hl-worker " : "");
+      // Hide rows that don't match the active worker filter (lighter than dimming).
+      if (activeWorker !== null && (w.opportunity_access || "") !== activeWorker) {
+        tr.style.display = "none";
+      }
       const excluded = w.status === "EXCLUDED";
       const id = esc(w.id);
       tr.innerHTML = `
@@ -223,6 +330,24 @@
     });
     $("sel-count").textContent = `${selected.size} selected`;
   }
+
+  // ---- worker filter ----
+  function setActiveWorker(name) {
+    activeWorker = (name === activeWorker) ? null : name;
+    renderSummary({ by_worker: lastByWorker, active: lastSummary.active, excluded: lastSummary.excluded, buildings_active: lastSummary.buildings_active });
+    renderTable();
+    setSelState();
+  }
+  // We need lastByWorker / lastSummary cached so the worker filter toggle can
+  // re-render without round-tripping. Stash them on each render.
+  let lastByWorker = {}, lastSummary = {};
+  const origRenderSummary = renderSummary;
+  renderSummary = function (s) { lastByWorker = s.by_worker || {}; lastSummary = s; origRenderSummary(s); };
+  $("by-worker").addEventListener("click", (e) => {
+    const row = e.target.closest(".worker-row"); if (!row) return;
+    setActiveWorker(row.dataset.worker);
+  });
+  $("worker-clear").addEventListener("click", () => { activeWorker = null; renderSummary(lastSummary); renderTable(); setSelState(); });
 
   // ---- edits ----
   async function edit(body) {
@@ -265,7 +390,7 @@
     const resp = await post(CSV_URL, {});
     if (!resp.ok) { $("status").textContent = "Export failed."; return; }
     const blob = await resp.blob(); const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `microplan_opp{{ opp_id }}_plan{{ plan_id }}.csv`;
+    const a = document.createElement("a"); a.href = url; a.download = `microplan_plan{{ plan_id }}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
 
@@ -273,7 +398,7 @@
   fetch(PLAN_URL).then((r) => r.json()).then((d) => { if (d.status === "ok") render(d); else $("status").textContent = d.detail || "load failed"; })
     .catch((e) => $("status").textContent = "load failed: " + e);
 
-  window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit };
+  window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit, get activeWorker() { return activeWorker; }, setActiveWorker };
 })();
 </script>
 {% endblock %}
