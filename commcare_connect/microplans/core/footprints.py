@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 OVERTURE_BUILDINGS = overture.theme_path("buildings", "building")
 _COLUMNS = ["lon", "lat", "area_m2", "confidence"]
+_COLUMNS_WITH_GEOM = ["lon", "lat", "area_m2", "confidence", "geom_json"]
 # Reject absurdly large areas before they pull gigabytes from S3 and OOM the
 # worker. A survey area is a ward/LGA (Maiduguri LGA ≈ 107 km²); 2000 km² is a
 # generous ceiling that still blocks "the whole country" mistakes.
@@ -59,7 +60,7 @@ def _approx_area_km2(area: BaseGeometry) -> float:
     return abs(width_km * height_km)
 
 
-def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> pd.DataFrame:
+def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None, with_geom: bool = False) -> pd.DataFrame:
     """Fetch building footprints whose centroid falls inside `area`.
 
     Args:
@@ -67,9 +68,12 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> 
         min_confidence: if set, drop buildings whose Google-source confidence is
             below this. Null-confidence footprints (Microsoft/OSM) are dropped too
             when this is set — matching the pilot's Google-Open-Buildings input.
+        with_geom: include the GeoJSON polygon column (`geom_json`) when True.
+            Adds significant payload weight; pipelines that only need centroids
+            (sampling, coverage clustering) keep this off.
 
     Returns:
-        DataFrame[lon, lat, area_m2, confidence].
+        DataFrame[lon, lat, area_m2, confidence] (+ geom_json if with_geom).
 
     Raises:
         ValueError: if the area's bounding box exceeds MAX_AREA_KM2.
@@ -83,14 +87,17 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> 
             "Draw a smaller area (a ward or LGA)."
         )
     area_hash = _area_cache_key(area.wkt)
+    cols = _COLUMNS_WITH_GEOM if with_geom else _COLUMNS
 
     cached = FootprintArea.objects.filter(area_hash=area_hash).first()
     if cached is not None:
-        df = pd.DataFrame(list(cached.buildings.values(*_COLUMNS)), columns=_COLUMNS)
+        df = pd.DataFrame(list(cached.buildings.values(*cols)), columns=cols)
         logger.info("microplans footprints cache hit (%s, %d buildings)", area_hash[:12], len(df))
         return _apply_confidence(df, min_confidence)
 
     # Miss: fetch every building once (confidence-agnostic) and persist as rows.
+    # Always pull the polygon from Overture so the cache is review-ready; pipelines
+    # that don't need it just don't read the column.
     df_all = _query_overture(area, min_confidence=None)
     try:
         with transaction.atomic():
@@ -105,6 +112,7 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> 
                         lat=r.lat,
                         area_m2=(None if pd.isna(r.area_m2) else r.area_m2),
                         confidence=(None if pd.isna(r.confidence) else r.confidence),
+                        geom_json=(None if not getattr(r, "geom_json", None) else r.geom_json),
                     )
                     for r in df_all.itertuples(index=False)
                 ],
@@ -115,7 +123,7 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None) -> 
         # Concurrent miss for the same area beat us to it — read what they wrote.
         logger.info("microplans footprints concurrent fill (%s); using stored rows", area_hash[:12])
         fa = FootprintArea.objects.get(area_hash=area_hash)
-        df_all = pd.DataFrame(list(fa.buildings.values(*_COLUMNS)), columns=_COLUMNS)
+        df_all = pd.DataFrame(list(fa.buildings.values(*cols)), columns=cols)
     return _apply_confidence(df_all, min_confidence)
 
 
@@ -138,11 +146,18 @@ def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.Data
             ST_X(ST_Centroid(geometry)) AS lon,
             ST_Y(ST_Centroid(geometry)) AS lat,
             ST_Area_Spheroid(geometry)  AS area_m2,
-            sources[1].confidence       AS confidence
+            sources[1].confidence       AS confidence,
+            ST_AsGeoJSON(geometry)      AS geom_json
         FROM read_parquet('{OVERTURE_BUILDINGS}', filename=false, hive_partitioning=true)
         WHERE bbox.xmin >= ? AND bbox.xmax <= ?
           AND bbox.ymin >= ? AND bbox.ymax <= ?
           AND ST_Within(ST_Centroid(geometry), ST_GeomFromText(?))
           {conf_clause}
     """
-    return con.execute(query, params).df()
+    df = con.execute(query, params).df()
+    # ST_AsGeoJSON returns a string; the JSONField wants a dict.
+    if "geom_json" in df.columns:
+        import json as _json
+
+        df["geom_json"] = df["geom_json"].apply(lambda s: _json.loads(s) if isinstance(s, str) else None)
+    return df

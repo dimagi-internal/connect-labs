@@ -39,7 +39,11 @@ class TestMaterialize:
         assert len(was) == 2
         w = was[0]
         assert w["status"] == plan.STATUS_UNASSIGNED
-        assert w["work_area_group"] == "coverage"  # default group = arm
+        # Coverage cells are auto-bucketed into spatial super-cells at materialize
+        # time so the LLO sees groups out of the box (instead of "every cell is in
+        # the same default group"). With only 2 cells the super-grid is 1×1 → both
+        # land in "group-1".
+        assert w["work_area_group"].startswith("group-")
         assert w["opportunity_access"] is None
         assert w["building_count"] == 100 and w["expected_visit_count"] == 100
         assert w["audit"] == []
@@ -92,7 +96,8 @@ class TestActions:
 
     def test_noop_edit_records_no_audit(self):
         wa = _materialize()[0]
-        plan.apply_action(wa, "regroup", {"work_area_group": "coverage"}, "u")  # same as default
+        # Re-set the work_area_group to its current auto-assigned value: no change → no audit.
+        plan.apply_action(wa, "regroup", {"work_area_group": wa["work_area_group"]}, "u")
         assert wa["audit"] == []
 
     def test_unexclude_clears(self):
@@ -182,10 +187,12 @@ class TestKpis:
         )
 
     def test_dimension_falls_back_to_group_before_assignment(self):
+        # Coverage cells auto-group into spatial super-cells at materialize time
+        # (target ~30 per group → 3 cells → 1×1 super-grid → all in "group-1").
         k = plan.plan_kpis(self._was())
         assert k["dimension"] == "group"  # nothing assigned yet
-        assert k["territories"][0]["name"] == "coverage"
-        assert k["plan"]["territory_count"] == 1  # all in the default arm group
+        assert k["territories"][0]["name"] == "group-1"
+        assert k["plan"]["territory_count"] == 1
 
     def test_per_worker_spread_is_territory_diameter(self):
         was = self._was()

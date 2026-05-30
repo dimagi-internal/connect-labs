@@ -660,7 +660,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
         def get_plan(self, pid):
             return plans[int(pid)]
 
-        def create_plan(self, region, name, mode, pins, hulls):
+        def create_plan(self, region, name, mode, pins, hulls, input_areas=None):
             was = plan_lib.materialize_work_areas(mode, pins, hulls)
             pid = seq["plan"]
             seq["plan"] += 1
