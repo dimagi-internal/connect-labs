@@ -701,12 +701,19 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
             mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
             pins = payload.get("pins") or empty_fc
             hulls = (payload.get("coverage_areas") or payload.get("hulls")) or empty_fc
+            # Optional: the original draw/admin/pin areas from setup. Stored on the
+            # plan so the review-page footprints overlay can re-fetch by THAT geometry
+            # (which is already PG-cached from generation) instead of by the unioned
+            # cells (a different hash → expensive cold Overture query).
+            input_areas = payload.get("input_areas") or []
+            if not isinstance(input_areas, list):
+                input_areas = []
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plan = da.create_plan(region=region, name=name, mode=mode, pins=pins, hulls=hulls)
+            plan = da.create_plan(region=region, name=name, mode=mode, pins=pins, hulls=hulls, input_areas=input_areas)
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
@@ -944,14 +951,14 @@ class ProgramPlanEditView(LoginRequiredMixin, View):
 
 
 class ProgramPlanFootprintsView(LoginRequiredMixin, View):
-    """Building footprints inside a saved plan's cells. Used by the review-page
-    'Show footprints' toggle. Re-fetches from PG cache by unioning the plan's cell
-    geometries; cheap on warm cache, no re-clustering."""
+    """Building footprints (polygons + centroids) inside a saved plan's area.
+
+    Used by the review-page 'Show footprints' toggle. Prefers the plan's stored
+    `input_areas` (the original ward boundary from setup, already PG-cached from
+    generation) over re-deriving from cell unions (which would be a different
+    cache hash → expensive cold Overture query)."""
 
     def get(self, request, program_id, plan_id):
-        from shapely.geometry import shape
-        from shapely.ops import unary_union
-
         from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
         from commcare_connect.microplans.core.footprints import fetch_buildings
 
@@ -961,36 +968,69 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
 
-        geoms = []
-        for w in plan.work_areas:
-            g = w.get("geometry")
-            if g:
-                try:
-                    geoms.append(shape(g))
-                except Exception:  # noqa: BLE001
-                    continue
-        if not geoms:
+        area = _plan_lookup_area(plan)
+        if area is None:
             return JsonResponse(
                 {"status": "ok", "footprints": {"type": "FeatureCollection", "features": []}, "count": 0}
             )
         try:
-            area = unary_union(geoms)
-            df = fetch_buildings(area, min_confidence=None)
+            df = fetch_buildings(area, min_confidence=None, with_geom=True)
         except Exception:  # noqa: BLE001
             logger.exception("plan footprints fetch failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Footprints fetch failed."}, status=502)
 
-        features = [
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]},
-                "properties": {},
-            }
-            for _, row in df.iterrows()
-        ]
+        # Prefer the stored polygon when present; fall back to a centroid Point
+        # for rows from before the polygon-on-cache rollout.
+        features = []
+        for _, row in df.iterrows():
+            geom_json = row.get("geom_json") if hasattr(row, "get") else None
+            if isinstance(geom_json, dict) and geom_json.get("type"):
+                features.append({"type": "Feature", "geometry": geom_json, "properties": {}})
+            else:
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]},
+                        "properties": {},
+                    }
+                )
         return JsonResponse(
             {"status": "ok", "footprints": {"type": "FeatureCollection", "features": features}, "count": len(features)}
         )
+
+
+def _plan_lookup_area(plan):
+    """Best geometry to use when re-querying footprints for a plan.
+
+    Order of preference:
+      1. The plan's stored ``input_areas`` (the ward/draw/pin payload from setup;
+         already PG-cached as a whole from generation → instant hit).
+      2. The union of cell geometries (works but a different cache hash → cold
+         miss the first time per plan).
+    """
+    from shapely.ops import unary_union
+
+    from commcare_connect.microplans.core.area_input import resolve_area
+
+    inputs = plan.data.get("input_areas") or []
+    if inputs:
+        try:
+            return unary_union([resolve_area(a) for a in inputs])
+        except Exception:  # noqa: BLE001
+            logger.exception("plan footprints: input_areas resolve failed; falling back to cells")
+
+    from shapely.geometry import shape
+
+    geoms = []
+    for w in plan.work_areas:
+        g = w.get("geometry")
+        if not g:
+            continue
+        try:
+            geoms.append(shape(g))
+        except Exception:  # noqa: BLE001
+            continue
+    return unary_union(geoms) if geoms else None
 
 
 class ProgramPlanCSVView(LoginRequiredMixin, View):
