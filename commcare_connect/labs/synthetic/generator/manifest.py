@@ -72,6 +72,13 @@ class FlwPersona(BaseModel):
     flag_rate: float = Field(ge=0, le=1)
     improvement_arc: ImprovementArc | None = None
     notes: str | None = None
+    # Per-FLW overrides for cohort field distributions. The engine merges these
+    # on top of ``BeneficiaryCohort.field_distributions`` before drawing a
+    # visit's form_json — same field path, different distribution, only for
+    # this persona. Use this when a signal should appear concentrated on a
+    # single worker (e.g. gender skew that the audit "finds" on one FLW)
+    # without bending the rest of the cohort.
+    field_overrides: dict[str, FieldDistribution] = Field(default_factory=dict)
 
 
 # ---------- Beneficiary cohorts ----------
@@ -133,6 +140,41 @@ class CoachingArc(BaseModel):
     follow_up_outcome_week: PositiveInt | None = None
 
 
+# ---------- Tasks ----------
+
+TaskPriority = Literal["low", "medium", "high"]
+TaskStatus = Literal["pending", "in_progress", "completed"]
+
+
+class TaskSpec(BaseModel):
+    flw_id: str
+    title: str
+    priority: TaskPriority
+    status: TaskStatus
+    created_week: PositiveInt
+    ocs_persona: str | None = None
+
+
+# ---------- Image config ----------
+
+
+class ImageConfig(BaseModel):
+    question_path: str = "form.muac_group.muac_display_group_1.muac_photo"
+    # Legacy uncategorized pool — kept so existing opps with `stock_image_count`
+    # alone keep working. Maps to muac_NNN.jpg / synth-muac-NNN.
+    stock_image_count: PositiveInt = 15
+    probability: float = Field(ge=0, le=1, default=0.85)
+    # Two-pool corpus. When good_image_count is set, visits are assigned from
+    # the good or bad pool based on per-FLW bad_rate; pool entries map to
+    # muac_good_NNN.jpg / muac_bad_NNN.jpg and synth-muac-good-NNN /
+    # synth-muac-bad-NNN. When good_image_count is None, the legacy
+    # uncategorized pool above is used.
+    good_image_count: PositiveInt | None = None
+    bad_image_count: PositiveInt | None = None
+    default_bad_rate: float = Field(ge=0, le=1, default=0.0)
+    flw_bad_rates: dict[str, float] = Field(default_factory=dict)
+
+
 # ---------- Timeline ----------
 
 
@@ -168,6 +210,8 @@ class Manifest(BaseModel):
     anomalies: list[Anomaly] = Field(default_factory=list)
     kpi_config: list[KpiSpec] = Field(min_length=1)
     coaching_arcs: list[CoachingArc] = Field(default_factory=list)
+    tasks: list[TaskSpec] = Field(default_factory=list)
+    image_config: ImageConfig | None = None
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:
@@ -190,4 +234,7 @@ class Manifest(BaseModel):
             unknown = set(anomaly.flw_ids) - flw_ids
             if unknown:
                 raise ValueError(f"anomaly {anomaly.id} references unknown flw_ids={unknown}")
+        for task in self.tasks:
+            if task.flw_id not in flw_ids:
+                raise ValueError(f"task references unknown flw_id={task.flw_id}")
         return self

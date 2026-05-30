@@ -12,10 +12,12 @@ import uuid
 from typing import Any
 
 from .fields import fill_form_json
+from .images import assign_visit_images
 from .manifest import Manifest
 from .opportunity import build_opportunity
 from .schema_loader import FormSchema
 from .status import decide_visit_status
+from .tasks import build_task_records
 from .timeline import expand_visit_schedule
 from .user_data import build_user_data
 from .works import build_works_and_modules
@@ -66,11 +68,23 @@ def generate(
     for slot in slots:
         persona = persona_index[slot.flw_id]
         anomalies = _anomalies_at(slot.week_index, slot.flw_id, manifest)
-        form_json = fill_form_json(schema=form_schema, cohort=cohort, anomalies_for_visit=anomalies, rng=rng)
+        form_json = fill_form_json(
+            schema=form_schema,
+            cohort=cohort,
+            anomalies_for_visit=anomalies,
+            rng=rng,
+            persona=persona,
+        )
         status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
+        # Visit id MUST be a PostgreSQL bigint-compatible integer — the audit
+        # data-access layer and labs cache both type the column as int, and a
+        # UUID-string id breaks `filter_visit_ids=set([...])` lookups + the
+        # `/audit/api/<id>/bulk-data/` rendering path (500s on type mismatch).
+        # 60 bits ≈ 1e18, way under bigint max; chance of collision with another
+        # synthetic opp is vanishingly small for demo-scale fixture sets.
         visits.append(
             {
-                "id": str(uuid.UUID(int=rng.getrandbits(128))),
+                "id": rng.getrandbits(60),
                 "xform_id": str(uuid.UUID(int=rng.getrandbits(128))),
                 "opportunity_id": manifest.opportunity_id,
                 "username": persona.id,
@@ -96,6 +110,18 @@ def generate(
             }
         )
 
+    if manifest.image_config:
+        assign_visit_images(visits, manifest.image_config, rng)
+
+    persona_names = {p.id: p.display_name or p.id for p in personas}
+    task_records = build_task_records(
+        opportunity_id=manifest.opportunity_id,
+        tasks=manifest.tasks,
+        coaching_arcs=manifest.coaching_arcs,
+        timeline=manifest.timeline,
+        persona_names=persona_names,
+    )
+
     user_data = build_user_data(personas, visits)
     works, modules = build_works_and_modules(visits, payment_units)
     opportunity = build_opportunity(opportunity_detail, opportunity_name_override=manifest.opportunity_name)
@@ -106,4 +132,5 @@ def generate(
         "user_data": user_data,
         "completed_works": works,
         "completed_module": modules,
+        "task_records": task_records,
     }

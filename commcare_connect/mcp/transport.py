@@ -134,9 +134,17 @@ def _handle_tools_call(params: dict, user) -> dict:
     except MCPToolError as e:
         _log(user, name, arguments, success=False, error_code=e.code, is_write=tool.is_write)
         raise
-    except Exception:
+    except Exception as e:
         _log(user, name, arguments, success=False, error_code="UPSTREAM_ERROR", is_write=tool.is_write)
-        raise
+        # Wrap the exception so the MCP client sees the full traceback (file +
+        # line) inline — much faster to debug than poking through CloudWatch.
+        # Synthetic/demo tools are the main caller; if you don't want this in
+        # prod ALL responses, gate on a flag — but for now the diagnostic
+        # value outweighs the noise.
+        import traceback
+
+        tb = traceback.format_exc()
+        raise MCPToolError("UPSTREAM_ERROR", f"{type(e).__name__}: {e}\n{tb}") from e
 
     version_before = None
     version_after = None

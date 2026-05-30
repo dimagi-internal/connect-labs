@@ -47,7 +47,7 @@
         {% endif %}
 
         <h1 class="text-2xl font-semibold text-brand-deep-purple mb-4 leading-tight max-w-4xl">{{ solicitation.title }}</h1>
-        <p class="text-gray-600 leading-relaxed max-w-4xl">{{ solicitation.description|truncatewords:50 }}</p>
+        <p class="text-gray-600 leading-relaxed max-w-4xl">{{ solicitation.description|markdown|striptags|truncatewords:50 }}</p>
     </div>
 
     <!-- Key Details Bar -->
@@ -139,6 +139,13 @@
                         {{ forloop.counter }}
                     </span>
                     <div class="flex-1 min-w-0">
+                        {% if question.framing %}
+                        <p class="text-xs text-gray-500 italic leading-relaxed mb-2">
+                            <i class="fa-regular fa-circle-question mr-1 text-gray-400"></i>
+                            <span class="font-medium not-italic text-gray-600">Why we're asking:</span>
+                            {{ question.framing }}
+                        </p>
+                        {% endif %}
                         <p class="text-sm text-gray-700 leading-relaxed mb-3">{{ question.text }}</p>
                         <div class="flex items-center gap-3">
                             {% if question.required %}

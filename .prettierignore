@@ -1,0 +1,7 @@
+# Prettier mangles MkDocs admonition syntax — every `!!! note "..."` block
+# requires its content to be 4-space-indented, and prettier strips that
+# indent. The docs auto-update workflow then re-adds the indent on next
+# merge, kicking off an endless lint-vs-docs churn cycle that blocks
+# unrelated PRs. user_docs/ is rendered by mkdocs (see mkdocs.yml), not
+# by anything that needs prettier's normalization.
+user_docs/

@@ -798,6 +798,7 @@ class GeoPoDELoader:
         clear: bool = False,
         on_progress: Callable[[str], None] | None = None,
         filename: str = "",
+        iso_override: str = "",
     ) -> CountryLoadResult:
         """
         Load boundaries from a GeoPoDe ZIP file.
@@ -807,6 +808,9 @@ class GeoPoDELoader:
             clear: If True, delete existing GeoPoDe boundaries before loading
             on_progress: Optional callback for progress messages
             filename: Optional filename to use for ISO extraction (if zip_file.name not available)
+            iso_override: Force this ISO-3 for every file (the manifest's canonical code).
+                Use when the filename is unreliable (e.g. ``GeoPoDe_DRC_...`` whose real
+                ISO is ``COD``) or the data carries no nested ISO.
 
         Returns:
             CountryLoadResult with details of what was loaded
@@ -824,7 +828,7 @@ class GeoPoDELoader:
             zip_filename = filename
             if not zip_filename and hasattr(zip_file, "name"):
                 zip_filename = str(zip_file.name)
-            iso_from_filename = self._extract_iso_from_filename(zip_filename)
+            iso_from_filename = (iso_override or "").upper() or self._extract_iso_from_filename(zip_filename)
 
             # Handle both UploadedFile and BytesIO
             if hasattr(zip_file, "read"):
@@ -865,14 +869,16 @@ class GeoPoDELoader:
                             fallback_iso=iso_code,  # Pass fallback ISO from filename
                             clear=clear and len(all_results) == 0,  # Only clear on first file
                             on_progress=on_progress,
+                            iso_override=iso_override,
                         )
 
                         all_results.append(result)
 
                         if result.success:
                             total_loaded += result.count
-                            # Use ISO from data if better than filename-derived
-                            if result.iso_code and len(result.iso_code) == 3:
+                            # An explicit override is authoritative; otherwise trust the
+                            # data's ISO over the filename when it looks valid.
+                            if not iso_override and result.iso_code and len(result.iso_code) == 3:
                                 iso_code = result.iso_code
 
                     except Exception as e:
@@ -885,6 +891,15 @@ class GeoPoDELoader:
                                 error=f"Error processing {json_filename}: {e}",
                             )
                         )
+
+                if iso_override:
+                    iso_code = iso_override.upper()
+                # Now that every level is loaded, link each unit to its immediate
+                # parent by matching the parent's denormalized code (so callers can
+                # narrow children by an indexed key instead of a spatial join).
+                linked = self._link_parents(iso_code) if iso_code else 0
+                if linked:
+                    progress(f"Linked {linked} units to their parents")
 
                 progress(f"Complete - loaded {total_loaded} boundaries from {len(json_files)} files")
 
@@ -916,6 +931,7 @@ class GeoPoDELoader:
         fallback_iso: str = "",
         clear: bool = False,
         on_progress: Callable[[str], None] | None = None,
+        iso_override: str = "",
     ) -> LoadResult:
         """Process a single GeoJSON file from GeoPoDe."""
 
@@ -938,14 +954,16 @@ class GeoPoDELoader:
         # Get ISO code and infer admin level from first feature
         first_props = features[0].get("properties", {})
 
-        # Try to get ISO code from nested properties (WHO data has this)
-        nested_props = first_props.get("properties", {})
-        iso_code = nested_props.get("Iso_3_code", "")
+        # ISO precedence: explicit override (manifest) > nested data (WHO files,
+        # case varies: Iso_3_code / ISO_3_CODE) > filename fallback.
+        nested_props = first_props.get("properties", {}) or {}
+        nested_iso = nested_props.get("Iso_3_code") or nested_props.get("ISO_3_CODE") or ""
+        iso_code = (iso_override or "").upper() or nested_iso or ""
 
         # Infer admin level from the level name and property structure
         admin_level = self._infer_admin_level(level_name, first_props)
 
-        # If no ISO from nested properties, use fallback from ZIP filename
+        # If no ISO yet, use fallback from ZIP filename
         if not iso_code and fallback_iso:
             iso_code = fallback_iso
 
@@ -1012,21 +1030,25 @@ class GeoPoDELoader:
         return ""
 
     def _extract_level_from_filename(self, filename: str) -> str:
-        """Extract the level name from a GeoPoDe filename."""
-        # Pattern: boundary_{level}_{source}.json or just {level}.json
-        basename = filename.split("/")[-1]  # Handle paths in ZIP
-        basename = basename.replace(".json", "")
+        """Extract the level token from a GeoPoDe member filename.
 
-        # Try to match boundary_{level}_{source} pattern
-        match = re.match(r"boundary_([^_]+)_", basename)
-        if match:
-            return match.group(1)
-
-        # Fallback: split by underscore and take second part
-        parts = basename.split("_")
-        if len(parts) >= 2:
-            return parts[1]
-
+        Files are ``boundary_<level>_<suffix>.json`` where <suffix> is
+        ``default`` or ``<provider>_boundaries`` and <level> may itself contain
+        underscores (e.g. ``sub_prefectures``, ``senatorial_divisions``). We strip
+        the leading ``boundary_`` and the trailing suffix so the full level token
+        survives — earlier code split on the first ``_`` and mislabeled multi-word
+        levels (``sub_prefectures`` -> ``sub``), which then matched the parent's
+        ``*_name`` field instead of the leaf's.
+        """
+        basename = filename.split("/")[-1]
+        if basename.endswith(".json"):
+            basename = basename[: -len(".json")]
+        if basename.startswith("boundary_"):
+            basename = basename[len("boundary_") :]
+        # Strip trailing source descriptor: "_<provider>_boundaries", "_boundaries", or "_default".
+        basename = re.sub(r"_(?:[a-z0-9]+_)?boundaries$", "", basename)
+        if basename.endswith("_default"):
+            basename = basename[: -len("_default")]
         return basename
 
     def _infer_admin_level(self, level_name: str, properties: dict) -> int:
@@ -1202,35 +1224,53 @@ class GeoPoDELoader:
         elif not isinstance(geom, MultiPolygon):
             raise ValueError(f"Unexpected geometry type: {geom.geom_type}")
 
-        # Get the name from the level-specific field
-        name_field = f"{level_name}_name"
-        name = properties.get(name_field, "")
+        # Denormalized hierarchy: every "<token>_name"/"<token>_code" pair on the
+        # feature, split into this unit's own token vs its parents'. ("_name"/"_code"
+        # are both 5 chars, so [:-5] yields the token.)
+        all_names = {k[:-5]: v for k, v in properties.items() if k.endswith("_name") and v}
+        all_codes = {k[:-5]: v for k, v in properties.items() if k.endswith("_code") and v}
 
-        # Fallback to other name patterns
+        # The leaf name is the level token's own "<token>_name". Fall back to the
+        # deepest non-country name if the token field is missing.
+        name = all_names.get(level_name) or ""
         if not name:
-            # Try common patterns
-            for key in properties.keys():
-                if key.endswith("_name") and key != "country_name":
-                    name = properties[key]
-                    break
+            for token, value in all_names.items():
+                if token != "country":
+                    name = value  # any non-country name beats nothing
+            name = name or all_names.get("country", "")
 
-        # Get global_id as boundary ID
+        own_code = all_codes.get(level_name, "")
+        parent_codes = {t: c for t, c in all_codes.items() if t != level_name}
+        parent_names = {t: n for t, n in all_names.items() if t != level_name}
+
         global_id = properties.get("global_id", "")
         if not global_id:
-            # Generate one
-            global_id = f"geopode-{iso_code}-{level}-{name}".replace(" ", "_")
-
+            global_id = f"{iso_code}-{level}-{name}".replace(" ", "_")
         boundary_id = f"geopode-{global_id}"
 
-        # Get local name from nested properties if available
-        nested_props = properties.get("properties", {})
+        # Local/display name from nested viz_n (WHO files only; best-effort).
+        nested_props = properties.get("properties", {}) or {}
         name_local = ""
-        if nested_props:
-            # Look for viz_n (visualization name) which is often the local name
-            for key in nested_props.keys():
-                if "_viz_n" in key.lower() and key != "Adm0_viz_n":
-                    name_local = nested_props.get(key, "")
-                    break
+        for key, value in nested_props.items():
+            if "_viz_n" in key.lower() and key != "Adm0_viz_n" and value:
+                name_local = value
+                break
+
+        population = properties.get("population_1")
+        try:
+            population = float(population) if population not in (None, "") else None
+        except (TypeError, ValueError):
+            population = None
+
+        extra = {
+            "provider": properties.get("source", ""),  # WHO / HDX / GRID3 / Other
+            "source_date": properties.get("source_date", ""),
+            "global_id": global_id,
+            "level_token": level_name,
+            "own_code": own_code,
+            "parent_codes": parent_codes,
+            "parent_names": parent_names,
+        }
 
         return AdminBoundary(
             iso_code=iso_code,
@@ -1241,7 +1281,46 @@ class GeoPoDELoader:
             geometry=geom,
             source=self.SOURCE,
             source_url=f"geopode:{source_filename}",
+            population=population,
+            extra=extra,
         )
+
+    def _link_parents(self, iso_code: str) -> int:
+        """Set parent_boundary_id on this country's GeoPoDe units.
+
+        Each unit stores its own code and its parents' codes (denormalized in
+        ``extra``). We map ``(level_token, own_code) -> boundary_id`` and, for each
+        unit, look up the parent one admin level up by its code. Returns the number
+        of units linked. Idempotent — safe to re-run.
+        """
+        boundaries = list(
+            AdminBoundary.objects.filter(iso_code=iso_code, source=self.SOURCE).only(
+                "id", "boundary_id", "admin_level", "parent_boundary_id", "extra"
+            )
+        )
+        code_to_id: dict[tuple, str] = {}
+        level_token: dict[int, str] = {}
+        for b in boundaries:
+            token = (b.extra or {}).get("level_token")
+            own = (b.extra or {}).get("own_code")
+            if token:
+                level_token[b.admin_level] = token
+                if own:
+                    code_to_id[(token, str(own))] = b.boundary_id
+
+        updates = []
+        for b in boundaries:
+            parent_token = level_token.get(b.admin_level - 1)
+            if not parent_token:
+                continue
+            parent_code = ((b.extra or {}).get("parent_codes") or {}).get(parent_token)
+            parent_id = code_to_id.get((parent_token, str(parent_code))) if parent_code else None
+            if parent_id and parent_id != b.parent_boundary_id:
+                b.parent_boundary_id = parent_id
+                updates.append(b)
+        if updates:
+            AdminBoundary.objects.bulk_update(updates, ["parent_boundary_id"], batch_size=200)
+        return len(updates)
 
 
 class CountrySourceRegistry:
@@ -1966,3 +2045,145 @@ def get_opp_boundary_coverage(
         visits_unmatched=visits_unmatched,
         boundaries_by_level=boundaries_by_level,
     )
+
+
+# ---------------------------------------------------------------------------
+# resolve_many — paste-a-list ward-name resolution
+#
+# The bulk-create flow's safety belt: the lead pastes a list of ward names; for
+# each name we return the resolved boundary (id + LGA + population), and for any
+# name that doesn't resolve we return an explicit `unresolved_reason` so the
+# front-end can render an "unknown ward" row the lead must fix or skip before
+# Create Plans is enabled. See spine item `name-match-and-confirm` in the
+# microplans-10-wards why-brief.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class NameResolution:
+    """Per-name resolution returned by `resolve_many_by_name`.
+
+    Exactly one of (matched_id, unresolved_reason) is non-empty.
+    """
+
+    name: str
+    matched_id: str = ""
+    matched_name: str = ""
+    lga: str = ""
+    population: float | None = None
+    unresolved_reason: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "matched_id": self.matched_id,
+            "matched_name": self.matched_name,
+            "lga": self.lga,
+            "population": self.population,
+            "unresolved_reason": self.unresolved_reason,
+        }
+
+
+def resolve_many_by_name(
+    names: list[str],
+    iso_code: str,
+    admin_level: int,
+    source: str | None = None,
+) -> list[NameResolution]:
+    """Resolve a list of ward names against the AdminBoundary table.
+
+    For each input name:
+    - If exactly one boundary matches (case-insensitive, exact match) at the
+      given iso_code + admin_level (+ optional source) → return the match with
+      its boundary_id, name, parent name (LGA), and population.
+    - If no boundary matches → return ``unresolved_reason="not found"``.
+    - If multiple boundaries match (ambiguous name across LGAs) → return
+      ``unresolved_reason="ambiguous: N candidates"`` so the front-end can
+      surface a disambiguation step.
+
+    Returns one NameResolution per input name, in the same order.
+    """
+    # Imported here so this module is import-light for non-DB callers.
+    from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+
+    results: list[NameResolution] = []
+    cleaned = [(raw, (raw or "").strip()) for raw in names]
+    nonempty_cleaned = [name for _, name in cleaned if name]
+    if not nonempty_cleaned:
+        return [NameResolution(name=raw, unresolved_reason="empty name") for raw, _ in cleaned]
+
+    qs = AdminBoundary.objects.filter(
+        iso_code=iso_code,
+        admin_level=admin_level,
+        name__in=nonempty_cleaned,  # case-sensitive prefilter; broaden below
+    )
+    if source:
+        qs = qs.filter(source=source)
+
+    # Bucket candidates by lowercase name so we can do case-insensitive match
+    # and disambiguation in one pass. Most callers will hit ≤ a few hundred
+    # candidates so an in-memory bucket is cheap and avoids N+1.
+    by_lower: dict[str, list[AdminBoundary]] = {}
+    for b in qs:
+        by_lower.setdefault(b.name.lower(), []).append(b)
+    # Fall back to a case-insensitive search for any names that didn't match
+    # the case-sensitive __in (e.g. the boundary stored as "Madobi" vs paste
+    # "madobi"). One extra query, OR'd across the misses.
+    misses = [n for n in nonempty_cleaned if n.lower() not in by_lower]
+    if misses:
+        from django.db.models import Q
+        q = Q()
+        for n in misses:
+            q |= Q(name__iexact=n)
+        ci_qs = AdminBoundary.objects.filter(
+            iso_code=iso_code, admin_level=admin_level
+        ).filter(q)
+        if source:
+            ci_qs = ci_qs.filter(source=source)
+        for b in ci_qs:
+            by_lower.setdefault(b.name.lower(), []).append(b)
+
+    # Parent lookup (LGA = the admin_level - 1 parent for ADM3 wards in NGA).
+    parent_ids = {
+        b.parent_boundary_id
+        for matches in by_lower.values()
+        for b in matches
+        if b.parent_boundary_id
+    }
+    parent_name_by_id: dict[str, str] = {}
+    if parent_ids:
+        parent_qs = AdminBoundary.objects.filter(
+            iso_code=iso_code, boundary_id__in=parent_ids
+        ).only("boundary_id", "name")
+        for p in parent_qs:
+            parent_name_by_id[p.boundary_id] = p.name
+
+    for raw, cleaned_name in cleaned:
+        if not cleaned_name:
+            results.append(NameResolution(name=raw, unresolved_reason="empty name"))
+            continue
+        matches = by_lower.get(cleaned_name.lower(), [])
+        if not matches:
+            results.append(
+                NameResolution(name=raw, unresolved_reason="not found")
+            )
+            continue
+        if len(matches) > 1:
+            results.append(
+                NameResolution(
+                    name=raw,
+                    unresolved_reason=f"ambiguous: {len(matches)} candidates",
+                )
+            )
+            continue
+        b = matches[0]
+        results.append(
+            NameResolution(
+                name=raw,
+                matched_id=b.boundary_id,
+                matched_name=b.name,
+                lga=parent_name_by_id.get(b.parent_boundary_id, ""),
+                population=b.population,
+            )
+        )
+    return results

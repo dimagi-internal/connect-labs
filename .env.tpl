@@ -42,6 +42,9 @@ SCALE_VALIDATION_API_KEY={{ op://Employee/Connect Labs .env/SCALE_VALIDATION_API
 GOOGLE_OAUTH_CLIENT_ID={{ op://Employee/Connect Labs .env/GOOGLE_OAUTH_CLIENT_ID }}
 GOOGLE_OAUTH_CLIENT_SECRET={{ op://Employee/Connect Labs .env/GOOGLE_OAUTH_CLIENT_SECRET }}
 
+# Mapbox (satellite basemap for microplanning / rooftop-surveys maps; public pk. token)
+MAPBOX_TOKEN={{ op://Employee/Connect Labs .env/MAPBOX_TOKEN }}
+
 # Superset
 SUPERSET_URL={{ op://Employee/Connect Labs .env/SUPERSET_URL }}
 SUPERSET_USERNAME={{ op://Employee/Connect Labs .env/SUPERSET_USERNAME }}

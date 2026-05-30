@@ -19,6 +19,7 @@ from django.http import HttpRequest
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
 from commcare_connect.solicitations.models import ResponseRecord, ReviewRecord, SolicitationRecord
+from commcare_connect.solicitations.validation import validate_solicitation_payload
 
 logger = logging.getLogger(__name__)
 
@@ -186,14 +187,25 @@ class SolicitationsDataAccess:
     def create_solicitation(self, data: dict) -> SolicitationRecord:
         """Create a new solicitation via production API.
 
-        ``is_public`` is the user-facing API name for the public-listing flag, but
-        it lives on the LabsRecord envelope (``record.public``), not inside the
-        JSON ``data`` column. Pop it before persisting so we don't store a stale
-        duplicate that could drift from the envelope.
+        Validates ``data`` against the canonical schema (see
+        :mod:`commcare_connect.solicitations.validation`) before persisting —
+        this is the single chokepoint every write path flows through (UI form,
+        HTTP API, MCP tool), so drift gets caught here once instead of being
+        replicated at every entry point. Raises
+        :class:`django.core.exceptions.ValidationError` on drift; callers map
+        to their protocol envelope.
+
+        ``is_public`` is the user-facing API name for the public-listing flag,
+        but it lives on the LabsRecord envelope (``record.public``), not inside
+        the JSON ``data`` column. Pop it before validation so the validator's
+        unknown-fields check doesn't flag it, and forward it as ``public=`` to
+        the envelope.
         """
         # Don't mutate the caller's dict
         data = dict(data)
         is_public = bool(data.pop("is_public", False))
+
+        validate_solicitation_payload(data)
 
         record = self.labs_api.create_record(
             experiment=self.experiment,
@@ -207,6 +219,14 @@ class SolicitationsDataAccess:
     def update_solicitation(self, solicitation_id: int, data: dict) -> SolicitationRecord:
         """Update an existing solicitation via production API.
 
+        Validates the partial payload against the canonical schema
+        (``partial=True``) so update-time drift gets caught at the same
+        chokepoint as create-time drift. Required fields are not enforced
+        — partial updates send only the fields they want to change — but
+        every other check (unknown-field rejection, enums, dates, nested
+        shapes) applies. Raises
+        :class:`django.core.exceptions.ValidationError` on drift.
+
         Pops ``is_public`` from data (visibility lives on the envelope, not in
         JSON) and forwards it as ``public=`` so toggling the form's "Publicly
         Listed" checkbox actually flips the server-side ACL flag. Without this
@@ -215,6 +235,9 @@ class SolicitationsDataAccess:
         """
         data = dict(data)
         public = bool(data.pop("is_public")) if "is_public" in data else None
+
+        validate_solicitation_payload(data, partial=True)
+
         record = self.labs_api.update_record(
             record_id=solicitation_id,
             experiment=self.experiment,

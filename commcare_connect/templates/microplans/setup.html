@@ -1,0 +1,753 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Microplans — Setup{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
+<style>
+  #rooftop-map { position: absolute; inset: 0; }
+  /* .button (in tailwind.css) sets `display: inline-block`, which has higher cascade priority
+     than Tailwind's .hidden. Force !important so JS-toggled .hidden actually hides things. */
+  .hidden { display: none !important; }
+  .seg-on { box-shadow: inset 0 0 0 2px #3843d0; background: #eef0ff; color: #3a42c7; }
+
+  /* Section label — small caps header above each control group */
+  .mp-section-label { font-size: 0.6875rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
+
+  /* Mode cards (top-level plan-type flip) */
+  .mode-card { border: 1.5px solid #e5e7eb; border-radius: 0.5rem; padding: 0.75rem 0.75rem; cursor: pointer; transition: all .12s; background: #fff; display: flex; flex-direction: column; gap: 0.2rem; }
+  .mode-card:hover { border-color: #9ca3af; background: #f9fafb; }
+  .mode-card.is-selected { border-color: #3843d0; background: #eef0ff; }
+  .mode-card .mode-title { font-weight: 600; color: #111827; font-size: 0.9rem; line-height: 1.1; }
+  .mode-card.is-selected .mode-title { color: #3843d0; }
+  .mode-card .mode-sub { font-size: 0.7rem; color: #6b7280; line-height: 1.35; }
+
+  /* Segmented tab row (area input + cell-size chips share the visual language) */
+  .seg-row { display: grid; gap: 0.25rem; }
+  .seg-tab { padding: 0.4rem 0.25rem; font-size: 0.75rem; font-weight: 500; text-align: center;
+             border: 1px solid #d1d5db; border-radius: 0.375rem; background: #fff; color: #4b5563;
+             cursor: pointer; transition: all .12s; }
+  .seg-tab:hover { border-color: #9ca3af; }
+  .seg-tab.is-on { border-color: #3843d0; background: #3843d0; color: #fff; }
+
+  /* Cell-size chips */
+  .chip-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.25rem; }
+  .chip { padding: 0.3rem 0.1rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.7rem;
+          color: #4b5563; cursor: pointer; background: #fff; text-align: center; transition: all .12s; }
+  .chip:hover { border-color: #9ca3af; }
+  .chip.is-on { border-color: #3843d0; color: #3843d0; background: #eef0ff; font-weight: 600; }
+
+  /* Stat row — left-aligned key, right-aligned value */
+  .mp-stat { display: flex; justify-content: space-between; font-size: 0.8125rem; color: #4b5563; }
+  .mp-stat dd { color: #111827; font-weight: 500; }
+
+  /* Action buttons — clearer hierarchy than tailwind's button-md */
+  .mp-action { display: block; width: 100%; padding: 0.55rem 0.75rem; border-radius: 0.375rem;
+               font-size: 0.875rem; font-weight: 600; text-align: center; cursor: pointer;
+               border: 1px solid transparent; transition: all .12s; }
+  .mp-action-primary { background: #3843d0; color: #fff; border-color: #3843d0; }
+  .mp-action-primary:hover { background: #2d36b3; }
+  .mp-action-secondary { background: #fff; color: #3843d0; border-color: #3843d0; }
+  .mp-action-secondary:hover { background: #eef0ff; }
+  .mp-action-link { background: transparent; color: #4b5563; border: none; padding: 0.4rem; font-weight: 500; }
+  .mp-action-link:hover { color: #111827; text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-4rem)]" x-data>
+  <!-- Control panel -->
+  <aside class="w-80 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-4">
+    <div>
+      <h1 class="text-lg font-bold text-gray-900">New microplan</h1>
+      {% if program_id %}
+      <p class="text-xs text-gray-500 mt-0.5">
+        Program #{{ program_id }} · <a href="{{ program_url }}" class="text-brand-cornflower-blue">← portfolio</a>
+      </p>
+      {% else %}
+      <p class="text-xs text-gray-500 mt-0.5">Opportunity #{{ opp_id }}</p>
+      {% endif %}
+    </div>
+
+    {% if error %}
+    <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
+    {% endif %}
+
+    <!-- PLAN TYPE: top-level flip -->
+    <section>
+      <div class="mp-section-label">Plan type</div>
+      <div class="grid grid-cols-2 gap-2">
+        <div id="card-coverage" class="mode-card" role="button" tabindex="0">
+          <div class="mode-title">Coverage</div>
+          <div class="mode-sub">Visit <em>every</em> household. Tile into small work areas, assign to CHWs.</div>
+        </div>
+        <div id="card-sampling" class="mode-card" role="button" tabindex="0">
+          <div class="mode-title">Sampling</div>
+          <div class="mode-sub">PPS <em>subset</em> for inference. Primaries + alternates across arms.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AREA -->
+    <section>
+      <div class="mp-section-label">Area</div>
+      <div class="seg-row mb-3" style="grid-template-columns: repeat(3, 1fr);">
+        <button type="button" id="btn-input-draw" class="seg-tab is-on">Draw</button>
+        <button type="button" id="btn-input-admin" class="seg-tab">Admin</button>
+        <button type="button" id="btn-input-pin" class="seg-tab">Pin</button>
+      </div>
+
+      <!-- Arm selector — sampling only (RCT intervention/comparison split) -->
+      <div id="arm-row" class="seg-row mb-3" style="grid-template-columns: repeat(2, 1fr);">
+        <button type="button" id="btn-arm-intervention" class="seg-tab is-on">Intervention</button>
+        <button type="button" id="btn-arm-comparison" class="seg-tab">Comparison</button>
+      </div>
+
+      <!-- Draw input -->
+      <div id="input-draw">
+        <p class="text-xs text-gray-500">Use the <strong>polygon tool</strong> at the top-right of the map to outline the area.</p>
+      </div>
+
+      <!-- Admin-area input -->
+      <div id="input-admin" class="hidden space-y-2 text-sm">
+        <label class="block">
+          <span class="text-gray-600 text-xs">Country</span>
+          <select id="sel-country" class="base-input mt-1"></select>
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="block">
+            <span class="text-gray-600 text-xs">Level</span>
+            <select id="sel-level" class="base-input mt-1">
+              <option value="1">Region / State</option>
+              <option value="2" selected>County / LGA</option>
+              <option value="3">Ward / Locality</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-gray-600 text-xs">Search</span>
+            <input id="inp-area-search" type="text" placeholder="name…" class="base-input mt-1">
+          </label>
+        </div>
+        <button type="button" id="btn-area-search" class="mp-action mp-action-primary text-sm py-1.5">Find areas</button>
+        <label class="block hidden" id="wrap-source">
+          <span class="text-gray-600 text-xs">Boundary source</span>
+          <select id="sel-source" class="base-input mt-1"></select>
+        </label>
+        <div id="area-source" class="text-xs text-gray-500"></div>
+        <div id="list-areas" class="max-h-48 overflow-y-auto border border-gray-100 rounded divide-y"></div>
+      </div>
+
+      <!-- Pin + radius input -->
+      <div id="input-pin" class="hidden space-y-2 text-sm">
+        <p class="text-xs text-gray-500">Click <strong>"Drop pin"</strong>, then click the map. The circle is the area.</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" id="btn-drop-pin" class="mp-action mp-action-secondary text-xs py-1.5">Drop pin</button>
+          <label class="block">
+            <span class="text-gray-600 text-xs">Radius (m)</span>
+            <input id="inp-pin-radius" type="number" value="500" min="20" step="50" class="base-input mt-1">
+          </label>
+        </div>
+        <div id="pin-status" class="text-xs text-gray-500"></div>
+      </div>
+
+      <!-- Stats — labels switch per mode -->
+      <dl class="mt-3 space-y-1">
+        <div class="mp-stat" id="stat-row-arm1"><dt id="stat-label-arm1">Intervention areas</dt><dd id="stat-intervention">0</dd></div>
+        <div class="mp-stat" id="stat-row-arm2"><dt id="stat-label-arm2">Comparison areas</dt><dd id="stat-comparison">0</dd></div>
+        <div class="mp-stat hidden" id="stat-row-cov"><dt>Coverage areas</dt><dd id="stat-coverage">0</dd></div>
+        <div class="mp-stat"><dt>Approx. area</dt><dd id="stat-area">—</dd></div>
+      </dl>
+
+      <!-- Footprints overlay toggle: peek at the buildings before generating -->
+      <label class="flex items-center gap-2 mt-3 text-xs text-gray-600 cursor-pointer">
+        <input id="toggle-footprints" type="checkbox" class="rounded">
+        <span>Show building footprints on map</span>
+      </label>
+    </section>
+
+    <!-- SAMPLING CONFIG -->
+    <section id="cfg-sampling">
+      <div class="mp-section-label">Sampling config</div>
+      <div class="space-y-2 text-sm">
+        <label class="block"><span class="text-gray-600 text-xs">Target clusters (PSUs)</span>
+          <input id="cfg-clusters" type="number" value="25" min="1" class="base-input mt-1"></label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="block"><span class="text-gray-600 text-xs">Primary / PSU</span>
+            <input id="cfg-primary" type="number" value="8" min="1" class="base-input mt-1"></label>
+          <label class="block"><span class="text-gray-600 text-xs">Alternates / PSU</span>
+            <input id="cfg-alternate" type="number" value="8" min="0" class="base-input mt-1"></label>
+        </div>
+        <label class="block"><span class="text-gray-600 text-xs">Min roof confidence</span>
+          <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="base-input mt-1"></label>
+        <div class="grid grid-cols-2 gap-2">
+          <label class="block"><span class="text-gray-600 text-xs">Min area m²</span>
+            <input id="cfg-area-min" type="number" value="9" min="0" class="base-input mt-1"></label>
+          <label class="block"><span class="text-gray-600 text-xs">Max area m²</span>
+            <input id="cfg-area-max" type="number" value="330" min="0" class="base-input mt-1"></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- COVERAGE CONFIG: just cell size -->
+    <section id="cfg-coverage" class="hidden">
+      <div class="mp-section-label">Work-area size</div>
+      <p class="text-xs text-gray-500 mb-2 leading-snug">
+        Tile the area into <strong>uniform squares</strong>. Each occupied square becomes one <strong>work area</strong>; CHWs are assigned groups of adjacent work areas.
+      </p>
+      <div class="chip-row" id="cellsize-chips">
+        <button type="button" class="chip" data-cellsize="50">50 m</button>
+        <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
+        <button type="button" class="chip" data-cellsize="150">150 m</button>
+        <button type="button" class="chip" data-cellsize="200">200 m</button>
+        <button type="button" class="chip" data-cellsize="250">250 m</button>
+      </div>
+      <label class="block mt-2">
+        <span class="text-gray-600 text-xs">Custom (m)</span>
+        <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input mt-1">
+      </label>
+    </section>
+
+    {% if program_id %}
+    <!-- NAME (program scope only) -->
+    <section>
+      <div class="mp-section-label">Name</div>
+      <div class="space-y-2 text-sm">
+        <label class="block"><span class="text-gray-600 text-xs">Plan name</span>
+          <input id="inp-plan-name" type="text" placeholder="e.g. Kano · Madobi · Gora ward" class="base-input mt-1"></label>
+        <label class="block"><span class="text-gray-600 text-xs">Region / area label <span class="text-gray-400">(optional)</span></span>
+          <input id="inp-plan-region" type="text" placeholder="Madobi LGA · Gora ward" class="base-input mt-1"></label>
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- ACTIONS -->
+    <section>
+      <div class="mp-section-label">Generate</div>
+      <button type="button" id="btn-preview" class="mp-action mp-action-primary">Preview</button>
+      {% if program_id %}
+      <button type="button" id="btn-create-plan" class="mp-action mp-action-primary mt-2 hidden">Create plan in program →</button>
+      {% else %}
+      <button type="button" id="btn-save" class="mp-action mp-action-primary mt-2 hidden">Save</button>
+      <button type="button" id="btn-review" class="mp-action mp-action-primary mt-2 hidden">Review &amp; edit plan</button>
+      {% endif %}
+      <button type="button" id="btn-csv" class="mp-action mp-action-link mt-1 hidden text-xs">Download Connect import CSV</button>
+      <div id="preview-status" class="mt-2 text-xs text-gray-600"></div>
+      <div id="save-status" class="mt-1 text-xs text-gray-600"></div>
+    </section>
+  </aside>
+
+  <!-- Map -->
+  <div class="relative flex-1">
+    <div id="rooftop-map"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+<script>
+(function () {
+  const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+  const URLS = {
+    sampling: "{% url 'microplans:preview_frame' opp_id=opp_id %}",
+    coverage: "{% url 'microplans:preview_coverage' opp_id=opp_id %}",
+    footprints: "{% url 'microplans:preview_footprints' opp_id=opp_id %}",
+    save: "{% url 'microplans:save_frame' opp_id=opp_id %}",
+    csv: "{% url 'microplans:work_areas_csv' opp_id=opp_id %}",
+    materialize: "{% url 'microplans:plan_materialize' opp_id=opp_id %}",
+    reviewBase: "/microplans/{{ opp_id }}/review/",
+    countries: "{% url 'microplans:countries' %}",
+    areas: "{% url 'microplans:admin_areas' opp_id=opp_id %}",
+    geometry: "{% url 'microplans:admin_area_geometry' opp_id=opp_id %}",
+  };
+  const CSRF = "{{ csrf_token }}";
+  const PROGRAM = "{{ program_id|default:''|escapejs }}";
+  const CREATE_PLAN_URL = "{{ create_plan_url|default:''|escapejs }}";
+  const PROGRAM_URL = "{{ program_url|default:''|escapejs }}";
+  if (!MAPBOX_TOKEN) { return; }
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+
+  const $ = (id) => document.getElementById(id);
+  const post = (url, body) => fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body),
+  });
+
+  const map = new mapboxgl.Map({
+    container: "rooftop-map",
+    style: "mapbox://styles/mapbox/satellite-streets-v12",
+    center: [8.6753, 9.0820], zoom: 5,
+  });
+
+  // Sampling arms get colored polygons; coverage = single neutral color.
+  const ARM_COLORS = { intervention: "#10b981", comparison: "#3b82f6", coverage: "#6366f1" };
+  const drawStyles = [
+    { id: "gl-draw-polygon-fill", type: "fill", filter: ["all", ["==", "$type", "Polygon"]],
+      paint: { "fill-color": ["case", ["==", ["get", "user_arm"], "comparison"], ARM_COLORS.comparison,
+                                    ["==", ["get", "user_arm"], "coverage"], ARM_COLORS.coverage,
+                                    ARM_COLORS.intervention], "fill-opacity": 0.18 } },
+    { id: "gl-draw-polygon-stroke", type: "line", filter: ["all", ["==", "$type", "Polygon"]],
+      paint: { "line-color": ["case", ["==", ["get", "user_arm"], "comparison"], ARM_COLORS.comparison,
+                                    ["==", ["get", "user_arm"], "coverage"], ARM_COLORS.coverage,
+                                    ARM_COLORS.intervention], "line-width": 2 } },
+    { id: "gl-draw-vertex", type: "circle", filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
+      paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": "#111", "circle-stroke-width": 1 } },
+  ];
+  const draw = new MapboxDraw({ displayControlsDefault: false, controls: { polygon: true, trash: true }, styles: drawStyles });
+  map.addControl(draw, "top-right");
+  map.addControl(new mapboxgl.NavigationControl(), "top-right");
+
+  // ---- state ----
+  let mode = "coverage";      // coverage | sampling — coverage is the more common workflow
+  let input = "draw";         // draw | admin | pin
+  let currentArm = "intervention"; // sampling: intervention | comparison ; coverage: forced to "coverage"
+  let circleAreas = [];       // [{arm, circle:{lon,lat,radius_m}}]
+  let dropPinArmed = false;
+  let lastPreview = null;
+  let cellSizeM = 100;
+
+  // ---- mode toggle ----
+  function setMode(m) {
+    mode = m;
+    $("card-coverage").classList.toggle("is-selected", m === "coverage");
+    $("card-sampling").classList.toggle("is-selected", m === "sampling");
+    $("cfg-sampling").classList.toggle("hidden", m !== "sampling");
+    $("cfg-coverage").classList.toggle("hidden", m !== "coverage");
+    // Arm selector is sampling-only — coverage = single coverage zone, no arms.
+    $("arm-row").classList.toggle("hidden", m === "coverage");
+    // Stats labels switch per mode.
+    $("stat-row-arm1").classList.toggle("hidden", m === "coverage");
+    $("stat-row-arm2").classList.toggle("hidden", m === "coverage");
+    $("stat-row-cov").classList.toggle("hidden", m !== "coverage");
+    // Force the arm to coverage when in coverage mode (any new draw/pin gets tagged "coverage").
+    if (m === "coverage") {
+      currentArm = "coverage";
+      retagAllFeatures("coverage");
+    } else {
+      currentArm = "intervention";
+      setArm("intervention");
+    }
+    resetPreviewButtons();
+    refreshStats();
+  }
+  $("card-coverage").addEventListener("click", () => setMode("coverage"));
+  $("card-sampling").addEventListener("click", () => setMode("sampling"));
+
+  // ---- area-input tabs ----
+  function setInput(i) {
+    input = i;
+    [["draw", "input-draw"], ["admin", "input-admin"], ["pin", "input-pin"]].forEach(([k, el]) =>
+      $(el).classList.toggle("hidden", k !== i));
+    ["draw", "admin", "pin"].forEach((k) =>
+      $("btn-input-" + k).classList.toggle("is-on", k === i));
+    if (i !== "pin") disarmPin();
+  }
+  $("btn-input-draw").addEventListener("click", () => setInput("draw"));
+  $("btn-input-admin").addEventListener("click", () => { setInput("admin"); loadCountries(); });
+  $("btn-input-pin").addEventListener("click", () => setInput("pin"));
+
+  // ---- arm (sampling-only) ----
+  function setArm(arm) {
+    if (mode === "coverage") return; // ignored — coverage has no arm split
+    currentArm = arm;
+    $("btn-arm-intervention").classList.toggle("is-on", arm === "intervention");
+    $("btn-arm-comparison").classList.toggle("is-on", arm === "comparison");
+  }
+  $("btn-arm-intervention").addEventListener("click", () => setArm("intervention"));
+  $("btn-arm-comparison").addEventListener("click", () => setArm("comparison"));
+
+  function tagFeature(id) {
+    draw.setFeatureProperty(id, "arm", currentArm);
+    const f = draw.get(id); if (f) draw.add(f);
+  }
+  function retagAllFeatures(arm) {
+    draw.getAll().features.forEach((f) => {
+      draw.setFeatureProperty(f.id, "arm", arm);
+      draw.add(draw.get(f.id));
+    });
+    circleAreas.forEach((c) => { c.arm = arm; });
+    renderCircles();
+  }
+
+  // ---- cell-size chips (coverage) ----
+  function setCellSize(m, fromChip) {
+    cellSizeM = Math.max(10, +m || 100);
+    document.querySelectorAll("#cellsize-chips .chip").forEach((c) =>
+      c.classList.toggle("is-on", +c.dataset.cellsize === cellSizeM));
+    if (fromChip) $("cfg-cellsize").value = cellSizeM;
+  }
+  document.querySelectorAll("#cellsize-chips .chip").forEach((c) =>
+    c.addEventListener("click", () => setCellSize(+c.dataset.cellsize, true)));
+  $("cfg-cellsize").addEventListener("input", () => setCellSize(+$("cfg-cellsize").value, false));
+
+  // ---- circle (pin) display ----
+  function circlePolygon(lon, lat, radiusM, arm, steps = 48) {
+    const coords = [];
+    const dLat = radiusM / 111320;
+    const dLon = radiusM / (111320 * Math.cos(lat * Math.PI / 180));
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * 2 * Math.PI;
+      coords.push([lon + dLon * Math.cos(t), lat + dLat * Math.sin(t)]);
+    }
+    return { type: "Feature", geometry: { type: "Polygon", coordinates: [coords] }, properties: { arm } };
+  }
+  function renderCircles() {
+    const fc = { type: "FeatureCollection", features: circleAreas.map((c) =>
+      circlePolygon(c.circle.lon, c.circle.lat, c.circle.radius_m, c.arm)) };
+    upsertSource("rooftop-circles", fc);
+    if (!map.getLayer("rooftop-circles-fill")) {
+      map.addLayer({ id: "rooftop-circles-fill", type: "fill", source: "rooftop-circles",
+        paint: { "fill-color": ["case", ["==", ["get", "arm"], "comparison"], ARM_COLORS.comparison,
+                                       ["==", ["get", "arm"], "coverage"], ARM_COLORS.coverage,
+                                       ARM_COLORS.intervention], "fill-opacity": 0.15 } });
+      map.addLayer({ id: "rooftop-circles-line", type: "line", source: "rooftop-circles",
+        paint: { "line-color": ["case", ["==", ["get", "arm"], "comparison"], ARM_COLORS.comparison,
+                                       ["==", ["get", "arm"], "coverage"], ARM_COLORS.coverage,
+                                       ARM_COLORS.intervention], "line-width": 2 } });
+    }
+    refreshStats();
+  }
+
+  function disarmPin() { dropPinArmed = false; map.getCanvas().style.cursor = ""; $("btn-drop-pin").classList.remove("seg-on"); }
+  $("btn-drop-pin").addEventListener("click", () => {
+    dropPinArmed = !dropPinArmed;
+    $("btn-drop-pin").classList.toggle("seg-on", dropPinArmed);
+    map.getCanvas().style.cursor = dropPinArmed ? "crosshair" : "";
+    $("pin-status").textContent = dropPinArmed ? "Click the map to place the pin." : "";
+  });
+  map.on("click", (e) => {
+    if (!dropPinArmed) return;
+    const r = Math.max(20, +$("inp-pin-radius").value || 500);
+    circleAreas.push({ arm: currentArm, circle: { lon: e.lngLat.lng, lat: e.lngLat.lat, radius_m: r } });
+    renderCircles();
+    $("pin-status").textContent = `${circleAreas.length} pin area(s). Click to add more, or Preview.`;
+  });
+
+  // ---- admin-area picker ----
+  let countriesLoaded = false;
+  let parentArea = null;
+  async function loadCountries() {
+    if (countriesLoaded) return;
+    countriesLoaded = true;
+    try {
+      const data = await (await fetch(URLS.countries)).json();
+      const bespoke = new Set(data.bespoke || []);
+      const sel = $("sel-country");
+      sel.innerHTML = "";
+      (data.countries || []).forEach((c) => {
+        const o = document.createElement("option");
+        o.value = c.alpha3;
+        o.textContent = (bespoke.has(c.alpha3) ? "★ " : "") + c.name;
+        if (c.alpha3 === "NGA") o.selected = true;
+        sel.appendChild(o);
+      });
+    } catch (e) { $("area-source").textContent = "Could not load countries: " + e; }
+  }
+  let chosenSource = null;
+  $("btn-area-search").addEventListener("click", () => { parentArea = null; chosenSource = null; searchAreas(); });
+  $("sel-source").addEventListener("change", () => { chosenSource = $("sel-source").value || null; searchAreas(); });
+
+  function syncSourcePicker(data) {
+    const sel = $("sel-source");
+    const avail = data.available_sources || [];
+    const labels = data.source_labels || {};
+    $("wrap-source").classList.toggle("hidden", avail.length < 2);
+    sel.innerHTML = "";
+    avail.forEach((name) => {
+      const o = document.createElement("option");
+      o.value = name; o.textContent = labels[name] || name;
+      if (name === data.source) o.selected = true;
+      sel.appendChild(o);
+    });
+    chosenSource = data.source;
+  }
+
+  async function searchAreas() {
+    const body = { country: $("sel-country").value, level: +$("sel-level").value, q: $("inp-area-search").value || null };
+    if (parentArea) body.parent = parentArea;
+    if (chosenSource) body.source = chosenSource;
+    $("area-source").textContent = "Searching…";
+    try {
+      const data = await (await post(URLS.areas, body)).json();
+      if (data.status !== "ok") { $("area-source").textContent = data.detail || "lookup failed"; return; }
+      syncSourcePicker(data);
+      const label = (data.source_labels || {})[data.source] || data.source;
+      $("area-source").innerHTML = `source: <span class="font-medium">${label}</span> · ${data.areas.length} areas`;
+      renderAreaList(data.areas);
+    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
+  }
+  function renderAreaList(areas) {
+    const box = $("list-areas");
+    box.innerHTML = "";
+    areas.forEach((a) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between gap-2 px-2 py-1 text-sm hover:bg-gray-50";
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "text-left flex-1 truncate text-emerald-700";
+      const meta = [a.area_km2 ? `${a.area_km2} km²` : null, a.population ? `pop ${Math.round(a.population).toLocaleString()}` : null].filter(Boolean).join(" · ");
+      name.textContent = a.name + (meta ? ` · ${meta}` : "");
+      name.title = "Use as area";
+      name.addEventListener("click", () => useArea(a));
+      row.appendChild(name);
+      if (a.level < 3) {
+        const drill = document.createElement("button");
+        drill.type = "button";
+        drill.className = "text-xs text-gray-400 hover:text-gray-700";
+        drill.textContent = "drill ↓";
+        drill.title = "List areas inside this one";
+        drill.addEventListener("click", () => { parentArea = a; $("sel-level").value = String(a.level + 1); searchAreas(); });
+        row.appendChild(drill);
+      }
+      box.appendChild(row);
+    });
+  }
+  async function useArea(a) {
+    $("area-source").textContent = `Loading ${a.name}…`;
+    try {
+      const data = await (await post(URLS.geometry, { area: a })).json();
+      if (data.status !== "ok") { $("area-source").textContent = data.detail || "geometry failed"; return; }
+      const ids = draw.add({ type: "Feature", geometry: data.geometry, properties: { arm: currentArm } });
+      ids.forEach((id) => tagFeature(id));
+      fitTo(data.geometry);
+      refreshStats();
+      $("area-source").textContent = `Added "${a.name}" as a ${mode === "coverage" ? "coverage" : currentArm} area.`;
+    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
+  }
+
+  // ---- stats / area ----
+  function refreshStats() {
+    const fc = draw.getAll();
+    let intervention = 0, comparison = 0, coverage = 0, areaM2 = 0;
+    const bump = (arm) => {
+      if (arm === "comparison") comparison++;
+      else if (arm === "coverage") coverage++;
+      else intervention++;
+    };
+    fc.features.forEach((f) => {
+      const arm = (f.properties && f.properties.arm) || (mode === "coverage" ? "coverage" : "intervention");
+      bump(arm);
+      try { areaM2 += polyArea(f.geometry); } catch (e) {}
+    });
+    circleAreas.forEach((c) => { bump(c.arm); areaM2 += Math.PI * c.circle.radius_m * c.circle.radius_m; });
+    $("stat-intervention").textContent = intervention;
+    $("stat-comparison").textContent = comparison;
+    $("stat-coverage").textContent = coverage;
+    const km2 = areaM2 / 1e6;
+    $("stat-area").textContent = km2 ? km2.toFixed(2) + " km²" : "—";
+  }
+  function polyArea(g) {
+    if (!g || g.type !== "Polygon") return 0;
+    const R = 6378137, toRad = (d) => (d * Math.PI) / 180, coords = g.coordinates[0];
+    let total = 0;
+    for (let i = 0; i < coords.length; i++) {
+      const [lon1, lat1] = coords[i], [lon2, lat2] = coords[(i + 1) % coords.length];
+      total += (toRad(lon2) - toRad(lon1)) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
+    }
+    return Math.abs(total * R * R / 2);
+  }
+  function fitTo(geom) {
+    const b = new mapboxgl.LngLatBounds();
+    const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c);
+    walk(geom.coordinates);
+    if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 16 });
+  }
+
+  map.on("draw.create", (e) => { e.features.forEach((f) => tagFeature(f.id)); refreshStats(); });
+  map.on("draw.update", refreshStats);
+  map.on("draw.delete", refreshStats);
+
+  function upsertSource(id, data) { const s = map.getSource(id); if (s) s.setData(data); else map.addSource(id, { type: "geojson", data }); }
+
+  function collectAreas() {
+    const polys = draw.getAll().features.map((f) => ({ arm: (f.properties && f.properties.arm) || (mode === "coverage" ? "coverage" : "intervention"), geometry: f.geometry }));
+    return polys.concat(circleAreas);
+  }
+
+  // ---- render: sampling ----
+  function renderSampling(data) {
+    upsertSource("rooftop-hulls", data.hulls);
+    upsertSource("rooftop-pins", data.pins);
+    if (!map.getLayer("rooftop-hulls-fill")) {
+      map.addLayer({ id: "rooftop-hulls-fill", type: "fill", source: "rooftop-hulls", paint: { "fill-color": "#f59e0b", "fill-opacity": 0.12 } });
+      map.addLayer({ id: "rooftop-hulls-line", type: "line", source: "rooftop-hulls", paint: { "line-color": "#f59e0b", "line-width": 1.5 } });
+      map.addLayer({ id: "rooftop-pins-circle", type: "circle", source: "rooftop-pins",
+        paint: { "circle-radius": ["case", ["==", ["get", "role"], "primary"], 5, 3.5], "circle-color": ["case", ["==", ["get", "role"], "primary"], "#ef4444", "#fbbf24"], "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
+    }
+    const feats = data.pins.features;
+    if (feats.length) { const b = new mapboxgl.LngLatBounds(); feats.forEach((f) => b.extend(f.geometry.coordinates)); map.fitBounds(b, { padding: 60, maxZoom: 17 }); }
+    $("preview-status").innerHTML = data.stats.map((s) =>
+      `<div class="mt-2 p-2 rounded bg-gray-50 border"><div class="font-semibold capitalize">${s.arm}</div>
+       <div>${(s.after_filters||0).toLocaleString()} buildings · ${s.psus_selected} PSUs</div>
+       <div><span class="text-red-600 font-medium">${s.primaries}</span> primary · <span class="text-amber-600 font-medium">${s.alternates}</span> alternate</div></div>`).join("");
+  }
+
+  // ---- render: coverage ----
+  function renderCoverage(data) {
+    // Hide sampling-mode layers if they exist from a prior preview.
+    ["rooftop-hulls-fill", "rooftop-hulls-line", "rooftop-pins-circle"].forEach((id) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+    });
+    upsertSource("rooftop-cov", data.areas);
+    if (!map.getLayer("rooftop-cov-fill")) {
+      map.addLayer({ id: "rooftop-cov-fill", type: "fill", source: "rooftop-cov", paint: { "fill-color": "#06b6d4", "fill-opacity": 0.22 } });
+      map.addLayer({ id: "rooftop-cov-line", type: "line", source: "rooftop-cov", paint: { "line-color": "#0891b2", "line-width": 1 } });
+      map.addLayer({ id: "rooftop-cov-label", type: "symbol", source: "rooftop-cov",
+        layout: { "text-field": ["to-string", ["get", "building_count"]], "text-size": 10 },
+        paint: { "text-color": "#0e7490", "text-halo-color": "#fff", "text-halo-width": 1 } });
+    } else {
+      ["rooftop-cov-fill", "rooftop-cov-line", "rooftop-cov-label"].forEach((id) => map.setLayoutProperty(id, "visibility", "visible"));
+    }
+    const b = new mapboxgl.LngLatBounds();
+    (data.areas.features || []).forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
+    if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 16 });
+    $("preview-status").innerHTML = data.stats.map((s) =>
+      `<div class="mt-2 p-2 rounded bg-gray-50 border">
+         <div class="font-semibold">Coverage · ${s.cell_size_m}m × ${s.cell_size_m}m cells</div>
+         <div>${(s.after_filters||0).toLocaleString()} buildings · ${s.work_areas} work areas</div>
+         <div>buildings per work area: min ${s.min_buildings} · median ${s.median_buildings} · max ${s.max_buildings}</div>
+       </div>`).join("");
+  }
+
+  // ---- config payloads ----
+  function samplingConfig() {
+    return {
+      target_clusters: +$("cfg-clusters").value, primary_per_psu: +$("cfg-primary").value,
+      alternates_per_psu: +$("cfg-alternate").value, min_confidence: +$("cfg-confidence").value,
+      area_min_m2: +$("cfg-area-min").value, area_max_m2: +$("cfg-area-max").value,
+    };
+  }
+  function coverageConfig() {
+    return { cell_size_m: cellSizeM };
+  }
+
+  function resetPreviewButtons() {
+    ["btn-save", "btn-review", "btn-csv", "btn-create-plan"].forEach((id) => {
+      const el = $(id); if (el) el.classList.add("hidden");
+    });
+  }
+  let savedFrameId = null;
+
+  // ---- preview ----
+  $("btn-preview").addEventListener("click", async () => {
+    const areas = collectAreas();
+    if (!areas.length) { $("preview-status").textContent = "Add an area first (draw, admin, or pin)."; return; }
+    $("preview-status").textContent = "Computing… (first run fetches buildings, ~20s)";
+    const config = mode === "sampling" ? samplingConfig() : coverageConfig();
+    try {
+      const resp = await post(URLS[mode], { areas, config });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { $("preview-status").textContent = data.detail || ("HTTP " + resp.status); return; }
+      if (mode === "sampling") { renderSampling(data); lastPreview = { mode, areas, config, pins: data.pins, hulls: data.hulls, stats: data.stats }; }
+      else { renderCoverage(data); lastPreview = { mode, areas, config, coverage_areas: data.areas, stats: data.stats }; }
+      const show = (id) => { const el = $(id); if (el) el.classList.remove("hidden"); };
+      if (PROGRAM) { show("btn-create-plan"); }
+      else { show("btn-save"); }
+      show("btn-csv");
+    } catch (err) { $("preview-status").textContent = "Request failed: " + err; }
+  });
+
+  // ---- opp-scoped save / review (only on the opportunity setup page) ----
+  if (!PROGRAM) {
+    $("btn-save").addEventListener("click", async () => {
+      if (!lastPreview) return;
+      $("save-status").textContent = "Saving…";
+      try {
+        const resp = await post(URLS.save, lastPreview);
+        const data = await resp.json();
+        if (resp.ok && data.status === "ok") {
+          savedFrameId = data.frame_record_id;
+          $("save-status").textContent = `Saved (frame #${data.frame_record_id}).`;
+          $("btn-review").classList.remove("hidden");
+        } else {
+          $("save-status").textContent = data.detail || ("HTTP " + resp.status);
+        }
+      } catch (err) { $("save-status").textContent = "Save failed: " + err; }
+    });
+
+    $("btn-review").addEventListener("click", async () => {
+      if (!savedFrameId) return;
+      $("save-status").textContent = "Building plan…";
+      try {
+        const resp = await post(URLS.materialize, { frame_record_id: savedFrameId });
+        const data = await resp.json();
+        if (resp.ok && data.status === "ok") { window.location = URLS.reviewBase + data.plan_id + "/"; }
+        else { $("save-status").textContent = data.detail || ("HTTP " + resp.status); }
+      } catch (err) { $("save-status").textContent = "Could not build plan: " + err; }
+    });
+  }
+
+  // ---- program-scoped create ----
+  if (PROGRAM) {
+    $("btn-create-plan").addEventListener("click", async () => {
+      if (!lastPreview) return;
+      const name = ($("inp-plan-name").value || "").trim();
+      const region = ($("inp-plan-region").value || "").trim();
+      if (!region && !name) { $("save-status").textContent = "Give the plan a name or region first."; return; }
+      $("save-status").textContent = "Creating plan…";
+      const body = { region, name, mode: lastPreview.mode, input_areas: lastPreview.areas || [] };
+      if (lastPreview.mode === "coverage") body.coverage_areas = lastPreview.coverage_areas;
+      else body.pins = lastPreview.pins;
+      try {
+        const resp = await post(CREATE_PLAN_URL, body);
+        const data = await resp.json();
+        if (resp.ok && data.status === "ok") { window.location = PROGRAM_URL + "plan/" + data.plan_id + "/review/"; }
+        else { $("save-status").textContent = data.detail || ("HTTP " + resp.status); }
+      } catch (err) { $("save-status").textContent = "Create failed: " + err; }
+    });
+  }
+
+  // ---- CSV ----
+  $("btn-csv").addEventListener("click", async () => {
+    if (!lastPreview) return;
+    const body = mode === "coverage" ? { mode, coverage_areas: lastPreview.coverage_areas } : { mode, pins: lastPreview.pins };
+    const resp = await post(URLS.csv, body);
+    if (!resp.ok) { $("save-status").textContent = "CSV failed: HTTP " + resp.status; return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `microplan_work_areas_opp{{ opp_id }}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // ---- footprints overlay (sanity-check buildings before generating) ----
+  let footprintsLoaded = false;
+  async function loadFootprints() {
+    const areas = collectAreas();
+    if (!areas.length) { $("preview-status").textContent = "Draw / pick an area first to see footprints."; $("toggle-footprints").checked = false; return; }
+    $("preview-status").textContent = "Fetching footprints…";
+    try {
+      const resp = await post(URLS.footprints, { areas });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { $("preview-status").textContent = data.detail || ("HTTP " + resp.status); $("toggle-footprints").checked = false; return; }
+      upsertSource("rooftop-footprints", data.footprints);
+      if (!map.getLayer("rooftop-footprints-dots")) {
+        map.addLayer({
+          id: "rooftop-footprints-dots", type: "circle", source: "rooftop-footprints",
+          paint: { "circle-radius": 1.5, "circle-color": "#f59e0b", "circle-stroke-color": "#fff", "circle-stroke-width": 0.3 },
+        });
+      } else {
+        map.setLayoutProperty("rooftop-footprints-dots", "visibility", "visible");
+      }
+      footprintsLoaded = true;
+      $("preview-status").textContent = `${data.count.toLocaleString()} building footprints loaded.`;
+    } catch (e) { $("preview-status").textContent = "Footprints failed: " + e; $("toggle-footprints").checked = false; }
+  }
+  $("toggle-footprints").addEventListener("change", () => {
+    const on = $("toggle-footprints").checked;
+    if (on && !footprintsLoaded) { loadFootprints(); return; }
+    if (map.getLayer("rooftop-footprints-dots")) {
+      map.setLayoutProperty("rooftop-footprints-dots", "visibility", on ? "visible" : "none");
+    }
+  });
+
+  // init: coverage is the default (most common workflow for CHC visits)
+  setMode("coverage"); setInput("draw");
+  window.__rooftop = { map, draw, get circleAreas() { return circleAreas; }, get lastPreview() { return lastPreview; }, setMode, setInput };
+})();
+</script>
+{% endblock %}

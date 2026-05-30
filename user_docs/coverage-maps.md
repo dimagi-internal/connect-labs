@@ -81,3 +81,6 @@ FLW assignments come from CommCare HQ. If an assignment changed recently, wait a
 
 **I see a blank map with no boundaries.**
 This usually means your CommCare HQ token has expired or your program doesn't have boundary data configured. Check **Token Status** first, then contact your CommCare administrator if the issue persists.
+
+**The landing page used to show two buttons for Coverage — where did the second one go?**
+The second button ("CHC Nutrition View") has been removed. It opened the same map with identical visuals, so it was redundant. Clicking **Coverage** on the landing page now takes you directly to the map, as before.

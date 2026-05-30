@@ -17,6 +17,7 @@ urlpatterns = [
     path("ace", RedirectView.as_view(url="/ace/", permanent=True), name="ace_slash_redirect"),
     path("about/", TemplateView.as_view(template_name="pages/about.html"), name="about"),
     path("health/", views.health_check, name="health_check"),
+    path("robots.txt", views.robots_txt, name="robots_txt"),
     path(".well-known/assetlinks.json", views.assetlinks_json, name="assetlinks_json"),
     path("o/", include("oauth2_provider.urls", namespace="oauth2_provider")),
     # Labs apps
@@ -25,6 +26,14 @@ urlpatterns = [
     path("tasks/", include("commcare_connect.tasks.urls", namespace="tasks")),
     path("audit/", include("commcare_connect.audit.urls", namespace="audit")),
     path("coverage/", include("commcare_connect.coverage.urls", namespace="coverage")),
+    path("microplans/", include("commcare_connect.microplans.urls", namespace="microplans")),
+    # Back-compat: the app was first shipped at /rooftop-surveys/ (a deployed opp may
+    # reference it). Redirect the old prefix to the renamed /microplans/.
+    path(
+        "rooftop-surveys/<path:subpath>",
+        RedirectView.as_view(url="/microplans/%(subpath)s", query_string=True, permanent=False),
+        name="rooftop_surveys_legacy_redirect",
+    ),
     path("mcp/", include("commcare_connect.mcp.urls", namespace="mcp")),
     path("labs/explorer/", include("commcare_connect.labs.explorer.urls", namespace="explorer")),
     path("labs/", include("commcare_connect.labs.urls", namespace="labs")),

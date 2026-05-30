@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from commcare_connect.labs.context import _merge_labs_only_opps
 from commcare_connect.labs.integrations.connect.oauth import fetch_user_organization_data
 
 from ..connect_token import require_connect_token
@@ -86,6 +87,12 @@ def labs_context(user, search: str = None) -> dict[str, Any]:
             "UPSTREAM_ERROR",
             "Failed to fetch organization data from production Connect.",
         )
+
+    # Merge labs-only synthetic opps into the org/program/opp lists for users
+    # who have opted in via view_synthetic_opps. Same chokepoint the web app
+    # uses (labs.context.get_org_data), so MCP and UI stay consistent.
+    if getattr(user, "view_synthetic_opps", False):
+        data = _merge_labs_only_opps(data, user)
 
     organizations: list[dict] = data.get("organizations") or []
     programs: list[dict] = data.get("programs") or []

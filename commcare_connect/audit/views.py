@@ -12,6 +12,7 @@ import json
 import logging
 import re
 from collections import defaultdict
+from datetime import timezone as _stdlib_timezone
 
 import httpx
 from django.conf import settings
@@ -126,27 +127,18 @@ class ExperimentAuditListView(LoginRequiredMixin, SingleTableView):
         labs_context = getattr(self.request, "labs_context", {})
         context["has_context"] = bool(labs_context.get("opportunity_id") or labs_context.get("program_id"))
 
-        # Check for Connect OAuth token
-        from django.conf import settings
+        # Check for Connect OAuth token (lives in session.labs_oauth, populated at login).
+        labs_oauth = self.request.session.get("labs_oauth", {})
+        context["has_connect_token"] = bool(labs_oauth.get("access_token"))
+        if labs_oauth.get("expires_at"):
+            import datetime
 
-        # In labs mode, OAuth token is in session
-        if getattr(settings, "IS_LABS_ENVIRONMENT", False):
-            labs_oauth = self.request.session.get("labs_oauth", {})
-            context["has_connect_token"] = bool(labs_oauth.get("access_token"))
-            if labs_oauth.get("expires_at"):
-                import datetime
+            from django.utils import timezone
 
-                from django.utils import timezone
-
-                context["token_expires_at"] = datetime.datetime.fromtimestamp(
-                    labs_oauth["expires_at"], tz=timezone.get_current_timezone()
-                )
-            else:
-                context["token_expires_at"] = None
+            context["token_expires_at"] = datetime.datetime.fromtimestamp(
+                labs_oauth["expires_at"], tz=timezone.get_current_timezone()
+            )
         else:
-            # allauth SocialAccount was removed during labs simplification.
-            # Non-labs users won't have Connect tokens.
-            context["has_connect_token"] = False
             context["token_expires_at"] = None
 
         return context
@@ -463,7 +455,9 @@ class ExperimentBulkAssessmentDataView(LoginRequiredMixin, View):
                 visit_date_raw = first_image.get("visit_date", "")
                 visit_date_dt = parse_datetime(visit_date_raw) if visit_date_raw else None
                 if visit_date_dt and timezone.is_naive(visit_date_dt):
-                    visit_date_dt = timezone.make_aware(visit_date_dt, timezone.utc)
+                    # django.utils.timezone.utc was removed in Django 5; use stdlib's
+                    # datetime.timezone.utc instead.
+                    visit_date_dt = timezone.make_aware(visit_date_dt, _stdlib_timezone.utc)
                 visit_date_local = timezone.localtime(visit_date_dt) if visit_date_dt else None
                 visit_date_display = visit_date_local.strftime("%b %d, %H:%M") if visit_date_local else ""
                 visit_date_sort = visit_date_local.isoformat() if visit_date_local else ""
@@ -645,29 +639,41 @@ class ExperimentAuditImageConnectView(LoginRequiredMixin, View):
     """Serve audit visit images from Connect API (no CommCare HQ)"""
 
     def get(self, request, opp_id, blob_id):
+        from commcare_connect.labs.synthetic.image_server import SyntheticImageServer
+        from commcare_connect.labs.synthetic.registry import get_synthetic_opp
+
+        if SyntheticImageServer.is_synthetic_blob(blob_id) and get_synthetic_opp(opp_id):
+            return self._serve_synthetic_image(blob_id)
+
         try:
-            # Initialize data access with opportunity ID
             data_access = AuditDataAccess(opportunity_id=opp_id, request=request)
-
             try:
-                # Download image from Connect API
                 image_content = data_access.download_image_from_connect(blob_id, opp_id)
-
-                # Return as image response
                 response = HttpResponse(image_content, content_type="image/jpeg")
                 disposition = 'inline; filename="' + blob_id + '.jpg"'
                 response["Content-Disposition"] = disposition
                 return response
-
             finally:
                 data_access.close()
-
         except Exception as e:
             import traceback
 
             print(f"[ERROR] Image fetch failed for blob_id={blob_id}, opp_id={opp_id}")
             print(f"[ERROR] {traceback.format_exc()}")
             return HttpResponse(f"Image not found: {e}", status=404)
+
+    def _serve_synthetic_image(self, blob_id: str):
+        from commcare_connect.labs.synthetic.image_server import get_image_server
+
+        try:
+            data = get_image_server().get_image(blob_id)
+            if data:
+                response = HttpResponse(data, content_type="image/jpeg")
+                response["Content-Disposition"] = f'inline; filename="{blob_id}.jpg"'
+                return response
+        except Exception as e:
+            logger.warning("Failed to serve synthetic image %s: %s", blob_id, e)
+        return HttpResponse("Synthetic image not found", status=404)
 
 
 class ExperimentAuditCreateAPIView(LoginRequiredMixin, View):

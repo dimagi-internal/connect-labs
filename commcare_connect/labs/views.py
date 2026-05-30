@@ -160,13 +160,6 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
         labs_context = getattr(self.request, "labs_context", {}) or {}
         context["has_labs_context"] = bool(labs_context)
 
-        # Build Coverage button URL using current labs context opportunity
-        opportunity_id = labs_context.get("opportunity_id")
-        if opportunity_id:
-            coverage_url = f"/coverage/?opportunity_id={opportunity_id}&config=chc_nutrition"
-        else:
-            coverage_url = "/coverage/?config=chc_nutrition"
-
         _has_access = lambda feat: user_has_feature_access(self.request.user, feat)  # noqa: E731
 
         # ── Labs projects ──────────────────────────────────────────────────────
@@ -214,17 +207,6 @@ class LabsOverviewView(LoginRequiredMixin, TemplateView):
                 "icon": "fa-map-marked-alt",
                 "description": "Geographic coverage analysis and mapping for Service Areas and Delivery Units",
                 "color": "green",
-                "buttons": [
-                    {"label": "CHC Nutrition View", "url": coverage_url},
-                    {"label": "Generic View", "url": "/coverage/"},
-                ],
-            },
-            {
-                "name": "CHC Nutrition",
-                "url": "/custom_analysis/chc_nutrition/",
-                "icon": "fa-heartbeat",
-                "description": "Nutrition and health metrics analysis for the Child Health Campaign",
-                "color": "rose",
             },
             {
                 "name": "KMC Timeline",

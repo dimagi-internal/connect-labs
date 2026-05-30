@@ -144,6 +144,7 @@ LOCAL_APPS = [
     "commcare_connect.audit",
     "commcare_connect.workflow",
     "commcare_connect.coverage",
+    "commcare_connect.flags",
     "commcare_connect.commcarehq",  # stub: HQServer model for FK references
     "commcare_connect.labs.admin_boundaries",
     "commcare_connect.labs.synthetic",
@@ -153,6 +154,7 @@ LOCAL_APPS = [
     "commcare_connect.organization",
     "commcare_connect.prelogin",
     "commcare_connect.program",
+    "commcare_connect.microplans",
     "commcare_connect.solicitations",
     "commcare_connect.users",
     "commcare_connect.web",
@@ -201,6 +203,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "commcare_connect.utils.middleware.NoIndexMiddleware",
     "commcare_connect.utils.middleware.CustomErrorHandlingMiddleware",
     "commcare_connect.utils.middleware.CurrentVersionMiddleware",
     "commcare_connect.utils.middleware.CustomPGHistoryMiddleware",
@@ -439,6 +442,8 @@ CONNECT_OAUTH_CLIENT_SECRET = env("CONNECT_OAUTH_CLIENT_SECRET", default="")
 # enable the synthetic-opportunity feature. See docs/SYNTHETIC_OPPS.md.
 # LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID is the Drive folder ID where dump output lands.
 LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = env("LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID", default="")
+# LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is the Drive folder ID for stock images.
+LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID = env("LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", default="")
 
 # Labs admin allowlist — LOCAL DEV ONLY fallback for Connect test accounts that
 # have no email address configured (e.g. username='matt', email='').

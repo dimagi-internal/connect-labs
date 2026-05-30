@@ -1,0 +1,81 @@
+{
+  "_comment": "Exact config passed to program_admin_demo_seed to reproduce the Program Admin Report walkthrough demo. Northern's last week is left in_progress for the manager-flow video; jumoke_n is the bad-MUAC FLW the manager audits + coaches. Southern is fully completed and used for the existing 9-scene drill-through.",
+  "cleanup_first": true,
+  "weeks": ["2025-11-03", "2025-11-10", "2025-11-17", "2025-11-24"],
+  "opps": [
+    {
+      "opportunity_id": 10000,
+      "label": "Northern Cluster",
+      "network_manager": "amani_nm",
+      "missed_week_idxs": [],
+      "in_progress_last_week": true,
+      "flws": [
+        { "id": "amina_n", "archetype": "solid" },
+        { "id": "binta_n", "archetype": "solid" },
+        { "id": "chinedu_n", "archetype": "solid" },
+        { "id": "dorcas_n", "archetype": "solid" },
+        { "id": "esi_n", "archetype": "solid" },
+        { "id": "fatima_n", "archetype": "solid" },
+        { "id": "grace_n", "archetype": "solid" },
+        {
+          "id": "hawa_n",
+          "archetype": "improver_closed_satisfactory",
+          "flag_week": 1,
+          "reason_key": "bad_muac_distribution"
+        },
+        {
+          "id": "isha_n",
+          "archetype": "improver_closed_satisfactory",
+          "flag_week": 1,
+          "reason_key": "gender_skew"
+        },
+        {
+          "id": "jumoke_n",
+          "archetype": "improver_warned",
+          "flag_week": 3,
+          "reason_key": "bad_muac_distribution"
+        }
+      ]
+    },
+    {
+      "opportunity_id": 10001,
+      "label": "Southern Cluster",
+      "network_manager": "kwame_nm",
+      "missed_week_idxs": [1],
+      "flws": [
+        { "id": "kadi_s", "archetype": "solid" },
+        { "id": "lola_s", "archetype": "solid" },
+        {
+          "id": "miriam_s",
+          "archetype": "improver_warned",
+          "flag_week": 0,
+          "reason_key": "gender_skew"
+        },
+        { "id": "nia_s", "archetype": "solid" },
+        {
+          "id": "ola_s",
+          "archetype": "improver_in_progress",
+          "flag_week": 2,
+          "reason_key": "bad_muac_distribution"
+        },
+        {
+          "id": "pinda_s",
+          "archetype": "suspended_repeat_offense",
+          "first_flag_week": 0,
+          "second_flag_week": 2,
+          "reason_key": "bad_muac_distribution"
+        },
+        { "id": "qisha_s", "archetype": "solid" },
+        {
+          "id": "rina_s",
+          "archetype": "suspended_fraudulent",
+          "first_flag_week": 0,
+          "second_flag_week": 2,
+          "reason_key": "misleading_photos"
+        },
+        { "id": "sade_s", "archetype": "solid" },
+        { "id": "tola_s", "archetype": "new_hire", "joined_week": 3 }
+      ]
+    }
+  ]
+}

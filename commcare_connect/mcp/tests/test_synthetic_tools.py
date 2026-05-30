@@ -248,3 +248,147 @@ def test_accessible_opp_ids_empty_set_when_no_token(user, monkeypatch):
 
     monkeypatch.setattr(syn, "require_connect_token", _raise)
     assert syn._accessible_opp_ids_for_user(user) == set()
+
+
+# -----------------------------------------------------------------------------
+# Labs-only synthetic tools (clone + create)
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_synthetic_create_labs_only_allocates_opp_id(user):
+    """Creating a labs-only opp auto-allocates from the reserved 10_000+ range."""
+    from commcare_connect.labs.synthetic.models import LABS_ONLY_OPP_ID_FLOOR
+
+    tool = get_tool("synthetic_create_labs_only")
+    result = tool.handler(
+        user=user,
+        label="CHC demo",
+        gdrive_folder_id="folder-abc",
+        org_name="Acme",
+        program_name="AcmeProg",
+        allowed_domains=["@dimagi.com"],
+    )
+    assert result["opportunity_id"] == LABS_ONLY_OPP_ID_FLOOR
+    assert result["labs_only"] is True
+    assert result["allowed_domains"] == ["@dimagi.com"]
+    row = SyntheticOpportunity.objects.get(opportunity_id=result["opportunity_id"])
+    assert row.labs_only is True
+    assert row.gdrive_folder_id == "folder-abc"
+
+
+@pytest.mark.django_db
+def test_synthetic_create_labs_only_defaults_allowed_domains(user):
+    """Default allowed_domains is ['@dimagi.com'] when not specified."""
+    tool = get_tool("synthetic_create_labs_only")
+    result = tool.handler(
+        user=user,
+        label="X",
+        gdrive_folder_id="folder-x",
+    )
+    assert result["allowed_domains"] == ["@dimagi.com"]
+
+
+@pytest.mark.django_db
+def test_synthetic_clone_to_labs_only_reuses_gdrive_folder(user):
+    """Cloning a real-backed opp creates a labs-only opp sharing the gdrive_folder_id."""
+    source = SyntheticOpportunity.objects.create(
+        opportunity_id=814,
+        gdrive_folder_id="folder-814",
+        label="Source",
+        labs_only=False,
+    )
+
+    tool = get_tool("synthetic_clone_to_labs_only")
+    result = tool.handler(user=user, source_opportunity_id=814)
+
+    assert result["source_opportunity_id"] == 814
+    assert result["opportunity_id"] >= 10_000
+    assert result["gdrive_folder_id"] == "folder-814"
+    assert result["labs_only"] is True
+    # Default broad allowlist so ace@dimagi-ai.com can see clones.
+    assert "@dimagi.com" in result["allowed_domains"]
+    assert "@dimagi-ai.com" in result["allowed_domains"]
+
+    new_row = SyntheticOpportunity.objects.get(opportunity_id=result["opportunity_id"])
+    assert new_row.labs_only is True
+    assert new_row.gdrive_folder_id == source.gdrive_folder_id
+
+
+@pytest.mark.django_db
+def test_synthetic_clone_to_labs_only_404s_on_missing_source(user):
+    tool = get_tool("synthetic_clone_to_labs_only")
+    with pytest.raises(MCPToolError) as exc:
+        tool.handler(user=user, source_opportunity_id=999_999)
+    assert exc.value.code == "NOT_FOUND"
+
+
+@pytest.mark.django_db
+def test_synthetic_clone_to_labs_only_does_not_require_source_connect_access(user, monkeypatch):
+    """Cloning any registered SyntheticOpportunity is allowed for any MCP caller.
+
+    Once an opp is in the SyntheticOpportunity registry it's already a
+    labs-controlled fixture. Cloning grants no new data access — just a
+    second view onto the same GDrive folder. The previous Connect-access
+    check defeated the "make this easy to do again" goal for users who
+    lack Connect membership on the source (e.g. ACE).
+    """
+    SyntheticOpportunity.objects.create(opportunity_id=814, gdrive_folder_id="folder-814", labs_only=False)
+
+    # Even when Connect access check would deny, clone still succeeds.
+    from commcare_connect.mcp.tools import synthetic as syn
+
+    monkeypatch.setattr(syn, "_require_opportunity_access", _raise_403)
+
+    tool = get_tool("synthetic_clone_to_labs_only")
+    result = tool.handler(user=user, source_opportunity_id=814)
+    assert result["labs_only"] is True
+    assert result["gdrive_folder_id"] == "folder-814"
+
+
+@pytest.mark.django_db
+def test_synthetic_clone_to_labs_only_works_on_invisible_labs_only_source(user):
+    """A labs-only source the caller can't see directly is still cloneable.
+
+    Same rationale: it's already a labs-controlled fixture. allowed_domains
+    on the source controls who sees the SOURCE in labs_context, not who
+    can clone it.
+    """
+    user.email = "bob@external.com"
+    user.view_synthetic_opps = False
+    user.save()
+
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10_000,
+        gdrive_folder_id="folder-src",
+        labs_only=True,
+        allowed_domains=["@dimagi.com"],
+    )
+
+    tool = get_tool("synthetic_clone_to_labs_only")
+    result = tool.handler(user=user, source_opportunity_id=10_000)
+    assert result["labs_only"] is True
+    assert result["gdrive_folder_id"] == "folder-src"
+
+
+# -----------------------------------------------------------------------------
+# synthetic_set_my_visibility
+# -----------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_synthetic_set_my_visibility_flips_user_flag(user):
+    user.view_synthetic_opps = False
+    user.save()
+
+    tool = get_tool("synthetic_set_my_visibility")
+    result = tool.handler(user=user, enabled=True)
+
+    assert result["view_synthetic_opps"] is True
+    user.refresh_from_db()
+    assert user.view_synthetic_opps is True
+
+    result = tool.handler(user=user, enabled=False)
+    assert result["view_synthetic_opps"] is False
+    user.refresh_from_db()
+    assert user.view_synthetic_opps is False

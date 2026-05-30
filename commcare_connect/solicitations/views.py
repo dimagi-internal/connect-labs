@@ -2,6 +2,7 @@ import json
 import logging
 
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.core.exceptions import ValidationError
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect
 from django.utils import timezone
@@ -42,19 +43,6 @@ def _has_context(request):
 def _get_data_access(request):
     """Create data access from request. Works for authed requests."""
     return SolicitationsDataAccess(request=request)
-
-
-def _get_public_data_access(request):
-    """Create data access for public views — uses CLI token as fallback if no session."""
-    try:
-        return SolicitationsDataAccess(request=request)
-    except ValueError:
-        # No OAuth session (unauthenticated user) — use CLI token
-        from commcare_connect.labs.integrations.connect.cli import TokenManager
-
-        tm = TokenManager()
-        token = tm.get_valid_token()
-        return SolicitationsDataAccess(access_token=token)
 
 
 # -- AI Criteria Generation ------------------------------------------------
@@ -279,17 +267,27 @@ Return ONLY the JSON array, no other text."""
         return JsonResponse({"error": "Failed to generate criteria. Please try again."}, status=500)
 
 
-# -- Public Views (no login) -----------------------------------------------
+# -- Marketplace Views (login required) ------------------------------------
+#
+# Historically these were anonymous-accessible with a CLI-token fallback
+# (`_get_public_data_access`). That fallback was a dev-time convenience that
+# was never wired up in the AWS ECS Fargate deployment — there is no
+# `~/.commcare-connect/token.json` on the container — and prod's
+# `LabsRecordDataView` requires `IsAuthenticated + TokenHasScope(['export'])`
+# even for queries that filter to `public=True`. The marketplace therefore
+# always relied on a logged-in OAuth session in practice; making that
+# requirement explicit removes the broken anonymous path and the silent
+# "empty marketplace" failure mode it produced. See gh#198.
 
 
-class PublicSolicitationListView(TemplateView):
+class PublicSolicitationListView(LabsLoginRequiredMixin, TemplateView):
     template_name = "solicitations/public_list.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         solicitation_type = self.request.GET.get("type")
         try:
-            da = _get_public_data_access(self.request)
+            da = _get_data_access(self.request)
             ctx["solicitations"] = da.get_public_solicitations(
                 solicitation_type=solicitation_type,
             )
@@ -300,14 +298,14 @@ class PublicSolicitationListView(TemplateView):
         return ctx
 
 
-class PublicSolicitationDetailView(TemplateView):
+class PublicSolicitationDetailView(LabsLoginRequiredMixin, TemplateView):
     template_name = "solicitations/public_detail.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         pk = kwargs["pk"]
         try:
-            da = _get_public_data_access(self.request)
+            da = _get_data_access(self.request)
             solicitation = da.get_solicitation_by_id(pk)
             if not solicitation:
                 raise Http404("Solicitation not found")
@@ -382,6 +380,24 @@ class SolicitationCreateView(ManagerRequiredMixin, TemplateView):
                 da = _get_data_access(request)
                 da.create_solicitation(data)
                 return redirect("solicitations:manage_list")
+            except ValidationError as e:
+                # Canonical-schema drift caught at the data-access layer.
+                # The form's field-level validators already passed — this
+                # surfaces structural issues (e.g. dangling linked_questions
+                # in evaluation_criteria) that the form doesn't otherwise see.
+                # Attach to the matching form field when one exists so errors
+                # render inline; fall back to non_field_errors for nested paths
+                # (e.g. ``evaluation_criteria[0].linked_questions``).
+                errors = e.message_dict if hasattr(e, "message_dict") else {"__all__": list(e.messages)}
+                form_fields = set(form.fields)
+                for field, msgs in errors.items():
+                    msg_list = msgs if isinstance(msgs, list) else [msgs]
+                    target = field if field in form_fields else None
+                    for msg in msg_list:
+                        form.add_error(target, msg if target else f"{field}: {msg}")
+                ctx = self.get_context_data(**kwargs)
+                ctx["form"] = form
+                return self.render_to_response(ctx)
             except Exception:
                 logger.exception("Failed to create solicitation")
                 ctx = self.get_context_data(**kwargs)
