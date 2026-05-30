@@ -44,9 +44,24 @@ urlpatterns = [
         name="program_plan_csv",
     ),
     path(
+        "program/<int:program_id>/plan/<int:plan_id>/footprints/",
+        views.ProgramPlanFootprintsView.as_view(),
+        name="program_plan_footprints",
+    ),
+    path(
         "program/<int:program_id>/plan/<int:plan_id>/transition/",
         views.ProgramPlanTransitionView.as_view(),
         name="program_plan_transition",
+    ),
+    path(
+        "program/<int:program_id>/plan/<int:plan_id>/delete/",
+        views.ProgramPlanDeleteView.as_view(),
+        name="program_plan_delete",
+    ),
+    path(
+        "program/<int:program_id>/group/<int:group_id>/delete/",
+        views.ProgramGroupDeleteView.as_view(),
+        name="program_group_delete",
     ),
     path(
         "program/<int:program_id>/plan/<int:plan_id>/review/", views.ProgramReviewView.as_view(), name="program_review"

@@ -744,6 +744,37 @@ class ProgramPlanTransitionView(LoginRequiredMixin, View):
         )
 
 
+class ProgramPlanDeleteView(LoginRequiredMixin, View):
+    """Hard-delete a plan record. POST → 204. Used for wiping sample data; the
+    safer default for normal lifecycle is the Archive status transition."""
+
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            da.delete_plan(plan_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans delete_plan failed (program=%s plan=%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Delete failed."}, status=502)
+        return JsonResponse({"status": "ok", "plan_id": int(plan_id)})
+
+
+class ProgramGroupDeleteView(LoginRequiredMixin, View):
+    """Hard-delete a plan group record (sample-data wipe)."""
+
+    def post(self, request, program_id, group_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            da.delete_group(group_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans delete_group failed (program=%s group=%s)", program_id, group_id)
+            return JsonResponse({"status": "error", "detail": "Delete failed."}, status=502)
+        return JsonResponse({"status": "ok", "group_id": int(group_id)})
+
+
 class ProgramGroupsAPIView(LoginRequiredMixin, View):
     """Create a plan group (a shareable subset offered to an LLO)."""
 
@@ -861,6 +892,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["plan_url"] = reverse("microplans:program_plan", args=[program_id, plan_id])
         context["edit_url"] = reverse("microplans:program_plan_edit", args=[program_id, plan_id])
         context["csv_url"] = reverse("microplans:program_plan_csv", args=[program_id, plan_id])
+        context["footprints_url"] = reverse("microplans:program_plan_footprints", args=[program_id, plan_id])
         context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + f"?plans={plan_id}"
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
@@ -909,6 +941,56 @@ class ProgramPlanEditView(LoginRequiredMixin, View):
             logger.exception("microplans program plan edit failed (%s/%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Edit failed."}, status=502)
         return JsonResponse(_plan_json(plan))
+
+
+class ProgramPlanFootprintsView(LoginRequiredMixin, View):
+    """Building footprints inside a saved plan's cells. Used by the review-page
+    'Show footprints' toggle. Re-fetches from PG cache by unioning the plan's cell
+    geometries; cheap on warm cache, no re-clustering."""
+
+    def get(self, request, program_id, plan_id):
+        from shapely.geometry import shape
+        from shapely.ops import unary_union
+
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.footprints import fetch_buildings
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.get_plan(int(plan_id))
+        except Exception:  # noqa: BLE001
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+
+        geoms = []
+        for w in plan.work_areas:
+            g = w.get("geometry")
+            if g:
+                try:
+                    geoms.append(shape(g))
+                except Exception:  # noqa: BLE001
+                    continue
+        if not geoms:
+            return JsonResponse(
+                {"status": "ok", "footprints": {"type": "FeatureCollection", "features": []}, "count": 0}
+            )
+        try:
+            area = unary_union(geoms)
+            df = fetch_buildings(area, min_confidence=None)
+        except Exception:  # noqa: BLE001
+            logger.exception("plan footprints fetch failed (program=%s plan=%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Footprints fetch failed."}, status=502)
+
+        features = [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]},
+                "properties": {},
+            }
+            for _, row in df.iterrows()
+        ]
+        return JsonResponse(
+            {"status": "ok", "footprints": {"type": "FeatureCollection", "features": features}, "count": len(features)}
+        )
 
 
 class ProgramPlanCSVView(LoginRequiredMixin, View):
