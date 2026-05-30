@@ -168,6 +168,9 @@
       </label>
     </section>
 
+    <!-- Service-delivery GPS overlay (rendered by service_delivery_layer.js) -->
+    <section id="sd-mount" class="mt-4"></section>
+
     <!-- SAMPLING CONFIG -->
     <section id="cfg-sampling">
       <div class="mp-section-label">Sampling config</div>
@@ -250,6 +253,8 @@
 {{ block.super }}
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+<script src="{% static 'microplans/service_delivery_layer.js' %}"></script>
+{{ sd_opps|json_script:"sd-opps-data" }}
 <script>
 (function () {
   const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
@@ -257,6 +262,9 @@
     sampling: "{% url 'microplans:preview_frame' opp_id=opp_id %}",
     coverage: "{% url 'microplans:preview_coverage' opp_id=opp_id %}",
     footprints: "{% url 'microplans:preview_footprints' opp_id=opp_id %}",
+    sdPreview: "{% url 'microplans:preview_service_delivery' opp_id=opp_id %}",
+    sdPipelines: "{% url 'microplans:service_delivery_pipelines' opp_id=opp_id %}",
+    sdDerive: "{% url 'microplans:derive_boundary' opp_id=opp_id %}",
     save: "{% url 'microplans:save_frame' opp_id=opp_id %}",
     csv: "{% url 'microplans:work_areas_csv' opp_id=opp_id %}",
     materialize: "{% url 'microplans:plan_materialize' opp_id=opp_id %}",
@@ -744,6 +752,38 @@
       map.setLayoutProperty("rooftop-footprints-dots", "visibility", on ? "visible" : "none");
     }
   });
+
+  // ---- service-delivery GPS overlay (reusable module) ----
+  // Adds an opp-multiselect + point layer + "derive boundary" panel. The
+  // derived boundary lands in the draw layer as an editable planning area,
+  // so it flows straight into sampling/coverage like any drawn/admin area.
+  (function initServiceDelivery() {
+    if (!global_ServiceDeliveryLayer()) return;
+    let sdOpps = [];
+    try { sdOpps = JSON.parse(document.getElementById("sd-opps-data").textContent); } catch (e) { sdOpps = []; }
+    window.ServiceDeliveryLayer.create({
+      map,
+      mount: $("sd-mount"),
+      csrf: CSRF,
+      opps: sdOpps,
+      currentOppId: {{ opp_id|default:'null' }},
+      urls: { preview: URLS.sdPreview, pipelines: URLS.sdPipelines, derive: URLS.sdDerive },
+      onBoundary: (feature) => {
+        // MapboxDraw edits Polygons cleanly; split a MultiPolygon into parts.
+        const geom = feature.geometry;
+        const polys = geom.type === "MultiPolygon"
+          ? geom.coordinates.map((c) => ({ type: "Polygon", coordinates: c }))
+          : [geom];
+        polys.forEach((g) => {
+          const ids = draw.add({ type: "Feature", geometry: g, properties: { arm: currentArm } });
+          ids.forEach((id) => tagFeature(id));
+        });
+        fitTo(geom);
+        refreshStats();
+      },
+    });
+  })();
+  function global_ServiceDeliveryLayer() { return window.ServiceDeliveryLayer; }
 
   // init: coverage is the default (most common workflow for CHC visits)
   setMode("coverage"); setInput("draw");
