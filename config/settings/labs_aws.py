@@ -101,6 +101,13 @@ _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddl
 MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.oauth_session.LabsOAuthSessionMiddleware")
 MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.context.LabsContextMiddleware")
 
+# Gzip-compress responses on the way out — the microplans footprints endpoint
+# ships ~1 MB of GeoJSON polygon coords per ward that compresses 80–90%, but
+# every JSON endpoint benefits. GZipMiddleware sits at the top of the stack so
+# it sees the fully-rendered body. Labs doesn't reflect secrets in response
+# bodies, so BREACH-class attacks aren't a concern here.
+MIDDLEWARE.insert(0, "django.middleware.gzip.GZipMiddleware")
+
 # CommCare OAuth configuration
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://www.commcarehq.org")
 COMMCARE_OAUTH_CLIENT_ID = env("COMMCARE_OAUTH_CLIENT_ID", default="")
