@@ -952,3 +952,85 @@ def test_program_plan_get_and_edit(client, django_user_model, monkeypatch):
     assert edited.status_code == 200
     wa = next(w for w in edited.json()["work_areas"] if w["id"] == wa_id)
     assert wa["status"] == "EXCLUDED" and wa["audit"][-1]["phase"] == "planning"
+
+
+# ---------------------------------------------------------------------------
+# Service-delivery GPS overlay views
+# ---------------------------------------------------------------------------
+def _login_with_opps(client, django_user_model, opp_ids):
+    user = _login(client, django_user_model)
+    session = client.session
+    session["labs_oauth"] = {
+        "access_token": "test-token",
+        "expires_at": time.time() + 3600,
+        "organization_data": {"opportunities": [{"id": oid, "name": f"Opp {oid}"} for oid in opp_ids]},
+    }
+    session.save()
+    return user
+
+
+def test_derive_boundary_returns_polygon(client, django_user_model):
+    _login(client, django_user_model)
+    coords = [[36.82 + i * 0.001, -1.29 + j * 0.001] for i in range(4) for j in range(4)]
+    resp = client.post(
+        reverse("microplans:derive_boundary", kwargs={"opp_id": 123}),
+        data=json.dumps({"coords": coords, "method": "concave", "buffer_m": 20}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["boundary"]["type"] == "Feature"
+    assert body["boundary"]["geometry"]["type"] in ("Polygon", "MultiPolygon")
+    assert body["point_count"] == len(coords)
+
+
+def test_derive_boundary_rejects_empty(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:derive_boundary", kwargs={"opp_id": 123}),
+        data=json.dumps({"coords": []}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert resp.json()["status"] == "error"
+
+
+def test_preview_service_delivery_scopes_to_allowed_opps(client, django_user_model):
+    _login_with_opps(client, django_user_model, [100])
+    # 999 is not in the user's org data -> filtered out -> 403
+    resp = client.post(
+        reverse("microplans:preview_service_delivery", kwargs={"opp_id": 100}),
+        data=json.dumps({"opp_ids": [999]}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 403
+
+
+def test_preview_service_delivery_merges_colored_layers(client, django_user_model, monkeypatch):
+    _login_with_opps(client, django_user_model, [100, 200])
+
+    def fake_fetch(opp_id, request=None, access_token=None, pipeline_id=None):
+        return {
+            "points": [{"lon": 36.82, "lat": -1.29, "username": f"flw{opp_id}", "status": "approved"}],
+            "stats": {"opportunity_id": opp_id, "total_rows": 1, "with_gps": 1, "gps_pct": 100.0},
+            "error": None,
+        }
+
+    monkeypatch.setattr("commcare_connect.microplans.service_delivery.points.fetch_points", fake_fetch)
+    resp = client.post(
+        reverse("microplans:preview_service_delivery", kwargs={"opp_id": 100}),
+        data=json.dumps({"opp_ids": [100, 200]}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["count"] == 2
+    assert len(body["layers"]) == 2
+    # distinct colors per opp
+    colors = {L["opportunity_id"]: L["color"] for L in body["layers"]}
+    assert colors[100] != colors[200]
+    # each feature tagged with its opp + color
+    feats = body["points"]["features"]
+    assert {f["properties"]["opportunity_id"] for f in feats} == {100, 200}

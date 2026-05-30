@@ -66,11 +66,26 @@ class SetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     template_name = "microplans/setup.html"
 
     def get_context_data(self, **kwargs):
+        from commcare_connect.labs.context import get_org_data
+
         context = super().get_context_data(**kwargs)
-        context["opp_id"] = kwargs.get("opp_id")
+        opp_id = kwargs.get("opp_id")
+        context["opp_id"] = opp_id
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         if not settings.MAPBOX_TOKEN:
             context["error"] = "MAPBOX_TOKEN is not configured; the map cannot load."
+
+        # Opportunities the user can overlay service-delivery data for; the
+        # current opp floats to the top so it's the default selection.
+        opps = []
+        try:
+            for o in get_org_data(self.request).get("opportunities", []):
+                if o.get("id") is not None:
+                    opps.append({"id": int(o["id"]), "name": o.get("name") or f"Opportunity #{o['id']}"})
+        except Exception:  # noqa: BLE001 — context is best-effort, never break setup
+            logger.exception("microplans setup: failed to load opportunity list")
+        opps.sort(key=lambda o: (int(o["id"]) != int(opp_id) if opp_id else False, o["name"].lower()))
+        context["sd_opps"] = opps
         return context
 
 
@@ -1237,3 +1252,142 @@ class ProgramComparePageView(_LabsContextSyncMixin, LoginRequiredMixin, Template
         context["compare_url"] = reverse("microplans:program_plan_compare", args=[program_id])
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
+
+
+# ---------------------------------------------------------------------------
+# Service-delivery GPS overlay (reusable layer; see microplans/service_delivery/)
+# ---------------------------------------------------------------------------
+class _ServiceDeliveryMixin:
+    """Restrict posted opp_ids to opportunities the user can actually see."""
+
+    def _allowed_opp_ids(self, request) -> set[int]:
+        from commcare_connect.labs.context import get_org_data
+
+        ids = set()
+        for o in get_org_data(request).get("opportunities", []):
+            if o.get("id") is not None:
+                ids.add(int(o["id"]))
+        return ids
+
+
+class PreviewServiceDeliveryView(_ServiceDeliveryMixin, LoginRequiredMixin, View):
+    """Fetch service-delivery GPS points for one or more opportunities.
+
+    POST {opp_ids: [int], pipeline_id?: int}. Each opp's points are fetched via
+    the ServiceDeliveryPoints provider (default GPS pipeline, or the given
+    pipeline_id), colored per opp, and merged into one FeatureCollection. Mirrors
+    PreviewFootprintsView's request/response shape so the FE layer code is uniform.
+    """
+
+    def post(self, request, opp_id):
+        from commcare_connect.labs.context import get_org_data
+        from commcare_connect.microplans.service_delivery.points import color_for, fetch_points, points_to_geojson
+
+        try:
+            payload = json.loads(request.body)
+            opp_ids = [int(x) for x in payload.get("opp_ids") or []]
+            pipeline_id = payload.get("pipeline_id")
+            pipeline_id = int(pipeline_id) if pipeline_id not in (None, "", "default") else None
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        if not opp_ids:
+            opp_ids = [int(opp_id)]
+        allowed = self._allowed_opp_ids(request)
+        opp_ids = [oid for oid in opp_ids if oid in allowed]
+        if not opp_ids:
+            return JsonResponse({"status": "error", "detail": "No accessible opportunities selected."}, status=403)
+
+        names = {
+            int(o["id"]): (o.get("name") or f"Opportunity #{o['id']}")
+            for o in get_org_data(request).get("opportunities", [])
+            if o.get("id") is not None
+        }
+
+        all_features, layers, auth_error = [], [], None
+        for i, oid in enumerate(opp_ids):
+            color = color_for(i)
+            result = fetch_points(oid, request=request, pipeline_id=pipeline_id)
+            if result.get("auth_error") and auth_error is None:
+                auth_error = {
+                    "auth_error": result["auth_error"],
+                    "auth_error_domain": result.get("auth_error_domain"),
+                    "auth_authorize_url": result.get("auth_authorize_url"),
+                }
+            fc = points_to_geojson(result["points"], opportunity_id=oid, color=color)
+            all_features.extend(fc["features"])
+            layers.append(
+                {
+                    "opportunity_id": oid,
+                    "name": names.get(oid, f"Opportunity #{oid}"),
+                    "color": color,
+                    "stats": result["stats"],
+                    "error": result.get("error"),
+                }
+            )
+
+        body = {
+            "status": "ok",
+            "points": {"type": "FeatureCollection", "features": all_features},
+            "layers": layers,
+            "count": len(all_features),
+        }
+        if auth_error:
+            body.update(auth_error)
+        return JsonResponse(body)
+
+
+class ServiceDeliveryPipelinesView(LoginRequiredMixin, View):
+    """List visit-level pipelines the user can pick instead of the default GPS one."""
+
+    def get(self, request, opp_id):
+        from commcare_connect.workflow.data_access import PipelineDataAccess
+
+        pipelines = [{"id": "default", "name": "Default — device GPS (any app)"}]
+        try:
+            pda = PipelineDataAccess(opportunity_id=opp_id, request=request)
+            for d in pda.list_definitions(include_shared=True):
+                schema = getattr(d, "schema", None) or {}
+                if schema.get("terminal_stage", "aggregated") == "visit_level":
+                    pipelines.append({"id": d.id, "name": d.name})
+        except Exception:  # noqa: BLE001 — dropdown is best-effort
+            logger.exception("microplans service_delivery_pipelines failed (opp=%s)", opp_id)
+        return JsonResponse({"status": "ok", "pipelines": pipelines})
+
+
+class DeriveBoundaryView(LoginRequiredMixin, View):
+    """Derive a boundary polygon from a posted service-delivery point cloud.
+
+    POST {coords: [[lon,lat],...], method?, concavity?, buffer_m?}. Returns the
+    boundary as a GeoJSON Feature so the FE can drop it straight into the draw
+    layer / area-input path used by sampling and coverage.
+    """
+
+    def post(self, request, opp_id):
+        from commcare_connect.microplans.service_delivery.hull import derive_boundary
+
+        try:
+            payload = json.loads(request.body)
+            coords = payload["coords"]
+            points = [{"lon": float(c[0]), "lat": float(c[1])} for c in coords]
+            method = payload.get("method", "concave")
+            concavity = float(payload.get("concavity", 0.3))
+            buffer_m = float(payload.get("buffer_m", 25.0))
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError, IndexError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        try:
+            geometry = derive_boundary(points, method=method, concavity=concavity, buffer_m=buffer_m)
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans derive_boundary failed (opp=%s)", opp_id)
+            return JsonResponse({"status": "error", "detail": "Boundary derivation failed."}, status=502)
+
+        return JsonResponse(
+            {
+                "status": "ok",
+                "boundary": {"type": "Feature", "geometry": geometry, "properties": {"source": "service_delivery"}},
+                "point_count": len(points),
+            }
+        )
