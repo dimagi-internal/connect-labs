@@ -187,12 +187,13 @@ class TestKpis:
         )
 
     def test_dimension_falls_back_to_group_before_assignment(self):
-        # Coverage cells auto-group into spatial super-cells at materialize time
-        # (target ~30 per group → 3 cells → 1×1 super-grid → all in "group-1").
+        # Coverage cells auto-group via BFS adjacency at materialize time. The
+        # three test cells are >50km apart, well beyond the 100m buffer, so they
+        # each land in their own group.
         k = plan.plan_kpis(self._was())
         assert k["dimension"] == "group"  # nothing assigned yet
-        assert k["territories"][0]["name"] == "group-1"
-        assert k["plan"]["territory_count"] == 1
+        assert all(t["name"].startswith("group-") for t in k["territories"])
+        assert k["plan"]["territory_count"] == 3
 
     def test_per_worker_spread_is_territory_diameter(self):
         was = self._was()
