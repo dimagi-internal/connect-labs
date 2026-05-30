@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Compare microplans{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-4rem)]" x-data>
+  <!-- Plan picker -->
+  <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-3 text-sm">
+    <div>
+      <h1 class="text-lg font-bold text-gray-900">Compare plans</h1>
+      <p class="text-xs text-gray-500">{{ scope_label }}</p>
+      <p class="text-xs text-gray-400 mt-1">Pick two or more plans (or versions) to stack their KPIs.</p>
+      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to portfolio</a>{% endif %}
+    </div>
+    <div id="plan-picker" class="space-y-1"></div>
+    <div id="picker-status" class="text-xs text-gray-500"></div>
+  </aside>
+
+  <!-- Comparison table -->
+  <div class="flex-1 overflow-auto p-5">
+    <div id="compare-status" class="text-sm text-gray-500 mb-3"></div>
+    <table class="text-sm border-collapse" id="compare-table"></table>
+    <p class="text-xs text-gray-400 mt-4" id="weights-note"></p>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script>
+(function () {
+  const LIST_URL = "{{ list_url|escapejs }}";
+  const COMPARE_URL = "{{ compare_url|escapejs }}";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const params = new URLSearchParams(window.location.search);
+  const selected = new Set((params.get("plans") || "").split(",").filter(Boolean));
+
+  // metric rows: label, accessor(entry), format, direction (lower/higher better)
+  const fmtKm = (v) => (v == null ? "—" : v + " km");
+  const fmtPct = (v) => (v == null ? "—" : v + " %");
+  const fmtNum = (v) => (v == null ? "—" : Number(v).toLocaleString());
+  const balVal = (e) => { const p = e.kpis.plan; return p.has_population ? p.pop_imbalance_pct : p.building_imbalance_pct; };
+  const stdVal = (e) => { const p = e.kpis.plan; return p.has_population ? p.pop_std : p.building_std; };
+  const ROWS = [
+    { label: "Worst travel (max spread)", get: (e) => e.kpis.plan.max_spread_km, fmt: fmtKm, better: "lower" },
+    { label: "Mean travel", get: (e) => e.kpis.plan.mean_spread_km, fmt: fmtKm, better: "lower" },
+    { label: "Travel std", get: (e) => e.kpis.plan.std_spread_km, fmt: fmtKm, better: "lower" },
+    { label: "Workload imbalance", get: balVal, fmt: fmtPct, better: "lower" },
+    { label: "Workload std", get: stdVal, fmt: fmtNum, better: "lower" },
+    { label: "Coverage", get: (e) => e.kpis.coverage_pct, fmt: fmtPct, better: "higher" },
+    { label: "Excluded areas", get: (e) => e.kpis.excluded.count, fmt: fmtNum, better: "lower" },
+    { label: "Excluded buildings", get: (e) => e.kpis.excluded.buildings, fmt: fmtNum, better: "lower" },
+    { label: e_dim_label(), get: (e) => e.kpis.plan.territory_count, fmt: fmtNum, better: null },
+  ];
+  function e_dim_label() { return "Territories"; }
+
+  async function loadPicker() {
+    try {
+      const d = await (await fetch(LIST_URL)).json();
+      const box = $("plan-picker");
+      if (!d.plans || !d.plans.length) { box.innerHTML = '<span class="text-gray-400">No saved plans yet.</span>'; return; }
+      box.innerHTML = d.plans.map((p) =>
+        `<label class="flex items-center gap-2"><input type="checkbox" class="psel" value="${p.plan_id}" ${selected.has(String(p.plan_id)) ? "checked" : ""}>
+          <span>${esc(p.name)} <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} areas</span></span></label>`).join("");
+      box.querySelectorAll(".psel").forEach((cb) => cb.addEventListener("change", () => {
+        if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
+        syncUrl(); renderCompare();
+      }));
+    } catch (e) { $("picker-status").textContent = "Could not load plans: " + e; }
+  }
+  function syncUrl() {
+    const u = new URL(window.location); u.searchParams.set("plans", [...selected].join(",")); history.replaceState(null, "", u);
+  }
+
+  async function renderCompare() {
+    const ids = [...selected];
+    if (ids.length < 1) { $("compare-status").textContent = "Select plans to compare."; $("compare-table").innerHTML = ""; return; }
+    $("compare-status").textContent = "Loading…";
+    try {
+      const d = await (await fetch(COMPARE_URL + "?plans=" + ids.join(","))).json();
+      if (d.status !== "ok") { $("compare-status").textContent = d.detail || "compare failed"; return; }
+      $("compare-status").textContent = "";
+      const plans = d.plans;
+      const base = plans[0];
+      let html = `<thead><tr><th class="text-left p-2"></th>${plans.map((e) =>
+        `<th class="p-2 text-left">${esc(e.name)}<div class="text-xs font-normal text-gray-400">${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
+      ROWS.forEach((row) => {
+        const baseVal = row.get(base);
+        html += `<tr class="border-t"><td class="p-2 text-gray-600">${row.label}</td>`;
+        plans.forEach((e, i) => {
+          const v = row.get(e);
+          let delta = "";
+          if (i > 0 && row.better && typeof v === "number" && typeof baseVal === "number") {
+            const diff = +(v - baseVal).toFixed(2);
+            if (diff !== 0) {
+              const good = (row.better === "lower") ? diff < 0 : diff > 0;
+              delta = ` <span class="text-xs ${good ? "text-green-600" : "text-red-500"}">(${diff > 0 ? "+" : ""}${diff})</span>`;
+            }
+          }
+          html += `<td class="p-2">${row.fmt(v)}${delta}</td>`;
+        });
+        html += `</tr>`;
+      });
+      html += `</tbody>`;
+      $("compare-table").innerHTML = html;
+      $("weights-note").textContent = "Deltas (the small +/− numbers) are vs the first plan. Green = better on that metric, red = worse.";
+    } catch (e) { $("compare-status").textContent = "Request failed: " + e; }
+  }
+
+  loadPicker(); renderCompare();
+})();
+</script>
+{% endblock %}

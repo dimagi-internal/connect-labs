@@ -78,6 +78,112 @@ export interface RunView {
    * or server error (errors are surfaced via window.alert for now).
    */
   complete(opts?: { confirm?: string }): Promise<boolean>;
+
+  /**
+   * Flags raised against this run, newest first. Always queried live from
+   * the Flag records (not snapshot-frozen). A Flag is a finding derived
+   * from the metrics (`source: 'auto'`) or appended by a human
+   * (`source: 'manual'`). Multiple Flags can exist for the same (run, flw).
+   */
+  flags: Flag[];
+
+  /**
+   * Convenience: return all Flags for `username`. Empty array if none.
+   * Render code uses this to decide what pills to show in the Flag column.
+   */
+  flagsFor(username: string): Flag[];
+
+  /**
+   * Persist any auto-computed flags that aren't already on the run. The
+   * framework dedups by (workflow_run_id, flw_id, flag_key) so calling
+   * this on every render is safe — only the first call per (run, flw,
+   * flag_key) actually POSTs. Returns the list of newly-created flags.
+   *
+   * Render code should call this from a React.useEffect on mount, passing
+   * the flags computed from the current row data.
+   */
+  ensureAutoFlags(
+    computed: Array<{
+      flw_id: string;
+      flag_key: string;
+      flag_label?: string;
+      evidence?: Record<string, unknown>;
+    }>,
+  ): Promise<Flag[]>;
+
+  /**
+   * Audits created against this run. Live-queried from AuditSession
+   * records by `labs_record_id == workflow_run_id`; not snapshot-frozen
+   * (audits live their own lifecycle and may transition status after
+   * the run completes). Render code uses {@link auditsFor} to know
+   * whether a per-row "Create Audit" affordance should swap to a
+   * "View audit" link to the existing artifact.
+   */
+  audits: Audit[];
+
+  /**
+   * Convenience: return all Audits for `username`. Empty array if none.
+   */
+  auditsFor(username: string): Audit[];
+
+  /**
+   * Tasks created against this run. Same live-query philosophy as audits.
+   */
+  tasks: Task[];
+
+  /**
+   * Convenience: return all Tasks for `username`. Empty array if none.
+   */
+  tasksFor(username: string): Task[];
+}
+
+/**
+ * A Flag is a finding attached to one FLW within one workflow run. Flags
+ * are typically computed from the metrics by render code on mount and
+ * persisted via `view.ensureAutoFlags(...)`. They do not carry audit/task
+ * linkage — actions create audit/task records separately.
+ */
+export interface Flag {
+  id: number;
+  flw_id: string;
+  flag_key: string;
+  flag_label: string;
+  evidence: Record<string, unknown>;
+  source: 'auto' | 'manual';
+  flagged_at: string | null;
+  flagged_by: string | null;
+}
+
+/**
+ * An AuditSession created against a workflow run, as seen from the
+ * runner's `view.audits` array. Mirrors the per-FLW shape PAR's
+ * build_snapshot uses so a template can read both surfaces with the
+ * same field names. The link to the run is by `labs_record_id ==
+ * workflow_run_id` server-side; render code doesn't need to know that.
+ */
+export interface Audit {
+  id: number;
+  flw_id: string;
+  status: string;
+  overall_result: string | null;
+  pass_count: number;
+  fail_count: number;
+  pending_count: number;
+}
+
+/**
+ * A Task created against a workflow run, as seen from the runner's
+ * `view.tasks` array. The link to the run is by `data.workflow_run_id`
+ * server-side. `official_action` reflects the resolution chosen when
+ * the task was closed (e.g. "satisfactory", "warned", "suspended").
+ */
+export interface Task {
+  id: number;
+  flw_id: string;
+  status: string;
+  title: string;
+  priority: string;
+  official_action: string | null;
 }
 
 // =============================================================================
@@ -402,6 +508,7 @@ export interface TaskUrlParams {
   username?: string;
   title?: string;
   description?: string;
+  coaching_prompt?: string;
   audit_session_id?: number;
   workflow_instance_id?: number;
   priority?: string;
@@ -787,6 +894,16 @@ export interface WorkflowDataFromDjango {
   };
   workers: WorkerData[];
   pipeline_data?: Record<string, PipelineResult>;
+  /** Flags raised against the current run. Optional — defaults to [] in
+   * useRunView when the BE response omits it. */
+  flags?: Flag[];
+  /** Audits created against the current run (link is by
+   * `labs_record_id == workflow_run_id` server-side). Optional —
+   * defaults to [] in useRunView when the BE response omits it. */
+  audits?: Audit[];
+  /** Tasks created against the current run. Optional — defaults to []
+   * in useRunView when the BE response omits it. */
+  tasks?: Task[];
   links: {
     auditUrlBase: string;
     taskUrlBase: string;

@@ -1,0 +1,665 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Microplan review{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  #review-map { position: absolute; inset: 0; }
+  .hidden { display: none !important; }
+  .wa-row.excluded { opacity: 0.45; text-decoration: line-through; }
+  .wa-row.sel { background: #ecfdf5; }
+  .wa-row.hl-worker { background: #fef9c3; }
+  .cell-input { width: 5.5rem; }
+  .worker-row { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0.4rem; border-radius: 0.25rem; cursor: pointer; align-items: center; }
+  .worker-row:hover { background: #f9fafb; }
+  .worker-row.is-active { background: #eef0ff; box-shadow: inset 0 0 0 1px #3843d0; }
+  .worker-row .sw { width: 0.6rem; height: 0.6rem; border-radius: 9999px; flex-shrink: 0; }
+  .worker-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .worker-row .ct { color: #6b7280; font-variant-numeric: tabular-nums; font-size: 0.7rem; }
+  /* Segmented tab (mirror of setup.html — Color-by control) */
+  .seg-tab { padding: 0.4rem 0.25rem; font-size: 0.7rem; font-weight: 500; text-align: center;
+             border: 1px solid #d1d5db; border-radius: 0.375rem; background: #fff; color: #4b5563;
+             cursor: pointer; transition: all .12s; }
+  .seg-tab:hover { border-color: #9ca3af; }
+  .seg-tab.is-on { border-color: #3843d0; background: #3843d0; color: #fff; }
+
+  /* Resizable map pane: drag the bottom edge to taste */
+  .map-pane { position: relative; flex-shrink: 0; min-height: 200px; }
+  .map-resizer { position: absolute; left: 0; right: 0; bottom: -4px; height: 8px; cursor: row-resize; z-index: 6;
+                 background: transparent; }
+  .map-resizer::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); bottom: 1px;
+                        width: 40px; height: 4px; border-radius: 2px; background: #d1d5db; }
+  .map-resizer:hover::after { background: #6b7280; }
+
+  .map-overlay { position: absolute; z-index: 5; background: rgba(255,255,255,0.95); border: 1px solid #e5e7eb; border-radius: 0.375rem; padding: 0.4rem 0.6rem; font-size: 0.7rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .map-overlay label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
+  .map-legend { display: flex; flex-direction: column; gap: 0.2rem; min-width: 7rem; }
+  .legend-row { display: flex; align-items: center; gap: 0.4rem; }
+  .legend-row .sw { width: 0.8rem; height: 0.5rem; border-radius: 0.15rem; flex-shrink: 0; }
+  .legend-row .lbl { color: #4b5563; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-4rem)]" x-data>
+  <!-- Left: summary + workers + bulk + export -->
+  <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-4 text-sm">
+    <div>
+      <h1 class="text-lg font-bold text-gray-900">Microplan review</h1>
+      <p class="text-xs text-gray-500">Plan #{{ plan_id }}</p>
+      <p class="text-xs text-gray-400 mt-1">Planning phase — edits here happen before upload to Connect.</p>
+      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to program</a>{% endif %}
+    </div>
+
+    <section>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Summary</h2>
+      <dl id="summary" class="space-y-1 text-sm"></dl>
+    </section>
+
+    <section>
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Color by</h2>
+      </div>
+      <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
+        <button type="button" id="dim-worker" class="seg-tab is-on">Worker</button>
+        <button type="button" id="dim-group" class="seg-tab">Group</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span id="dim-label">Workers</span></h2>
+        <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
+      </div>
+      <div id="by-dim" class="space-y-0.5"></div>
+      <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
+    </section>
+
+    <section class="border-t pt-3">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-group work areas</h2>
+      <div class="flex flex-col gap-2 text-xs">
+        <label class="block">
+          <span class="text-gray-600">Strategy</span>
+          <select id="grp-strategy" class="base-input mt-0.5 text-xs">
+            <option value="bfs_adjacency" selected>BFS adjacency (Connect GIS)</option>
+            <option value="bbox">Bbox bucket (fast)</option>
+          </select>
+        </label>
+        <div id="grp-bfs-params" class="grid grid-cols-2 gap-1">
+          <label class="block">
+            <span class="text-gray-600">Max buildings</span>
+            <input id="grp-max-buildings" type="number" value="200" min="1" class="base-input mt-0.5 text-xs">
+          </label>
+          <label class="block">
+            <span class="text-gray-600">Buffer (m)</span>
+            <input id="grp-buffer-m" type="number" value="100" min="0" step="10" class="base-input mt-0.5 text-xs">
+          </label>
+        </div>
+        <label class="block hidden" id="grp-bbox-params">
+          <span class="text-gray-600">Target work areas / group</span>
+          <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
+        </label>
+        <button type="button" id="btn-regroup" class="button button-sm primary-dark">Apply grouping</button>
+        <p class="text-[10px] text-gray-400">Re-groups all active work areas. Audited per work area.</p>
+      </div>
+    </section>
+
+    <section class="border-t pt-3">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-assign CHWs</h2>
+      <div class="flex flex-col gap-2 text-xs">
+        <label class="block">
+          <span class="text-gray-600">Strategy</span>
+          <select id="asg-strategy" class="base-input mt-0.5 text-xs">
+            <option value="minimax_spread" selected>Minimax spread (Neal Lesh)</option>
+            <option value="round_robin">Round robin</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-gray-600">Workers (one per line)</span>
+          <textarea id="asg-workers" rows="4" class="base-input mt-0.5 text-xs font-mono"
+                    placeholder="chw-1&#10;chw-2&#10;chw-3"></textarea>
+        </label>
+        <label class="block" id="asg-restarts-wrap">
+          <span class="text-gray-600">Restarts</span>
+          <input id="asg-restarts" type="number" value="20" min="1" max="200" class="base-input mt-0.5 text-xs">
+        </label>
+        <button type="button" id="btn-reassign" class="button button-sm primary-dark">Apply assignment</button>
+        <p class="text-[10px] text-gray-400">Assigns all groups to a CHW. Audited per work area whose worker changes.</p>
+      </div>
+    </section>
+
+    <section class="border-t pt-3">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Bulk (selected)</h2>
+      <div class="flex flex-col gap-2">
+        <button type="button" id="bulk-exclude" class="button button-sm primary-dark">Exclude selected…</button>
+        <div class="grid grid-cols-2 gap-1">
+          <input id="bulk-group" placeholder="group" class="base-input text-xs">
+          <button type="button" id="bulk-regroup" class="button button-sm outline-style">Set group</button>
+          <input id="bulk-worker" placeholder="worker" class="base-input text-xs">
+          <button type="button" id="bulk-reassign" class="button button-sm outline-style">Assign</button>
+        </div>
+        <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
+      </div>
+    </section>
+
+    <section class="border-t pt-3">
+      <button type="button" id="btn-export" class="button button-sm outline-style w-full">Download Connect import CSV</button>
+      <div id="status" class="text-xs text-gray-500 mt-2"></div>
+    </section>
+  </aside>
+
+  <!-- Center: map + metrics + table -->
+  <div class="flex-1 flex flex-col min-w-0">
+    <div class="map-pane" id="map-pane" style="height: 50vh">
+      <div id="review-map"></div>
+      <!-- Map overlays: footprints toggle (top-left) + legend (bottom-left) -->
+      <div class="map-overlay" style="top: 0.5rem; left: 0.5rem;">
+        <label><input id="toggle-footprints" type="checkbox" class="rounded"> <span id="footprints-label">Show building footprints</span></label>
+      </div>
+      <div class="map-overlay map-legend" style="bottom: 0.5rem; left: 0.5rem;">
+        <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Status</div>
+        <div class="legend-row"><span class="sw" style="background:#06b6d4;opacity:0.6"></span><span class="lbl">Active (assigned)</span></div>
+        <div class="legend-row"><span class="sw" style="background:#cbd5e1;opacity:0.6"></span><span class="lbl">Unassigned</span></div>
+        <div class="legend-row"><span class="sw" style="background:#9ca3af;opacity:0.25"></span><span class="lbl">Excluded</span></div>
+      </div>
+      <!-- Drag handle on the bottom edge -->
+      <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
+    </div>
+
+    <!-- Plan metrics (kpi strip + per-FLW table) -->
+    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Plan metrics</h2>
+        <a id="compare-link" class="text-xs text-brand-cornflower-blue" href="#">Compare plans…</a>
+      </div>
+      <div id="kpi-strip" class="flex flex-wrap gap-3 mb-2"></div>
+      <div class="max-h-40 overflow-auto border border-gray-100 rounded">
+        <table class="min-w-full text-xs">
+          <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
+            <th class="p-1.5" id="flw-dim">Worker</th><th class="p-1.5">Areas</th><th class="p-1.5">Buildings</th>
+            <th class="p-1.5" id="flw-pop-col">Population</th><th class="p-1.5">Expected visits</th><th class="p-1.5">Spread (km)</th>
+          </tr></thead>
+          <tbody id="flw-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="flex-1 overflow-auto border-t border-gray-200">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 sticky top-0">
+          <tr class="text-left text-gray-500">
+            <th class="p-2"><input type="checkbox" id="sel-all"></th>
+            <th class="p-2">Work area</th><th class="p-2">Group</th><th class="p-2">Worker</th>
+            <th class="p-2">Buildings</th><th class="p-2">Expected visits</th><th class="p-2">Status</th><th class="p-2"></th>
+          </tr>
+        </thead>
+        <tbody id="wa-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script>
+(function () {
+  const TOKEN = "{{ mapbox_token|escapejs }}";
+  const CSRF = "{{ csrf_token }}";
+  const PLAN_URL = "{{ plan_url|escapejs }}";
+  const EDIT_URL = "{{ edit_url|escapejs }}";
+  const CSV_URL = "{{ csv_url|escapejs }}";
+  const COMPARE_URL = "{{ compare_url|escapejs }}";
+  const FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
+  const REGROUP_URL = "{{ regroup_url|default:''|escapejs }}";
+  const REASSIGN_URL = "{{ reassign_url|default:''|escapejs }}";
+  document.getElementById("compare-link").href = COMPARE_URL;
+  const $ = (id) => document.getElementById(id);
+  const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
+  // Escape user-controlled values before innerHTML interpolation (group, worker,
+  // reason are LLO-typed and could carry HTML).
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  let WAS = [];                 // current work areas (raw plan rows)
+  const selected = new Set();   // selected wa ids
+  let activeDim = null;         // string | null — current click-to-filter value
+  let colorDim = "worker";      // "worker" | "group" — drives map color + sidebar
+  const DIM_FIELD = { worker: "opportunity_access", group: "work_area_group" };
+
+  // ---- color per assignment key (CHW name or group) -----------------------
+  // Golden-angle HSL hash → adjacent territories visually distinct without a
+  // palette lookup. Connect-gis uses the same trick on group_id.
+  function colorFor(key) {
+    if (!key) return "#cbd5e1";  // unassigned = neutral
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = ((h * 31) + key.charCodeAt(i)) | 0;
+    const hue = (Math.abs(h) * 137.508) % 360;
+    return `hsl(${Math.round(hue)}, 65%, 55%)`;
+  }
+  // The aggregation key: depends on which dimension the user is coloring by.
+  function keyOf(w) { return (w[DIM_FIELD[colorDim]] || "").trim(); }
+
+  // ---- map (best-effort; needs WebGL) ----
+  let map = null, mapReady = false;
+  if (TOKEN) {
+    mapboxgl.accessToken = TOKEN;
+    try {
+      map = new mapboxgl.Map({ container: "review-map", style: "mapbox://styles/mapbox/satellite-streets-v12", center: [8.6753, 9.082], zoom: 5 });
+      map.on("load", () => { mapReady = true; refreshMap(); });
+    } catch (e) { /* headless / no webgl */ }
+  }
+  function colorExpr() {
+    // Color by per-feature "fill" property (computed in fc()); status overrides.
+    return ["case",
+      ["==", ["get", "status"], "EXCLUDED"], "#9ca3af",
+      ["get", "fill"]];
+  }
+  function opacityExpr() {
+    // Excluded = faded; selected = bold; worker-filter inactive matches = dim.
+    return ["case",
+      ["==", ["get", "status"], "EXCLUDED"], 0.18,
+      ["boolean", ["feature-state", "sel"], false], 0.85,
+      ["boolean", ["feature-state", "dim"], false], 0.18,
+      0.55];
+  }
+  function fc() {
+    return { type: "FeatureCollection", features: WAS.filter((w) => w.geometry).map((w) => ({
+      type: "Feature", id: w.id, geometry: w.geometry,
+      properties: { id: w.id, status: w.status, group: w.work_area_group || "",
+                    worker: w.opportunity_access || "", fill: colorFor(keyOf(w)) } })) };
+  }
+  // ---- hover tooltip on cells (cell ID, worker, group, counts, status) ----
+  let hoverPopup = null;
+  function ensurePopup() {
+    if (!hoverPopup) hoverPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+    return hoverPopup;
+  }
+  function cellTooltipHTML(props, w) {
+    const worker = props.worker ? esc(props.worker) : "<i style='color:#9ca3af'>unassigned</i>";
+    const group = props.group ? esc(props.group) : "<i style='color:#9ca3af'>—</i>";
+    const status = (props.status || "active").toLowerCase();
+    const excluded = w && w.status === "EXCLUDED";
+    const reason = excluded && w.excluded_reason ? `<div style="color:#dc2626;margin-top:2px">${esc(w.excluded_reason)}</div>` : "";
+    return `<div style="font-size:11px;line-height:1.4;min-width:140px">
+      <div style="font-weight:600;font-family:monospace">${esc(props.id)}</div>
+      <div><span style="color:#6b7280">worker</span> · ${worker}</div>
+      <div><span style="color:#6b7280">group</span> · ${group}</div>
+      <div><span style="color:#6b7280">buildings</span> · ${(w ? w.building_count : 0) || 0}</div>
+      <div><span style="color:#6b7280">visits</span> · ${(w ? w.expected_visit_count : 0) || 0}</div>
+      <div><span style="color:#6b7280">status</span> · ${esc(status)}</div>
+      ${reason}
+    </div>`;
+  }
+
+  function refreshMap() {
+    if (!map || !mapReady) return;
+    const data = fc();
+    const src = map.getSource("wa");
+    if (src) { src.setData(data); }
+    else {
+      map.addSource("wa", { type: "geojson", data, promoteId: "id" });
+      map.addLayer({ id: "wa-fill", type: "fill", source: "wa",
+                     paint: { "fill-color": colorExpr(), "fill-opacity": opacityExpr() } });
+      map.addLayer({ id: "wa-line", type: "line", source: "wa",
+                     paint: { "line-color": "#0f172a", "line-width": 0.5, "line-opacity": 0.4 } });
+      map.on("click", "wa-fill", (e) => { const id = e.features[0].properties.id; toggleSelect(id); });
+      map.on("mouseenter", "wa-fill", () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "wa-fill", () => { map.getCanvas().style.cursor = ""; ensurePopup().remove(); });
+      map.on("mousemove", "wa-fill", (e) => {
+        const f = e.features[0]; if (!f) return;
+        const wa = WAS.find((x) => x.id === f.properties.id);
+        ensurePopup().setLngLat(e.lngLat).setHTML(cellTooltipHTML(f.properties, wa)).addTo(map);
+      });
+    }
+    const b = new mapboxgl.LngLatBounds();
+    data.features.forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
+    if (!b.isEmpty()) map.fitBounds(b, { padding: 40, maxZoom: 16, animate: false });
+  }
+  function setSelState() {
+    if (!map || !mapReady) return;
+    const field = DIM_FIELD[colorDim];
+    WAS.forEach((w) => {
+      map.setFeatureState({ source: "wa", id: w.id }, {
+        sel: selected.has(w.id),
+        dim: activeDim !== null && (w[field] || "") !== activeDim,
+      });
+    });
+  }
+
+  // ---- footprints overlay ----
+  let footprintsLoaded = false;
+  async function loadFootprints() {
+    if (!FOOTPRINTS_URL) { $("toggle-footprints").checked = false; return; }
+    const lbl = $("footprints-label");
+    if (lbl) lbl.textContent = "Loading footprints…";
+    $("status").textContent = "Fetching footprints…";
+    const t0 = performance.now();
+    try {
+      const data = await (await fetch(FOOTPRINTS_URL)).json();
+      if (data.status !== "ok") throw new Error(data.detail || "footprints failed");
+      const src = map.getSource("plan-fp");
+      if (src) { src.setData(data.footprints); }
+      else {
+        map.addSource("plan-fp", { type: "geojson", data: data.footprints });
+        // Polygon fill (for buildings whose geometry the cache has stored).
+        map.addLayer({
+          id: "plan-fp-fill", type: "fill", source: "plan-fp",
+          filter: ["==", ["geometry-type"], "Polygon"],
+          paint: { "fill-color": "#f59e0b", "fill-opacity": 0.55, "fill-outline-color": "#b45309" },
+        }, "wa-line");
+        // Centroid dot fallback (for legacy cache rows with no polygon stored).
+        map.addLayer({
+          id: "plan-fp-dots", type: "circle", source: "plan-fp",
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: { "circle-radius": 1.6, "circle-color": "#f59e0b", "circle-stroke-color": "#fff", "circle-stroke-width": 0.4 },
+        }, "wa-line");
+      }
+      footprintsLoaded = true;
+      const dt = ((performance.now() - t0) / 1000).toFixed(1);
+      $("status").textContent = `${data.count.toLocaleString()} footprints loaded in ${dt}s.`;
+      if (lbl) lbl.textContent = "Show building footprints";
+    } catch (e) {
+      $("status").textContent = "Footprints failed: " + e.message;
+      $("toggle-footprints").checked = false;
+      if (lbl) lbl.textContent = "Show building footprints";
+    }
+  }
+  $("toggle-footprints").addEventListener("change", () => {
+    const on = $("toggle-footprints").checked;
+    if (on && !footprintsLoaded) { loadFootprints(); return; }
+    if (map && mapReady) {
+      ["plan-fp-fill", "plan-fp-dots"].forEach((id) => {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+      });
+    }
+  });
+
+  // ---- render ----
+  function render(data) {
+    WAS = data.work_areas || [];
+    renderSummary(data.summary || {});
+    renderKpis(data.kpis || {});
+    renderTable();
+    refreshMap(); setSelState();
+  }
+  function chip(label, value, hint) {
+    return `<div class="px-2 py-1 rounded bg-gray-50 border" title="${hint || ""}">
+      <div class="text-[10px] uppercase tracking-wide text-gray-400">${label}</div>
+      <div class="font-semibold text-gray-800">${value}</div></div>`;
+  }
+  function renderKpis(k) {
+    const p = k.plan || {};
+    const balLabel = p.has_population ? "Pop imbalance" : "Bldg imbalance";
+    const balVal = p.has_population ? p.pop_imbalance_pct : p.building_imbalance_pct;
+    $("kpi-strip").innerHTML = [
+      chip("Worst travel", (p.max_spread_km ?? 0) + " km", "Largest FLW territory diameter — the minimax objective"),
+      chip("Mean travel", (p.mean_spread_km ?? 0) + " km", "Mean FLW territory diameter (±std " + (p.std_spread_km ?? 0) + ")"),
+      chip(balLabel, balVal == null ? "—" : balVal + " %", "(max − min) / target × 100"),
+      chip(p.has_population ? "Pop std" : "Bldg std", (p.has_population ? p.pop_std : p.building_std) ?? "—", "Std of per-FLW " + (p.has_population ? "population" : "buildings")),
+      chip("Coverage", (k.coverage_pct ?? 100) + " %", "Active buildings / (active + excluded)"),
+      chip("Excluded", (k.excluded ? k.excluded.count : 0) + " areas", (k.excluded ? k.excluded.buildings : 0) + " buildings dropped"),
+      chip(k.dimension === "worker" ? "Workers" : "Groups", p.territory_count ?? 0, k.dimension === "worker" ? "" : "No workers assigned yet — metrics shown by group"),
+    ].join("");
+    $("flw-dim").textContent = k.dimension === "worker" ? "Worker" : "Group";
+    const showPop = !!p.has_population;
+    $("flw-pop-col").style.display = showPop ? "" : "none";
+    $("flw-body").innerHTML = (k.territories || []).map((t) =>
+      `<tr class="border-b"><td class="p-1.5 font-medium">${esc(t.name)}</td>
+        <td class="p-1.5">${t.work_areas}</td>
+        <td class="p-1.5">${(t.buildings || 0).toLocaleString()}</td>
+        ${showPop ? `<td class="p-1.5">${t.population ? t.population.toLocaleString() : "—"}</td>` : ""}
+        <td class="p-1.5">${(t.expected_visits || 0).toLocaleString()}</td>
+        <td class="p-1.5">${t.spread_km}</td></tr>`).join("");
+  }
+  function renderSummary(s) {
+    $("summary").innerHTML =
+      `<div class="flex justify-between"><dt class="text-gray-500">Active areas</dt><dd class="font-medium">${s.active ?? 0}</dd></div>
+       <div class="flex justify-between"><dt class="text-gray-500">Excluded</dt><dd class="font-medium">${s.excluded ?? 0}</dd></div>
+       <div class="flex justify-between"><dt class="text-gray-500">Buildings (active)</dt><dd class="font-medium">${(s.buildings_active ?? 0).toLocaleString()}</dd></div>`;
+    renderDimSidebar(s);
+  }
+  function renderDimSidebar(s) {
+    // Sidebar contents follow the active dimension (worker | group).
+    const bucket = (colorDim === "worker" ? s.by_worker : s.by_group) || {};
+    // Don't list the synthetic "(unassigned)" bucket — empty key is the visual.
+    const rows = Object.keys(bucket).filter((k) => k && k !== "(unassigned)")
+                       .sort((a, b) => bucket[b].work_areas - bucket[a].work_areas);
+    if (!rows.length) {
+      $("by-dim").innerHTML = `<span class="text-gray-400 text-xs">no ${colorDim === "worker" ? "workers assigned" : "groups defined"}</span>`;
+    } else {
+      $("by-dim").innerHTML = rows.map((name) => {
+        const cls = "worker-row text-xs " + (activeDim === name ? "is-active" : "");
+        return `<div class="${cls}" data-dim="${esc(name)}">
+          <span class="sw" style="background:${colorFor(name)}"></span>
+          <span class="nm">${esc(name)}</span>
+          <span class="ct">${bucket[name].work_areas} · ${bucket[name].buildings.toLocaleString()}</span>
+        </div>`;
+      }).join("");
+    }
+    $("dim-clear").classList.toggle("hidden", activeDim === null);
+  }
+  function renderTable() {
+    const body = $("wa-body");
+    body.innerHTML = "";
+    const field = DIM_FIELD[colorDim];
+    WAS.forEach((w) => {
+      const tr = document.createElement("tr");
+      const isHl = activeDim !== null && (w[field] || "") === activeDim;
+      tr.className = "wa-row border-b "
+        + (w.status === "EXCLUDED" ? "excluded " : "")
+        + (selected.has(w.id) ? "sel " : "")
+        + (isHl ? "hl-worker " : "");
+      // Hide rows that don't match the active filter (lighter than dimming).
+      if (activeDim !== null && (w[field] || "") !== activeDim) {
+        tr.style.display = "none";
+      }
+      const excluded = w.status === "EXCLUDED";
+      const id = esc(w.id);
+      tr.innerHTML = `
+        <td class="p-2"><input type="checkbox" class="rowsel" data-id="${id}" ${selected.has(w.id) ? "checked" : ""}></td>
+        <td class="p-2 font-mono text-xs">${id}</td>
+        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="regroup" data-field="work_area_group" data-id="${id}" value="${esc(w.work_area_group || "")}"></td>
+        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${id}" value="${esc(w.opportunity_access || "")}"></td>
+        <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
+        <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${id}" value="${w.expected_visit_count ?? 0}"></td>
+        <td class="p-2 text-xs">${excluded ? `<span title="${esc(w.excluded_reason || "")}">EXCLUDED</span>` : esc(w.status || "")}</td>
+        <td class="p-2">${excluded
+          ? `<button class="text-xs text-brand-cornflower-blue" data-restore="${id}">restore</button>`
+          : `<button class="text-xs text-red-600" data-exclude="${id}">exclude</button>`}</td>`;
+      body.appendChild(tr);
+    });
+    $("sel-count").textContent = `${selected.size} selected`;
+  }
+
+  // ---- dimension filter (worker | group) ----
+  function setActiveDim(name) {
+    activeDim = (name === activeDim) ? null : name;
+    renderDimSidebar(lastSummary);
+    renderTable();
+    setSelState();
+  }
+  function setColorDim(d) {
+    colorDim = d;
+    activeDim = null;  // clear filter when switching dimensions
+    $("dim-worker").classList.toggle("is-on", d === "worker");
+    $("dim-group").classList.toggle("is-on", d === "group");
+    $("dim-label").textContent = d === "worker" ? "Workers" : "Groups";
+    $("dim-label2").textContent = d === "worker" ? "worker" : "group";
+    // Recompute per-feature fill color (map source has it baked in), then re-render.
+    if (map && mapReady) {
+      const src = map.getSource("wa");
+      if (src) src.setData(fc());
+    }
+    renderDimSidebar(lastSummary);
+    renderTable();
+    setSelState();
+  }
+  let lastSummary = {};
+  const origRenderSummary = renderSummary;
+  renderSummary = function (s) { lastSummary = s; origRenderSummary(s); };
+  $("by-dim").addEventListener("click", (e) => {
+    const row = e.target.closest(".worker-row"); if (!row) return;
+    setActiveDim(row.dataset.dim);
+  });
+  $("dim-clear").addEventListener("click", () => { activeDim = null; renderDimSidebar(lastSummary); renderTable(); setSelState(); });
+  $("dim-worker").addEventListener("click", () => setColorDim("worker"));
+  $("dim-group").addEventListener("click", () => setColorDim("group"));
+
+  // ---- edits ----
+  async function edit(body) {
+    $("status").textContent = "Saving…";
+    try {
+      const resp = await post(EDIT_URL, body);
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { $("status").textContent = data.detail || ("HTTP " + resp.status); return; }
+      $("status").textContent = "Saved.";
+      render(data);
+    } catch (e) { $("status").textContent = "Failed: " + e; }
+  }
+  function toggleSelect(id) { if (selected.has(id)) selected.delete(id); else selected.add(id); renderTable(); setSelState(); }
+
+  // table interactions (delegated)
+  $("wa-body").addEventListener("click", (e) => {
+    const ex = e.target.closest("[data-exclude]"); const rs = e.target.closest("[data-restore]");
+    if (ex) { const reason = prompt("Reason for excluding this work area?"); if (reason !== null) edit({ action: "exclude", wa_id: ex.dataset.exclude, reason }); }
+    else if (rs) { edit({ action: "unexclude", wa_id: rs.dataset.restore }); }
+    const cb = e.target.closest(".rowsel"); if (cb) { toggleSelect(cb.dataset.id); }
+  });
+  $("wa-body").addEventListener("change", (e) => {
+    const inp = e.target.closest("[data-act]"); if (!inp) return;
+    const body = { action: inp.dataset.act, wa_id: inp.dataset.id };
+    body[inp.dataset.field] = inp.dataset.act === "resize" ? +inp.value : inp.value;
+    edit(body);
+  });
+  $("sel-all").addEventListener("change", (e) => { selected.clear(); if (e.target.checked) WAS.forEach((w) => selected.add(w.id)); renderTable(); setSelState(); });
+
+  // bulk
+  $("bulk-exclude").addEventListener("click", () => {
+    if (!selected.size) return; const reason = prompt(`Reason for excluding ${selected.size} work areas?`);
+    if (reason !== null) edit({ action: "exclude", wa_ids: [...selected], reason });
+  });
+  $("bulk-regroup").addEventListener("click", () => { if (selected.size && $("bulk-group").value) edit({ action: "regroup", wa_ids: [...selected], work_area_group: $("bulk-group").value }); });
+  $("bulk-reassign").addEventListener("click", () => { if (selected.size) edit({ action: "reassign", wa_ids: [...selected], opportunity_access: $("bulk-worker").value }); });
+
+  // export
+  // ---- Phase-1: re-group cells ----
+  $("grp-strategy").addEventListener("change", () => {
+    const s = $("grp-strategy").value;
+    $("grp-bfs-params").classList.toggle("hidden", s !== "bfs_adjacency");
+    $("grp-bbox-params").classList.toggle("hidden", s !== "bbox");
+  });
+  $("btn-regroup").addEventListener("click", async () => {
+    if (!REGROUP_URL) { $("status").textContent = "Regroup URL not available."; return; }
+    const strategy = $("grp-strategy").value;
+    const body = { strategy };
+    if (strategy === "bfs_adjacency") {
+      body.max_buildings = +$("grp-max-buildings").value;
+      body.buffer_distance_m = +$("grp-buffer-m").value;
+    } else {
+      body.target_size = +$("grp-target-size").value;
+    }
+    $("btn-regroup").disabled = true;
+    $("status").textContent = `Re-grouping (${strategy})…`;
+    const t0 = performance.now();
+    try {
+      const resp = await post(REGROUP_URL, body);
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") {
+        $("status").textContent = data.detail || ("HTTP " + resp.status);
+      } else {
+        const dt = ((performance.now() - t0) / 1000).toFixed(1);
+        // Count distinct groups from the new work_areas response.
+        const groups = new Set((data.work_areas || []).map((w) => w.work_area_group));
+        $("status").textContent = `Re-grouped into ${groups.size} groups in ${dt}s.`;
+        render(data);
+      }
+    } catch (e) {
+      $("status").textContent = "Re-group failed: " + e;
+    } finally {
+      $("btn-regroup").disabled = false;
+    }
+  });
+
+  // ---- Phase-2: re-assign CHWs ----
+  $("asg-strategy").addEventListener("change", () => {
+    const s = $("asg-strategy").value;
+    $("asg-restarts-wrap").classList.toggle("hidden", s !== "minimax_spread");
+  });
+  $("btn-reassign").addEventListener("click", async () => {
+    if (!REASSIGN_URL) { $("status").textContent = "Reassign URL not available."; return; }
+    const strategy = $("asg-strategy").value;
+    const workers = ($("asg-workers").value || "").trim();
+    if (!workers) { $("status").textContent = "Enter at least one worker name."; return; }
+    const body = { strategy, workers };
+    if (strategy === "minimax_spread") body.restarts = +$("asg-restarts").value;
+    $("btn-reassign").disabled = true;
+    $("status").textContent = `Re-assigning (${strategy})…`;
+    const t0 = performance.now();
+    try {
+      const resp = await post(REASSIGN_URL, body);
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") {
+        $("status").textContent = data.detail || ("HTTP " + resp.status);
+      } else {
+        const dt = ((performance.now() - t0) / 1000).toFixed(1);
+        const assigned = new Set((data.work_areas || []).map((w) => w.opportunity_access).filter(Boolean));
+        $("status").textContent = `Assigned to ${assigned.size} CHWs in ${dt}s.`;
+        render(data);
+      }
+    } catch (e) {
+      $("status").textContent = "Re-assign failed: " + e;
+    } finally {
+      $("btn-reassign").disabled = false;
+    }
+  });
+
+  $("btn-export").addEventListener("click", async () => {
+    const resp = await post(CSV_URL, {});
+    if (!resp.ok) { $("status").textContent = "Export failed."; return; }
+    const blob = await resp.blob(); const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `microplan_plan{{ plan_id }}.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // ---- map resize (drag the handle on the bottom edge) ----
+  (() => {
+    const pane = $("map-pane"), handle = $("map-resizer");
+    if (!pane || !handle) return;
+    let startY = 0, startHeight = 0;
+    const onMove = (e) => {
+      const dy = e.clientY - startY;
+      const h = Math.max(160, Math.min(window.innerHeight - 200, startHeight + dy));
+      pane.style.height = h + "px";
+      if (map) map.resize();
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    handle.addEventListener("mousedown", (e) => {
+      startY = e.clientY;
+      startHeight = pane.getBoundingClientRect().height;
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+  })();
+
+  // initial load
+  fetch(PLAN_URL).then((r) => r.json()).then((d) => { if (d.status === "ok") render(d); else $("status").textContent = d.detail || "load failed"; })
+    .catch((e) => $("status").textContent = "load failed: " + e);
+
+  window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit,
+                      get activeDim() { return activeDim; }, get colorDim() { return colorDim; },
+                      setActiveDim, setColorDim };
+})();
+</script>
+{% endblock %}

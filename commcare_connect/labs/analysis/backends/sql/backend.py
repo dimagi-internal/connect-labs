@@ -718,8 +718,12 @@ class SQLBackend:
                 last_visit_date=row.get("_base_last_visit_date"),
             )
 
-            # Custom fields (from config fields + histograms)
+            # Custom fields (from config fields + histograms). days_active is
+            # surfaced here (rather than as a FLWRow attribute) so it flows
+            # transparently through the cache JSON and out to pipeline-output
+            # consumers (workflow render code) alongside any user-defined fields.
             custom = {}
+            custom["days_active"] = row.get("_base_days_active") or 0
             for field in config.fields:
                 if field.name in row:
                     custom[field.name] = row[field.name]

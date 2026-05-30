@@ -78,7 +78,6 @@ if SENTRY_DSN:
 CSRF_TRUSTED_ORIGINS = ["https://*.127.0.0.1"] + env.list("CSRF_TRUSTED_ORIGINS", default=[])
 # LABS ENVIRONMENT
 # ------------------------------------------------------------------------------
-IS_LABS_ENVIRONMENT = True
 DEPLOY_ENVIRONMENT = "labs"
 
 # OAuth configuration
@@ -93,10 +92,21 @@ PRELOGIN_APP_LOGIN_URL = "/labs/overview/"
 INSTALLED_APPS.append("commcare_connect.labs")
 INSTALLED_APPS.append("commcare_connect.custom_analysis.chc_nutrition")
 
-# Add labs context middleware after auth
+# Add labs middlewares after auth.
 MIDDLEWARE = list(MIDDLEWARE)
 _auth_idx = MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware")
-MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.context.LabsContextMiddleware")
+# OAuth session sync runs first so the rest of the stack sees a fresh
+# session.labs_oauth (or a logged-out user, if refresh failed). See
+# commcare_connect/labs/oauth_session.py.
+MIDDLEWARE.insert(_auth_idx + 1, "commcare_connect.labs.oauth_session.LabsOAuthSessionMiddleware")
+MIDDLEWARE.insert(_auth_idx + 2, "commcare_connect.labs.context.LabsContextMiddleware")
+
+# Gzip-compress responses on the way out — the microplans footprints endpoint
+# ships ~1 MB of GeoJSON polygon coords per ward that compresses 80–90%, but
+# every JSON endpoint benefits. GZipMiddleware sits at the top of the stack so
+# it sees the fully-rendered body. Labs doesn't reflect secrets in response
+# bodies, so BREACH-class attacks aren't a concern here.
+MIDDLEWARE.insert(0, "django.middleware.gzip.GZipMiddleware")
 
 # CommCare OAuth configuration
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://www.commcarehq.org")

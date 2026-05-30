@@ -44,6 +44,11 @@ class User(AbstractUser):
         null=True,
     )
     phone_number = models.CharField(max_length=15, null=True, blank=True)
+    view_synthetic_opps = models.BooleanField(
+        default=False,
+        help_text="When on, labs-only synthetic opportunities matching the user's email "
+        "domain are merged into their labs_context org/program/opportunity lists.",
+    )
 
     REQUIRED_FIELDS = []
 

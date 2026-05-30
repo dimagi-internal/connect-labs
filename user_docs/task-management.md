@@ -77,12 +77,46 @@ The OCS bot sends an automated chat message to a field worker via CommCare Conne
 To trigger the OCS bot:
 
 1. Open the task
-2. Click **Start OCS Chat**
-3. The bot sends a message to the FLW through CommCare Connect
-4. The conversation transcript appears in the task timeline as it progresses
+2. Click **Create Task with Coaching** (from a review table) or **Start OCS Chat** (from within a task directly)
+3. The **Initiate AI Assistant** modal opens — review the pre-filled prompt in the **Instructions to assistant** banner, edit it if needed, then click **Initiate AI**
+4. The bot sends a message to the FLW through CommCare Connect
+5. The conversation transcript appears in the task timeline as it progresses
+
+The prompt shown in the modal is an instruction to the assistant describing what to coach the worker about and why — for example, noting which flag was raised and what it typically means. The assistant then opens the conversation with the worker in its own words. You can edit the instructions before clicking **Initiate AI** if you want to adjust the focus or add context.
 
 !!! note
 The OCS bot is only available for programs that have been configured to use it. Ask your program administrator if you're unsure whether it's enabled.
+
+---
+
+## Weekly Review Table — Manager Actions
+
+During a weekly review (such as the CHC Nutrition review), the manager works through each worker row in the review table to record a decision.
+
+**Marking a single row as No Issues:**
+Click **Mark No Issue** in the Actions column for that row. The Decision column updates to show a green **No Issues** pill and the Actions cell clears — no further steps are needed for that worker.
+
+**Marking all rows as No Issues at once:**
+Use the **Mark all No Issue** toolbar button at the top of the table (above the column headers). This applies the green **No Issues** pill to every row in one click, clearing all Actions cells at the same time.
+
+**Creating a task with coaching:**
+Click **Create Task with Coaching** in the Actions column for a worker who needs follow-up. This opens the **Initiate AI Assistant** modal, where you can review and edit the outreach instructions before clicking **Initiate AI** to start the OCS bot conversation.
+
+The task page shows a short, readable description of what the follow-up is about — for example, "Coach Maria on household visit selection." The full instructions the OCS bot will use are kept separate: they pre-fill the **Instructions to assistant** prompt field inside the **Initiate AI Assistant** modal when you're ready to send. The prompt textarea is tall enough to show the whole message without scrolling, and you can resize it vertically if you want more room to review or edit.
+
+!!! tip
+Rows marked No Issues are visually distinct — the green pill makes it easy to scan the table and see which workers still need a decision.
+
+---
+
+## Completed Runs — Historical Records
+
+Once a program run is saved and completed, it becomes a fixed historical record. In a completed run:
+
+- Rows where no audit or task was created show **greyed-out, non-interactive** Create Audit and Create Task buttons — you cannot start new work from a finished run.
+- Rows that did produce an audit or task still show a working **View Audit** or **View Task** link so you can navigate to the existing record at any time.
+
+If you need to take action on a worker from a completed run, create a new task manually from the Tasks section instead.
 
 ---
 

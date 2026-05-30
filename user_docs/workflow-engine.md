@@ -55,6 +55,63 @@ Click any row to see that worker's detailed record — individual visit data, ti
 
 ---
 
+## Flags and Actions
+
+### Flags column
+
+Many per-opportunity reports include a **Flags** column. Flags are findings the system raises automatically based on the metrics — they represent concerns surfaced from the data, not judgments that a manager records manually.
+
+When you open a report, the system reads the data and applies all relevant flags immediately on page load. There is nothing to click to trigger this — flags are already present by the time the dashboard is visible. A row with no concerns shows an em-dash (—).
+
+Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same time. Flag pills never break mid-phrase — the FLAGS column widens to fit the full label of whichever flags are active on that row.
+
+### Actions column
+
+Every row has an **Actions** column. What the Actions cell shows depends on whether an audit or task has already been created for that worker in the current run, and whether the run is still in progress or has been saved as completed.
+
+**When no audit or task exists yet**, the cell shows two menu buttons: **Create Audit ▾** and **Create Task ▾**.
+
+The dropdown menus display each option as an outlined button so every option is clearly clickable. The open menu has a coloured border and header band matching its trigger button — blue for **Create Audit**, purple for **Create Task** — so the menu is visually connected to the button that opened it.
+
+**Menu positioning:** When a row is near the bottom of the screen, the Create Audit and Create Task dropdown menus open upward instead of downward, so the options are always fully visible and never hidden below the edge of the screen.
+
+**Create Audit menu** always contains exactly two options:
+
+- **New Audit** — opens a blank audit record for that worker
+- **Audit Last 7 days** — opens an audit pre-scoped to the most recent seven days of that worker's visits
+
+**Create Task menu** contains:
+
+- **New Task** — opens a blank task record for that worker
+- **Coach on Flag implications** — only appears when the row carries at least one flag; opens a coaching task whose prompt is composed from the specific flag labels active on that row, so the coaching prompt stays relevant whether the FLW tripped SAM-low, MAM-low, gender-skew, or any combination of those flags
+
+**When an audit or task has already been created**, the create menus are replaced by plain links:
+
+- **View Audit** — appears in place of the Create Audit menu when an audit already exists for that worker in this run; clicking it opens that audit record directly
+- **View Task** — appears in place of the Create Task menu when a task already exists for that worker in this run; clicking it opens that task record directly
+
+**On a completed (saved) run**, rows that have no existing audit or task show greyed-out, non-interactive Create Audit and Create Task buttons. A saved run is a historical record — no new work can be started from it. Rows that already produced an audit or task still show working **View Audit / View Task** links so you can always navigate back to those records.
+
+This means the Actions cell always reflects the current state of the row: rows with no prior action offer the create menus (on an in-progress run) or greyed-out buttons (on a completed run), and rows where action has already been taken show direct links to those records. This applies whether you are viewing the current week's run or replaying a historical run.
+
+### CHC Nutrition Analysis flags
+
+The CHC Nutrition Analysis dashboard uses the following flag catalog:
+
+| Flag                            | What it means                                                                                                                     |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **SAM rate < 1%**               | The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
+| **MAM rate < 3%**               | The FLW's MAM case rate is below 3% — same pattern as the SAM flag but for moderate acute malnutrition                            |
+| **Gender split outside 40–60%** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                        |
+
+!!! note "SAM/MAM flags signal too few at-risk cases, not too many"
+These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
+
+!!! note "Flags appear immediately when opening a new weekly run"
+    When you open a brand-new CHC Nutrition weekly review, auto-detected flags (SAM rate < 1%, MAM rate < 3%, gender split) appear on each row the moment the table loads. You do not need to reload the page to see the system's findings — they are ready as soon as the dashboard is visible.
+
+---
+
 ## Workflow Statuses
 
 Many workflows include a status column that tracks where a case is in a program process:
@@ -76,93 +133,105 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 Labs includes pre-built workflow templates for common program types. Your program administrator can create a workflow from any of these templates and configure it for your opportunity.
 
-| Template                | Best for                                        |
-| ----------------------- | ----------------------------------------------- |
-| **KMC Longitudinal**    | Kangaroo Mother Care — tracking cases over time |
-| **KMC FLW Flags**       | Flag workers needing supervisory follow-up      |
-| **KMC Project Metrics** | Program-level KPIs and summary statistics       |
-| **MBW Monitoring**      | Mother and baby wellness visit tracking         |
-| **Performance Review**  | FLW performance compared across programs        |
-| **SAM Follow-up**       | Severe acute malnutrition case management       |
-| **OCS Outreach**        | Community health outreach tracking              |
-| **Bulk Image Audit**    | Image-based QA combined with workflow status    |
+| Template                   | Best for                                             |
+| -------------------------- | ---------------------------------------------------- |
+| **KMC Longitudinal**       | Kangaroo Mother Care — tracking cases over time      |
+| **KMC FLW Flags**          | Flag workers needing supervisory follow-up           |
+| **KMC Project Metrics**    | Program-level KPIs and summary statistics            |
+| **MBW Monitoring**         | Mother and baby wellness visit tracking              |
+| **Performance Review**     | FLW performance compared across programs             |
+| **SAM Follow-up**          | Severe acute malnutrition case management            |
+| **OCS Outreach**           | Community health outreach tracking                   |
+| **Bulk Image Audit**       | Image-based QA combined with workflow status         |
+| **CHC Nutrition Analysis** | Community health centre nutrition program monitoring |
+| **MBW Auditing V4**        | MBW audit reviews with flag and task workflow        |
+| **MBW Auditing V5**        | MBW audit reviews — faster loads and preserved runs  |
+| **Program Admin Report**   | Cross-opportunity compliance view for program admins |
 
 ---
 
-## MBW Monitoring Dashboard
+## Creating and Customizing Workflows
 
-The **MBW Monitoring** template has five tabs. The sections below describe what each tab shows and how its numbers are calculated, so you know what to expect when reviewing data.
+This section is for program administrators and technical staff who want to build or adapt a workflow for their program. End users who just want to read a workflow dashboard don't need to read this section.
 
-### Overview tab
+### Templates vs. Instances
 
-- **Eligible mothers** counts only mothers who qualify for the full intervention bonus — this is the same eligibility rule used in the Performance tab and the drilldown, so all three figures stay consistent with each other.
-- **Expected visits** (shown as _total_cases_ in exports) is the count of visits that were expected in the selected period, matching the original MBW v1 definition.
+Every workflow you see in Labs is an **instance** — a copy attached to a specific CommCare opportunity. Instances are created from **templates**, which are reusable blueprints.
 
-### Followups tab
+- A **template** never runs on its own. It defines the SQL pipelines and display logic that will be applied when a workflow is created for an opportunity.
+- An **instance** is what you see in the Workflows list: a template applied to one opportunity, with real data flowing through it.
 
-- **Completion rate** is calculated using the same eligibility filter as MBW v1, and includes a 5-day grace window so visits completed slightly after their due date are not counted as missed.
-- **Worker attribution**: if no visits have been recorded for a mother yet, the dashboard attributes her to the field worker who submitted her registration form, rather than leaving the row blank.
-- **Visit status** uses six categories: _Completed – On Time_, _Completed – Late_, _Due – On Time_, _Due – Late_, _Missed_, and _Not Due Yet_. The visit-type breakdown chart will render correctly with this data.
+The recommended starting point: pick the closest existing template from the [Starter Templates](#starter-templates) list, have Claude Code derive a new template from it, deploy it to Labs, then create an instance for your opportunity.
 
-### GPS tab
+### How Data Gets into a Workflow
 
-- **Flagged visits** and **total flagged** are now calculated using the 5 km distance threshold.
-- **Cases with revisits** counts distinct mothers, not the total number of distance log entries.
-- **Visits with GPS**, **unique cases**, and **average daily travel (km)** are all produced and visible in the tab.
+All workflows follow the same core pattern — the same approach Superset uses:
 
-### Performance tab
+1. CommCare form submissions are synced into a Connect Labs SQL database.
+2. **Pipelines** run JSON-based SQL queries against that data to extract and aggregate it — one row per visit, one row per FLW, counts, percentages, and more.
+3. The **workflow dashboard** renders the query results and lets users interact with them.
 
-Field workers are grouped into four categories, matching the original MBW v1 logic:
+All aggregation belongs in SQL. If Claude Code ever suggests doing aggregation in Python instead, that is a signal the session has gone off track — ask in **#connect-labs** before continuing. Because the pipelines use the same JSON query approach as Superset, you can paste a pipeline's SQL directly into Superset to debug it if something looks wrong.
 
-| Category             | What it means                                            |
-| -------------------- | -------------------------------------------------------- |
-| Eligible for Renewal | Worker meets the still-eligible business rule            |
-| Probation            | Worker is at risk — missed visits above the threshold    |
-| Suspended            | Worker has exceeded the allowable missed-visit threshold |
-| No Category          | Insufficient data to place the worker in a category      |
+The `custom_analysis/` section of Labs predates the workflow engine. Most of those dashboards could now be rebuilt as workflows. Write custom Django or Python only for a genuinely complex multi-step UI — and even then, the better answer is usually to split the work into multiple simpler workflows.
 
-The tab also shows the percentage of workers who missed one visit or fewer (_pct_missed_1_or_less_) and milestone percentages.
+### Generating Demo or Test Data from a Real Opportunity
 
----
+If you need realistic data for testing, training, or demonstrations, Labs can generate a **synthetic dataset** based on the statistical profile of an existing opportunity — without any real patient data leaving the server.
 
-## MBW Auditing V4 Dashboard
+This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges, and so on) and producing a synthetic dataset that looks realistic but contains no actual records. The result can be used to populate a test workflow instance so you can demonstrate the dashboard or validate a new template without using live data.
 
-### % Still Eligible
+Synthetic opportunities now support the complete program management loop, not just the dashboard view. This means a demo can include:
 
-The **% Still Eligible** figure answers the question: of mothers who are bonus-eligible AND have a completed ANC visit, how many have missed at most 1 of their post-ANC visits within their expiry window?
+- **Audit drill-downs with MUAC photos** — so stakeholders can see what an image-based quality audit looks like end to end.
+- **Task follow-ups** — showing how supervisors assign and track corrective actions after a flagged visit.
+- **OCS coaching transcripts** — demonstrating the outreach coaching conversation flow within the synthetic opportunity.
 
-A mother is included in the denominator only if she meets both of the following conditions:
+This makes synthetic data suitable for full stakeholder and funder demonstrations without any real patient data being used.
 
-1. She qualifies for the full intervention bonus.
-2. Her antenatal visit completion is recorded as complete on her visit form.
+#### Live manager-flow demos
 
-The missed-visit check then looks only at the five post-ANC visit types — **Postnatal Delivery, 1 Week, 1 Month, 3 Month, and 6 Month** — within the mother's expiry window. The ANC visit itself is not counted in this check, because it is already required just to be included in the denominator.
+If you want to record a walkthrough that shows a network manager actually conducting a weekly review — rather than clicking through a pre-decided run — you can request the **in-progress last week** seed flag when setting up a synthetic opportunity. When this flag is enabled:
 
-If you see this figure change compared to an earlier version of the dashboard, it is because the calculation now correctly matches visit records to their scheduled visit types and applies both eligibility filters together before checking for missed visits.
+- The most recent week's run is left in an **in-progress** state with no decisions, audits, or tasks already filled in.
+- The manager performing the walkthrough makes real decisions during the recording, so the demo looks and feels like a genuine live review rather than a replay.
 
----
+While the run is in progress, the manager has access to the full set of live actions in the dashboard:
 
-## Common Questions
+- **Mark all No Issue** — a toolbar button displayed above the table (next to the table title) that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.
+- **Mark No Issue** — a per-row button to approve an individual field worker without raising a flag. After clicking either the bulk or per-row button, the Decision column fills in with a green **No Issues** pill and the Actions cell for that row is cleared.
+- **Create Audit** — opens an audit record with 5 unreviewed photos for that worker. The manager reviews each photo, passes or flags it, and then clicks **Complete Image Review** to record the verdict. The audit opens in an unreviewed state so the walkthrough shows the full review process rather than landing on an already-finished record.
+- **Create Task with Coaching** — opens the **Initiate AI Assistant** modal on the task page, the same modal a real OCS user sees. The task page shows a short, readable description of what the coaching task is about. The prompt is framed as an instruction to the assistant — for example, "Coach [worker] about this week's nutrition screening. The report flagged: … A suspiciously low SAM/MAM rate usually means …" — and is rendered as a distinct **Instructions to assistant** banner above the conversation, separate from the assistant's own opening line. The full prompt is also pre-filled in the modal's prompt field, where the manager can read or edit it before clicking **Initiate AI** to start the coaching conversation.
 
-**Why is a worker's data missing or outdated?**
-Pipelines refresh data on a schedule. If a CommCare form was submitted recently, it may take up to 30 minutes to appear. Look for the "Last refreshed" timestamp at the top of the workflow.
+All four actions are only available while the run is in an **in-progress** state. Once the run is concluded it becomes read-only, so the buttons are no longer shown — rows without an existing audit or task show greyed-out, non-interactive buttons, while rows that already produced an audit or task still show working **View Audit / View Task** links.
 
-**Can I export the workflow data?**
-Some workflows include an export button in the top toolbar. If yours doesn't, ask your program administrator — this can be configured.
+This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in **#connect-labs** and specify that you need an in-progress run for the most recent week.
 
-**Can I edit what a workflow displays?**
-Program administrators can edit workflow layouts using the AI-powered workflow editor. See [AI Features](ai-features.md) for details.
+To use synthetic data capabilities, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
 
-**The dashboard looks different from yesterday — what changed?**
-Workflow dashboards are actively developed. Check the [weekly changelog](https://dimagi.atlassian.net/wiki/spaces/connect/pages/3918528513/Connect+Labs+Changelog) for recent updates.
+!!! note "No real data is used in the output"
+    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
-**The MBW Monitoring numbers look different from what I saw before — is something wrong?**
-Several calculations in the MBW Monitoring dashboard were updated to match the original MBW v1 definitions more precisely. In particular, eligible mother counts, completion rates, performance categories, and GPS figures may shift slightly compared to earlier versions of the dashboard. The new numbers are more accurate. If a figure still looks unexpected, check the "Last refreshed" timestamp and contact your program administrator if the discrepancy persists.
+!!! note "Nutrition metrics and other program-specific fields in synthetic data"
+    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
 
-**The MBW Auditing V4 dashboard was showing an error on load — is that fixed?**
-Yes. A loading error that caused the dashboard to crash before displaying any data has been resolved. If you continue to see an error, try refreshing the page. If the problem persists, contact your program administrator.
+!!! note "CHC Nutrition Analysis synthetic data and flag direction"
+    Synthetic datasets for the CHC Nutrition Analysis dashboard now generate realistic SAM and MAM distributions that match the flag direction used in the live dashboard. Clean FLWs receive baseline SAM/MAM rates that sit comfortably above the flag thresholds, while FLWs meant to represent cherry-picking behaviour receive near-zero SAM/MAM rates that trigger the **SAM rate < 1%** and **MAM rate < 3%** flags as expected. If you re-seed an older CHC Nutrition Analysis demo, the FLW flagging pattern will change to reflect this corrected logic — the previously clean-looking FLWs will no longer auto-flag, and the intended problem FLWs will now flag correctly.
 
-**The % Still Eligible figure in MBW Auditing V4 looks much lower than expected — is something wrong?**
-This figure was previously undercounting eligible mothers due to two issues: certain visit types were not being matched correctly to their scheduled entries, and the ANC visit was being included in the missed-visit check even though it is already a requirement for entering the denominator. Both issues have been corrected. If the number still looks unexpected after a data refresh, contact your program administrator.
+### Creating a New Workflow with Claude Code
 
----
+1. **Get the connect-labs repo and Claude Code.** Clone the repository — you don't need to run it locally, but having it gives Claude Code the context it needs to understand the system. Install the Claude Code CLI.
+
+2. **Pick a starting template.** Find the closest match in the Starter Templates table. If you're new, a good first project is a one-row-per-FLW weekly performance chart based on **KMC Project Metrics**.
+
+3. **Open Claude Code and describe what you want.** Start with something like:
+
+   > "I want to create a new workflow template for [my opportunity]. Walk me through the initial steps to create a basic one-row-per-FLW weekly performance chart."
+
+4. **Claude Code generates the template and deploys it.** Changes go directly to Connect Labs prod — no local server needed. After Claude pushes the update, reload the workflow in your browser to see the result.
+
+5. **Iterate.** Describe changes in plain English or use the `/workflow-author` skill to keep Claude on track with the correct design patterns.
+
+### You Don't Need a Local Instance
+
+For workflow development, **do not run Connect Labs locally.** Even when running locally, data is still fetched from Connect prod — so there is no isolation benefit. The only reason to run locally is if you are modifying the core Connect Labs application code (the Django app

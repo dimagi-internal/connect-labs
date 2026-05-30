@@ -17,12 +17,111 @@ CONTEXT_PARAMS = ["organization_id", "program_id", "opportunity_id"]
 
 
 def get_org_data(request) -> dict:
-    """Get organization data from session.
+    """Get organization data from session, with labs-only synthetic opps merged in.
 
     Returns the organizations/programs/opportunities dict stored during OAuth login.
+    When the authenticated user has ``view_synthetic_opps`` enabled, any
+    ``labs_only=True`` SyntheticOpportunity rows whose ``allowed_domains`` match
+    the user's email are folded into the org/program/opp lists. This is the
+    single chokepoint that lets labs-only opps appear in URL validation,
+    auto-select, template context, and registry.accessible_opp_ids without
+    needing any real Connect membership.
     """
     labs_oauth = getattr(request, "session", {}).get("labs_oauth", {}) if hasattr(request, "session") else {}
-    return labs_oauth.get("organization_data", {})
+    org_data = dict(labs_oauth.get("organization_data", {}))
+
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return org_data
+    if not getattr(user, "view_synthetic_opps", False):
+        return org_data
+
+    return _merge_labs_only_opps(org_data, user)
+
+
+def _merge_labs_only_opps(org_data: dict, user) -> dict:
+    """Append visible labs-only synthetic opps to org/program/opportunity lists."""
+    # Local import to avoid circular dependency with labs.synthetic.models at module load.
+    from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+
+    try:
+        candidates = list(SyntheticOpportunity.objects.filter(labs_only=True, enabled=True))
+    except Exception:  # noqa: BLE001 — DB unavailable should never break context
+        logger.exception("Failed to query labs-only synthetic opportunities")
+        return org_data
+
+    visible = [opp for opp in candidates if opp.is_visible_to(user)]
+    if not visible:
+        return org_data
+
+    merged = dict(org_data)
+    opportunities = list(merged.get("opportunities", []))
+    organizations = list(merged.get("organizations", []))
+    programs = list(merged.get("programs", []))
+
+    existing_opp_ids = {int(o["id"]) for o in opportunities if o.get("id") is not None}
+    existing_org_slugs = {o.get("slug") for o in organizations if o.get("slug")}
+    existing_program_ids = {p.get("id") for p in programs if p.get("id") is not None}
+
+    for opp in visible:
+        if opp.opportunity_id in existing_opp_ids:
+            continue
+        org_label = opp.org_name or "Labs Synthetic"
+        program_label = opp.program_name or "Labs Synthetic"
+        # Stable synthetic slug/id so the same opp gets the same shell across requests.
+        org_slug = f"labs-synthetic-{_slugify(org_label)}"
+        program_id = -opp.opportunity_id  # negative ID can't collide with real Connect program PKs
+
+        opportunities.append(
+            {
+                "id": opp.opportunity_id,
+                "name": opp.label or f"Synthetic {opp.opportunity_id}",
+                # `organization` carries the org slug to match Connect's serializer shape
+                # (templates do {{ opp.organization }} expecting a slug for URL building).
+                "organization": org_slug,
+                "program": program_id,
+                "program_name": program_label,
+                "is_active": True,
+                "end_date": None,
+                "visit_count": 0,
+                "labs_only": True,
+            }
+        )
+        existing_opp_ids.add(opp.opportunity_id)
+
+        if org_slug not in existing_org_slugs:
+            organizations.append(
+                {
+                    "id": org_slug,
+                    "slug": org_slug,
+                    "name": org_label,
+                    "labs_only": True,
+                }
+            )
+            existing_org_slugs.add(org_slug)
+
+        if program_id not in existing_program_ids:
+            programs.append(
+                {
+                    "id": program_id,
+                    "name": program_label,
+                    # Connect's serializer uses `organization` as a SlugRelatedField,
+                    # so a program's `organization` value is the slug, not the name.
+                    "organization": org_slug,
+                    "labs_only": True,
+                }
+            )
+            existing_program_ids.add(program_id)
+
+    merged["opportunities"] = opportunities
+    merged["organizations"] = organizations
+    merged["programs"] = programs
+    return merged
+
+
+def _slugify(value: str) -> str:
+    """Lowercase, hyphen-separated, alnum-only slug for synthesized org slugs."""
+    return "".join(c if c.isalnum() else "-" for c in value.strip().lower()).strip("-") or "labs"
 
 
 def extract_context_from_url(request: HttpRequest) -> dict:
@@ -120,11 +219,23 @@ def validate_context_access(request: HttpRequest, context: dict) -> dict:
     if "program_id" in context:
         program_id = context["program_id"]
         programs = org_data.get("programs", [])
+        program_found = False
         for program in programs:
             if program.get("id") == program_id:
                 validated["program_id"] = program_id
                 validated["program"] = program
+                program_found = True
                 break
+
+        # If program not found in cached data, still pass through the ID — same
+        # fallback as opportunity_id below. The cached OAuth org_data can be
+        # incomplete (membership granted after login, or paginated short), and the
+        # downstream LabsRecord API enforces real access per request. Without this,
+        # /microplans/program/N/ for an accessible-but-not-cached program left the
+        # context unset and the picker pill stuck on the previous (stale) selection.
+        if not program_found:
+            logger.info(f"Program {program_id} not in cached OAuth data, passing through for API validation")
+            validated["program_id"] = program_id
 
     # Validate opportunity_id
     if "opportunity_id" in context:
@@ -253,12 +364,7 @@ class LabsContextMiddleware(MiddlewareMixin):
 
     def process_request(self, request: HttpRequest):
         """Process request to extract and validate context."""
-        # Only run in labs environment for authenticated users
-        from django.conf import settings
-
-        is_labs = getattr(settings, "IS_LABS_ENVIRONMENT", False)
-
-        if not is_labs or not request.user.is_authenticated:
+        if not request.user.is_authenticated:
             request.labs_context = {}
             return None
 

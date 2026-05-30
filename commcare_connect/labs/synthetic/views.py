@@ -12,6 +12,7 @@ from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 
@@ -19,7 +20,7 @@ from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView, send
 from commcare_connect.labs.integrations.connect import factory
 from commcare_connect.labs.synthetic import registry
 from commcare_connect.labs.synthetic.dump import dump_generator
-from commcare_connect.labs.synthetic.forms import SyntheticOpportunityForm
+from commcare_connect.labs.synthetic.forms import LabsOnlySyntheticOpportunityForm, SyntheticOpportunityForm
 from commcare_connect.labs.synthetic.gdrive import DriveAPIError, DriveAuthError, DriveClient
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity, UserSyntheticDataset
 from commcare_connect.labs.synthetic.self_service import SyntheticGenerationError, generate_and_save
@@ -139,12 +140,130 @@ class SyntheticDeleteView(LoginRequiredMixin, _AccessScopedMixin, DeleteView):
     success_url = reverse_lazy("labs:synthetic:list")
 
 
+class LabsOnlySyntheticCreateView(LoginRequiredMixin, CreateView):
+    """Create a brand-new labs-only synthetic opp (no real Connect opp behind it).
+
+    Unlike SyntheticCreateView, this does NOT require a Connect opp in the
+    labs_context — labs-only opps are stand-alone fixtures. opportunity_id is
+    auto-allocated by the form via SyntheticOpportunity.next_labs_only_opp_id().
+    """
+
+    model = SyntheticOpportunity
+    form_class = LabsOnlySyntheticOpportunityForm
+    template_name = "labs/synthetic/labs_only_form.html"
+    success_url = reverse_lazy("labs:synthetic:list")
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        response = super().form_valid(form)
+        registry.invalidate_cache()
+        messages.success(
+            self.request,
+            f"Labs-only synthetic opp {self.object.opportunity_id} created.",
+        )
+        return response
+
+
+class LabsOnlySyntheticUpdateView(LoginRequiredMixin, UpdateView):
+    """Edit a labs-only synthetic opp. Access scoped to labs_only rows the user owns or can see."""
+
+    model = SyntheticOpportunity
+    form_class = LabsOnlySyntheticOpportunityForm
+    template_name = "labs/synthetic/labs_only_form.html"
+    success_url = reverse_lazy("labs:synthetic:list")
+
+    def get_queryset(self):
+        # Limit to labs_only rows the user can see — visibility uses the same is_visible_to
+        # gate that controls labs_context injection, with created_by as a fallback for
+        # opps the user authored before turning view_synthetic_opps on.
+        user = self.request.user
+        qs = super().get_queryset().filter(labs_only=True)
+        visible_ids = [opp.id for opp in qs if opp.is_visible_to(user) or opp.created_by_id == user.id]
+        return qs.filter(id__in=visible_ids)
+
+    def form_valid(self, form):
+        # opportunity_id is identity; never allow it to change after creation.
+        form.instance.opportunity_id = self.get_object().opportunity_id
+        response = super().form_valid(form)
+        registry.invalidate_cache()
+        return response
+
+
+class LabsOnlyCloneFromOppView(LoginRequiredMixin, CreateView):
+    """Clone an existing SyntheticOpportunity (real OR labs-only) into a new labs-only one.
+
+    Reuses the source's gdrive_folder_id by default (same fixture set, new opp_id).
+    The user lands on the labs-only create form with everything pre-filled and can
+    edit before saving. Source opp must be one the user can access via the registry.
+    """
+
+    model = SyntheticOpportunity
+    form_class = LabsOnlySyntheticOpportunityForm
+    template_name = "labs/synthetic/labs_only_form.html"
+    success_url = reverse_lazy("labs:synthetic:list")
+
+    def dispatch(self, request, *args, **kwargs):
+        source_opp_id = kwargs["source_opp_id"]
+        accessible = registry.accessible_opp_ids(request)
+        if source_opp_id not in accessible:
+            messages.warning(
+                request,
+                f"You don't have access to opportunity {source_opp_id} — cannot clone.",
+            )
+            return HttpResponseRedirect(reverse("labs:synthetic:list"))
+        self._source = get_object_or_404(SyntheticOpportunity, opportunity_id=source_opp_id)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        src = self._source
+        return {
+            "label": f"Clone of {src.label or src.opportunity_id}",
+            "org_name": src.org_name or "Labs Synthetic",
+            "program_name": src.program_name or "Labs Synthetic",
+            "gdrive_folder_id": src.gdrive_folder_id,
+            "enabled": True,
+            "notes": f"Cloned from opp {src.opportunity_id} on {timezone.now().date().isoformat()}.",
+        }
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["source"] = self._source
+        ctx["clone_mode"] = True
+        return ctx
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        response = super().form_valid(form)
+        registry.invalidate_cache()
+        messages.success(
+            self.request,
+            f"Cloned opp {self._source.opportunity_id} → labs-only opp {self.object.opportunity_id}.",
+        )
+        return response
+
+
 @login_required
 @require_POST
 def refresh_cache_view(request):
     """Clear the in-worker registry cache."""
     registry.invalidate_cache()
     messages.success(request, "Registry cache refreshed.")
+    return HttpResponseRedirect(reverse("labs:synthetic:list"))
+
+
+@login_required
+@require_POST
+def toggle_view_synthetic_opps_view(request):
+    """Flip the current user's view_synthetic_opps toggle.
+
+    Labs-only synthetic opps appear in this user's labs_context iff this is on
+    AND their email domain matches one of the opp's allowed_domains.
+    """
+    user = request.user
+    user.view_synthetic_opps = not user.view_synthetic_opps
+    user.save(update_fields=["view_synthetic_opps"])
+    state = "on" if user.view_synthetic_opps else "off"
+    messages.success(request, f"view_synthetic_opps is now {state}.")
     return HttpResponseRedirect(reverse("labs:synthetic:list"))
 
 

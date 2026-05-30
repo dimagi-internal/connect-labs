@@ -18,9 +18,12 @@ from django.views import View
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
+from commcare_connect.audit.data_access import AuditDataAccess
+from commcare_connect.flags.data_access import FlagsDataAccess
 from commcare_connect.labs import s3_export
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
+from commcare_connect.tasks.data_access import TaskDataAccess
 from commcare_connect.utils.feature_access import can_create_from_template, get_allowed_templates
 from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
 from commcare_connect.workflow.templates import TEMPLATES
@@ -375,6 +378,19 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     logger.exception("Failed to load workers for opp %s", oid)
             context["workers"] = workers
 
+            # Hoisted: flags are loaded only on the run-id branch (live
+            # query — never frozen on the watched workflow's snapshot, per
+            # spec §3.3). For edit mode and the picker branch, this stays [].
+            flags_for_run: list[dict] = []
+            # Audits + Tasks created against this run. Same live-query
+            # philosophy as flags: the source of truth lives on the
+            # AuditSession / Task records, not on the workflow_run
+            # snapshot. Render code reads via `view.auditsFor(username)`
+            # / `view.tasksFor(username)` to know whether a per-row
+            # "View" affordance should replace the "Create" menus.
+            audits_for_run: list[dict] = []
+            tasks_for_run: list[dict] = []
+
             # Get or create run based on mode
             if is_edit_mode:
                 # Edit mode: create temporary run (not persisted)
@@ -424,6 +440,89 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                     "snapshot": run.snapshot,
                 }
                 context["is_edit_mode"] = False
+
+                # Flags / Audits / Tasks are surfaced to render code via
+                # view.flagsFor / view.auditsFor / view.tasksFor. Each is a
+                # FULL-table scan of the relevant LabsRecord type (the
+                # export API can't filter by labs_record_id / workflow_run_id
+                # server-side), so loading all three on every run-detail
+                # page is expensive — and pointless for a template that
+                # doesn't read that surface. The Program Admin Report, for
+                # instance, builds its own per-FLW rollup from its snapshot
+                # and never touches view.flagsFor/auditsFor/tasksFor; loading
+                # them just added three wasted scans to its (already heavy
+                # multi-opp) page load, which showed up as a multi-second
+                # blank screen at the top of the recorded drill-through.
+                #
+                # Gate each load on whether the render code actually
+                # references the helper. Self-maintaining: a template that
+                # starts using view.auditsFor automatically gets the data.
+                # Match the call form (".flagsFor(") rather than the bare
+                # word so a prose comment that merely mentions a helper
+                # (e.g. PAR's render code has a comment about
+                # "ensureAutoFlags") doesn't trigger a needless scan.
+                render_code_str = context.get("render_code") or ""
+                wants_flags = ".flagsFor(" in render_code_str or ".ensureAutoFlags(" in render_code_str
+                wants_audits = ".auditsFor(" in render_code_str
+                wants_tasks = ".tasksFor(" in render_code_str
+
+                if wants_flags:
+                    try:
+                        fda = FlagsDataAccess(request=self.request, opportunity_id=opportunity_id)
+                        for f in fda.get_flags_for_run(int(run_id)):
+                            flags_for_run.append(
+                                {
+                                    "id": f.id,
+                                    "flw_id": f.flw_id,
+                                    "flag_key": f.flag_key,
+                                    "flag_label": f.flag_label,
+                                    "evidence": f.evidence,
+                                    "source": f.source,
+                                    "flagged_at": f.flagged_at,
+                                    "flagged_by": f.flagged_by,
+                                }
+                            )
+                    except Exception:
+                        logger.warning("Failed to load flags for run %s", run_id, exc_info=True)
+
+                if wants_audits:
+                    try:
+                        ada = AuditDataAccess(request=self.request, opportunity_id=opportunity_id)
+                        for a in ada.get_sessions_by_workflow_run(int(run_id)):
+                            # Match the per-FLW shape PAR's build_snapshot uses
+                            # so template render code can read both surfaces
+                            # without diverging field names.
+                            img = a.data.get("image_results") or {}
+                            audits_for_run.append(
+                                {
+                                    "id": a.id,
+                                    "flw_id": a.username or (a.data.get("flw_id") or ""),
+                                    "status": a.status,
+                                    "overall_result": a.overall_result,
+                                    "pass_count": img.get("pass", 0),
+                                    "fail_count": img.get("fail", 0),
+                                    "pending_count": img.get("pending", 0),
+                                }
+                            )
+                    except Exception:
+                        logger.warning("Failed to load audits for run %s", run_id, exc_info=True)
+
+                if wants_tasks:
+                    try:
+                        tda = TaskDataAccess(request=self.request, opportunity_id=opportunity_id)
+                        for t in tda.get_tasks_for_run(int(run_id)):
+                            tasks_for_run.append(
+                                {
+                                    "id": t.id,
+                                    "flw_id": t.username or (t.data.get("username") or ""),
+                                    "status": t.status,
+                                    "title": t.title,
+                                    "priority": t.priority,
+                                    "official_action": (t.resolution_details or {}).get("official_action"),
+                                }
+                            )
+                    except Exception:
+                        logger.warning("Failed to load tasks for run %s", run_id, exc_info=True)
             else:
                 # No run_id and not edit mode — render the run picker. Past runs
                 # are listed; user clicks "Open" to load one or "Start Run" to
@@ -467,6 +566,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
                 "is_edit_mode": is_edit_mode,
                 "workers": workers,
                 "pipeline_data": pipeline_data,
+                "flags": flags_for_run,
+                "audits": audits_for_run,
+                "tasks": tasks_for_run,
                 "links": {
                     "auditUrlBase": "/audit/create/",
                     "taskUrlBase": "/tasks/new/",
@@ -957,11 +1059,11 @@ def save_worker_result_api(request, run_id):
     Request body:
         {
             "username": "worker@example.com",
-            "result": "eligible_for_renewal" | "probation" | "suspended" | null,
+            "result": "eligible_for_renewal" | "probation" | "requires_improvement" | "suspended" | null,
             "notes": "Optional notes"
         }
     """
-    VALID_RESULTS = ("eligible_for_renewal", "probation", "suspended")
+    VALID_RESULTS = ("eligible_for_renewal", "probation", "requires_improvement", "suspended")
 
     data_access = None
     try:
@@ -1124,6 +1226,12 @@ def complete_run_api(request, run_id):
             opportunity_id=opportunity_id,
             workers=workers,
             opportunity_ids=effective_opp_ids,
+            # Optional context fields that some templates' build_snapshot hooks
+            # accept (definition_id, request). The framework relays via
+            # **context — hooks that don't use these fields just absorb them
+            # into **_.
+            definition_id=definition_id,
+            request=request,
         )
         if not isinstance(snapshot_payload, dict):
             return JsonResponse(
@@ -2657,10 +2765,7 @@ def prev_categories_api(request):
         runs = wf_access.list_runs()
         wf_access.close()
 
-        candidates = [
-            r for r in runs
-            if (r.data.get("state") or {}).get("worker_results")
-        ]
+        candidates = [r for r in runs if r.is_completed and (r.data.get("state") or {}).get("worker_results")]
         if not candidates:
             return JsonResponse({"prev_categories": {}, "source_run_id": None})
 
@@ -2670,6 +2775,40 @@ def prev_categories_api(request):
         return JsonResponse({"prev_categories": worker_results, "source_run_id": best.id})
     except Exception:
         logger.exception("Failed to fetch prev categories for opportunity")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
+def open_run_state_api(request):
+    """
+    Return merged worker_results and audit_statuses across all open (in-progress
+    or completed) runs for this opportunity, sorted oldest-first so newer runs
+    overwrite older ones per FLW. Used by V5 to pre-populate Category, Notes,
+    and Audit Status from whatever run last touched each FLW.
+    """
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        runs = wf_access.list_runs()
+        wf_access.close()
+
+        runs_with_data = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]
+        if not runs_with_data:
+            return JsonResponse({"worker_results": {}, "audit_statuses": {}})
+
+        runs_with_data.sort(key=lambda r: r.data.get("created_at") or "")
+
+        merged_worker_results = {}
+        merged_audit_statuses = {}
+        for run in runs_with_data:
+            state = run.data.get("state") or {}
+            for username, entry in (state.get("worker_results") or {}).items():
+                merged_worker_results[username] = entry
+            for username, entry in (state.get("audit_statuses") or {}).items():
+                merged_audit_statuses[username] = entry
+
+        return JsonResponse({"worker_results": merged_worker_results, "audit_statuses": merged_audit_statuses})
+    except Exception:
+        logger.exception("Failed to fetch open run state for opportunity")
         return JsonResponse({"error": "An internal error occurred"}, status=500)
 
 

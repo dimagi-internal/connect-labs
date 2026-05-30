@@ -133,9 +133,9 @@
               </label>
               <textarea
                 x-model="taskForm.description"
-                rows="2"
+                rows="5"
                 placeholder="Detailed explanation of what happened..."
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo resize-none"></textarea>
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo resize-y min-h-[120px]"></textarea>
             </div>
 
             <!-- Priority, Status & Assigned To Row (both create and edit mode) -->
@@ -152,14 +152,33 @@
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
-                  x-model="taskForm.status"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
-                  <option value="investigating">Investigating</option>
-                  <option value="flw_action_in_progress">FLW Action In Progress</option>
-                  <option value="flw_action_completed">FLW Action Completed</option>
-                  <option value="review_needed">Review Needed</option>
-                </select>
+                <!-- Closed tasks: show a read-only badge instead of the open-status
+                     dropdown. The dropdown's options only cover the open states
+                     (investigating / flw_action_in_progress / …), so when
+                     taskForm.status === "closed" Alpine renders the first option
+                     ("Investigating") and the form lies about reality. -->
+                <template x-if="taskForm.status === 'closed'">
+                  <div class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-xs font-medium">
+                      <i class="fa-solid fa-check"></i>
+                      <span>Closed</span>
+                    </span>
+                    <span
+                      x-show="taskForm.resolution_details && taskForm.resolution_details.official_action"
+                      class="text-sm text-gray-700"
+                      x-text="'· ' + (taskForm.resolution_details ? taskForm.resolution_details.official_action : '')"></span>
+                  </div>
+                </template>
+                <template x-if="taskForm.status !== 'closed'">
+                  <select
+                    x-model="taskForm.status"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-brand-indigo focus:border-brand-indigo">
+                    <option value="investigating">Investigating</option>
+                    <option value="flw_action_in_progress">FLW Action In Progress</option>
+                    <option value="flw_action_completed">FLW Action Completed</option>
+                    <option value="review_needed">Review Needed</option>
+                  </select>
+                </template>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Assigned To</label>
@@ -277,6 +296,50 @@
           </div>
         </div>
       </template>
+
+
+      {% if task and task.ocs_conversation %}
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden mb-4">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+          <i class="fa-solid fa-comments text-indigo-600"></i>
+          <h3 class="font-semibold text-gray-900">Coaching Conversation</h3>
+          <span class="text-xs text-gray-500 ml-2">{{ task.ocs_conversation|length }} messages</span>
+        </div>
+        <div class="p-6 space-y-3">
+          {% for msg in task.ocs_conversation %}
+            {% if msg.role == "system" %}
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div class="flex items-center gap-2 mb-1">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-600 text-xs"></i>
+                <span class="text-xs font-semibold uppercase tracking-wide text-amber-700">Instructions to assistant</span>
+              </div>
+              <div class="text-sm text-gray-700">{{ msg.text }}</div>
+            </div>
+            {% elif msg.role == "bot" %}
+            <div class="flex gap-3">
+              <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-robot text-indigo-600 text-sm"></i>
+              </div>
+              <div class="flex-1 max-w-2xl">
+                <div class="bg-indigo-50 border border-indigo-100 rounded-lg rounded-tl-sm px-4 py-2 text-sm text-gray-800">{{ msg.text }}</div>
+                <div class="text-xs text-gray-400 mt-1">Coach &middot; {{ msg.ts }}</div>
+              </div>
+            </div>
+            {% else %}
+            <div class="flex gap-3 justify-end">
+              <div class="flex-1 max-w-2xl flex flex-col items-end">
+                <div class="bg-gray-100 border border-gray-200 rounded-lg rounded-tr-sm px-4 py-2 text-sm text-gray-800">{{ msg.text }}</div>
+                <div class="text-xs text-gray-400 mt-1">{{ task.flw_name|default:task.username }} &middot; {{ msg.ts }}</div>
+              </div>
+              <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-user text-gray-600 text-sm"></i>
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
 
       <!-- History (shown after task is created or in edit mode) -->
       <template x-if="(taskCreated || isEditMode) && timeline.length > 0">
@@ -754,8 +817,8 @@
           </label>
           <textarea
             x-model="aiParams.prompt_text"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 resize-none"
-            rows="4"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 resize-y min-h-[180px]"
+            rows="8"
             placeholder="Instructions for the bot..."></textarea>
         </div>
 
@@ -846,6 +909,11 @@ function taskCreateEditPage() {
       priority: 'medium',
       title: '',
       description: '',
+      // Long-form coaching prompt fed to the OCS bot. Separate from
+      // `description` (which is the short human-readable task summary)
+      // so the AI modal pre-fills with the bot-targeted instructions and
+      // the task UI stays scannable.
+      coaching_prompt: '',
       status: 'investigating',
       assigned_to_type: 'self',
       assigned_to_name: ''
@@ -933,9 +1001,14 @@ function taskCreateEditPage() {
           priority: taskData.priority || 'medium',
           title: taskData.title || '',
           description: taskData.description || '',
+          coaching_prompt: taskData.coaching_prompt || this.quickParams.coaching_prompt || '',
           status: taskData.status || 'investigating',
           assigned_to_type: taskData.assigned_to_type || 'self',
-          assigned_to_name: taskData.assigned_to_name || ''
+          assigned_to_name: taskData.assigned_to_name || '',
+          // Closed-task badge needs to read the official action — exposing
+          // resolution_details on taskForm so the read-only status surface
+          // can display "Closed · warned" etc.
+          resolution_details: taskData.resolution_details || null
         };
         this.selectedFlwUsername = taskData.username || '';
         this.selectedFlw = {
@@ -970,6 +1043,9 @@ function taskCreateEditPage() {
       }
       if (this.quickParams.description) {
         this.taskForm.description = this.quickParams.description;
+      }
+      if (this.quickParams.coaching_prompt) {
+        this.taskForm.coaching_prompt = this.quickParams.coaching_prompt;
       }
       if (this.quickParams.audit_session_id) {
         this.auditSessionId = parseInt(this.quickParams.audit_session_id, 10);
@@ -1014,8 +1090,13 @@ function taskCreateEditPage() {
           this.taskCreated = true;
           this.showToastMessage('Task created successfully!');
 
-          // Redirect to edit mode for the new task
-          window.location.href = `/tasks/${data.task_id}/edit/`;
+          // Redirect to edit mode. Pass coaching_prompt in URL so the edit
+          // page can pre-fill the OCS modal even if the task was just
+          // created and the server save hasn't propagated yet.
+          const editUrl = new URL(`/tasks/${data.task_id}/edit/`, window.location.origin);
+          if (this.taskForm.coaching_prompt)
+            editUrl.searchParams.set('coaching_prompt', this.taskForm.coaching_prompt);
+          window.location.href = editUrl.toString();
         } else {
           this.error = data.error || 'Failed to create task';
         }
@@ -1111,6 +1192,18 @@ function taskCreateEditPage() {
 
     showAIModal() {
       this.aiParams.identifier = this.selectedFlw?.username || '';
+      // Pre-fill the modal's prompt textarea. Prefer a stored
+      // coaching_prompt (set by chc_nutrition's Create Task with
+      // Coaching button — long-form instructions targeted at the bot),
+      // and only fall back to the task description when no coaching
+      // prompt exists. Either way, preserve any edit the user already
+      // typed in the modal.
+      if (!this.aiParams.prompt_text && this.taskForm) {
+        this.aiParams.prompt_text =
+          this.taskForm.coaching_prompt ||
+          this.taskForm.description ||
+          '';
+      }
       this.aiProgress = { show: false, status: '', message: '', detail: '' };
       this.showAI = true;
       this.loadBots();

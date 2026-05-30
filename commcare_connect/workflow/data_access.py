@@ -2068,3 +2068,89 @@ class PipelineDataAccess(BaseDataAccess):
             # pipelines for the same opp don't clobber each other (#116).
             pipeline_id=definition_id,
         )
+
+
+# =============================================================================
+# Cross-workflow reader for program_admin_report (spec §5.5)
+# =============================================================================
+
+
+def get_saved_runs_for_program_report(
+    wda: "WorkflowDataAccess | None" = None,
+    *,
+    watched_sources: list[dict],
+    window_start,
+    window_end,
+    access_token: str | None = None,
+    request=None,
+) -> list[dict]:
+    """For each (opp_id, workflow_definition_id) pair in ``watched_sources``,
+    return every completed run whose ``completed_at`` falls within
+    ``[window_start, window_end]``.
+
+    Returns a list of ``{opportunity_id, workflow_definition_id, runs:
+    list[WorkflowRunRecord]}`` entries. A source with no completed runs in
+    the window still appears with ``runs=[]`` so the caller can render a
+    "no run" cell.
+
+    The window is inclusive on both ends. ``completed_at`` is compared as
+    parsed datetime; bad/missing timestamps are skipped.
+
+    Window bounds are coerced to UTC if naive so comparison against
+    Connect's TZ-aware ``completed_at`` doesn't raise TypeError.
+    """
+    from datetime import datetime, timezone
+
+    def _to_utc(dt_):
+        if dt_ is None:
+            return None
+        if dt_.tzinfo is None:
+            return dt_.replace(tzinfo=timezone.utc)
+        return dt_.astimezone(timezone.utc)
+
+    ws = _to_utc(window_start)
+    we = _to_utc(window_end)
+
+    def _within(completed_at_str):
+        if not completed_at_str:
+            return False
+        try:
+            ts = datetime.fromisoformat(completed_at_str.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        ts = _to_utc(ts)
+        return ws <= ts <= we
+
+    # Per-source WDA so list_runs is scoped to the watched opp. A single
+    # opp-less WDA would hit the LabsRecord API with no scope param and
+    # return only public records, which workflow_runs are not — silently
+    # producing an empty rollup. Caller can pass ``wda`` (with no opp scope)
+    # for the legacy single-source path; if so we still re-scope per source
+    # by minting a fresh WDA per loop iteration.
+    if access_token is None and wda is not None:
+        access_token = getattr(wda, "access_token", None)
+
+    out = []
+    for source in watched_sources:
+        opp_id = source["opportunity_id"]
+        def_id = source["workflow_definition_id"]
+        scoped_wda = WorkflowDataAccess(
+            request=request,
+            access_token=access_token,
+            opportunity_id=opp_id,
+        )
+        try:
+            all_runs = scoped_wda.list_runs(definition_id=def_id)
+        finally:
+            scoped_wda.close()
+        matched = [
+            r for r in all_runs if r.opportunity_id == opp_id and r.status == "completed" and _within(r.completed_at)
+        ]
+        out.append(
+            {
+                "opportunity_id": opp_id,
+                "workflow_definition_id": def_id,
+                "runs": matched,
+            }
+        )
+    return out

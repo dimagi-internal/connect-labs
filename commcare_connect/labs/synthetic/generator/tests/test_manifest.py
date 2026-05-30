@@ -88,3 +88,83 @@ coaching_arcs:
     )
     with pytest.raises(ManifestValidationError):
         Manifest.from_yaml(bad)
+
+
+_MINIMAL_YAML_HEADER = """
+opportunity_id: 1
+opportunity_name: Test
+random_seed: 42
+timeline:
+  start_date: '2026-01-01'
+  end_date: '2026-01-29'
+  weeks: 4
+  visit_cadence_per_week_per_flw:
+    mean: 10
+    stddev: 2
+flw_personas:
+  - id: a
+    archetype: steady
+    accuracy_distribution: {mean: 0.8, stddev: 0.1}
+    completeness_distribution: {mean: 0.9, stddev: 0.05}
+    flag_rate: 0.05
+beneficiary_cohorts:
+  - {id: c1, size: 10, field_distributions: {}, progression: flat}
+kpi_config:
+  - {kpi: acc, field_path: form.x, aggregation: validated_rate, threshold_underperform: 0.7}
+"""
+
+
+def test_manifest_with_tasks():
+    yaml_str = (
+        _MINIMAL_YAML_HEADER
+        + """
+tasks:
+  - flw_id: a
+    title: Follow up on flagged visits
+    priority: high
+    status: completed
+    created_week: 2
+"""
+    )
+    m = Manifest.from_yaml(yaml_str)
+    assert len(m.tasks) == 1
+    assert m.tasks[0].flw_id == "a"
+    assert m.tasks[0].priority == "high"
+    assert m.tasks[0].created_week == 2
+
+
+def test_manifest_tasks_default_empty():
+    m = Manifest.from_yaml(_MINIMAL_YAML_HEADER)
+    assert m.tasks == []
+
+
+def test_manifest_with_image_config():
+    yaml_str = (
+        _MINIMAL_YAML_HEADER
+        + """
+image_config:
+  question_path: form.muac_group.muac_photo
+  stock_image_count: 15
+  probability: 0.85
+"""
+    )
+    m = Manifest.from_yaml(yaml_str)
+    assert m.image_config is not None
+    assert m.image_config.probability == 0.85
+    assert m.image_config.stock_image_count == 15
+
+
+def test_manifest_task_validates_flw_ref():
+    yaml_str = (
+        _MINIMAL_YAML_HEADER
+        + """
+tasks:
+  - flw_id: unknown_flw
+    title: Should fail
+    priority: high
+    status: pending
+    created_week: 1
+"""
+    )
+    with pytest.raises(ManifestValidationError):
+        Manifest.from_yaml(yaml_str)

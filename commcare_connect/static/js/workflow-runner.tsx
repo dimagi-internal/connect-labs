@@ -38,6 +38,9 @@ import type {
   CompleteRunParams,
   CompleteRunResponse,
   RunView,
+  Flag,
+  Audit,
+  Task,
   WorkerData,
   WorkflowState,
 } from '@/components/workflow/types';
@@ -502,6 +505,8 @@ function createActionHandlers(csrfToken: string): ActionHandlers {
       if (params.username) urlParams.set('username', params.username);
       if (params.title) urlParams.set('title', params.title);
       if (params.description) urlParams.set('description', params.description);
+      if (params.coaching_prompt)
+        urlParams.set('coaching_prompt', params.coaching_prompt);
       if (params.workflow_instance_id)
         urlParams.set(
           'workflow_instance_id',
@@ -1350,16 +1355,145 @@ function WorkflowRunner({
       }
     };
 
-    if (isCompleted && snapshot) {
+    // Flags are always queried live — Flag lifecycle state-of-truth lives
+    // on the Flag record, not the run snapshot. Newest-first so render code
+    // that sorts by flagged_at gets sensible ordering.
+    const flagsList = (initialData.flags ?? [])
+      .slice()
+      .sort((a, b) => (b.flagged_at || '').localeCompare(a.flagged_at || ''));
+    const flagsByFlw = new Map<string, Flag[]>();
+    for (const f of flagsList) {
+      const list = flagsByFlw.get(f.flw_id);
+      if (list) {
+        list.push(f);
+      } else {
+        flagsByFlw.set(f.flw_id, [f]);
+      }
+    }
+    const flagsFor = (username: string) => flagsByFlw.get(username) ?? [];
+
+    // Audits + Tasks created against this run — same live-query
+    // philosophy as flags (the workflow_run snapshot never freezes them).
+    // Render code reads via view.auditsFor(username) / view.tasksFor
+    // (username) to know whether a per-row Action affordance should
+    // surface as "View" instead of "Create" — i.e., the action was
+    // already taken. Works on both in_progress and completed runs.
+    const auditsList = (initialData.audits ?? []) as Audit[];
+    const auditsByFlw = new Map<string, Audit[]>();
+    for (const a of auditsList) {
+      const list = auditsByFlw.get(a.flw_id);
+      if (list) {
+        list.push(a);
+      } else {
+        auditsByFlw.set(a.flw_id, [a]);
+      }
+    }
+    const auditsFor = (username: string) => auditsByFlw.get(username) ?? [];
+
+    const tasksList = (initialData.tasks ?? []) as Task[];
+    const tasksByFlw = new Map<string, Task[]>();
+    for (const t of tasksList) {
+      const list = tasksByFlw.get(t.flw_id);
+      if (list) {
+        list.push(t);
+      } else {
+        tasksByFlw.set(t.flw_id, [t]);
+      }
+    }
+    const tasksFor = (username: string) => tasksByFlw.get(username) ?? [];
+
+    // Dedup key for ensureAutoFlags. We track in a closure-scoped Set so
+    // repeated render-effect calls within the same page load are no-ops
+    // after the first POST, even before the BE reflects the new flag.
+    const persistedKeys = new Set<string>(
+      flagsList.map((f) => `${f.flw_id}::${f.flag_key}`),
+    );
+    const inflightKeys = new Set<string>();
+    const ensureAutoFlags = async (
+      computed: Array<{
+        flw_id: string;
+        flag_key: string;
+        flag_label?: string;
+        evidence?: Record<string, unknown>;
+      }>,
+    ): Promise<Flag[]> => {
+      if (isCompleted) return [];
+      const runId = initialData.instance.id;
+      const oppId =
+        initialData.instance.opportunity_id || initialData.opportunity_id;
+      if (!runId || !oppId) return [];
+      const toPost = computed.filter((c) => {
+        const k = `${c.flw_id}::${c.flag_key}`;
+        if (persistedKeys.has(k) || inflightKeys.has(k)) return false;
+        inflightKeys.add(k);
+        return true;
+      });
+      if (!toPost.length) return [];
+      const created: Flag[] = [];
+      await Promise.all(
+        toPost.map(async (c) => {
+          try {
+            const res = await fetch(`/labs/workflow/api/run/${runId}/flags/`, {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+              },
+              body: JSON.stringify({
+                opportunity_id: oppId,
+                flw_id: c.flw_id,
+                flag_key: c.flag_key,
+                flag_label: c.flag_label || c.flag_key,
+                evidence: c.evidence || {},
+                source: 'auto',
+              }),
+            });
+            if (res.ok) {
+              const body = (await res.json()) as Flag;
+              persistedKeys.add(`${c.flw_id}::${c.flag_key}`);
+              created.push(body);
+            } else {
+              console.warn(
+                `ensureAutoFlags: POST failed for ${c.flw_id}/${c.flag_key} (${res.status})`,
+              );
+            }
+          } catch (e) {
+            console.warn('ensureAutoFlags: network error', e);
+          }
+        }),
+      );
+      return created;
+    };
+
+    // Snapshot preference: serve the stamped snapshot whenever one
+    // exists, not just on completed runs. The framework only writes a
+    // snapshot at completion in production (`commcare_connect/workflow/
+    // views.py:430` comment: "Snapshot is null while in_progress;
+    // populated on completion"), so the only time an in_progress run
+    // has a snapshot is when something explicitly seeded one — currently
+    // the synthetic generator, which stamps a preview snapshot onto its
+    // backdated in_progress run so the manager-flow demo doesn't open
+    // on a real-data live pipeline that happens to back the synthetic
+    // opp's CSV folder. Templates can still read `instance.snapshot`
+    // directly if they want even finer control.
+    if (snapshot) {
       return {
         workers: (snapshot.workers as WorkerData[]) ?? initialData.workers,
         pipelines:
           (snapshot.pipelines as Record<string, PipelineResult>) ??
           pipelineData,
         state: (snapshot.state as WorkflowState) ?? instanceState,
-        isCompleted: true,
-        asOf: inst.completed_at ?? null,
+        isCompleted,
+        asOf: isCompleted ? inst.completed_at ?? null : null,
         complete: completeFn,
+        flags: flagsList,
+        flagsFor,
+        ensureAutoFlags,
+        audits: auditsList,
+        auditsFor,
+        tasks: tasksList,
+        tasksFor,
       };
     }
 
@@ -1370,14 +1504,25 @@ function WorkflowRunner({
       isCompleted: false,
       asOf: null,
       complete: completeFn,
+      flags: flagsList,
+      flagsFor,
+      ensureAutoFlags,
+      audits: auditsList,
+      auditsFor,
+      tasks: tasksList,
+      tasksFor,
     };
   }, [
     initialData.instance,
     initialData.workers,
+    initialData.flags,
+    initialData.audits,
+    initialData.tasks,
     initialData.apiEndpoints.completeRun,
     pipelineData,
     instanceState,
     actions,
+    csrfToken,
   ]);
 
   // Create props for workflow component

@@ -6,11 +6,14 @@ import logging
 from typing import Any
 
 import httpx
+from django.conf import settings
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
+from commcare_connect.labs.synthetic.dump import _fetch_endpoint
 from commcare_connect.labs.synthetic.gdrive import DriveClient
 from commcare_connect.labs.synthetic.generator.engine import generate as _generate
 from commcare_connect.labs.synthetic.generator.manifest import Manifest, ManifestValidationError
+from commcare_connect.labs.synthetic.generator.profiler import profile as _profile
 from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, parse_form_schema_from_app_json
 from commcare_connect.labs.synthetic.generator.uploader import upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
@@ -48,11 +51,24 @@ def _accessible_opp_ids_for_user(user) -> set[int]:
 def _require_opportunity_access(user, opportunity_id: int) -> None:
     """Raise PERMISSION_DENIED if the user has no access to ``opportunity_id``.
 
-    Checked against the user's live Connect membership data — same source
-    the labs synthetic UI uses, just without the request-bound session
-    detour. Empty set (no token, upstream failure) is treated as "no
-    access" so an unauthenticated MCP caller can't slip a write through.
+    Two paths are accepted:
+    1. The opp is a labs-only SyntheticOpportunity the user can see (via
+       ``view_synthetic_opps`` + matching ``allowed_domains``). These opps
+       have no Connect side and are gated entirely on the labs visibility model.
+    2. The opp is in the user's live Connect membership data (the existing
+       check — same source the labs synthetic UI uses, just without the
+       request-bound session detour). Empty set (no token, upstream failure)
+       is treated as "no access" so an unauthenticated caller can't slip a
+       write through.
     """
+    # Labs-only path first — cheap DB lookup, no upstream call.
+    try:
+        opp = SyntheticOpportunity.objects.get(opportunity_id=opportunity_id, labs_only=True)
+    except SyntheticOpportunity.DoesNotExist:
+        opp = None
+    if opp is not None and opp.is_visible_to(user):
+        return
+
     accessible = _accessible_opp_ids_for_user(user)
     if opportunity_id not in accessible:
         raise MCPToolError(
@@ -288,9 +304,470 @@ def synthetic_generate_from_manifest(
         opportunity_name=manifest.opportunity_name,
         fixtures=fixtures,
     )
+
+    task_records = fixtures.get("task_records", [])
+    tasks_created = 0
+    if task_records:
+        # For labs-only opps the client has no Connect token; the dispatch in
+        # LabsRecordAPIClient routes writes to LabsLocalRecord instead. Pass
+        # token=None (won't be used) rather than require_connect_token which
+        # would raise for users without a Connect membership.
+        try:
+            token = require_connect_token(user)
+        except MCPToolError:
+            token = ""
+        client = LabsRecordAPIClient(access_token=token, opportunity_id=opportunity_id)
+        try:
+            for rec in task_records:
+                # Write as Task records so the Tasks UI (experiment="tasks",
+                # type="Task") picks them up. The synthetic generator already
+                # produces records in the Task schema; this just registers them
+                # under the right experiment/type tags.
+                client.create_record(
+                    experiment="tasks",
+                    type="Task",
+                    data=rec,
+                    username=rec.get("username") or "",
+                )
+                tasks_created += 1
+        finally:
+            client.close()
+
+    # Invalidate the labs analysis SQL cache so the next pipeline read sees the
+    # fresh visits/fixtures we just uploaded — otherwise stale aggregated cache
+    # from a prior fixture set keeps shadowing the new data.
+    from commcare_connect.labs.analysis.backends.sql.cache import SQLCacheManager
+    from commcare_connect.labs.synthetic.registry import invalidate_cache as _reg_invalidate
+
+    SQLCacheManager.delete_all_cache(opportunity_id)
+    _reg_invalidate()
+
     return {
         "folder_id": result.folder_id,
         "folder_url": result.folder_url,
         "record_counts": result.record_counts,
         "form_schema_questions": len(form_schema.questions),
+        "tasks_created": tasks_created,
+    }
+
+
+@register(
+    name="synthetic_create_labs_only",
+    description=(
+        "Create a labs-only synthetic opportunity from scratch. No real Connect "
+        "opp is required — opportunity_id is auto-allocated from the labs-only "
+        "reserved range (10_000+). The opp is surfaced into labs_context only "
+        "for users with view_synthetic_opps=True whose email domain matches one "
+        "of allowed_domains. Returns the new opportunity_id."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "gdrive_folder_id": {"type": "string"},
+            "org_name": {"type": "string", "default": "Labs Synthetic"},
+            "program_name": {"type": "string", "default": "Labs Synthetic"},
+            "allowed_domains": {
+                "type": "array",
+                "items": {"type": "string"},
+                "default": ["@dimagi.com"],
+                "description": "Email-domain allowlist (e.g. ['@dimagi.com']). Empty = any.",
+            },
+            "enabled": {"type": "boolean", "default": True},
+            "notes": {"type": "string", "default": ""},
+        },
+        "required": ["label", "gdrive_folder_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_create_labs_only(
+    user,
+    *,
+    label: str,
+    gdrive_folder_id: str,
+    org_name: str = "Labs Synthetic",
+    program_name: str = "Labs Synthetic",
+    allowed_domains: list[str] | None = None,
+    enabled: bool = True,
+    notes: str = "",
+) -> dict[str, Any]:
+    new_opp_id = SyntheticOpportunity.next_labs_only_opp_id()
+    row = SyntheticOpportunity.objects.create(
+        opportunity_id=new_opp_id,
+        label=label,
+        gdrive_folder_id=gdrive_folder_id,
+        org_name=org_name,
+        program_name=program_name,
+        allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com"],
+        enabled=enabled,
+        notes=notes,
+        labs_only=True,
+        created_by=user,
+    )
+    invalidate_cache()
+    return {
+        "opportunity_id": row.opportunity_id,
+        "label": row.label,
+        "gdrive_folder_id": row.gdrive_folder_id,
+        "org_name": row.org_name,
+        "program_name": row.program_name,
+        "allowed_domains": list(row.allowed_domains),
+        "labs_only": True,
+        "enabled": row.enabled,
+    }
+
+
+@register(
+    name="synthetic_clone_to_labs_only",
+    description=(
+        "Clone an existing SyntheticOpportunity (real-backed or labs-only) into a "
+        "new labs-only opp. Reuses the source's gdrive_folder_id (same fixture set, "
+        "new opp_id from the 10_000+ range). Open to any authenticated MCP caller: "
+        "once a source has been registered as a SyntheticOpportunity it's already a "
+        "labs-controlled fixture artifact, so cloning it doesn't grant any new data "
+        "access — it just creates a second view onto the same GDrive fixture folder. "
+        "Use this to make existing synthetic fixture data accessible to users who "
+        "lack Connect membership for the original opp (e.g. ACE)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "source_opportunity_id": {"type": "integer"},
+            "label": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": "Label for the new opp. Defaults to 'Clone of <source label>'.",
+            },
+            "org_name": {"type": ["string", "null"], "default": None},
+            "program_name": {"type": ["string", "null"], "default": None},
+            "allowed_domains": {
+                "type": "array",
+                "items": {"type": "string"},
+                "default": ["@dimagi.com", "@dimagi-ai.com"],
+                "description": (
+                    "Email-domain allowlist for the new labs-only opp. Default is broad "
+                    "(['@dimagi.com', '@dimagi-ai.com']) so ace@dimagi-ai.com can use it."
+                ),
+            },
+        },
+        "required": ["source_opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_clone_to_labs_only(
+    user,
+    *,
+    source_opportunity_id: int,
+    label: str | None = None,
+    org_name: str | None = None,
+    program_name: str | None = None,
+    allowed_domains: list[str] | None = None,
+) -> dict[str, Any]:
+    try:
+        source = SyntheticOpportunity.objects.get(opportunity_id=source_opportunity_id)
+    except SyntheticOpportunity.DoesNotExist:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"No SyntheticOpportunity for opportunity_id={source_opportunity_id}. "
+            "Register the source as synthetic first via synthetic_register or "
+            "synthetic_generate_from_manifest.",
+        )
+
+    # Auth: any authenticated MCP caller may clone an existing SyntheticOpportunity.
+    # The source row's existence is the gate — it was registered by a human with
+    # Connect access, the underlying data is already a synthetic fixture, and the
+    # clone creates only a second view onto the same GDrive folder (no new data).
+    # Visibility of the new opp is controlled by allowed_domains + view_synthetic_opps.
+    new_opp_id = SyntheticOpportunity.next_labs_only_opp_id()
+    row = SyntheticOpportunity.objects.create(
+        opportunity_id=new_opp_id,
+        label=label or f"Clone of {source.label or source.opportunity_id}",
+        gdrive_folder_id=source.gdrive_folder_id,
+        org_name=org_name or source.org_name or "Labs Synthetic",
+        program_name=program_name or source.program_name or "Labs Synthetic",
+        allowed_domains=(allowed_domains if allowed_domains is not None else ["@dimagi.com", "@dimagi-ai.com"]),
+        enabled=True,
+        notes=f"Cloned from opp {source_opportunity_id} via MCP.",
+        labs_only=True,
+        created_by=user,
+    )
+    invalidate_cache()
+    return {
+        "opportunity_id": row.opportunity_id,
+        "source_opportunity_id": source_opportunity_id,
+        "label": row.label,
+        "gdrive_folder_id": row.gdrive_folder_id,
+        "org_name": row.org_name,
+        "program_name": row.program_name,
+        "allowed_domains": list(row.allowed_domains),
+        "labs_only": True,
+    }
+
+
+@register(
+    name="synthetic_image_server_status",
+    description=(
+        "Diagnostic: report the synthetic image-server config and folder access — "
+        "whether LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID is set, what filenames the "
+        "service-account can see in that folder, and whether a sample stock image "
+        "downloads. Used to root-cause why audit MUAC photo cards render with "
+        "placeholders."
+    ),
+    input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+    is_write=False,
+)
+def synthetic_image_server_status(user) -> dict[str, Any]:
+    import json as _json
+    import os as _os
+
+    from django.conf import settings
+
+    from commcare_connect.labs.synthetic.image_server import SyntheticImageServer
+
+    # Try to expose the labs Drive service-account email so the operator
+    # knows what address to share the stock-images folder with when the
+    # listing comes back empty.
+    sa_email = None
+    raw = _os.environ.get("LABS_SYNTHETIC_GDRIVE_SA_KEY", "")
+    if raw:
+        try:
+            if raw.strip().startswith("{"):
+                sa_email = _json.loads(raw).get("client_email")
+            else:
+                with open(raw) as _f:
+                    sa_email = _json.load(_f).get("client_email")
+        except Exception:  # noqa: BLE001 — best-effort, don't fail the diagnostic
+            pass
+
+    folder_id = getattr(settings, "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID", "") or ""
+    result: dict[str, Any] = {
+        "folder_id_set": bool(folder_id),
+        "folder_id": folder_id,
+        "service_account_email": sa_email,
+        "listing_files": [],
+        "listing_error": None,
+        "sample_blob_id": None,
+        "sample_download_ok": False,
+        "sample_bytes": 0,
+        "sample_download_error": None,
+    }
+    if not folder_id:
+        return result
+
+    server = SyntheticImageServer()
+    try:
+        listing = server.list_stock_folder()
+        result["listing_files"] = sorted(listing.keys())
+    except Exception as exc:  # noqa: BLE001 — diagnostic surfaces all errors
+        result["listing_error"] = f"{type(exc).__name__}: {exc}"
+        return result
+
+    # Pick the first muac_NNN.jpg from the listing and translate to its blob_id.
+    # Hardcoding "synth-muac-001" would 404 if the operator's stock folder
+    # used a different numbering scheme.
+    sample_blob_id = None
+    for fn in result["listing_files"]:
+        if fn.startswith("muac_") and fn.endswith(".jpg"):
+            digits = fn[len("muac_") : -len(".jpg")]
+            if digits.isdigit():
+                sample_blob_id = f"synth-muac-{int(digits):03d}"
+                break
+    result["sample_blob_id"] = sample_blob_id
+    if not sample_blob_id:
+        return result
+
+    try:
+        data = server.get_image(sample_blob_id)
+        result["sample_download_ok"] = bool(data)
+        result["sample_bytes"] = len(data) if data else 0
+    except Exception as exc:  # noqa: BLE001 — diagnostic surfaces all errors
+        result["sample_download_error"] = f"{type(exc).__name__}: {exc}"
+
+    return result
+
+
+@register(
+    name="synthetic_local_records_count",
+    description=(
+        "Diagnostic: return counts of LabsLocalRecord rows for a labs-only opp, "
+        "grouped by (experiment, type). Useful for verifying that synthetic-data "
+        "writes landed correctly in the labs-local backend before triaging UI gaps."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {"opportunity_id": {"type": "integer"}},
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_local_records_count(user, *, opportunity_id: int) -> dict[str, Any]:
+    from django.db.models import Count
+
+    from commcare_connect.labs.synthetic.models import LabsLocalRecord
+
+    rows = (
+        LabsLocalRecord.objects.filter(opportunity_id=opportunity_id)
+        .values("experiment", "type")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+    return {
+        "opportunity_id": opportunity_id,
+        "groups": list(rows),
+        "total": LabsLocalRecord.objects.filter(opportunity_id=opportunity_id).count(),
+    }
+
+
+@register(
+    name="synthetic_local_record_dump",
+    description=(
+        "Diagnostic: return the full ``data`` JSON for a single LabsLocalRecord "
+        "row, scoped to the caller's labs-only opp. Used to debug shape "
+        "mismatches between the synthetic generator's emitted dict and what "
+        "the labs UI reads back."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "record_id": {"type": "integer"},
+        },
+        "required": ["opportunity_id", "record_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_local_record_dump(user, *, opportunity_id: int, record_id: int) -> dict[str, Any]:
+    from commcare_connect.labs.synthetic.models import LabsLocalRecord
+
+    try:
+        rec = LabsLocalRecord.objects.get(id=record_id, opportunity_id=opportunity_id)
+    except LabsLocalRecord.DoesNotExist:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"no LabsLocalRecord with id={record_id} in opp {opportunity_id}",
+        )
+    return {
+        "id": rec.id,
+        "opportunity_id": rec.opportunity_id,
+        "experiment": rec.experiment,
+        "type": rec.type,
+        "username": rec.username,
+        "data_keys": sorted(rec.data.keys()) if isinstance(rec.data, dict) else [],
+        "data": rec.data,
+    }
+
+
+@register(
+    name="synthetic_set_my_visibility",
+    description=(
+        "Toggle the calling user's `view_synthetic_opps` setting. When on, "
+        "labs-only synthetic opportunities whose `allowed_domains` matches the "
+        "user's email domain are merged into the user's labs_context (org/"
+        "program/opportunity lists). Off by default. Returns the new state."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "enabled": {
+                "type": "boolean",
+                "description": "True to opt in to seeing labs-only opps; False to opt out.",
+            },
+        },
+        "required": ["enabled"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_set_my_visibility(user, *, enabled: bool) -> dict[str, Any]:
+    user.view_synthetic_opps = bool(enabled)
+    user.save(update_fields=["view_synthetic_opps"])
+    return {
+        "view_synthetic_opps": user.view_synthetic_opps,
+        "email": user.email,
+    }
+
+
+@register(
+    name="synthetic_profile_from_prod",
+    description=(
+        "Analyze real production data for an opportunity and produce a "
+        "synthetic-data manifest that reproduces the same statistical shape. "
+        "Reads the five export endpoints server-side, computes per-FLW "
+        "distributions (approval rates, flag rates, visit cadence), field "
+        "value distributions from form_json, and timeline parameters. "
+        "Returns a YAML manifest string (no PII) ready to pass to "
+        "synthetic_generate_from_manifest."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "opportunity_id": {"type": "integer"},
+            "form_json_paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional explicit list of form_json dot-paths to profile "
+                    "(e.g. ['form.case.update.soliciter_muac_cm']). If omitted, "
+                    "auto-discovers numeric fields from a sample of visits."
+                ),
+            },
+        },
+        "required": ["opportunity_id"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_profile_from_prod(
+    user,
+    *,
+    opportunity_id: int,
+    form_json_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    _require_opportunity_access(user, opportunity_id)
+
+    try:
+        token = require_connect_token(user)
+    except MCPToolError:
+        raise MCPToolError(
+            "PERMISSION_DENIED",
+            "No Connect token available — cannot fetch production data.",
+        )
+
+    base_url = settings.CONNECT_PRODUCTION_URL
+
+    logger.info("synthetic_profile_from_prod: fetching exports for opp %s", opportunity_id)
+    detail = _fetch_endpoint(base_url, opportunity_id, "", token)
+    user_visits = _fetch_endpoint(base_url, opportunity_id, "user_visits", token)
+    user_data = _fetch_endpoint(base_url, opportunity_id, "user_data", token)
+
+    if not isinstance(user_visits, list) or not user_visits:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"No user_visits data for opportunity_id={opportunity_id}",
+        )
+
+    logger.info(
+        "synthetic_profile_from_prod: profiling %d visits, %d users for opp %s",
+        len(user_visits),
+        len(user_data) if isinstance(user_data, list) else 0,
+        opportunity_id,
+    )
+
+    manifest_yaml = _profile(
+        opportunity_id=opportunity_id,
+        user_visits=user_visits,
+        user_data=user_data if isinstance(user_data, list) else [],
+        opportunity_detail=detail if isinstance(detail, dict) else {},
+        form_json_paths=form_json_paths,
+    )
+
+    return {
+        "manifest_yaml": manifest_yaml,
+        "source_visit_count": len(user_visits),
+        "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
+        "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
     }

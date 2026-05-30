@@ -41,27 +41,6 @@ class CoverageMapDataLoader:
         """
         self.request = request
 
-    def get_analysis_config(self) -> AnalysisPipelineConfig | None:
-        """
-        Get the analysis config to use for computing visit fields.
-
-        Checks URL parameter first (?config=chc_nutrition), then returns None
-        if not specified (will fall back to COVERAGE_BASE_CONFIG).
-        """
-        config_name = self.request.GET.get("config")
-        if config_name:
-            from commcare_connect.coverage.config_registry import get_config
-
-            config = get_config(config_name)
-            if config:
-                logger.info(f"[Coverage] Using analysis config: {config_name} ({len(config.fields)} fields)")
-                field_names = [f.name for f in config.fields[:5]]
-                logger.info(f"[Coverage] Config fields (first 5): {field_names}")
-                return config
-            logger.warning(f"[Coverage] Config '{config_name}' not found in registry")
-
-        return None
-
     def get_enriched_visits(
         self, config: AnalysisPipelineConfig, coverage: CoverageData
     ) -> tuple[list[VisitRow], list[dict]]:

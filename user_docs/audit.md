@@ -90,6 +90,17 @@ After completing a session, click **Create Task** next to any flagged visit to o
 
 ---
 
+## Demoing Audit Without Real Patient Data
+
+Synthetic opportunities include fully populated audit content — MUAC photos, pre-reviewed sessions with pass/fail results, linked follow-up tasks, and OCS coaching transcripts — so you can walk stakeholders or funders through the complete program management loop without using any real patient data.
+
+To access a demo audit session, select a **synthetic opportunity** from the opportunity list. Audit sessions, tasks, and coaching transcripts within synthetic opportunities are pre-filled with realistic sample data and behave exactly like live sessions, but no real FLW or patient information is involved.
+
+!!! note "Synthetic data is read-only for demo purposes"
+You can navigate and explore all audit drill-downs in a synthetic opportunity, but changes you make (such as overriding Pass/Fail results) do not affect any real program data.
+
+---
+
 ## Common Questions
 
 **Why are some visits missing?**
@@ -103,3 +114,6 @@ The AI looks at image quality (blur, brightness, framing), whether the measureme
 
 **Can I review the same set of visits twice?**
 Yes — create a new session with the same filters. Each session is independent.
+
+**Can I use audit sessions to demonstrate the system to funders?**
+Yes — synthetic opportunities include realistic MUAC photos, completed audit sessions, follow-up tasks, and OCS coaching transcripts. This lets you show the full program management workflow without any real patient data. See the [Demoing Audit Without Real Patient Data](#demoing-audit-without-real-patient-data) section above.

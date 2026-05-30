@@ -242,6 +242,17 @@ class TaskCreateEditView(LoginRequiredMixin, TemplateView):
                         "assigned_to_type": task.assigned_to_type,
                         "assigned_to_name": task.assigned_to_name,
                         "resolution_details": task.resolution_details,
+                        # Embedded OCS coaching transcript from synthetic tasks.
+                        # The Tasks UI normally fetches transcripts from OCS via
+                        # session_id, but synthetic coaching arcs carry the
+                        # conversation inline so demos work without an OCS round-trip.
+                        "ocs_conversation": task.data.get("ocs_conversation") or [],
+                        # Coaching prompt — the long instructions that get fed to
+                        # the OCS bot. Stored separately from `description` (which
+                        # is the human-readable task summary) so the AI modal can
+                        # pre-fill with the right text. Set by chc_nutrition's
+                        # Create Task with Coaching flow.
+                        "coaching_prompt": task.data.get("coaching_prompt") or "",
                     }
                 data_access.close()
             except Exception as e:
@@ -278,6 +289,7 @@ class TaskCreateEditView(LoginRequiredMixin, TemplateView):
             "username": self.request.GET.get("username", ""),
             "title": self.request.GET.get("title", ""),
             "description": self.request.GET.get("description", ""),
+            "coaching_prompt": self.request.GET.get("coaching_prompt", ""),
         }
         # Filter out empty values
         quick_params = {k: v for k, v in quick_params.items() if v}
@@ -453,7 +465,16 @@ def task_bulk_create(request):
 @csrf_exempt
 @require_POST
 def task_single_create(request):
-    """Create a single task for one FLW. Used by combined create/edit page."""
+    """Create a single task for one FLW. Used by combined create/edit page.
+
+    Body fields:
+        username, flw_name, priority, title, description, workflow_run_id —
+        standard task fields.
+        extra_data (optional dict) — arbitrary key/value pairs merged into
+        ``task.data`` after creation. Used by chc_nutrition's "Create Task
+        with Coaching" flow to attach the long OCS prompt separately from
+        the short human-readable ``description``.
+    """
     try:
         body = json.loads(request.body)
         username = body.get("username")
@@ -462,6 +483,14 @@ def task_single_create(request):
         title = body.get("title", "")
         description = body.get("description", "")
         workflow_run_id = body.get("workflow_run_id")
+        extra_data = body.get("extra_data") or {}
+        if not isinstance(extra_data, dict):
+            return JsonResponse({"success": False, "error": "extra_data must be an object"}, status=400)
+        # coaching_prompt may arrive as a top-level field (spread from taskForm)
+        # or inside extra_data — merge either way so it's always persisted.
+        coaching_prompt = body.get("coaching_prompt") or extra_data.get("coaching_prompt") or ""
+        if coaching_prompt:
+            extra_data = {**extra_data, "coaching_prompt": coaching_prompt}
 
         if not username:
             return JsonResponse({"success": False, "error": "username is required"}, status=400)
@@ -492,6 +521,13 @@ def task_single_create(request):
                 creator_name=creator_name,
                 workflow_run_id=workflow_run_id,
             )
+
+            # Merge any extra data into the task record (e.g. coaching_prompt).
+            if extra_data:
+                merged = dict(task.data or {})
+                merged.update(extra_data)
+                task.data = merged
+                data_access.save_task(task)
 
             return JsonResponse(
                 {
@@ -693,6 +729,29 @@ class OCSBotsListAPIView(LoginRequiredMixin, View):
     """List available OCS bots (experiments) via OAuth API."""
 
     def get(self, request):
+        # Synthetic-opp short circuit: the manager-flow demo lives on
+        # synthetic opps that don't have a real OCS account wired up.
+        # Return a single canned coaching bot so the "Initiate AI Assistant"
+        # modal renders with something selectable — the bot id is recognised
+        # downstream in `task_initiate_ai` to skip the real OCS round-trip.
+        from commcare_connect.labs.synthetic.registry import get_synthetic_opp
+
+        labs_context = getattr(request, "labs_context", {}) or {}
+        opp_id = labs_context.get("opportunity_id")
+        if opp_id and get_synthetic_opp(int(opp_id)) is not None:
+            return JsonResponse(
+                {
+                    "success": True,
+                    "bots": [
+                        {
+                            "id": "synthetic-muac-coaching",
+                            "name": "MUAC Coaching (Synthetic Demo Bot)",
+                            "version_number": 1,
+                        }
+                    ],
+                }
+            )
+
         try:
             ocs_client = OCSDataAccess(request=request)
 
@@ -764,6 +823,49 @@ def task_initiate_ai(request, task_id):
             return JsonResponse({"error": "Bot ID (experiment) is required"}, status=400)
         if not prompt_text:
             return JsonResponse({"error": "Prompt instructions are required"}, status=400)
+
+        # Synthetic-opp short circuit: skip the real OCS call and attach a
+        # canned coaching transcript directly onto the task. Triggered when
+        # the modal selected the synthetic bot from OCSBotsListAPIView's
+        # short-circuit return — keeps the manager-flow demo self-contained
+        # without requiring a real OCS account / experiment.
+        from commcare_connect.labs.synthetic.manager_flow_views import _coaching_conversation
+        from commcare_connect.labs.synthetic.registry import get_synthetic_opp
+
+        is_synthetic = (
+            experiment == "synthetic-muac-coaching" or get_synthetic_opp(int(task.opportunity_id)) is not None
+        )
+        if is_synthetic:
+            updated_data = dict(task.data or {})
+            updated_data["ocs_conversation"] = _coaching_conversation(
+                prompt_text, flw_name=task.flw_name or task.username or "there"
+            )
+            updated_data["ocs_status"] = "in_progress"
+            updated_data.pop("coaching_pending", None)
+            task.data = updated_data
+            data_access.save_task(task)
+
+            actor_name = request.user.get_display_name()
+            data_access.add_ai_session(
+                task,
+                actor=actor_name,
+                session_params={
+                    "identifier": identifier,
+                    "experiment": experiment,
+                    "platform": platform,
+                    "prompt_text": prompt_text,
+                },
+                session_id="synthetic-coaching-session",
+                status="completed",
+            )
+            return JsonResponse(
+                {
+                    "success": True,
+                    "session_id": "synthetic-coaching-session",
+                    "status": "completed",
+                    "message": "Synthetic coaching conversation started.",
+                }
+            )
 
         # Prepare session data to link back to Connect
         session_data = {
@@ -1027,6 +1129,20 @@ def task_ai_transcript(request, task_id):
                     }
                 )
 
+            # Auto-save the transcript so future viewers don't need OCS auth
+            try:
+                for session_event in ai_sessions:
+                    if session_event.get("session_id") == session_id:
+                        session_event["saved_transcript"] = {
+                            "messages": formatted_messages,
+                            "saved_at": datetime.now(timezone.utc).isoformat(),
+                            "saved_by": "auto",
+                        }
+                        data_access.save_task(task)
+                        break
+            except Exception:
+                logger.warning("Failed to auto-save transcript for task %s", task_id, exc_info=True)
+
             data_access.close()
             return JsonResponse(
                 {
@@ -1041,10 +1157,19 @@ def task_ai_transcript(request, task_id):
             data_access.close()
             return JsonResponse({"success": False, "error": "Invalid transcript format from OCS"}, status=500)
 
-    except OCSAPIError:
-        logger.exception("Error fetching transcript from OCS")
+    except OCSAPIError as e:
         data_access.close()
-        return JsonResponse({"success": False, "error": "An internal error occurred"}, status=500)
+        if "not configured or expired" in str(e):
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "OCS authentication required to view this transcript.",
+                    "ocs_auth_required": True,
+                },
+                status=403,
+            )
+        logger.exception("Error fetching transcript from OCS")
+        return JsonResponse({"success": False, "error": "Failed to load transcript from OCS"}, status=500)
 
 
 @login_required

@@ -1,16 +1,18 @@
 """
-Analysis config registry for coverage visualization.
+Analysis config registry for the FLW analysis API.
 
-Allows coverage views to look up analysis configs by name, enabling URL-based
-config selection (e.g., ?config=chc_nutrition) while leveraging cached results.
+Lets `/labs/api/analysis/flw/?config=<name>` (and any other named-config lookup)
+resolve an AnalysisPipelineConfig by string name. Configs register themselves
+at import time (typically in an app's __init__.py) and the FLW analysis API
+view looks them up by name.
 
 Usage:
     # Register a config (typically in the analysis module's __init__.py)
-    from commcare_connect.coverage.config_registry import register_config
+    from commcare_connect.labs.analysis.config_registry import register_config
     register_config("chc_nutrition", CHC_NUTRITION_CONFIG)
 
     # Look up a config by name
-    from commcare_connect.coverage.config_registry import get_config
+    from commcare_connect.labs.analysis.config_registry import get_config
     config = get_config("chc_nutrition")
 """
 
