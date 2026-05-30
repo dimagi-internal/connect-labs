@@ -914,6 +914,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["csv_url"] = reverse("microplans:program_plan_csv", args=[program_id, plan_id])
         context["footprints_url"] = reverse("microplans:program_plan_footprints", args=[program_id, plan_id])
         context["regroup_url"] = reverse("microplans:program_plan_regroup", args=[program_id, plan_id])
+        context["reassign_url"] = reverse("microplans:program_plan_reassign", args=[program_id, plan_id])
         context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + f"?plans={plan_id}"
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
@@ -1045,6 +1046,34 @@ def _plan_lookup_area(plan):
         except Exception:  # noqa: BLE001
             continue
     return unary_union(geoms) if geoms else None
+
+
+class ProgramPlanReassignView(LoginRequiredMixin, View):
+    """Phase-2 op: re-apply the assignment strategy to a plan's groups.
+
+    Body: ``{"strategy": "manual" | "round_robin" | "minimax_spread",
+    "workers": ["chw-1", "chw-2", ...], "restarts": int, "seed": int}``.
+    See ``core.assignment.AssignmentConfig`` for defaults.
+    """
+
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            payload = json.loads(request.body or "{}")
+            assignment = payload if isinstance(payload, dict) else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.reassign_plan(int(plan_id), assignment, request.user.get_username())
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans reassign failed (program=%s plan=%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Reassign failed."}, status=502)
+        return JsonResponse(_plan_json(plan))
 
 
 class ProgramPlanRegroupView(LoginRequiredMixin, View):
