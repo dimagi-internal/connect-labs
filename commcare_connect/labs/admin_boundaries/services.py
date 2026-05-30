@@ -2045,3 +2045,145 @@ def get_opp_boundary_coverage(
         visits_unmatched=visits_unmatched,
         boundaries_by_level=boundaries_by_level,
     )
+
+
+# ---------------------------------------------------------------------------
+# resolve_many — paste-a-list ward-name resolution
+#
+# The bulk-create flow's safety belt: the lead pastes a list of ward names; for
+# each name we return the resolved boundary (id + LGA + population), and for any
+# name that doesn't resolve we return an explicit `unresolved_reason` so the
+# front-end can render an "unknown ward" row the lead must fix or skip before
+# Create Plans is enabled. See spine item `name-match-and-confirm` in the
+# microplans-10-wards why-brief.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class NameResolution:
+    """Per-name resolution returned by `resolve_many_by_name`.
+
+    Exactly one of (matched_id, unresolved_reason) is non-empty.
+    """
+
+    name: str
+    matched_id: str = ""
+    matched_name: str = ""
+    lga: str = ""
+    population: float | None = None
+    unresolved_reason: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "matched_id": self.matched_id,
+            "matched_name": self.matched_name,
+            "lga": self.lga,
+            "population": self.population,
+            "unresolved_reason": self.unresolved_reason,
+        }
+
+
+def resolve_many_by_name(
+    names: list[str],
+    iso_code: str,
+    admin_level: int,
+    source: str | None = None,
+) -> list[NameResolution]:
+    """Resolve a list of ward names against the AdminBoundary table.
+
+    For each input name:
+    - If exactly one boundary matches (case-insensitive, exact match) at the
+      given iso_code + admin_level (+ optional source) → return the match with
+      its boundary_id, name, parent name (LGA), and population.
+    - If no boundary matches → return ``unresolved_reason="not found"``.
+    - If multiple boundaries match (ambiguous name across LGAs) → return
+      ``unresolved_reason="ambiguous: N candidates"`` so the front-end can
+      surface a disambiguation step.
+
+    Returns one NameResolution per input name, in the same order.
+    """
+    # Imported here so this module is import-light for non-DB callers.
+    from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+
+    results: list[NameResolution] = []
+    cleaned = [(raw, (raw or "").strip()) for raw in names]
+    nonempty_cleaned = [name for _, name in cleaned if name]
+    if not nonempty_cleaned:
+        return [NameResolution(name=raw, unresolved_reason="empty name") for raw, _ in cleaned]
+
+    qs = AdminBoundary.objects.filter(
+        iso_code=iso_code,
+        admin_level=admin_level,
+        name__in=nonempty_cleaned,  # case-sensitive prefilter; broaden below
+    )
+    if source:
+        qs = qs.filter(source=source)
+
+    # Bucket candidates by lowercase name so we can do case-insensitive match
+    # and disambiguation in one pass. Most callers will hit ≤ a few hundred
+    # candidates so an in-memory bucket is cheap and avoids N+1.
+    by_lower: dict[str, list[AdminBoundary]] = {}
+    for b in qs:
+        by_lower.setdefault(b.name.lower(), []).append(b)
+    # Fall back to a case-insensitive search for any names that didn't match
+    # the case-sensitive __in (e.g. the boundary stored as "Madobi" vs paste
+    # "madobi"). One extra query, OR'd across the misses.
+    misses = [n for n in nonempty_cleaned if n.lower() not in by_lower]
+    if misses:
+        from django.db.models import Q
+        q = Q()
+        for n in misses:
+            q |= Q(name__iexact=n)
+        ci_qs = AdminBoundary.objects.filter(
+            iso_code=iso_code, admin_level=admin_level
+        ).filter(q)
+        if source:
+            ci_qs = ci_qs.filter(source=source)
+        for b in ci_qs:
+            by_lower.setdefault(b.name.lower(), []).append(b)
+
+    # Parent lookup (LGA = the admin_level - 1 parent for ADM3 wards in NGA).
+    parent_ids = {
+        b.parent_boundary_id
+        for matches in by_lower.values()
+        for b in matches
+        if b.parent_boundary_id
+    }
+    parent_name_by_id: dict[str, str] = {}
+    if parent_ids:
+        parent_qs = AdminBoundary.objects.filter(
+            iso_code=iso_code, boundary_id__in=parent_ids
+        ).only("boundary_id", "name")
+        for p in parent_qs:
+            parent_name_by_id[p.boundary_id] = p.name
+
+    for raw, cleaned_name in cleaned:
+        if not cleaned_name:
+            results.append(NameResolution(name=raw, unresolved_reason="empty name"))
+            continue
+        matches = by_lower.get(cleaned_name.lower(), [])
+        if not matches:
+            results.append(
+                NameResolution(name=raw, unresolved_reason="not found")
+            )
+            continue
+        if len(matches) > 1:
+            results.append(
+                NameResolution(
+                    name=raw,
+                    unresolved_reason=f"ambiguous: {len(matches)} candidates",
+                )
+            )
+            continue
+        b = matches[0]
+        results.append(
+            NameResolution(
+                name=raw,
+                matched_id=b.boundary_id,
+                matched_name=b.name,
+                lga=parent_name_by_id.get(b.parent_boundary_id, ""),
+                population=b.population,
+            )
+        )
+    return results
