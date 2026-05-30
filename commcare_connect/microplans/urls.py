@@ -49,6 +49,11 @@ urlpatterns = [
         name="program_plan_footprints",
     ),
     path(
+        "program/<int:program_id>/plan/<int:plan_id>/footprints/refresh/",
+        views.ProgramPlanFootprintsRefreshView.as_view(),
+        name="program_plan_footprints_refresh",
+    ),
+    path(
         "program/<int:program_id>/plan/<int:plan_id>/transition/",
         views.ProgramPlanTransitionView.as_view(),
         name="program_plan_transition",
