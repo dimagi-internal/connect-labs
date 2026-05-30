@@ -19,6 +19,21 @@
   .worker-row .sw { width: 0.6rem; height: 0.6rem; border-radius: 9999px; flex-shrink: 0; }
   .worker-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .worker-row .ct { color: #6b7280; font-variant-numeric: tabular-nums; font-size: 0.7rem; }
+  /* Segmented tab (mirror of setup.html — Color-by control) */
+  .seg-tab { padding: 0.4rem 0.25rem; font-size: 0.7rem; font-weight: 500; text-align: center;
+             border: 1px solid #d1d5db; border-radius: 0.375rem; background: #fff; color: #4b5563;
+             cursor: pointer; transition: all .12s; }
+  .seg-tab:hover { border-color: #9ca3af; }
+  .seg-tab.is-on { border-color: #3843d0; background: #3843d0; color: #fff; }
+
+  /* Resizable map pane: drag the bottom edge to taste */
+  .map-pane { position: relative; flex-shrink: 0; min-height: 200px; }
+  .map-resizer { position: absolute; left: 0; right: 0; bottom: -4px; height: 8px; cursor: row-resize; z-index: 6;
+                 background: transparent; }
+  .map-resizer::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); bottom: 1px;
+                        width: 40px; height: 4px; border-radius: 2px; background: #d1d5db; }
+  .map-resizer:hover::after { background: #6b7280; }
+
   .map-overlay { position: absolute; z-index: 5; background: rgba(255,255,255,0.95); border: 1px solid #e5e7eb; border-radius: 0.375rem; padding: 0.4rem 0.6rem; font-size: 0.7rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   .map-overlay label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
   .map-legend { display: flex; flex-direction: column; gap: 0.2rem; min-width: 7rem; }
@@ -46,11 +61,21 @@
 
     <section>
       <div class="flex items-center justify-between mb-1">
-        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Workers</h2>
-        <button type="button" id="worker-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Color by</h2>
       </div>
-      <div id="by-worker" class="space-y-0.5"></div>
-      <p class="text-[10px] text-gray-400 mt-1">Click a worker to filter the map &amp; table.</p>
+      <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
+        <button type="button" id="dim-worker" class="seg-tab is-on">Worker</button>
+        <button type="button" id="dim-group" class="seg-tab">Group</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span id="dim-label">Workers</span></h2>
+        <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
+      </div>
+      <div id="by-dim" class="space-y-0.5"></div>
+      <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
     </section>
 
     <section class="border-t pt-3">
@@ -75,7 +100,7 @@
 
   <!-- Center: map + metrics + table -->
   <div class="flex-1 flex flex-col min-w-0">
-    <div class="relative" style="height: 36%">
+    <div class="map-pane" id="map-pane" style="height: 70%">
       <div id="review-map"></div>
       <!-- Map overlays: footprints toggle (top-left) + legend (bottom-left) -->
       <div class="map-overlay" style="top: 0.5rem; left: 0.5rem;">
@@ -87,6 +112,8 @@
         <div class="legend-row"><span class="sw" style="background:#cbd5e1;opacity:0.6"></span><span class="lbl">Unassigned</span></div>
         <div class="legend-row"><span class="sw" style="background:#9ca3af;opacity:0.25"></span><span class="lbl">Excluded</span></div>
       </div>
+      <!-- Drag handle on the bottom edge -->
+      <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
     </div>
 
     <!-- Plan metrics (kpi strip + per-FLW table) -->
@@ -144,7 +171,9 @@
 
   let WAS = [];                 // current work areas (raw plan rows)
   const selected = new Set();   // selected wa ids
-  let activeWorker = null;      // string | null — current click-to-filter
+  let activeDim = null;         // string | null — current click-to-filter value
+  let colorDim = "worker";      // "worker" | "group" — drives map color + sidebar
+  const DIM_FIELD = { worker: "opportunity_access", group: "work_area_group" };
 
   // ---- color per assignment key (CHW name or group) -----------------------
   // Golden-angle HSL hash → adjacent territories visually distinct without a
@@ -156,8 +185,8 @@
     const hue = (Math.abs(h) * 137.508) % 360;
     return `hsl(${Math.round(hue)}, 65%, 55%)`;
   }
-  // The aggregation key: prefer worker (opportunity_access), fall back to group.
-  function keyOf(w) { return (w.opportunity_access || w.work_area_group || "").trim(); }
+  // The aggregation key: depends on which dimension the user is coloring by.
+  function keyOf(w) { return (w[DIM_FIELD[colorDim]] || "").trim(); }
 
   // ---- map (best-effort; needs WebGL) ----
   let map = null, mapReady = false;
@@ -237,10 +266,11 @@
   }
   function setSelState() {
     if (!map || !mapReady) return;
+    const field = DIM_FIELD[colorDim];
     WAS.forEach((w) => {
       map.setFeatureState({ source: "wa", id: w.id }, {
         sel: selected.has(w.id),
-        dim: activeWorker !== null && (w.opportunity_access || "") !== activeWorker,
+        dim: activeDim !== null && (w[field] || "") !== activeDim,
       });
     });
   }
@@ -257,8 +287,18 @@
       if (src) { src.setData(data.footprints); }
       else {
         map.addSource("plan-fp", { type: "geojson", data: data.footprints });
-        map.addLayer({ id: "plan-fp-dots", type: "circle", source: "plan-fp",
-          paint: { "circle-radius": 1.6, "circle-color": "#f59e0b", "circle-stroke-color": "#fff", "circle-stroke-width": 0.4 } }, "wa-line");
+        // Polygon fill (for buildings whose geometry the cache has stored).
+        map.addLayer({
+          id: "plan-fp-fill", type: "fill", source: "plan-fp",
+          filter: ["==", ["geometry-type"], "Polygon"],
+          paint: { "fill-color": "#f59e0b", "fill-opacity": 0.55, "fill-outline-color": "#b45309" },
+        }, "wa-line");
+        // Centroid dot fallback (for legacy cache rows with no polygon stored).
+        map.addLayer({
+          id: "plan-fp-dots", type: "circle", source: "plan-fp",
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: { "circle-radius": 1.6, "circle-color": "#f59e0b", "circle-stroke-color": "#fff", "circle-stroke-width": 0.4 },
+        }, "wa-line");
       }
       footprintsLoaded = true;
       $("status").textContent = `${data.count.toLocaleString()} footprints.`;
@@ -267,8 +307,10 @@
   $("toggle-footprints").addEventListener("change", () => {
     const on = $("toggle-footprints").checked;
     if (on && !footprintsLoaded) { loadFootprints(); return; }
-    if (map && mapReady && map.getLayer("plan-fp-dots")) {
-      map.setLayoutProperty("plan-fp-dots", "visibility", on ? "visible" : "none");
+    if (map && mapReady) {
+      ["plan-fp-fill", "plan-fp-dots"].forEach((id) => {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+      });
     }
   });
 
@@ -314,33 +356,41 @@
       `<div class="flex justify-between"><dt class="text-gray-500">Active areas</dt><dd class="font-medium">${s.active ?? 0}</dd></div>
        <div class="flex justify-between"><dt class="text-gray-500">Excluded</dt><dd class="font-medium">${s.excluded ?? 0}</dd></div>
        <div class="flex justify-between"><dt class="text-gray-500">Buildings (active)</dt><dd class="font-medium">${(s.buildings_active ?? 0).toLocaleString()}</dd></div>`;
-    // Worker rows — color swatch + click filter. Sort by area count desc so
-    // heaviest territories surface first.
-    const bw = s.by_worker || {};
-    const rows = Object.keys(bw).sort((a, b) => bw[b].work_areas - bw[a].work_areas);
-    if (!rows.length) { $("by-worker").innerHTML = '<span class="text-gray-400 text-xs">no workers assigned</span>'; return; }
-    $("by-worker").innerHTML = rows.map((name) => {
-      const cls = "worker-row text-xs " + (activeWorker === name ? "is-active" : "");
-      return `<div class="${cls}" data-worker="${esc(name)}">
-        <span class="sw" style="background:${colorFor(name)}"></span>
-        <span class="nm">${esc(name)}</span>
-        <span class="ct">${bw[name].work_areas} · ${bw[name].buildings.toLocaleString()}</span>
-      </div>`;
-    }).join("");
-    $("worker-clear").classList.toggle("hidden", activeWorker === null);
+    renderDimSidebar(s);
+  }
+  function renderDimSidebar(s) {
+    // Sidebar contents follow the active dimension (worker | group).
+    const bucket = (colorDim === "worker" ? s.by_worker : s.by_group) || {};
+    // Don't list the synthetic "(unassigned)" bucket — empty key is the visual.
+    const rows = Object.keys(bucket).filter((k) => k && k !== "(unassigned)")
+                       .sort((a, b) => bucket[b].work_areas - bucket[a].work_areas);
+    if (!rows.length) {
+      $("by-dim").innerHTML = `<span class="text-gray-400 text-xs">no ${colorDim === "worker" ? "workers assigned" : "groups defined"}</span>`;
+    } else {
+      $("by-dim").innerHTML = rows.map((name) => {
+        const cls = "worker-row text-xs " + (activeDim === name ? "is-active" : "");
+        return `<div class="${cls}" data-dim="${esc(name)}">
+          <span class="sw" style="background:${colorFor(name)}"></span>
+          <span class="nm">${esc(name)}</span>
+          <span class="ct">${bucket[name].work_areas} · ${bucket[name].buildings.toLocaleString()}</span>
+        </div>`;
+      }).join("");
+    }
+    $("dim-clear").classList.toggle("hidden", activeDim === null);
   }
   function renderTable() {
     const body = $("wa-body");
     body.innerHTML = "";
+    const field = DIM_FIELD[colorDim];
     WAS.forEach((w) => {
       const tr = document.createElement("tr");
-      const isHl = activeWorker !== null && (w.opportunity_access || "") === activeWorker;
+      const isHl = activeDim !== null && (w[field] || "") === activeDim;
       tr.className = "wa-row border-b "
         + (w.status === "EXCLUDED" ? "excluded " : "")
         + (selected.has(w.id) ? "sel " : "")
         + (isHl ? "hl-worker " : "");
-      // Hide rows that don't match the active worker filter (lighter than dimming).
-      if (activeWorker !== null && (w.opportunity_access || "") !== activeWorker) {
+      // Hide rows that don't match the active filter (lighter than dimming).
+      if (activeDim !== null && (w[field] || "") !== activeDim) {
         tr.style.display = "none";
       }
       const excluded = w.status === "EXCLUDED";
@@ -361,23 +411,39 @@
     $("sel-count").textContent = `${selected.size} selected`;
   }
 
-  // ---- worker filter ----
-  function setActiveWorker(name) {
-    activeWorker = (name === activeWorker) ? null : name;
-    renderSummary({ by_worker: lastByWorker, active: lastSummary.active, excluded: lastSummary.excluded, buildings_active: lastSummary.buildings_active });
+  // ---- dimension filter (worker | group) ----
+  function setActiveDim(name) {
+    activeDim = (name === activeDim) ? null : name;
+    renderDimSidebar(lastSummary);
     renderTable();
     setSelState();
   }
-  // We need lastByWorker / lastSummary cached so the worker filter toggle can
-  // re-render without round-tripping. Stash them on each render.
-  let lastByWorker = {}, lastSummary = {};
+  function setColorDim(d) {
+    colorDim = d;
+    activeDim = null;  // clear filter when switching dimensions
+    $("dim-worker").classList.toggle("is-on", d === "worker");
+    $("dim-group").classList.toggle("is-on", d === "group");
+    $("dim-label").textContent = d === "worker" ? "Workers" : "Groups";
+    $("dim-label2").textContent = d === "worker" ? "worker" : "group";
+    // Recompute per-feature fill color (map source has it baked in), then re-render.
+    if (map && mapReady) {
+      const src = map.getSource("wa");
+      if (src) src.setData(fc());
+    }
+    renderDimSidebar(lastSummary);
+    renderTable();
+    setSelState();
+  }
+  let lastSummary = {};
   const origRenderSummary = renderSummary;
-  renderSummary = function (s) { lastByWorker = s.by_worker || {}; lastSummary = s; origRenderSummary(s); };
-  $("by-worker").addEventListener("click", (e) => {
+  renderSummary = function (s) { lastSummary = s; origRenderSummary(s); };
+  $("by-dim").addEventListener("click", (e) => {
     const row = e.target.closest(".worker-row"); if (!row) return;
-    setActiveWorker(row.dataset.worker);
+    setActiveDim(row.dataset.dim);
   });
-  $("worker-clear").addEventListener("click", () => { activeWorker = null; renderSummary(lastSummary); renderTable(); setSelState(); });
+  $("dim-clear").addEventListener("click", () => { activeDim = null; renderDimSidebar(lastSummary); renderTable(); setSelState(); });
+  $("dim-worker").addEventListener("click", () => setColorDim("worker"));
+  $("dim-group").addEventListener("click", () => setColorDim("group"));
 
   // ---- edits ----
   async function edit(body) {
@@ -424,11 +490,41 @@
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   });
 
+  // ---- map resize (drag the handle on the bottom edge) ----
+  (() => {
+    const pane = $("map-pane"), handle = $("map-resizer");
+    if (!pane || !handle) return;
+    let startY = 0, startHeight = 0;
+    const onMove = (e) => {
+      const dy = e.clientY - startY;
+      const h = Math.max(160, Math.min(window.innerHeight - 200, startHeight + dy));
+      pane.style.height = h + "px";
+      if (map) map.resize();
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    handle.addEventListener("mousedown", (e) => {
+      startY = e.clientY;
+      startHeight = pane.getBoundingClientRect().height;
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      document.body.style.cursor = "row-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+  })();
+
   // initial load
   fetch(PLAN_URL).then((r) => r.json()).then((d) => { if (d.status === "ok") render(d); else $("status").textContent = d.detail || "load failed"; })
     .catch((e) => $("status").textContent = "load failed: " + e);
 
-  window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit, get activeWorker() { return activeWorker; }, setActiveWorker };
+  window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit,
+                      get activeDim() { return activeDim; }, get colorDim() { return colorDim; },
+                      setActiveDim, setColorDim };
 })();
 </script>
 {% endblock %}

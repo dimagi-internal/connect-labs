@@ -34,11 +34,20 @@ class FootprintArea(models.Model):
 
 
 class FootprintBuilding(models.Model):
-    """One building centroid within a cached area (the input shape the sampling /
-    coverage pipelines consume)."""
+    """One building within a cached area.
+
+    `lon/lat` are the centroid (the input shape the sampling / coverage pipelines
+    consume — they only need a point + size). `geom_json` carries the actual
+    Overture footprint polygon as GeoJSON-encoded coordinates for the review-page
+    overlay; nullable so rows from the centroid-only era keep working.
+    """
 
     area = models.ForeignKey(FootprintArea, on_delete=models.CASCADE, related_name="buildings")
     lon = models.FloatField()
     lat = models.FloatField()
     area_m2 = models.FloatField(null=True, blank=True)
     confidence = models.FloatField(null=True, blank=True)  # Google-source confidence; null for MS/OSM
+    # GeoJSON coordinates of the actual polygon (e.g. [[[lon,lat],...]] for Polygon).
+    # Stored as JSON to keep the model GIS-free; the review-page footprints overlay
+    # reads this when present, otherwise falls back to a centroid marker.
+    geom_json = models.JSONField(null=True, blank=True)

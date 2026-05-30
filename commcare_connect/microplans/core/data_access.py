@@ -171,9 +171,19 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     # ---- plans ----
 
-    def create_plan(self, region: str, name: str, mode: str, pins: dict, hulls: dict) -> RooftopPlanRecord:
+    def create_plan(
+        self,
+        region: str,
+        name: str,
+        mode: str,
+        pins: dict,
+        hulls: dict,
+        input_areas: list | None = None,
+    ) -> RooftopPlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
-        per cluster/pin)."""
+        per cluster/pin). `input_areas` is the original draw/admin/pin payload from
+        setup — stored so downstream features (footprints overlay) can reuse the
+        cached fetch geometry instead of re-fetching by a derived shape."""
         work_areas = plan_lib.materialize_work_areas(mode, pins, hulls)
         record = self.labs_api.create_record(
             experiment=self._experiment,
@@ -188,6 +198,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "name": name,
                 "mode": mode,
                 "work_areas": work_areas,
+                "input_areas": list(input_areas or []),
                 "status_log": [],
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
