@@ -108,6 +108,30 @@
     </section>
 
     <section class="border-t pt-3">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-assign CHWs</h2>
+      <div class="flex flex-col gap-2 text-xs">
+        <label class="block">
+          <span class="text-gray-600">Strategy</span>
+          <select id="asg-strategy" class="base-input mt-0.5 text-xs">
+            <option value="minimax_spread" selected>Minimax spread (Neal Lesh)</option>
+            <option value="round_robin">Round robin</option>
+          </select>
+        </label>
+        <label class="block">
+          <span class="text-gray-600">Workers (one per line)</span>
+          <textarea id="asg-workers" rows="4" class="base-input mt-0.5 text-xs font-mono"
+                    placeholder="chw-1&#10;chw-2&#10;chw-3"></textarea>
+        </label>
+        <label class="block" id="asg-restarts-wrap">
+          <span class="text-gray-600">Restarts</span>
+          <input id="asg-restarts" type="number" value="20" min="1" max="200" class="base-input mt-0.5 text-xs">
+        </label>
+        <button type="button" id="btn-reassign" class="button button-sm primary-dark">Apply assignment</button>
+        <p class="text-[10px] text-gray-400">Assigns all groups to a CHW. Audited per cell whose worker changes.</p>
+      </div>
+    </section>
+
+    <section class="border-t pt-3">
       <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Bulk (selected)</h2>
       <div class="flex flex-col gap-2">
         <button type="button" id="bulk-exclude" class="button button-sm primary-dark">Exclude selected…</button>
@@ -192,6 +216,7 @@
   const COMPARE_URL = "{{ compare_url|escapejs }}";
   const FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
   const REGROUP_URL = "{{ regroup_url|default:''|escapejs }}";
+  const REASSIGN_URL = "{{ reassign_url|default:''|escapejs }}";
   document.getElementById("compare-link").href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
@@ -556,6 +581,39 @@
       $("status").textContent = "Re-group failed: " + e;
     } finally {
       $("btn-regroup").disabled = false;
+    }
+  });
+
+  // ---- Phase-2: re-assign CHWs ----
+  $("asg-strategy").addEventListener("change", () => {
+    const s = $("asg-strategy").value;
+    $("asg-restarts-wrap").classList.toggle("hidden", s !== "minimax_spread");
+  });
+  $("btn-reassign").addEventListener("click", async () => {
+    if (!REASSIGN_URL) { $("status").textContent = "Reassign URL not available."; return; }
+    const strategy = $("asg-strategy").value;
+    const workers = ($("asg-workers").value || "").trim();
+    if (!workers) { $("status").textContent = "Enter at least one worker name."; return; }
+    const body = { strategy, workers };
+    if (strategy === "minimax_spread") body.restarts = +$("asg-restarts").value;
+    $("btn-reassign").disabled = true;
+    $("status").textContent = `Re-assigning (${strategy})…`;
+    const t0 = performance.now();
+    try {
+      const resp = await post(REASSIGN_URL, body);
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") {
+        $("status").textContent = data.detail || ("HTTP " + resp.status);
+      } else {
+        const dt = ((performance.now() - t0) / 1000).toFixed(1);
+        const assigned = new Set((data.work_areas || []).map((w) => w.opportunity_access).filter(Boolean));
+        $("status").textContent = `Assigned to ${assigned.size} CHWs in ${dt}s.`;
+        render(data);
+      }
+    } catch (e) {
+      $("status").textContent = "Re-assign failed: " + e;
+    } finally {
+      $("btn-reassign").disabled = false;
     }
   });
 
