@@ -79,7 +79,7 @@
     </section>
 
     <section class="border-t pt-3">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-group cells</h2>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-group work areas</h2>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
           <span class="text-gray-600">Strategy</span>
@@ -99,11 +99,11 @@
           </label>
         </div>
         <label class="block hidden" id="grp-bbox-params">
-          <span class="text-gray-600">Target cells / group</span>
+          <span class="text-gray-600">Target work areas / group</span>
           <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
         </label>
         <button type="button" id="btn-regroup" class="button button-sm primary-dark">Apply grouping</button>
-        <p class="text-[10px] text-gray-400">Re-groups all non-excluded cells. Audited per cell.</p>
+        <p class="text-[10px] text-gray-400">Re-groups all active work areas. Audited per work area.</p>
       </div>
     </section>
 
@@ -127,7 +127,7 @@
           <input id="asg-restarts" type="number" value="20" min="1" max="200" class="base-input mt-0.5 text-xs">
         </label>
         <button type="button" id="btn-reassign" class="button button-sm primary-dark">Apply assignment</button>
-        <p class="text-[10px] text-gray-400">Assigns all groups to a CHW. Audited per cell whose worker changes.</p>
+        <p class="text-[10px] text-gray-400">Assigns all groups to a CHW. Audited per work area whose worker changes.</p>
       </div>
     </section>
 

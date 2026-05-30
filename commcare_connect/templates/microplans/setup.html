@@ -82,7 +82,7 @@
       <div class="grid grid-cols-2 gap-2">
         <div id="card-coverage" class="mode-card" role="button" tabindex="0">
           <div class="mode-title">Coverage</div>
-          <div class="mode-sub">Visit <em>every</em> household. Tile into small grid cells, assign to CHWs.</div>
+          <div class="mode-sub">Visit <em>every</em> household. Tile into small work areas, assign to CHWs.</div>
         </div>
         <div id="card-sampling" class="mode-card" role="button" tabindex="0">
           <div class="mode-title">Sampling</div>
@@ -195,7 +195,7 @@
     <section id="cfg-coverage" class="hidden">
       <div class="mp-section-label">Work-area size</div>
       <p class="text-xs text-gray-500 mb-2 leading-snug">
-        Tile the area into <strong>square cells</strong>. Each cell containing a building becomes one work area; CHWs are assigned groups of adjacent cells.
+        Tile the area into <strong>uniform squares</strong>. Each occupied square becomes one <strong>work area</strong>; CHWs are assigned groups of adjacent work areas.
       </p>
       <div class="chip-row" id="cellsize-chips">
         <button type="button" class="chip" data-cellsize="50">50 m</button>
@@ -608,8 +608,8 @@
     $("preview-status").innerHTML = data.stats.map((s) =>
       `<div class="mt-2 p-2 rounded bg-gray-50 border">
          <div class="font-semibold">Coverage · ${s.cell_size_m}m × ${s.cell_size_m}m cells</div>
-         <div>${(s.after_filters||0).toLocaleString()} buildings · ${s.work_areas} work cells</div>
-         <div>buildings per cell: min ${s.min_buildings} · median ${s.median_buildings} · max ${s.max_buildings}</div>
+         <div>${(s.after_filters||0).toLocaleString()} buildings · ${s.work_areas} work areas</div>
+         <div>buildings per work area: min ${s.min_buildings} · median ${s.median_buildings} · max ${s.max_buildings}</div>
        </div>`).join("");
   }
 
