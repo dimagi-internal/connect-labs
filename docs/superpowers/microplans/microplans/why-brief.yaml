@@ -1,0 +1,283 @@
+schema_version: 1
+feature: microplans-10-wards
+problem: >-
+  The IPA × Dimagi CHC implementation RCT plans 40 wards across four states (Gombe, Kaduna,
+  Kano, Jigawa) with one local LLO per state — each LLO working 10 randomly selected wards
+  spread across their state's four shortlisted LGAs. The program lead has a fixed list of
+  wards to plan per state (today: the ten Kano wards Galinja, Madobi, Gora, Jibga, Kadan Dani,
+  Durma, Rimin Gado, Dawakin Gulu, Tofa, Kwami, each ~20–30K people across Nassarawa / Fagge
+  / Tofa / Madobi LGAs); for each state's batch she needs to bulk-create the plans from that
+  list, get them sign-off-ready with the local LLO (who lives outside the program team and
+  can't be expected to have a Dimagi account), and push the approved set into a live Connect
+  opportunity so the FLW app picks them up. Today the lead can do most of that in labs — open
+  the program workspace, see per-plan KPIs, share with the LLO, capture every audit decision,
+  sign off — but two pieces are still rough: a bulk-input UI that takes a list of ward names
+  and creates a plan per ward in one operation (rather than entering each ward one at a
+  time), and the cross-system push that turns the approved batch into live Connect WorkArea
+  rows. The loop only closes when the approved plans land in Connect as live WorkAreas.
+
+spine:
+  - id: portfolio-open
+    claim: >-
+      Dana opens the program 135 workspace and sees her ten Kano wards (Galinja, Madobi, Gora,
+      Jibga, Kadan Dani, Durma, Rimin Gado, Dawakin Gulu, Tofa, Kwami) across the four
+      shortlisted Kano LGAs (Nassarawa, Fagge, Tofa, Madobi), each row showing lifecycle phase,
+      work-area count, and the headline KPIs.
+    rationale: >-
+      The program portfolio is what makes "ten wards in one batch" a workflow rather than ten
+      separate plan pages; without it the RCT lead loses the batch view that lets her see Jibga
+      and Madobi as outliers next to Galinja's best-fit row.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: "PR #305 program portfolio layer; ProgramWorkspaceView at commcare_connect/microplans/views.py; live at https://labs.connect.dimagi.com/microplans/program/135/ — 10 Kano wards, lifecycle phases, CHW teams already rendering."
+
+  - id: batch-create
+    claim: >-
+      The per-plan creation core (coverage + sampling on a shared core, real building
+      footprints, work-area materialization from boundary + density) is shipped end-to-end,
+      and the program-scoped create endpoint accepts N boundary IDs in one POST.
+    rationale: >-
+      Kimpling and coverage on a shared core lets one config materialize every plan; the
+      bulk POST is what makes ten plans in one API call possible at all — without it, even a
+      thin bulk UI has no plumbing to call.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: "PR #299 sampling + coverage on a shared core; PR #305 ProgramCreatePlanView accepting N boundary IDs in one POST at /microplans/program/<program_id>/plan/create/; PR #301 admin-boundary capture (population + hierarchy); PR HEAD caches building footprints in Postgres."
+
+  - id: name-match-and-confirm
+    claim: >-
+      The bulk-create form takes a pasted list of ward names, resolves each name against the
+      admin boundaries, and presents the resolved ward data (LGA + population + ID) back to
+      the lead — with any unresolved names called out explicitly — so she confirms all
+      wards were found BEFORE the system commits to creating any plans.
+    rationale: >-
+      A paste-list UI without a resolution-and-confirm step is unsafe: ward names vary in
+      spelling (Kadan Dani vs Kadandani; "Tofa" the LGA vs "Tofa" the ward), and the lead
+      needs to see what the system actually matched before plans are created — a silent
+      best-effort match would create wrong plans for typo'd names and the lead would only
+      discover it later from KPIs. Confirmation before commit is what makes paste-the-list
+      trustworthy.
+    status: gap
+    evidence:
+      - kind: implemented
+        ref: "Backend partially ready: boundary lookup by name exists in commcare_connect/labs/admin_boundaries/services.py. Missing: a resolve-many endpoint that takes a list of names and returns per-name {matched_id, matched_name, lga, population, unresolved_reason}; and the front-end's review/confirm step that renders the resolved list before commit."
+
+  - id: bulk-input-ui
+    claim: >-
+      Once the matched ward list is confirmed, Dana picks the per-batch config (Coverage
+      mode, Balanced strategy, 100 buildings per work area, ±10% balance tolerance) and hits
+      Create Plans — one bulk operation materializes one plan per ward, with per-ward
+      progress shown to the lead since it's a long-running call.
+    rationale: >-
+      Even with the bulk POST endpoint shipped, today's UI picks one ward at a time and the
+      lead enters each separately — for a fixed ward list per state in an RCT batch, that's
+      ten times the clicks and ten chances to drift from the protocol; a paste-the-list UI
+      with progress feedback is what makes a "ten wards in one batch" workflow real for the
+      lead. The progress affordance is load-bearing because the materializer is
+      long-running (per-ward boundary lookup + footprint query + work-area split); without
+      it the form looks hung and the lead second-guesses whether anything is happening.
+    status: gap
+    evidence:
+      - kind: implemented
+        ref: "Backend ready: ProgramCreatePlanView (PR #305) accepts N boundary IDs in one POST. Footprint cache (HEAD) speeds repeat calls. Missing on the front end: the form layer that consumes the confirmed match-list from name-match-and-confirm, sends one POST, and renders per-ward progress (server-sent events or polling) while the materializer runs. The prior session built per-plan via the existing one-at-a-time setup form, not via this bulk-input UI."
+
+  - id: compare-and-tune
+    claim: >-
+      Dana reads each plan's assignment-aware KPIs (max travel km, workload imbalance, fit
+      score) in the workspace, then opens the comparison page on the top picks plus a couple
+      of suspects, and uses the fit ranking to surface the highest-imbalance and lowest-fit
+      wards as the actionable outliers.
+    rationale: >-
+      Outliers in a batch of ten are invisible without side-by-side; the comparison page is what
+      makes batch authorship trustable, and the tool catching a real imbalance is itself a
+      first-class demo moment — it shows the system surfacing real problems, not papering over
+      them.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: "PRs #305 (plan KPIs), #306 (assignment-aware KPIs + clearer lifecycle controls), #308 (program-scoped comparison page); plan_lib.plan_kpis() returns max_spread_km/territory_count; the prior real run on program 135 produced one ward with >100% workload imbalance and a low-double-digit fit score (the actionable outlier shape this demo expects to reproduce on re-materialize)."
+
+  - id: bundle-and-share
+    claim: >-
+      Dana bundles the ten Kano wards into the plan group "Kano — CHC implementation (10
+      wards)" for the Kano State LLO, sets visibility to anyone-with-link, and ships one share
+      URL — the proposal page that ranks all ten plans by fit score.
+    rationale: >-
+      An LLO who lives outside the program team can't sign off without an account-free,
+      fit-ranked proposal page; the plan group is the unit of LLO ownership (one group =
+      "their state's 10 ward-plans"), and the proposal ranking is the LLO's first read.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: "Plan groups + share surface live at https://labs.connect.dimagi.com/microplans/program/135/group/3342/share/ (group 3342 = Kano State LLO, placeholder name); templates/microplans/group_share.html being polished right now in the rooftop-1qpwd sibling worktree (unstaged views.py + group_share.html)."
+
+  - id: llo-work-area-editing
+    claim: >-
+      Kim, the LLO, drills into a single plan on the map, eliminates the work areas she knows
+      won't run (a school footprint that shouldn't be a household visit, an unsafe stretch on
+      the far east of the boundary), tags each elimination with a reason, and the planning
+      audit captures each removed area, the reason text, and the before/after geometry.
+    rationale: >-
+      Plan-level Accept/Exclude alone is too coarse: an LLO often wants to keep most of a plan
+      and remove just a few work areas. Without per-work-area editing she has to either accept
+      a partly-bad plan or reject the whole thing, which throws away the work; reason metadata
+      ("school", "flooding") is what makes the eliminations explainable later.
+    status: gap
+    evidence:
+      - kind: implemented
+        ref: "Plan map + work-area rendering exists (PR #299 sampling+coverage core; PR #304 LLO planning-phase plan review/edit). What's missing: an in-plan map UI for eliminating individual work areas with a reason field, and an audit-row writer that captures the deleted area's geometry alongside the reason. The reason vocabulary itself is open (free-text seeded with chips like 'school', 'flooding', 'insecurity')."
+
+  - id: llo-group-and-user-reassignment
+    claim: >-
+      Within a plan, Kim drags individual work areas between work-area groups, and reassigns
+      an entire work-area group from one user to another — the audit captures each move
+      (which work area / which group, which group / which user, before and after).
+    rationale: >-
+      Coverage plans assign each work area to a work-area group, and each group to a user;
+      both assignments are computed by the materializer but neither is always right at the
+      ward level. Letting the LLO move work areas between groups (to balance workload by
+      local knowledge of distance/access) and reassign a group from one user to another
+      (because the materializer doesn't know who's actually available next week) is what
+      makes the plans deployable as-is rather than needing a re-run.
+    status: gap
+    evidence:
+      - kind: implemented
+        ref: "Work-area-group + group-to-user assignment exist on the plan (PR #305 program portfolio renders CHW teams per ward; assignment-aware KPIs PR #306). What's missing: an in-plan UI for dragging a work area to a different group, an in-plan UI for changing the user assigned to a group, and audit rows that capture both move kinds with before/after state."
+
+  - id: llo-decisions-with-audit
+    claim: >-
+      Kim, the Kano State LLO, opens the share, uses her local knowledge to mark some wards as
+      exclusions with reasons (e.g. flooding, insecurity), Accepts the plans she's confident
+      on, leaves any she's unsure on In review for Dana, and every decision lands in the
+      phase-tagged planning audit with timestamp, user, reason, and the before/after state.
+    rationale: >-
+      Without a phase-tagged audit Dana can't trust the LLO's accept/exclude calls — she'd have
+      to diff manually; the audit makes LLO decisions delegable AND captures local taste
+      (flooding, insecurity) the program team can't see from Cambridge.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: "PR #304 LLO planning-phase plan review/edit + phase-tagged audit; mirrors Connect WorkArea pghistory shape per project memory; the prior real run on program 135 ended in a partial-Approved + partial-In-review state with two named exclusions (flooding, insecurity) — the shape this demo expects to reproduce, though the specific Kim decisions are a demo-script input, not a system output."
+
+  - id: signoff-flip-to-approved
+    claim: >-
+      Dana reads the audit on the workspace, retunes any In-review plan worth lifting (e.g.
+      lowering buildings per work area to tighten fit), signs off, and the lifecycle status
+      flips In review → Approved on the remaining plans — the precondition for Deploy.
+    rationale: >-
+      Sign-off is the human commitment moment; folding it into the lifecycle (Draft → In review
+      → Approved → Deployed) keeps the chain honest, and the retune-then-sign-off path means
+      one outlier doesn't block the whole batch.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: "commcare_connect/microplans/views.py line ~663 'Advance a plan's lifecycle status (Deploy binds the live opportunity_id)' — lifecycle-advance endpoint with Draft/In review/Approved/Deployed states; PR #306 clearer lifecycle controls."
+
+  - id: deploy-to-opportunity
+    claim: >-
+      Dana opens a per-plan sync-to-Connect UI, picks the (synthetic for now) Connect
+      opportunity to push to, maps each work-area-group's labs user to an FLW already invited
+      to that opp, hits Deploy, and the plan's work areas + per-group user assignments land
+      in Connect as live WorkAreas the FLW app picks up.
+    rationale: >-
+      Deploy is the cross-system handoff, and the user-mapping step is load-bearing — labs
+      work-area-group "users" are abstract slots that need to be matched to specific FLWs
+      already on the Connect opp. Doing this against synthetic opps that mimic real Connect
+      APIs lets the demo close the loop end-to-end without depending on live prod data; the
+      synthetic surface becomes the spec for the real call when it ships.
+    status: gap
+    evidence:
+      - kind: implemented
+        ref: "Labs-side binding is real: views.py line ~676 advances lifecycle to 'deployed' and accepts opportunity_id in the payload. Per-group user assignments exist on the plan side (PR #306 assignment-aware KPIs). Missing: the sync-to-Connect UI (per-plan picker + per-group user-mapping dropdown), the user-map payload extension on the lifecycle endpoint, and a synthetic-Connect surface that mimics the real WorkArea-create API for end-to-end demo runs."
+
+gaps:
+  - id: gap-name-match-and-confirm
+    type: CAPABILITY
+    claim_ref: name-match-and-confirm
+    detail: >-
+      Ward names vary in spelling and even in identity (Kadan Dani vs Kadandani; "Tofa" the
+      LGA vs "Tofa" the ward). A paste-the-list bulk-create flow without an explicit
+      resolution-and-confirm step would silently best-effort-match and create wrong plans
+      for typo'd names, and the lead would only see it later from anomalous KPIs. The
+      one-at-a-time setup form sidesteps this because the boundary picker is interactive,
+      but a paste-the-list flow needs the resolve+confirm step as its safety belt.
+    proposed_action: >-
+      Add a resolve-many endpoint on admin_boundaries that takes a list of name strings and
+      returns per-name {matched_id, matched_name, lga, population, unresolved_reason}.
+      Wire a front-end step into the bulk-create form that posts the list, renders the
+      resolved table (with explicit "unresolved" rows the lead must fix or skip), and only
+      enables the "Create Plans" action after the lead confirms.
+  - id: gap-bulk-input-ui
+    type: CAPABILITY
+    claim_ref: bulk-input-ui
+    detail: >-
+      Today's UI walks the lead through one ward at a time on the setup form, even though
+      ProgramCreatePlanView accepts a list of boundary IDs in one POST. For a 10-ward batch
+      the lead clicks setup → boundary picker → config → materialize ten times. AND when the
+      bulk endpoint does run, it's long-running enough (per-ward boundary + footprint +
+      work-area split) that the lead needs progress feedback or the form looks hung. The
+      bulk operation Wouter's email implies — "ten randomly selected wards" handed to each
+      LLO — stays cumbersome until paste-the-list + progress exists as a form.
+    proposed_action: >-
+      Add a bulk-create form on the program workspace that consumes the confirmed match-list
+      from name-match-and-confirm + the per-batch config (mode, strategy, per-area workload,
+      balance tolerance), POSTs all resolved IDs to ProgramCreatePlanView in one call, and
+      renders per-ward progress as the materializer runs (server-sent events or short
+      polling). Kime config applies to every plan in the batch; per-plan retunes happen
+      later on the comparison page.
+  - id: gap-llo-work-area-editing
+    type: CAPABILITY
+    claim_ref: llo-work-area-editing
+    detail: >-
+      Today's LLO surface lets her Accept/Exclude/Leave-in-review a whole plan but not edit
+      its work areas. Kim's session on this run demonstrated the need: she eliminated several
+      work areas on the far east of one ward (a school footprint, an unsafe stretch) while
+      keeping the rest — the existing all-or-nothing controls would have made her reject the
+      whole plan instead.
+    proposed_action: >-
+      Add an in-plan map UI that lets the LLO click a work area to eliminate it, with a
+      required reason (free-text plus chip suggestions like "school", "flooding",
+      "insecurity"). Write each elimination as an audit row tagged phase=planning with the
+      deleted area's geometry, the reason, the actor, and the timestamp. Recompute KPIs on
+      save so the lead sees the effect immediately.
+  - id: gap-llo-group-and-user-reassignment
+    type: CAPABILITY
+    claim_ref: llo-group-and-user-reassignment
+    detail: >-
+      Kim also moved three work areas between work-area groups within a plan, and reassigned
+      an entire work-area group from one user to another. The materializer computes initial
+      assignments by KPI optimization, but the LLO often has local knowledge — workload,
+      access, who is actually available — that the optimizer can't see. Without an in-plan UI
+      for these moves, the LLO has to push the plan back to the program team to re-run with
+      different inputs, which throws away her judgment.
+    proposed_action: >-
+      Add two in-plan affordances. (1) Drag-a-work-area-between-groups: pick a work area on
+      the map, choose a target group from a chip list, audit-row the move (work area id,
+      source group, target group, actor, timestamp). (2) Reassign-a-group-to-a-different-user:
+      pick a group, choose a user from a dropdown, audit-row the move (group id, old user,
+      new user, actor, timestamp). Recompute group-level KPIs after each move.
+  - id: gap-connect-side-workarea-transfer
+    type: CAPABILITY
+    claim_ref: deploy-to-opportunity
+    detail: >-
+      Project memory ([[project_microplans_planning_vs_execution]]) records it explicitly: labs
+      owns creation/planning, Connect owns execution, transfer deferred. The labs Deploy step
+      stamps opportunity_id locally but does NOT create live Connect WorkArea rows for the FLW
+      app. AND the LLO's labs-side per-group user assignments are abstract slots — they need
+      to be mapped to specific FLWs already invited to the Connect opportunity for the push
+      to be meaningful. Until that transfer + mapping UI ships, the RCT's Kano arm stops at
+      "Approved in labs" and the Connect-side handoff is manual.
+    proposed_action: >-
+      Two pieces. (1) Synthetic-Connect surface that mimics the real Connect WorkArea-create
+      and opportunity-FLW APIs so the demo can close the loop end-to-end without touching
+      prod — this is new synthetic functionality we haven't built before; treat the synthetic
+      shape as the spec for the real call. (2) Build the labs → (synthetic) Connect
+      WorkArea-create call (gated on lifecycle=Approved + matching opportunity_id +
+      complete user_map for every work-area-group), materialize each plan's work_areas as
+      live (synthetic) Connect WorkArea rows with assigned_user populated from user_map,
+      return the created IDs, stamp them back on the labs plan so future changes round-trip.
+      When the synthetic side is solid, the same call wired to real Connect APIs is a single
+      base-URL swap. The Connect-side surface change itself touches core commcare-connect, so
+      PR-only (per the autonomy boundary on core product code).
