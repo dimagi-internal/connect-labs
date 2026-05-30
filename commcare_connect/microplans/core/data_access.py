@@ -243,6 +243,11 @@ class ProgramPlanDataAccess(BaseDataAccess):
         plan_lib.transition_plan(data, to, actor, opportunity_id=opportunity_id)
         return self._save_plan(plan, data)
 
+    def delete_plan(self, plan_id: int) -> None:
+        """Hard-delete a plan record. Use sparingly — Archive (status transition) is
+        the safer default for normal lifecycle. This is for wiping sample data."""
+        self.labs_api.delete_record(int(plan_id))
+
     # ---- plan groups (shareable subset offered to an LLO) ----
 
     def create_group(self, name: str, plan_ids: list[int], offered_to: str = "") -> RooftopPlanGroupRecord:
@@ -292,3 +297,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
             current_record=group,
         )
         return RooftopPlanGroupRecord(record.to_api_dict())
+
+    def delete_group(self, group_id: int) -> None:
+        """Hard-delete a plan group record. Use sparingly."""
+        self.labs_api.delete_record(int(group_id))
