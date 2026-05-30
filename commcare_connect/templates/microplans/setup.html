@@ -689,7 +689,7 @@
       const region = ($("inp-plan-region").value || "").trim();
       if (!region && !name) { $("save-status").textContent = "Give the plan a name or region first."; return; }
       $("save-status").textContent = "Creating plan…";
-      const body = { region, name, mode: lastPreview.mode };
+      const body = { region, name, mode: lastPreview.mode, input_areas: lastPreview.areas || [] };
       if (lastPreview.mode === "coverage") body.coverage_areas = lastPreview.coverage_areas;
       else body.pins = lastPreview.pins;
       try {
