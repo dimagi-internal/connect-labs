@@ -152,7 +152,7 @@
   </aside>
 
   <!-- Center: map + metrics + table -->
-  <div class="flex-1 flex flex-col min-w-0">
+  <div class="flex-1 flex flex-col min-w-0 min-h-0">
     <div class="map-pane" id="map-pane" style="height: 50vh">
       <div id="review-map"></div>
       <!-- Map overlays: footprints toggle (top-left) + legend (bottom-left) -->
@@ -187,7 +187,7 @@
       </div>
     </section>
 
-    <div class="flex-1 overflow-auto border-t border-gray-200">
+    <div class="flex-1 overflow-auto border-t border-gray-200 min-h-0">
       <table class="min-w-full text-sm">
         <thead class="bg-gray-50 sticky top-0">
           <tr class="text-left text-gray-500">
@@ -575,6 +575,9 @@
         // Count distinct groups from the new work_areas response.
         const groups = new Set((data.work_areas || []).map((w) => w.work_area_group));
         $("status").textContent = `Re-grouped into ${groups.size} groups in ${dt}s.`;
+        // Switch the map color dimension to Group so the new layout is
+        // immediately visible. setColorDim also re-renders sidebar + table.
+        setColorDim("group");
         render(data);
       }
     } catch (e) {
@@ -608,6 +611,8 @@
         const dt = ((performance.now() - t0) / 1000).toFixed(1);
         const assigned = new Set((data.work_areas || []).map((w) => w.opportunity_access).filter(Boolean));
         $("status").textContent = `Assigned to ${assigned.size} CHWs in ${dt}s.`;
+        // Switch the map color dimension to Worker so the new assignment is visible.
+        setColorDim("worker");
         render(data);
       }
     } catch (e) {
