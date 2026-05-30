@@ -1033,6 +1033,31 @@ def _plan_lookup_area(plan):
     return unary_union(geoms) if geoms else None
 
 
+class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
+    """Force a refresh of the footprint cache for this plan's area.
+
+    Used to upgrade plans cached in the centroid-only era (pre-`geom_json`) to
+    the new polygon-aware cache: deletes the matching `FootprintArea` row so the
+    next footprints toggle re-fetches from Overture and stores polygons too.
+    """
+
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.footprints import _area_cache_key
+        from commcare_connect.microplans.models import FootprintArea
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.get_plan(int(plan_id))
+        except Exception:  # noqa: BLE001
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+        area = _plan_lookup_area(plan)
+        if area is None:
+            return JsonResponse({"status": "ok", "deleted": 0})
+        deleted, _ = FootprintArea.objects.filter(area_hash=_area_cache_key(area.wkt)).delete()
+        return JsonResponse({"status": "ok", "deleted": deleted})
+
+
 class ProgramPlanCSVView(LoginRequiredMixin, View):
     def post(self, request, program_id, plan_id):
         from commcare_connect.microplans.core import plan as plan_lib
