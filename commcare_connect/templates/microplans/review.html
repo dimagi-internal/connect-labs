@@ -188,6 +188,29 @@
       properties: { id: w.id, status: w.status, group: w.work_area_group || "",
                     worker: w.opportunity_access || "", fill: colorFor(keyOf(w)) } })) };
   }
+  // ---- hover tooltip on cells (cell ID, worker, group, counts, status) ----
+  let hoverPopup = null;
+  function ensurePopup() {
+    if (!hoverPopup) hoverPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+    return hoverPopup;
+  }
+  function cellTooltipHTML(props, w) {
+    const worker = props.worker ? esc(props.worker) : "<i style='color:#9ca3af'>unassigned</i>";
+    const group = props.group ? esc(props.group) : "<i style='color:#9ca3af'>—</i>";
+    const status = (props.status || "active").toLowerCase();
+    const excluded = w && w.status === "EXCLUDED";
+    const reason = excluded && w.excluded_reason ? `<div style="color:#dc2626;margin-top:2px">${esc(w.excluded_reason)}</div>` : "";
+    return `<div style="font-size:11px;line-height:1.4;min-width:140px">
+      <div style="font-weight:600;font-family:monospace">${esc(props.id)}</div>
+      <div><span style="color:#6b7280">worker</span> · ${worker}</div>
+      <div><span style="color:#6b7280">group</span> · ${group}</div>
+      <div><span style="color:#6b7280">buildings</span> · ${(w ? w.building_count : 0) || 0}</div>
+      <div><span style="color:#6b7280">visits</span> · ${(w ? w.expected_visit_count : 0) || 0}</div>
+      <div><span style="color:#6b7280">status</span> · ${esc(status)}</div>
+      ${reason}
+    </div>`;
+  }
+
   function refreshMap() {
     if (!map || !mapReady) return;
     const data = fc();
@@ -200,6 +223,13 @@
       map.addLayer({ id: "wa-line", type: "line", source: "wa",
                      paint: { "line-color": "#0f172a", "line-width": 0.5, "line-opacity": 0.4 } });
       map.on("click", "wa-fill", (e) => { const id = e.features[0].properties.id; toggleSelect(id); });
+      map.on("mouseenter", "wa-fill", () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "wa-fill", () => { map.getCanvas().style.cursor = ""; ensurePopup().remove(); });
+      map.on("mousemove", "wa-fill", (e) => {
+        const f = e.features[0]; if (!f) return;
+        const wa = WAS.find((x) => x.id === f.properties.id);
+        ensurePopup().setLngLat(e.lngLat).setHTML(cellTooltipHTML(f.properties, wa)).addTo(map);
+      });
     }
     const b = new mapboxgl.LngLatBounds();
     data.features.forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
