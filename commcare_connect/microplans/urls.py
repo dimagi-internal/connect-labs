@@ -9,6 +9,17 @@ urlpatterns = [
     path("<int:opp_id>/preview_frame/", views.PreviewFrameView.as_view(), name="preview_frame"),
     path("<int:opp_id>/preview_coverage/", views.PreviewCoverageView.as_view(), name="preview_coverage"),
     path("<int:opp_id>/preview_footprints/", views.PreviewFootprintsView.as_view(), name="preview_footprints"),
+    path(
+        "<int:opp_id>/preview_service_delivery/",
+        views.PreviewServiceDeliveryView.as_view(),
+        name="preview_service_delivery",
+    ),
+    path(
+        "<int:opp_id>/service_delivery_pipelines/",
+        views.ServiceDeliveryPipelinesView.as_view(),
+        name="service_delivery_pipelines",
+    ),
+    path("<int:opp_id>/derive_boundary/", views.DeriveBoundaryView.as_view(), name="derive_boundary"),
     path("<int:opp_id>/save_frame/", views.SaveFrameView.as_view(), name="save_frame"),
     path("<int:opp_id>/work_areas.csv", views.DownloadWorkAreaCSVView.as_view(), name="work_areas_csv"),
     path("<int:opp_id>/boundaries/areas/", views.AdminAreasView.as_view(), name="admin_areas"),
