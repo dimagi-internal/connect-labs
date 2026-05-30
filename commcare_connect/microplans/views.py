@@ -708,12 +708,25 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
             input_areas = payload.get("input_areas") or []
             if not isinstance(input_areas, list):
                 input_areas = []
+            # Optional: Phase-1 grouping strategy + params. Defaults to BFS
+            # adjacency (Connect-GIS parity).
+            grouping = payload.get("grouping") or {}
+            if not isinstance(grouping, dict):
+                grouping = {}
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plan = da.create_plan(region=region, name=name, mode=mode, pins=pins, hulls=hulls, input_areas=input_areas)
+            plan = da.create_plan(
+                region=region,
+                name=name,
+                mode=mode,
+                pins=pins,
+                hulls=hulls,
+                input_areas=input_areas,
+                grouping=grouping,
+            )
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
@@ -900,6 +913,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["edit_url"] = reverse("microplans:program_plan_edit", args=[program_id, plan_id])
         context["csv_url"] = reverse("microplans:program_plan_csv", args=[program_id, plan_id])
         context["footprints_url"] = reverse("microplans:program_plan_footprints", args=[program_id, plan_id])
+        context["regroup_url"] = reverse("microplans:program_plan_regroup", args=[program_id, plan_id])
         context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + f"?plans={plan_id}"
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
@@ -1031,6 +1045,34 @@ def _plan_lookup_area(plan):
         except Exception:  # noqa: BLE001
             continue
     return unary_union(geoms) if geoms else None
+
+
+class ProgramPlanRegroupView(LoginRequiredMixin, View):
+    """Phase-1 op: re-apply the grouping strategy to a plan's cells.
+
+    Body: ``{"strategy": "bbox" | "bfs_adjacency", "max_buildings": int,
+    "buffer_distance_m": int, "target_size": int}``. All params optional; see
+    `core.grouping.GroupingConfig` for defaults.
+    """
+
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            payload = json.loads(request.body or "{}")
+            grouping = payload if isinstance(payload, dict) else {}
+        except json.JSONDecodeError as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.regroup_plan(int(plan_id), grouping, request.user.get_username())
+        except ValueError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans regroup failed (program=%s plan=%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Regroup failed."}, status=502)
+        return JsonResponse(_plan_json(plan))
 
 
 class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
