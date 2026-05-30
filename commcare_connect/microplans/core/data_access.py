@@ -208,6 +208,31 @@ class ProgramPlanDataAccess(BaseDataAccess):
         )
         return RooftopPlanRecord(record.to_api_dict())
 
+    def reassign_plan(self, plan_id: int, assignment: dict, actor: str) -> RooftopPlanRecord:
+        """Re-apply CHW assignment to a plan's groups.
+
+        Phase 2 of the two-phase pipeline. Snapshots each cell's old worker,
+        runs the strategy, restores so ``apply_action("reassign", ...)`` can
+        emit a real audit per cell.
+        """
+        from commcare_connect.microplans.core import assignment as assignment_lib
+
+        plan = self.get_plan(plan_id)
+        data = dict(plan.data)
+        work_areas = [dict(w) for w in data.get("work_areas", [])]
+        cfg = assignment_lib.AssignmentConfig.from_payload(assignment)
+        active = [w for w in work_areas if w.get("status") != plan_lib.STATUS_EXCLUDED]
+        old_workers = {w["id"]: w.get("opportunity_access") for w in active}
+        assignment_lib.assign_groups_to_chws(active, cfg)
+        new_workers = {w["id"]: w.get("opportunity_access") for w in active}
+        for w in active:
+            if old_workers[w["id"]] != new_workers[w["id"]]:
+                w["opportunity_access"] = old_workers[w["id"]]
+                plan_lib.apply_action(w, "reassign", {"opportunity_access": new_workers[w["id"]]}, actor)
+        data["work_areas"] = work_areas
+        data["assignment"] = assignment
+        return self._save_plan(plan, data)
+
     def regroup_plan(self, plan_id: int, grouping: dict, actor: str) -> RooftopPlanRecord:
         """Re-apply grouping (cells → work_area_group) to an existing plan.
 
