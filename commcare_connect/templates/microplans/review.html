@@ -728,7 +728,11 @@
     setStatus("Fetching footprints…");
     const t0 = performance.now();
     try {
-      const data = await (await fetch(FOOTPRINTS_URL)).json();
+      // Revision cache-buster: footprints are HTTP-cached (max-age=600), but a
+      // regenerate changes the plan's area under the same URL — keying the fetch
+      // on planRevision keeps cache hits within a revision yet busts on change.
+      const fpUrl = FOOTPRINTS_URL + (FOOTPRINTS_URL.includes("?") ? "&" : "?") + "rev=" + (planRevision == null ? "" : planRevision);
+      const data = await (await fetch(fpUrl)).json();
       if (data.status !== "ok") throw new Error(data.detail || "footprints failed");
       const src = map.getSource("plan-fp");
       if (src) { src.setData(data.footprints); }
@@ -858,9 +862,10 @@
     refreshMap(); setSelState();
   }
   function chip(label, value, hint) {
-    return `<div class="px-2 py-1 rounded bg-gray-50 border" title="${hint || ""}">
-      <div class="text-[10px] uppercase tracking-wide text-gray-400">${label}</div>
-      <div class="font-semibold text-gray-800">${value}</div></div>`;
+    // value/hint may carry plan/territory data — escape before innerHTML.
+    return `<div class="px-2 py-1 rounded bg-gray-50 border" title="${esc(hint || "")}">
+      <div class="text-[10px] uppercase tracking-wide text-gray-400">${esc(label)}</div>
+      <div class="font-semibold text-gray-800">${esc(value)}</div></div>`;
   }
   function renderKpis(k) {
     const p = k.plan || {};
@@ -1459,6 +1464,10 @@
         if (draw) draw.deleteAll();
         circleAreas = []; refreshAreaStats();
         prefillSetupForm(data); render(data);
+        // Work areas changed — the building overlay (if shown) is now stale and
+        // would misalign. render() already restamped planRevision, so re-fetching
+        // gets the new layout's footprints (and misses the old HTTP cache entry).
+        if (footprintsLoaded) loadFootprints();
       } else {
         // New plan: name + region from the inputs (fall back to picked area's
         // label or a sensible default). The server requires at least one of

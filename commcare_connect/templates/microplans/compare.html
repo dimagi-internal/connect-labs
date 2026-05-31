@@ -42,18 +42,20 @@
   const fmtKm = (v) => (v == null ? "—" : v + " km");
   const fmtPct = (v) => (v == null ? "—" : v + " %");
   const fmtNum = (v) => (v == null ? "—" : Number(v).toLocaleString());
-  const balVal = (e) => { const p = e.kpis.plan; return p.has_population ? p.pop_imbalance_pct : p.building_imbalance_pct; };
-  const stdVal = (e) => { const p = e.kpis.plan; return p.has_population ? p.pop_std : p.building_std; };
+  // Accessors are null-safe: a plan whose KPIs failed to load (or an unassigned
+  // plan) must degrade to "—" in its column, not throw and blank the whole table.
+  const balVal = (e) => { const p = e.kpis?.plan; return p?.has_population ? p.pop_imbalance_pct : p?.building_imbalance_pct; };
+  const stdVal = (e) => { const p = e.kpis?.plan; return p?.has_population ? p.pop_std : p?.building_std; };
   const ROWS = [
-    { label: "Worst travel (max spread)", get: (e) => e.kpis.plan.max_spread_km, fmt: fmtKm, better: "lower" },
-    { label: "Mean travel", get: (e) => e.kpis.plan.mean_spread_km, fmt: fmtKm, better: "lower" },
-    { label: "Travel std", get: (e) => e.kpis.plan.std_spread_km, fmt: fmtKm, better: "lower" },
+    { label: "Worst travel (max spread)", get: (e) => e.kpis?.plan?.max_spread_km, fmt: fmtKm, better: "lower" },
+    { label: "Mean travel", get: (e) => e.kpis?.plan?.mean_spread_km, fmt: fmtKm, better: "lower" },
+    { label: "Travel std", get: (e) => e.kpis?.plan?.std_spread_km, fmt: fmtKm, better: "lower" },
     { label: "Workload imbalance", get: balVal, fmt: fmtPct, better: "lower" },
     { label: "Workload std", get: stdVal, fmt: fmtNum, better: "lower" },
-    { label: "Coverage", get: (e) => e.kpis.coverage_pct, fmt: fmtPct, better: "higher" },
-    { label: "Excluded areas", get: (e) => e.kpis.excluded.count, fmt: fmtNum, better: "lower" },
-    { label: "Excluded buildings", get: (e) => e.kpis.excluded.buildings, fmt: fmtNum, better: "lower" },
-    { label: e_dim_label(), get: (e) => e.kpis.plan.territory_count, fmt: fmtNum, better: null },
+    { label: "Coverage", get: (e) => e.kpis?.coverage_pct, fmt: fmtPct, better: "higher" },
+    { label: "Excluded areas", get: (e) => e.kpis?.excluded?.count, fmt: fmtNum, better: "lower" },
+    { label: "Excluded buildings", get: (e) => e.kpis?.excluded?.buildings, fmt: fmtNum, better: "lower" },
+    { label: e_dim_label(), get: (e) => e.kpis?.plan?.territory_count, fmt: fmtNum, better: null },
   ];
   function e_dim_label() { return "Territories"; }
 
