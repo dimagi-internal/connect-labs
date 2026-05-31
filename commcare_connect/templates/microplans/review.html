@@ -354,6 +354,7 @@
 {{ block.super }}
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+<script src="{% static 'microplans/shared.js' %}"></script>
 <script>
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
@@ -377,7 +378,8 @@
   const compareLink = document.getElementById("compare-link");
   if (compareLink) compareLink.href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
-  const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
+  Microplans.setCsrf(CSRF);
+  const post = (url, body, opts) => Microplans.post(url, body, Object.assign({ csrf: CSRF }, opts || {}));
   // The new-plan page shares this template with the per-plan review page;
   // many widgets (table, KPIs, dim sidebar) aren't rendered until a plan
   // exists. `on(id, evt, fn)` no-ops when the element is missing so all the
@@ -385,7 +387,7 @@
   function on(id, evt, fn) { const el = $(id); if (el) el.addEventListener(evt, fn); }
   // Escape user-controlled values before innerHTML interpolation (group, worker,
   // reason are LLO-typed and could carry HTML).
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const esc = Microplans.esc;
 
   let WAS = [];                 // current work areas (raw plan rows)
   const selected = new Set();   // selected wa ids
@@ -396,13 +398,7 @@
   // ---- color per assignment key (CHW name or group) -----------------------
   // Golden-angle HSL hash → adjacent territories visually distinct without a
   // palette lookup. Connect-gis uses the same trick on group_id.
-  function colorFor(key) {
-    if (!key) return "#cbd5e1";  // unassigned = neutral
-    let h = 0;
-    for (let i = 0; i < key.length; i++) h = ((h * 31) + key.charCodeAt(i)) | 0;
-    const hue = (Math.abs(h) * 137.508) % 360;
-    return `hsl(${Math.round(hue)}, 65%, 55%)`;
-  }
+  const colorFor = Microplans.colorFor;
   // The aggregation key: depends on which dimension the user is coloring by.
   function keyOf(w) { return (w[DIM_FIELD[colorDim]] || "").trim(); }
 
@@ -501,9 +497,7 @@
         ensurePopup().setLngLat(e.lngLat).setHTML(cellTooltipHTML(f.properties, wa)).addTo(map);
       });
     }
-    const b = new mapboxgl.LngLatBounds();
-    data.features.forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
-    if (!b.isEmpty()) map.fitBounds(b, { padding: 40, maxZoom: 16, animate: false });
+    Microplans.fitTo(map, data, { maxZoom: 16, animate: false, duration: 0 });
   }
   function setSelState() {
     if (!map || !mapReady) return;
@@ -1108,10 +1102,7 @@
       const data = await (await post(ADMIN_AREA_GEOMETRY_URL, { area: a })).json();
       if (data.status !== "ok") { $("area-source").textContent = data.detail || "geometry failed"; return; }
       if (draw) draw.add({ type: "Feature", geometry: data.geometry, properties: {} });
-      const b = new mapboxgl.LngLatBounds();
-      const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c);
-      walk(data.geometry.coordinates);
-      if (!b.isEmpty()) map.fitBounds(b, { padding: 40, maxZoom: 15 });
+      Microplans.fitTo(map, data.geometry, { maxZoom: 15 });
       $("area-source").textContent = `Added "${a.name}".`;
       refreshAreaStats();
     } catch (e) { $("area-source").textContent = "Request failed: " + e; }

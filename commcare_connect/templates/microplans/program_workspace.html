@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Program microplans{% endblock %}
 
 {% block content %}
@@ -33,6 +34,7 @@
 
 {% block inline_javascript %}
 {{ block.super }}
+<script src="{% static 'microplans/shared.js' %}"></script>
 <script>
 (function () {
   const PROGRAM = "{{ program_id|escapejs }}";
@@ -46,8 +48,9 @@
   const groupUpdateUrl = (gid) => base + "group/" + gid + "/";
   const compareUrl = () => base + "compare/?plans=" + [...selected].join(",");
   const $ = (id) => document.getElementById(id);
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body || {}) });
+  Microplans.setCsrf(CSRF);
+  const esc = Microplans.esc;
+  const post = (url, body, opts) => Microplans.post(url, body, Object.assign({ csrf: CSRF }, opts || {}));
 
   const PHASES = [
     { key: "planning", label: "Planning", statuses: ["draft", "in_review", "approved"], hint: "labs — being designed & reviewed with the LLO/funder" },
@@ -63,7 +66,7 @@
   const selected = new Set();
   let DATA = { plans: [], groups: [], transitions: {}, status_labels: {} };
 
-  function chip(label, val) { return `<span class="text-xs px-1.5 py-0.5 rounded bg-gray-50 border text-gray-600">${label} <b>${val}</b></span>`; }
+  const chip = Microplans.chip;
 
   function transitionBtn(p, to) {
     let label, cls;
