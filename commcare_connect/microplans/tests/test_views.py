@@ -971,3 +971,15 @@ def test_arm_comparability_not_matched_when_counts_diverge(client, django_user_m
     body = resp.json()
     assert body["matched"] is False
     assert body["reasons"]
+
+
+def test_boundary_viewport_bbox_snaps_to_grid():
+    """Viewport bbox snaps outward to the SNAP_DEG grid so pans reuse one cache key
+    (and the snapped bbox drives the query too, keeping results correct)."""
+    from commcare_connect.microplans.views import BoundaryViewportView
+
+    poly = BoundaryViewportView._parse_bbox("8.41,11.93,8.46,11.97")
+    assert tuple(round(x, 4) for x in poly.extent) == (8.40, 11.90, 8.50, 12.00)
+    # already-on-grid stays put; degenerate/invalid → None
+    assert BoundaryViewportView._parse_bbox("8.5,11.5,8.5,11.6") is None  # minx == maxx
+    assert BoundaryViewportView._parse_bbox("nope") is None
