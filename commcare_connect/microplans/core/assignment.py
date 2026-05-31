@@ -148,6 +148,7 @@ _EARTH_KM = 6371.0088
 def _haversine(p: tuple, q: tuple) -> float:
     lon1, lat1, lon2, lat2 = map(math.radians, [p[0], p[1], q[0], q[1]])
     a = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    a = min(1.0, max(0.0, a))  # guard float error so asin(sqrt) can't domain-error
     return 2 * _EARTH_KM * math.asin(math.sqrt(a))
 
 

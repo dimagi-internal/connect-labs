@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Compare microplans{% endblock %}
 
 {% block content %}
@@ -26,12 +27,13 @@
 
 {% block inline_javascript %}
 {{ block.super }}
+<script src="{% static 'microplans/shared.js' %}"></script>
 <script>
 (function () {
   const LIST_URL = "{{ list_url|escapejs }}";
   const COMPARE_URL = "{{ compare_url|escapejs }}";
   const $ = (id) => document.getElementById(id);
-  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const esc = Microplans.esc;
 
   const params = new URLSearchParams(window.location.search);
   const selected = new Set((params.get("plans") || "").split(",").filter(Boolean));

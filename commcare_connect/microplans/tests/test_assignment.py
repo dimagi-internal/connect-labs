@@ -136,3 +136,38 @@ class TestHaversine:
         lon = (-0.128, 51.508)
         d = _haversine(ny, lon)
         assert 5500 < d < 5650
+
+    def test_identical_centroids_no_domain_error(self):
+        # Fix B: two identical (or near-identical) centroids must not raise
+        # "math domain error" from asin.  Before the clamp this triggered when
+        # floating-point rounding pushed sin^2 + cos*cos*sin^2 slightly above 1.
+        p = (3.123456789, 6.987654321)
+        q = (3.123456789, 6.987654321)  # exact duplicate → a can exceed 1.0
+        d = _haversine(p, q)
+        assert d == pytest.approx(0.0, abs=1e-9)
+
+    def test_near_identical_centroids_no_domain_error(self):
+        # ~1e-9 degree apart — still triggers the FP edge case without the clamp.
+        p = (3.0, 6.0)
+        q = (3.0 + 1e-9, 6.0 + 1e-9)
+        d = _haversine(p, q)
+        assert d >= 0.0
+
+
+class TestIdenticalCentroidAssignment:
+    """Fix B integration: assign_groups_to_chws with identical centroids must not
+    raise ValueError: math domain error."""
+
+    def test_assign_groups_identical_centroids_no_crash(self):
+        # Two work areas in different groups but at exactly the same lat/lon.
+        # The minimax_spread path calls _diameter → _haversine on these, which
+        # (before the clamp) could blow up with a math domain error.
+        same_lon, same_lat = 3.123456789, 6.987654321
+        cells = [
+            _cell("g1-c0", "group-1", same_lon, same_lat, buildings=10),
+            _cell("g2-c0", "group-2", same_lon, same_lat, buildings=10),
+        ]
+        cfg = AssignmentConfig(strategy="minimax_spread", workers=["alice", "bob"], restarts=5)
+        # Must complete without raising
+        result = assign_groups_to_chws(cells, cfg)
+        assert all(c["opportunity_access"] in ("alice", "bob") for c in result)

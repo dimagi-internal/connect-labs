@@ -42,11 +42,7 @@
   ];
   const colorFor = (i) => OPP_COLORS[i % OPP_COLORS.length];
 
-  const esc = (s) =>
-    String(s == null ? '' : s).replace(
-      /[&<>"]/g,
-      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
-    );
+  const esc = Microplans.esc;
 
   function el(tag, attrs, html) {
     const e = document.createElement(tag);
@@ -65,12 +61,8 @@
       opts.currentOppId != null ? Number(opts.currentOppId) : null;
     const onBoundary = opts.onBoundary || function () {};
 
-    const post = (url, body) =>
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-        body: JSON.stringify(body),
-      });
+    const post = (url, body, o) =>
+      Microplans.post(url, body, Object.assign({ csrf }, o || {}));
 
     let loadedFeatures = []; // last-rendered point features (source of derive coords)
     let pipelinesLoaded = false;
@@ -304,12 +296,8 @@
       });
     }
 
-    function fitTo(features) {
-      if (!features.length) return;
-      const b = new mapboxgl.LngLatBounds();
-      features.forEach((f) => b.extend(f.geometry.coordinates));
-      if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 15 });
-    }
+    const fitTo = (features) =>
+      Microplans.fitTo(map, features, { padding: 60, maxZoom: 15 });
 
     function renderLegend(layers) {
       q('.sd-legend').innerHTML = layers
