@@ -40,6 +40,21 @@
   .legend-row { display: flex; align-items: center; gap: 0.4rem; }
   .legend-row .sw { width: 0.8rem; height: 0.5rem; border-radius: 0.15rem; flex-shrink: 0; }
   .legend-row .lbl { color: #4b5563; }
+
+  /* Sortable column headers — click to sort, click again to flip direction */
+  .wa-th { cursor: pointer; user-select: none; transition: background-color .12s; }
+  .wa-th:hover { background: #e5e7eb; }
+  .wa-th.is-sorted { color: #111827; font-weight: 600; }
+  .sort-ind { color: #6b7280; font-size: 0.7rem; margin-left: 0.15rem; opacity: 0; }
+  .wa-th.is-sorted .sort-ind { opacity: 1; }
+
+  /* Group header rows: chevron + summary row that toggles its child work areas */
+  .wa-group-hdr td { background: #f8fafc; font-weight: 500; color: #111827; padding: 0.4rem 0.5rem; border-top: 1px solid #e5e7eb; cursor: pointer; user-select: none; }
+  .wa-group-hdr:hover td { background: #eef2f6; }
+  .wa-group-hdr .chev { display: inline-block; width: 0.8rem; color: #6b7280; }
+  .wa-group-hdr.is-collapsed .chev { color: #9ca3af; }
+  .wa-group-hdr .gn { font-family: ui-monospace, monospace; color: #3843d0; margin-right: 0.5rem; }
+  .wa-group-hdr .meta { color: #6b7280; font-weight: 400; font-size: 0.75rem; }
 </style>
 {% endblock %}
 
@@ -196,8 +211,13 @@
         <thead class="bg-gray-50 sticky top-0">
           <tr class="text-left text-gray-500">
             <th class="p-2"><input type="checkbox" id="sel-all"></th>
-            <th class="p-2">Work area</th><th class="p-2">Group</th><th class="p-2">Worker</th>
-            <th class="p-2">Buildings</th><th class="p-2">Expected visits</th><th class="p-2">Status</th><th class="p-2"></th>
+            <th class="p-2 wa-th" data-sort="id">Work area <span class="sort-ind"></span></th>
+            <th class="p-2 wa-th" data-sort="work_area_group">Group <span class="sort-ind"></span></th>
+            <th class="p-2 wa-th" data-sort="opportunity_access">Worker <span class="sort-ind"></span></th>
+            <th class="p-2 wa-th" data-sort="building_count">Buildings <span class="sort-ind"></span></th>
+            <th class="p-2 wa-th" data-sort="expected_visit_count">Expected visits <span class="sort-ind"></span></th>
+            <th class="p-2 wa-th" data-sort="status">Status <span class="sort-ind"></span></th>
+            <th class="p-2"></th>
           </tr>
         </thead>
         <tbody id="wa-body"></tbody>
@@ -469,37 +489,115 @@
     }
     $("dim-clear").classList.toggle("hidden", activeDim === null);
   }
+  // ---- sort + collapse state for the work-area table ----
+  let sortKey = "work_area_group";  // start grouped by group name
+  let sortDir = 1;                  // 1 = asc, -1 = desc
+  const collapsedGroups = new Set();
+  const SORT_GETTERS = {
+    id: (w) => String(w.id || ""),
+    work_area_group: (w) => String(w.work_area_group || ""),
+    opportunity_access: (w) => String(w.opportunity_access || ""),
+    building_count: (w) => Number(w.building_count || 0),
+    expected_visit_count: (w) => Number(w.expected_visit_count || 0),
+    status: (w) => String(w.status || ""),
+  };
+
+  function _cellRow(w) {
+    const excluded = w.status === "EXCLUDED";
+    const id = esc(w.id);
+    const field = DIM_FIELD[colorDim];
+    const isHl = activeDim !== null && (w[field] || "") === activeDim;
+    const tr = document.createElement("tr");
+    tr.className = "wa-row border-b "
+      + (excluded ? "excluded " : "")
+      + (selected.has(w.id) ? "sel " : "")
+      + (isHl ? "hl-worker " : "");
+    tr.innerHTML = `
+      <td class="p-2"><input type="checkbox" class="rowsel" data-id="${id}" ${selected.has(w.id) ? "checked" : ""}></td>
+      <td class="p-2 font-mono text-xs">${id}</td>
+      <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="regroup" data-field="work_area_group" data-id="${id}" value="${esc(w.work_area_group || "")}"></td>
+      <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${id}" value="${esc(w.opportunity_access || "")}"></td>
+      <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
+      <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${id}" value="${w.expected_visit_count ?? 0}"></td>
+      <td class="p-2 text-xs">${excluded ? `<span title="${esc(w.excluded_reason || "")}">EXCLUDED</span>` : esc(w.status || "")}</td>
+      <td class="p-2">${excluded
+        ? `<button class="text-xs text-brand-cornflower-blue" data-restore="${id}">restore</button>`
+        : `<button class="text-xs text-red-600" data-exclude="${id}">exclude</button>`}</td>`;
+    return tr;
+  }
+
+  function _groupHeaderRow(name, items) {
+    const buildings = items.reduce((s, w) => s + (w.building_count || 0), 0);
+    const visits = items.reduce((s, w) => s + (w.expected_visit_count || 0), 0);
+    const workers = Array.from(new Set(items.map((w) => w.opportunity_access).filter(Boolean)));
+    const workerTxt = workers.length === 0 ? "—" : workers.length === 1 ? esc(workers[0]) : `${workers.length} workers`;
+    const collapsed = collapsedGroups.has(name);
+    const tr = document.createElement("tr");
+    tr.className = "wa-group-hdr" + (collapsed ? " is-collapsed" : "");
+    tr.dataset.groupToggle = name;
+    tr.innerHTML = `<td colspan="8">
+      <span class="chev">${collapsed ? "▶" : "▼"}</span>
+      <span class="gn">${esc(name)}</span>
+      <span class="meta">${items.length} work areas · ${buildings.toLocaleString()} buildings · ${visits.toLocaleString()} visits · ${workerTxt}</span>
+    </td>`;
+    return tr;
+  }
+
   function renderTable() {
     const body = $("wa-body");
     body.innerHTML = "";
     const field = DIM_FIELD[colorDim];
-    WAS.forEach((w) => {
-      const tr = document.createElement("tr");
-      const isHl = activeDim !== null && (w[field] || "") === activeDim;
-      tr.className = "wa-row border-b "
-        + (w.status === "EXCLUDED" ? "excluded " : "")
-        + (selected.has(w.id) ? "sel " : "")
-        + (isHl ? "hl-worker " : "");
-      // Hide rows that don't match the active filter (lighter than dimming).
-      if (activeDim !== null && (w[field] || "") !== activeDim) {
-        tr.style.display = "none";
-      }
-      const excluded = w.status === "EXCLUDED";
-      const id = esc(w.id);
-      tr.innerHTML = `
-        <td class="p-2"><input type="checkbox" class="rowsel" data-id="${id}" ${selected.has(w.id) ? "checked" : ""}></td>
-        <td class="p-2 font-mono text-xs">${id}</td>
-        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="regroup" data-field="work_area_group" data-id="${id}" value="${esc(w.work_area_group || "")}"></td>
-        <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${id}" value="${esc(w.opportunity_access || "")}"></td>
-        <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
-        <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${id}" value="${w.expected_visit_count ?? 0}"></td>
-        <td class="p-2 text-xs">${excluded ? `<span title="${esc(w.excluded_reason || "")}">EXCLUDED</span>` : esc(w.status || "")}</td>
-        <td class="p-2">${excluded
-          ? `<button class="text-xs text-brand-cornflower-blue" data-restore="${id}">restore</button>`
-          : `<button class="text-xs text-red-600" data-exclude="${id}">exclude</button>`}</td>`;
-      body.appendChild(tr);
+    let rows = WAS.slice();
+    if (activeDim !== null) rows = rows.filter((w) => (w[field] || "") === activeDim);
+    // Sort rows by the active column.
+    const getter = SORT_GETTERS[sortKey] || SORT_GETTERS.id;
+    rows.sort((a, b) => {
+      const va = getter(a), vb = getter(b);
+      if (va < vb) return -1 * sortDir;
+      if (va > vb) return  1 * sortDir;
+      return 0;
+    });
+    // Bucket into groups preserving the sorted within-group order.
+    const groups = new Map();
+    rows.forEach((w) => {
+      const g = w.work_area_group || "(no group)";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(w);
+    });
+    // Group header ordering follows the Group column sort direction; otherwise
+    // alphabetical so the layout is stable across other sorts.
+    const dir = (sortKey === "work_area_group") ? sortDir : 1;
+    const groupOrder = Array.from(groups.keys()).sort((a, b) => (a < b ? -dir : a > b ? dir : 0));
+    groupOrder.forEach((name) => {
+      const items = groups.get(name);
+      body.appendChild(_groupHeaderRow(name, items));
+      if (collapsedGroups.has(name)) return;
+      items.forEach((w) => body.appendChild(_cellRow(w)));
+    });
+    // Sort indicators on the table head.
+    document.querySelectorAll(".wa-th").forEach((th) => {
+      const active = th.dataset.sort === sortKey;
+      th.classList.toggle("is-sorted", active);
+      const ind = th.querySelector(".sort-ind");
+      if (ind) ind.textContent = active ? (sortDir === 1 ? "↑" : "↓") : "";
     });
     $("sel-count").textContent = `${selected.size} selected`;
+  }
+
+  // ---- column sort: click toggles asc/desc, clicking a new column starts asc.
+  document.querySelectorAll(".wa-th").forEach((th) => {
+    th.addEventListener("click", () => {
+      const k = th.dataset.sort;
+      if (sortKey === k) sortDir = -sortDir;
+      else { sortKey = k; sortDir = 1; }
+      renderTable();
+    });
+  });
+
+  function toggleGroupCollapse(name) {
+    if (collapsedGroups.has(name)) collapsedGroups.delete(name);
+    else collapsedGroups.add(name);
+    renderTable();
   }
 
   // ---- dimension filter (worker | group) ----
@@ -556,9 +654,11 @@
   // table interactions (delegated)
   $("wa-body").addEventListener("click", (e) => {
     const ex = e.target.closest("[data-exclude]"); const rs = e.target.closest("[data-restore]");
-    if (ex) { const reason = prompt("Reason for excluding this work area?"); if (reason !== null) edit({ action: "exclude", wa_id: ex.dataset.exclude, reason }); }
-    else if (rs) { edit({ action: "unexclude", wa_id: rs.dataset.restore }); }
-    const cb = e.target.closest(".rowsel"); if (cb) { toggleSelect(cb.dataset.id); }
+    if (ex) { const reason = prompt("Reason for excluding this work area?"); if (reason !== null) edit({ action: "exclude", wa_id: ex.dataset.exclude, reason }); return; }
+    if (rs) { edit({ action: "unexclude", wa_id: rs.dataset.restore }); return; }
+    const cb = e.target.closest(".rowsel"); if (cb) { toggleSelect(cb.dataset.id); return; }
+    // Click on a group header row → toggle collapse for that group.
+    const hdr = e.target.closest("[data-group-toggle]"); if (hdr) { toggleGroupCollapse(hdr.dataset.groupToggle); }
   });
   $("wa-body").addEventListener("change", (e) => {
     const inp = e.target.closest("[data-act]"); if (!inp) return;
