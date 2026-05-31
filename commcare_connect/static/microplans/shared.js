@@ -118,6 +118,54 @@
     return _parseJsonResponse(resp);
   }
 
+  // Enqueue a server-side generation job and poll it to completion.
+  // The endpoint returns 202 {task_id, poll_url}; we poll poll_url until the
+  // task's `state` is completed (resolve with its result envelope, which carries
+  // its own {status:'ok'|'error', ...}) or failed (reject). Cold map generation
+  // runs on the Celery worker so it no longer blocks a web worker — the tradeoff
+  // is the client waits across a few polls. opts: {csrf, signal, interval,
+  // timeoutMs, onProgress(message)}.
+  async function enqueueAndPoll(url, body, opts) {
+    opts = opts || {};
+    const enq = await apiCall(url, body, {
+      csrf: opts.csrf,
+      signal: opts.signal,
+    });
+    const pollUrl = enq && enq.poll_url;
+    if (!pollUrl) throw new Error('Server did not return a poll URL.');
+    const interval = opts.interval || 1200;
+    const deadline = Date.now() + (opts.timeoutMs || 180000);
+    for (;;) {
+      await new Promise((res, rej) => {
+        const t = setTimeout(res, interval);
+        if (opts.signal) {
+          if (opts.signal.aborted) {
+            clearTimeout(t);
+            rej(_abortError());
+            return;
+          }
+          opts.signal.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(t);
+              rej(_abortError());
+            },
+            { once: true },
+          );
+        }
+      });
+      const st = await apiGet(pollUrl, { signal: opts.signal });
+      if (st.state === 'completed') return st.result || {};
+      if (st.state === 'failed')
+        throw new Error(st.detail || 'Generation failed.');
+      if (opts.onProgress && st.message) opts.onProgress(st.message);
+      if (Date.now() > deadline)
+        throw new Error(
+          'Timed out waiting for the server. Try a smaller area.',
+        );
+    }
+  }
+
   // ---- color ----------------------------------------------------------------
   // Golden-angle HSL hash → adjacent territories visually distinct without a
   // palette lookup. Connect-gis uses the same trick on group_id.
@@ -256,6 +304,7 @@
     post,
     apiCall,
     apiGet,
+    enqueueAndPoll,
     colorFor,
     OPP_COLORS,
     oppColorFor,

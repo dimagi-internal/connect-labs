@@ -1355,7 +1355,13 @@
     $("btn-apply-area").disabled = true;
     $("apply-area-status").textContent = "Previewing work areas…";
     try {
-      const prev = await (await post(PREVIEW_COVERAGE_URL, { areas, config: { cell_size_m: cellSizeM } })).json();
+      // Generation runs on the Celery worker (cold Overture fetch is tens of
+      // seconds) — enqueue then poll, surfacing progress on the status line.
+      const prev = await Microplans.enqueueAndPoll(
+        PREVIEW_COVERAGE_URL,
+        { areas, config: { cell_size_m: cellSizeM } },
+        { csrf: CSRF, onProgress: (m) => { $("apply-area-status").textContent = m; } },
+      );
       if (prev.status !== "ok") { $("apply-area-status").textContent = prev.detail || "preview failed"; return; }
       const n = prev.areas.features.length;
       $("apply-area-status").textContent = `Generating ${n} work areas…`;
