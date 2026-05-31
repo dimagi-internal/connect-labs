@@ -1,4 +1,7 @@
-"""Views for the Rooftop Surveys setup flow (Stage A: area → frame → push)."""
+"""Views for microplans: stateless preview/boundary/service-delivery utilities +
+the program-scoped plan portfolio (create, review/edit, compare, groups). The
+legacy opportunity-scoped setup/plan flow was removed once the program flow
+superseded it."""
 
 import csv
 import json
@@ -54,29 +57,6 @@ class _LabsContextSyncMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
-@method_decorator(ensure_csrf_cookie, name="dispatch")
-class SetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
-    """Area picker → frame config → preview → push-to-Connect.
-
-    Stage A entry point. Renders a Mapbox GL JS map (matching Connect's
-    microplanning display tooling) with draw controls for the intervention
-    and optional comparison polygons.
-    """
-
-    template_name = "microplans/setup.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["opp_id"] = kwargs.get("opp_id")
-        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
-        if not settings.MAPBOX_TOKEN:
-            context["error"] = "MAPBOX_TOKEN is not configured; the map cannot load."
-        # The service-delivery overlay's opp picker reads the global
-        # `user_opportunities` context var (id, name, program_name, visit_count),
-        # the same data the labs context selector uses — no extra context needed.
-        return context
-
-
 def _sd_urls(opp_id=123):
     """Service-delivery layer endpoints for the unified page.
 
@@ -91,32 +71,6 @@ def _sd_urls(opp_id=123):
         "service_delivery_pipelines_url": reverse("microplans:service_delivery_pipelines", args=[opp_id]),
         "derive_boundary_url": reverse("microplans:derive_boundary", args=[opp_id]),
     }
-
-
-@method_decorator(ensure_csrf_cookie, name="dispatch")
-class ReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
-    """LLO review/edit page for a materialised plan.
-
-    Renders the work areas on a map + an editable list (exclude, resize, regroup,
-    reassign, bulk-exclude) backed by the plan edit endpoints. Planning-phase only.
-    """
-
-    template_name = "microplans/review.html"
-
-    def get_context_data(self, **kwargs):
-        from django.urls import reverse
-
-        context = super().get_context_data(**kwargs)
-        opp_id, plan_id = kwargs.get("opp_id"), kwargs.get("plan_id")
-        context["opp_id"] = opp_id
-        context["plan_id"] = plan_id
-        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
-        context["plan_url"] = reverse("microplans:plan", args=[opp_id, plan_id])
-        context["edit_url"] = reverse("microplans:plan_edit", args=[opp_id, plan_id])
-        context["csv_url"] = reverse("microplans:plan_csv", args=[opp_id, plan_id])
-        context["compare_url"] = reverse("microplans:compare", args=[opp_id]) + f"?plans={plan_id}"
-        context.update(_sd_urls(opp_id))
-        return context
 
 
 class PreviewFrameView(LoginRequiredMixin, View):
@@ -239,47 +193,6 @@ class PreviewFootprintsView(LoginRequiredMixin, View):
         )
 
 
-class SaveFrameView(LoginRequiredMixin, View):
-    """Persist a previewed frame (area + pins) as LabsRecords for this opp.
-
-    The client posts the already-generated pins/hulls/stats from the preview so
-    we don't recompute. Returns the new record ids.
-    """
-
-    def post(self, request, opp_id):
-        from commcare_connect.microplans.core.data_access import RooftopDataAccess
-
-        empty_fc = {"type": "FeatureCollection", "features": []}
-        try:
-            payload = json.loads(request.body)
-            areas = payload["areas"]
-            mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
-            # Coverage stores its cluster polygons in `hulls` (pins stays empty).
-            if mode == "coverage":
-                pins = empty_fc
-                hulls = payload.get("coverage_areas") or payload.get("hulls", empty_fc)
-            else:
-                pins = payload["pins"]
-                hulls = payload.get("hulls", empty_fc)
-            stats = payload.get("stats", [])
-            config = payload.get("config", {})
-        except (json.JSONDecodeError, KeyError) as e:
-            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
-
-        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
-        try:
-            area_record = da.save_area(areas=areas, config=config, name=payload.get("name", ""), mode=mode)
-            frame_record = da.save_frame(area_record_id=area_record.id, pins=pins, hulls=hulls, stats=stats, mode=mode)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans save_frame failed (opp=%s)", opp_id)
-            return JsonResponse(
-                {"status": "error", "detail": "Saving the frame failed. Check server logs."},
-                status=502,
-            )
-
-        return JsonResponse({"status": "ok", "area_record_id": area_record.id, "frame_record_id": frame_record.id})
-
-
 class CountriesView(LoginRequiredMixin, View):
     """List ISO countries for the area picker, flagging those with bespoke data.
 
@@ -372,42 +285,6 @@ class AdminAreaGeometryView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
 
 
-class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
-    """Render the previewed frame as a Connect microplanning work-area import CSV.
-
-    Lets a frame be pushed to Connect *today* via the existing org-admin web
-    importer (no prod write API needed). Sampling: each pin → one tiny WorkArea.
-    Coverage: each cluster polygon → one WorkArea (visit every household).
-    """
-
-    def post(self, request, opp_id):
-        from commcare_connect.microplans.core.workarea import build_coverage_work_areas, build_work_areas, to_csv_rows
-
-        try:
-            payload = json.loads(request.body)
-            mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
-            geojson = payload["coverage_areas"] if mode == "coverage" else payload["pins"]
-        except (json.JSONDecodeError, KeyError) as e:
-            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
-
-        builder = build_coverage_work_areas if mode == "coverage" else build_work_areas
-        rows = to_csv_rows(
-            builder(
-                geojson,
-                ward_for_arm=payload.get("ward_for_arm"),
-                lga=payload.get("lga", ""),
-                state=payload.get("state", ""),
-            )
-        )
-        response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="rooftop_work_areas_opp{opp_id}.csv"'
-        if rows:
-            writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(rows)
-        return response
-
-
 # --- Planning-phase plan review/edit (the LLO validation layer; pre-upload) ---
 
 
@@ -430,200 +307,6 @@ def _plan_json(plan):
         "grouping": plan.data.get("grouping") or {},
         "assignment": plan.data.get("assignment") or {},
     }
-
-
-class MaterializePlanView(LoginRequiredMixin, View):
-    """Create an editable plan from a saved frame (one work area per cluster/pin)."""
-
-    def post(self, request, opp_id):
-        from commcare_connect.microplans.core.data_access import RooftopDataAccess
-
-        try:
-            payload = json.loads(request.body)
-            frame_record_id = int(payload["frame_record_id"])
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
-
-        from commcare_connect.microplans.core.models import RooftopFrameRecord
-
-        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
-        try:
-            frame = da.labs_api.get_record_by_id(frame_record_id, model_class=RooftopFrameRecord)
-            plan = da.materialize_plan(frame, name=payload.get("name", ""))
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans materialize_plan failed (opp=%s frame=%s)", opp_id, frame_record_id)
-            return JsonResponse(
-                {"status": "error", "detail": "Could not build the plan. Check server logs."}, status=502
-            )
-        return JsonResponse(_plan_json(plan))
-
-
-class PlanView(LoginRequiredMixin, View):
-    """Load a plan (work areas + summary) for review."""
-
-    def get(self, request, opp_id, plan_id):
-        from commcare_connect.microplans.core.data_access import RooftopDataAccess
-
-        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
-        try:
-            plan = da.get_plan(int(plan_id))
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans get_plan failed (opp=%s plan=%s)", opp_id, plan_id)
-            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
-        return JsonResponse(_plan_json(plan))
-
-
-class PlanEditView(LoginRequiredMixin, View):
-    """Apply one LLO edit (exclude/unexclude/resize/regroup/reassign) to a work area.
-
-    Supports a single `wa_id` or a list `wa_ids` (bulk, e.g. lasso-exclude). The
-    action + its params are recorded as a phase=planning audit event.
-    """
-
-    def post(self, request, opp_id, plan_id):
-        from commcare_connect.microplans.core.data_access import RooftopDataAccess
-        from commcare_connect.microplans.core.plan import ACTIONS
-
-        try:
-            payload = json.loads(request.body)
-            action = payload["action"]
-            wa_ids = payload.get("wa_ids") or ([payload["wa_id"]] if payload.get("wa_id") else [])
-            if action not in ACTIONS:
-                raise ValueError(f"unknown action {action}")
-            if not wa_ids:
-                raise ValueError("no work area specified")
-            if len(wa_ids) > 5000:  # bound the batch (a plan never has this many areas)
-                raise ValueError("too many work areas in one request")
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
-            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
-
-        params = {k: v for k, v in payload.items() if k not in ("action", "wa_id", "wa_ids")}
-        actor = request.user.get_username()
-        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
-        try:
-            plan = da.apply_plan_edits(int(plan_id), [str(w) for w in wa_ids], action, params, actor)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans plan edit failed (opp=%s plan=%s)", opp_id, plan_id)
-            return JsonResponse({"status": "error", "detail": "Edit failed. Check server logs."}, status=502)
-        return JsonResponse(_plan_json(plan))
-
-
-class PlanCSVView(LoginRequiredMixin, View):
-    """Export the edited plan as a Connect work-area import CSV (skips EXCLUDED)."""
-
-    def post(self, request, opp_id, plan_id):
-        from commcare_connect.microplans.core import plan as plan_lib
-        from commcare_connect.microplans.core.data_access import RooftopDataAccess
-        from commcare_connect.microplans.core.workarea import to_csv_rows
-
-        try:
-            payload = json.loads(request.body) if request.body else {}
-        except json.JSONDecodeError:
-            payload = {}
-        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
-        try:
-            plan = da.get_plan(int(plan_id))
-        except Exception:  # noqa: BLE001
-            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
-
-        rows = to_csv_rows(
-            plan_lib.to_workarea_payloads(plan.work_areas, lga=payload.get("lga", ""), state=payload.get("state", ""))
-        )
-        response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = f'attachment; filename="microplan_work_areas_opp{opp_id}.csv"'
-        if rows:
-            writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(rows)
-        return response
-
-
-class PlanListView(LoginRequiredMixin, View):
-    """List this opportunity's plans (for the comparison picker)."""
-
-    def get(self, request, opp_id):
-        from commcare_connect.microplans.core.data_access import RooftopDataAccess
-
-        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
-        try:
-            plans = da.list_plans()
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans list_plans failed (opp=%s)", opp_id)
-            return JsonResponse({"status": "error", "detail": "Could not list plans."}, status=502)
-        return JsonResponse(
-            {
-                "status": "ok",
-                "plans": [
-                    {
-                        "plan_id": p.id,
-                        "name": p.name or f"Plan {p.id}",
-                        "mode": p.mode,
-                        "created_at": p.created_at,
-                        "work_areas": len(p.work_areas),
-                    }
-                    for p in plans
-                ],
-            }
-        )
-
-
-class ComparePlansView(LoginRequiredMixin, View):
-    """Compare N plans' KPIs side by side. GET ?plans=<id>,<id>,... — loads each
-    plan and returns its KPIs so the UI can stack them with deltas. The honest
-    comparison is the metrics themselves (worst travel, imbalance, coverage); no
-    weighted composite — that read as a black box and was removed."""
-
-    def get(self, request, opp_id):
-        from commcare_connect.microplans.core import plan as plan_lib
-        from commcare_connect.microplans.core.data_access import RooftopDataAccess
-
-        try:
-            ids = [int(x) for x in (request.GET.get("plans", "")).split(",") if x.strip()]
-        except ValueError:
-            return JsonResponse({"status": "error", "detail": "plans must be comma-separated ids"}, status=400)
-        if not ids:
-            return JsonResponse({"status": "error", "detail": "no plans selected"}, status=400)
-
-        da = RooftopDataAccess(opportunity_id=opp_id, request=request)
-        entries = []
-        for pid in ids:
-            try:
-                p = da.get_plan(pid)
-            except Exception:  # noqa: BLE001
-                logger.exception("microplans compare: plan %s load failed", pid)
-                continue
-            entries.append(
-                {
-                    "plan_id": p.id,
-                    "name": p.name or f"Plan {p.id}",
-                    "mode": p.mode,
-                    "created_at": p.created_at,
-                    "kpis": plan_lib.plan_kpis(p.work_areas),
-                }
-            )
-        if not entries:
-            return JsonResponse({"status": "error", "detail": "no plans found."}, status=404)
-        return JsonResponse({"status": "ok", "plans": entries})
-
-
-@method_decorator(ensure_csrf_cookie, name="dispatch")
-class ComparePageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
-    """Plan comparison page: pick plans, see KPIs stacked with deltas + composite."""
-
-    template_name = "microplans/compare.html"
-
-    def get_context_data(self, **kwargs):
-        from django.urls import reverse
-
-        context = super().get_context_data(**kwargs)
-        opp_id = kwargs.get("opp_id")
-        context["opp_id"] = opp_id
-        context["scope_label"] = f"Opportunity #{opp_id}"
-        context["list_url"] = reverse("microplans:plan_list", args=[opp_id])
-        context["compare_url"] = reverse("microplans:plan_compare", args=[opp_id])
-        return context
 
 
 # ============================================================================
@@ -1285,9 +968,9 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
 
 
 class ProgramComparePlansView(LoginRequiredMixin, View):
-    """Compare N program plans' KPIs side by side — program-scoped sibling of
-    ComparePlansView. Returns per-plan KPIs so the UI can stack them with deltas;
-    no composite score (the metrics themselves are the comparison)."""
+    """Compare N program plans' KPIs side by side. Returns per-plan KPIs so the UI
+    can stack them with deltas; no composite score (the metrics themselves are the
+    comparison)."""
 
     def get(self, request, program_id):
         from commcare_connect.microplans.core import plan as plan_lib
