@@ -622,10 +622,9 @@ class _FakeProgramPlan:
         self.region, self.status, self.opportunity_id = region, status, opportunity_id
         self.status_log = []
         self.created_at = "2026-05-28T00:00:00Z"
-
-    @property
-    def data(self):
-        return {
+        # Real backing dict for `data` so tests can mutate e.g. plan.data["grouping"]
+        # and have the mutation stick. Mirrors how the real proxy model exposes data.
+        self._data = {
             "work_areas": self.work_areas,
             "status": self.status,
             "region": self.region,
@@ -634,6 +633,21 @@ class _FakeProgramPlan:
             "mode": self.mode,
             "name": self.name,
         }
+
+    @property
+    def data(self):
+        # Sync mutable fields back into the dict on every access so callers that
+        # mutate p.status etc. through the attribute API still see fresh values.
+        self._data.update(
+            {
+                "work_areas": self.work_areas,
+                "status": self.status,
+                "opportunity_id": self.opportunity_id,
+                "status_log": self.status_log,
+                "mode": self.mode,
+            }
+        )
+        return self._data
 
 
 class _FakeGroup:
@@ -666,6 +680,18 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             seq["plan"] += 1
             plans[pid] = _FakeProgramPlan(pid, mode, was, name=name, region=region)
             return plans[pid]
+
+        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None):
+            was = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
+            p = plans[int(pid)]
+            p.work_areas = was
+            p.mode = mode
+            p.data["mode"] = mode
+            p.data["work_areas"] = was
+            p.data["input_areas"] = list(input_areas or [])
+            p.data["grouping"] = dict(grouping or {})
+            p.data["assignment"] = {}
+            return p
 
         def apply_plan_edits(self, pid, wa_ids, action, params, actor):
             p = plans[int(pid)]
@@ -772,6 +798,40 @@ def test_program_create_plan(client, django_user_model, monkeypatch):
     pid = resp.json()["plan_id"]
     assert plans[pid].region == "Zaria" and plans[pid].status == "draft"
     assert len(plans[pid].work_areas) == 2
+
+
+def test_program_regenerate_replaces_work_areas(client, django_user_model, monkeypatch):
+    # Regenerate wipes the work areas + resets grouping / assignment configs
+    # — destructive equivalent of "create new plan with these settings", but
+    # the plan keeps its id, name, region.
+    _login(client, django_user_model)
+    plans, _ = _seed_program_plans(monkeypatch)
+    # Seed a CHW assignment so we can confirm it gets wiped
+    plans[1].data["assignment"] = {"strategy": "minimax_spread", "workers": ["chw-1"]}
+    plans[1].data["grouping"] = {"strategy": "bfs_adjacency", "max_buildings": 200}
+    resp = client.post(
+        reverse("microplans:program_plan_regenerate", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps(
+            {
+                "mode": "coverage",
+                "coverage_areas": _HULL_FC,
+                "input_areas": [{"geometry": _HULL_FC["features"][0]["geometry"]}],
+                "grouping": {"strategy": "bbox", "target_size": 30},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    # New work areas were generated
+    assert len(body["work_areas"]) == 2  # _HULL_FC has 2 features
+    # Grouping config got replaced
+    assert plans[1].data["grouping"] == {"strategy": "bbox", "target_size": 30}
+    # Assignment is wiped
+    assert plans[1].data["assignment"] == {}
+    # Plan identity preserved
+    assert plans[1].id == 1
 
 
 def test_program_create_plan_page_renders(client, django_user_model, settings):
