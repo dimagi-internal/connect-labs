@@ -281,7 +281,9 @@
         ].filter(([, v]) => v != null && v !== '');
         const html = rows
           .map(
-            ([k, v]) => `<div><span style="color:#888">${k}:</span> ${v}</div>`,
+            // FLW/entity names come from CommCare submissions — escape before innerHTML.
+            ([k, v]) =>
+              `<div><span style="color:#888">${esc(k)}:</span> ${esc(v)}</div>`,
           )
           .join('');
         if (popup) popup.remove();

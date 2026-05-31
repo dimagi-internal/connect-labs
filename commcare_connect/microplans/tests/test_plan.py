@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from commcare_connect.microplans.core import plan
 
 # a 2-cluster coverage frame (hulls)
@@ -235,6 +237,31 @@ class TestHaversine:
     def test_diameter_no_domain_error_on_dense_points(self):
         cents = [[3.0 + i * 1e-7, 6.0] for i in range(50)]  # near-identical points
         assert plan._territory_diameter_km(cents) >= 0.0  # must not raise math domain error
+
+    def test_diameter_hull_path_equals_brute_force(self):
+        # The convex-hull optimization (n>50) must give the EXACT same diameter as
+        # the O(n²) pairwise max — the hull contains the diametral pair.
+        import math
+
+        def brute(cents):
+            n = len(cents)
+            return max(
+                (plan._haversine_km(cents[i], cents[j]) for i in range(n) for j in range(i + 1, n)),
+                default=0.0,
+            )
+
+        # deterministic pseudo-random scatter of 300 points in a Kano-ish box
+        cents = []
+        for i in range(300):
+            lon = 8.4 + (math.sin(i * 12.9898) % 1) * 0.4
+            lat = 11.9 + (math.cos(i * 78.233) % 1) * 0.3
+            cents.append([lon, lat])
+        assert len(cents) > 50  # exercises the hull branch
+        assert plan._territory_diameter_km(cents) == pytest.approx(brute(cents), rel=0, abs=1e-9)
+
+    def test_diameter_all_coincident_is_zero_via_hull(self):
+        cents = [[3.0, 6.0] for _ in range(60)]  # >50 identical → hull is a Point
+        assert plan._territory_diameter_km(cents) == 0.0
 
 
 class TestLifecycle:
