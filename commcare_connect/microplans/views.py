@@ -1173,74 +1173,152 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
         boundary_by_id = {b.boundary_id: b for b in AdminBoundary.objects.filter(boundary_id__in=wanted)}
 
         da = ProgramPlanDataAccess(program_id, request=request)
-        results = []
-        for spec in plans_input:
-            if not isinstance(spec, dict):
-                results.append({"status": "error", "detail": "invalid plan spec"})
-                continue
-            name = (spec.get("name") or "").strip()[:255]
-            boundary_id = (spec.get("boundary_id") or "").strip()
-            if not boundary_id:
-                results.append({"name": name, "status": "error", "detail": "missing boundary_id"})
-                continue
-            boundary = boundary_by_id.get(boundary_id)
-            if not boundary:
-                results.append({"name": name, "status": "error", "detail": "boundary not found"})
-                continue
-            try:
-                geom_geojson = json.loads(boundary.geometry.geojson)
-            except Exception as e:  # noqa: BLE001
-                logger.exception("bulk_create: geometry parse failed for %s", boundary_id)
-                results.append({"name": name, "status": "error", "detail": f"bad geometry: {e}"})
-                continue
-            hulls = {
-                "type": "FeatureCollection",
-                "features": [
-                    {
-                        "type": "Feature",
-                        "properties": {
-                            "boundary_id": boundary_id,
-                            "name": boundary.name,
-                        },
-                        "geometry": geom_geojson,
-                    }
-                ],
-            }
-            display_name = name or boundary.name
-            try:
-                plan = da.create_plan(
-                    region=display_name,
-                    name=display_name,
-                    mode=mode,
-                    pins={"type": "FeatureCollection", "features": []},
-                    hulls=hulls,
-                    input_areas=[
+        total = len(plans_input)
+
+        # Stream NDJSON: one JSON object per line, each describing either the
+        # per-ward "result" of a materialize call or the final "done" summary.
+        # The front-end consumes the stream incrementally so each plan's pill
+        # flips from Creating → Created as soon as the server finishes that
+        # ward, not at the end when all wards are done. For a 10-ward batch
+        # that materializes against real Overture footprints, the per-ward
+        # call takes a few seconds — without the stream, the lead stares at
+        # "Creating plans…" for 20-60 seconds with no signal.
+        def stream():
+            ok_count = 0
+            for index, spec in enumerate(plans_input):
+                if not isinstance(spec, dict):
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": "",
+                                "boundary_id": "",
+                                "status": "error",
+                                "detail": "invalid plan spec",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                name = (spec.get("name") or "").strip()[:255]
+                boundary_id = (spec.get("boundary_id") or "").strip()
+                if not boundary_id:
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": name,
+                                "boundary_id": "",
+                                "status": "error",
+                                "detail": "missing boundary_id",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                boundary = boundary_by_id.get(boundary_id)
+                if not boundary:
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": name,
+                                "boundary_id": boundary_id,
+                                "status": "error",
+                                "detail": "boundary not found",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                try:
+                    geom_geojson = json.loads(boundary.geometry.geojson)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("bulk_create: geometry parse failed for %s", boundary_id)
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": name,
+                                "boundary_id": boundary_id,
+                                "status": "error",
+                                "detail": f"bad geometry: {e}",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                hulls = {
+                    "type": "FeatureCollection",
+                    "features": [
                         {
-                            "kind": "admin_boundary",
-                            "boundary_id": boundary_id,
-                            "name": boundary.name,
+                            "type": "Feature",
+                            "properties": {
+                                "boundary_id": boundary_id,
+                                "name": boundary.name,
+                            },
+                            "geometry": geom_geojson,
                         }
                     ],
-                    grouping=grouping,
-                )
-                results.append(
-                    {
-                        "name": display_name,
-                        "status": "ok",
-                        "plan_id": plan.id,
-                        "boundary_id": boundary_id,
-                    }
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("bulk_create: create_plan failed (program=%s, ward=%s)", program_id, name)
-                results.append({"name": display_name, "status": "error", "detail": "create_plan failed"})
+                }
+                display_name = name or boundary.name
+                try:
+                    plan = da.create_plan(
+                        region=display_name,
+                        name=display_name,
+                        mode=mode,
+                        pins={"type": "FeatureCollection", "features": []},
+                        hulls=hulls,
+                        input_areas=[
+                            {
+                                "kind": "admin_boundary",
+                                "boundary_id": boundary_id,
+                                "name": boundary.name,
+                            }
+                        ],
+                        grouping=grouping,
+                    )
+                    ok_count += 1
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": display_name,
+                                "boundary_id": boundary_id,
+                                "status": "ok",
+                                "plan_id": plan.id,
+                            }
+                        )
+                        + "\n"
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("bulk_create: create_plan failed (program=%s, ward=%s)", program_id, name)
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": display_name,
+                                "boundary_id": boundary_id,
+                                "status": "error",
+                                "detail": "create_plan failed",
+                            }
+                        )
+                        + "\n"
+                    )
+            yield json.dumps({"event": "done", "created": ok_count, "total": total}) + "\n"
 
-        ok_count = sum(1 for r in results if r.get("status") == "ok")
-        return JsonResponse(
-            {
-                "status": "ok",
-                "created": ok_count,
-                "total": len(results),
-                "results": results,
-            }
-        )
+        from django.http import StreamingHttpResponse
+
+        response = StreamingHttpResponse(stream(), content_type="application/x-ndjson")
+        # Disable buffering at the gateway so each \n-terminated chunk lands
+        # immediately on the client — without this, ECS Fargate's ALB tends
+        # to hold the response until completion, defeating the stream.
+        response["X-Accel-Buffering"] = "no"
+        response["Cache-Control"] = "no-cache"
+        return response

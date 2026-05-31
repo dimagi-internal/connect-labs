@@ -467,20 +467,26 @@
     $("btn-create").disabled = true;
     $("btn-back").disabled = true;
 
-    // Mark all as creating, then send one POST. (The server pipeline is per-plan
-    // synchronous; per-row "creating" → "ok/err" updates happen client-side from
-    // the response array.)
+    // Mark all as Creating up-front; per-row pills flip as the SERVER's
+    // NDJSON stream emits each "result" event. The pre-stream behavior was
+    // a single fetch().then(json) + a client-side staggered animation —
+    // looked alive but the actual server work happened invisibly before
+    // any pill flipped. With NDJSON, each pill flip lines up with the
+    // moment the server actually finished materializing that ward.
     log.querySelectorAll(".pill").forEach((p) => { p.className = "pill pill-creating"; p.textContent = "Creating"; });
 
-    let payload;
+    let resp;
     try {
-      const resp = await fetch(BULK_CREATE_URL, {
+      resp = await fetch(BULK_CREATE_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF, "Accept": "application/x-ndjson" },
         body: JSON.stringify({ plans: toCreate, mode: "coverage" }),
       });
-      payload = await resp.json();
-      if (!resp.ok) throw new Error((payload && payload.detail) || `HTTP ${resp.status}`);
+      if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try { const j = await resp.json(); detail = j.detail || detail; } catch (_) {}
+        throw new Error(detail);
+      }
     } catch (e) {
       alert("Create failed: " + e.message);
       $("btn-create").disabled = false;
@@ -489,54 +495,61 @@
       return;
     }
 
-    // Stagger the pill flips so each Created lands one at a time —
-    // turns a synchronous flip into a visible per-plan beat. Promise wraps
-    // the staggered loop so the rest of the function awaits completion.
+    // Consume NDJSON: one JSON object per \n-terminated line. Each "result"
+    // event names which ward (by index + boundary_id) just finished and
+    // whether it succeeded; the final "done" event carries the rolled-up
+    // count. We update the matching pill in real time.
     let okCount = 0, errCount = 0;
-    const results = payload.results || [];
-    await new Promise((resolveAll) => {
-      let i = 0;
-      const tick = () => {
-        if (i >= results.length) { resolveAll(); return; }
-        const res = results[i];
-        const row = log.querySelector(`.progress-row[data-boundary-id="${CSS.escape(res.boundary_id || "")}"]`) ||
-                    log.querySelector(`.progress-row:nth-child(${i + 1})`);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    const handleEvent = (evt) => {
+      if (!evt || typeof evt !== "object") return;
+      if (evt.event === "result") {
+        const row = log.querySelector(`.progress-row[data-boundary-id="${CSS.escape(evt.boundary_id || "")}"]`) ||
+                    log.querySelector(`.progress-row:nth-child(${(evt.index ?? -1) + 1})`);
         if (row) {
           const pill = row.querySelector(".pill");
-          if (res.status === "ok") {
+          if (evt.status === "ok") {
             pill.className = "pill pill-ok pill-just-flipped";
-            pill.textContent = res.plan_id ? `✓ Created · #${res.plan_id}` : "✓ Created";
-            // Live-update the section title as plans land so the eye reads
-            // progress, not just "still creating".
-            const sofar = okCount + 1;
-            $("create-title").textContent = `Created ${sofar} of ${results.length} plans…`;
-            // Wrap the row label in a deep-link if we got a plan_id.
-            if (res.plan_id) {
+            pill.textContent = evt.plan_id ? `✓ Created · #${evt.plan_id}` : "✓ Created";
+            okCount++;
+            $("create-title").textContent = `Created ${okCount} of ${toCreate.length} plans…`;
+            if (evt.plan_id) {
               const labelEl = row.querySelector(".progress-label");
               if (labelEl && !labelEl.querySelector("a")) {
                 const txt = labelEl.textContent;
                 labelEl.innerHTML = "";
                 const a = document.createElement("a");
-                a.href = `/microplans/program/${PROGRAM_ID}/plan/${res.plan_id}/`;
+                a.href = `/microplans/program/${PROGRAM_ID}/plan/${evt.plan_id}/`;
                 a.className = "text-gray-900 hover:text-brand-cornflower-blue hover:underline";
                 a.textContent = txt;
                 labelEl.appendChild(a);
               }
             }
-            okCount++;
           } else {
             pill.className = "pill pill-err";
-            pill.textContent = res.detail || "Error";
+            pill.textContent = evt.detail || "Error";
             errCount++;
           }
         }
-        i++;
-        // 420ms between flips → 6 rows = ~2.5s of distinct beats
-        // (clearly visible in video, not blink-and-miss).
-        setTimeout(tick, 420);
-      };
-      tick();
-    });
+      }
+      // "done" events are summary-only; the final counts come from
+      // okCount/errCount accumulated above.
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (value) buffer += decoder.decode(value, { stream: true });
+      if (done) buffer += decoder.decode();
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        try { handleEvent(JSON.parse(line)); } catch (_) { /* skip malformed */ }
+      }
+      if (done) break;
+    }
 
     hide($("create-spinner"));
     show($("create-check"));
