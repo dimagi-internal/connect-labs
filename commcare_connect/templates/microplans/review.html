@@ -130,7 +130,7 @@
             <div class="text-gray-600 mb-1">Area input</div>
             <div class="seg-row" style="grid-template-columns: repeat(3, 1fr);">
               <button type="button" id="btn-area-draw" class="seg-tab is-on">Draw</button>
-              <button type="button" id="btn-area-admin" class="seg-tab">Admin</button>
+              <button type="button" id="btn-area-admin" class="seg-tab">Boundaries</button>
               <button type="button" id="btn-area-pin" class="seg-tab">Pin</button>
             </div>
           </div>
@@ -140,21 +140,12 @@
           </div>
 
           <div id="area-admin" class="hidden space-y-2">
-            <label class="block"><span class="text-gray-600">Country</span>
-              <select id="sel-country" class="base-input mt-0.5 text-xs"></select></label>
-            <div class="grid grid-cols-2 gap-1">
-              <label class="block"><span class="text-gray-600">Level</span>
-                <select id="sel-level" class="base-input mt-0.5 text-xs">
-                  <option value="1">Region / State</option>
-                  <option value="2" selected>County / LGA</option>
-                  <option value="3">Ward / Locality</option>
-                </select></label>
-              <label class="block"><span class="text-gray-600">Search</span>
-                <input id="inp-area-search" type="text" placeholder="name…" class="base-input mt-0.5 text-xs"></label>
-            </div>
-            <button type="button" id="btn-area-search" class="button button-sm primary-dark w-full text-xs">Find areas</button>
-            <div id="area-source" class="text-[10px] text-gray-500"></div>
-            <div id="list-areas" class="max-h-32 overflow-y-auto border border-gray-100 rounded divide-y"></div>
+            <p class="text-[10px] text-gray-500 leading-snug">
+              The <b>Boundaries</b> layer is on (top-right map panel). Hover to inspect;
+              <b>Shift/⌘-click</b> a boundary to add it to the plan area, or type a name in
+              the layer's search box. Switch the boundary source (local data / Overture)
+              there too.
+            </p>
           </div>
 
           <div id="area-pin" class="hidden space-y-2">
@@ -415,6 +406,7 @@
 <script src="{% static 'labs/context_picker.js' %}"></script>
 <script src="{% static 'microplans/map_panel.js' %}"></script>
 <script src="{% static 'microplans/service_delivery_layer.js' %}"></script>
+<script src="{% static 'microplans/admin_boundaries_layer.js' %}"></script>
 <script>
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
@@ -429,6 +421,7 @@
   const REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
   const PREVIEW_COVERAGE_URL = "{{ preview_coverage_url|default:''|escapejs }}";
   const COUNTRIES_URL = "{{ countries_url|default:''|escapejs }}";
+  const BOUNDARY_VIEWPORT_URL = "{{ boundary_viewport_url|default:''|escapejs }}";
   const SD_PREVIEW_URL = "{{ preview_service_delivery_url|default:''|escapejs }}";
   const SD_PIPELINES_URL = "{{ service_delivery_pipelines_url|default:''|escapejs }}";
   const DERIVE_BOUNDARY_URL = "{{ derive_boundary_url|default:''|escapejs }}";
@@ -681,7 +674,7 @@
   // The panel (microplans/map_panel.js) owns the overlay toggles; footprints is
   // its first registered layer. Admin boundaries + service delivery register
   // here too (follow-up). `__mpPanel` is exposed for those + debugging.
-  let mapPanel = null, fpLayer = null, footprintsLoaded = false;
+  let mapPanel = null, fpLayer = null, footprintsLoaded = false, adminBoundaries = null;
   const setStatus = (t) => { const s = $("status"); if (s) s.textContent = t; };
   async function loadFootprints() {
     if (!FOOTPRINTS_URL) return false;
@@ -757,6 +750,41 @@
           Microplans.fitTo(map, feature);
           if (typeof setAreaInput === "function") setAreaInput("draw");
         },
+      });
+    }
+
+    // Admin "Boundaries" layer — render the boundaries we have for the region as
+    // outlines; smallest-wins inspect; in the area phase Shift/⌘-click (or a search
+    // result) adds the boundary's full geometry to the MapboxDraw area layer.
+    if (window.MicroplansAdminBoundaries && BOUNDARY_VIEWPORT_URL) {
+      const adminDrawIds = {}; // boundary_id -> [draw feature ids]
+      function adminAddGeometry(boundaryId, geom) {
+        if (!draw) return;
+        const polys = geom.type === "MultiPolygon"
+          ? geom.coordinates.map((c) => ({ type: "Polygon", coordinates: c }))
+          : [geom];
+        adminDrawIds[boundaryId] = [];
+        polys.forEach((g) => {
+          const ids = draw.add({ type: "Feature", geometry: g, properties: {} });
+          (ids || []).forEach((id) => adminDrawIds[boundaryId].push(id));
+        });
+        if (typeof refreshAreaStats === "function") refreshAreaStats();
+      }
+      function adminRemoveGeometry(boundaryId) {
+        if (draw && adminDrawIds[boundaryId]) draw.delete(adminDrawIds[boundaryId]);
+        delete adminDrawIds[boundaryId];
+        if (typeof refreshAreaStats === "function") refreshAreaStats();
+      }
+      adminBoundaries = MicroplansAdminBoundaries.register({
+        panel: mapPanel, map, csrf: CSRF,
+        urls: { viewport: BOUNDARY_VIEWPORT_URL, geometry: ADMIN_AREA_GEOMETRY_URL, areas: ADMIN_AREAS_URL },
+        getCountryIso: () => (typeof OPP_COUNTRY_ISO !== "undefined" && OPP_COUNTRY_ISO) || null,
+        isAreaPhase: () => {
+          const d = document.querySelector("details.area-def");
+          return !!(d && d.open);
+        },
+        onAreaAdd: (boundaryId, geometry) => adminAddGeometry(boundaryId, geometry),
+        onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
       });
     }
   }
@@ -1246,7 +1274,6 @@
   let areaInput = "draw";              // "draw" | "admin" | "pin"
   let circleAreas = [];                // [{circle:{lon,lat,radius_m}}]
   let dropPinArmed = false;
-  let countriesLoaded = false;
   let cellSizeM = 100;
 
   function setupAreaDef() {
@@ -1282,7 +1309,9 @@
     if (i !== "pin") disarmPin();
   }
   $("btn-area-draw").addEventListener("click", () => setAreaInput("draw"));
-  $("btn-area-admin").addEventListener("click", () => { setAreaInput("admin"); loadCountries(); });
+  // "Boundaries" mode = turn on the admin-boundaries map layer (the layer panel owns
+  // the source picker, search, and Shift/⌘-click area-select). No dropdown here.
+  $("btn-area-admin").addEventListener("click", () => { setAreaInput("admin"); if (adminBoundaries) adminBoundaries.enable(); });
   $("btn-area-pin").addEventListener("click", () => setAreaInput("pin"));
 
   // ---- cell-size chips (same pattern as setup.html) ----
@@ -1296,76 +1325,10 @@
     c.addEventListener("click", () => setCellSize(+c.dataset.cellsize, true)));
   $("cfg-cellsize").addEventListener("input", () => setCellSize(+$("cfg-cellsize").value, false));
 
-  // ---- admin-area picker (loadCountries + searchAreas + useArea) ----
-  let chosenSource = null, parentArea = null;
-  async function loadCountries() {
-    if (countriesLoaded || !COUNTRIES_URL) return;
-    countriesLoaded = true;
-    try {
-      const data = await (await fetch(COUNTRIES_URL)).json();
-      const bespoke = new Set(data.bespoke || []);
-      const sel = $("sel-country"); sel.innerHTML = "";
-      (data.countries || []).forEach((c) => {
-        const o = document.createElement("option");
-        o.value = c.alpha3;
-        o.textContent = (bespoke.has(c.alpha3) ? "★ " : "") + c.name;
-        if (c.alpha3 === "NGA") o.selected = true;
-        sel.appendChild(o);
-      });
-    } catch (e) { $("area-source").textContent = "Could not load countries: " + e; }
-  }
-  $("btn-area-search").addEventListener("click", () => { parentArea = null; chosenSource = null; searchAreas(); });
-  let areaSearchCtrl = null;
-  async function searchAreas() {
-    if (!ADMIN_AREAS_URL) return;
-    const body = { country: $("sel-country").value, level: +$("sel-level").value, q: $("inp-area-search").value || null };
-    if (parentArea) body.parent = parentArea;
-    if (chosenSource) body.source = chosenSource;
-    $("area-source").textContent = "Searching…";
-    // Cancel any in-flight lookup so a slow earlier result can't overwrite a newer
-    // one (both the Search button and the "drill ↓" buttons call this).
-    if (areaSearchCtrl) areaSearchCtrl.abort();
-    areaSearchCtrl = new AbortController();
-    try {
-      const data = await (await post(ADMIN_AREAS_URL, body, { signal: areaSearchCtrl.signal })).json();
-      if (data.status !== "ok") { $("area-source").textContent = data.detail || "lookup failed"; return; }
-      $("area-source").innerHTML = `${data.areas.length} areas`;
-      const box = $("list-areas"); box.innerHTML = "";
-      data.areas.forEach((a) => {
-        const row = document.createElement("div");
-        row.className = "flex items-center justify-between gap-2 px-1.5 py-1 hover:bg-gray-50";
-        const b = document.createElement("button");
-        b.type = "button"; b.className = "text-left flex-1 truncate text-emerald-700 text-xs";
-        const meta = [a.area_km2 ? `${a.area_km2} km²` : null, a.population ? `pop ${Math.round(a.population).toLocaleString()}` : null].filter(Boolean).join(" · ");
-        b.textContent = a.name + (meta ? ` · ${meta}` : "");
-        b.addEventListener("click", () => useArea(a));
-        row.appendChild(b);
-        if (a.level < 3) {
-          const d = document.createElement("button");
-          d.type = "button"; d.className = "text-[10px] text-gray-400 hover:text-gray-700";
-          d.textContent = "drill ↓";
-          d.addEventListener("click", () => { parentArea = a; $("sel-level").value = String(a.level + 1); searchAreas(); });
-          row.appendChild(d);
-        }
-        box.appendChild(row);
-      });
-    } catch (e) {
-      if (e.name === "AbortError") return;  // superseded by a newer search
-      $("area-source").textContent = "Request failed: " + e;
-    }
-  }
-  async function useArea(a) {
-    if (!ADMIN_AREA_GEOMETRY_URL) return;
-    $("area-source").textContent = `Loading ${a.name}…`;
-    try {
-      const data = await (await post(ADMIN_AREA_GEOMETRY_URL, { area: a })).json();
-      if (data.status !== "ok") { $("area-source").textContent = data.detail || "geometry failed"; return; }
-      if (draw) draw.add({ type: "Feature", geometry: data.geometry, properties: {} });
-      Microplans.fitTo(map, data.geometry, { maxZoom: 15 });
-      $("area-source").textContent = `Added "${a.name}".`;
-      refreshAreaStats();
-    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
-  }
+  // Admin-area selection now lives in the "Boundaries" map-panel layer
+  // (admin_boundaries_layer.js): outline render, source picker, name search, and
+  // Shift/⌘-click area-select. It calls back into the draw control via the
+  // onAreaAdd / onAreaRemove handlers wired where the layer is registered above.
 
   // ---- pin + radius ----
   function disarmPin() { dropPinArmed = false; map.getCanvas().style.cursor = ""; $("btn-drop-pin").classList.remove("seg-on"); }

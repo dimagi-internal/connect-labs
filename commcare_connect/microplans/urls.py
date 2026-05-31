@@ -24,6 +24,7 @@ urlpatterns = [
     path("<int:opp_id>/boundaries/areas/", views.AdminAreasView.as_view(), name="admin_areas"),
     path("<int:opp_id>/boundaries/geometry/", views.AdminAreaGeometryView.as_view(), name="admin_area_geometry"),
     path("boundaries/countries/", views.CountriesView.as_view(), name="countries"),
+    path("boundaries/viewport/", views.BoundaryViewportView.as_view(), name="boundary_viewport"),
     # Program layer: a program owns a portfolio of candidate plans + plan groups.
     path("program/<int:program_id>/", views.ProgramWorkspaceView.as_view(), name="program_workspace"),
     path("program/<int:program_id>/plans.json", views.ProgramPlansAPIView.as_view(), name="program_plans"),
