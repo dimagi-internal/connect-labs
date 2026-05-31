@@ -350,7 +350,11 @@
         status(
           `${data.count.toLocaleString()} points across ${
             (data.layers || []).length
-          } opp(s).`,
+          } opp(s).${
+            data.sampled
+              ? ` (sampled from ${(data.total || 0).toLocaleString()})`
+              : ''
+          }`,
         );
       } catch (e) {
         status('Failed: ' + e);
@@ -545,7 +549,11 @@
         layer.setMeta(
           `${(d.count || 0).toLocaleString()} points · ${
             (d.layers || []).length
-          } opp(s)`,
+          } opp(s)${
+            d.sampled
+              ? ` · sampled from ${(d.total || 0).toLocaleString()}`
+              : ''
+          }`,
         );
       } catch (e) {
         layer.setMeta('Failed: ' + e);
