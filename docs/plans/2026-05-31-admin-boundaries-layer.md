@@ -43,13 +43,25 @@ These were settled with the user and must not be relitigated:
   both it and map Shift/⌘-click feed the *same* selected-area set. The old
   Country/Level/Search *dropdown mechanics* are replaced, but "find a boundary by typing
   its name" is preserved.
+- **Single-select source picker** — we have more than one admin-boundary *system*:
+  `labs` (the bespoke per-country uploads, ~12 countries, in PostGIS) and `overture`
+  (the global default, in a DuckDB/parquet store). Exactly **one source is active at a
+  time**. The layer body has a source dropdown populated from the resolver's
+  `describe()` (`available_sources` + `source_labels`), defaulting to the resolver's
+  preference order (`labs` where it has data, else `overture`). Both sources render as
+  viewport outlines and support smallest-wins inspect + select — i.e. they are fully
+  interchangeable. (This required making Overture bbox-queryable; see Backend.)
 
 ## Backend
 
-### New endpoint: `BoundaryViewportAPIView`
+### New endpoint: `BoundaryViewportView`
 
-- **URL:** `api/viewport/` in `commcare_connect/labs/admin_boundaries/urls.py`
-  (name `viewport_api`), alongside the existing `api/map/`.
+Lives in the **microplans** app next to its sibling resolver-backed endpoints
+(`CountriesView`, `AdminAreasView`, `AdminAreaGeometryView`), since it renders **both**
+sources through `core/admin_boundaries.py`'s `BoundaryResolver` — not just the labs DB.
+
+- **URL:** `boundaries/viewport/` in `commcare_connect/microplans/urls.py`
+  (name `boundary_viewport`), alongside `boundaries/countries/`.
 - **Input** (query params):
   - `bbox=minLng,minLat,maxLng,maxLat` — **required**. Parsed into a `Polygon` (SRID 4326).
   - `zoom` — optional float; drives simplification tolerance.
@@ -67,6 +79,19 @@ These were settled with the user and must not be relitigated:
 - **Feature cap:** hard limit (default **1500**). If the intersect set exceeds it, return
   the largest-`area_km2`-first slice and a top-level `truncated: true` flag. The FE
   surfaces "zoom in to see all boundaries" — **no silent truncation** (logged).
+- **Both sources via the resolver:** add `list_in_bbox(bbox, *, iso, levels, tolerance,
+  limit)` to `BoundarySource` + a `BoundaryFeature` normalised shape (name, canonical
+  level, source, country, ref/boundary_id, geometry, area_km2, population, parent_name).
+  - `LabsAdminBoundarySource.list_in_bbox` → `filter(geometry__intersects=bbox)`,
+    optional `iso_code`/`admin_level` filters, per-feature `.simplify(tolerance)`,
+    area_km2 via equal-area transform (EPSG:6933).
+  - `OvertureBoundarySource.list_in_bbox` → new `core/boundaries.py`
+    `list_admin_areas_in_bbox(...)` DuckDB query with `ST_Intersects(geometry, bbox)` +
+    `ST_AsGeoJSON(ST_Simplify(...))`. **`iso` is required for the Overture path**
+    (country partition pruning); labs treats it as optional. The FE always passes the
+    resolved country.
+  - Resolver `boundaries_in_bbox(bbox, *, source, iso, levels, zoom, limit)` picks the
+    source (`prefer=source`, else preference order) and returns `(features, truncated)`.
 
 ### Full-resolution geometry on select
 
@@ -136,6 +161,18 @@ Mirrors `service_delivery_layer.js` (the worked panel-layer example). Built on
   **≥2 countries** with different hierarchy depths; verify no floating popup.
 - **DDD:** add an admin-boundary scene to
   `docs/walkthroughs/microplans-service-delivery.yaml` for the DDD pass.
+
+## Implementation status
+
+- **Built (this branch):** viewport endpoint + resolver bbox methods (TDD, 33 passing
+  tests), `admin_boundaries_layer.js`, `review.html` wiring (relabel + dropdown removal +
+  draw integration), DDD walkthrough scenes.
+- **Search scope nuance:** the layer's name-search currently filters the **in-view**
+  loaded boundaries (client-side) — it satisfies "select without clicking the map" for
+  what's rendered, but is not yet a country-wide search. Country-wide typed search can
+  reuse `AdminAreasView` in a follow-up.
+- **Pending:** live `gstack browse` validation across ≥2 countries — blocked on deploy,
+  which is gated to `main` (merge the PR first, then deploy + validate live).
 
 ## Out of scope
 
