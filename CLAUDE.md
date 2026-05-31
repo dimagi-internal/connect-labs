@@ -127,6 +127,15 @@ Labs deploys to **AWS ECS Fargate** via `.github/workflows/deploy-labs.yml`.
 - **ECS cluster:** `labs-jj-cluster` in `us-east-1`
 - **Services:** `labs-jj-web` (web), `labs-jj-worker` (celery)
 
+**Deploy only from `main`.** The workflow has a hard `guard` job that refuses any `--ref` other than `refs/heads/main`. Land changes via PR + merge first, then trigger the deploy with `--ref main`. Branch deploys are not allowed: they make "what's on prod?" ambiguous and let unreviewed code into the labs environment.
+
+```bash
+# canonical deploy command — only main is accepted
+gh workflow run deploy-labs.yml --repo jjackson/connect-labs --ref main --field run_migrations=false
+```
+
+(Historical note: this repo used to be a fork of `dimagi/commcare-connect` whose labs branch was `labs-main`. That label is dead — the repo is its own thing now and `main` is the default branch. Any older doc that says `labs-main` now means `main`.)
+
 ## Pull Requests
 
 Before creating any pull request, read `.github/PULL_REQUEST_TEMPLATE.md` and follow its structure exactly. Key sections:

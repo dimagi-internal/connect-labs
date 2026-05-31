@@ -18,8 +18,34 @@ env:
   ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
 
 jobs:
+  guard:
+    # Hard gate: this workflow only deploys from main. If somebody (human or
+    # agent) triggers it on any other branch it fails fast, before pushing an
+    # image. The previous behavior — workflow_dispatch on any ref — was easy
+    # to misuse: a branch deploy can land code that hasn't been reviewed AND
+    # it makes "what is prod running?" ambiguous. main is the canonical
+    # source of truth; deploys come from there or not at all.
+    #
+    # (Legacy note: this repo used to be a fork off commcare-connect, and its
+    # canonical deploy branch was 'labs-main'. That label is dead — this is
+    # its own repo now and 'main' is the default branch.)
+    name: Guard — branch must be main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse deploys from non-main refs
+        run: |
+          ref="${GITHUB_REF:-}"
+          echo "triggered on ref=$ref"
+          if [ "$ref" != "refs/heads/main" ]; then
+            echo "::error::Deploys are only allowed from main. Got: $ref"
+            echo "::error::Land your changes on main first (PR + merge), then re-run this workflow."
+            exit 1
+          fi
+          echo "ref OK — proceeding to deploy"
+
   deploy:
     name: Deploy to Fargate
+    needs: guard
     runs-on: ubuntu-latest
 
     permissions:
