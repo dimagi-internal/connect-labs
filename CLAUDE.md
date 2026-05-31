@@ -127,6 +127,19 @@ Labs deploys to **AWS ECS Fargate** via `.github/workflows/deploy-labs.yml`.
 - **ECS cluster:** `labs-jj-cluster` in `us-east-1`
 - **Services:** `labs-jj-web` (web), `labs-jj-worker` (celery)
 
+### Deploy only from `labs-main`
+
+**Do not deploy from feature branches.** The `deploy-labs.yml` workflow has a hard guard step that refuses any ref other than `refs/heads/labs-main` — a non-main `--ref` will fail with `::error::Deploys are only allowed from labs-main`. The reason is twofold:
+
+1. A branch deploy can land code that hasn't been reviewed (no PR gate), which is the failure mode that keeps the deployed branch and `labs-main` out of sync indefinitely.
+2. "What is prod running?" should be answerable by looking at the head of `labs-main`. Branch deploys make it ambiguous.
+
+The flow:
+- Land your work on `labs-main` via PR (squash merge is the convention).
+- THEN trigger `gh workflow run deploy-labs.yml --ref labs-main`. The guard accepts it.
+
+If you ever find yourself thinking "I'll just deploy this branch real quick to test" — stop, open the PR, merge it, and deploy from main.
+
 ## Pull Requests
 
 Before creating any pull request, read `.github/PULL_REQUEST_TEMPLATE.md` and follow its structure exactly. Key sections:
