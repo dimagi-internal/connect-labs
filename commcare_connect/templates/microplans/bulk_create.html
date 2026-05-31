@@ -51,7 +51,11 @@
   .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
   .btn-outline:hover { background: #f9fafb; border-color: #9ca3af; }
   .spinner { width: 14px; height: 14px; border: 2px solid #c7d2fe; border-top-color: #3843d0; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  .spinner-inline { width: 12px; height: 12px; border: 1.75px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Created pill — soft scale-in when it appears (Creating → Created). */
+  @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .pill-just-flipped { animation: popIn 0.35s ease-out; }
 </style>
 {% endblock %}
 
@@ -71,7 +75,7 @@
     </p>
     <div class="mt-3 inline-flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 max-w-2xl">
       <svg viewBox="0 0 16 16" class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4.5zM8 10.25a.875.875 0 1 1 0 1.75.875.875 0 0 1 0-1.75z"/></svg>
-      <span><strong>Why confirm before creating:</strong> ward names overlap across LGAs (Madobi the LGA AND Madobi the ward; "Tofa" exists in multiple LGAs). A silent best-effort match would create plans for the wrong wards. Every row must be either matched or skipped before Create plans enables.</span>
+      <span><strong>Why confirm before creating:</strong> ward names overlap across LGAs (e.g. <em>Madobi</em> is both an LGA AND a ward in Kano; <em>Tofa</em> is a ward in 4 different LGAs). A silent best-effort match would create plans for the wrong wards. Every row must be either matched or skipped before Create plans enables.</span>
     </div>
   </div>
 
@@ -248,7 +252,8 @@
 
     const btn = $("btn-resolve");
     btn.disabled = true;
-    btn.querySelector(".btn-label").textContent = "Resolving…";
+    // Inline spinner inside the button while the POST is in flight.
+    btn.querySelector(".btn-label").innerHTML = '<span class="spinner-inline mr-2"></span>Resolving…';
 
     let payload;
     try {
@@ -443,8 +448,8 @@
       if (!row) return;
       const pill = row.querySelector(".pill");
       if (res.status === "ok") {
-        pill.className = "pill pill-ok";
-        pill.textContent = "Created";
+        pill.className = "pill pill-ok pill-just-flipped";
+        pill.textContent = "✓ Created";
         okCount++;
       } else {
         pill.className = "pill pill-err";
