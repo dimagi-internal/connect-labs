@@ -56,6 +56,9 @@
   /* Created pill — soft scale-in when it appears (Creating → Created). */
   @keyframes popIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .pill-just-flipped { animation: popIn 0.35s ease-out; }
+  /* Skip transition — when a row goes from unresolved to skipped, dim quickly. */
+  @keyframes dimRow { from { background-color: rgba(245, 158, 11, 0.12); } to { background-color: transparent; } }
+  .resolved-table tr.just-skipped { animation: dimRow 0.5s ease-out; }
 </style>
 {% endblock %}
 
@@ -184,6 +187,7 @@
   <section id="step-create" class="hidden border border-gray-200 rounded-lg bg-white p-5 space-y-3">
     <div class="flex items-center gap-3">
       <div id="create-spinner" class="spinner"></div>
+      <svg id="create-check" viewBox="0 0 20 20" class="hidden w-6 h-6 text-emerald-600" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm3.707-9.293a1 1 0 0 0-1.414-1.414L9 10.586 7.707 9.293a1 1 0 0 0-1.414 1.414l2 2a1 1 0 0 0 1.414 0l4-4z" clip-rule="evenodd"/></svg>
       <h2 class="text-lg font-semibold text-gray-900">
         <span id="create-title">Creating plans…</span>
       </h2>
@@ -312,6 +316,11 @@
       if (isSkipped) tr.classList.add("is-skipped");
       else if (isResolved) tr.classList.add("is-matched");
       else tr.classList.add("is-unresolved");
+      // Brief flash when a skip just happened on THIS row.
+      if (isSkipped && window._justSkippedIdx === i) {
+        tr.classList.add("just-skipped");
+        window._justSkippedIdx = null;
+      }
       if (isResolved && !isSkipped) matched++;
       else if (isSkipped) skipped++;
       else unresolved++;
@@ -367,7 +376,7 @@
         skip.type = "button";
         skip.className = "ml-2 text-xs text-brand-cornflower-blue hover:underline";
         skip.textContent = "Skip";
-        skip.onclick = () => { RESOLUTIONS[i].skipped = true; renderPreview(); };
+        skip.onclick = () => { RESOLUTIONS[i].skipped = true; renderPreview(); window._justSkippedIdx = i; };
         tdStat.appendChild(skip);
       }
       tr.appendChild(tdStat);
@@ -459,6 +468,7 @@
     });
 
     hide($("create-spinner"));
+    show($("create-check"));
     setStep(4);
     $("create-title").textContent =
       `Created ${okCount} of ${toCreate.length} plan${toCreate.length === 1 ? "" : "s"}`
