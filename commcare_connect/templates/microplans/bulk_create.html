@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Microplans — Bulk-create from a ward list{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<style>
+  /* Mirrors the labs design tokens used on the workspace + setup pages. */
+  .mp-section-label { font-size: 0.6875rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; }
+  .field-input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem; background: #fff; color: #111827; }
+  .field-input:focus { outline: none; border-color: #3843d0; box-shadow: 0 0 0 3px rgba(56, 67, 208, 0.12); }
+  .field-textarea { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: #fff; color: #111827; line-height: 1.45; resize: vertical; }
+  .field-textarea:focus { outline: none; border-color: #3843d0; box-shadow: 0 0 0 3px rgba(56, 67, 208, 0.12); }
+  .pill { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 600; line-height: 1.3; }
+  .pill-ok { background: #d1fae5; color: #065f46; }
+  .pill-skip { background: #fef3c7; color: #92400e; }
+  .pill-err { background: #fee2e2; color: #991b1b; }
+  .pill-pending { background: #e0e7ff; color: #3730a3; }
+  .pill-creating { background: #fef9c3; color: #854d0e; }
+  /* The resolved-table appears inline below the form; scrolls on overflow but
+     pre-sized to show ~6 rows so the demo lands cleanly within the viewport. */
+  .resolved-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+  .resolved-table th { text-align: left; font-weight: 600; color: #6b7280; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb; }
+  .resolved-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #f3f4f6; vertical-align: middle; color: #111827; }
+  .resolved-table tr:last-child td { border-bottom: none; }
+  .resolved-table .name-cell { font-weight: 600; }
+  .resolved-table tr.is-skipped td { opacity: 0.55; }
+  .resolved-table tr.is-unresolved .name-cell { color: #9a3412; }
+  /* Compact monospace block for the per-row detail (boundary id) */
+  .mono-sub { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.6875rem; color: #6b7280; }
+  .progress-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid #f3f4f6; font-size: 0.85rem; }
+  .progress-row:last-child { border-bottom: none; }
+  .progress-row .progress-label { flex: 1; color: #111827; font-weight: 500; }
+  .stat-card { border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 0.75rem 1rem; background: #fff; }
+  .stat-card .stat-num { font-size: 1.75rem; font-weight: 700; color: #111827; line-height: 1; }
+  .stat-card .stat-label { font-size: 0.7rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+  .stat-num.ok { color: #047857; }
+  .stat-num.warn { color: #c2410c; }
+  .stat-num.err { color: #b91c1c; }
+  .btn-primary { background: #3843d0; color: #fff; border: 1px solid #3843d0; }
+  .btn-primary:hover:not(:disabled) { background: #2f3aba; }
+  .btn-primary:disabled { background: #c7d2fe; border-color: #c7d2fe; cursor: not-allowed; }
+  .btn { padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all .12s; display: inline-flex; align-items: center; gap: 0.5rem; }
+  .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+  .btn-outline:hover { background: #f9fafb; border-color: #9ca3af; }
+  .spinner { width: 14px; height: 14px; border: 2px solid #c7d2fe; border-top-color: #3843d0; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto p-6 space-y-6">
+  <!-- Page header -->
+  <div>
+    <div class="flex items-center gap-2 text-sm">
+      <a href="{{ program_url }}" class="text-brand-cornflower-blue hover:underline">← Portfolio</a>
+      <span class="text-gray-300">·</span>
+      <span class="text-gray-600">Program #{{ program_id }}</span>
+    </div>
+    <h1 class="mt-1 text-2xl font-bold text-gray-900">Bulk-create plans from a ward list</h1>
+    <p class="mt-1 text-sm text-gray-600">
+      Paste a list of ward names — one per line — and the system matches each against the admin boundaries.
+      Confirm the matches, then create one draft plan per ward in a single batch.
+    </p>
+  </div>
+
+  <!-- Step 1: Paste + config -->
+  <section id="step-paste" class="border border-gray-200 rounded-lg bg-white p-5 space-y-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <label class="block">
+        <span class="mp-section-label block mb-1">Country</span>
+        <select id="cfg-iso" class="field-input">
+          <option value="NGA" selected>Nigeria (NGA)</option>
+          <option value="KEN">Kenya (KEN)</option>
+          <option value="GHA">Ghana (GHA)</option>
+        </select>
+      </label>
+      <label class="block">
+        <span class="mp-section-label block mb-1">Admin level</span>
+        <select id="cfg-level" class="field-input">
+          <option value="2">ADM2 (LGA / district)</option>
+          <option value="3" selected>ADM3 (ward / parish)</option>
+        </select>
+      </label>
+      <label class="block">
+        <span class="mp-section-label block mb-1">Boundary source</span>
+        <select id="cfg-source" class="field-input">
+          <option value="geopode" selected>GeoPoDe</option>
+          <option value="geoboundaries">geoBoundaries</option>
+          <option value="osm">OpenStreetMap</option>
+          <option value="">(any)</option>
+        </select>
+      </label>
+    </div>
+
+    <label class="block">
+      <span class="mp-section-label block mb-1">Ward names — one per line</span>
+      <textarea id="ward-list" class="field-textarea" rows="8" placeholder="Galinja&#10;Madobi&#10;Gora&#10;Jibga&#10;Kadan Dani&#10;Durma&#10;Rimin Gado&#10;Dawakin Gulu&#10;Tofa&#10;Kwami"></textarea>
+    </label>
+
+    <div class="flex items-center justify-between">
+      <div class="text-xs text-gray-500">
+        <span id="line-count">0</span> name<span id="line-count-plural"></span> ready
+      </div>
+      <button type="button" id="btn-resolve" class="btn btn-primary">
+        <span class="btn-label">Resolve &amp; preview</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Step 2: Resolved preview -->
+  <section id="step-preview" class="hidden border border-gray-200 rounded-lg bg-white p-5 space-y-4">
+    <div class="flex items-center justify-between gap-4">
+      <h2 class="text-lg font-semibold text-gray-900">Resolved wards</h2>
+      <div class="flex items-center gap-3">
+        <div class="stat-card">
+          <div class="stat-num ok" id="stat-matched">0</div>
+          <div class="stat-label">Matched</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num warn" id="stat-unresolved">0</div>
+          <div class="stat-label">Unresolved</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-skipped">0</div>
+          <div class="stat-label">Skipped</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto rounded border border-gray-200">
+      <table class="resolved-table">
+        <thead>
+          <tr>
+            <th>Ward</th>
+            <th>LGA</th>
+            <th>Population</th>
+            <th>Boundary ID</th>
+            <th class="text-right">Status</th>
+          </tr>
+        </thead>
+        <tbody id="resolved-tbody">
+          <!-- rows injected by JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <p id="confirm-hint" class="text-xs text-gray-500">
+      Every row must be either <strong>matched</strong> or <strong>skipped</strong> before Create Plans is enabled.
+    </p>
+
+    <div class="flex items-center justify-between">
+      <button type="button" id="btn-back" class="btn btn-outline">← Edit the list</button>
+      <button type="button" id="btn-create" class="btn btn-primary" disabled>
+        <span class="btn-label">Create plans</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Step 3: Create progress / done -->
+  <section id="step-create" class="hidden border border-gray-200 rounded-lg bg-white p-5 space-y-3">
+    <div class="flex items-center gap-3">
+      <div id="create-spinner" class="spinner"></div>
+      <h2 class="text-lg font-semibold text-gray-900">
+        <span id="create-title">Creating plans…</span>
+      </h2>
+    </div>
+    <div id="create-log" class="border border-gray-200 rounded">
+      <!-- per-row progress injected by JS -->
+    </div>
+    <div id="create-done" class="hidden flex items-center justify-between">
+      <p class="text-sm text-gray-700">
+        <span id="done-summary"></span>
+      </p>
+      <a id="back-to-portfolio" href="{{ program_url }}" class="btn btn-primary">
+        Back to portfolio
+      </a>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script>
+(function () {
+  const PROGRAM_ID = "{{ program_id|escapejs }}";
+  const RESOLVE_URL = "{{ resolve_many_url|escapejs }}";
+  const BULK_CREATE_URL = "{{ bulk_create_url|escapejs }}";
+  const CSRF = "{{ csrf_token|escapejs }}";
+
+  // ---------- helpers ----------
+  const $ = (id) => document.getElementById(id);
+  function show(el) { el.classList.remove("hidden"); }
+  function hide(el) { el.classList.add("hidden"); }
+  function fmtPop(p) {
+    if (p == null || isNaN(p)) return "—";
+    if (p >= 10_000) return Math.round(p / 1000).toLocaleString() + "K";
+    return Number(p).toLocaleString();
+  }
+  function readNames() {
+    return ($("ward-list").value || "")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+
+  // ---------- state ----------
+  // After resolve, this holds: [{name, matched_id, matched_name, lga, population, unresolved_reason, skipped}]
+  let RESOLUTIONS = [];
+
+  // ---------- step 1: paste + line counter ----------
+  function updateLineCount() {
+    const n = readNames().length;
+    $("line-count").textContent = n;
+    $("line-count-plural").textContent = n === 1 ? "" : "s";
+    $("btn-resolve").disabled = n === 0;
+  }
+  $("ward-list").addEventListener("input", updateLineCount);
+  updateLineCount();
+
+  // ---------- resolve ----------
+  async function doResolve() {
+    const names = readNames();
+    if (!names.length) return;
+    const iso = $("cfg-iso").value;
+    const admin_level = parseInt($("cfg-level").value, 10);
+    const source = $("cfg-source").value || undefined;
+
+    const btn = $("btn-resolve");
+    btn.disabled = true;
+    btn.querySelector(".btn-label").textContent = "Resolving…";
+
+    let payload;
+    try {
+      const resp = await fetch(RESOLVE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        body: JSON.stringify({ names, iso_code: iso, admin_level, source }),
+      });
+      payload = await resp.json();
+      if (!resp.ok || payload.success !== true) {
+        throw new Error((payload && payload.error) || `HTTP ${resp.status}`);
+      }
+    } catch (e) {
+      alert("Resolve failed: " + e.message);
+      btn.disabled = false;
+      btn.querySelector(".btn-label").textContent = "Resolve & preview";
+      return;
+    }
+
+    RESOLUTIONS = (payload.resolutions || []).map((r) => ({ ...r, skipped: false }));
+    renderPreview();
+    show($("step-preview"));
+    $("step-preview").scrollIntoView({ behavior: "smooth", block: "start" });
+    btn.disabled = false;
+    btn.querySelector(".btn-label").textContent = "Re-resolve";
+  }
+  $("btn-resolve").addEventListener("click", doResolve);
+
+  // ---------- preview render ----------
+  function renderPreview() {
+    const tbody = $("resolved-tbody");
+    tbody.innerHTML = "";
+    let matched = 0, unresolved = 0, skipped = 0;
+    RESOLUTIONS.forEach((r, i) => {
+      const tr = document.createElement("tr");
+      const isResolved = !!r.matched_id;
+      const isSkipped = !!r.skipped;
+      if (isSkipped) tr.classList.add("is-skipped");
+      if (!isResolved) tr.classList.add("is-unresolved");
+      if (isResolved && !isSkipped) matched++;
+      else if (isSkipped) skipped++;
+      else unresolved++;
+
+      // Name cell
+      const tdName = document.createElement("td");
+      tdName.className = "name-cell";
+      tdName.textContent = r.name;
+      tr.appendChild(tdName);
+
+      // LGA + Population
+      const tdLga = document.createElement("td");
+      tdLga.textContent = r.lga || "—";
+      tr.appendChild(tdLga);
+
+      const tdPop = document.createElement("td");
+      tdPop.textContent = fmtPop(r.population);
+      tr.appendChild(tdPop);
+
+      // Boundary id (mono)
+      const tdBid = document.createElement("td");
+      const span = document.createElement("span");
+      span.className = "mono-sub";
+      span.textContent = r.matched_id || "—";
+      tdBid.appendChild(span);
+      tr.appendChild(tdBid);
+
+      // Status + per-row action
+      const tdStat = document.createElement("td");
+      tdStat.style.textAlign = "right";
+      if (isResolved && !isSkipped) {
+        const pill = document.createElement("span");
+        pill.className = "pill pill-ok";
+        pill.textContent = "Matched";
+        tdStat.appendChild(pill);
+      } else if (isSkipped) {
+        const pill = document.createElement("span");
+        pill.className = "pill pill-skip";
+        pill.textContent = "Skipped";
+        tdStat.appendChild(pill);
+        const undo = document.createElement("button");
+        undo.type = "button";
+        undo.className = "ml-2 text-xs text-brand-cornflower-blue hover:underline";
+        undo.textContent = "Undo";
+        undo.onclick = () => { RESOLUTIONS[i].skipped = false; renderPreview(); };
+        tdStat.appendChild(undo);
+      } else {
+        const pill = document.createElement("span");
+        pill.className = "pill pill-err";
+        pill.textContent = r.unresolved_reason || "Not found";
+        tdStat.appendChild(pill);
+        const skip = document.createElement("button");
+        skip.type = "button";
+        skip.className = "ml-2 text-xs text-brand-cornflower-blue hover:underline";
+        skip.textContent = "Skip";
+        skip.onclick = () => { RESOLUTIONS[i].skipped = true; renderPreview(); };
+        tdStat.appendChild(skip);
+      }
+      tr.appendChild(tdStat);
+      tbody.appendChild(tr);
+    });
+
+    $("stat-matched").textContent = matched;
+    $("stat-unresolved").textContent = unresolved;
+    $("stat-skipped").textContent = skipped;
+
+    const ready = matched > 0 && unresolved === 0;
+    const btn = $("btn-create");
+    btn.disabled = !ready;
+    btn.querySelector(".btn-label").textContent =
+      matched > 0 ? "Create " + matched + " plan" + (matched === 1 ? "" : "s") : "Create plans";
+    $("confirm-hint").textContent = ready
+      ? "All wards ready. Click Create plans to materialize one plan per ward."
+      : "Every row must be either matched or skipped before Create plans is enabled.";
+  }
+
+  $("btn-back").addEventListener("click", () => {
+    hide($("step-preview"));
+    hide($("step-create"));
+    $("step-paste").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  // ---------- create plans ----------
+  async function doCreate() {
+    const toCreate = RESOLUTIONS
+      .filter((r) => r.matched_id && !r.skipped)
+      .map((r) => ({ boundary_id: r.matched_id, name: r.matched_name || r.name }));
+    if (!toCreate.length) return;
+
+    hide($("step-create").querySelector("#create-done"));
+    show($("create-spinner"));
+    $("create-title").textContent = `Creating ${toCreate.length} plan${toCreate.length === 1 ? "" : "s"}…`;
+    const log = $("create-log");
+    log.innerHTML = "";
+    toCreate.forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "progress-row";
+      row.dataset.boundaryId = r.boundary_id;
+      row.innerHTML = `<div class="progress-label">${r.name}</div><span class="pill pill-pending">Queued</span>`;
+      log.appendChild(row);
+    });
+    show($("step-create"));
+    $("step-create").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("btn-create").disabled = true;
+    $("btn-back").disabled = true;
+
+    // Mark all as creating, then send one POST. (The server pipeline is per-plan
+    // synchronous; per-row "creating" → "ok/err" updates happen client-side from
+    // the response array.)
+    log.querySelectorAll(".pill").forEach((p) => { p.className = "pill pill-creating"; p.textContent = "Creating"; });
+
+    let payload;
+    try {
+      const resp = await fetch(BULK_CREATE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        body: JSON.stringify({ plans: toCreate, mode: "coverage" }),
+      });
+      payload = await resp.json();
+      if (!resp.ok) throw new Error((payload && payload.detail) || `HTTP ${resp.status}`);
+    } catch (e) {
+      alert("Create failed: " + e.message);
+      $("btn-create").disabled = false;
+      $("btn-back").disabled = false;
+      hide($("create-spinner"));
+      return;
+    }
+
+    let okCount = 0, errCount = 0;
+    (payload.results || []).forEach((res) => {
+      const row = log.querySelector(`.progress-row[data-boundary-id="${CSS.escape(res.boundary_id || "")}"]`) ||
+                  log.querySelector(`.progress-row:nth-child(${(payload.results.indexOf(res) + 1)})`);
+      if (!row) return;
+      const pill = row.querySelector(".pill");
+      if (res.status === "ok") {
+        pill.className = "pill pill-ok";
+        pill.textContent = "Created";
+        okCount++;
+      } else {
+        pill.className = "pill pill-err";
+        pill.textContent = res.detail || "Error";
+        errCount++;
+      }
+    });
+
+    hide($("create-spinner"));
+    $("create-title").textContent =
+      `Created ${okCount} of ${toCreate.length} plan${toCreate.length === 1 ? "" : "s"}`
+      + (errCount ? ` · ${errCount} error${errCount === 1 ? "" : "s"}` : "");
+    $("done-summary").textContent =
+      okCount > 0
+        ? `Created ${okCount} plan${okCount === 1 ? "" : "s"} in program #${PROGRAM_ID}. Open the portfolio to review and assign.`
+        : "No plans were created.";
+    show($("create-done"));
+  }
+  $("btn-create").addEventListener("click", doCreate);
+})();
+</script>
+{% endblock %}

@@ -32,6 +32,19 @@ urlpatterns = [
     ),
     path("program/<int:program_id>/new/", views.ProgramSetupView.as_view(), name="program_create_plan_page"),
     path("program/<int:program_id>/plan/create/", views.ProgramCreatePlanView.as_view(), name="program_create_plan"),
+    # Bulk-create: paste a ward list, resolve against admin_boundaries,
+    # preview matched + unresolved rows, confirm, then materialize one plan per ward
+    # in one server call. Backbone for the microplans-10-wards demo scene 2.
+    path(
+        "program/<int:program_id>/bulk_create/",
+        views.ProgramBulkCreatePlanPageView.as_view(),
+        name="program_bulk_create_page",
+    ),
+    path(
+        "program/<int:program_id>/plan/bulk_create/",
+        views.ProgramBulkCreatePlansView.as_view(),
+        name="program_bulk_create",
+    ),
     path("program/<int:program_id>/plan/<int:plan_id>/", views.ProgramPlanView.as_view(), name="program_plan"),
     path(
         "program/<int:program_id>/plan/<int:plan_id>/edit/",

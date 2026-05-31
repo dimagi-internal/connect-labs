@@ -10,6 +10,7 @@
     </div>
     <div class="flex items-center gap-2">
       <button type="button" id="compare-sel" class="button button-sm outline-style" disabled title="Tick 2+ plans to compare">Compare selected</button>
+      <a href="{% url 'microplans:program_bulk_create_page' program_id=program_id %}" class="button button-sm outline-style" title="Paste a list of ward names and create one plan per ward in one batch">+ Bulk paste list</a>
       <a href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button button-sm primary-dark">+ New plan</a>
     </div>
   </div>
