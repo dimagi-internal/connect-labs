@@ -6,9 +6,23 @@
 {% block css %}
 {{ block.super }}
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
 <style>
   #review-map { position: absolute; inset: 0; }
   .hidden { display: none !important; }
+
+  /* Area-definition controls — copied from setup.html so the look matches. */
+  .seg-row { display: grid; gap: 0.25rem; }
+  .chip-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.25rem; }
+  .chip { padding: 0.3rem 0.1rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.7rem;
+          color: #4b5563; cursor: pointer; background: #fff; text-align: center; transition: all .12s; }
+  .chip:hover { border-color: #9ca3af; }
+  .chip.is-on { border-color: #3843d0; color: #3843d0; background: #eef0ff; font-weight: 600; }
+  details.area-def[open] > summary .chev { transform: rotate(90deg); }
+  details.area-def > summary { cursor: pointer; user-select: none; list-style: none; }
+  details.area-def > summary::-webkit-details-marker { display: none; }
+  details.area-def > summary .chev { display: inline-block; transition: transform 0.15s; color: #6b7280; margin-right: 0.25rem; }
+  .seg-on { box-shadow: inset 0 0 0 2px #3843d0; background: #eef0ff; color: #3a42c7; }
   .wa-row.excluded { opacity: 0.45; text-decoration: line-through; }
   .wa-row.sel { background: #ecfdf5; }
   .wa-row.hl-worker { background: #fef9c3; }
@@ -68,6 +82,88 @@
       <p class="text-xs text-gray-400 mt-1">Planning phase — edits here happen before upload to Connect.</p>
       {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to program</a>{% endif %}
     </div>
+
+    <!-- AREA DEFINITION — collapsible. Lets the LLO redraw the boundary or
+         change the cell size on this plan and regenerate. Destructive: every
+         work area is rebuilt; CHW assignments + per-area edits wiped. -->
+    <section>
+      <details class="area-def">
+        <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
+          <span class="chev">▶</span> Edit area &amp; cell size
+        </summary>
+        <div class="space-y-3 mt-2 text-xs">
+          <p class="text-[10px] text-gray-500 leading-snug">
+            Regenerates every work area. CHW assignments and per-area edits are reset.
+          </p>
+
+          <div>
+            <div class="text-gray-600 mb-1">Area input</div>
+            <div class="seg-row" style="grid-template-columns: repeat(3, 1fr);">
+              <button type="button" id="btn-area-draw" class="seg-tab is-on">Draw</button>
+              <button type="button" id="btn-area-admin" class="seg-tab">Admin</button>
+              <button type="button" id="btn-area-pin" class="seg-tab">Pin</button>
+            </div>
+          </div>
+
+          <div id="area-draw-help" class="text-[10px] text-gray-500">
+            Use the polygon tool at the top-right of the map to draw the area.
+          </div>
+
+          <div id="area-admin" class="hidden space-y-2">
+            <label class="block"><span class="text-gray-600">Country</span>
+              <select id="sel-country" class="base-input mt-0.5 text-xs"></select></label>
+            <div class="grid grid-cols-2 gap-1">
+              <label class="block"><span class="text-gray-600">Level</span>
+                <select id="sel-level" class="base-input mt-0.5 text-xs">
+                  <option value="1">Region / State</option>
+                  <option value="2" selected>County / LGA</option>
+                  <option value="3">Ward / Locality</option>
+                </select></label>
+              <label class="block"><span class="text-gray-600">Search</span>
+                <input id="inp-area-search" type="text" placeholder="name…" class="base-input mt-0.5 text-xs"></label>
+            </div>
+            <button type="button" id="btn-area-search" class="button button-sm primary-dark w-full text-xs">Find areas</button>
+            <div id="area-source" class="text-[10px] text-gray-500"></div>
+            <div id="list-areas" class="max-h-32 overflow-y-auto border border-gray-100 rounded divide-y"></div>
+          </div>
+
+          <div id="area-pin" class="hidden space-y-2">
+            <p class="text-[10px] text-gray-500">Click "Drop pin", then click the map.</p>
+            <div class="grid grid-cols-2 gap-1">
+              <button type="button" id="btn-drop-pin" class="button button-sm outline-style text-xs">Drop pin</button>
+              <label class="block"><span class="text-gray-600">Radius (m)</span>
+                <input id="inp-pin-radius" type="number" value="500" min="20" step="50" class="base-input mt-0.5 text-xs"></label>
+            </div>
+            <div id="pin-status" class="text-[10px] text-gray-500"></div>
+          </div>
+
+          <div>
+            <div class="text-gray-600 mb-1">Work-area size (cell edge)</div>
+            <div class="chip-row" id="cellsize-chips">
+              <button type="button" class="chip" data-cellsize="50">50 m</button>
+              <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
+              <button type="button" class="chip" data-cellsize="150">150 m</button>
+              <button type="button" class="chip" data-cellsize="200">200 m</button>
+              <button type="button" class="chip" data-cellsize="250">250 m</button>
+            </div>
+            <label class="block mt-1.5">
+              <span class="text-gray-600">Custom (m)</span>
+              <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input mt-0.5 text-xs">
+            </label>
+          </div>
+
+          <dl class="space-y-0.5 pt-2 border-t border-gray-100">
+            <div class="flex justify-between"><dt class="text-gray-500">Areas drawn</dt><dd id="stat-areas-drawn" class="text-gray-700 font-medium">0</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-500">Approx. area</dt><dd id="stat-area-km2" class="text-gray-700 font-medium">—</dd></div>
+          </dl>
+
+          <button type="button" id="btn-apply-area" class="button button-sm primary-dark w-full">
+            Apply geographic frame
+          </button>
+          <p class="text-[10px] text-gray-500" id="apply-area-status"></p>
+        </div>
+      </details>
+    </section>
 
     <section>
       <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Map colors</h2>
@@ -230,6 +326,7 @@
 {% block inline_javascript %}
 {{ block.super }}
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
 <script>
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
@@ -241,6 +338,11 @@
   const FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
   const REGROUP_URL = "{{ regroup_url|default:''|escapejs }}";
   const REASSIGN_URL = "{{ reassign_url|default:''|escapejs }}";
+  const REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
+  const PREVIEW_COVERAGE_URL = "{{ preview_coverage_url|default:''|escapejs }}";
+  const COUNTRIES_URL = "{{ countries_url|default:''|escapejs }}";
+  const ADMIN_AREAS_URL = "{{ admin_areas_url|default:''|escapejs }}";
+  const ADMIN_AREA_GEOMETRY_URL = "{{ admin_area_geometry_url|default:''|escapejs }}";
   document.getElementById("compare-link").href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
@@ -816,6 +918,12 @@
       $("asg-workers").value = w;
     }
     if (a.restarts) $("asg-restarts").value = a.restarts;
+    // Pre-fill the cell-size from the first work area's properties.cell_size_m
+    // (coverage frame stores it on every feature). So the Area definition
+    // section shows the size used to generate the current layout.
+    const was = data.work_areas || [];
+    const cellSize = was.length && was[0].properties && was[0].properties.cell_size_m;
+    if (cellSize) setCellSize(cellSize, true);
     // Stamp baselines so Apply buttons grey out until something actually
     // changes. If the plan had nothing stored for that phase, baseline stays
     // null → button is enabled for the first-ever apply.
@@ -846,10 +954,214 @@
   GRP_FIELDS.forEach((id) => { const el = $(id); if (el) { el.addEventListener("input", syncApplyButtons); el.addEventListener("change", syncApplyButtons); } });
   ASG_FIELDS.forEach((id) => { const el = $(id); if (el) { el.addEventListener("input", syncApplyButtons); el.addEventListener("change", syncApplyButtons); } });
 
+  // ----------------------------------------------------------------------
+  //  Area definition (Edit area & cell size) — destructive regenerate flow.
+  //  Adds a MapboxDraw control to the existing map so the LLO can draw a new
+  //  boundary; offers admin-area picker + pin-and-radius as alternatives;
+  //  Apply geographic frame posts to /plan/<id>/regenerate/ and re-renders.
+  // ----------------------------------------------------------------------
+  let draw = null;
+  let areaInput = "draw";              // "draw" | "admin" | "pin"
+  let circleAreas = [];                // [{circle:{lon,lat,radius_m}}]
+  let dropPinArmed = false;
+  let countriesLoaded = false;
+  let cellSizeM = 100;
+
+  function setupAreaDef() {
+    if (!map) return;
+    // MapboxDraw is added top-right; works alongside the existing wa-fill /
+    // wa-line layers because those layers are below the draw layer ordering.
+    try {
+      draw = new MapboxDraw({
+        displayControlsDefault: false,
+        controls: { polygon: true, trash: true },
+        styles: [
+          { id: "gl-draw-polygon-fill", type: "fill", filter: ["all", ["==", "$type", "Polygon"]],
+            paint: { "fill-color": "#10b981", "fill-opacity": 0.15 } },
+          { id: "gl-draw-polygon-stroke", type: "line", filter: ["all", ["==", "$type", "Polygon"]],
+            paint: { "line-color": "#10b981", "line-width": 2 } },
+          { id: "gl-draw-vertex", type: "circle", filter: ["all", ["==", "meta", "vertex"], ["==", "$type", "Point"]],
+            paint: { "circle-radius": 4, "circle-color": "#fff", "circle-stroke-color": "#111", "circle-stroke-width": 1 } },
+        ],
+      });
+      map.addControl(draw, "top-right");
+      map.on("draw.create", refreshAreaStats);
+      map.on("draw.update", refreshAreaStats);
+      map.on("draw.delete", refreshAreaStats);
+    } catch (e) { /* draw plugin unavailable — fall back gracefully */ }
+  }
+
+  function setAreaInput(i) {
+    areaInput = i;
+    [["draw", "btn-area-draw", "area-draw-help"], ["admin", "btn-area-admin", "area-admin"], ["pin", "btn-area-pin", "area-pin"]].forEach(([k, btnId, panelId]) => {
+      $(btnId).classList.toggle("is-on", k === i);
+      $(panelId).classList.toggle("hidden", k !== i);
+    });
+    if (i !== "pin") disarmPin();
+  }
+  $("btn-area-draw").addEventListener("click", () => setAreaInput("draw"));
+  $("btn-area-admin").addEventListener("click", () => { setAreaInput("admin"); loadCountries(); });
+  $("btn-area-pin").addEventListener("click", () => setAreaInput("pin"));
+
+  // ---- cell-size chips (same pattern as setup.html) ----
+  function setCellSize(m, fromChip) {
+    cellSizeM = Math.max(10, +m || 100);
+    document.querySelectorAll("#cellsize-chips .chip").forEach((c) =>
+      c.classList.toggle("is-on", +c.dataset.cellsize === cellSizeM));
+    if (fromChip) $("cfg-cellsize").value = cellSizeM;
+  }
+  document.querySelectorAll("#cellsize-chips .chip").forEach((c) =>
+    c.addEventListener("click", () => setCellSize(+c.dataset.cellsize, true)));
+  $("cfg-cellsize").addEventListener("input", () => setCellSize(+$("cfg-cellsize").value, false));
+
+  // ---- admin-area picker (loadCountries + searchAreas + useArea) ----
+  let chosenSource = null, parentArea = null;
+  async function loadCountries() {
+    if (countriesLoaded || !COUNTRIES_URL) return;
+    countriesLoaded = true;
+    try {
+      const data = await (await fetch(COUNTRIES_URL)).json();
+      const bespoke = new Set(data.bespoke || []);
+      const sel = $("sel-country"); sel.innerHTML = "";
+      (data.countries || []).forEach((c) => {
+        const o = document.createElement("option");
+        o.value = c.alpha3;
+        o.textContent = (bespoke.has(c.alpha3) ? "★ " : "") + c.name;
+        if (c.alpha3 === "NGA") o.selected = true;
+        sel.appendChild(o);
+      });
+    } catch (e) { $("area-source").textContent = "Could not load countries: " + e; }
+  }
+  $("btn-area-search").addEventListener("click", () => { parentArea = null; chosenSource = null; searchAreas(); });
+  async function searchAreas() {
+    if (!ADMIN_AREAS_URL) return;
+    const body = { country: $("sel-country").value, level: +$("sel-level").value, q: $("inp-area-search").value || null };
+    if (parentArea) body.parent = parentArea;
+    if (chosenSource) body.source = chosenSource;
+    $("area-source").textContent = "Searching…";
+    try {
+      const data = await (await post(ADMIN_AREAS_URL, body)).json();
+      if (data.status !== "ok") { $("area-source").textContent = data.detail || "lookup failed"; return; }
+      $("area-source").innerHTML = `${data.areas.length} areas`;
+      const box = $("list-areas"); box.innerHTML = "";
+      data.areas.forEach((a) => {
+        const row = document.createElement("div");
+        row.className = "flex items-center justify-between gap-2 px-1.5 py-1 hover:bg-gray-50";
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "text-left flex-1 truncate text-emerald-700 text-xs";
+        const meta = [a.area_km2 ? `${a.area_km2} km²` : null, a.population ? `pop ${Math.round(a.population).toLocaleString()}` : null].filter(Boolean).join(" · ");
+        b.textContent = a.name + (meta ? ` · ${meta}` : "");
+        b.addEventListener("click", () => useArea(a));
+        row.appendChild(b);
+        if (a.level < 3) {
+          const d = document.createElement("button");
+          d.type = "button"; d.className = "text-[10px] text-gray-400 hover:text-gray-700";
+          d.textContent = "drill ↓";
+          d.addEventListener("click", () => { parentArea = a; $("sel-level").value = String(a.level + 1); searchAreas(); });
+          row.appendChild(d);
+        }
+        box.appendChild(row);
+      });
+    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
+  }
+  async function useArea(a) {
+    if (!ADMIN_AREA_GEOMETRY_URL) return;
+    $("area-source").textContent = `Loading ${a.name}…`;
+    try {
+      const data = await (await post(ADMIN_AREA_GEOMETRY_URL, { area: a })).json();
+      if (data.status !== "ok") { $("area-source").textContent = data.detail || "geometry failed"; return; }
+      if (draw) draw.add({ type: "Feature", geometry: data.geometry, properties: {} });
+      const b = new mapboxgl.LngLatBounds();
+      const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c);
+      walk(data.geometry.coordinates);
+      if (!b.isEmpty()) map.fitBounds(b, { padding: 40, maxZoom: 15 });
+      $("area-source").textContent = `Added "${a.name}".`;
+      refreshAreaStats();
+    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
+  }
+
+  // ---- pin + radius ----
+  function disarmPin() { dropPinArmed = false; map.getCanvas().style.cursor = ""; $("btn-drop-pin").classList.remove("seg-on"); }
+  $("btn-drop-pin").addEventListener("click", () => {
+    dropPinArmed = !dropPinArmed;
+    $("btn-drop-pin").classList.toggle("seg-on", dropPinArmed);
+    map.getCanvas().style.cursor = dropPinArmed ? "crosshair" : "";
+    $("pin-status").textContent = dropPinArmed ? "Click the map to place the pin." : "";
+  });
+  map.on("click", (e) => {
+    if (!dropPinArmed) return;
+    const r = Math.max(20, +$("inp-pin-radius").value || 500);
+    circleAreas.push({ circle: { lon: e.lngLat.lng, lat: e.lngLat.lat, radius_m: r } });
+    $("pin-status").textContent = `${circleAreas.length} pin area(s).`;
+    refreshAreaStats();
+  });
+
+  // ---- stats (count + approx area) ----
+  function polyArea(g) {
+    if (!g || g.type !== "Polygon") return 0;
+    const R = 6378137, toRad = (d) => (d * Math.PI) / 180, coords = g.coordinates[0];
+    let total = 0;
+    for (let i = 0; i < coords.length; i++) {
+      const [lon1, lat1] = coords[i], [lon2, lat2] = coords[(i + 1) % coords.length];
+      total += (toRad(lon2) - toRad(lon1)) * (2 + Math.sin(toRad(lat1)) + Math.sin(toRad(lat2)));
+    }
+    return Math.abs(total * R * R / 2);
+  }
+  function refreshAreaStats() {
+    const drawn = draw ? draw.getAll().features : [];
+    const total = drawn.length + circleAreas.length;
+    let areaM2 = 0;
+    drawn.forEach((f) => { try { areaM2 += polyArea(f.geometry); } catch (e) {} });
+    circleAreas.forEach((c) => { areaM2 += Math.PI * c.circle.radius_m * c.circle.radius_m; });
+    $("stat-areas-drawn").textContent = total;
+    $("stat-area-km2").textContent = areaM2 ? (areaM2 / 1e6).toFixed(2) + " km²" : "—";
+  }
+
+  // ---- collect + apply geographic frame ----
+  function collectAreas() {
+    const polys = (draw ? draw.getAll().features : []).map((f) => ({ geometry: f.geometry }));
+    return polys.concat(circleAreas);
+  }
+  $("btn-apply-area").addEventListener("click", async () => {
+    if (!REGENERATE_URL) { $("apply-area-status").textContent = "Regenerate URL not available."; return; }
+    const areas = collectAreas();
+    if (!areas.length) { $("apply-area-status").textContent = "Define an area first (draw / admin / pin)."; return; }
+    if (!confirm("Regenerate work areas? CHW assignments and per-area edits will be wiped.")) return;
+    $("btn-apply-area").disabled = true;
+    $("apply-area-status").textContent = "Previewing work areas…";
+    try {
+      const prev = await (await post(PREVIEW_COVERAGE_URL, { areas, config: { cell_size_m: cellSizeM } })).json();
+      if (prev.status !== "ok") { $("apply-area-status").textContent = prev.detail || "preview failed"; return; }
+      $("apply-area-status").textContent = `Generating ${prev.areas.features.length} work areas…`;
+      const resp = await post(REGENERATE_URL, {
+        mode: "coverage",
+        coverage_areas: prev.areas,
+        input_areas: areas,
+        grouping: {
+          strategy: $("grp-strategy").value,
+          max_buildings: +$("grp-max-buildings").value,
+          buffer_distance_m: +$("grp-buffer-m").value,
+        },
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
+      $("apply-area-status").textContent = `Regenerated ${data.work_areas.length} work areas.`;
+      // Clear drawn polygons + circles so the next "Apply" starts clean.
+      if (draw) draw.deleteAll();
+      circleAreas = [];
+      refreshAreaStats();
+      // Re-render the page from the new plan data.
+      prefillSetupForm(data);
+      render(data);
+    } catch (e) { $("apply-area-status").textContent = "Apply failed: " + e; }
+    finally { $("btn-apply-area").disabled = false; }
+  });
+
   // initial load
   fetch(PLAN_URL).then((r) => r.json()).then((d) => {
     if (d.status === "ok") { prefillSetupForm(d); render(d); }
     else $("status").textContent = d.detail || "load failed";
+    setupAreaDef();
   }).catch((e) => $("status").textContent = "load failed: " + e);
 
   window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit,
