@@ -591,6 +591,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         # a real opp; the path arg is just historical.
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
         context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
+        context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
@@ -900,6 +901,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context.update(_sd_urls())
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
         context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
+        context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
@@ -1129,6 +1131,76 @@ class DeriveBoundaryView(LoginRequiredMixin, View):
                 "point_count": len(points),
             }
         )
+
+
+class ArmComparabilityView(LoginRequiredMixin, View):
+    """Compare two study arms so the control reads as a fair counterfactual.
+
+    POST {areas: [{arm, geometry}, ...], building_counts: {arm: int}}. Unions the
+    geometries per arm, computes accurate area (UTM) + building density from the
+    counts the sample already produced (no second Overture fetch), and returns a
+    matched flag when the arms are within tolerance on building count and density.
+    """
+
+    RATIO_TOLERANCE = 1.5
+
+    def post(self, request, opp_id):
+        from shapely.geometry import shape
+        from shapely.ops import transform, unary_union
+
+        from commcare_connect.microplans.core.geo import utm_epsg_for
+
+        try:
+            payload = json.loads(request.body)
+            areas = payload["areas"]
+            counts = payload.get("building_counts", {}) or {}
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        by_arm: dict[str, list] = {}
+        for a in areas:
+            try:
+                by_arm.setdefault(a.get("arm", "intervention"), []).append(shape(a["geometry"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        out = []
+        for arm, geoms in by_arm.items():
+            try:
+                from pyproj import Transformer
+
+                geom = unary_union(geoms)
+                c = geom.centroid
+                tf = Transformer.from_crs(4326, utm_epsg_for(c.x, c.y), always_xy=True).transform
+                area_km2 = transform(tf, geom).area / 1e6
+            except Exception:  # noqa: BLE001
+                logger.exception("arm_comparability area failed (opp=%s arm=%s)", opp_id, arm)
+                area_km2 = 0.0
+            bc = int(counts.get(arm) or 0)
+            density = round(bc / area_km2, 1) if area_km2 > 0 else 0.0
+            out.append(
+                {"arm": arm, "building_count": bc, "area_km2": round(area_km2, 3), "density_per_km2": density}
+            )
+
+        matched = None
+        reasons: list[str] = []
+        if len(out) >= 2:
+
+            def _ratio(x: float, y: float) -> float:
+                lo, hi = sorted((float(x), float(y)))
+                return (hi / lo) if lo > 0 else float("inf")
+
+            interv = next((x for x in out if x["arm"] == "intervention"), out[0])
+            comp = next((x for x in out if x["arm"] == "comparison"), out[1])
+            bc_r = _ratio(interv["building_count"], comp["building_count"])
+            d_r = _ratio(interv["density_per_km2"], comp["density_per_km2"])
+            matched = bc_r <= self.RATIO_TOLERANCE and d_r <= self.RATIO_TOLERANCE
+            if bc_r > self.RATIO_TOLERANCE:
+                reasons.append(f"building counts differ {bc_r:.1f}×")
+            if d_r > self.RATIO_TOLERANCE:
+                reasons.append(f"densities differ {d_r:.1f}×")
+
+        return JsonResponse({"status": "ok", "arms": out, "matched": matched, "reasons": reasons})
 
 
 # Bulk-create flow — the "paste a ward list" form + the server-side

@@ -21,6 +21,7 @@ urlpatterns = [
         name="service_delivery_pipelines",
     ),
     path("<int:opp_id>/derive_boundary/", views.DeriveBoundaryView.as_view(), name="derive_boundary"),
+    path("<int:opp_id>/arm_comparability/", views.ArmComparabilityView.as_view(), name="arm_comparability"),
     path("<int:opp_id>/boundaries/areas/", views.AdminAreasView.as_view(), name="admin_areas"),
     path("<int:opp_id>/boundaries/geometry/", views.AdminAreaGeometryView.as_view(), name="admin_area_geometry"),
     path("boundaries/countries/", views.CountriesView.as_view(), name="countries"),
