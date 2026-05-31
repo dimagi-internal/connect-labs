@@ -279,10 +279,10 @@
   <div class="flex-1 flex flex-col min-w-0">
     <div class="map-pane" id="map-pane" style="height: 50vh">
       <div id="review-map"></div>
-      <!-- Map overlays: footprints toggle (top-left) + legend (bottom-left) -->
-      <div class="map-overlay" style="top: 0.5rem; left: 0.5rem;">
-        <label><input id="toggle-footprints" type="checkbox" class="rounded"> <span id="footprints-label">Show building footprints</span></label>
-      </div>
+      <!-- Map overlays: Layers/Inspector panel (top-right) + legend (bottom-left).
+           The footprints toggle (and admin / service-delivery layers) live in the
+           panel; rendered by microplans/map_panel.js. -->
+      <div id="map-panel-mount"></div>
       <div class="map-overlay map-legend" style="bottom: 0.5rem; left: 0.5rem;">
         <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Encoding</div>
         <div class="legend-row" id="legend-fill"><span class="sw" style="background:#06b6d4;opacity:0.55"></span><span class="lbl">Fill: <span id="legend-fill-dim">worker</span></span></div>
@@ -358,6 +358,7 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
 <script src="{% static 'microplans/shared.js' %}"></script>
+<script src="{% static 'microplans/map_panel.js' %}"></script>
 <script>
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
@@ -513,13 +514,16 @@
     });
   }
 
-  // ---- footprints overlay ----
-  let footprintsLoaded = false;
+  // ---- map Layers/Inspector panel + footprints layer ----
+  // The panel (microplans/map_panel.js) owns the overlay toggles; footprints is
+  // its first registered layer. Admin boundaries + service delivery register
+  // here too (follow-up). `__mpPanel` is exposed for those + debugging.
+  let mapPanel = null, fpLayer = null, footprintsLoaded = false;
+  const setStatus = (t) => { const s = $("status"); if (s) s.textContent = t; };
   async function loadFootprints() {
-    if (!FOOTPRINTS_URL) { $("toggle-footprints").checked = false; return; }
-    const lbl = $("footprints-label");
-    if (lbl) lbl.textContent = "Loading footprints…";
-    $("status").textContent = "Fetching footprints…";
+    if (!FOOTPRINTS_URL) return false;
+    if (fpLayer) fpLayer.setMeta("Loading footprints…");
+    setStatus("Fetching footprints…");
     const t0 = performance.now();
     try {
       const data = await (await fetch(FOOTPRINTS_URL)).json();
@@ -528,38 +532,52 @@
       if (src) { src.setData(data.footprints); }
       else {
         map.addSource("plan-fp", { type: "geojson", data: data.footprints });
+        const before = map.getLayer("wa-line") ? "wa-line" : undefined;
         // Polygon fill (for buildings whose geometry the cache has stored).
         map.addLayer({
           id: "plan-fp-fill", type: "fill", source: "plan-fp",
           filter: ["==", ["geometry-type"], "Polygon"],
           paint: { "fill-color": "#f59e0b", "fill-opacity": 0.55, "fill-outline-color": "#b45309" },
-        }, "wa-line");
+        }, before);
         // Centroid dot fallback (for legacy cache rows with no polygon stored).
         map.addLayer({
           id: "plan-fp-dots", type: "circle", source: "plan-fp",
           filter: ["==", ["geometry-type"], "Point"],
           paint: { "circle-radius": 1.6, "circle-color": "#f59e0b", "circle-stroke-color": "#fff", "circle-stroke-width": 0.4 },
-        }, "wa-line");
+        }, before);
       }
       footprintsLoaded = true;
       const dt = ((performance.now() - t0) / 1000).toFixed(1);
-      $("status").textContent = `${data.count.toLocaleString()} footprints loaded in ${dt}s.`;
-      if (lbl) lbl.textContent = "Show building footprints";
+      if (fpLayer) fpLayer.setMeta(`${data.count.toLocaleString()} buildings`);
+      setStatus(`${data.count.toLocaleString()} footprints loaded in ${dt}s.`);
+      return true;
     } catch (e) {
-      $("status").textContent = "Footprints failed: " + e.message;
-      $("toggle-footprints").checked = false;
-      if (lbl) lbl.textContent = "Show building footprints";
+      if (fpLayer) fpLayer.setMeta("Failed — toggle to retry");
+      setStatus("Footprints failed: " + e.message);
+      return false;
     }
   }
-  on("toggle-footprints", "change", () => {
-    const isOn = $("toggle-footprints").checked;
-    if (isOn && !footprintsLoaded) { loadFootprints(); return; }
-    if (map && mapReady) {
-      ["plan-fp-fill", "plan-fp-dots"].forEach((id) => {
-        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", isOn ? "visible" : "none");
-      });
-    }
-  });
+  function setFootprintsVisible(isOn) {
+    if (!map || !mapReady) return;
+    ["plan-fp-fill", "plan-fp-dots"].forEach((id) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", isOn ? "visible" : "none");
+    });
+  }
+  if (map && window.MicroplansMapPanel && $("map-panel-mount")) {
+    mapPanel = MicroplansMapPanel.create({ map, mount: $("map-panel-mount") });
+    fpLayer = mapPanel.registerLayer({
+      id: "footprints", label: "Building footprints", color: "#f59e0b",
+      meta: FOOTPRINTS_URL ? "" : "available once a plan exists",
+      onToggle: async (isOn, layer) => {
+        if (isOn && !footprintsLoaded) {
+          const ok = await loadFootprints();
+          if (!ok) { layer.setEnabled(false, false); return; }
+        }
+        setFootprintsVisible(isOn);
+      },
+    });
+    window.__mpPanel = mapPanel;
+  }
 
   // ---- render ----
   function render(data) {
