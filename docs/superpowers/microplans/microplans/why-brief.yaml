@@ -50,19 +50,28 @@ spine:
     claim: >-
       The bulk-create form takes a pasted list of ward names, resolves each name against the
       admin boundaries, and presents the resolved ward data (LGA + population + ID) back to
-      the lead — with any unresolved names called out explicitly — so she confirms all
-      wards were found BEFORE the system commits to creating any plans.
+      the lead — with an explicit unresolved_reason for typos/unknown names AND a per-row
+      Pick LGA picker (with each candidate's LGA + population) for ward names that collide
+      across multiple LGAs — so she confirms or disambiguates every row inline BEFORE the
+      system commits to creating any plans.
     rationale: >-
       A paste-list UI without a resolution-and-confirm step is unsafe: ward names vary in
-      spelling (Kadan Dani vs Kadandani; "Tofa" the LGA vs "Tofa" the ward), and the lead
-      needs to see what the system actually matched before plans are created — a silent
-      best-effort match would create wrong plans for typo'd names and the lead would only
-      discover it later from KPIs. Confirmation before commit is what makes paste-the-list
-      trustworthy.
-    status: gap
+      spelling (Kadan Dani vs Kadandani) AND collide across LGAs (Madobi is both an LGA AND
+      a ward in Kano; Tofa is a ward in 4 different LGAs). Without per-row disambiguation,
+      a silent best-effort match would create plans for the wrong wards; without an inline
+      picker, the lead's only option for an ambiguous row is Skip, which silently drops it
+      from the batch. The Pick-LGA-or-Skip pattern + "Create N plans" button disabled until
+      every row is decided is what makes paste-the-list both trustworthy AND complete.
+    status: grounded
     evidence:
       - kind: implemented
-        ref: "Backend partially ready: boundary lookup by name exists in commcare_connect/labs/admin_boundaries/services.py. Missing: a resolve-many endpoint that takes a list of names and returns per-name {matched_id, matched_name, lga, population, unresolved_reason}; and the front-end's review/confirm step that renders the resolved list before commit."
+        ref: "commcare_connect/labs/admin_boundaries/services.py:resolve_many_by_name + NameResolution.candidates (PR #349)"
+      - kind: implemented
+        ref: "commcare_connect/labs/admin_boundaries/views.py:ResolveManyByNameAPIView (POST /labs/explorer/boundaries/resolve_many/)"
+      - kind: implemented
+        ref: "commcare_connect/microplans/views.py:ProgramBulkCreatePlanPageView + ProgramBulkCreatePlansView (PR #340)"
+      - kind: implemented
+        ref: "commcare_connect/templates/microplans/bulk_create.html (paste textarea, resolved table, per-row Pick LGA picker, disabled Create until matched-or-skipped)"
 
   - id: bulk-input-ui
     claim: >-
