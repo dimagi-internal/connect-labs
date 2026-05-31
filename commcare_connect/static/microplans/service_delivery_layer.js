@@ -10,8 +10,8 @@
  *     map,                       // a mapboxgl.Map
  *     mount,                     // an element to render the panel into
  *     csrf,                      // CSRF token string
- *     opps: [{id, name}],        // selectable opportunities
- *     currentOppId,              // pre-checked opp
+ *     opps: [{id, name, program_name?, visit_count?}], // searchable opportunities
+ *     currentOppId,              // pre-selected opp (added as the first chip)
  *     urls: { preview, pipelines, derive },
  *     onBoundary: (feature) => {}, // optional: receives the derived GeoJSON Feature
  *   }) -> controller { destroy() }
@@ -24,6 +24,29 @@
 
   const SRC = 'sd-points';
   const LAYER = 'sd-points-circle';
+
+  // Mirrors OPP_COLORS in microplans/service_delivery/points.py so the chip
+  // swatch a user sees matches the server-assigned layer color (both index by
+  // selection order).
+  const OPP_COLORS = [
+    '#2563eb',
+    '#dc2626',
+    '#16a34a',
+    '#d97706',
+    '#7c3aed',
+    '#0891b2',
+    '#db2777',
+    '#65a30d',
+    '#ea580c',
+    '#4f46e5',
+  ];
+  const colorFor = (i) => OPP_COLORS[i % OPP_COLORS.length];
+
+  const esc = (s) =>
+    String(s == null ? '' : s).replace(
+      /[&<>"]/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+    );
 
   function el(tag, attrs, html) {
     const e = document.createElement(tag);
@@ -52,29 +75,22 @@
     let loadedFeatures = []; // last-rendered point features (source of derive coords)
     let pipelinesLoaded = false;
 
+    // ---- opp selection state (searchable multiselect) -----------------------
+    const oppById = new Map(opps.map((o) => [Number(o.id), o]));
+    const selected = []; // opp ids, in selection order (drives server colors)
+    if (currentOppId != null && oppById.has(currentOppId))
+      selected.push(currentOppId);
+
     // ---- panel markup -------------------------------------------------------
     const panel = el('div', { class: 'sd-panel' });
-    const oppRows = opps
-      .map(
-        (o) =>
-          `<label class="flex items-center gap-2 text-xs cursor-pointer py-0.5">
-             <input type="checkbox" class="sd-opp rounded" value="${o.id}" ${
-               o.id === currentOppId ? 'checked' : ''
-             }>
-             <span class="truncate" title="${o.name.replace(/"/g, '&quot;')}">${
-               o.name
-             }</span>
-           </label>`,
-      )
-      .join('');
-
     panel.innerHTML = `
       <div class="mp-section-label">Service delivery data</div>
-      <div class="text-xs text-gray-500 mb-1">Overlay visit GPS for one or more opportunities.</div>
-      <div class="sd-opps max-h-32 overflow-auto border rounded p-1 bg-white">${
-        oppRows ||
-        '<div class="text-xs text-gray-400 p-1">No opportunities available.</div>'
-      }</div>
+      <div class="text-xs text-gray-500 mb-1">Search opportunities to overlay their visit GPS. Add as many as you like.</div>
+      <div class="sd-picker relative">
+        <input type="text" class="sd-search base-input text-xs w-full" placeholder="Search by name, program, or id…" autocomplete="off">
+        <div class="sd-results hidden absolute z-20 left-0 right-0 mt-1 max-h-56 overflow-auto bg-white border rounded shadow-lg"></div>
+      </div>
+      <div class="sd-chips flex flex-wrap gap-1 mt-2"></div>
       <label class="block mt-2"><span class="text-gray-600 text-xs">Data source</span>
         <select class="sd-pipeline base-input mt-1 text-xs"><option value="default">Default — device GPS (any app)</option></select>
       </label>
@@ -102,10 +118,91 @@
 
     const q = (sel) => panel.querySelector(sel);
     const status = (t) => (q('.sd-status').textContent = t || '');
-    const selectedOppIds = () =>
-      Array.from(panel.querySelectorAll('.sd-opp:checked')).map((c) =>
-        Number(c.value),
+    const selectedOppIds = () => selected.slice();
+
+    // ---- searchable multiselect (mirrors the labs context picker) -----------
+    function oppMatches(o, term) {
+      if (!term) return true;
+      const hay = `${o.name || ''} ${o.program_name || ''} ${
+        o.id
+      }`.toLowerCase();
+      return term.split(/\s+/).every((t) => hay.includes(t));
+    }
+    function renderChips() {
+      const box = q('.sd-chips');
+      if (!selected.length) {
+        box.innerHTML =
+          '<span class="text-xs text-gray-400">No opportunities selected.</span>';
+        return;
+      }
+      box.innerHTML = selected
+        .map((id, i) => {
+          const o = oppById.get(id) || { name: `Opp #${id}`, id };
+          return `<span class="sd-chip inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded text-xs bg-gray-100 border" data-id="${id}">
+            <span style="background:${colorFor(
+              i,
+            )};width:9px;height:9px;border-radius:9999px;display:inline-block"></span>
+            <span class="truncate max-w-[9rem]" title="${esc(
+              o.name,
+            )} (id ${id})">${esc(o.name)}</span>
+            <button type="button" class="sd-chip-x text-gray-400 hover:text-red-600 leading-none" data-id="${id}" title="Remove">&times;</button>
+          </span>`;
+        })
+        .join('');
+      box.querySelectorAll('.sd-chip-x').forEach((b) =>
+        b.addEventListener('click', () => {
+          const id = Number(b.dataset.id);
+          const idx = selected.indexOf(id);
+          if (idx > -1) selected.splice(idx, 1);
+          renderChips();
+        }),
       );
+    }
+    function renderResults() {
+      const term = q('.sd-search').value.trim().toLowerCase();
+      const box = q('.sd-results');
+      const hits = opps
+        .filter((o) => !selected.includes(Number(o.id)) && oppMatches(o, term))
+        .slice(0, 40);
+      if (!hits.length) {
+        box.innerHTML =
+          '<div class="px-3 py-2 text-xs text-gray-400">No matches.</div>';
+      } else {
+        box.innerHTML = hits
+          .map(
+            (o) =>
+              `<button type="button" class="sd-result w-full text-left px-3 py-1.5 text-xs hover:bg-purple-50" data-id="${
+                o.id
+              }">
+                <div class="font-medium truncate" title="${esc(o.name)}">${esc(
+                  o.name,
+                )}</div>
+                <div class="text-gray-500">ID ${o.id}${
+                  o.program_name ? ' · ' + esc(o.program_name) : ''
+                } · ${o.visit_count || 0} visits</div>
+              </button>`,
+          )
+          .join('');
+        box.querySelectorAll('.sd-result').forEach((r) =>
+          r.addEventListener('click', () => {
+            const id = Number(r.dataset.id);
+            if (!selected.includes(id)) selected.push(id);
+            q('.sd-search').value = '';
+            box.classList.add('hidden');
+            renderChips();
+          }),
+        );
+      }
+      box.classList.remove('hidden');
+    }
+    q('.sd-search').addEventListener('input', renderResults);
+    q('.sd-search').addEventListener('focus', renderResults);
+    const onDocClick = (e) => {
+      if (!q('.sd-picker').contains(e.target))
+        q('.sd-results').classList.add('hidden');
+    };
+    document.addEventListener('click', onDocClick);
+    renderChips();
 
     // ---- pipeline dropdown (lazy) ------------------------------------------
     async function loadPipelines() {
@@ -325,6 +422,7 @@
 
     return {
       destroy() {
+        document.removeEventListener('click', onDocClick);
         if (map.getLayer(LAYER)) map.removeLayer(LAYER);
         if (map.getSource(SRC)) map.removeSource(SRC);
         if (popup) popup.remove();
