@@ -811,3 +811,45 @@ def test_preview_service_delivery_merges_colored_layers(client, django_user_mode
     # each feature tagged with its opp + color
     feats = body["points"]["features"]
     assert {f["properties"]["opportunity_id"] for f in feats} == {100, 200}
+    assert body["sampled"] is False and body["total"] == 2
+
+
+def test_preview_service_delivery_caps_overlay_points(client, django_user_model, monkeypatch):
+    from commcare_connect.microplans.service_delivery.points import MAX_OVERLAY_POINTS
+
+    _login_with_opps(client, django_user_model, [100, 200])
+    per_opp = MAX_OVERLAY_POINTS  # 2 opps × cap → comfortably over the limit
+
+    def fake_fetch(opp_id, request=None, access_token=None, pipeline_id=None):
+        pts = [{"lon": 36.82 + i * 1e-5, "lat": -1.29, "status": "approved"} for i in range(per_opp)]
+        return {"points": pts, "stats": {"opportunity_id": opp_id}, "error": None}
+
+    monkeypatch.setattr("commcare_connect.microplans.service_delivery.points.fetch_points", fake_fetch)
+    resp = client.post(
+        reverse("microplans:preview_service_delivery", kwargs={"opp_id": 100}),
+        data=json.dumps({"opp_ids": [100, 200]}),
+        content_type="application/json",
+    )
+    body = resp.json()
+    assert body["sampled"] is True
+    assert body["total"] == 2 * per_opp  # honest about how many there were
+    assert body["count"] <= MAX_OVERLAY_POINTS  # bounded, no silent truncation
+    assert len(body["points"]["features"]) == body["count"]
+
+
+def test_program_plan_footprints_sets_cache_control(client, django_user_model, monkeypatch):
+    import pandas as pd
+
+    _login(client, django_user_model)
+    plan = _FakeProgramPlan(
+        5, "coverage", [{"geometry": {"type": "Polygon", "coordinates": [[[0, 0], [0.01, 0], [0.01, 0.01], [0, 0]]]}}]
+    )
+    _make_fake_program_da(monkeypatch, {5: plan}, {})
+    monkeypatch.setattr(
+        "commcare_connect.microplans.core.footprints.fetch_buildings",
+        lambda area, min_confidence=None, with_geom=False: pd.DataFrame([{"lon": 0.005, "lat": 0.005}]),
+    )
+    resp = client.get(reverse("microplans:program_plan_footprints", kwargs={"program_id": 1, "plan_id": 5}))
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+    assert "max-age" in resp.headers.get("Cache-Control", "")
