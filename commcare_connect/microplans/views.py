@@ -590,6 +590,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         # exactly as the setup page does. The endpoints don't actually require
         # a real opp; the path arg is just historical.
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
+        context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
@@ -898,6 +899,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["back_url"] = context["program_url"]
         context.update(_sd_urls())
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
+        context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
