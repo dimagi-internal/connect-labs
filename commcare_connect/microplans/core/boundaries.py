@@ -118,3 +118,63 @@ def get_admin_area_geojson(country_iso2: str, name: str, subtype: str, region: s
     geom = json.loads(rows[0][0]) if rows else None
     cache.set(key, geom, CACHE_TTL_SECONDS)
     return geom
+
+
+def list_admin_areas_in_bbox(
+    country_iso2: str,
+    bbox_wkt: str,
+    subtypes: tuple[str, ...] | list[str] | None = None,
+    simplify: float | None = None,
+    limit: int = 1500,
+) -> list[dict]:
+    """List admin areas *with geometry* intersecting a bbox, for the map layer.
+
+    Mirrors `list_admin_areas` but (a) filters spatially by `ST_Intersects` against
+    the viewport polygon, (b) returns each area's GeoJSON geometry (optionally
+    `ST_Simplify`-ed by `simplify` degrees for a lighter payload), and (c) orders
+    largest-first so a `limit` cut keeps the most prominent boundaries.
+
+    `country_iso2` is required — it prunes the country-partitioned parquet so a
+    bbox scan doesn't read the whole global file. Returns dicts:
+    {name, subtype, region, area_km2, geometry}.
+    """
+    subtypes = tuple(subtypes) if subtypes else PICKABLE_SUBTYPES
+    key = _key("bbox", country_iso2, bbox_wkt, subtypes, simplify, limit)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    # SELECT-clause binds come before WHERE binds in execution order.
+    select_params: list = []
+    if simplify:
+        geom_sql = "ST_AsGeoJSON(ST_Simplify(geometry, ?)) AS geom"
+        select_params.append(float(simplify))
+    else:
+        geom_sql = "ST_AsGeoJSON(geometry) AS geom"
+
+    where = ["country = ?", "ST_Intersects(geometry, ST_GeomFromText(?))"]
+    params: list = [country_iso2, bbox_wkt]
+    where.append("subtype IN (" + ",".join("?" for _ in subtypes) + ")")
+    params.extend(subtypes)
+
+    con = overture.connect()
+    rows = con.execute(
+        f"""
+        SELECT names.primary AS name, subtype, region,
+               round(ST_Area_Spheroid(geometry)/1e6, 1) AS area_km2,
+               {geom_sql}
+        FROM read_parquet('{DIVISION_AREA}', filename=false, hive_partitioning=true)
+        WHERE {' AND '.join(where)} AND names.primary IS NOT NULL
+        ORDER BY area_km2 DESC
+        LIMIT {int(limit)}
+        """,
+        select_params + params,
+    ).df()
+    result = []
+    for r in rows.to_dict("records"):
+        geom = r.pop("geom", None)
+        r["geometry"] = json.loads(geom) if geom else None
+        result.append(r)
+    cache.set(key, result, CACHE_TTL_SECONDS)
+    logger.info("rooftop boundaries in bbox: %d areas (%s)", len(result), country_iso2)
+    return result

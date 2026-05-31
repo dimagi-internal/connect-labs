@@ -18,6 +18,13 @@ from django.views.generic import TemplateView
 logger = logging.getLogger(__name__)
 
 
+def _float_or_none(raw):
+    try:
+        return float(raw) if raw not in (None, "") else None
+    except (ValueError, TypeError):
+        return None
+
+
 class _LabsContextSyncMixin:
     """Sync the labs context picker pill to the program_id / opp_id in this view's
     URL kwargs. Without it, the picker stays on "Select Context" on every
@@ -283,6 +290,91 @@ class AdminAreaGeometryView(LoginRequiredMixin, View):
         if not geom:
             return JsonResponse({"status": "error", "detail": "Area not found."}, status=404)
         return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
+
+
+class BoundaryViewportView(LoginRequiredMixin, View):
+    """Admin boundaries intersecting the map viewport, for the 'Boundaries' layer.
+
+    GET query params:
+      * ``bbox`` (required) — ``minLng,minLat,maxLng,maxLat`` (WGS84).
+      * ``zoom`` — map zoom; coarser zoom → more outline simplification.
+      * ``source`` — pick a boundary system (``labs`` / ``overture``); falls back to
+        the country default. Exactly one source renders at a time.
+      * ``iso`` — alpha-3 country; optional for labs (a filter), **required for
+        Overture** (parquet partition pruning).
+      * ``level`` — restrict to one canonical admin level (1/2/3).
+
+    Returns a GeoJSON FeatureCollection plus the source actually used and the
+    pickable-source list (so the layer can offer a single-select source dropdown).
+    """
+
+    LIMIT = 1500
+
+    def get(self, request):
+        from commcare_connect.microplans.core.admin_boundaries import SOURCE_LABELS, get_resolver
+
+        bbox = self._parse_bbox(request.GET.get("bbox"))
+        if bbox is None:
+            return JsonResponse(
+                {"status": "error", "detail": "bbox=minLng,minLat,maxLng,maxLat is required."}, status=400
+            )
+        zoom = _float_or_none(request.GET.get("zoom"))
+        source = request.GET.get("source") or None
+        iso = request.GET.get("iso") or None
+        levels = [int(request.GET["level"])] if (request.GET.get("level") or "").isdigit() else None
+
+        resolver = get_resolver()
+        try:
+            features, truncated = resolver.boundaries_in_bbox(
+                bbox, source=source, iso=iso, levels=levels, zoom=zoom, limit=self.LIMIT
+            )
+            used = resolver.bbox_source_name(source, iso)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans boundary viewport failed (iso=%s source=%s)", iso, source)
+            return JsonResponse({"status": "error", "detail": "Boundary viewport lookup failed."}, status=502)
+
+        available = self._available_sources(resolver, iso)
+        return JsonResponse(
+            {
+                "status": "ok",
+                "type": "FeatureCollection",
+                "features": [f.to_feature() for f in features],
+                "truncated": truncated,
+                "source": used,
+                "available_sources": available,
+                "source_labels": {n: SOURCE_LABELS.get(n, n) for n in available},
+            }
+        )
+
+    @staticmethod
+    def _parse_bbox(raw):
+        from django.contrib.gis.geos import Polygon
+
+        if not raw:
+            return None
+        try:
+            minx, miny, maxx, maxy = (float(v) for v in raw.split(","))
+        except (ValueError, TypeError):
+            return None
+        if minx >= maxx or miny >= maxy:
+            return None
+        poly = Polygon.from_bbox((minx, miny, maxx, maxy))
+        poly.srid = 4326
+        return poly
+
+    @staticmethod
+    def _available_sources(resolver, iso):
+        """Sources with data for this region (preference order), for the picker.
+        Without an iso we can't scope to a country, so offer all known sources."""
+        if not iso:
+            return list(resolver._sources)
+        seen, out = set(), []
+        for level in (1, 2, 3):
+            for name in resolver.sources_for(iso, level):
+                if name not in seen:
+                    seen.add(name)
+                    out.append(name)
+        return out or list(resolver._sources)
 
 
 # --- Planning-phase plan review/edit (the LLO validation layer; pre-upload) ---
@@ -632,6 +724,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
+        context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         context["regenerate_url"] = reverse("microplans:program_plan_regenerate", args=[program_id, plan_id])
         from django.conf import settings as _s
 
@@ -951,6 +1044,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
+        context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         # Review-only URLs that don't apply pre-create. JS will skip the
         # buttons that depend on them.
         for k in (
