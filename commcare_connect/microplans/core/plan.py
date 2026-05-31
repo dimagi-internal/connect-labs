@@ -103,8 +103,13 @@ def transition_plan(plan_data: dict, to: str, actor: str, opportunity_id=None, n
 
 
 def _centroid(geometry: dict) -> list[float]:
-    c = shape(geometry).centroid
-    return [float(c.x), float(c.y)]
+    try:
+        c = shape(geometry).centroid
+        if c.is_empty:
+            return [0.0, 0.0]
+        return [float(c.x), float(c.y)]
+    except Exception:  # noqa: BLE001
+        return [0.0, 0.0]
 
 
 def _wa_id(props: dict, index: int) -> str:

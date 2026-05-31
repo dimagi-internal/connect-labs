@@ -271,6 +271,7 @@
 {{ block.super }}
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+<script src="{% static 'microplans/shared.js' %}"></script>
 <script src="{% static 'microplans/service_delivery_layer.js' %}"></script>
 {{ user_opportunities|json_script:"sd-opps-data" }}
 <script>
@@ -299,9 +300,8 @@
   mapboxgl.accessToken = MAPBOX_TOKEN;
 
   const $ = (id) => document.getElementById(id);
-  const post = (url, body) => fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body),
-  });
+  Microplans.setCsrf(CSRF);
+  const post = (url, body, opts) => Microplans.post(url, body, Object.assign({ csrf: CSRF }, opts || {}));
 
   const map = new mapboxgl.Map({
     container: "rooftop-map",
@@ -576,18 +576,13 @@
     }
     return Math.abs(total * R * R / 2);
   }
-  function fitTo(geom) {
-    const b = new mapboxgl.LngLatBounds();
-    const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c);
-    walk(geom.coordinates);
-    if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 16 });
-  }
+  const fitTo = (geom) => Microplans.fitTo(map, geom, { padding: 60, maxZoom: 16 });
 
   map.on("draw.create", (e) => { e.features.forEach((f) => tagFeature(f.id)); refreshStats(); });
   map.on("draw.update", refreshStats);
   map.on("draw.delete", refreshStats);
 
-  function upsertSource(id, data) { const s = map.getSource(id); if (s) s.setData(data); else map.addSource(id, { type: "geojson", data }); }
+  const upsertSource = (id, data) => Microplans.upsertSource(map, id, data);
 
   function collectAreas() {
     const polys = draw.getAll().features.map((f) => ({ arm: (f.properties && f.properties.arm) || (mode === "coverage" ? "coverage" : "intervention"), geometry: f.geometry }));
@@ -596,6 +591,8 @@
 
   // ---- render: sampling ----
   function renderSampling(data) {
+    // Leaving coverage mode: free its layers + source so they don't accumulate.
+    Microplans.removeSourceAndLayers(map, "rooftop-cov", ["rooftop-cov-fill", "rooftop-cov-line", "rooftop-cov-label"]);
     upsertSource("rooftop-hulls", data.hulls);
     upsertSource("rooftop-pins", data.pins);
     if (!map.getLayer("rooftop-hulls-fill")) {
@@ -605,7 +602,7 @@
         paint: { "circle-radius": ["case", ["==", ["get", "role"], "primary"], 5, 3.5], "circle-color": ["case", ["==", ["get", "role"], "primary"], "#ef4444", "#fbbf24"], "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
     }
     const feats = data.pins.features;
-    if (feats.length) { const b = new mapboxgl.LngLatBounds(); feats.forEach((f) => b.extend(f.geometry.coordinates)); map.fitBounds(b, { padding: 60, maxZoom: 17 }); }
+    if (feats.length) Microplans.fitTo(map, data.pins, { padding: 60, maxZoom: 17 });
     $("preview-status").innerHTML = data.stats.map((s) =>
       `<div class="mt-2 p-2 rounded bg-gray-50 border"><div class="font-semibold capitalize">${s.arm}</div>
        <div>${(s.after_filters||0).toLocaleString()} buildings · ${s.psus_selected} PSUs</div>
@@ -614,10 +611,9 @@
 
   // ---- render: coverage ----
   function renderCoverage(data) {
-    // Hide sampling-mode layers if they exist from a prior preview.
-    ["rooftop-hulls-fill", "rooftop-hulls-line", "rooftop-pins-circle"].forEach((id) => {
-      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
-    });
+    // Leaving sampling mode: free its layers + sources so they don't accumulate.
+    Microplans.removeSourceAndLayers(map, "rooftop-hulls", ["rooftop-hulls-fill", "rooftop-hulls-line"]);
+    Microplans.removeSourceAndLayers(map, "rooftop-pins", ["rooftop-pins-circle"]);
     upsertSource("rooftop-cov", data.areas);
     if (!map.getLayer("rooftop-cov-fill")) {
       map.addLayer({ id: "rooftop-cov-fill", type: "fill", source: "rooftop-cov", paint: { "fill-color": "#06b6d4", "fill-opacity": 0.22 } });
@@ -628,9 +624,7 @@
     } else {
       ["rooftop-cov-fill", "rooftop-cov-line", "rooftop-cov-label"].forEach((id) => map.setLayoutProperty(id, "visibility", "visible"));
     }
-    const b = new mapboxgl.LngLatBounds();
-    (data.areas.features || []).forEach((f) => { const walk = (c) => Array.isArray(c[0]) ? c.forEach(walk) : b.extend(c); walk(f.geometry.coordinates); });
-    if (!b.isEmpty()) map.fitBounds(b, { padding: 60, maxZoom: 16 });
+    Microplans.fitTo(map, data.areas, { padding: 60, maxZoom: 16 });
     $("preview-status").innerHTML = data.stats.map((s) =>
       `<div class="mt-2 p-2 rounded bg-gray-50 border">
          <div class="font-semibold">Coverage · ${s.cell_size_m}m × ${s.cell_size_m}m cells</div>
