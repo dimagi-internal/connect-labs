@@ -450,21 +450,42 @@
       return;
     }
 
+    // Stagger the pill flips so each Created lands one at a time —
+    // turns a synchronous flip into a visible per-plan beat. Promise wraps
+    // the staggered loop so the rest of the function awaits completion.
     let okCount = 0, errCount = 0;
-    (payload.results || []).forEach((res) => {
-      const row = log.querySelector(`.progress-row[data-boundary-id="${CSS.escape(res.boundary_id || "")}"]`) ||
-                  log.querySelector(`.progress-row:nth-child(${(payload.results.indexOf(res) + 1)})`);
-      if (!row) return;
-      const pill = row.querySelector(".pill");
-      if (res.status === "ok") {
-        pill.className = "pill pill-ok pill-just-flipped";
-        pill.textContent = "✓ Created";
-        okCount++;
-      } else {
-        pill.className = "pill pill-err";
-        pill.textContent = res.detail || "Error";
-        errCount++;
-      }
+    const results = payload.results || [];
+    await new Promise((resolveAll) => {
+      let i = 0;
+      const tick = () => {
+        if (i >= results.length) { resolveAll(); return; }
+        const res = results[i];
+        const row = log.querySelector(`.progress-row[data-boundary-id="${CSS.escape(res.boundary_id || "")}"]`) ||
+                    log.querySelector(`.progress-row:nth-child(${i + 1})`);
+        if (row) {
+          const pill = row.querySelector(".pill");
+          if (res.status === "ok") {
+            pill.className = "pill pill-ok pill-just-flipped";
+            pill.textContent = "✓ Created";
+            okCount++;
+            // Append the plan-ID deep link if we got one back.
+            if (res.plan_id && !row.querySelector(".plan-link")) {
+              const link = document.createElement("a");
+              link.className = "plan-link ml-2 text-xs text-brand-cornflower-blue hover:underline";
+              link.textContent = "#" + res.plan_id;
+              link.href = `/microplans/program/${PROGRAM_ID}/plan/${res.plan_id}/`;
+              row.appendChild(link);
+            }
+          } else {
+            pill.className = "pill pill-err";
+            pill.textContent = res.detail || "Error";
+            errCount++;
+          }
+        }
+        i++;
+        setTimeout(tick, 280);
+      };
+      tick();
     });
 
     hide($("create-spinner"));
