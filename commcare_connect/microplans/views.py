@@ -75,95 +75,83 @@ def _sd_urls(opp_id=123):
     }
 
 
-class PreviewFrameView(LoginRequiredMixin, View):
-    """Fetch building footprints for the drawn area(s) and run the sampling preview.
+def _queued(task):
+    """202 envelope for an enqueued generation task: id + where to poll it."""
+    from django.urls import reverse
 
-    Synchronous: the first fetch for an area hits Overture S3 (~tens of seconds);
-    subsequent runs are served from cache. Returns the sampled pins + cluster
-    hulls as GeoJSON plus per-arm stats for the map to render.
+    return JsonResponse(
+        {
+            "status": "queued",
+            "task_id": task.id,
+            "poll_url": reverse("microplans:preview_status", args=[task.id]),
+        },
+        status=202,
+    )
+
+
+class PreviewFrameView(LoginRequiredMixin, View):
+    """Enqueue the sampling preview for the drawn area(s) and return a task id.
+
+    The first fetch for an area hits Overture S3 (~tens of seconds), which used
+    to block a web worker for the whole request. Generation now runs on the
+    Celery worker (see ``microplans/tasks.py``); this view validates the request
+    synchronously (cheap) and enqueues — the client polls
+    ``microplans:preview_status`` for the sampled pins + cluster hulls.
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.sampling.frame import FrameConfig, generate_frame
+        from commcare_connect.microplans.sampling.frame import FrameConfig
+        from commcare_connect.microplans.tasks import generate_frame_task
 
         try:
             payload = json.loads(request.body)
             areas = payload["areas"]
             if not areas:
                 raise ValueError("no areas drawn")
-            config = FrameConfig.from_payload(payload.get("config", {}))
+            config_payload = payload.get("config", {})
+            FrameConfig.from_payload(config_payload)  # validate now → 400, not a failed task
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            result = generate_frame(areas, config)
-        except ValueError as e:
-            # Expected, actionable user errors (e.g. area too large) — safe to surface.
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            # Unexpected — log server-side, return a generic message (no internal leak).
-            logger.exception("microplans preview_frame failed (opp=%s)", opp_id)
-            return JsonResponse(
-                {"status": "error", "detail": "Frame generation failed. Check server logs."},
-                status=502,
-            )
-
-        return JsonResponse(
-            {
-                "status": "ok",
-                "pins": result.pins_geojson,
-                "hulls": result.hulls_geojson,
-                "stats": result.stats,
-            }
-        )
+        return _queued(generate_frame_task.delay(areas, config_payload))
 
 
 class PreviewCoverageView(LoginRequiredMixin, View):
-    """Coverage-mode preview: balanced/grid clusters → cluster polygons.
+    """Enqueue the coverage-mode preview (balanced/grid clusters → polygons).
 
-    Same footprint fetch as sampling, but instead of PPS-sampling pins it returns
-    the cluster hulls (each = one WorkArea covering every household within it).
+    Same offload contract as :class:`PreviewFrameView`: validate synchronously,
+    enqueue the cold Overture fetch + clustering onto the Celery worker, return a
+    task id for the client to poll.
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
+        from commcare_connect.microplans.coverage.frame import CoverageConfig
+        from commcare_connect.microplans.tasks import generate_coverage_task
 
         try:
             payload = json.loads(request.body)
             areas = payload["areas"]
             if not areas:
                 raise ValueError("no areas drawn")
-            config = CoverageConfig.from_payload(payload.get("config", {}))
+            config_payload = payload.get("config", {})
+            CoverageConfig.from_payload(config_payload)  # validate now → 400, not a failed task
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            result = generate_coverage_frame(areas, config)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans preview_coverage failed (opp=%s)", opp_id)
-            return JsonResponse(
-                {"status": "error", "detail": "Coverage generation failed. Check server logs."},
-                status=502,
-            )
-
-        return JsonResponse({"status": "ok", "areas": result.areas_geojson, "stats": result.stats})
+        return _queued(generate_coverage_task.delay(areas, config_payload))
 
 
 class PreviewFootprintsView(LoginRequiredMixin, View):
-    """Return building footprints (as point features) inside the drawn area(s).
+    """Enqueue a building-footprints fetch (as point features) for the area(s).
 
-    Used by the setup-page "Show building footprints" toggle so the user can
-    sanity-check what's in their area before generating cells. Reuses the same
-    PG-cached `fetch_buildings` path; cheap on a warm cache.
+    Used by the "Show building footprints" toggle to sanity-check an area before
+    generating cells. Reuses the PG-cached `fetch_buildings` path, but the cold
+    fetch is offloaded to Celery like the other previews; the client polls
+    ``microplans:preview_status``.
     """
 
     def post(self, request, opp_id):
-        from shapely.ops import unary_union
-
-        from commcare_connect.microplans.core.area_input import resolve_area
-        from commcare_connect.microplans.core.footprints import fetch_buildings
+        from commcare_connect.microplans.tasks import fetch_footprints_task
 
         try:
             payload = json.loads(request.body)
@@ -173,26 +161,39 @@ class PreviewFootprintsView(LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            geom = unary_union([resolve_area(a) for a in areas])
-            df = fetch_buildings(geom, min_confidence=None)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans preview_footprints failed (opp=%s)", opp_id)
-            return JsonResponse({"status": "error", "detail": "Footprints fetch failed."}, status=502)
+        return _queued(fetch_footprints_task.delay(areas))
 
-        features = [
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]},
-                "properties": {},
-            }
-            for _, row in df.iterrows()
-        ]
-        return JsonResponse(
-            {"status": "ok", "footprints": {"type": "FeatureCollection", "features": features}, "count": len(features)}
-        )
+
+class PreviewStatusView(LoginRequiredMixin, View):
+    """Poll a queued preview/generation task.
+
+    Lifecycle is reported in ``state`` (queued | running | completed | failed).
+    On completion the task's own response envelope — which carries its own
+    ``status`` of ``ok`` / ``error`` plus the data — is returned under
+    ``result``. A failed task returns a generic message (no internal leak); the
+    full traceback is logged server-side. Task ids are unguessable uuids and the
+    payloads are non-sensitive (public building footprints / cluster polygons),
+    so login is the only gate.
+    """
+
+    def get(self, request, task_id):
+        from celery.result import AsyncResult
+
+        result = AsyncResult(task_id)
+        state = result.state
+        info = result.info if isinstance(result.info, dict) else {}
+
+        if state == "PENDING":
+            return JsonResponse({"state": "queued", "message": "Waiting to start…"})
+        if state in ("RECEIVED", "STARTED", "PROGRESS"):
+            return JsonResponse({"state": "running", "message": info.get("message", "Working…")})
+        if state == "SUCCESS":
+            payload = result.result if isinstance(result.result, dict) else {}
+            return JsonResponse({"state": "completed", "result": payload})
+        if state == "FAILURE":
+            logger.error("microplans preview task %s failed: %s", task_id, result.info)
+            return JsonResponse({"state": "failed", "detail": "Generation failed. Check server logs."})
+        return JsonResponse({"state": state.lower(), "message": f"Status: {state}"})
 
 
 class CountriesView(LoginRequiredMixin, View):

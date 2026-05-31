@@ -8,6 +8,8 @@ urlpatterns = [
     path("<int:opp_id>/preview_frame/", views.PreviewFrameView.as_view(), name="preview_frame"),
     path("<int:opp_id>/preview_coverage/", views.PreviewCoverageView.as_view(), name="preview_coverage"),
     path("<int:opp_id>/preview_footprints/", views.PreviewFootprintsView.as_view(), name="preview_footprints"),
+    # Poll a queued preview/generation task (frame / coverage / footprints).
+    path("preview_status/<str:task_id>/", views.PreviewStatusView.as_view(), name="preview_status"),
     path(
         "<int:opp_id>/preview_service_delivery/",
         views.PreviewServiceDeliveryView.as_view(),
