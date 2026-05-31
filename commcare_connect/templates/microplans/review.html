@@ -1241,14 +1241,19 @@
     } catch (e) { $("area-source").textContent = "Could not load countries: " + e; }
   }
   $("btn-area-search").addEventListener("click", () => { parentArea = null; chosenSource = null; searchAreas(); });
+  let areaSearchCtrl = null;
   async function searchAreas() {
     if (!ADMIN_AREAS_URL) return;
     const body = { country: $("sel-country").value, level: +$("sel-level").value, q: $("inp-area-search").value || null };
     if (parentArea) body.parent = parentArea;
     if (chosenSource) body.source = chosenSource;
     $("area-source").textContent = "Searching…";
+    // Cancel any in-flight lookup so a slow earlier result can't overwrite a newer
+    // one (both the Search button and the "drill ↓" buttons call this).
+    if (areaSearchCtrl) areaSearchCtrl.abort();
+    areaSearchCtrl = new AbortController();
     try {
-      const data = await (await post(ADMIN_AREAS_URL, body)).json();
+      const data = await (await post(ADMIN_AREAS_URL, body, { signal: areaSearchCtrl.signal })).json();
       if (data.status !== "ok") { $("area-source").textContent = data.detail || "lookup failed"; return; }
       $("area-source").innerHTML = `${data.areas.length} areas`;
       const box = $("list-areas"); box.innerHTML = "";
@@ -1270,7 +1275,10 @@
         }
         box.appendChild(row);
       });
-    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
+    } catch (e) {
+      if (e.name === "AbortError") return;  // superseded by a newer search
+      $("area-source").textContent = "Request failed: " + e;
+    }
   }
   async function useArea(a) {
     if (!ADMIN_AREA_GEOMETRY_URL) return;
