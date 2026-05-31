@@ -510,11 +510,12 @@
   }
   // ---- hover tooltip on cells (cell ID, worker, group, counts, status) ----
   // ---- work-area inspector (replaces the old cursor-following Mapbox popup) ----
-  // Hover = a light preview (work area only); click = pin the full inspector
-  // (work area AND its group). Both render into the map panel's Inspect tab, so
-  // nothing floats over the map. `pinnedInspectHTML` survives hover so mouseout
-  // reverts to the last clicked work area.
-  let pinnedInspectHTML = null;
+  // Hover = a light preview (work area only); plain click = pin the full
+  // inspector (work area AND its group); Shift/⌘-click multi-selects work areas
+  // and pins a BULK panel (count + aggregates + bulk actions). All render into
+  // the map panel's Inspect tab — nothing floats over the map. `pinnedInspectFn`
+  // (a thunk → html|node) survives hover so mouseout reverts to the pinned view.
+  let pinnedInspectFn = null;
   let hoverWAId = null;
   const kvRow = (k, v) =>
     `<div style="display:flex;justify-content:space-between;gap:.6rem;padding:2px 0"><span style="color:#8a90a0">${k}</span><span style="font-weight:600;text-align:right">${v}</span></div>`;
@@ -564,13 +565,54 @@
     if (!mapPanel) return;
     const w = WAS.find((x) => x.id === id);
     if (!w) return;
-    const html = waInspectHTML(w, pin);
-    if (pin) { pinnedInspectHTML = html; mapPanel.setInspect(html); } // pin + switch to Inspect
-    else mapPanel.setInspect(html); // hover preview also shows the Inspect tab
+    if (pin) pinnedInspectFn = () => waInspectHTML(w, true); // pin the single WA+group view
+    mapPanel.setInspect(waInspectHTML(w, pin)); // switches to the Inspect tab
+  }
+  // Bulk panel for a multi-selection (Shift/⌘-click). Aggregates + bulk actions
+  // that reuse the same edit() endpoint as the rail's "Bulk (selected)" section.
+  function bulkInspectNode(ids) {
+    const members = WAS.filter((w) => ids.includes(w.id));
+    const buildings = members.reduce((s, w) => s + (w.building_count || 0), 0);
+    const visits = members.reduce((s, w) => s + (w.expected_visit_count || 0), 0);
+    const groups = new Set(members.map((w) => (w.work_area_group || "").trim()).filter(Boolean)).size;
+    const workers = new Set(members.map((w) => (w.opportunity_access || "").trim()).filter(Boolean)).size;
+    const cell = (v, k) => `<div style="background:#f7f8fb;border:1px solid #eceef1;border-radius:6px;padding:.4rem .5rem"><div style="font-weight:700;font-size:.85rem">${v}</div><div style="font-size:.58rem;color:#8a90a0;text-transform:uppercase;letter-spacing:.04em">${k}</div></div>`;
+    const wrap = document.createElement("div");
+    wrap.style.fontSize = ".72rem";
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem">
+        <span style="font-weight:800;font-size:1rem;color:#2d36b3">${ids.length}</span>
+        <span style="font-weight:600;color:#555">work areas selected</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.35rem">${cell(buildings.toLocaleString(), "buildings")}${cell(visits.toLocaleString(), "expected visits")}</div>
+      <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:#8a90a0">groups spanned</span><b>${groups}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:#8a90a0">workers spanned</span><b>${workers}</b></div>
+      <div class="bulk-acts" style="display:grid;gap:.35rem;margin-top:.55rem"></div>`;
+    const acts = wrap.querySelector(".bulk-acts");
+    const mkBtn = (label, fn, danger) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = label;
+      b.style.cssText = `font:700 11px/1 inherit;padding:.5rem;border-radius:6px;cursor:pointer;border:1px solid ${danger ? "#f3c08a" : "#cdd2f5"};color:${danger ? "#b45309" : "#3843d0"};background:${danger ? "#fff8f0" : "#fff"}`;
+      b.addEventListener("click", fn); acts.appendChild(b);
+    };
+    mkBtn(`Reassign ${ids.length} → worker…`, () => { const w = prompt("Assign the selected work areas to which worker?"); if (w) edit({ action: "reassign", wa_ids: [...ids], opportunity_access: w }); });
+    mkBtn(`Move ${ids.length} → group…`, () => { const g = prompt("Move the selected work areas to which group?"); if (g) edit({ action: "regroup", wa_ids: [...ids], work_area_group: g }); });
+    mkBtn(`Exclude ${ids.length} work areas`, () => { const r = prompt(`Reason for excluding ${ids.length} work areas?`); if (r !== null) edit({ action: "exclude", wa_ids: [...ids], reason: r }); }, true);
+    return wrap;
+  }
+  // Reflect the current selection in the Inspect tab: single → WA+group, many → bulk.
+  function syncInspectToSelection(lastId) {
+    if (!mapPanel) return;
+    if (selected.size > 1) {
+      pinnedInspectFn = () => bulkInspectNode([...selected]);
+      mapPanel.setInspect(bulkInspectNode([...selected]));
+    } else {
+      inspectWA(selected.size === 1 ? [...selected][0] : lastId, true);
+    }
   }
   function revertInspect() {
     if (!mapPanel) return;
-    if (pinnedInspectHTML) mapPanel.setInspect(pinnedInspectHTML);
+    if (pinnedInspectFn) mapPanel.setInspect(pinnedInspectFn());
     else mapPanel.clearInspect();
   }
 
@@ -594,13 +636,20 @@
                        "line-width": 0.8,
                        "line-opacity": 0.55,
                      } });
-      // Click pins the full inspector (work area + group) and keeps the existing
-      // table-selection toggle. Hover previews the work area (no group) in the
-      // panel; mouseout reverts to the pinned work area.
+      // Plain click selects just this work area (pins its WA+group inspector).
+      // Shift/⌘/Ctrl-click adds/removes it from the selection and, once more than
+      // one is selected, pins the bulk panel. Hover previews a single work area
+      // (no group); mouseout reverts to whatever is pinned (single or bulk).
       map.on("click", "wa-fill", (e) => {
         const id = e.features[0].properties.id;
-        inspectWA(id, true);
-        toggleSelect(id);
+        const oe = e.originalEvent || {};
+        if (oe.shiftKey || oe.metaKey || oe.ctrlKey) {
+          if (selected.has(id)) selected.delete(id); else selected.add(id);
+        } else {
+          selected.clear(); selected.add(id);
+        }
+        renderTable(); setSelState();
+        syncInspectToSelection(id);
       });
       map.on("mouseenter", "wa-fill", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "wa-fill", () => {
