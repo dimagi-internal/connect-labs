@@ -140,8 +140,17 @@ class FakeLabsRecordAPIClient:
         type: str | None = None,
         model_class=None,
     ) -> LocalLabsRecord | None:
+        # Mirror prod scoping: the real client sends experiment + the client's
+        # program_id, and the prod GET filters by them — so a record from another
+        # program/experiment returns None (this is what read-before-delete relies on).
         echo = self._store.get(record_id)
         if echo is None:
+            return None
+        if experiment is not None and echo.get("experiment") != experiment:
+            return None
+        if type is not None and echo.get("type") != type:
+            return None
+        if self.program_id is not None and echo.get("program_id") != self.program_id:
             return None
         cls = model_class if model_class is not None else LocalLabsRecord
         return cls(echo)
@@ -535,6 +544,33 @@ class TestProgramPlanDataAccessContract:
 
         da.delete_plan(plan_rec.id)
         assert len(da.list_plans()) == 0
+
+    def test_delete_plan_refuses_unknown_id(self):
+        """A bare id that isn't in this program is refused — not deleted by raw id."""
+        from commcare_connect.microplans.core.data_access import RecordNotInProgramError
+
+        da = _make_program_da()
+        with pytest.raises(RecordNotInProgramError):
+            da.delete_plan(999999)
+
+    def test_delete_plan_refuses_another_programs_record(self):
+        """The cross-tenant IDOR: a program-B DA must NOT delete program-A's plan by
+        id. read-before-delete (scoped get) returns None for the foreign record, so
+        we refuse and the plan survives."""
+        from commcare_connect.microplans.core.data_access import RecordNotInProgramError
+
+        da_a = _make_program_da()  # program PROGRAM_ID
+        plan = da_a.create_plan(region="R", name="A's plan", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+
+        # A different program's DA, sharing the same backing store (as both would
+        # hit the same prod LabsRecord table) but scoped to program B.
+        da_b = ProgramPlanDataAccess(program_id=PROGRAM_ID + 1, access_token="stub")
+        da_b.labs_api = FakeLabsRecordAPIClient(program_id=PROGRAM_ID + 1)
+        da_b.labs_api._store = da_a.labs_api._store
+
+        with pytest.raises(RecordNotInProgramError):
+            da_b.delete_plan(plan.id)
+        assert da_a.get_plan(plan.id) is not None  # A's plan was NOT clobbered
 
     # ---- grouping config round-trip ----
 

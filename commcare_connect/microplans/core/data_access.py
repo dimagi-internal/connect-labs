@@ -27,6 +27,16 @@ class StalePlanError(Exception):
     silently clobbering the newer state. See ``ProgramPlanDataAccess._save_plan``."""
 
 
+class RecordNotInProgramError(Exception):
+    """A delete targeted a record id that isn't in this program — it doesn't exist,
+    or it belongs to another program the caller can't see. We refuse rather than
+    delete by raw id: the production DELETE endpoint authorizes the caller's
+    *membership* of any scope in the payload but then deletes by ``pk__in`` without
+    checking the record actually belongs there, so a bare id would let a member of
+    one program delete another program's records. Reading the record scoped to this
+    program first (404 → None) closes that. The view maps this to a 404."""
+
+
 class ProgramPlanDataAccess(BaseDataAccess):
     """Program-scoped CRUD for microplans + plan groups.
 
@@ -239,7 +249,14 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     def delete_plan(self, plan_id: int) -> None:
         """Hard-delete a plan record. Use sparingly — Archive (status transition) is
-        the safer default for normal lifecycle. This is for wiping sample data."""
+        the safer default for normal lifecycle. This is for wiping sample data.
+
+        Reads the plan scoped to this program first (``get_plan`` sends program_id,
+        so the prod GET only returns it if it's in this program and the caller is a
+        member). Refuses if it's not ours — never deletes by raw id. See
+        :class:`RecordNotInProgramError`."""
+        if self.get_plan(int(plan_id)) is None:
+            raise RecordNotInProgramError(f"plan {plan_id} is not in program {self.program_id}")
         self.labs_api.delete_record(int(plan_id))
 
     # ---- plan groups (shareable subset offered to an LLO) ----
@@ -293,5 +310,8 @@ class ProgramPlanDataAccess(BaseDataAccess):
         return PlanGroupRecord(record.to_api_dict())
 
     def delete_group(self, group_id: int) -> None:
-        """Hard-delete a plan group record. Use sparingly."""
+        """Hard-delete a plan group record. Use sparingly. Reads it scoped to this
+        program first and refuses if it's not ours (see :class:`RecordNotInProgramError`)."""
+        if self.get_group(int(group_id)) is None:
+            raise RecordNotInProgramError(f"group {group_id} is not in program {self.program_id}")
         self.labs_api.delete_record(int(group_id))

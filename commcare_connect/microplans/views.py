@@ -532,11 +532,13 @@ class ProgramPlanDeleteView(LoginRequiredMixin, View):
     safer default for normal lifecycle is the Archive status transition."""
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             da.delete_plan(plan_id)
+        except RecordNotInProgramError:
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
         except Exception:  # noqa: BLE001
             logger.exception("microplans delete_plan failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Delete failed."}, status=502)
@@ -547,11 +549,13 @@ class ProgramGroupDeleteView(LoginRequiredMixin, View):
     """Hard-delete a plan group record (sample-data wipe)."""
 
     def post(self, request, program_id, group_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             da.delete_group(group_id)
+        except RecordNotInProgramError:
+            return JsonResponse({"status": "error", "detail": "Group not found."}, status=404)
         except Exception:  # noqa: BLE001
             logger.exception("microplans delete_group failed (program=%s group=%s)", program_id, group_id)
             return JsonResponse({"status": "error", "detail": "Delete failed."}, status=502)
