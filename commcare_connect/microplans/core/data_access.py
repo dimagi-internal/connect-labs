@@ -1,8 +1,8 @@
 """Data access for microplans — wraps LabsRecordAPIClient.
 
-Persists the drawn area + generated frame as LabsRecords scoped by
-experiment=<opportunity_id>. No Django models; reads/writes go to the
-production LabsRecord API via BaseDataAccess.labs_api.
+Persists program-scoped plans + plan groups as LabsRecords (experiment=<program_id>).
+No Django models; reads/writes go to the production LabsRecord API via
+BaseDataAccess.labs_api.
 """
 
 from __future__ import annotations
@@ -10,148 +10,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from commcare_connect.microplans.core import plan as plan_lib
-from commcare_connect.microplans.core.models import (
-    TYPE_AREA,
-    TYPE_FRAME,
-    TYPE_PLAN,
-    TYPE_PLAN_GROUP,
-    RooftopAreaRecord,
-    RooftopFrameRecord,
-    RooftopPlanGroupRecord,
-    RooftopPlanRecord,
-)
+from commcare_connect.microplans.core.models import TYPE_PLAN, TYPE_PLAN_GROUP, PlanGroupRecord, PlanRecord
 from commcare_connect.workflow.data_access import BaseDataAccess
 
-# Bump when the rooftop_area / rooftop_frame `data` shape changes, so readers
-# can branch on schema_version instead of guessing (cheap migration insurance).
-# v2 added `mode` ("sampling" | "coverage").
+# Bump when the `microplan_plan` `data` shape changes, so readers can branch on
+# schema_version instead of guessing (cheap migration insurance).
 # v3 added the editable `microplan_plan` record (planning-phase work areas + audit).
 # v4 made plans program-scoped (program_id, opportunity_id, status) + plan groups.
 SCHEMA_VERSION = 4
-
-
-class RooftopDataAccess(BaseDataAccess):
-    """CRUD for rooftop_area + rooftop_frame records, scoped to one opportunity."""
-
-    @property
-    def _experiment(self) -> str:
-        return str(self.opportunity_id)
-
-    def save_area(self, areas: list[dict], config: dict, name: str = "", mode: str = "sampling") -> RooftopAreaRecord:
-        record = self.labs_api.create_record(
-            experiment=self._experiment,
-            type=TYPE_AREA,
-            data={
-                "schema_version": SCHEMA_VERSION,
-                "name": name,
-                "mode": mode,
-                "areas": areas,
-                "config": config,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        return RooftopAreaRecord(record.to_api_dict())
-
-    def save_frame(
-        self,
-        area_record_id: int,
-        pins: dict,
-        hulls: dict,
-        stats: list[dict],
-        mode: str = "sampling",
-    ) -> RooftopFrameRecord:
-        record = self.labs_api.create_record(
-            experiment=self._experiment,
-            type=TYPE_FRAME,
-            data={
-                "schema_version": SCHEMA_VERSION,
-                "mode": mode,
-                "pins": pins,
-                "hulls": hulls,
-                "stats": stats,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-            labs_record_id=area_record_id,
-        )
-        return RooftopFrameRecord(record.to_api_dict())
-
-    def list_frames(self) -> list[RooftopFrameRecord]:
-        return self.labs_api.get_records(
-            experiment=self._experiment,
-            type=TYPE_FRAME,
-            model_class=RooftopFrameRecord,
-        )
-
-    def list_areas(self) -> list[RooftopAreaRecord]:
-        return self.labs_api.get_records(
-            experiment=self._experiment,
-            type=TYPE_AREA,
-            model_class=RooftopAreaRecord,
-        )
-
-    # ---- planning-phase plan (the editable, LLO-reviewed work areas) ----
-
-    def materialize_plan(self, frame: RooftopFrameRecord, name: str = "") -> RooftopPlanRecord:
-        """Create an editable plan from a generated frame: one work area per
-        cluster (coverage) or pin (sampling), each UNASSIGNED with an empty audit."""
-        work_areas = plan_lib.materialize_work_areas(frame.mode, frame.pins, frame.hulls)
-        record = self.labs_api.create_record(
-            experiment=self._experiment,
-            type=TYPE_PLAN,
-            data={
-                "schema_version": SCHEMA_VERSION,
-                "mode": frame.mode,
-                "name": name,
-                "frame_record_id": frame.id,
-                "work_areas": work_areas,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-            labs_record_id=frame.id,
-        )
-        return RooftopPlanRecord(record.to_api_dict())
-
-    def get_plan(self, plan_id: int) -> RooftopPlanRecord:
-        record = self.labs_api.get_record_by_id(plan_id, model_class=RooftopPlanRecord)
-        return record
-
-    def list_plans(self) -> list[RooftopPlanRecord]:
-        return self.labs_api.get_records(
-            experiment=self._experiment,
-            type=TYPE_PLAN,
-            model_class=RooftopPlanRecord,
-        )
-
-    def _save_work_areas(self, plan: RooftopPlanRecord, work_areas: list[dict]) -> RooftopPlanRecord:
-        data = dict(plan.data)
-        data["work_areas"] = work_areas
-        record = self.labs_api.update_record(
-            record_id=plan.id,
-            experiment=self._experiment,
-            type=TYPE_PLAN,
-            data=data,
-            current_record=plan,
-        )
-        return RooftopPlanRecord(record.to_api_dict())
-
-    def apply_plan_edits(
-        self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str
-    ) -> RooftopPlanRecord:
-        """Apply one edit to one or more work areas in a single read-modify-write
-        (audit appended per area, phase=planning). Loading once + saving once avoids
-        the lost-update race a per-id loop would create within a request.
-
-        Across concurrent requests this is last-write-wins (no version check) — an
-        accepted tradeoff for planning, which is a single-reviewer activity before
-        upload, not the concurrent operational editing Connect handles post-upload.
-        """
-        plan = self.get_plan(plan_id)
-        work_areas = [dict(w) for w in plan.work_areas]
-        for wa_id in wa_ids:
-            wa = plan_lib.find(work_areas, wa_id)
-            if wa is None:
-                raise ValueError(f"work area {wa_id!r} not in plan {plan_id}")
-            plan_lib.apply_action(wa, action, params, actor)
-        return self._save_work_areas(plan, work_areas)
 
 
 class ProgramPlanDataAccess(BaseDataAccess):
@@ -180,7 +46,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         hulls: dict,
         input_areas: list | None = None,
         grouping: dict | None = None,
-    ) -> RooftopPlanRecord:
+    ) -> PlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
         per cluster/pin). ``input_areas`` is the original draw/admin/pin payload
         (stored so footprints overlay can reuse the cached fetch geometry).
@@ -206,9 +72,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        return RooftopPlanRecord(record.to_api_dict())
+        return PlanRecord(record.to_api_dict())
 
-    def reassign_plan(self, plan_id: int, assignment: dict, actor: str) -> RooftopPlanRecord:
+    def reassign_plan(self, plan_id: int, assignment: dict, actor: str) -> PlanRecord:
         """Re-apply CHW assignment to a plan's groups.
 
         Phase 2 of the two-phase pipeline. Snapshots each cell's old worker,
@@ -233,7 +99,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["assignment"] = assignment
         return self._save_plan(plan, data)
 
-    def regroup_plan(self, plan_id: int, grouping: dict, actor: str) -> RooftopPlanRecord:
+    def regroup_plan(self, plan_id: int, grouping: dict, actor: str) -> PlanRecord:
         """Re-apply grouping (cells → work_area_group) to an existing plan.
 
         Phase 1 of the two-phase pipeline. Snapshots each cell's old group, runs
@@ -268,7 +134,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         hulls: dict,
         input_areas: list,
         grouping: dict | None = None,
-    ) -> RooftopPlanRecord:
+    ) -> PlanRecord:
         """Destructive re-creation of the work areas for an existing plan.
 
         Same end state as `create_plan` (one work area per cluster/pin, auto-
@@ -291,20 +157,20 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["assignment"] = {}  # destructive reset — no CHWs carried over
         return self._save_plan(plan, data)
 
-    def list_plans(self) -> list[RooftopPlanRecord]:
+    def list_plans(self) -> list[PlanRecord]:
         return self.labs_api.get_records(
             experiment=self._experiment,
             type=TYPE_PLAN,
             program_id=self.program_id,
-            model_class=RooftopPlanRecord,
+            model_class=PlanRecord,
         )
 
-    def get_plan(self, plan_id: int) -> RooftopPlanRecord:
+    def get_plan(self, plan_id: int) -> PlanRecord:
         return self.labs_api.get_record_by_id(
-            int(plan_id), experiment=self._experiment, type=TYPE_PLAN, model_class=RooftopPlanRecord
+            int(plan_id), experiment=self._experiment, type=TYPE_PLAN, model_class=PlanRecord
         )
 
-    def _save_plan(self, plan: RooftopPlanRecord, data: dict) -> RooftopPlanRecord:
+    def _save_plan(self, plan: PlanRecord, data: dict) -> PlanRecord:
         record = self.labs_api.update_record(
             record_id=plan.id,
             experiment=self._experiment,
@@ -313,11 +179,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
             data=data,
             current_record=plan,
         )
-        return RooftopPlanRecord(record.to_api_dict())
+        return PlanRecord(record.to_api_dict())
 
-    def apply_plan_edits(
-        self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str
-    ) -> RooftopPlanRecord:
+    def apply_plan_edits(self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str) -> PlanRecord:
         """Apply one edit to one or more work areas in a single read-modify-write
         (phase=planning audit per area). Last-write-wins across concurrent requests
         — acceptable for single-reviewer planning."""
@@ -332,7 +196,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["work_areas"] = work_areas
         return self._save_plan(plan, data)
 
-    def transition_plan(self, plan_id: int, to: str, actor: str, opportunity_id=None) -> RooftopPlanRecord:
+    def transition_plan(self, plan_id: int, to: str, actor: str, opportunity_id=None) -> PlanRecord:
         """Advance a plan's lifecycle status (Draft→In review→Approved→Deployed /
         Archived). Deploying binds the live Connect opportunity_id."""
         plan = self.get_plan(plan_id)
@@ -347,7 +211,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     # ---- plan groups (shareable subset offered to an LLO) ----
 
-    def create_group(self, name: str, plan_ids: list[int], offered_to: str = "") -> RooftopPlanGroupRecord:
+    def create_group(self, name: str, plan_ids: list[int], offered_to: str = "") -> PlanGroupRecord:
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_PLAN_GROUP,
@@ -362,22 +226,22 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        return RooftopPlanGroupRecord(record.to_api_dict())
+        return PlanGroupRecord(record.to_api_dict())
 
-    def list_groups(self) -> list[RooftopPlanGroupRecord]:
+    def list_groups(self) -> list[PlanGroupRecord]:
         return self.labs_api.get_records(
             experiment=self._experiment,
             type=TYPE_PLAN_GROUP,
             program_id=self.program_id,
-            model_class=RooftopPlanGroupRecord,
+            model_class=PlanGroupRecord,
         )
 
-    def get_group(self, group_id: int) -> RooftopPlanGroupRecord:
+    def get_group(self, group_id: int) -> PlanGroupRecord:
         return self.labs_api.get_record_by_id(
-            int(group_id), experiment=self._experiment, type=TYPE_PLAN_GROUP, model_class=RooftopPlanGroupRecord
+            int(group_id), experiment=self._experiment, type=TYPE_PLAN_GROUP, model_class=PlanGroupRecord
         )
 
-    def update_group(self, group_id: int, **fields) -> RooftopPlanGroupRecord:
+    def update_group(self, group_id: int, **fields) -> PlanGroupRecord:
         group = self.get_group(group_id)
         data = dict(group.data)
         for key in ("name", "offered_to", "shared"):
@@ -393,7 +257,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
             data=data,
             current_record=group,
         )
-        return RooftopPlanGroupRecord(record.to_api_dict())
+        return PlanGroupRecord(record.to_api_dict())
 
     def delete_group(self, group_id: int) -> None:
         """Hard-delete a plan group record. Use sparingly."""
