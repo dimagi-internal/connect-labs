@@ -841,7 +841,12 @@ def test_program_create_plan_page_renders(client, django_user_model, settings):
     assert resp.status_code == 200
     body = resp.content.decode()
     assert resp.context["program_id"] == 25
-    assert "Create plan in program" in body  # program-mode button present
+    assert resp.context["plan_id"] is None
+    # Unified template: new-plan page shows the "New microplan" header + the
+    # Create plan button (vs. the per-plan "Microplan review" + "Apply
+    # geographic frame" button on the existing-plan flow).
+    assert "New microplan" in body
+    assert "Create plan" in body
 
 
 def test_program_transition_advances_status(client, django_user_model, monkeypatch):
