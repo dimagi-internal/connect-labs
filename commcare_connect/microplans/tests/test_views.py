@@ -750,6 +750,25 @@ def test_program_regenerate_stale_revision_returns_409(client, django_user_model
     assert "changed" in resp.json()["detail"].lower()
 
 
+def test_program_plan_delete_foreign_record_returns_404(client, django_user_model, monkeypatch):
+    """Deleting a plan that isn't in this program (RecordNotInProgramError) → 404,
+    not a silent cross-tenant delete."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core.data_access import RecordNotInProgramError
+
+    class RefuseDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def delete_plan(self, plan_id):
+            raise RecordNotInProgramError(f"plan {plan_id} is not in program")
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", RefuseDA)
+    resp = client.post(reverse("microplans:program_plan_delete", kwargs={"program_id": 1, "plan_id": 999}))
+    assert resp.status_code == 404
+    assert resp.json()["status"] == "error"
+
+
 def test_program_compare_page_renders(client, django_user_model):
     _login(client, django_user_model)
     resp = client.get(reverse("microplans:program_compare_page", kwargs={"program_id": 25}))
