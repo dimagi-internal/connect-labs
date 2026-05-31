@@ -55,66 +55,51 @@
     </div>
 
     <section>
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Summary</h2>
-      <dl id="summary" class="space-y-1 text-sm"></dl>
-    </section>
-
-    <section>
-      <div class="flex items-center justify-between mb-1">
-        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Color by</h2>
-      </div>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Map colors</h2>
       <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
-        <button type="button" id="dim-worker" class="seg-tab is-on">Worker</button>
-        <button type="button" id="dim-group" class="seg-tab">Group</button>
+        <button type="button" id="dim-worker" class="seg-tab is-on">By worker</button>
+        <button type="button" id="dim-group" class="seg-tab">By group</button>
       </div>
-    </section>
-
-    <section>
-      <div class="flex items-center justify-between mb-1">
-        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span id="dim-label">Workers</span></h2>
-        <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
-      </div>
-      <div id="by-dim" class="space-y-0.5"></div>
-      <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
+      <p class="text-[10px] text-gray-400 mt-1">Fill colors the chosen dimension; outline always carries the other.</p>
     </section>
 
     <section class="border-t pt-3">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-group work areas</h2>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Group work areas</h2>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
-          <span class="text-gray-600">Strategy</span>
+          <span class="text-gray-600">How to group</span>
           <select id="grp-strategy" class="base-input mt-0.5 text-xs">
-            <option value="bfs_adjacency" selected>BFS adjacency (Connect GIS)</option>
-            <option value="bbox">Bbox bucket (fast)</option>
+            <option value="bfs_adjacency" selected>Walkable clusters (recommended)</option>
+            <option value="bbox">Uniform grid (fast)</option>
           </select>
         </label>
         <div id="grp-bfs-params" class="grid grid-cols-2 gap-1">
           <label class="block">
-            <span class="text-gray-600">Max buildings</span>
+            <span class="text-gray-600">Max buildings per group</span>
             <input id="grp-max-buildings" type="number" value="200" min="1" class="base-input mt-0.5 text-xs">
           </label>
           <label class="block">
-            <span class="text-gray-600">Buffer (m)</span>
+            <span class="text-gray-600">Adjacency buffer (m)</span>
             <input id="grp-buffer-m" type="number" value="100" min="0" step="10" class="base-input mt-0.5 text-xs">
           </label>
         </div>
         <label class="block hidden" id="grp-bbox-params">
-          <span class="text-gray-600">Target work areas / group</span>
+          <span class="text-gray-600">Target work areas per group</span>
           <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
         </label>
         <button type="button" id="btn-regroup" class="button button-sm primary-dark">Apply grouping</button>
-        <p class="text-[10px] text-gray-400">Re-groups all active work areas. Audited per work area.</p>
+        <p class="text-[10px] text-gray-400">Re-groups every active work area. Audited per work area.</p>
       </div>
     </section>
 
     <section class="border-t pt-3">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Re-assign CHWs</h2>
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Assign workers</h2>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
-          <span class="text-gray-600">Strategy</span>
+          <span class="text-gray-600">How to assign</span>
           <select id="asg-strategy" class="base-input mt-0.5 text-xs">
-            <option value="minimax_spread" selected>Minimax spread (Neal Lesh)</option>
-            <option value="round_robin">Round robin</option>
+            <option value="minimax_spread" selected>Minimize travel (recommended)</option>
+            <option value="round_robin">Equal workload</option>
           </select>
         </label>
         <label class="block">
@@ -123,11 +108,11 @@
                     placeholder="chw-1&#10;chw-2&#10;chw-3"></textarea>
         </label>
         <label class="block" id="asg-restarts-wrap">
-          <span class="text-gray-600">Restarts</span>
+          <span class="text-gray-600">Optimization passes</span>
           <input id="asg-restarts" type="number" value="20" min="1" max="200" class="base-input mt-0.5 text-xs">
         </label>
         <button type="button" id="btn-reassign" class="button button-sm primary-dark">Apply assignment</button>
-        <p class="text-[10px] text-gray-400">Assigns all groups to a CHW. Audited per work area whose worker changes.</p>
+        <p class="text-[10px] text-gray-400">Assigns every group to a worker. Audited per work area whose worker changes.</p>
       </div>
     </section>
 
@@ -168,6 +153,25 @@
       <!-- Drag handle on the bottom edge -->
       <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
     </div>
+
+    <!-- What the map is showing: summary + the dim-keyed list (Workers / Groups).
+         Moved below the map so the sidebar stays "actions you take" only. -->
+    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm grid grid-cols-3 gap-3">
+      <div>
+        <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Summary</h3>
+        <dl id="summary" class="space-y-1 text-sm"></dl>
+      </div>
+      <div class="col-span-2">
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+            <span id="dim-label">Workers</span>
+          </h3>
+          <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
+        </div>
+        <div id="by-dim" class="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-auto"></div>
+        <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
+      </div>
+    </section>
 
     <!-- Plan metrics (kpi strip + per-FLW table) -->
     <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
@@ -326,8 +330,8 @@
                        "line-color": ["case",
                          ["==", ["get", "status"], "EXCLUDED"], "#9ca3af",
                          ["get", "outline"]],
-                       "line-width": 1.4,
-                       "line-opacity": 0.95,
+                       "line-width": 0.8,
+                       "line-opacity": 0.55,
                      } });
       map.on("click", "wa-fill", (e) => { const id = e.features[0].properties.id; toggleSelect(id); });
       map.on("mouseenter", "wa-fill", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -685,9 +689,36 @@
     });
   })();
 
+  // ---- pre-fill the sidebar form from the plan's stored config ----
+  // So opening an existing plan shows the SAME params that produced its
+  // current grouping/assignment — the user can see "what was used" by just
+  // reading the form, and re-apply with one click after tweaking anything.
+  function prefillSetupForm(data) {
+    const g = data.grouping || {};
+    const a = data.assignment || {};
+    if (g.strategy) {
+      $("grp-strategy").value = g.strategy;
+      $("grp-strategy").dispatchEvent(new Event("change"));
+    }
+    if (g.max_buildings) $("grp-max-buildings").value = g.max_buildings;
+    if (g.buffer_distance_m) $("grp-buffer-m").value = g.buffer_distance_m;
+    if (g.target_size) $("grp-target-size").value = g.target_size;
+    if (a.strategy) {
+      $("asg-strategy").value = a.strategy;
+      $("asg-strategy").dispatchEvent(new Event("change"));
+    }
+    if (a.workers) {
+      const w = Array.isArray(a.workers) ? a.workers.join("\n") : String(a.workers);
+      $("asg-workers").value = w;
+    }
+    if (a.restarts) $("asg-restarts").value = a.restarts;
+  }
+
   // initial load
-  fetch(PLAN_URL).then((r) => r.json()).then((d) => { if (d.status === "ok") render(d); else $("status").textContent = d.detail || "load failed"; })
-    .catch((e) => $("status").textContent = "load failed: " + e);
+  fetch(PLAN_URL).then((r) => r.json()).then((d) => {
+    if (d.status === "ok") { prefillSetupForm(d); render(d); }
+    else $("status").textContent = d.detail || "load failed";
+  }).catch((e) => $("status").textContent = "load failed: " + e);
 
   window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit,
                       get activeDim() { return activeDim; }, get colorDim() { return colorDim; },
