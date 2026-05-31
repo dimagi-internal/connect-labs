@@ -75,6 +75,11 @@ urlpatterns = [
         name="program_plan_regroup",
     ),
     path(
+        "program/<int:program_id>/plan/<int:plan_id>/regenerate/",
+        views.ProgramPlanRegenerateView.as_view(),
+        name="program_plan_regenerate",
+    ),
+    path(
         "program/<int:program_id>/plan/<int:plan_id>/reassign/",
         views.ProgramPlanReassignView.as_view(),
         name="program_plan_reassign",
