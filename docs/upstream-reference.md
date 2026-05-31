@@ -32,4 +32,4 @@ Labs does **not** run data_export locally. Instead:
 
 ## Fork Point
 
-This repo diverged from upstream around October 2025. The `labs-main` branch contains all labs-specific development.
+This repo diverged from upstream around October 2025 and was later split out of `dimagi/commcare-connect` into its own repo at `jjackson/connect-labs`. The canonical branch is now `main`. (Historical note: while it lived as a fork, labs-specific development happened on a `labs-main` branch — references to `labs-main` in older plans/docs refer to that era and now mean `main`.)
