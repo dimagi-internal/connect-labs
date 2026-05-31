@@ -904,20 +904,25 @@ def test_program_plan_footprints_sets_cache_control(client, django_user_model, m
 
 
 def _square(lon, lat, d=0.02):
-    return {"type": "Polygon", "coordinates": [[[lon, lat], [lon + d, lat], [lon + d, lat + d], [lon, lat + d], [lon, lat]]]}
+    return {
+        "type": "Polygon",
+        "coordinates": [[[lon, lat], [lon + d, lat], [lon + d, lat + d], [lon, lat + d], [lon, lat]]],
+    }
 
 
 def test_arm_comparability_matched_when_similar(client, django_user_model):
     _login(client, django_user_model)
     resp = client.post(
         reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
-        data=json.dumps({
-            "areas": [
-                {"arm": "intervention", "geometry": _square(8.30, 11.78)},
-                {"arm": "comparison", "geometry": _square(8.40, 11.78)},
-            ],
-            "building_counts": {"intervention": 100, "comparison": 110},
-        }),
+        data=json.dumps(
+            {
+                "areas": [
+                    {"arm": "intervention", "geometry": _square(8.30, 11.78)},
+                    {"arm": "comparison", "geometry": _square(8.40, 11.78)},
+                ],
+                "building_counts": {"intervention": 100, "comparison": 110},
+            }
+        ),
         content_type="application/json",
     )
     assert resp.status_code == 200, resp.content
@@ -932,13 +937,15 @@ def test_arm_comparability_not_matched_when_counts_diverge(client, django_user_m
     _login(client, django_user_model)
     resp = client.post(
         reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
-        data=json.dumps({
-            "areas": [
-                {"arm": "intervention", "geometry": _square(8.30, 11.78)},
-                {"arm": "comparison", "geometry": _square(8.40, 11.78)},
-            ],
-            "building_counts": {"intervention": 100, "comparison": 300},
-        }),
+        data=json.dumps(
+            {
+                "areas": [
+                    {"arm": "intervention", "geometry": _square(8.30, 11.78)},
+                    {"arm": "comparison", "geometry": _square(8.40, 11.78)},
+                ],
+                "building_counts": {"intervention": 100, "comparison": 300},
+            }
+        ),
         content_type="application/json",
     )
     assert resp.status_code == 200, resp.content
