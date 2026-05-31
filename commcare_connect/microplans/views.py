@@ -66,26 +66,14 @@ class SetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     template_name = "microplans/setup.html"
 
     def get_context_data(self, **kwargs):
-        from commcare_connect.labs.context import get_org_data
-
         context = super().get_context_data(**kwargs)
-        opp_id = kwargs.get("opp_id")
-        context["opp_id"] = opp_id
+        context["opp_id"] = kwargs.get("opp_id")
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         if not settings.MAPBOX_TOKEN:
             context["error"] = "MAPBOX_TOKEN is not configured; the map cannot load."
-
-        # Opportunities the user can overlay service-delivery data for; the
-        # current opp floats to the top so it's the default selection.
-        opps = []
-        try:
-            for o in get_org_data(self.request).get("opportunities", []):
-                if o.get("id") is not None:
-                    opps.append({"id": int(o["id"]), "name": o.get("name") or f"Opportunity #{o['id']}"})
-        except Exception:  # noqa: BLE001 — context is best-effort, never break setup
-            logger.exception("microplans setup: failed to load opportunity list")
-        opps.sort(key=lambda o: (int(o["id"]) != int(opp_id) if opp_id else False, o["name"].lower()))
-        context["sd_opps"] = opps
+        # The service-delivery overlay's opp picker reads the global
+        # `user_opportunities` context var (id, name, program_name, visit_count),
+        # the same data the labs context selector uses — no extra context needed.
         return context
 
 
