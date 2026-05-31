@@ -450,26 +450,69 @@
     }) };
   }
   // ---- hover tooltip on cells (cell ID, worker, group, counts, status) ----
-  let hoverPopup = null;
-  function ensurePopup() {
-    if (!hoverPopup) hoverPopup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
-    return hoverPopup;
+  // ---- work-area inspector (replaces the old cursor-following Mapbox popup) ----
+  // Hover = a light preview (work area only); click = pin the full inspector
+  // (work area AND its group). Both render into the map panel's Inspect tab, so
+  // nothing floats over the map. `pinnedInspectHTML` survives hover so mouseout
+  // reverts to the last clicked work area.
+  let pinnedInspectHTML = null;
+  let hoverWAId = null;
+  const kvRow = (k, v) =>
+    `<div style="display:flex;justify-content:space-between;gap:.6rem;padding:2px 0"><span style="color:#8a90a0">${k}</span><span style="font-weight:600;text-align:right">${v}</span></div>`;
+  function groupStats(groupName) {
+    if (!groupName) return null;
+    const members = WAS.filter((x) => (x.work_area_group || "").trim() === groupName);
+    if (!members.length) return null;
+    const workers = Array.from(
+      new Set(members.map((x) => (x.opportunity_access || "").trim()).filter(Boolean)),
+    );
+    return {
+      count: members.length,
+      buildings: members.reduce((s, x) => s + (x.building_count || 0), 0),
+      visits: members.reduce((s, x) => s + (x.expected_visit_count || 0), 0),
+      workers,
+    };
   }
-  function cellTooltipHTML(props, w) {
-    const worker = props.worker ? esc(props.worker) : "<i style='color:#9ca3af'>unassigned</i>";
-    const group = props.group ? esc(props.group) : "<i style='color:#9ca3af'>—</i>";
-    const status = (props.status || "active").toLowerCase();
-    const excluded = w && w.status === "EXCLUDED";
-    const reason = excluded && w.excluded_reason ? `<div style="color:#dc2626;margin-top:2px">${esc(w.excluded_reason)}</div>` : "";
-    return `<div style="font-size:11px;line-height:1.4;min-width:140px">
-      <div style="font-weight:600;font-family:monospace">${esc(props.id)}</div>
-      <div><span style="color:#6b7280">worker</span> · ${worker}</div>
-      <div><span style="color:#6b7280">group</span> · ${group}</div>
-      <div><span style="color:#6b7280">buildings</span> · ${(w ? w.building_count : 0) || 0}</div>
-      <div><span style="color:#6b7280">visits</span> · ${(w ? w.expected_visit_count : 0) || 0}</div>
-      <div><span style="color:#6b7280">status</span> · ${esc(status)}</div>
-      ${reason}
-    </div>`;
+  function waInspectHTML(w, includeGroup) {
+    const worker = (w.opportunity_access || "").trim();
+    const groupName = (w.work_area_group || "").trim();
+    const status = (w.status || "active").toLowerCase();
+    const excluded = w.status === "EXCLUDED";
+    const workerHTML = worker ? esc(worker) : "<i style='color:#9ca3af'>unassigned</i>";
+    const reason = excluded && w.excluded_reason
+      ? `<div style="color:#dc2626;margin-top:3px">${esc(w.excluded_reason)}</div>` : "";
+    let html = `<div style="font-size:.72rem;line-height:1.45">
+      <div style="font-weight:700;font-family:ui-monospace,monospace;margin-bottom:4px">${esc(w.id)}</div>
+      ${kvRow("worker", workerHTML)}
+      ${kvRow("group", groupName ? esc(groupName) : "—")}
+      ${kvRow("buildings", (w.building_count || 0).toLocaleString())}
+      ${kvRow("expected visits", (w.expected_visit_count || 0).toLocaleString())}
+      ${kvRow("status", `<span style="color:${excluded ? "#dc2626" : "#16a34a"}">${esc(status)}</span>`)}
+      ${reason}`;
+    const gs = includeGroup ? groupStats(groupName) : null;
+    if (gs) {
+      html += `<div style="margin-top:8px;padding-top:7px;border-top:1px solid #eceef1">
+        <div style="font-weight:700;margin-bottom:4px">${esc(groupName)} <span style="color:#9ca3af;font-weight:500">· its group</span></div>
+        ${kvRow("work areas", gs.count)}
+        ${kvRow("buildings", gs.buildings.toLocaleString())}
+        ${kvRow("expected visits", gs.visits.toLocaleString())}
+        ${kvRow("worker" + (gs.workers.length > 1 ? "s" : ""), gs.workers.length ? esc(gs.workers.join(", ")) : "—")}
+      </div>`;
+    }
+    return html + "</div>";
+  }
+  function inspectWA(id, pin) {
+    if (!mapPanel) return;
+    const w = WAS.find((x) => x.id === id);
+    if (!w) return;
+    const html = waInspectHTML(w, pin);
+    if (pin) { pinnedInspectHTML = html; mapPanel.setInspect(html); } // pin + switch to Inspect
+    else mapPanel.setInspect(html); // hover preview also shows the Inspect tab
+  }
+  function revertInspect() {
+    if (!mapPanel) return;
+    if (pinnedInspectHTML) mapPanel.setInspect(pinnedInspectHTML);
+    else mapPanel.clearInspect();
   }
 
   function refreshMap() {
@@ -492,13 +535,25 @@
                        "line-width": 0.8,
                        "line-opacity": 0.55,
                      } });
-      map.on("click", "wa-fill", (e) => { const id = e.features[0].properties.id; toggleSelect(id); });
+      // Click pins the full inspector (work area + group) and keeps the existing
+      // table-selection toggle. Hover previews the work area (no group) in the
+      // panel; mouseout reverts to the pinned work area.
+      map.on("click", "wa-fill", (e) => {
+        const id = e.features[0].properties.id;
+        inspectWA(id, true);
+        toggleSelect(id);
+      });
       map.on("mouseenter", "wa-fill", () => { map.getCanvas().style.cursor = "pointer"; });
-      map.on("mouseleave", "wa-fill", () => { map.getCanvas().style.cursor = ""; ensurePopup().remove(); });
+      map.on("mouseleave", "wa-fill", () => {
+        map.getCanvas().style.cursor = "";
+        hoverWAId = null;
+        revertInspect();
+      });
       map.on("mousemove", "wa-fill", (e) => {
         const f = e.features[0]; if (!f) return;
-        const wa = WAS.find((x) => x.id === f.properties.id);
-        ensurePopup().setLngLat(e.lngLat).setHTML(cellTooltipHTML(f.properties, wa)).addTo(map);
+        if (f.properties.id === hoverWAId) return; // only rebuild when the cell changes
+        hoverWAId = f.properties.id;
+        inspectWA(hoverWAId, false);
       });
     }
     Microplans.fitTo(map, data, { maxZoom: 16, animate: false, duration: 0 });
