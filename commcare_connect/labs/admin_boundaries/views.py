@@ -20,6 +20,7 @@ from commcare_connect.labs.admin_boundaries.services import (
     CountrySourceRegistry,
     GeoPoDELoader,
     get_loader,
+    resolve_many_by_name,
     stream_load_country,
 )
 from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView, send_sse_event
@@ -920,3 +921,84 @@ class BoundaryMapAPIView(LoginRequiredMixin, View):
         (SolicitationDataAccess.get_enrichment_record and OppOrgEnrichmentRecord model)
         """
         return []
+
+        return []
+
+
+class ResolveManyByNameAPIView(LoginRequiredMixin, View):
+    """POST /labs/explorer/boundaries/resolve_many/
+
+    Resolve a list of admin-boundary names (e.g. ward names) into their
+    matched boundary records — id, name, parent LGA, population — or, for
+    names that don't resolve, an explicit ``unresolved_reason`` so the
+    front-end can render a confirmable list before committing.
+
+    Request body (JSON):
+        {
+            "names": ["Galinja", "FakeWardName"],
+            "iso_code": "NGA",
+            "admin_level": 3,
+            "source": "geopode"      # optional
+        }
+
+    Response (JSON):
+        {
+            "resolutions": [
+                {"name": "Galinja", "matched_id": "...", "matched_name": "Galinja",
+                 "lga": "Makoda", "population": 27123.0, "unresolved_reason": ""},
+                {"name": "FakeWardName", "matched_id": "", "matched_name": "",
+                 "lga": "", "population": null, "unresolved_reason": "not found"}
+            ]
+        }
+
+    Implements feature ``resolve-many-endpoint`` of the
+    ``name-match-and-confirm`` spine item in the microplans-10-wards spec.
+    """
+
+    def post(self, request):
+        try:
+            payload = json.loads(request.body or b"{}")
+        except ValueError:
+            return JsonResponse({"success": False, "error": "invalid JSON body"}, status=400)
+
+        names = payload.get("names")
+        iso_code = (payload.get("iso_code") or "").strip().upper()
+        admin_level = payload.get("admin_level")
+        source = (payload.get("source") or "").strip() or None
+
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+            return JsonResponse(
+                {"success": False, "error": "names must be a list of strings"},
+                status=400,
+            )
+        if not iso_code or len(iso_code) != 3:
+            return JsonResponse(
+                {"success": False, "error": "iso_code is required (3-letter)"},
+                status=400,
+            )
+        if not isinstance(admin_level, int) or admin_level < 0:
+            return JsonResponse(
+                {"success": False, "error": "admin_level is required (int >= 0)"},
+                status=400,
+            )
+
+        try:
+            resolutions = resolve_many_by_name(
+                names=names,
+                iso_code=iso_code,
+                admin_level=admin_level,
+                source=source,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.exception("[admin_boundaries] resolve_many failed")
+            return JsonResponse(
+                {"success": False, "error": f"resolve failed: {e}"},
+                status=500,
+            )
+
+        return JsonResponse(
+            {
+                "success": True,
+                "resolutions": [r.to_dict() for r in resolutions],
+            }
+        )
