@@ -15,6 +15,8 @@ from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
 
+from commcare_connect.microplans import serialization
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,7 +102,7 @@ class PreviewFrameView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
             # Unexpected — log server-side, return a generic message (no internal leak).
-            logger.exception("rooftop preview_frame failed (opp=%s)", opp_id)
+            logger.exception("microplans preview_frame failed (opp=%s)", opp_id)
             return JsonResponse(
                 {"status": "error", "detail": "Frame generation failed. Check server logs."},
                 status=502,
@@ -288,27 +290,6 @@ class AdminAreaGeometryView(LoginRequiredMixin, View):
 # --- Planning-phase plan review/edit (the LLO validation layer; pre-upload) ---
 
 
-def _plan_json(plan):
-    """Serialize a plan for the review UI: work areas + headline summary.
-
-    Includes the most recent grouping + assignment configs so the review
-    sidebar can pre-fill its form controls with whatever produced the current
-    layout — the LLO sees ``what was used`` without a separate config header.
-    """
-    from commcare_connect.microplans.core import plan as plan_lib
-
-    return {
-        "status": "ok",
-        "plan_id": plan.id,
-        "mode": plan.mode,
-        "work_areas": plan.work_areas,
-        "summary": plan_lib.summarize(plan.work_areas),
-        "kpis": plan_lib.plan_kpis(plan.work_areas),
-        "grouping": plan.data.get("grouping") or {},
-        "assignment": plan.data.get("assignment") or {},
-    }
-
-
 # ============================================================================
 # Program layer: a program owns a portfolio of candidate plans + plan groups.
 # Plans are program-scoped; an opportunity is bound only at Deploy.
@@ -320,33 +301,6 @@ def _plan_json(plan):
 # shell views render for any logged-in user, but their data fetches return nothing
 # unless the user is a member. No program data leaks from rendering the shell.
 # ============================================================================
-
-
-def _plan_summary_row(plan):
-    """Compact per-plan row for the workspace (status, region, headline KPIs)."""
-    from commcare_connect.microplans.core import plan as plan_lib
-
-    k = plan_lib.plan_kpis(plan.work_areas)
-    # Travel/balance KPIs are only meaningful once areas are split across workers.
-    # Pre-assignment everything collapses to one territory, so flag it so the UI can
-    # show the area count instead of a misleading "1 worker / whole-region travel".
-    assigned = k["dimension"] == "worker"
-    return {
-        "plan_id": plan.id,
-        "name": plan.name or f"Plan {plan.id}",
-        "region": plan.region,
-        "mode": plan.mode,
-        "status": plan.status,
-        "status_label": plan_lib.PLAN_STATUS_LABELS.get(plan.status, plan.status),
-        "opportunity_id": plan.data.get("opportunity_id"),
-        "assigned": assigned,
-        "work_areas": len(plan.work_areas),
-        "max_spread_km": k["plan"]["max_spread_km"],
-        "coverage_pct": k["coverage_pct"],
-        "excluded": k["excluded"]["count"],
-        "territory_count": k["plan"]["territory_count"],
-        "created_at": plan.created_at,
-    }
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -371,7 +325,7 @@ class ProgramPlansAPIView(LoginRequiredMixin, View):
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plans = [_plan_summary_row(p) for p in da.list_plans()]
+            plans = [serialization.plan_summary_row(p) for p in da.list_plans()]
             groups = [
                 {
                     "group_id": g.id,
@@ -652,7 +606,7 @@ class ProgramPlanView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans program plan get failed (%s/%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanEditView(LoginRequiredMixin, View):
@@ -684,7 +638,7 @@ class ProgramPlanEditView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans program plan edit failed (%s/%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Edit failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanFootprintsView(LoginRequiredMixin, View):
@@ -705,7 +659,7 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
 
-        area = _plan_lookup_area(plan)
+        area = serialization.plan_lookup_geometry(plan)
         if area is None:
             return JsonResponse(
                 {"status": "ok", "footprints": {"type": "FeatureCollection", "features": []}, "count": 0}
@@ -736,40 +690,6 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
         )
 
 
-def _plan_lookup_area(plan):
-    """Best geometry to use when re-querying footprints for a plan.
-
-    Order of preference:
-      1. The plan's stored ``input_areas`` (the ward/draw/pin payload from setup;
-         already PG-cached as a whole from generation → instant hit).
-      2. The union of cell geometries (works but a different cache hash → cold
-         miss the first time per plan).
-    """
-    from shapely.ops import unary_union
-
-    from commcare_connect.microplans.core.area_input import resolve_area
-
-    inputs = plan.data.get("input_areas") or []
-    if inputs:
-        try:
-            return unary_union([resolve_area(a) for a in inputs])
-        except Exception:  # noqa: BLE001
-            logger.exception("plan footprints: input_areas resolve failed; falling back to cells")
-
-    from shapely.geometry import shape
-
-    geoms = []
-    for w in plan.work_areas:
-        g = w.get("geometry")
-        if not g:
-            continue
-        try:
-            geoms.append(shape(g))
-        except Exception:  # noqa: BLE001
-            continue
-    return unary_union(geoms) if geoms else None
-
-
 class ProgramPlanReassignView(LoginRequiredMixin, View):
     """Phase-2 op: re-apply the assignment strategy to a plan's groups.
 
@@ -795,7 +715,7 @@ class ProgramPlanReassignView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans reassign failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Reassign failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanRegenerateView(LoginRequiredMixin, View):
@@ -837,7 +757,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans regenerate failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Regenerate failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanRegroupView(LoginRequiredMixin, View):
@@ -865,7 +785,7 @@ class ProgramPlanRegroupView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans regroup failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Regroup failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
@@ -886,7 +806,7 @@ class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
             plan = da.get_plan(int(plan_id))
         except Exception:  # noqa: BLE001
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
-        area = _plan_lookup_area(plan)
+        area = serialization.plan_lookup_geometry(plan)
         if area is None:
             return JsonResponse({"status": "ok", "deleted": 0})
         deleted, _ = FootprintArea.objects.filter(area_hash=_area_cache_key(area.wkt)).delete()

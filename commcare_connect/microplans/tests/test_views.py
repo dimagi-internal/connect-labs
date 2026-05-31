@@ -240,52 +240,6 @@ _HULL_FC = {
 _EMPTY_FC = {"type": "FeatureCollection", "features": []}
 
 
-class _FakePlan:
-    def __init__(self, pid, mode, work_areas, name="", created_at="2026-05-28T00:00:00Z"):
-        self.id, self.mode, self.work_areas = pid, mode, work_areas
-        self.name, self.created_at = name or f"Plan {pid}", created_at
-        self.data = {"work_areas": work_areas}
-
-
-def _make_fake_da(monkeypatch, store):
-    """A RooftopDataAccess stand-in that runs the real plan logic over an in-memory store."""
-    from commcare_connect.microplans.core import plan as plan_lib
-
-    class _Frame:
-        mode, pins, hulls = "coverage", _EMPTY_FC, _HULL_FC
-
-    class _Api:
-        def get_record_by_id(self, rid, model_class=None):
-            return _Frame()
-
-    class FakeDA:
-        def __init__(self, *a, **k):
-            self.labs_api = _Api()
-
-        def materialize_plan(self, frame, name=""):
-            was = plan_lib.materialize_work_areas(frame.mode, frame.pins, frame.hulls)
-            store[1] = _FakePlan(1, frame.mode, was)
-            return store[1]
-
-        def get_plan(self, pid):
-            return store[int(pid)]
-
-        def apply_plan_edits(self, pid, wa_ids, action, params, actor):
-            p = store[int(pid)]
-            for wa_id in wa_ids:
-                wa = plan_lib.find(p.work_areas, wa_id)
-                if wa is None:
-                    raise ValueError(f"work area {wa_id!r} not found")
-                plan_lib.apply_action(wa, action, params, actor)
-            return p
-
-        def list_plans(self):
-            return list(store.values())
-
-    monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
-    return store
-
-
 # ============================================================================
 # Program layer: portfolio workspace, program-scoped creation/review, lifecycle
 # transitions, and plan groups. Fakes run the real plan_lib logic over a store.
