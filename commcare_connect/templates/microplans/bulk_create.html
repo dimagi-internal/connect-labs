@@ -187,7 +187,7 @@
   <section id="step-create" class="hidden border border-gray-200 rounded-lg bg-white p-5 space-y-3">
     <div class="flex items-center gap-3">
       <div id="create-spinner" class="spinner"></div>
-      <svg id="create-check" viewBox="0 0 20 20" class="hidden w-6 h-6 text-emerald-600" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm3.707-9.293a1 1 0 0 0-1.414-1.414L9 10.586 7.707 9.293a1 1 0 0 0-1.414 1.414l2 2a1 1 0 0 0 1.414 0l4-4z" clip-rule="evenodd"/></svg>
+      <svg id="create-check" viewBox="0 0 20 20" class="hidden w-6 h-6" fill="#059669" style="color:#059669"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm3.707-9.293a1 1 0 0 0-1.414-1.414L9 10.586 7.707 9.293a1 1 0 0 0-1.414 1.414l2 2a1 1 0 0 0 1.414 0l4-4z" clip-rule="evenodd"/></svg>
       <h2 class="text-lg font-semibold text-gray-900">
         <span id="create-title">Creating plans…</span>
       </h2>
@@ -466,16 +466,21 @@
           const pill = row.querySelector(".pill");
           if (res.status === "ok") {
             pill.className = "pill pill-ok pill-just-flipped";
-            pill.textContent = "✓ Created";
-            okCount++;
-            // Append the plan-ID deep link if we got one back.
-            if (res.plan_id && !row.querySelector(".plan-link")) {
-              const link = document.createElement("a");
-              link.className = "plan-link ml-2 text-xs text-brand-cornflower-blue hover:underline";
-              link.textContent = "#" + res.plan_id;
-              link.href = `/microplans/program/${PROGRAM_ID}/plan/${res.plan_id}/`;
-              row.appendChild(link);
+            pill.textContent = res.plan_id ? `✓ Created · #${res.plan_id}` : "✓ Created";
+            // Wrap the row label in a deep-link if we got a plan_id.
+            if (res.plan_id) {
+              const labelEl = row.querySelector(".progress-label");
+              if (labelEl && !labelEl.querySelector("a")) {
+                const txt = labelEl.textContent;
+                labelEl.innerHTML = "";
+                const a = document.createElement("a");
+                a.href = `/microplans/program/${PROGRAM_ID}/plan/${res.plan_id}/`;
+                a.className = "text-gray-900 hover:text-brand-cornflower-blue hover:underline";
+                a.textContent = txt;
+                labelEl.appendChild(a);
+              }
             }
+            okCount++;
           } else {
             pill.className = "pill pill-err";
             pill.textContent = res.detail || "Error";
@@ -483,7 +488,9 @@
           }
         }
         i++;
-        setTimeout(tick, 280);
+        // 420ms between flips → 6 rows = ~2.5s of distinct beats
+        // (clearly visible in video, not blink-and-miss).
+        setTimeout(tick, 420);
       };
       tick();
     });
