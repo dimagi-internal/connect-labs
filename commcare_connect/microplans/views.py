@@ -1086,6 +1086,48 @@ class ProgramPlanReassignView(LoginRequiredMixin, View):
         return JsonResponse(_plan_json(plan))
 
 
+class ProgramPlanRegenerateView(LoginRequiredMixin, View):
+    """Destructive regenerate: wipe + rebuild a plan's work areas from a new
+    boundary/cell-size payload. Same body shape as ProgramCreatePlanView, sans
+    name/region (those stay on the plan).
+
+    The plan keeps its id; CHW assignments + per-area edits are reset.
+    """
+
+    def post(self, request, program_id, plan_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        empty_fc = {"type": "FeatureCollection", "features": []}
+        try:
+            payload = json.loads(request.body)
+            mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
+            pins = payload.get("pins") or empty_fc
+            hulls = (payload.get("coverage_areas") or payload.get("hulls")) or empty_fc
+            input_areas = payload.get("input_areas") or []
+            if not isinstance(input_areas, list):
+                input_areas = []
+            grouping = payload.get("grouping") or {}
+            if not isinstance(grouping, dict):
+                grouping = {}
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            plan = da.regenerate_plan(
+                int(plan_id),
+                mode=mode,
+                pins=pins,
+                hulls=hulls,
+                input_areas=input_areas,
+                grouping=grouping,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans regenerate failed (program=%s plan=%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Regenerate failed."}, status=502)
+        return JsonResponse(_plan_json(plan))
+
+
 class ProgramPlanRegroupView(LoginRequiredMixin, View):
     """Phase-1 op: re-apply the grouping strategy to a plan's cells.
 
