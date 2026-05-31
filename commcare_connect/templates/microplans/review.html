@@ -283,6 +283,53 @@
            The footprints toggle (and admin / service-delivery layers) live in the
            panel; rendered by microplans/map_panel.js. -->
       <div id="map-panel-mount"></div>
+
+      <!-- Service-delivery opportunity picker (multi-select). Server-rendered +
+           Alpine-initialised here (hidden), then relocated into the panel's
+           "Service delivery" layer body by service_delivery_layer.js. Uses the
+           shared labsContextPicker core over its own opportunity data (self-
+           contained — does not rely on the navbar being present). -->
+      {{ user_opportunities|json_script:"sd-opportunity-data" }}
+      <div id="sd-picker" class="hidden" data-sd
+           x-data="labsContextPicker({mode:'multi', scope:['opp'], sourceIds:{opp:'sd-opportunity-data'}})">
+        <input type="text" x-model="search" placeholder="Search opportunities…"
+               class="w-full text-[11px] border border-gray-300 rounded px-2 py-1 mb-1">
+        <div class="max-h-28 overflow-auto border border-gray-200 rounded mb-1">
+          <template x-for="opp in filteredOpps" :key="opp.id">
+            <button type="button" x-show="matchesSearch(opp.name) || matchesSearch(String(opp.id))"
+                    @click="selectOpp(opp)"
+                    class="block w-full text-left text-[11px] px-2 py-1 hover:bg-blue-50"
+                    :class="isSelected('opp', opp.id) ? 'bg-blue-50 font-medium' : ''">
+              <span x-text="opp.name"></span>
+              <span class="text-gray-400" x-text="'· ' + (opp.visit_count||0) + ' visits'"></span>
+            </button>
+          </template>
+        </div>
+        <div class="flex flex-wrap gap-1 mb-1">
+          <template x-for="(opp, i) in selectedOpps" :key="opp.id">
+            <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 border">
+              <span class="w-2 h-2 rounded-full" :style="`background:${oppColor(i)}`"></span>
+              <span class="truncate" style="max-width:7rem" x-text="opp.name"></span>
+              <button type="button" @click="removeOpp(opp.id)" class="text-gray-400 hover:text-red-600 leading-none">&times;</button>
+            </span>
+          </template>
+          <span x-show="!selectedOpps.length" class="text-[10px] text-gray-400">No opportunities selected.</span>
+        </div>
+        <select class="sd-pipeline w-full text-[11px] border border-gray-300 rounded px-1 py-1 mb-1">
+          <option value="default">Default — device GPS (any app)</option>
+        </select>
+        <button type="button" class="sd-show w-full text-[11px] font-semibold bg-brand-cornflower-blue text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
+        <div class="border-t border-gray-100 pt-1.5">
+          <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Boundary from points</div>
+          <div class="flex items-center gap-3 text-[11px] mb-1">
+            <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="concave" checked> Concave</label>
+            <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="convex"> Convex</label>
+          </div>
+          <label class="block text-[11px]">Tightness <input type="range" class="sd-tightness w-full" min="0.05" max="1" step="0.05" value="0.3"></label>
+          <label class="block text-[11px]">Buffer (m) <input type="number" class="sd-buffer w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 mt-0.5" value="25" min="0" step="5"></label>
+          <button type="button" class="sd-derive-btn w-full text-[11px] font-semibold border border-blue-300 text-blue-700 rounded py-1.5 mt-1">Add boundary as planning area</button>
+        </div>
+      </div>
       <div class="map-overlay map-legend" style="bottom: 0.5rem; left: 0.5rem;">
         <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Encoding</div>
         <div class="legend-row" id="legend-fill"><span class="sw" style="background:#06b6d4;opacity:0.55"></span><span class="lbl">Fill: <span id="legend-fill-dim">worker</span></span></div>
@@ -358,7 +405,9 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
 <script src="{% static 'microplans/shared.js' %}"></script>
+<script src="{% static 'labs/context_picker.js' %}"></script>
 <script src="{% static 'microplans/map_panel.js' %}"></script>
+<script src="{% static 'microplans/service_delivery_layer.js' %}"></script>
 <script>
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
@@ -373,6 +422,9 @@
   const REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
   const PREVIEW_COVERAGE_URL = "{{ preview_coverage_url|default:''|escapejs }}";
   const COUNTRIES_URL = "{{ countries_url|default:''|escapejs }}";
+  const SD_PREVIEW_URL = "{{ preview_service_delivery_url|default:''|escapejs }}";
+  const SD_PIPELINES_URL = "{{ service_delivery_pipelines_url|default:''|escapejs }}";
+  const DERIVE_BOUNDARY_URL = "{{ derive_boundary_url|default:''|escapejs }}";
   const ADMIN_AREAS_URL = "{{ admin_areas_url|default:''|escapejs }}";
   const ADMIN_AREA_GEOMETRY_URL = "{{ admin_area_geometry_url|default:''|escapejs }}";
   const CREATE_PLAN_URL = "{{ create_plan_url|default:''|escapejs }}";
@@ -632,6 +684,25 @@
       },
     });
     window.__mpPanel = mapPanel;
+
+    // Service-delivery layer — re-homed from the (removed) setup page. Registers
+    // into the panel, driven by the shared multi-select opportunity picker; a
+    // derived boundary lands in the MapboxDraw area layer (`draw`, lazy).
+    if (window.MicroplansServiceDelivery && $("sd-picker") && SD_PREVIEW_URL) {
+      MicroplansServiceDelivery.register({
+        panel: mapPanel, map, csrf: CSRF, pickerEl: $("sd-picker"),
+        urls: { preview: SD_PREVIEW_URL, pipelines: SD_PIPELINES_URL, derive: DERIVE_BOUNDARY_URL },
+        onBoundary: (feature) => {
+          const geom = feature.geometry;
+          const polys = geom.type === "MultiPolygon"
+            ? geom.coordinates.map((c) => ({ type: "Polygon", coordinates: c }))
+            : [geom];
+          polys.forEach((g) => { if (draw) draw.add({ type: "Feature", geometry: g, properties: {} }); });
+          Microplans.fitTo(map, feature);
+          if (typeof setAreaInput === "function") setAreaInput("draw");
+        },
+      });
+    }
   }
 
   // ---- render ----
