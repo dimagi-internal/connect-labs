@@ -43,3 +43,25 @@ def test_plan_lookup_geometry_unions_cells_when_no_input_areas():
 def test_plan_lookup_geometry_none_when_no_geometry():
     plan = _Plan(work_areas=[{"geometry": None}, {}])
     assert serialization.plan_lookup_geometry(plan) is None
+
+
+def test_plan_to_json_rounds_geometry_coords():
+    wa = [{"geometry": {"type": "Point", "coordinates": [13.123456789, 11.987654321]}, "building_count": 5}]
+    out = serialization.plan_to_json(_Plan(work_areas=wa))
+    assert out["work_areas"][0]["geometry"]["coordinates"] == [13.123457, 11.987654]
+    # non-geometry properties pass through untouched
+    assert out["work_areas"][0]["building_count"] == 5
+
+
+def test_slim_work_areas_does_not_mutate_source():
+    wa = [{"geometry": {"type": "Point", "coordinates": [13.123456789, 11.987654321]}}]
+    serialization.slim_work_areas(wa)
+    assert wa[0]["geometry"]["coordinates"] == [13.123456789, 11.987654321]  # source unchanged
+
+
+def test_slim_work_areas_tolerates_missing_geometry():
+    # rows without geometry (or non-dict) must pass through, not raise
+    assert serialization.slim_work_areas([{"building_count": 1}, {"geometry": None}]) == [
+        {"building_count": 1},
+        {"geometry": None},
+    ]

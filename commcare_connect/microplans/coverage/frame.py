@@ -22,6 +22,14 @@ from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
 from commcare_connect.microplans.core.footprints import fetch_buildings
 
+# Upper bound on work areas a single coverage plan may produce. Far above real
+# use (the largest live plan is ~1,100 areas) — this is a guardrail so a tiny
+# cell size on a huge area can't generate a 50k-cell, multi-MB plan that bloats
+# every plan response and is unreviewable anyway. Exceeding it is a user error
+# with an actionable fix (bigger cells / split the area), surfaced via the
+# preview's error envelope.
+MAX_WORK_AREAS = 8000
+
 
 def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
@@ -69,6 +77,13 @@ def generate_coverage_frame(areas: list[dict], config: CoverageConfig) -> Covera
         buildings, FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2)
     )
     out = clustering.grid_clusters(filtered.buildings, cell_size_m=config.cell_size_m)
+
+    n_cells = len(out.psu_frame)
+    if n_cells > MAX_WORK_AREAS:
+        raise ValueError(
+            f"This area at {config.cell_size_m:.0f} m cells produces {n_cells:,} work areas "
+            f"(limit {MAX_WORK_AREAS:,}). Increase the cell size, or split the area into separate plans."
+        )
 
     features: list[dict] = []
     for _, row in out.psu_frame.iterrows():

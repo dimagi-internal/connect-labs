@@ -128,6 +128,24 @@ def points_to_geojson(points: list[dict], opportunity_id: int, color: str) -> di
     return {"type": "FeatureCollection", "features": features}
 
 
+# Max GPS points the service-delivery overlay will return in one response. The
+# overlay is a visual density cue, not analysis — beyond a few thousand dots it's
+# indistinguishable but keeps inflating the payload (a multi-opp selection can be
+# tens of thousands of points). Above the cap we uniformly subsample so the
+# spatial spread is preserved, and report what was dropped (no silent truncation).
+MAX_OVERLAY_POINTS = 6000
+
+
+def downsample_features(features: list[dict], max_n: int = MAX_OVERLAY_POINTS) -> tuple[list[dict], bool, int]:
+    """Cap a feature list to ``max_n`` by uniform stride. Returns
+    ``(features, sampled, total)`` — ``sampled`` is True iff anything was dropped."""
+    total = len(features)
+    if max_n <= 0 or total <= max_n:
+        return features, False, total
+    stride = -(-total // max_n)  # ceil(total / max_n) → keeps ≤ max_n, evenly spread
+    return features[::stride], True, total
+
+
 def fetch_points(
     opp_id: int,
     request=None,
