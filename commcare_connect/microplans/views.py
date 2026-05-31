@@ -1272,9 +1272,7 @@ class ArmComparabilityView(LoginRequiredMixin, View):
                 area_km2 = 0.0
             bc = int(counts.get(arm) or 0)
             density = round(bc / area_km2, 1) if area_km2 > 0 else 0.0
-            out.append(
-                {"arm": arm, "building_count": bc, "area_km2": round(area_km2, 3), "density_per_km2": density}
-            )
+            out.append({"arm": arm, "building_count": bc, "area_km2": round(area_km2, 3), "density_per_km2": density})
 
         matched = None
         reasons: list[str] = []
