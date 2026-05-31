@@ -260,6 +260,37 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["grouping"] = grouping
         return self._save_plan(plan, data)
 
+    def regenerate_plan(
+        self,
+        plan_id: int,
+        mode: str,
+        pins: dict,
+        hulls: dict,
+        input_areas: list,
+        grouping: dict | None = None,
+    ) -> RooftopPlanRecord:
+        """Destructive re-creation of the work areas for an existing plan.
+
+        Same end state as `create_plan` (one work area per cluster/pin, auto-
+        grouped via Phase 1) — the only "preservation" is that the plan keeps
+        its id, name, region, mode, status, and status_log. CHW assignments,
+        per-area resizes, exclusions, audit history, and the previous
+        grouping/assignment configs are all wiped, since the underlying work
+        areas are different objects.
+
+        Use when the LLO changes the boundary or cell size on an existing plan
+        and wants the new layout to replace the old one outright.
+        """
+        plan = self.get_plan(plan_id)
+        data = dict(plan.data)
+        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
+        data["work_areas"] = work_areas
+        data["input_areas"] = list(input_areas or [])
+        data["mode"] = mode
+        data["grouping"] = dict(grouping or {})
+        data["assignment"] = {}  # destructive reset — no CHWs carried over
+        return self._save_plan(plan, data)
+
     def list_plans(self) -> list[RooftopPlanRecord]:
         return self.labs_api.get_records(
             experiment=self._experiment,
