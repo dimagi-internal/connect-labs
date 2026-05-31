@@ -380,6 +380,11 @@ class BoundaryResolver:
         order = self._country_order.get(a3, DEFAULT_SOURCE_ORDER)
         return tuple(order)
 
+    def source_names(self) -> list[str]:
+        """All registered source names (no country scoping). Public accessor so
+        callers don't reach into the private ``_sources`` registry."""
+        return list(self._sources)
+
     def sources_for(self, country3: str, level: int) -> list[str]:
         """Names of every source that has data for this (country, level), in
         preference order (the default is first)."""
