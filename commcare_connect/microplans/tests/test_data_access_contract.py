@@ -1,6 +1,6 @@
 """Contract tests for the microplans data-access layer.
 
-These tests exercise the REAL RooftopDataAccess and ProgramPlanDataAccess classes
+These tests exercise the REAL ProgramPlanDataAccess class
 against a faithful in-memory fake of LabsRecordAPIClient. The key invariant under
 test: any value written via a DA method must survive the full
     DA.save → LocalLabsRecord.to_api_dict() → ProxyModel(api_data) → .property
@@ -16,9 +16,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from commcare_connect.labs.models import LocalLabsRecord
 from commcare_connect.microplans.core import plan as plan_lib
-from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, RooftopDataAccess
+from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
 
 # ---------------------------------------------------------------------------
 # In-memory fake of LabsRecordAPIClient
@@ -180,16 +182,6 @@ OPP_ID = 999
 PROGRAM_ID = 133
 
 
-def _make_rooftop_da() -> RooftopDataAccess:
-    """Construct RooftopDataAccess and swap its labs_api for the in-memory fake."""
-    # BaseDataAccess.__init__ requires an access_token; we pass a stub because
-    # we immediately replace .labs_api. The constructor also initialises an
-    # httpx.Client which we do NOT close (it's a stub with no real connection).
-    da = RooftopDataAccess(opportunity_id=OPP_ID, access_token="test-token-stub")
-    da.labs_api = FakeLabsRecordAPIClient(opportunity_id=OPP_ID)
-    return da
-
-
 def _make_program_da() -> ProgramPlanDataAccess:
     """Construct ProgramPlanDataAccess and swap its labs_api for the in-memory fake."""
     da = ProgramPlanDataAccess(program_id=PROGRAM_ID, access_token="test-token-stub")
@@ -263,223 +255,6 @@ _EMPTY_FC = {"type": "FeatureCollection", "features": []}
 
 
 # ===========================================================================
-# RooftopDataAccess contract tests
-# ===========================================================================
-
-
-class TestRooftopDataAccessContract:
-    """Round-trip tests for RooftopDataAccess through the fake API."""
-
-    def test_save_area_proxy_properties_survive_round_trip(self):
-        """save_area → LocalLabsRecord.to_api_dict() → RooftopAreaRecord properties intact."""
-        da = _make_rooftop_da()
-        config = {"cell_size_m": 200, "mode": "coverage"}
-        areas = [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [3.0, 6.0]}}]
-        area_rec = da.save_area(areas=areas, config=config, name="Test Area", mode="coverage")
-
-        assert area_rec.name == "Test Area"
-        assert area_rec.mode == "coverage"
-        assert area_rec.config == config
-        # areas survive JSON round-trip (list of dicts, no tuples)
-        assert area_rec.areas == areas
-        assert area_rec.id is not None and area_rec.id > 0
-
-    def test_save_area_config_nested_values_survive(self):
-        """Nested config values (cell_size_m, min_buildings) survive JSON round-trip."""
-        da = _make_rooftop_da()
-        config = {"cell_size_m": 250, "min_buildings": 5, "nested": {"flag": True}}
-        area_rec = da.save_area(areas=[], config=config, mode="sampling")
-        # If to_api_dict dropped config, this would be {}
-        assert area_rec.config["cell_size_m"] == 250
-        assert area_rec.config["min_buildings"] == 5
-        assert area_rec.config["nested"]["flag"] is True
-
-    def test_save_frame_proxy_properties_survive_round_trip(self):
-        """save_frame → RooftopFrameRecord: pins/hulls/stats/mode all accessible."""
-        da = _make_rooftop_da()
-        # First create an area record so we have a valid area_record_id
-        area_rec = da.save_area(areas=[], config={}, mode="coverage")
-
-        stats = [{"arm": "coverage", "cluster_count": 2, "building_count": 140}]
-        frame_rec = da.save_frame(
-            area_record_id=area_rec.id,
-            pins=_EMPTY_FC,
-            hulls=_HULLS_2,
-            stats=stats,
-            mode="coverage",
-        )
-
-        assert frame_rec.mode == "coverage"
-        assert frame_rec.stats == stats
-        assert frame_rec.pins == _EMPTY_FC
-        # hulls survive: list of features with geometry dicts
-        assert len(frame_rec.hulls["features"]) == 2
-        assert frame_rec.pin_count == 0
-        assert frame_rec.id > 0
-
-    def test_list_areas_returns_typed_records_with_properties(self):
-        """list_areas returns RooftopAreaRecord instances, not raw LocalLabsRecord."""
-        da = _make_rooftop_da()
-        da.save_area(areas=[], config={"k": "v1"}, name="Area A", mode="sampling")
-        da.save_area(areas=[], config={"k": "v2"}, name="Area B", mode="coverage")
-
-        areas = da.list_areas()
-        assert len(areas) == 2
-        names = {a.name for a in areas}
-        assert names == {"Area A", "Area B"}
-        # Verify proxy properties exist (would AttributeError on raw LocalLabsRecord)
-        for a in areas:
-            _ = a.config  # proxy property
-            _ = a.mode  # proxy property
-
-    def test_list_frames_returns_typed_records(self):
-        """list_frames returns RooftopFrameRecord instances."""
-        da = _make_rooftop_da()
-        area_rec = da.save_area(areas=[], config={})
-        da.save_frame(area_record_id=area_rec.id, pins=_EMPTY_FC, hulls=_HULLS_2, stats=[], mode="coverage")
-        da.save_frame(area_record_id=area_rec.id, pins=_PINS_2, hulls=_EMPTY_FC, stats=[], mode="sampling")
-
-        frames = da.list_frames()
-        assert len(frames) == 2
-        modes = {f.mode for f in frames}
-        assert modes == {"coverage", "sampling"}
-
-    def test_materialize_plan_produces_work_areas_from_hulls(self):
-        """materialize_plan builds a RooftopPlanRecord with typed work areas."""
-        da = _make_rooftop_da()
-        area_rec = da.save_area(areas=[], config={})
-        frame_rec = da.save_frame(
-            area_record_id=area_rec.id, pins=_EMPTY_FC, hulls=_HULLS_2, stats=[], mode="coverage"
-        )
-
-        plan_rec = da.materialize_plan(frame_rec, name="Kano North Draft")
-        assert plan_rec.name == "Kano North Draft"
-        assert plan_rec.mode == "coverage"
-        assert plan_rec.frame_record_id == frame_rec.id
-        # Two hulls → two work areas
-        assert len(plan_rec.work_areas) == 2
-        # Each work area starts UNASSIGNED with empty audit
-        for wa in plan_rec.work_areas:
-            assert wa["status"] == plan_lib.STATUS_UNASSIGNED
-            assert wa["audit"] == []
-
-    def test_get_plan_returns_same_record(self):
-        """get_plan returns the same record that materialize_plan created."""
-        da = _make_rooftop_da()
-        area_rec = da.save_area(areas=[], config={})
-        frame_rec = da.save_frame(
-            area_record_id=area_rec.id, pins=_EMPTY_FC, hulls=_HULLS_2, stats=[], mode="coverage"
-        )
-        plan_rec = da.materialize_plan(frame_rec, name="Plan X")
-
-        fetched = da.get_plan(plan_rec.id)
-        assert fetched.id == plan_rec.id
-        assert fetched.name == "Plan X"
-        assert len(fetched.work_areas) == len(plan_rec.work_areas)
-
-    def test_apply_plan_edits_exclude_persists_through_round_trip(self):
-        """apply_plan_edits(exclude) → re-fetch → audit + status present in stored data."""
-        da = _make_rooftop_da()
-        area_rec = da.save_area(areas=[], config={})
-        frame_rec = da.save_frame(
-            area_record_id=area_rec.id, pins=_EMPTY_FC, hulls=_HULLS_2, stats=[], mode="coverage"
-        )
-        plan_rec = da.materialize_plan(frame_rec)
-
-        first_wa_id = plan_rec.work_areas[0]["id"]
-        updated = da.apply_plan_edits(
-            plan_id=plan_rec.id,
-            wa_ids=[first_wa_id],
-            action="exclude",
-            params={"reason": "flooded area"},
-            actor="llo_user",
-        )
-
-        # Immediately assert on the returned record (in-memory, same object as stored)
-        wa = next(w for w in updated.work_areas if w["id"] == first_wa_id)
-        assert wa["status"] == plan_lib.STATUS_EXCLUDED
-        assert wa["excluded_reason"] == "flooded area"
-        assert wa["excluded_by"] == "llo_user"
-        assert len(wa["audit"]) == 1
-        assert wa["audit"][0]["phase"] == plan_lib.PLANNING_PHASE
-        assert wa["audit"][0]["action"] == "exclude"
-
-    def test_apply_plan_edits_exclude_persists_on_re_get(self):
-        """After apply_plan_edits, re-fetching the plan shows the edit (round-trip test)."""
-        da = _make_rooftop_da()
-        area_rec = da.save_area(areas=[], config={})
-        frame_rec = da.save_frame(
-            area_record_id=area_rec.id, pins=_EMPTY_FC, hulls=_HULLS_2, stats=[], mode="coverage"
-        )
-        plan_rec = da.materialize_plan(frame_rec)
-
-        first_wa_id = plan_rec.work_areas[0]["id"]
-        da.apply_plan_edits(
-            plan_id=plan_rec.id,
-            wa_ids=[first_wa_id],
-            action="exclude",
-            params={"reason": "flooded area"},
-            actor="llo_user",
-        )
-
-        # Re-fetch and verify the edit survived the JSON round-trip in the fake store
-        refetched = da.get_plan(plan_rec.id)
-        wa = next(w for w in refetched.work_areas if w["id"] == first_wa_id)
-        assert wa["status"] == plan_lib.STATUS_EXCLUDED
-        assert wa["excluded_reason"] == "flooded area"
-        # Audit list is a list (not tuple) after JSON round-trip
-        assert isinstance(wa["audit"], list)
-        assert len(wa["audit"]) == 1
-        # The changes dict inside audit survived
-        assert "status" in wa["audit"][0]["changes"]
-        assert wa["audit"][0]["changes"]["status"] == [plan_lib.STATUS_UNASSIGNED, plan_lib.STATUS_EXCLUDED]
-
-    def test_apply_plan_edits_resize_persists_and_audit_has_old_new(self):
-        """apply_plan_edits(resize) → audit records old→new expected_visit_count."""
-        da = _make_rooftop_da()
-        area_rec = da.save_area(areas=[], config={})
-        frame_rec = da.save_frame(
-            area_record_id=area_rec.id, pins=_EMPTY_FC, hulls=_HULLS_2, stats=[], mode="coverage"
-        )
-        plan_rec = da.materialize_plan(frame_rec)
-
-        first_wa = plan_rec.work_areas[0]
-        original_evc = first_wa["expected_visit_count"]  # should be 80 from _HULLS_2
-
-        da.apply_plan_edits(
-            plan_id=plan_rec.id,
-            wa_ids=[first_wa["id"]],
-            action="resize",
-            params={"expected_visit_count": 50},
-            actor="planner",
-        )
-
-        refetched = da.get_plan(plan_rec.id)
-        wa = next(w for w in refetched.work_areas if w["id"] == first_wa["id"])
-        assert wa["expected_visit_count"] == 50
-        # Audit change captures old→new
-        assert wa["audit"][0]["changes"]["expected_visit_count"] == [original_evc, 50]
-
-    def test_list_plans_returns_typed_records(self):
-        """list_plans returns RooftopPlanRecord instances with .work_areas property."""
-        da = _make_rooftop_da()
-        area_rec = da.save_area(areas=[], config={})
-        frame_rec = da.save_frame(
-            area_record_id=area_rec.id, pins=_EMPTY_FC, hulls=_HULLS_2, stats=[], mode="coverage"
-        )
-        da.materialize_plan(frame_rec, name="Plan A")
-        da.materialize_plan(frame_rec, name="Plan B")
-
-        plans = da.list_plans()
-        assert len(plans) == 2
-        for p in plans:
-            # These are proxy-model properties; would fail on plain LocalLabsRecord
-            _ = p.work_areas
-            _ = p.mode
-            _ = p.status_log
-
-
-# ===========================================================================
 # ProgramPlanDataAccess contract tests
 # ===========================================================================
 
@@ -488,7 +263,7 @@ class TestProgramPlanDataAccessContract:
     """Round-trip tests for ProgramPlanDataAccess through the fake API."""
 
     def test_create_plan_properties_survive_round_trip(self):
-        """create_plan → RooftopPlanRecord: status, region, work_areas, mode all accessible."""
+        """create_plan → PlanRecord: status, region, work_areas, mode all accessible."""
         da = _make_program_da()
         plan_rec = da.create_plan(
             region="Kano North LGA",
@@ -517,7 +292,7 @@ class TestProgramPlanDataAccessContract:
         assert plan_rec.data["opportunity_id"] is None
 
     def test_get_plan_returns_fetched_plan(self):
-        """get_plan fetches the record by id, returns RooftopPlanRecord with proxy props."""
+        """get_plan fetches the record by id, returns PlanRecord with proxy props."""
         da = _make_program_da()
         plan_rec = da.create_plan(region="Lagos Island", name="Lagos", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
 
@@ -551,6 +326,39 @@ class TestProgramPlanDataAccessContract:
                 # old→new is a 2-element list after JSON round-trip (not tuple)
                 assert isinstance(ev["changes"]["work_area_group"], list)
                 assert len(ev["changes"]["work_area_group"]) == 2
+
+    def test_create_plan_starts_at_revision_zero(self):
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        assert plan.data.get("revision") == 0
+
+    def test_each_save_bumps_revision(self):
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        g = {"strategy": "bbox", "target_size": 1}
+        r1 = da.regroup_plan(plan_id=plan.id, grouping=g, actor="p")
+        assert r1.data["revision"] == 1
+        r2 = da.regroup_plan(plan_id=plan.id, grouping=g, actor="p")
+        assert r2.data["revision"] == 2
+        assert da.get_plan(plan.id).data["revision"] == 2  # persists
+
+    def test_stale_base_revision_raises(self):
+        from commcare_connect.microplans.core.data_access import StalePlanError
+
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        g = {"strategy": "bbox", "target_size": 1}
+        # Client thinks it's at r5 but the stored plan is r0 → conflict, no write.
+        with pytest.raises(StalePlanError):
+            da.regroup_plan(plan_id=plan.id, grouping=g, actor="p", base_revision=5)
+        assert da.get_plan(plan.id).data["revision"] == 0  # unchanged — not clobbered
+
+    def test_matching_base_revision_succeeds(self):
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        g = {"strategy": "bbox", "target_size": 1}
+        updated = da.regroup_plan(plan_id=plan.id, grouping=g, actor="p", base_revision=0)
+        assert updated.data["revision"] == 1
 
     def test_reassign_plan_opportunity_access_survives_round_trip(self):
         """reassign_plan → opportunity_access fields updated + audit persisted."""
@@ -639,7 +447,7 @@ class TestProgramPlanDataAccessContract:
         assert wa["audit"][0]["actor"] == "reviewer"
 
     def test_list_plans_program_scoped_returns_typed_records(self):
-        """list_plans returns program-scoped RooftopPlanRecord list with proxy props."""
+        """list_plans returns program-scoped PlanRecord list with proxy props."""
         da = _make_program_da()
         da.create_plan(region="R1", name="Plan 1", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
         da.create_plan(region="R2", name="Plan 2", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
@@ -666,7 +474,7 @@ class TestProgramPlanDataAccessContract:
         assert grp.shared is False
 
     def test_get_group_round_trip(self):
-        """get_group returns RooftopPlanGroupRecord with proxy properties."""
+        """get_group returns PlanGroupRecord with proxy properties."""
         da = _make_program_da()
         grp = da.create_group(name="Test Group", plan_ids=[10, 20])
 
@@ -697,7 +505,7 @@ class TestProgramPlanDataAccessContract:
         assert all(isinstance(pid, int) for pid in updated.plan_ids)
 
     def test_list_groups_returns_typed_records(self):
-        """list_groups returns RooftopPlanGroupRecord instances with proxy props."""
+        """list_groups returns PlanGroupRecord instances with proxy props."""
         da = _make_program_da()
         da.create_group(name="Group A", plan_ids=[1])
         da.create_group(name="Group B", plan_ids=[2, 3])

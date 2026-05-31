@@ -22,6 +22,13 @@
   details.area-def > summary { cursor: pointer; user-select: none; list-style: none; }
   details.area-def > summary::-webkit-details-marker { display: none; }
   details.area-def > summary .chev { display: inline-block; transition: transform 0.15s; color: #6b7280; margin-right: 0.25rem; }
+  /* Generic rail accordion (Map colors / Group / Assign / Bulk) — same chevron
+     affordance as the Area accordion so the whole rail collapses consistently. */
+  details.mp-acc > summary { cursor: pointer; user-select: none; list-style: none; display: block; }
+  details.mp-acc > summary::-webkit-details-marker { display: none; }
+  details.mp-acc > summary .chev { display: inline-block; transition: transform 0.15s; color: #6b7280; margin-right: 0.25rem; }
+  details.mp-acc[open] > summary .chev { transform: rotate(90deg); }
+  details.mp-acc > :not(summary) { margin-top: 0.5rem; }
   .seg-on { box-shadow: inset 0 0 0 2px #3843d0; background: #eef0ff; color: #3a42c7; }
   .wa-row.excluded { opacity: 0.45; text-decoration: line-through; }
   .wa-row.sel { background: #ecfdf5; }
@@ -180,17 +187,17 @@
     </section>
 
     {% if plan_id %}
-    <section>
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Map colors</h2>
+    <details class="mp-acc" open>
+      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Map colors</summary>
       <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
         <button type="button" id="dim-worker" class="seg-tab is-on">By worker</button>
         <button type="button" id="dim-group" class="seg-tab">By group</button>
       </div>
       <p class="text-[10px] text-gray-400 mt-1">Fill colors the chosen dimension; outline always carries the other.</p>
-    </section>
+    </details>
 
-    <section class="border-t pt-3">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Group work areas</h2>
+    <details class="mp-acc border-t pt-3" open>
+      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Group work areas</summary>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
           <span class="text-gray-600">How to group</span>
@@ -216,10 +223,10 @@
         <button type="button" id="btn-regroup" class="button button-sm primary-dark">Apply grouping</button>
         <p class="text-[10px] text-gray-400">Re-groups every active work area. Audited per work area.</p>
       </div>
-    </section>
+    </details>
 
-    <section class="border-t pt-3">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Assign workers</h2>
+    <details class="mp-acc border-t pt-3">
+      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Assign workers</summary>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
           <span class="text-gray-600">How to assign</span>
@@ -240,10 +247,10 @@
         <button type="button" id="btn-reassign" class="button button-sm primary-dark">Apply assignment</button>
         <p class="text-[10px] text-gray-400">Assigns every group to a worker. Audited per work area whose worker changes.</p>
       </div>
-    </section>
+    </details>
 
-    <section class="border-t pt-3">
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Bulk (selected)</h2>
+    <details class="mp-acc border-t pt-3">
+      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Bulk (selected)</summary>
       <div class="flex flex-col gap-2">
         <button type="button" id="bulk-exclude" class="button button-sm primary-dark">Exclude selected…</button>
         <div class="grid grid-cols-2 gap-1">
@@ -254,7 +261,7 @@
         </div>
         <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
       </div>
-    </section>
+    </details>
 
     <section class="border-t pt-3">
       <button type="button" id="btn-export" class="button button-sm outline-style w-full">Download Connect import CSV</button>
@@ -496,11 +503,12 @@
   }
   // ---- hover tooltip on cells (cell ID, worker, group, counts, status) ----
   // ---- work-area inspector (replaces the old cursor-following Mapbox popup) ----
-  // Hover = a light preview (work area only); click = pin the full inspector
-  // (work area AND its group). Both render into the map panel's Inspect tab, so
-  // nothing floats over the map. `pinnedInspectHTML` survives hover so mouseout
-  // reverts to the last clicked work area.
-  let pinnedInspectHTML = null;
+  // Hover = a light preview (work area only); plain click = pin the full
+  // inspector (work area AND its group); Shift/⌘-click multi-selects work areas
+  // and pins a BULK panel (count + aggregates + bulk actions). All render into
+  // the map panel's Inspect tab — nothing floats over the map. `pinnedInspectFn`
+  // (a thunk → html|node) survives hover so mouseout reverts to the pinned view.
+  let pinnedInspectFn = null;
   let hoverWAId = null;
   const kvRow = (k, v) =>
     `<div style="display:flex;justify-content:space-between;gap:.6rem;padding:2px 0"><span style="color:#8a90a0">${k}</span><span style="font-weight:600;text-align:right">${v}</span></div>`;
@@ -550,13 +558,54 @@
     if (!mapPanel) return;
     const w = WAS.find((x) => x.id === id);
     if (!w) return;
-    const html = waInspectHTML(w, pin);
-    if (pin) { pinnedInspectHTML = html; mapPanel.setInspect(html); } // pin + switch to Inspect
-    else mapPanel.setInspect(html); // hover preview also shows the Inspect tab
+    if (pin) pinnedInspectFn = () => waInspectHTML(w, true); // pin the single WA+group view
+    mapPanel.setInspect(waInspectHTML(w, pin)); // switches to the Inspect tab
+  }
+  // Bulk panel for a multi-selection (Shift/⌘-click). Aggregates + bulk actions
+  // that reuse the same edit() endpoint as the rail's "Bulk (selected)" section.
+  function bulkInspectNode(ids) {
+    const members = WAS.filter((w) => ids.includes(w.id));
+    const buildings = members.reduce((s, w) => s + (w.building_count || 0), 0);
+    const visits = members.reduce((s, w) => s + (w.expected_visit_count || 0), 0);
+    const groups = new Set(members.map((w) => (w.work_area_group || "").trim()).filter(Boolean)).size;
+    const workers = new Set(members.map((w) => (w.opportunity_access || "").trim()).filter(Boolean)).size;
+    const cell = (v, k) => `<div style="background:#f7f8fb;border:1px solid #eceef1;border-radius:6px;padding:.4rem .5rem"><div style="font-weight:700;font-size:.85rem">${v}</div><div style="font-size:.58rem;color:#8a90a0;text-transform:uppercase;letter-spacing:.04em">${k}</div></div>`;
+    const wrap = document.createElement("div");
+    wrap.style.fontSize = ".72rem";
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem">
+        <span style="font-weight:800;font-size:1rem;color:#2d36b3">${ids.length}</span>
+        <span style="font-weight:600;color:#555">work areas selected</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.35rem">${cell(buildings.toLocaleString(), "buildings")}${cell(visits.toLocaleString(), "expected visits")}</div>
+      <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:#8a90a0">groups spanned</span><b>${groups}</b></div>
+      <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:#8a90a0">workers spanned</span><b>${workers}</b></div>
+      <div class="bulk-acts" style="display:grid;gap:.35rem;margin-top:.55rem"></div>`;
+    const acts = wrap.querySelector(".bulk-acts");
+    const mkBtn = (label, fn, danger) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = label;
+      b.style.cssText = `font:700 11px/1 inherit;padding:.5rem;border-radius:6px;cursor:pointer;border:1px solid ${danger ? "#f3c08a" : "#cdd2f5"};color:${danger ? "#b45309" : "#3843d0"};background:${danger ? "#fff8f0" : "#fff"}`;
+      b.addEventListener("click", fn); acts.appendChild(b);
+    };
+    mkBtn(`Reassign ${ids.length} → worker…`, () => { const w = prompt("Assign the selected work areas to which worker?"); if (w) edit({ action: "reassign", wa_ids: [...ids], opportunity_access: w }); });
+    mkBtn(`Move ${ids.length} → group…`, () => { const g = prompt("Move the selected work areas to which group?"); if (g) edit({ action: "regroup", wa_ids: [...ids], work_area_group: g }); });
+    mkBtn(`Exclude ${ids.length} work areas`, () => { const r = prompt(`Reason for excluding ${ids.length} work areas?`); if (r !== null) edit({ action: "exclude", wa_ids: [...ids], reason: r }); }, true);
+    return wrap;
+  }
+  // Reflect the current selection in the Inspect tab: single → WA+group, many → bulk.
+  function syncInspectToSelection(lastId) {
+    if (!mapPanel) return;
+    if (selected.size > 1) {
+      pinnedInspectFn = () => bulkInspectNode([...selected]);
+      mapPanel.setInspect(bulkInspectNode([...selected]));
+    } else {
+      inspectWA(selected.size === 1 ? [...selected][0] : lastId, true);
+    }
   }
   function revertInspect() {
     if (!mapPanel) return;
-    if (pinnedInspectHTML) mapPanel.setInspect(pinnedInspectHTML);
+    if (pinnedInspectFn) mapPanel.setInspect(pinnedInspectFn());
     else mapPanel.clearInspect();
   }
 
@@ -580,13 +629,20 @@
                        "line-width": 0.8,
                        "line-opacity": 0.55,
                      } });
-      // Click pins the full inspector (work area + group) and keeps the existing
-      // table-selection toggle. Hover previews the work area (no group) in the
-      // panel; mouseout reverts to the pinned work area.
+      // Plain click selects just this work area (pins its WA+group inspector).
+      // Shift/⌘/Ctrl-click adds/removes it from the selection and, once more than
+      // one is selected, pins the bulk panel. Hover previews a single work area
+      // (no group); mouseout reverts to whatever is pinned (single or bulk).
       map.on("click", "wa-fill", (e) => {
         const id = e.features[0].properties.id;
-        inspectWA(id, true);
-        toggleSelect(id);
+        const oe = e.originalEvent || {};
+        if (oe.shiftKey || oe.metaKey || oe.ctrlKey) {
+          if (selected.has(id)) selected.delete(id); else selected.add(id);
+        } else {
+          selected.clear(); selected.add(id);
+        }
+        renderTable(); setSelState();
+        syncInspectToSelection(id);
       });
       map.on("mouseenter", "wa-fill", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "wa-fill", () => {
@@ -734,7 +790,20 @@
   }
 
   // ---- render ----
+  // Optimistic-concurrency token. Every plan payload (load + each save response)
+  // carries the current `revision`; we echo it back on the next save so the
+  // server can 409 if someone else changed the plan in between.
+  let planRevision = null;
+  // A 409 = the plan changed in another tab/session since we loaded it; saving
+  // would clobber the newer state. Warn and reload to the latest.
+  function handleConflict(resp, data, setMsg) {
+    if (resp.status !== 409) return false;
+    setMsg((data && data.detail ? data.detail + " " : "") + "Reloading to the latest…");
+    setTimeout(() => location.reload(), 2000);
+    return true;
+  }
   function render(data) {
+    if (data && data.revision !== undefined) planRevision = data.revision;
     WAS = data.work_areas || [];
     renderSummary(data.summary || {});
     renderKpis(data.kpis || {});
@@ -974,8 +1043,9 @@
   async function edit(body) {
     $("status").textContent = "Saving…";
     try {
-      const resp = await post(EDIT_URL, body);
+      const resp = await post(EDIT_URL, Object.assign({ revision: planRevision }, body));
       const data = await resp.json();
+      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
       if (!resp.ok || data.status !== "ok") { $("status").textContent = data.detail || ("HTTP " + resp.status); return; }
       $("status").textContent = "Saved.";
       render(data);
@@ -1035,8 +1105,10 @@
     $("status").textContent = `Re-grouping (${strategy})…`;
     const t0 = performance.now();
     try {
+      body.revision = planRevision;
       const resp = await post(REGROUP_URL, body);
       const data = await resp.json();
+      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
       if (!resp.ok || data.status !== "ok") {
         $("status").textContent = data.detail || ("HTTP " + resp.status);
       } else {
@@ -1075,8 +1147,10 @@
     $("status").textContent = `Re-assigning (${strategy})…`;
     const t0 = performance.now();
     try {
+      body.revision = planRevision;
       const resp = await post(REASSIGN_URL, body);
       const data = await resp.json();
+      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
       if (!resp.ok || data.status !== "ok") {
         $("status").textContent = data.detail || ("HTTP " + resp.status);
       } else {
@@ -1311,7 +1385,13 @@
     $("btn-apply-area").disabled = true;
     $("apply-area-status").textContent = "Previewing work areas…";
     try {
-      const prev = await (await post(PREVIEW_COVERAGE_URL, { areas, config: { cell_size_m: cellSizeM } })).json();
+      // Generation runs on the Celery worker (cold Overture fetch is tens of
+      // seconds) — enqueue then poll, surfacing progress on the status line.
+      const prev = await Microplans.enqueueAndPoll(
+        PREVIEW_COVERAGE_URL,
+        { areas, config: { cell_size_m: cellSizeM } },
+        { csrf: CSRF, onProgress: (m) => { $("apply-area-status").textContent = m; } },
+      );
       if (prev.status !== "ok") { $("apply-area-status").textContent = prev.detail || "preview failed"; return; }
       const n = prev.areas.features.length;
       $("apply-area-status").textContent = `Generating ${n} work areas…`;
@@ -1324,8 +1404,9 @@
         buffer_distance_m: +grpBuf.value,
       } : {};
       if (PLAN_ID) {
-        const resp = await post(REGENERATE_URL, { mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping });
+        const resp = await post(REGENERATE_URL, { mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping, revision: planRevision });
         const data = await resp.json();
+        if (handleConflict(resp, data, (m) => $("apply-area-status").textContent = m)) return;
         if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
         $("apply-area-status").textContent = `Regenerated ${data.work_areas.length} work areas.`;
         if (draw) draw.deleteAll();
@@ -1365,6 +1446,7 @@
 
   window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit,
                       get activeDim() { return activeDim; }, get colorDim() { return colorDim; },
+                      get map() { return map; }, get panel() { return mapPanel; },
                       setActiveDim, setColorDim };
 })();
 </script>

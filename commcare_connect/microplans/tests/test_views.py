@@ -1,14 +1,20 @@
 """View tests for the microplans setup flow.
 
-generate_frame is patched out — it hits Overture S3, which isn't a unit-test
-dependency. We assert the view's request handling: auth gate, payload
-validation, error mapping, and the response envelope.
+Cold map generation (Overture S3 fetch + clustering) is offloaded to Celery —
+the preview views validate synchronously then enqueue, returning 202
+{task_id, poll_url}; PreviewStatusView reports progress/result. So the view
+tests assert the auth gate, synchronous payload/config validation, and the
+enqueue envelope; the generation work itself is exercised against the task
+functions (with generate_frame/generate_coverage_frame patched out — they hit
+Overture S3, which isn't a unit-test dependency); and the lifecycle mapping is
+exercised against PreviewStatusView with AsyncResult mocked.
 """
 
 from __future__ import annotations
 
 import json
 import time
+from types import SimpleNamespace
 
 import pytest
 from django.urls import reverse
@@ -25,6 +31,9 @@ def _login(client, django_user_model):
     session["labs_oauth"] = {"access_token": "test-token", "expires_at": time.time() + 3600}
     session.save()
     return user
+
+
+# --- synchronous request validation (runs before anything is enqueued) --------
 
 
 def test_preview_rejects_empty_areas(client, django_user_model):
@@ -48,27 +57,9 @@ def test_preview_rejects_malformed_body(client, django_user_model):
     assert resp.status_code == 400
 
 
-def test_preview_maps_sampling_failure_to_502(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
-
-    def boom(*a, **k):
-        raise RuntimeError("overture down")
-
-    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", boom)
-    resp = client.post(
-        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
-        data=json.dumps({"areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}]}),
-        content_type="application/json",
-    )
-    assert resp.status_code == 502
-    # generic message — the internal exception text must NOT leak to the client
-    assert "overture down" not in resp.json()["detail"]
-    assert "server logs" in resp.json()["detail"].lower()
-
-
 def test_preview_bad_config_is_400_not_500(client, django_user_model):
-    # A non-numeric config value must surface as 400 (config parsing is inside the
-    # request-validation try), not crash with a 500.
+    # A non-numeric config value must surface as 400 (config is validated in the
+    # request-validation try, before enqueue), not crash or become a failed task.
     _login(client, django_user_model)
     resp = client.post(
         reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
@@ -98,48 +89,18 @@ def test_preview_coverage_bad_config_is_400(client, django_user_model):
     assert resp.status_code == 400
 
 
-def test_preview_maps_value_error_to_400(client, django_user_model, monkeypatch):
+# --- enqueue: a valid request returns 202 + a pollable task id -----------------
+
+
+def _fake_delay(task_id):
+    return lambda *a, **k: SimpleNamespace(id=task_id)
+
+
+def test_preview_frame_enqueues(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import generate_frame_task
 
-    def too_big(*a, **k):
-        raise ValueError("Area is too large (~5,000 km²); draw a smaller area.")
-
-    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", too_big)
-    resp = client.post(
-        reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
-        data=json.dumps({"areas": [{"arm": "intervention", "geometry": {"type": "Point", "coordinates": [0, 0]}}]}),
-        content_type="application/json",
-    )
-    assert resp.status_code == 400  # actionable user error surfaces
-    assert "too large" in resp.json()["detail"]
-
-
-def test_preview_happy_path(client, django_user_model, monkeypatch):
-    _login(client, django_user_model)
-    fake = FrameResult(
-        pins_geojson={
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [13.1, 11.8]},
-                    "properties": {"role": "primary", "cluster": "C0", "arm": "intervention"},
-                }
-            ],
-        },
-        hulls_geojson={"type": "FeatureCollection", "features": []},
-        stats=[
-            {
-                "arm": "intervention",
-                "psus_selected": 1,
-                "pins": 1,
-                "primaries": 1,
-                "alternates": 0,
-                "after_filters": 10,
-            }
-        ],
-    )
-    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", lambda areas, config: fake)
+    monkeypatch.setattr(generate_frame_task, "delay", _fake_delay("frame-task-1"))
     resp = client.post(
         reverse("microplans:preview_frame", kwargs={"opp_id": 123}),
         data=json.dumps(
@@ -155,15 +116,109 @@ def test_preview_happy_path(client, django_user_model, monkeypatch):
         ),
         content_type="application/json",
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     body = resp.json()
-    assert body["status"] == "ok"
-    assert body["pins"]["features"][0]["properties"]["role"] == "primary"
-    assert body["stats"][0]["psus_selected"] == 1
+    assert body["status"] == "queued"
+    assert body["task_id"] == "frame-task-1"
+    assert "frame-task-1" in body["poll_url"]
 
 
-def test_preview_coverage_happy_path(client, django_user_model, monkeypatch):
+def test_preview_coverage_enqueues(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import generate_coverage_task
+
+    monkeypatch.setattr(generate_coverage_task, "delay", _fake_delay("coverage-task-1"))
+    resp = client.post(
+        reverse("microplans:preview_coverage", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "areas": [{"geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}}],
+                "config": {"strategy": "balanced"},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["task_id"] == "coverage-task-1"
+    assert "coverage-task-1" in body["poll_url"]
+
+
+def test_preview_footprints_enqueues(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import fetch_footprints_task
+
+    monkeypatch.setattr(fetch_footprints_task, "delay", _fake_delay("fp-task-1"))
+    resp = client.post(
+        reverse("microplans:preview_footprints", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {"areas": [{"geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}}]}
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202
+    assert resp.json()["task_id"] == "fp-task-1"
+
+
+# --- the task bodies produce the same response envelope the views used to ------
+
+
+def test_generate_frame_task_returns_envelope(monkeypatch):
+    monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
+    fake = FrameResult(
+        pins_geojson={
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [13.1, 11.8]},
+                    "properties": {"role": "primary", "cluster": "C0", "arm": "intervention"},
+                }
+            ],
+        },
+        hulls_geojson={"type": "FeatureCollection", "features": []},
+        stats=[{"arm": "intervention", "psus_selected": 1}],
+    )
+    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", lambda areas, config: fake)
+    from commcare_connect.microplans.tasks import generate_frame_task
+
+    out = generate_frame_task.run([{"arm": "intervention"}], {"target_clusters": 1})
+    assert out["status"] == "ok"
+    assert out["pins"]["features"][0]["properties"]["role"] == "primary"
+    assert out["stats"][0]["psus_selected"] == 1
+
+
+def test_generate_frame_task_maps_value_error_to_envelope(monkeypatch):
+    monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
+
+    def too_big(*a, **k):
+        raise ValueError("Area is too large (~5,000 km²); draw a smaller area.")
+
+    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", too_big)
+    from commcare_connect.microplans.tasks import generate_frame_task
+
+    out = generate_frame_task.run([{"arm": "intervention"}], {})
+    assert out["status"] == "error"
+    assert "too large" in out["detail"]
+
+
+def test_generate_frame_task_propagates_unexpected(monkeypatch):
+    # An unexpected failure must NOT be swallowed — it propagates so Celery marks
+    # the task FAILURE and the status view returns a generic message.
+    monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
+
+    def boom(*a, **k):
+        raise RuntimeError("overture down")
+
+    monkeypatch.setattr("commcare_connect.microplans.sampling.frame.generate_frame", boom)
+    from commcare_connect.microplans.tasks import generate_frame_task
+
+    with pytest.raises(RuntimeError):
+        generate_frame_task.run([{"arm": "intervention"}], {})
+
+
+def test_generate_coverage_task_returns_envelope(monkeypatch):
+    monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
     from commcare_connect.microplans.coverage.frame import CoverageFrameResult
 
     fake = CoverageFrameResult(
@@ -177,41 +232,67 @@ def test_preview_coverage_happy_path(client, django_user_model, monkeypatch):
                 }
             ],
         },
-        stats=[
-            {
-                "arm": "coverage",
-                "strategy": "balanced",
-                "after_filters": 42,
-                "work_areas": 1,
-                "min_buildings": 42,
-                "median_buildings": 42,
-                "max_buildings": 42,
-            }
-        ],
+        stats=[{"arm": "coverage", "strategy": "balanced", "work_areas": 1}],
     )
     monkeypatch.setattr(
         "commcare_connect.microplans.coverage.frame.generate_coverage_frame", lambda areas, config: fake
     )
-    resp = client.post(
-        reverse("microplans:preview_coverage", kwargs={"opp_id": 123}),
-        data=json.dumps(
-            {
-                "areas": [
-                    {
-                        "arm": "coverage",
-                        "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]},
-                    }
-                ],
-                "config": {"strategy": "balanced"},
-            }
-        ),
-        content_type="application/json",
+    from commcare_connect.microplans.tasks import generate_coverage_task
+
+    out = generate_coverage_task.run([{"arm": "coverage"}], {"strategy": "balanced"})
+    assert out["status"] == "ok"
+    assert out["areas"]["features"][0]["properties"]["building_count"] == 42
+    assert out["stats"][0]["strategy"] == "balanced"
+
+
+# --- status polling maps Celery lifecycle to a stable client contract ----------
+
+
+def _patch_async_result(monkeypatch, fake):
+    # The view does `from celery.result import AsyncResult` at call time, so
+    # patching the source symbol is enough.
+    monkeypatch.setattr("celery.result.AsyncResult", lambda task_id: fake)
+
+
+def test_preview_status_requires_login(client):
+    resp = client.get(reverse("microplans:preview_status", kwargs={"task_id": "abc"}))
+    assert resp.status_code in (302, 403)
+
+
+def test_preview_status_running(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    _patch_async_result(
+        monkeypatch,
+        SimpleNamespace(state="PROGRESS", info={"message": "Fetching building footprints…"}, result=None),
     )
+    resp = client.get(reverse("microplans:preview_status", kwargs={"task_id": "abc"}))
     assert resp.status_code == 200
     body = resp.json()
-    assert body["status"] == "ok"
-    assert body["areas"]["features"][0]["properties"]["building_count"] == 42
-    assert body["stats"][0]["strategy"] == "balanced"
+    assert body["state"] == "running"
+    assert "Fetching" in body["message"]
+
+
+def test_preview_status_completed_passes_envelope(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    envelope = {"status": "ok", "areas": {"type": "FeatureCollection", "features": []}, "stats": []}
+    _patch_async_result(monkeypatch, SimpleNamespace(state="SUCCESS", info=envelope, result=envelope))
+    resp = client.get(reverse("microplans:preview_status", kwargs={"task_id": "abc"}))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["state"] == "completed"
+    assert body["result"]["status"] == "ok"
+
+
+def test_preview_status_failed_hides_internals(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    err = RuntimeError("overture down — secret internals")
+    _patch_async_result(monkeypatch, SimpleNamespace(state="FAILURE", info=err, result=err))
+    resp = client.get(reverse("microplans:preview_status", kwargs={"task_id": "abc"}))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["state"] == "failed"
+    assert "overture down" not in body["detail"]
+    assert "server logs" in body["detail"].lower()
 
 
 # ---- planning-phase plan review/edit endpoints ----
@@ -238,52 +319,6 @@ _HULL_FC = {
     ],
 }
 _EMPTY_FC = {"type": "FeatureCollection", "features": []}
-
-
-class _FakePlan:
-    def __init__(self, pid, mode, work_areas, name="", created_at="2026-05-28T00:00:00Z"):
-        self.id, self.mode, self.work_areas = pid, mode, work_areas
-        self.name, self.created_at = name or f"Plan {pid}", created_at
-        self.data = {"work_areas": work_areas}
-
-
-def _make_fake_da(monkeypatch, store):
-    """A RooftopDataAccess stand-in that runs the real plan logic over an in-memory store."""
-    from commcare_connect.microplans.core import plan as plan_lib
-
-    class _Frame:
-        mode, pins, hulls = "coverage", _EMPTY_FC, _HULL_FC
-
-    class _Api:
-        def get_record_by_id(self, rid, model_class=None):
-            return _Frame()
-
-    class FakeDA:
-        def __init__(self, *a, **k):
-            self.labs_api = _Api()
-
-        def materialize_plan(self, frame, name=""):
-            was = plan_lib.materialize_work_areas(frame.mode, frame.pins, frame.hulls)
-            store[1] = _FakePlan(1, frame.mode, was)
-            return store[1]
-
-        def get_plan(self, pid):
-            return store[int(pid)]
-
-        def apply_plan_edits(self, pid, wa_ids, action, params, actor):
-            p = store[int(pid)]
-            for wa_id in wa_ids:
-                wa = plan_lib.find(p.work_areas, wa_id)
-                if wa is None:
-                    raise ValueError(f"work area {wa_id!r} not found")
-                plan_lib.apply_action(wa, action, params, actor)
-            return p
-
-        def list_plans(self):
-            return list(store.values())
-
-    monkeypatch.setattr("commcare_connect.microplans.core.data_access.RooftopDataAccess", FakeDA)
-    return store
 
 
 # ============================================================================
@@ -358,7 +393,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             plans[pid] = _FakeProgramPlan(pid, mode, was, name=name, region=region)
             return plans[pid]
 
-        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None):
+        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None):
             was = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
             p = plans[int(pid)]
             p.work_areas = was
@@ -370,7 +405,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             p.data["assignment"] = {}
             return p
 
-        def apply_plan_edits(self, pid, wa_ids, action, params, actor):
+        def apply_plan_edits(self, pid, wa_ids, action, params, actor, base_revision=None):
             p = plans[int(pid)]
             for wa_id in wa_ids:
                 wa = plan_lib.find(p.work_areas, wa_id)
@@ -379,7 +414,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
                 plan_lib.apply_action(wa, action, params, actor)
             return p
 
-        def transition_plan(self, pid, to, actor, opportunity_id=None):
+        def transition_plan(self, pid, to, actor, opportunity_id=None, base_revision=None):
             p = plans[int(pid)]
             data = dict(p.data)
             plan_lib.transition_plan(data, to, actor, opportunity_id=opportunity_id)
@@ -670,6 +705,51 @@ def test_program_compare_json_bad_ids_400(client, django_user_model, monkeypatch
     assert resp.status_code == 400
 
 
+def test_program_compare_uses_list_plans_not_per_id(client, django_user_model, monkeypatch):
+    """N+1 guard: compare must fetch the program once (list_plans), not get_plan per id."""
+    _login(client, django_user_model)
+
+    class CountDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def list_plans(self):
+            return [_FakeProgramPlan(1, "coverage", []), _FakeProgramPlan(2, "coverage", [])]
+
+        def get_plan(self, pid):
+            raise AssertionError("compare must not call get_plan per id (N+1)")
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", CountDA)
+    resp = client.get(reverse("microplans:program_plan_compare", kwargs={"program_id": 1}) + "?plans=2,1")
+    assert resp.status_code == 200
+    assert [e["plan_id"] for e in resp.json()["plans"]] == [2, 1]  # requested order preserved
+
+
+def test_program_regenerate_stale_revision_returns_409(client, django_user_model, monkeypatch):
+    """A save against a stale revision surfaces as 409 (not a silent clobber)."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core.data_access import StalePlanError
+
+    class ConflictDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def regenerate_plan(self, *a, **k):
+            raise StalePlanError("This plan changed since you opened it (you have r0, it's now r3). Reload…")
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", ConflictDA)
+    resp = client.post(
+        reverse("microplans:program_plan_regenerate", kwargs={"program_id": 1, "plan_id": 2}),
+        data=json.dumps(
+            {"mode": "coverage", "coverage_areas": {"type": "FeatureCollection", "features": []}, "revision": 0}
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 409
+    assert resp.json()["status"] == "error"
+    assert "changed" in resp.json()["detail"].lower()
+
+
 def test_program_compare_page_renders(client, django_user_model):
     _login(client, django_user_model)
     resp = client.get(reverse("microplans:program_compare_page", kwargs={"program_id": 25}))
@@ -776,3 +856,45 @@ def test_preview_service_delivery_merges_colored_layers(client, django_user_mode
     # each feature tagged with its opp + color
     feats = body["points"]["features"]
     assert {f["properties"]["opportunity_id"] for f in feats} == {100, 200}
+    assert body["sampled"] is False and body["total"] == 2
+
+
+def test_preview_service_delivery_caps_overlay_points(client, django_user_model, monkeypatch):
+    from commcare_connect.microplans.service_delivery.points import MAX_OVERLAY_POINTS
+
+    _login_with_opps(client, django_user_model, [100, 200])
+    per_opp = MAX_OVERLAY_POINTS  # 2 opps × cap → comfortably over the limit
+
+    def fake_fetch(opp_id, request=None, access_token=None, pipeline_id=None):
+        pts = [{"lon": 36.82 + i * 1e-5, "lat": -1.29, "status": "approved"} for i in range(per_opp)]
+        return {"points": pts, "stats": {"opportunity_id": opp_id}, "error": None}
+
+    monkeypatch.setattr("commcare_connect.microplans.service_delivery.points.fetch_points", fake_fetch)
+    resp = client.post(
+        reverse("microplans:preview_service_delivery", kwargs={"opp_id": 100}),
+        data=json.dumps({"opp_ids": [100, 200]}),
+        content_type="application/json",
+    )
+    body = resp.json()
+    assert body["sampled"] is True
+    assert body["total"] == 2 * per_opp  # honest about how many there were
+    assert body["count"] <= MAX_OVERLAY_POINTS  # bounded, no silent truncation
+    assert len(body["points"]["features"]) == body["count"]
+
+
+def test_program_plan_footprints_sets_cache_control(client, django_user_model, monkeypatch):
+    import pandas as pd
+
+    _login(client, django_user_model)
+    plan = _FakeProgramPlan(
+        5, "coverage", [{"geometry": {"type": "Polygon", "coordinates": [[[0, 0], [0.01, 0], [0.01, 0.01], [0, 0]]]}}]
+    )
+    _make_fake_program_da(monkeypatch, {5: plan}, {})
+    monkeypatch.setattr(
+        "commcare_connect.microplans.core.footprints.fetch_buildings",
+        lambda area, min_confidence=None, with_geom=False: pd.DataFrame([{"lon": 0.005, "lat": 0.005}]),
+    )
+    resp = client.get(reverse("microplans:program_plan_footprints", kwargs={"program_id": 1, "plan_id": 5}))
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+    assert "max-age" in resp.headers.get("Cache-Control", "")

@@ -15,6 +15,8 @@ from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
 
+from commcare_connect.microplans import serialization
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,95 +82,83 @@ def _sd_urls(opp_id=123):
     }
 
 
-class PreviewFrameView(LoginRequiredMixin, View):
-    """Fetch building footprints for the drawn area(s) and run the sampling preview.
+def _queued(task):
+    """202 envelope for an enqueued generation task: id + where to poll it."""
+    from django.urls import reverse
 
-    Synchronous: the first fetch for an area hits Overture S3 (~tens of seconds);
-    subsequent runs are served from cache. Returns the sampled pins + cluster
-    hulls as GeoJSON plus per-arm stats for the map to render.
+    return JsonResponse(
+        {
+            "status": "queued",
+            "task_id": task.id,
+            "poll_url": reverse("microplans:preview_status", args=[task.id]),
+        },
+        status=202,
+    )
+
+
+class PreviewFrameView(LoginRequiredMixin, View):
+    """Enqueue the sampling preview for the drawn area(s) and return a task id.
+
+    The first fetch for an area hits Overture S3 (~tens of seconds), which used
+    to block a web worker for the whole request. Generation now runs on the
+    Celery worker (see ``microplans/tasks.py``); this view validates the request
+    synchronously (cheap) and enqueues — the client polls
+    ``microplans:preview_status`` for the sampled pins + cluster hulls.
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.sampling.frame import FrameConfig, generate_frame
+        from commcare_connect.microplans.sampling.frame import FrameConfig
+        from commcare_connect.microplans.tasks import generate_frame_task
 
         try:
             payload = json.loads(request.body)
             areas = payload["areas"]
             if not areas:
                 raise ValueError("no areas drawn")
-            config = FrameConfig.from_payload(payload.get("config", {}))
+            config_payload = payload.get("config", {})
+            FrameConfig.from_payload(config_payload)  # validate now → 400, not a failed task
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            result = generate_frame(areas, config)
-        except ValueError as e:
-            # Expected, actionable user errors (e.g. area too large) — safe to surface.
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            # Unexpected — log server-side, return a generic message (no internal leak).
-            logger.exception("rooftop preview_frame failed (opp=%s)", opp_id)
-            return JsonResponse(
-                {"status": "error", "detail": "Frame generation failed. Check server logs."},
-                status=502,
-            )
-
-        return JsonResponse(
-            {
-                "status": "ok",
-                "pins": result.pins_geojson,
-                "hulls": result.hulls_geojson,
-                "stats": result.stats,
-            }
-        )
+        return _queued(generate_frame_task.delay(areas, config_payload))
 
 
 class PreviewCoverageView(LoginRequiredMixin, View):
-    """Coverage-mode preview: balanced/grid clusters → cluster polygons.
+    """Enqueue the coverage-mode preview (balanced/grid clusters → polygons).
 
-    Same footprint fetch as sampling, but instead of PPS-sampling pins it returns
-    the cluster hulls (each = one WorkArea covering every household within it).
+    Same offload contract as :class:`PreviewFrameView`: validate synchronously,
+    enqueue the cold Overture fetch + clustering onto the Celery worker, return a
+    task id for the client to poll.
     """
 
     def post(self, request, opp_id):
-        from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
+        from commcare_connect.microplans.coverage.frame import CoverageConfig
+        from commcare_connect.microplans.tasks import generate_coverage_task
 
         try:
             payload = json.loads(request.body)
             areas = payload["areas"]
             if not areas:
                 raise ValueError("no areas drawn")
-            config = CoverageConfig.from_payload(payload.get("config", {}))
+            config_payload = payload.get("config", {})
+            CoverageConfig.from_payload(config_payload)  # validate now → 400, not a failed task
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            result = generate_coverage_frame(areas, config)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans preview_coverage failed (opp=%s)", opp_id)
-            return JsonResponse(
-                {"status": "error", "detail": "Coverage generation failed. Check server logs."},
-                status=502,
-            )
-
-        return JsonResponse({"status": "ok", "areas": result.areas_geojson, "stats": result.stats})
+        return _queued(generate_coverage_task.delay(areas, config_payload))
 
 
 class PreviewFootprintsView(LoginRequiredMixin, View):
-    """Return building footprints (as point features) inside the drawn area(s).
+    """Enqueue a building-footprints fetch (as point features) for the area(s).
 
-    Used by the setup-page "Show building footprints" toggle so the user can
-    sanity-check what's in their area before generating cells. Reuses the same
-    PG-cached `fetch_buildings` path; cheap on a warm cache.
+    Used by the "Show building footprints" toggle to sanity-check an area before
+    generating cells. Reuses the PG-cached `fetch_buildings` path, but the cold
+    fetch is offloaded to Celery like the other previews; the client polls
+    ``microplans:preview_status``.
     """
 
     def post(self, request, opp_id):
-        from shapely.ops import unary_union
-
-        from commcare_connect.microplans.core.area_input import resolve_area
-        from commcare_connect.microplans.core.footprints import fetch_buildings
+        from commcare_connect.microplans.tasks import fetch_footprints_task
 
         try:
             payload = json.loads(request.body)
@@ -178,26 +168,39 @@ class PreviewFootprintsView(LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        try:
-            geom = unary_union([resolve_area(a) for a in areas])
-            df = fetch_buildings(geom, min_confidence=None)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans preview_footprints failed (opp=%s)", opp_id)
-            return JsonResponse({"status": "error", "detail": "Footprints fetch failed."}, status=502)
+        return _queued(fetch_footprints_task.delay(areas))
 
-        features = [
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]},
-                "properties": {},
-            }
-            for _, row in df.iterrows()
-        ]
-        return JsonResponse(
-            {"status": "ok", "footprints": {"type": "FeatureCollection", "features": features}, "count": len(features)}
-        )
+
+class PreviewStatusView(LoginRequiredMixin, View):
+    """Poll a queued preview/generation task.
+
+    Lifecycle is reported in ``state`` (queued | running | completed | failed).
+    On completion the task's own response envelope — which carries its own
+    ``status`` of ``ok`` / ``error`` plus the data — is returned under
+    ``result``. A failed task returns a generic message (no internal leak); the
+    full traceback is logged server-side. Task ids are unguessable uuids and the
+    payloads are non-sensitive (public building footprints / cluster polygons),
+    so login is the only gate.
+    """
+
+    def get(self, request, task_id):
+        from celery.result import AsyncResult
+
+        result = AsyncResult(task_id)
+        state = result.state
+        info = result.info if isinstance(result.info, dict) else {}
+
+        if state == "PENDING":
+            return JsonResponse({"state": "queued", "message": "Waiting to start…"})
+        if state in ("RECEIVED", "STARTED", "PROGRESS"):
+            return JsonResponse({"state": "running", "message": info.get("message", "Working…")})
+        if state == "SUCCESS":
+            payload = result.result if isinstance(result.result, dict) else {}
+            return JsonResponse({"state": "completed", "result": payload})
+        if state == "FAILURE":
+            logger.error("microplans preview task %s failed: %s", task_id, result.info)
+            return JsonResponse({"state": "failed", "detail": "Generation failed. Check server logs."})
+        return JsonResponse({"state": state.lower(), "message": f"Status: {state}"})
 
 
 class CountriesView(LoginRequiredMixin, View):
@@ -380,27 +383,6 @@ class BoundaryViewportView(LoginRequiredMixin, View):
 # --- Planning-phase plan review/edit (the LLO validation layer; pre-upload) ---
 
 
-def _plan_json(plan):
-    """Serialize a plan for the review UI: work areas + headline summary.
-
-    Includes the most recent grouping + assignment configs so the review
-    sidebar can pre-fill its form controls with whatever produced the current
-    layout — the LLO sees ``what was used`` without a separate config header.
-    """
-    from commcare_connect.microplans.core import plan as plan_lib
-
-    return {
-        "status": "ok",
-        "plan_id": plan.id,
-        "mode": plan.mode,
-        "work_areas": plan.work_areas,
-        "summary": plan_lib.summarize(plan.work_areas),
-        "kpis": plan_lib.plan_kpis(plan.work_areas),
-        "grouping": plan.data.get("grouping") or {},
-        "assignment": plan.data.get("assignment") or {},
-    }
-
-
 # ============================================================================
 # Program layer: a program owns a portfolio of candidate plans + plan groups.
 # Plans are program-scoped; an opportunity is bound only at Deploy.
@@ -412,33 +394,6 @@ def _plan_json(plan):
 # shell views render for any logged-in user, but their data fetches return nothing
 # unless the user is a member. No program data leaks from rendering the shell.
 # ============================================================================
-
-
-def _plan_summary_row(plan):
-    """Compact per-plan row for the workspace (status, region, headline KPIs)."""
-    from commcare_connect.microplans.core import plan as plan_lib
-
-    k = plan_lib.plan_kpis(plan.work_areas)
-    # Travel/balance KPIs are only meaningful once areas are split across workers.
-    # Pre-assignment everything collapses to one territory, so flag it so the UI can
-    # show the area count instead of a misleading "1 worker / whole-region travel".
-    assigned = k["dimension"] == "worker"
-    return {
-        "plan_id": plan.id,
-        "name": plan.name or f"Plan {plan.id}",
-        "region": plan.region,
-        "mode": plan.mode,
-        "status": plan.status,
-        "status_label": plan_lib.PLAN_STATUS_LABELS.get(plan.status, plan.status),
-        "opportunity_id": plan.data.get("opportunity_id"),
-        "assigned": assigned,
-        "work_areas": len(plan.work_areas),
-        "max_spread_km": k["plan"]["max_spread_km"],
-        "coverage_pct": k["coverage_pct"],
-        "excluded": k["excluded"]["count"],
-        "territory_count": k["plan"]["territory_count"],
-        "created_at": plan.created_at,
-    }
 
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
@@ -463,7 +418,7 @@ class ProgramPlansAPIView(LoginRequiredMixin, View):
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plans = [_plan_summary_row(p) for p in da.list_plans()]
+            plans = [serialization.plan_summary_row(p) for p in da.list_plans()]
             groups = [
                 {
                     "group_id": g.id,
@@ -539,7 +494,7 @@ class ProgramPlanTransitionView(LoginRequiredMixin, View):
     """Advance a plan's lifecycle status (Deploy binds the live opportunity_id)."""
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         try:
             payload = json.loads(request.body)
@@ -549,8 +504,14 @@ class ProgramPlanTransitionView(LoginRequiredMixin, View):
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             plan = da.transition_plan(
-                int(plan_id), to, request.user.get_username(), opportunity_id=payload.get("opportunity_id")
+                int(plan_id),
+                to,
+                request.user.get_username(),
+                opportunity_id=payload.get("opportunity_id"),
+                base_revision=payload.get("revision"),
             )
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
@@ -745,12 +706,12 @@ class ProgramPlanView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans program plan get failed (%s/%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanEditView(LoginRequiredMixin, View):
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
         from commcare_connect.microplans.core.plan import ACTIONS
 
         try:
@@ -766,18 +727,25 @@ class ProgramPlanEditView(LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        params = {k: v for k, v in payload.items() if k not in ("action", "wa_id", "wa_ids")}
+        params = {k: v for k, v in payload.items() if k not in ("action", "wa_id", "wa_ids", "revision")}
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             plan = da.apply_plan_edits(
-                int(plan_id), [str(w) for w in wa_ids], action, params, request.user.get_username()
+                int(plan_id),
+                [str(w) for w in wa_ids],
+                action,
+                params,
+                request.user.get_username(),
+                base_revision=payload.get("revision"),
             )
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
             logger.exception("microplans program plan edit failed (%s/%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Edit failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanFootprintsView(LoginRequiredMixin, View):
@@ -798,7 +766,7 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
 
-        area = _plan_lookup_area(plan)
+        area = serialization.plan_lookup_geometry(plan)
         if area is None:
             return JsonResponse(
                 {"status": "ok", "footprints": {"type": "FeatureCollection", "features": []}, "count": 0}
@@ -824,43 +792,14 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
                         "properties": {},
                     }
                 )
-        return JsonResponse(
+        resp = JsonResponse(
             {"status": "ok", "footprints": {"type": "FeatureCollection", "features": features}, "count": len(features)}
         )
-
-
-def _plan_lookup_area(plan):
-    """Best geometry to use when re-querying footprints for a plan.
-
-    Order of preference:
-      1. The plan's stored ``input_areas`` (the ward/draw/pin payload from setup;
-         already PG-cached as a whole from generation → instant hit).
-      2. The union of cell geometries (works but a different cache hash → cold
-         miss the first time per plan).
-    """
-    from shapely.ops import unary_union
-
-    from commcare_connect.microplans.core.area_input import resolve_area
-
-    inputs = plan.data.get("input_areas") or []
-    if inputs:
-        try:
-            return unary_union([resolve_area(a) for a in inputs])
-        except Exception:  # noqa: BLE001
-            logger.exception("plan footprints: input_areas resolve failed; falling back to cells")
-
-    from shapely.geometry import shape
-
-    geoms = []
-    for w in plan.work_areas:
-        g = w.get("geometry")
-        if not g:
-            continue
-        try:
-            geoms.append(shape(g))
-        except Exception:  # noqa: BLE001
-            continue
-    return unary_union(geoms) if geoms else None
+        # Footprints for a plan's area are derived from immutable PG-cached building
+        # data — re-serializing the whole FeatureCollection on every page load is
+        # wasted work. Let the browser cache it (private: it's auth-gated).
+        resp["Cache-Control"] = "private, max-age=600"
+        return resp
 
 
 class ProgramPlanReassignView(LoginRequiredMixin, View):
@@ -872,23 +811,27 @@ class ProgramPlanReassignView(LoginRequiredMixin, View):
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         try:
             payload = json.loads(request.body or "{}")
-            assignment = payload if isinstance(payload, dict) else {}
+            payload = payload if isinstance(payload, dict) else {}
+            base_revision = payload.pop("revision", None)
+            assignment = payload
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plan = da.reassign_plan(int(plan_id), assignment, request.user.get_username())
+            plan = da.reassign_plan(int(plan_id), assignment, request.user.get_username(), base_revision=base_revision)
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
             logger.exception("microplans reassign failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Reassign failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanRegenerateView(LoginRequiredMixin, View):
@@ -900,7 +843,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         empty_fc = {"type": "FeatureCollection", "features": []}
         try:
@@ -926,11 +869,14 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
                 hulls=hulls,
                 input_areas=input_areas,
                 grouping=grouping,
+                base_revision=payload.get("revision"),
             )
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except Exception:  # noqa: BLE001
             logger.exception("microplans regenerate failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Regenerate failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanRegroupView(LoginRequiredMixin, View):
@@ -942,23 +888,27 @@ class ProgramPlanRegroupView(LoginRequiredMixin, View):
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         try:
             payload = json.loads(request.body or "{}")
-            grouping = payload if isinstance(payload, dict) else {}
+            payload = payload if isinstance(payload, dict) else {}
+            base_revision = payload.pop("revision", None)
+            grouping = payload
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plan = da.regroup_plan(int(plan_id), grouping, request.user.get_username())
+            plan = da.regroup_plan(int(plan_id), grouping, request.user.get_username(), base_revision=base_revision)
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
             logger.exception("microplans regroup failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Regroup failed."}, status=502)
-        return JsonResponse(_plan_json(plan))
+        return JsonResponse(serialization.plan_to_json(plan))
 
 
 class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
@@ -979,7 +929,7 @@ class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
             plan = da.get_plan(int(plan_id))
         except Exception:  # noqa: BLE001
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
-        area = _plan_lookup_area(plan)
+        area = serialization.plan_lookup_geometry(plan)
         if area is None:
             return JsonResponse({"status": "ok", "deleted": 0})
         deleted, _ = FootprintArea.objects.filter(area_hash=_area_cache_key(area.wkt)).delete()
@@ -1078,12 +1028,17 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": "no plans selected"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
+        # One API round-trip for the whole program, then filter — instead of one
+        # get_plan() per id (the comparison set is a handful of a program's plans).
+        try:
+            by_id = {p.id: p for p in da.list_plans()}
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans program compare: list_plans failed (program=%s)", program_id)
+            return JsonResponse({"status": "error", "detail": "Could not load plans."}, status=502)
         entries = []
-        for pid in ids:
-            try:
-                p = da.get_plan(pid)
-            except Exception:  # noqa: BLE001
-                logger.exception("microplans program compare: plan %s load failed", pid)
+        for pid in ids:  # preserve the requested order
+            p = by_id.get(pid)
+            if p is None:
                 continue
             entries.append(
                 {
@@ -1146,7 +1101,12 @@ class PreviewServiceDeliveryView(_ServiceDeliveryMixin, LoginRequiredMixin, View
 
     def post(self, request, opp_id):
         from commcare_connect.labs.context import get_org_data
-        from commcare_connect.microplans.service_delivery.points import color_for, fetch_points, points_to_geojson
+        from commcare_connect.microplans.service_delivery.points import (
+            color_for,
+            downsample_features,
+            fetch_points,
+            points_to_geojson,
+        )
 
         try:
             payload = json.loads(request.body)
@@ -1191,11 +1151,16 @@ class PreviewServiceDeliveryView(_ServiceDeliveryMixin, LoginRequiredMixin, View
                 }
             )
 
+        shown_features, sampled, total = downsample_features(all_features)
+        if sampled:
+            logger.warning("microplans SD overlay capped: %s→%s points (opps=%s)", total, len(shown_features), opp_ids)
         body = {
             "status": "ok",
-            "points": {"type": "FeatureCollection", "features": all_features},
+            "points": {"type": "FeatureCollection", "features": shown_features},
             "layers": layers,
-            "count": len(all_features),
+            "count": len(shown_features),
+            "total": total,
+            "sampled": sampled,
         }
         if auth_error:
             body.update(auth_error)
@@ -1274,6 +1239,8 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
     def get_context_data(self, **kwargs):
         from django.urls import reverse
 
+        from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+
         context = super().get_context_data(**kwargs)
         program_id = kwargs.get("program_id")
         context["program_id"] = program_id
@@ -1285,6 +1252,17 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
         context["default_admin_level"] = 3
         context["default_source"] = "geopode"
         context["default_mode"] = "coverage"
+        # Freshness stamp: the latest boundary load date for the default
+        # iso/source. Surfaced in the resolved-wards subhead so the lead knows
+        # which Nigeria shape set the matches came from. Skipped silently if
+        # no boundaries are loaded for the default — UI just hides the line.
+        latest = (
+            AdminBoundary.objects.filter(iso_code="NGA", source="geopode")
+            .order_by("-updated_at")
+            .values_list("updated_at", flat=True)
+            .first()
+        )
+        context["boundary_freshness"] = latest.date().isoformat() if latest else ""
         return context
 
 
@@ -1331,74 +1309,152 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
         boundary_by_id = {b.boundary_id: b for b in AdminBoundary.objects.filter(boundary_id__in=wanted)}
 
         da = ProgramPlanDataAccess(program_id, request=request)
-        results = []
-        for spec in plans_input:
-            if not isinstance(spec, dict):
-                results.append({"status": "error", "detail": "invalid plan spec"})
-                continue
-            name = (spec.get("name") or "").strip()[:255]
-            boundary_id = (spec.get("boundary_id") or "").strip()
-            if not boundary_id:
-                results.append({"name": name, "status": "error", "detail": "missing boundary_id"})
-                continue
-            boundary = boundary_by_id.get(boundary_id)
-            if not boundary:
-                results.append({"name": name, "status": "error", "detail": "boundary not found"})
-                continue
-            try:
-                geom_geojson = json.loads(boundary.geometry.geojson)
-            except Exception as e:  # noqa: BLE001
-                logger.exception("bulk_create: geometry parse failed for %s", boundary_id)
-                results.append({"name": name, "status": "error", "detail": f"bad geometry: {e}"})
-                continue
-            hulls = {
-                "type": "FeatureCollection",
-                "features": [
-                    {
-                        "type": "Feature",
-                        "properties": {
-                            "boundary_id": boundary_id,
-                            "name": boundary.name,
-                        },
-                        "geometry": geom_geojson,
-                    }
-                ],
-            }
-            display_name = name or boundary.name
-            try:
-                plan = da.create_plan(
-                    region=display_name,
-                    name=display_name,
-                    mode=mode,
-                    pins={"type": "FeatureCollection", "features": []},
-                    hulls=hulls,
-                    input_areas=[
+        total = len(plans_input)
+
+        # Stream NDJSON: one JSON object per line, each describing either the
+        # per-ward "result" of a materialize call or the final "done" summary.
+        # The front-end consumes the stream incrementally so each plan's pill
+        # flips from Creating → Created as soon as the server finishes that
+        # ward, not at the end when all wards are done. For a 10-ward batch
+        # that materializes against real Overture footprints, the per-ward
+        # call takes a few seconds — without the stream, the lead stares at
+        # "Creating plans…" for 20-60 seconds with no signal.
+        def stream():
+            ok_count = 0
+            for index, spec in enumerate(plans_input):
+                if not isinstance(spec, dict):
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": "",
+                                "boundary_id": "",
+                                "status": "error",
+                                "detail": "invalid plan spec",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                name = (spec.get("name") or "").strip()[:255]
+                boundary_id = (spec.get("boundary_id") or "").strip()
+                if not boundary_id:
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": name,
+                                "boundary_id": "",
+                                "status": "error",
+                                "detail": "missing boundary_id",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                boundary = boundary_by_id.get(boundary_id)
+                if not boundary:
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": name,
+                                "boundary_id": boundary_id,
+                                "status": "error",
+                                "detail": "boundary not found",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                try:
+                    geom_geojson = json.loads(boundary.geometry.geojson)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("bulk_create: geometry parse failed for %s", boundary_id)
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": name,
+                                "boundary_id": boundary_id,
+                                "status": "error",
+                                "detail": f"bad geometry: {e}",
+                            }
+                        )
+                        + "\n"
+                    )
+                    continue
+                hulls = {
+                    "type": "FeatureCollection",
+                    "features": [
                         {
-                            "kind": "admin_boundary",
-                            "boundary_id": boundary_id,
-                            "name": boundary.name,
+                            "type": "Feature",
+                            "properties": {
+                                "boundary_id": boundary_id,
+                                "name": boundary.name,
+                            },
+                            "geometry": geom_geojson,
                         }
                     ],
-                    grouping=grouping,
-                )
-                results.append(
-                    {
-                        "name": display_name,
-                        "status": "ok",
-                        "plan_id": plan.id,
-                        "boundary_id": boundary_id,
-                    }
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("bulk_create: create_plan failed (program=%s, ward=%s)", program_id, name)
-                results.append({"name": display_name, "status": "error", "detail": "create_plan failed"})
+                }
+                display_name = name or boundary.name
+                try:
+                    plan = da.create_plan(
+                        region=display_name,
+                        name=display_name,
+                        mode=mode,
+                        pins={"type": "FeatureCollection", "features": []},
+                        hulls=hulls,
+                        input_areas=[
+                            {
+                                "kind": "admin_boundary",
+                                "boundary_id": boundary_id,
+                                "name": boundary.name,
+                            }
+                        ],
+                        grouping=grouping,
+                    )
+                    ok_count += 1
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": display_name,
+                                "boundary_id": boundary_id,
+                                "status": "ok",
+                                "plan_id": plan.id,
+                            }
+                        )
+                        + "\n"
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("bulk_create: create_plan failed (program=%s, ward=%s)", program_id, name)
+                    yield (
+                        json.dumps(
+                            {
+                                "event": "result",
+                                "index": index,
+                                "name": display_name,
+                                "boundary_id": boundary_id,
+                                "status": "error",
+                                "detail": "create_plan failed",
+                            }
+                        )
+                        + "\n"
+                    )
+            yield json.dumps({"event": "done", "created": ok_count, "total": total}) + "\n"
 
-        ok_count = sum(1 for r in results if r.get("status") == "ok")
-        return JsonResponse(
-            {
-                "status": "ok",
-                "created": ok_count,
-                "total": len(results),
-                "results": results,
-            }
-        )
+        from django.http import StreamingHttpResponse
+
+        response = StreamingHttpResponse(stream(), content_type="application/x-ndjson")
+        # Disable buffering at the gateway so each \n-terminated chunk lands
+        # immediately on the client — without this, ECS Fargate's ALB tends
+        # to hold the response until completion, defeating the stream.
+        response["X-Accel-Buffering"] = "no"
+        response["Cache-Control"] = "no-cache"
+        return response

@@ -298,9 +298,9 @@ class TestRecordModels:
         }
 
     def test_plan_record_instantiates_from_api_data(self):
-        from commcare_connect.microplans.core.models import RooftopPlanRecord
+        from commcare_connect.microplans.core.models import PlanRecord
 
-        rec = RooftopPlanRecord(self._plan_api_data())  # must not raise (property-shadow regression)
+        rec = PlanRecord(self._plan_api_data())  # must not raise (property-shadow regression)
         assert rec.id == 501
         assert rec.program_id == 133  # base instance attr, not shadowed
         assert rec.opportunity_id is None  # base record-level field
@@ -310,17 +310,17 @@ class TestRecordModels:
 
     def test_plan_record_round_trips_through_to_api_dict(self):
         # data_access constructs typed records via `record.to_api_dict()`; verify the
-        # LocalLabsRecord → to_api_dict() → RooftopPlanRecord round-trip works.
+        # LocalLabsRecord → to_api_dict() → PlanRecord round-trip works.
         from commcare_connect.labs.models import LocalLabsRecord
-        from commcare_connect.microplans.core.models import RooftopPlanRecord
+        from commcare_connect.microplans.core.models import PlanRecord
 
         base = LocalLabsRecord(self._plan_api_data())
-        rec = RooftopPlanRecord(base.to_api_dict())
+        rec = PlanRecord(base.to_api_dict())
         assert rec.id == 501 and rec.program_id == 133 and rec.status == "deployed"
 
     def test_group_record_instantiates_from_api_data(self):
         from commcare_connect.labs.models import LocalLabsRecord
-        from commcare_connect.microplans.core.models import RooftopPlanGroupRecord
+        from commcare_connect.microplans.core.models import PlanGroupRecord
 
         api_data = {
             "id": 9,
@@ -330,9 +330,9 @@ class TestRecordModels:
             "program_id": 133,
             "data": {"name": "For Hilltop Health", "plan_ids": [1, 2], "offered_to": "Hilltop", "shared": True},
         }
-        rec = RooftopPlanGroupRecord(api_data)  # must not raise
+        rec = PlanGroupRecord(api_data)  # must not raise
         assert rec.program_id == 133 and rec.name == "For Hilltop Health"
         assert rec.plan_ids == [1, 2] and rec.shared is True
         # round-trip too
-        rec2 = RooftopPlanGroupRecord(LocalLabsRecord(api_data).to_api_dict())
+        rec2 = PlanGroupRecord(LocalLabsRecord(api_data).to_api_dict())
         assert rec2.plan_ids == [1, 2]

@@ -2,12 +2,29 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
+import pytest
 
 from commcare_connect.microplans.core.workarea import build_coverage_work_areas, to_api_payload
 from commcare_connect.microplans.coverage import frame as coverage_frame
 from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
+
+
+def test_coverage_caps_work_area_count(monkeypatch):
+    """A pathological cell/area combo that yields > MAX_WORK_AREAS cells is a user
+    error with an actionable message — not a silently-huge, multi-MB plan."""
+    monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(10, seed=1))
+    monkeypatch.setattr(
+        coverage_frame.clustering,
+        "grid_clusters",
+        lambda buildings, cell_size_m: SimpleNamespace(psu_frame=list(range(coverage_frame.MAX_WORK_AREAS + 1))),
+    )
+    with pytest.raises(ValueError, match="work areas"):
+        generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=10))
+
 
 LON0, LAT0 = 13.155, 11.832
 M_PER_DEG = 111_320.0
