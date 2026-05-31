@@ -13,6 +13,9 @@
      than Tailwind's .hidden. Force !important so JS-toggled .hidden actually hides things. */
   .hidden { display: none !important; }
   .seg-on { box-shadow: inset 0 0 0 2px #3843d0; background: #eef0ff; color: #3a42c7; }
+  /* Left-panel tabs: Plan (default) vs the rarer Service-delivery overlay */
+  .sd-tab { color: #6b7280; transition: all .12s; }
+  .sd-tab[aria-selected="true"] { background: #fff; color: #3a42c7; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
 
   /* Section label — small caps header above each control group */
   .mp-section-label { font-size: 0.6875rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
@@ -75,6 +78,17 @@
     {% if error %}
     <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
     {% endif %}
+
+    <!-- Left-panel tabs. Plan is the default workflow; Service delivery is a
+         rarer overlay op (visualize visit GPS, derive a boundary), kept off the
+         main flow so it doesn't crowd it. -->
+    <div class="flex gap-1 p-1 bg-gray-100 rounded-lg text-sm" role="tablist">
+      <button type="button" id="tabbtn-plan" class="sd-tab flex-1 py-1.5 rounded-md font-medium" aria-selected="true">Plan</button>
+      <button type="button" id="tabbtn-sd" class="sd-tab flex-1 py-1.5 rounded-md font-medium" aria-selected="false">Service delivery</button>
+    </div>
+
+    <!-- TAB: Plan (the existing setup workflow) -->
+    <div id="tab-plan" class="space-y-4">
 
     <!-- PLAN TYPE: top-level flip -->
     <section>
@@ -168,9 +182,6 @@
       </label>
     </section>
 
-    <!-- Service-delivery GPS overlay (rendered by service_delivery_layer.js) -->
-    <section id="sd-mount" class="mt-4"></section>
-
     <!-- SAMPLING CONFIG -->
     <section id="cfg-sampling">
       <div class="mp-section-label">Sampling config</div>
@@ -240,6 +251,13 @@
       <div id="preview-status" class="mt-2 text-xs text-gray-600"></div>
       <div id="save-status" class="mt-1 text-xs text-gray-600"></div>
     </section>
+
+    </div><!-- /tab-plan -->
+
+    <!-- TAB: Service delivery (overlay rendered by service_delivery_layer.js) -->
+    <div id="tab-sd" class="hidden">
+      <section id="sd-mount"></section>
+    </div>
   </aside>
 
   <!-- Map -->
@@ -254,7 +272,7 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
 <script src="{% static 'microplans/service_delivery_layer.js' %}"></script>
-{{ sd_opps|json_script:"sd-opps-data" }}
+{{ user_opportunities|json_script:"sd-opps-data" }}
 <script>
 (function () {
   const MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
@@ -784,6 +802,20 @@
     });
   })();
   function global_ServiceDeliveryLayer() { return window.ServiceDeliveryLayer; }
+
+  // ---- left-panel tabs (Plan | Service delivery) ----
+  // Pure show/hide of the panel; map + its layers are untouched, so service-
+  // delivery points stay overlaid while you flip back to Plan to draw/pick.
+  function showTab(which) {
+    const sd = which === "sd";
+    $("tab-plan").classList.toggle("hidden", sd);
+    $("tab-sd").classList.toggle("hidden", !sd);
+    $("tabbtn-plan").setAttribute("aria-selected", String(!sd));
+    $("tabbtn-sd").setAttribute("aria-selected", String(sd));
+    map.resize(); // panel width is unchanged, but resize guards against any reflow
+  }
+  $("tabbtn-plan").addEventListener("click", () => showTab("plan"));
+  $("tabbtn-sd").addEventListener("click", () => showTab("sd"));
 
   // init: coverage is the default (most common workflow for CHC visits)
   setMode("coverage"); setInput("draw");
