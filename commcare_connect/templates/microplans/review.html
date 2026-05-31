@@ -127,10 +127,19 @@
           </p>
 
           <div>
+            <div class="text-gray-600 mb-1">Plan type</div>
+            <div class="seg-row" style="grid-template-columns: repeat(2, 1fr);">
+              <button type="button" id="btn-mode-coverage" class="seg-tab is-on">Coverage</button>
+              <button type="button" id="btn-mode-sampling" class="seg-tab">Sampling</button>
+            </div>
+            <p class="text-[10px] text-gray-500 mt-1" id="mode-help">Coverage visits every household; Sampling draws a statistical rooftop subset across one or two study arms.</p>
+          </div>
+
+          <div>
             <div class="text-gray-600 mb-1">Area input</div>
             <div class="seg-row" style="grid-template-columns: repeat(3, 1fr);">
               <button type="button" id="btn-area-draw" class="seg-tab is-on">Draw</button>
-              <button type="button" id="btn-area-admin" class="seg-tab">Admin</button>
+              <button type="button" id="btn-area-admin" class="seg-tab">Boundaries</button>
               <button type="button" id="btn-area-pin" class="seg-tab">Pin</button>
             </div>
           </div>
@@ -140,21 +149,12 @@
           </div>
 
           <div id="area-admin" class="hidden space-y-2">
-            <label class="block"><span class="text-gray-600">Country</span>
-              <select id="sel-country" class="base-input mt-0.5 text-xs"></select></label>
-            <div class="grid grid-cols-2 gap-1">
-              <label class="block"><span class="text-gray-600">Level</span>
-                <select id="sel-level" class="base-input mt-0.5 text-xs">
-                  <option value="1">Region / State</option>
-                  <option value="2" selected>County / LGA</option>
-                  <option value="3">Ward / Locality</option>
-                </select></label>
-              <label class="block"><span class="text-gray-600">Search</span>
-                <input id="inp-area-search" type="text" placeholder="name…" class="base-input mt-0.5 text-xs"></label>
-            </div>
-            <button type="button" id="btn-area-search" class="button button-sm primary-dark w-full text-xs">Find areas</button>
-            <div id="area-source" class="text-[10px] text-gray-500"></div>
-            <div id="list-areas" class="max-h-32 overflow-y-auto border border-gray-100 rounded divide-y"></div>
+            <p class="text-[10px] text-gray-500 leading-snug">
+              The <b>Boundaries</b> layer is on (top-right map panel). Hover to inspect;
+              <b>Shift/⌘-click</b> a boundary to add it to the plan area, or type a name in
+              the layer's search box. Switch the boundary source (local data / Overture)
+              there too.
+            </p>
           </div>
 
           <div id="area-pin" class="hidden space-y-2">
@@ -167,7 +167,7 @@
             <div id="pin-status" class="text-[10px] text-gray-500"></div>
           </div>
 
-          <div>
+          <div id="coverage-config">
             <div class="text-gray-600 mb-1">Work-area size (cell edge)</div>
             <div class="chip-row" id="cellsize-chips">
               <button type="button" class="chip" data-cellsize="50">50 m</button>
@@ -180,6 +180,36 @@
               <span class="text-gray-600">Custom (m)</span>
               <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input mt-0.5 text-xs">
             </label>
+          </div>
+
+          <div id="sampling-config" class="hidden space-y-2">
+            <div>
+              <div class="text-gray-600 mb-1">Study arm</div>
+              <div class="seg-row" style="grid-template-columns: repeat(2, 1fr);">
+                <button type="button" id="btn-arm-intervention" class="seg-tab is-on">Intervention</button>
+                <button type="button" id="btn-arm-comparison" class="seg-tab">Comparison</button>
+              </div>
+              <p class="text-[10px] text-gray-500 mt-1">Areas you draw or derive tag to the active arm. Set an intervention area, then a comparable control.</p>
+            </div>
+            <div class="grid grid-cols-3 gap-1">
+              <label class="block"><span class="text-gray-600">PSUs</span>
+                <input id="cfg-target-clusters" type="number" value="25" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
+              <label class="block"><span class="text-gray-600">Primary</span>
+                <input id="cfg-primary" type="number" value="8" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
+              <label class="block"><span class="text-gray-600">Alternate</span>
+                <input id="cfg-alternate" type="number" value="8" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
+            </div>
+            <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">Generate sample</button>
+            <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
+            <dl class="space-y-0.5" id="sampling-arm-stats"></dl>
+            <div id="sampling-comparability" class="hidden text-[10px] border-t border-gray-100 pt-2">
+              <div class="font-semibold text-gray-700 mb-1">Arm comparability</div>
+              <div id="comparability-body"></div>
+            </div>
+            <details id="sampling-rationale" class="hidden mt-1 border-t border-gray-100 pt-2">
+              <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Why this sample</summary>
+              <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
+            </details>
           </div>
 
           <dl class="space-y-0.5 pt-2 border-t border-gray-100">
@@ -415,6 +445,7 @@
 <script src="{% static 'labs/context_picker.js' %}"></script>
 <script src="{% static 'microplans/map_panel.js' %}"></script>
 <script src="{% static 'microplans/service_delivery_layer.js' %}"></script>
+<script src="{% static 'microplans/admin_boundaries_layer.js' %}"></script>
 <script>
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
@@ -428,7 +459,15 @@
   const REASSIGN_URL = "{{ reassign_url|default:''|escapejs }}";
   const REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
   const PREVIEW_COVERAGE_URL = "{{ preview_coverage_url|default:''|escapejs }}";
+  const PREVIEW_FRAME_URL = "{{ preview_frame_url|default:''|escapejs }}";
+  const COMPARABILITY_URL = "{{ arm_comparability_url|default:''|escapejs }}";
+  // Sampling-mode state (two-arm rooftop study). Declared early so the
+  // service-delivery derive-boundary handler can tag derived polys to the arm.
+  let mpMode = "coverage";          // "coverage" | "sampling"
+  let currentArm = "intervention";  // "intervention" | "comparison"
+  const ARM_COLOR = { intervention: "#10b981", comparison: "#3b82f6" };
   const COUNTRIES_URL = "{{ countries_url|default:''|escapejs }}";
+  const BOUNDARY_VIEWPORT_URL = "{{ boundary_viewport_url|default:''|escapejs }}";
   const SD_PREVIEW_URL = "{{ preview_service_delivery_url|default:''|escapejs }}";
   const SD_PIPELINES_URL = "{{ service_delivery_pipelines_url|default:''|escapejs }}";
   const DERIVE_BOUNDARY_URL = "{{ derive_boundary_url|default:''|escapejs }}";
@@ -681,7 +720,7 @@
   // The panel (microplans/map_panel.js) owns the overlay toggles; footprints is
   // its first registered layer. Admin boundaries + service delivery register
   // here too (follow-up). `__mpPanel` is exposed for those + debugging.
-  let mapPanel = null, fpLayer = null, footprintsLoaded = false;
+  let mapPanel = null, fpLayer = null, footprintsLoaded = false, adminBoundaries = null;
   const setStatus = (t) => { const s = $("status"); if (s) s.textContent = t; };
   async function loadFootprints() {
     if (!FOOTPRINTS_URL) return false;
@@ -753,10 +792,46 @@
           const polys = geom.type === "MultiPolygon"
             ? geom.coordinates.map((c) => ({ type: "Polygon", coordinates: c }))
             : [geom];
-          polys.forEach((g) => { if (draw) draw.add({ type: "Feature", geometry: g, properties: {} }); });
+          // In sampling mode a derived boundary belongs to the active study arm.
+          polys.forEach((g) => { if (draw) draw.add({ type: "Feature", geometry: g, properties: mpMode === "sampling" ? { arm: currentArm } : {} }); });
           Microplans.fitTo(map, feature);
           if (typeof setAreaInput === "function") setAreaInput("draw");
         },
+      });
+    }
+
+    // Admin "Boundaries" layer — render the boundaries we have for the region as
+    // outlines; smallest-wins inspect; in the area phase Shift/⌘-click (or a search
+    // result) adds the boundary's full geometry to the MapboxDraw area layer.
+    if (window.MicroplansAdminBoundaries && BOUNDARY_VIEWPORT_URL) {
+      const adminDrawIds = {}; // boundary_id -> [draw feature ids]
+      function adminAddGeometry(boundaryId, geom) {
+        if (!draw) return;
+        const polys = geom.type === "MultiPolygon"
+          ? geom.coordinates.map((c) => ({ type: "Polygon", coordinates: c }))
+          : [geom];
+        adminDrawIds[boundaryId] = [];
+        polys.forEach((g) => {
+          const ids = draw.add({ type: "Feature", geometry: g, properties: {} });
+          (ids || []).forEach((id) => adminDrawIds[boundaryId].push(id));
+        });
+        if (typeof refreshAreaStats === "function") refreshAreaStats();
+      }
+      function adminRemoveGeometry(boundaryId) {
+        if (draw && adminDrawIds[boundaryId]) draw.delete(adminDrawIds[boundaryId]);
+        delete adminDrawIds[boundaryId];
+        if (typeof refreshAreaStats === "function") refreshAreaStats();
+      }
+      adminBoundaries = MicroplansAdminBoundaries.register({
+        panel: mapPanel, map, csrf: CSRF,
+        urls: { viewport: BOUNDARY_VIEWPORT_URL, geometry: ADMIN_AREA_GEOMETRY_URL, areas: ADMIN_AREAS_URL },
+        getCountryIso: () => (typeof OPP_COUNTRY_ISO !== "undefined" && OPP_COUNTRY_ISO) || null,
+        isAreaPhase: () => {
+          const d = document.querySelector("details.area-def");
+          return !!(d && d.open);
+        },
+        onAreaAdd: (boundaryId, geometry) => adminAddGeometry(boundaryId, geometry),
+        onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
       });
     }
   }
@@ -1246,7 +1321,6 @@
   let areaInput = "draw";              // "draw" | "admin" | "pin"
   let circleAreas = [];                // [{circle:{lon,lat,radius_m}}]
   let dropPinArmed = false;
-  let countriesLoaded = false;
   let cellSizeM = 100;
 
   function setupAreaDef() {
@@ -1282,7 +1356,9 @@
     if (i !== "pin") disarmPin();
   }
   $("btn-area-draw").addEventListener("click", () => setAreaInput("draw"));
-  $("btn-area-admin").addEventListener("click", () => { setAreaInput("admin"); loadCountries(); });
+  // "Boundaries" mode = turn on the admin-boundaries map layer (the layer panel owns
+  // the source picker, search, and Shift/⌘-click area-select). No dropdown here.
+  $("btn-area-admin").addEventListener("click", () => { setAreaInput("admin"); if (adminBoundaries) adminBoundaries.enable(); });
   $("btn-area-pin").addEventListener("click", () => setAreaInput("pin"));
 
   // ---- cell-size chips (same pattern as setup.html) ----
@@ -1296,76 +1372,10 @@
     c.addEventListener("click", () => setCellSize(+c.dataset.cellsize, true)));
   $("cfg-cellsize").addEventListener("input", () => setCellSize(+$("cfg-cellsize").value, false));
 
-  // ---- admin-area picker (loadCountries + searchAreas + useArea) ----
-  let chosenSource = null, parentArea = null;
-  async function loadCountries() {
-    if (countriesLoaded || !COUNTRIES_URL) return;
-    countriesLoaded = true;
-    try {
-      const data = await (await fetch(COUNTRIES_URL)).json();
-      const bespoke = new Set(data.bespoke || []);
-      const sel = $("sel-country"); sel.innerHTML = "";
-      (data.countries || []).forEach((c) => {
-        const o = document.createElement("option");
-        o.value = c.alpha3;
-        o.textContent = (bespoke.has(c.alpha3) ? "★ " : "") + c.name;
-        if (c.alpha3 === "NGA") o.selected = true;
-        sel.appendChild(o);
-      });
-    } catch (e) { $("area-source").textContent = "Could not load countries: " + e; }
-  }
-  $("btn-area-search").addEventListener("click", () => { parentArea = null; chosenSource = null; searchAreas(); });
-  let areaSearchCtrl = null;
-  async function searchAreas() {
-    if (!ADMIN_AREAS_URL) return;
-    const body = { country: $("sel-country").value, level: +$("sel-level").value, q: $("inp-area-search").value || null };
-    if (parentArea) body.parent = parentArea;
-    if (chosenSource) body.source = chosenSource;
-    $("area-source").textContent = "Searching…";
-    // Cancel any in-flight lookup so a slow earlier result can't overwrite a newer
-    // one (both the Search button and the "drill ↓" buttons call this).
-    if (areaSearchCtrl) areaSearchCtrl.abort();
-    areaSearchCtrl = new AbortController();
-    try {
-      const data = await (await post(ADMIN_AREAS_URL, body, { signal: areaSearchCtrl.signal })).json();
-      if (data.status !== "ok") { $("area-source").textContent = data.detail || "lookup failed"; return; }
-      $("area-source").innerHTML = `${data.areas.length} areas`;
-      const box = $("list-areas"); box.innerHTML = "";
-      data.areas.forEach((a) => {
-        const row = document.createElement("div");
-        row.className = "flex items-center justify-between gap-2 px-1.5 py-1 hover:bg-gray-50";
-        const b = document.createElement("button");
-        b.type = "button"; b.className = "text-left flex-1 truncate text-emerald-700 text-xs";
-        const meta = [a.area_km2 ? `${a.area_km2} km²` : null, a.population ? `pop ${Math.round(a.population).toLocaleString()}` : null].filter(Boolean).join(" · ");
-        b.textContent = a.name + (meta ? ` · ${meta}` : "");
-        b.addEventListener("click", () => useArea(a));
-        row.appendChild(b);
-        if (a.level < 3) {
-          const d = document.createElement("button");
-          d.type = "button"; d.className = "text-[10px] text-gray-400 hover:text-gray-700";
-          d.textContent = "drill ↓";
-          d.addEventListener("click", () => { parentArea = a; $("sel-level").value = String(a.level + 1); searchAreas(); });
-          row.appendChild(d);
-        }
-        box.appendChild(row);
-      });
-    } catch (e) {
-      if (e.name === "AbortError") return;  // superseded by a newer search
-      $("area-source").textContent = "Request failed: " + e;
-    }
-  }
-  async function useArea(a) {
-    if (!ADMIN_AREA_GEOMETRY_URL) return;
-    $("area-source").textContent = `Loading ${a.name}…`;
-    try {
-      const data = await (await post(ADMIN_AREA_GEOMETRY_URL, { area: a })).json();
-      if (data.status !== "ok") { $("area-source").textContent = data.detail || "geometry failed"; return; }
-      if (draw) draw.add({ type: "Feature", geometry: data.geometry, properties: {} });
-      Microplans.fitTo(map, data.geometry, { maxZoom: 15 });
-      $("area-source").textContent = `Added "${a.name}".`;
-      refreshAreaStats();
-    } catch (e) { $("area-source").textContent = "Request failed: " + e; }
-  }
+  // Admin-area selection now lives in the "Boundaries" map-panel layer
+  // (admin_boundaries_layer.js): outline render, source picker, name search, and
+  // Shift/⌘-click area-select. It calls back into the draw control via the
+  // onAreaAdd / onAreaRemove handlers wired where the layer is registered above.
 
   // ---- pin + radius ----
   function disarmPin() { dropPinArmed = false; map.getCanvas().style.cursor = ""; $("btn-drop-pin").classList.remove("seg-on"); }
@@ -1481,9 +1491,183 @@
     setupAreaDef();
   }
 
+  // ---- sampling mode (two-arm rooftop study) -------------------------------
+  // Reuses the existing draw surface + the offloaded preview_frame engine. Each
+  // drawn/derived polygon is tagged to a study arm; Generate runs the rooftop
+  // sampling (PPS PSUs → primary/alternate pins) per arm and renders both.
+  function setMode(m) {
+    mpMode = m;
+    const samp = m === "sampling";
+    $("btn-mode-coverage")?.classList.toggle("is-on", !samp);
+    $("btn-mode-sampling")?.classList.toggle("is-on", samp);
+    $("coverage-config")?.classList.toggle("hidden", samp);
+    $("sampling-config")?.classList.toggle("hidden", !samp);
+    // Coverage commits on "Create plan / Apply"; sampling previews on "Generate".
+    $("btn-apply-area")?.classList.toggle("hidden", samp);
+  }
+  on("btn-mode-coverage", "click", () => setMode("coverage"));
+  on("btn-mode-sampling", "click", () => setMode("sampling"));
+
+  function setArm(a) {
+    currentArm = a;
+    $("btn-arm-intervention")?.classList.toggle("is-on", a === "intervention");
+    $("btn-arm-comparison")?.classList.toggle("is-on", a === "comparison");
+  }
+  on("btn-arm-intervention", "click", () => setArm("intervention"));
+  on("btn-arm-comparison", "click", () => setArm("comparison"));
+
+  // Tag freshly user-drawn polygons with the active arm (derived ones are tagged
+  // at draw.add above).
+  if (map) {
+    map.on("draw.create", (e) => {
+      if (mpMode !== "sampling" || !draw) return;
+      (e.features || []).forEach((f) => { try { draw.setFeatureProperty(f.id, "arm", currentArm); } catch (_) {} });
+    });
+  }
+
+  function collectArmAreas() {
+    const feats = draw ? draw.getAll().features : [];
+    return feats
+      .filter((f) => f.geometry && (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon"))
+      .map((f) => ({ arm: (f.properties && f.properties.arm) || "intervention", geometry: f.geometry }));
+  }
+
+  function samplingConfig() {
+    return {
+      target_clusters: parseInt($("cfg-target-clusters")?.value || "25", 10),
+      primary_per_psu: parseInt($("cfg-primary")?.value || "8", 10),
+      alternates_per_psu: parseInt($("cfg-alternate")?.value || "8", 10),
+    };
+  }
+
+  function armPaint(prop, intervention, comparison) {
+    return ["match", ["get", "arm"], "comparison", comparison, intervention];
+  }
+
+  function renderSample(result) {
+    if (!map || !mapReady) return;
+    const hulls = result.hulls || result.hulls_geojson || { type: "FeatureCollection", features: [] };
+    const pins = result.pins || result.pins_geojson || { type: "FeatureCollection", features: [] };
+    Microplans.upsertSource(map, "samp-hulls", hulls);
+    if (!map.getLayer("samp-hull-fill")) {
+      map.addLayer({ id: "samp-hull-fill", type: "fill", source: "samp-hulls",
+        paint: { "fill-color": armPaint("arm", ARM_COLOR.intervention, ARM_COLOR.comparison), "fill-opacity": 0.12 } });
+      map.addLayer({ id: "samp-hull-line", type: "line", source: "samp-hulls",
+        paint: { "line-color": armPaint("arm", ARM_COLOR.intervention, ARM_COLOR.comparison), "line-width": 1.5 } });
+    }
+    Microplans.upsertSource(map, "samp-pins", pins);
+    if (!map.getLayer("samp-pins-layer")) {
+      map.addLayer({ id: "samp-pins-layer", type: "circle", source: "samp-pins",
+        paint: {
+          "circle-radius": ["case", ["==", ["get", "role"], "primary"], 5, 3],
+          "circle-color": armPaint("arm", ARM_COLOR.intervention, ARM_COLOR.comparison),
+          "circle-opacity": ["case", ["==", ["get", "role"], "primary"], 0.95, 0.45],
+          "circle-stroke-width": ["case", ["==", ["get", "role"], "primary"], 1.2, 0.5],
+          "circle-stroke-color": "#ffffff",
+        } });
+    }
+    const fitData = (pins.features && pins.features.length) ? pins : hulls;
+    if (fitData.features && fitData.features.length) Microplans.fitTo(map, fitData, { maxZoom: 16, animate: false, duration: 0 });
+    renderArmStats(result.stats || []);
+    renderRationale(result.stats || []);
+  }
+
+  function renderArmStats(stats) {
+    const el = $("sampling-arm-stats"); if (!el) return;
+    el.innerHTML = (stats || []).map((s) => {
+      const c = ARM_COLOR[s.arm] || ARM_COLOR.intervention;
+      const prim = s.primaries || 0, alt = s.alternates || 0, psus = s.psus_selected || 0;
+      return `<div class="flex justify-between"><dt class="text-gray-500"><span style="color:${c}">●</span> ${esc(s.arm)}</dt>`
+        + `<dd class="text-gray-700 font-medium">${prim}+${alt} pins · ${psus} PSUs</dd></div>`;
+    }).join("");
+  }
+
+  // "Why this sample" — turn the per-arm engine stats into a plain-language,
+  // methodology-faithful explanation so a non-specialist can defend the sample.
+  function renderRationale(stats) {
+    const wrap = $("sampling-rationale"), body = $("sampling-rationale-body");
+    if (!wrap || !body) return;
+    if (!stats || !stats.length) { wrap.classList.add("hidden"); return; }
+    wrap.classList.remove("hidden");
+    const step = (n, title, txt) => `<li class="text-[10px] text-gray-600"><b>${n}. ${esc(title)}</b> — ${txt}</li>`;
+    body.innerHTML = stats.map((s) => {
+      const c = ARM_COLOR[s.arm] || ARM_COLOR.intervention;
+      const fetched = s.fetched || 0, kept = s.after_filters || 0;
+      const tiny = s.removed_tiny_isolated || 0, large = s.removed_large || 0;
+      const psusFormed = s.clusters_formed || 0, psusSel = s.psus_selected || 0;
+      const prim = s.primaries || 0, alt = s.alternates || 0;
+      return `<div>
+        <div class="text-[11px] font-medium text-gray-700"><span style="color:${c}">●</span> ${esc(s.arm)} arm</div>
+        <ol class="space-y-1 mt-1 ml-1 list-none">
+          ${step(1, "Building frame", `${fetched} rooftops fetched; dropped ${tiny} tiny/isolated (&lt;9 m²) and ${large} oversized (&gt;330 m²) &rarr; <b>${kept}</b> in the frame.`)}
+          ${step(2, "PSUs formed", `grouped into <b>${psusFormed}</b> candidate clusters; under-16-building clusters merge into their nearest neighbour.`)}
+          ${step(3, "PPS selection", `<b>${psusSel}</b> PSUs drawn with probability proportional to building count &mdash; denser clusters are likelier, so the sample mirrors where people actually live.`)}
+          ${step(4, "Pins per PSU", `<b>${prim}</b> primary + <b>${alt}</b> alternate, spaced &ge;15 m apart; an alternate is the 15 m substitute when a primary roof can't be surveyed.`)}
+          ${step(5, "Design weight", `each primary carries weight = 1 &divide; its inclusion probability, so coverage estimates stay unbiased despite the unequal draw.`)}
+        </ol>
+      </div>`;
+    }).join("");
+  }
+
+  // Comparability — is the control a fair counterfactual? Server computes area +
+  // density from the arm geometries + the sample's building counts; we show the
+  // two arms side by side with a matched / not-matched flag.
+  async function updateComparability(areas, stats) {
+    const wrap = $("sampling-comparability"), body = $("comparability-body");
+    if (!wrap || !body) return;
+    const armSet = new Set(areas.map((a) => a.arm));
+    if (armSet.size < 2 || !COMPARABILITY_URL) { wrap.classList.add("hidden"); return; }
+    const counts = {};
+    (stats || []).forEach((s) => { counts[s.arm] = s.after_filters || 0; });
+    try {
+      const r = await Microplans.post(COMPARABILITY_URL, { areas, building_counts: counts }, { csrf: CSRF });
+      if (!r || r.status !== "ok" || !(r.arms || []).length) { wrap.classList.add("hidden"); return; }
+      const byArm = {}; r.arms.forEach((a) => { byArm[a.arm] = a; });
+      const iv = byArm.intervention || r.arms[0], cm = byArm.comparison || r.arms[1] || r.arms[0];
+      const cell = (v) => `<td class="text-right tabular-nums px-1">${esc(String(v))}</td>`;
+      const badge = r.matched
+        ? `<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">matched</span>`
+        : `<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">not matched</span>`;
+      const why = (r.matched === false && (r.reasons || []).length) ? ` <span class="text-gray-500">${esc(r.reasons.join("; "))}</span>` : "";
+      body.innerHTML = `
+        <table class="w-full"><thead><tr class="text-gray-500">
+          <th class="text-left"></th>
+          <th class="text-right px-1"><span style="color:${ARM_COLOR.intervention}">●</span> Interv.</th>
+          <th class="text-right px-1"><span style="color:${ARM_COLOR.comparison}">●</span> Control</th></tr></thead>
+          <tbody class="text-gray-700">
+            <tr><td>Buildings</td>${cell(iv.building_count)}${cell(cm.building_count)}</tr>
+            <tr><td>Area (km²)</td>${cell(iv.area_km2)}${cell(cm.area_km2)}</tr>
+            <tr><td>Density /km²</td>${cell(iv.density_per_km2)}${cell(cm.density_per_km2)}</tr>
+          </tbody></table>
+        <div class="mt-1">${badge}${why}</div>`;
+      wrap.classList.remove("hidden");
+    } catch (e) { wrap.classList.add("hidden"); }
+  }
+
+  on("btn-generate-sample", "click", async () => {
+    const statusEl = $("generate-sample-status");
+    if (!PREVIEW_FRAME_URL) { if (statusEl) statusEl.textContent = "Sampling endpoint unavailable."; return; }
+    const areas = collectArmAreas();
+    if (!areas.length) { if (statusEl) statusEl.textContent = "Draw or derive at least one area first."; return; }
+    const btn = $("btn-generate-sample"); if (btn) btn.disabled = true;
+    if (statusEl) statusEl.textContent = "Sampling… fetching buildings + selecting (this can take ~30s).";
+    try {
+      const result = await Microplans.enqueueAndPoll(PREVIEW_FRAME_URL, { areas, config: samplingConfig() }, { csrf: CSRF });
+      renderSample(result);
+      updateComparability(areas, result.stats || []);
+      const arms = new Set(areas.map((a) => a.arm));
+      if (statusEl) statusEl.textContent = `Sampled ${arms.size} arm${arms.size === 1 ? "" : "s"}.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = "Sampling failed: " + (e && e.message ? e.message : e);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit,
                       get activeDim() { return activeDim; }, get colorDim() { return colorDim; },
                       get map() { return map; }, get panel() { return mapPanel; },
+                      get mode() { return mpMode; }, get arm() { return currentArm; }, setMode, setArm,
                       setActiveDim, setColorDim };
 })();
 </script>
