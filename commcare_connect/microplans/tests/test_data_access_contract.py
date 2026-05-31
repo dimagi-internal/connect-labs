@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from commcare_connect.labs.models import LocalLabsRecord
 from commcare_connect.microplans.core import plan as plan_lib
 from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
@@ -324,6 +326,39 @@ class TestProgramPlanDataAccessContract:
                 # old→new is a 2-element list after JSON round-trip (not tuple)
                 assert isinstance(ev["changes"]["work_area_group"], list)
                 assert len(ev["changes"]["work_area_group"]) == 2
+
+    def test_create_plan_starts_at_revision_zero(self):
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        assert plan.data.get("revision") == 0
+
+    def test_each_save_bumps_revision(self):
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        g = {"strategy": "bbox", "target_size": 1}
+        r1 = da.regroup_plan(plan_id=plan.id, grouping=g, actor="p")
+        assert r1.data["revision"] == 1
+        r2 = da.regroup_plan(plan_id=plan.id, grouping=g, actor="p")
+        assert r2.data["revision"] == 2
+        assert da.get_plan(plan.id).data["revision"] == 2  # persists
+
+    def test_stale_base_revision_raises(self):
+        from commcare_connect.microplans.core.data_access import StalePlanError
+
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        g = {"strategy": "bbox", "target_size": 1}
+        # Client thinks it's at r5 but the stored plan is r0 → conflict, no write.
+        with pytest.raises(StalePlanError):
+            da.regroup_plan(plan_id=plan.id, grouping=g, actor="p", base_revision=5)
+        assert da.get_plan(plan.id).data["revision"] == 0  # unchanged — not clobbered
+
+    def test_matching_base_revision_succeeds(self):
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        g = {"strategy": "bbox", "target_size": 1}
+        updated = da.regroup_plan(plan_id=plan.id, grouping=g, actor="p", base_revision=0)
+        assert updated.data["revision"] == 1
 
     def test_reassign_plan_opportunity_access_survives_round_trip(self):
         """reassign_plan → opportunity_access fields updated + audit persisted."""

@@ -762,7 +762,20 @@
   }
 
   // ---- render ----
+  // Optimistic-concurrency token. Every plan payload (load + each save response)
+  // carries the current `revision`; we echo it back on the next save so the
+  // server can 409 if someone else changed the plan in between.
+  let planRevision = null;
+  // A 409 = the plan changed in another tab/session since we loaded it; saving
+  // would clobber the newer state. Warn and reload to the latest.
+  function handleConflict(resp, data, setMsg) {
+    if (resp.status !== 409) return false;
+    setMsg((data && data.detail ? data.detail + " " : "") + "Reloading to the latest…");
+    setTimeout(() => location.reload(), 2000);
+    return true;
+  }
   function render(data) {
+    if (data && data.revision !== undefined) planRevision = data.revision;
     WAS = data.work_areas || [];
     renderSummary(data.summary || {});
     renderKpis(data.kpis || {});
@@ -1002,8 +1015,9 @@
   async function edit(body) {
     $("status").textContent = "Saving…";
     try {
-      const resp = await post(EDIT_URL, body);
+      const resp = await post(EDIT_URL, Object.assign({ revision: planRevision }, body));
       const data = await resp.json();
+      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
       if (!resp.ok || data.status !== "ok") { $("status").textContent = data.detail || ("HTTP " + resp.status); return; }
       $("status").textContent = "Saved.";
       render(data);
@@ -1063,8 +1077,10 @@
     $("status").textContent = `Re-grouping (${strategy})…`;
     const t0 = performance.now();
     try {
+      body.revision = planRevision;
       const resp = await post(REGROUP_URL, body);
       const data = await resp.json();
+      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
       if (!resp.ok || data.status !== "ok") {
         $("status").textContent = data.detail || ("HTTP " + resp.status);
       } else {
@@ -1103,8 +1119,10 @@
     $("status").textContent = `Re-assigning (${strategy})…`;
     const t0 = performance.now();
     try {
+      body.revision = planRevision;
       const resp = await post(REASSIGN_URL, body);
       const data = await resp.json();
+      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
       if (!resp.ok || data.status !== "ok") {
         $("status").textContent = data.detail || ("HTTP " + resp.status);
       } else {
@@ -1423,8 +1441,9 @@
         buffer_distance_m: +grpBuf.value,
       } : {};
       if (PLAN_ID) {
-        const resp = await post(REGENERATE_URL, { mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping });
+        const resp = await post(REGENERATE_URL, { mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping, revision: planRevision });
         const data = await resp.json();
+        if (handleConflict(resp, data, (m) => $("apply-area-status").textContent = m)) return;
         if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
         $("apply-area-status").textContent = `Regenerated ${data.work_areas.length} work areas.`;
         if (draw) draw.deleteAll();
