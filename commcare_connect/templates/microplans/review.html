@@ -610,11 +610,14 @@
         // immediately visible. setColorDim also re-renders sidebar + table.
         setColorDim("group");
         render(data);
+        // The form now matches the applied state; restamp baseline so the
+        // Apply button greys back out until the user changes something again.
+        grpBaseline = snapshotGrp();
       }
     } catch (e) {
       $("status").textContent = "Re-group failed: " + e;
     } finally {
-      $("btn-regroup").disabled = false;
+      syncApplyButtons();
     }
   });
 
@@ -645,11 +648,12 @@
         // Switch the map color dimension to Worker so the new assignment is visible.
         setColorDim("worker");
         render(data);
+        asgBaseline = snapshotAsg();
       }
     } catch (e) {
       $("status").textContent = "Re-assign failed: " + e;
     } finally {
-      $("btn-reassign").disabled = false;
+      syncApplyButtons();
     }
   });
 
@@ -712,7 +716,35 @@
       $("asg-workers").value = w;
     }
     if (a.restarts) $("asg-restarts").value = a.restarts;
+    // Stamp baselines so Apply buttons grey out until something actually
+    // changes. If the plan had nothing stored for that phase, baseline stays
+    // null → button is enabled for the first-ever apply.
+    grpBaseline = Object.keys(g).length ? snapshotGrp() : null;
+    asgBaseline = Object.keys(a).length ? snapshotAsg() : null;
+    syncApplyButtons();
   }
+
+  // ---- Apply-button dirty tracking: grey the button when the current form
+  // matches the last-applied config, so a no-op Apply can't masquerade as
+  // work done. Re-enable as soon as anything in the section is edited.
+  let grpBaseline = null;
+  let asgBaseline = null;
+  const GRP_FIELDS = ["grp-strategy", "grp-max-buildings", "grp-buffer-m", "grp-target-size"];
+  const ASG_FIELDS = ["asg-strategy", "asg-workers", "asg-restarts"];
+  function snapshotFields(ids) { return ids.map((id) => ($(id) ? String($(id).value) : "")).join("|"); }
+  function snapshotGrp() { return snapshotFields(GRP_FIELDS); }
+  function snapshotAsg() { return snapshotFields(ASG_FIELDS); }
+  function syncApplyButtons() {
+    const gb = $("btn-regroup");
+    if (gb) gb.disabled = (grpBaseline !== null && snapshotGrp() === grpBaseline);
+    const ab = $("btn-reassign");
+    if (ab) {
+      const noWorkers = !($("asg-workers").value || "").trim();
+      ab.disabled = noWorkers || (asgBaseline !== null && snapshotAsg() === asgBaseline);
+    }
+  }
+  GRP_FIELDS.forEach((id) => { const el = $(id); if (el) { el.addEventListener("input", syncApplyButtons); el.addEventListener("change", syncApplyButtons); } });
+  ASG_FIELDS.forEach((id) => { const el = $(id); if (el) { el.addEventListener("input", syncApplyButtons); el.addEventListener("change", syncApplyButtons); } });
 
   // initial load
   fetch(PLAN_URL).then((r) => r.json()).then((d) => {
