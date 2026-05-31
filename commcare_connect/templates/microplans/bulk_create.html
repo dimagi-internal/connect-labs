@@ -115,7 +115,7 @@
 
     <label class="block">
       <span class="mp-section-label block mb-1">Ward names — one per line</span>
-      <textarea id="ward-list" class="field-textarea" rows="8" placeholder="Galinja&#10;Madobi&#10;Gora&#10;Jibga&#10;Kadan Dani&#10;Durma&#10;Rimin Gado&#10;Dawakin Gulu&#10;Tofa&#10;Kwami"></textarea>
+      <textarea id="ward-list" class="field-textarea" rows="6" placeholder="One ward name per line…"></textarea>
     </label>
 
     <div class="flex items-center justify-between">
@@ -155,7 +155,6 @@
             <th>Ward</th>
             <th>LGA</th>
             <th>Population</th>
-            <th>Boundary ID</th>
             <th class="text-right">Status</th>
           </tr>
         </thead>
@@ -329,20 +328,11 @@
       else tdPop.innerHTML = '<span class="empty-cell">·</span>';
       tr.appendChild(tdPop);
 
-      // Boundary id (mono, truncated to last segment for readability)
-      const tdBid = document.createElement("td");
-      const span = document.createElement("span");
-      span.className = "mono-sub";
+      // Boundary id is audit-trail metadata, not a decision input — surfaced
+      // via the row's title attribute (hover tooltip) instead of its own column.
       if (r.matched_id) {
-        const short = r.matched_id.length > 28 ? "…" + r.matched_id.slice(-26) : r.matched_id;
-        span.textContent = short;
-        span.title = r.matched_id;
-      } else {
-        span.className = "empty-cell";
-        span.textContent = "·";
+        tr.title = `Boundary ID: ${r.matched_id}`;
       }
-      tdBid.appendChild(span);
-      tr.appendChild(tdBid);
 
       // Status + per-row action
       const tdStat = document.createElement("td");
