@@ -27,6 +27,12 @@
   .resolved-table .name-cell { font-weight: 600; }
   .resolved-table tr.is-skipped td { opacity: 0.55; }
   .resolved-table tr.is-unresolved .name-cell { color: #9a3412; }
+  /* Left-border accent for quick visual hierarchy — green for matched, amber for unresolved. */
+  .resolved-table tr.is-matched td:first-child { box-shadow: inset 3px 0 0 0 #10b981; }
+  .resolved-table tr.is-unresolved td:first-child { box-shadow: inset 3px 0 0 0 #f59e0b; }
+  .resolved-table tr.is-skipped td:first-child { box-shadow: inset 3px 0 0 0 #d1d5db; }
+  /* Softer empty-state — em-dash too harsh; centered ‐ in muted gray. */
+  .empty-cell { color: #d1d5db; }
   /* Compact monospace block for the per-row detail (boundary id) */
   .mono-sub { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.6875rem; color: #6b7280; }
   .progress-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.75rem; border-bottom: 1px solid #f3f4f6; font-size: 0.85rem; }
@@ -63,7 +69,20 @@
       Paste a list of ward names — one per line — and the system matches each against the admin boundaries.
       Confirm the matches, then create one draft plan per ward in a single batch.
     </p>
+    <div class="mt-3 inline-flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 max-w-2xl">
+      <svg viewBox="0 0 16 16" class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4.5zM8 10.25a.875.875 0 1 1 0 1.75.875.875 0 0 1 0-1.75z"/></svg>
+      <span><strong>Why confirm before creating:</strong> ward names overlap across LGAs (Madobi the LGA AND Madobi the ward; "Tofa" exists in multiple LGAs). A silent best-effort match would create plans for the wrong wards. Every row must be either matched or skipped before Create plans enables.</span>
+    </div>
   </div>
+
+  <!-- Step indicator -->
+  <ol class="flex items-center gap-2 text-xs text-gray-500" aria-label="Steps">
+    <li class="flex items-center gap-1.5" data-step="paste"><span class="w-5 h-5 rounded-full bg-brand-cornflower-blue text-white inline-flex items-center justify-center text-[10px] font-bold">1</span><span class="font-medium text-gray-900">Paste</span></li>
+    <li class="text-gray-300">→</li>
+    <li class="flex items-center gap-1.5" data-step="confirm"><span id="step-num-2" class="w-5 h-5 rounded-full bg-gray-300 text-white inline-flex items-center justify-center text-[10px] font-bold">2</span><span id="step-label-2">Confirm matches</span></li>
+    <li class="text-gray-300">→</li>
+    <li class="flex items-center gap-1.5" data-step="create"><span id="step-num-3" class="w-5 h-5 rounded-full bg-gray-300 text-white inline-flex items-center justify-center text-[10px] font-bold">3</span><span id="step-label-3">Create plans</span></li>
+  </ol>
 
   <!-- Step 1: Paste + config -->
   <section id="step-paste" class="border border-gray-200 rounded-lg bg-white p-5 space-y-4">
@@ -253,11 +272,29 @@
     RESOLUTIONS = (payload.resolutions || []).map((r) => ({ ...r, skipped: false }));
     renderPreview();
     show($("step-preview"));
+    setStep(2);
     $("step-preview").scrollIntoView({ behavior: "smooth", block: "start" });
     btn.disabled = false;
     btn.querySelector(".btn-label").textContent = "Re-resolve";
   }
   $("btn-resolve").addEventListener("click", doResolve);
+
+  // ---------- step indicator ----------
+  function setStep(n) {
+    const colorActive = "bg-brand-cornflower-blue";
+    const colorDone = "bg-emerald-500";
+    const colorIdle = "bg-gray-300";
+    [["step-num-2", n >= 2 ? (n > 2 ? colorDone : colorActive) : colorIdle],
+     ["step-num-3", n >= 3 ? (n > 3 ? colorDone : colorActive) : colorIdle]].forEach(([id, klass]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = el.className.replace(/bg-[a-z-]+(?:-\d+)?/g, "") + " " + klass;
+    });
+    const lbl2 = document.getElementById("step-label-2");
+    const lbl3 = document.getElementById("step-label-3");
+    if (lbl2) lbl2.className = (n >= 2 ? "font-medium text-gray-900" : "");
+    if (lbl3) lbl3.className = (n >= 3 ? "font-medium text-gray-900" : "");
+  }
 
   // ---------- preview render ----------
   function renderPreview() {
@@ -269,7 +306,8 @@
       const isResolved = !!r.matched_id;
       const isSkipped = !!r.skipped;
       if (isSkipped) tr.classList.add("is-skipped");
-      if (!isResolved) tr.classList.add("is-unresolved");
+      else if (isResolved) tr.classList.add("is-matched");
+      else tr.classList.add("is-unresolved");
       if (isResolved && !isSkipped) matched++;
       else if (isSkipped) skipped++;
       else unresolved++;
@@ -280,20 +318,29 @@
       tdName.textContent = r.name;
       tr.appendChild(tdName);
 
-      // LGA + Population
+      // LGA + Population (subtle empty state when unresolved)
       const tdLga = document.createElement("td");
-      tdLga.textContent = r.lga || "—";
+      if (r.lga) tdLga.textContent = r.lga;
+      else tdLga.innerHTML = '<span class="empty-cell">·</span>';
       tr.appendChild(tdLga);
 
       const tdPop = document.createElement("td");
-      tdPop.textContent = fmtPop(r.population);
+      if (r.population != null && !isNaN(r.population)) tdPop.textContent = fmtPop(r.population);
+      else tdPop.innerHTML = '<span class="empty-cell">·</span>';
       tr.appendChild(tdPop);
 
-      // Boundary id (mono)
+      // Boundary id (mono, truncated to last segment for readability)
       const tdBid = document.createElement("td");
       const span = document.createElement("span");
       span.className = "mono-sub";
-      span.textContent = r.matched_id || "—";
+      if (r.matched_id) {
+        const short = r.matched_id.length > 28 ? "…" + r.matched_id.slice(-26) : r.matched_id;
+        span.textContent = short;
+        span.title = r.matched_id;
+      } else {
+        span.className = "empty-cell";
+        span.textContent = "·";
+      }
       tdBid.appendChild(span);
       tr.appendChild(tdBid);
 
@@ -372,6 +419,7 @@
       log.appendChild(row);
     });
     show($("step-create"));
+    setStep(3);
     $("step-create").scrollIntoView({ behavior: "smooth", block: "start" });
     $("btn-create").disabled = true;
     $("btn-back").disabled = true;
@@ -416,6 +464,7 @@
     });
 
     hide($("create-spinner"));
+    setStep(4);
     $("create-title").textContent =
       `Created ${okCount} of ${toCreate.length} plan${toCreate.length === 1 ? "" : "s"}`
       + (errCount ? ` · ${errCount} error${errCount === 1 ? "" : "s"}` : "");
@@ -424,6 +473,8 @@
         ? `Created ${okCount} plan${okCount === 1 ? "" : "s"} in program #${PROGRAM_ID}. Open the portfolio to review and assign.`
         : "No plans were created.";
     show($("create-done"));
+    // Scroll the user back to the top so they see the final stats + done state in one beat.
+    setTimeout(() => $("step-create").scrollIntoView({ behavior: "smooth", block: "end" }), 200);
   }
   $("btn-create").addEventListener("click", doCreate);
 })();
