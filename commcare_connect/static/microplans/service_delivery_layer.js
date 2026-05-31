@@ -421,4 +421,193 @@
   }
 
   global.ServiceDeliveryLayer = { create };
+
+  /*
+   * Panel-aware integration for the unified review page.
+   *
+   * Registers a "Service delivery" layer in a MicroplansMapPanel and drives it
+   * from a server-rendered Alpine multi-picker (the shared labsContextPicker),
+   * instead of building its own tab UI. Reads the picker's selection via
+   * Alpine.$data(pickerEl). Renders the points + hands a derived boundary to the
+   * page's MapboxDraw via onBoundary.
+   *
+   *   MicroplansServiceDelivery.register({
+   *     panel, map, csrf, draw, pickerEl,
+   *     urls: { preview, pipelines, derive },
+   *     onBoundary: (feature) => {...},   // add to draw / area input
+   *   });
+   */
+  function register(opts) {
+    const map = opts.map;
+    const panel = opts.panel;
+    const pickerEl = opts.pickerEl;
+    const urls = opts.urls || {};
+    const onBoundary = opts.onBoundary || function () {};
+    const M = global.Microplans;
+    const post = (url, body) =>
+      M
+        ? M.post(url, body, { csrf: opts.csrf })
+        : fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': opts.csrf,
+            },
+            body: JSON.stringify(body),
+          });
+    const SRC = 'sd-points',
+      LAYER = 'sd-points-circle';
+    let loadedFeatures = [],
+      pipelinesLoaded = false;
+
+    function pickerData() {
+      return global.Alpine ? global.Alpine.$data(pickerEl) : null;
+    }
+    function ctl(sel) {
+      return pickerEl.querySelector(sel);
+    }
+    function ensureLayer() {
+      if (!map.getSource(SRC))
+        map.addSource(SRC, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+      if (!map.getLayer(LAYER))
+        map.addLayer({
+          id: LAYER,
+          type: 'circle',
+          source: SRC,
+          paint: {
+            'circle-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              8,
+              2.5,
+              14,
+              5,
+            ],
+            'circle-color': ['coalesce', ['get', 'color'], '#2563eb'],
+            'circle-stroke-color': '#fff',
+            'circle-stroke-width': 0.6,
+            'circle-opacity': 0.85,
+          },
+        });
+      else map.setLayoutProperty(LAYER, 'visibility', 'visible');
+    }
+    function setVisible(on) {
+      if (map.getLayer(LAYER))
+        map.setLayoutProperty(LAYER, 'visibility', on ? 'visible' : 'none');
+    }
+    async function loadPipelines() {
+      if (pipelinesLoaded || !urls.pipelines) return;
+      pipelinesLoaded = true;
+      try {
+        const data = await (await fetch(urls.pipelines)).json();
+        if (data.status === 'ok' && data.pipelines) {
+          const sel = ctl('.sd-pipeline');
+          if (sel)
+            sel.innerHTML = data.pipelines
+              .map((p) => `<option value="${p.id}">${p.name}</option>`)
+              .join('');
+        }
+      } catch (e) {
+        /* keep default option */
+      }
+    }
+    async function showPoints() {
+      const data = pickerData();
+      const opp_ids = ((data && data.selectedOpps) || []).map((o) => o.id);
+      if (!opp_ids.length) {
+        layer.setMeta('Pick an opportunity first');
+        return;
+      }
+      const pipeline_id = (ctl('.sd-pipeline') || {}).value || 'default';
+      layer.setMeta('Fetching points…');
+      try {
+        const resp = await post(urls.preview, { opp_ids, pipeline_id });
+        const d = await resp.json();
+        if (d.auth_error === 'commcare_hq') {
+          layer.setMeta('Authorize CommCare HQ');
+          if (d.auth_authorize_url) global.open(d.auth_authorize_url, '_blank');
+          return;
+        }
+        if (!resp.ok || d.status !== 'ok') {
+          layer.setMeta(d.detail || 'HTTP ' + resp.status);
+          return;
+        }
+        ensureLayer();
+        map.getSource(SRC).setData(d.points);
+        loadedFeatures = (d.points && d.points.features) || [];
+        if (M) M.fitTo(map, d.points, { maxZoom: 15 });
+        const dv = ctl('.sd-derive-btn');
+        if (dv) dv.disabled = !loadedFeatures.length;
+        layer.setMeta(
+          `${(d.count || 0).toLocaleString()} points · ${
+            (d.layers || []).length
+          } opp(s)`,
+        );
+      } catch (e) {
+        layer.setMeta('Failed: ' + e);
+      }
+    }
+    async function derive() {
+      if (!loadedFeatures.length) {
+        layer.setMeta('Show points first');
+        return;
+      }
+      const coords = loadedFeatures.map((f) => f.geometry.coordinates);
+      const method =
+        (ctl('input[name="sd-method"]:checked') || {}).value || 'concave';
+      layer.setMeta('Deriving boundary…');
+      try {
+        const resp = await post(urls.derive, {
+          coords,
+          method,
+          concavity: Number((ctl('.sd-tightness') || {}).value || 0.3),
+          buffer_m: Number((ctl('.sd-buffer') || {}).value || 25),
+        });
+        const d = await resp.json();
+        if (!resp.ok || d.status !== 'ok') {
+          layer.setMeta(d.detail || 'derive failed');
+          return;
+        }
+        onBoundary(d.boundary);
+        layer.setMeta(
+          `Boundary added from ${(d.point_count || 0).toLocaleString()} points`,
+        );
+      } catch (e) {
+        layer.setMeta('Derive failed: ' + e);
+      }
+    }
+
+    const layer = panel.registerLayer({
+      id: 'service-delivery',
+      label: 'Service delivery',
+      color: '#2563eb',
+      badge: 'sampling',
+      onToggle: (on) => {
+        if (on) {
+          layer.setBody(pickerEl);
+          pickerEl.classList.remove('hidden');
+          ensureLayer();
+          setVisible(true);
+        } else setVisible(false);
+      },
+    });
+    const showBtn = ctl('.sd-show');
+    if (showBtn) showBtn.addEventListener('click', showPoints);
+    const deriveBtn = ctl('.sd-derive-btn');
+    if (deriveBtn) {
+      deriveBtn.disabled = true;
+      deriveBtn.addEventListener('click', derive);
+    }
+    const pipeSel = ctl('.sd-pipeline');
+    if (pipeSel)
+      pipeSel.addEventListener('mousedown', loadPipelines, { once: true });
+
+    return { layer, showPoints };
+  }
+
+  global.MicroplansServiceDelivery = { register };
 })(window);
