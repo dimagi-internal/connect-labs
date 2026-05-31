@@ -100,6 +100,58 @@ class TestBfsAdjacency:
         assert l_groups.isdisjoint(r_groups)
 
 
+class TestBfsAdjacencyBadGeometry:
+    """Fix A: malformed/unparseable geometry must not crash the regroup."""
+
+    def test_empty_coordinates_polygon_is_skipped_not_fatal(self):
+        # One area with a well-formed geometry, one with an empty-coordinates polygon
+        # (shapely raises on this), one with geometry=None.
+        good = _cell("good", 0.0, 0.0, building_count=20)
+        bad_empty_coords = {
+            "id": "bad-empty",
+            "centroid": [0.001, 0.0],
+            "building_count": 5,
+            "geometry": {"type": "Polygon", "coordinates": []},
+            "work_area_group": "intervention",
+            "status": "UNASSIGNED",
+        }
+        no_geom = {
+            "id": "no-geom",
+            "centroid": [0.002, 0.0],
+            "building_count": 5,
+            "geometry": None,
+            "work_area_group": "intervention",
+            "status": "UNASSIGNED",
+        }
+        cells = [good, bad_empty_coords, no_geom]
+        # Must complete without raising
+        result = group_work_areas(cells, GroupingConfig(strategy="bfs_adjacency"))
+        # Every cell has a group label (no crash)
+        for c in result:
+            assert c.get("work_area_group"), f"cell {c['id']} has no group"
+        # The two bad cells land in the sentinel group, not a real BFS group
+        assert bad_empty_coords["work_area_group"] == "group-no-geometry"
+        assert no_geom["work_area_group"] == "group-no-geometry"
+        # The good cell lands in a real BFS group
+        assert good["work_area_group"] != "group-no-geometry"
+
+    def test_invalid_geometry_type_is_skipped_not_fatal(self):
+        # geometry dict present but unrecognised type — shapely should raise TypeError/ValueError
+        good = _cell("good", 0.0, 0.0, building_count=20)
+        bad_type = {
+            "id": "bad-type",
+            "centroid": [0.001, 0.0],
+            "building_count": 5,
+            "geometry": {"type": "NotARealType", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]},
+            "work_area_group": "intervention",
+            "status": "UNASSIGNED",
+        }
+        cells = [good, bad_type]
+        group_work_areas(cells, GroupingConfig(strategy="bfs_adjacency"))
+        assert bad_type["work_area_group"] == "group-no-geometry"
+        assert good["work_area_group"] != "group-no-geometry"
+
+
 class TestGroupingConfigPayload:
     def test_defaults_to_bfs(self):
         cfg = GroupingConfig.from_payload({})

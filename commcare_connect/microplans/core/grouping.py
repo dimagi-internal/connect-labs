@@ -114,6 +114,7 @@ def _bfs_adjacency(work_areas: list[dict], max_buildings: int, buffer_distance_m
     """
     from pyproj import Transformer
     from shapely import get_dimensions
+    from shapely.errors import ShapelyError
     from shapely.geometry import shape
     from shapely.ops import transform as shp_transform
     from shapely.strtree import STRtree
@@ -126,7 +127,13 @@ def _bfs_adjacency(work_areas: list[dict], max_buildings: int, buffer_distance_m
         if not g:
             skipped.append(w)
             continue
-        geoms_3857[w["id"]] = shp_transform(fwd.transform, shape(g))
+        try:
+            shp = shape(g)
+            if shp.is_empty:
+                raise ValueError("empty geometry")
+            geoms_3857[w["id"]] = shp_transform(fwd.transform, shp)
+        except (ShapelyError, ValueError, TypeError):
+            skipped.append(w)
 
     if not geoms_3857:
         # No geometries to cluster — fall back to bbox so every cell still gets a label.
