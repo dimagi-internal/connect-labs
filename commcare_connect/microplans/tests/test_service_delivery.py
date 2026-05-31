@@ -136,3 +136,22 @@ class TestDeriveBoundary:
         width_deg = maxx - minx
         expected = 2 * 100 / (111320 * math.cos(math.radians(LAT0)))
         assert width_deg == pytest.approx(expected, rel=0.15)
+
+
+def test_downsample_features_under_cap_is_noop():
+    from commcare_connect.microplans.service_delivery.points import downsample_features
+
+    feats = [{"id": i} for i in range(10)]
+    out, sampled, total = downsample_features(feats, max_n=100)
+    assert out == feats and sampled is False and total == 10
+
+
+def test_downsample_features_over_cap_strides_evenly():
+    from commcare_connect.microplans.service_delivery.points import downsample_features
+
+    feats = [{"id": i} for i in range(1000)]
+    out, sampled, total = downsample_features(feats, max_n=100)
+    assert sampled is True and total == 1000
+    assert len(out) <= 100  # bounded
+    # uniform stride (ceil(1000/100)=10) preserves spatial spread, no silent head-truncation
+    assert out[0]["id"] == 0 and out[1]["id"] == 10

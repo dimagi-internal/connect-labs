@@ -686,9 +686,14 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
                         "properties": {},
                     }
                 )
-        return JsonResponse(
+        resp = JsonResponse(
             {"status": "ok", "footprints": {"type": "FeatureCollection", "features": features}, "count": len(features)}
         )
+        # Footprints for a plan's area are derived from immutable PG-cached building
+        # data — re-serializing the whole FeatureCollection on every page load is
+        # wasted work. Let the browser cache it (private: it's auth-gated).
+        resp["Cache-Control"] = "private, max-age=600"
+        return resp
 
 
 class ProgramPlanReassignView(LoginRequiredMixin, View):
@@ -973,7 +978,12 @@ class PreviewServiceDeliveryView(_ServiceDeliveryMixin, LoginRequiredMixin, View
 
     def post(self, request, opp_id):
         from commcare_connect.labs.context import get_org_data
-        from commcare_connect.microplans.service_delivery.points import color_for, fetch_points, points_to_geojson
+        from commcare_connect.microplans.service_delivery.points import (
+            color_for,
+            downsample_features,
+            fetch_points,
+            points_to_geojson,
+        )
 
         try:
             payload = json.loads(request.body)
@@ -1018,11 +1028,16 @@ class PreviewServiceDeliveryView(_ServiceDeliveryMixin, LoginRequiredMixin, View
                 }
             )
 
+        shown_features, sampled, total = downsample_features(all_features)
+        if sampled:
+            logger.warning("microplans SD overlay capped: %s→%s points (opps=%s)", total, len(shown_features), opp_ids)
         body = {
             "status": "ok",
-            "points": {"type": "FeatureCollection", "features": all_features},
+            "points": {"type": "FeatureCollection", "features": shown_features},
             "layers": layers,
-            "count": len(all_features),
+            "count": len(shown_features),
+            "total": total,
+            "sampled": sampled,
         }
         if auth_error:
             body.update(auth_error)
