@@ -211,7 +211,7 @@
         ensureLayers();
         map.getSource(SRC).setData({ type: 'FeatureCollection', features });
         renderSourceOptions();
-        applySearch();
+        // search is country-wide + user-driven, so it doesn't re-run on viewport refresh
         setStatus(
           `${features.length.toLocaleString()} boundaries${
             truncated ? ' · zoom in to see all' : ''
