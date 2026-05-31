@@ -1145,6 +1145,8 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
     def get_context_data(self, **kwargs):
         from django.urls import reverse
 
+        from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+
         context = super().get_context_data(**kwargs)
         program_id = kwargs.get("program_id")
         context["program_id"] = program_id
@@ -1156,6 +1158,17 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
         context["default_admin_level"] = 3
         context["default_source"] = "geopode"
         context["default_mode"] = "coverage"
+        # Freshness stamp: the latest boundary load date for the default
+        # iso/source. Surfaced in the resolved-wards subhead so the lead knows
+        # which Nigeria shape set the matches came from. Skipped silently if
+        # no boundaries are loaded for the default — UI just hides the line.
+        latest = (
+            AdminBoundary.objects.filter(iso_code="NGA", source="geopode")
+            .order_by("-updated_at")
+            .values_list("updated_at", flat=True)
+            .first()
+        )
+        context["boundary_freshness"] = latest.date().isoformat() if latest else ""
         return context
 
 
