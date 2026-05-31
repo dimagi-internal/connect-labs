@@ -77,6 +77,22 @@ class SetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         return context
 
 
+def _sd_urls(opp_id=123):
+    """Service-delivery layer endpoints for the unified page.
+
+    opp_id is a routing placeholder (same trick as the area-definition URLs): the
+    POST body's ``opp_ids`` drive the actual fetch and are validated against the
+    user's accessible opportunities, so the URL's opp_id is irrelevant.
+    """
+    from django.urls import reverse
+
+    return {
+        "preview_service_delivery_url": reverse("microplans:preview_service_delivery", args=[opp_id]),
+        "service_delivery_pipelines_url": reverse("microplans:service_delivery_pipelines", args=[opp_id]),
+        "derive_boundary_url": reverse("microplans:derive_boundary", args=[opp_id]),
+    }
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class ReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """LLO review/edit page for a materialised plan.
@@ -99,6 +115,7 @@ class ReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["edit_url"] = reverse("microplans:plan_edit", args=[opp_id, plan_id])
         context["csv_url"] = reverse("microplans:plan_csv", args=[opp_id, plan_id])
         context["compare_url"] = reverse("microplans:compare", args=[opp_id]) + f"?plans={plan_id}"
+        context.update(_sd_urls(opp_id))
         return context
 
 
@@ -937,6 +954,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
 
         context["mapbox_token"] = _s.MAPBOX_TOKEN or context.get("mapbox_token", "")
         context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + f"?plans={plan_id}"
+        context.update(_sd_urls())
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
 
@@ -1245,6 +1263,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["create_plan_url"] = reverse("microplans:program_create_plan", args=[program_id])
         context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
         context["back_url"] = context["program_url"]
+        context.update(_sd_urls())
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
