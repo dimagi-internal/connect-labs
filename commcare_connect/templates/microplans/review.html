@@ -69,6 +69,9 @@
   .wa-group-hdr.is-collapsed .chev { color: #9ca3af; }
   .wa-group-hdr .gn { font-family: ui-monospace, monospace; color: #3843d0; margin-right: 0.5rem; }
   .wa-group-hdr .meta { color: #6b7280; font-weight: 400; font-size: 0.75rem; }
+  .wa-group-hdr .gn-sw { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 0.15rem; vertical-align: middle; margin-right: 0.4rem; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
+  .wa-group-hdr .ghdr-check { display: inline-block; margin-right: 0.35rem; cursor: pointer; }
+  .wa-group-hdr .ghdr-check input { vertical-align: middle; }
 </style>
 {% endblock %}
 
@@ -665,14 +668,26 @@
     const workers = Array.from(new Set(items.map((w) => w.opportunity_access).filter(Boolean)));
     const workerTxt = workers.length === 0 ? "—" : workers.length === 1 ? esc(workers[0]) : `${workers.length} workers`;
     const collapsed = collapsedGroups.has(name);
+    const selInGroup = items.reduce((n, w) => n + (selected.has(w.id) ? 1 : 0), 0);
+    const allSelected = selInGroup === items.length && items.length > 0;
+    const noneSelected = selInGroup === 0;
+    // Color swatch ties the row to the map's group fill color (same `colorFor`).
+    const swatch = colorFor(name);
     const tr = document.createElement("tr");
     tr.className = "wa-group-hdr" + (collapsed ? " is-collapsed" : "");
     tr.dataset.groupToggle = name;
     tr.innerHTML = `<td colspan="8">
+      <label class="ghdr-check" title="${allSelected ? "Deselect all in group" : "Select all in group"}">
+        <input type="checkbox" class="grp-sel" data-group-sel="${esc(name)}" ${allSelected ? "checked" : ""}>
+      </label>
       <span class="chev">${collapsed ? "▶" : "▼"}</span>
+      <span class="gn-sw" style="background:${swatch}"></span>
       <span class="gn">${esc(name)}</span>
-      <span class="meta">${items.length} work areas · ${buildings.toLocaleString()} buildings · ${visits.toLocaleString()} visits · ${workerTxt}</span>
+      <span class="meta">${items.length} work areas · ${buildings.toLocaleString()} buildings · ${visits.toLocaleString()} visits · ${workerTxt}${noneSelected ? "" : ` · ${selInGroup} selected`}</span>
     </td>`;
+    // .indeterminate isn't a serializable attribute; set it after construct.
+    const cb = tr.querySelector(".grp-sel");
+    if (cb) cb.indeterminate = !allSelected && !noneSelected;
     return tr;
   }
 
@@ -727,6 +742,18 @@
     });
   });
 
+  // Select/deselect every cell whose work_area_group matches `name`.
+  // Partial state (some-but-not-all selected) promotes to all-selected first
+  // — matches how a click on a tri-state checkbox resolves the `indeterminate`
+  // visual into a definite checked.
+  function toggleGroupSelect(name) {
+    const cellsInGroup = WAS.filter((w) => (w.work_area_group || "") === name);
+    if (!cellsInGroup.length) return;
+    const allOn = cellsInGroup.every((w) => selected.has(w.id));
+    cellsInGroup.forEach((w) => { if (allOn) selected.delete(w.id); else selected.add(w.id); });
+    renderTable();
+    setSelState();
+  }
   function toggleGroupCollapse(name) {
     if (collapsedGroups.has(name)) collapsedGroups.delete(name);
     else collapsedGroups.add(name);
@@ -791,6 +818,12 @@
     if (rs) { edit({ action: "unexclude", wa_id: rs.dataset.restore }); return; }
     const cb = e.target.closest(".rowsel"); if (cb) { toggleSelect(cb.dataset.id); return; }
     // Click on a group header row → toggle collapse for that group.
+    // Group-header checkbox: select/deselect all cells in this group. Sits
+    // inside [data-group-toggle], so catch it FIRST and stop the bubble so the
+    // collapse handler below doesn't also fire.
+    const gsel = e.target.closest("[data-group-sel]");
+    if (gsel) { e.stopPropagation(); toggleGroupSelect(gsel.dataset.groupSel); return; }
+    // Click on any other part of the group header row → toggle collapse.
     const hdr = e.target.closest("[data-group-toggle]"); if (hdr) { toggleGroupCollapse(hdr.dataset.groupToggle); }
   });
   on("wa-body", "change", (e) => {
