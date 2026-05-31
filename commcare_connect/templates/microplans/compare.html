@@ -19,8 +19,11 @@
   <!-- Comparison table -->
   <div class="flex-1 overflow-auto p-5">
     <div id="compare-status" class="text-sm text-gray-500 mb-3"></div>
+    <!-- Legend above the table so a reader sees how to interpret the highlights
+         and deltas BEFORE scanning numbers — without this, the per-row best
+         pill and the green/red delta colors read as decoration on first pass. -->
+    <p class="text-xs text-gray-500 mb-2" id="weights-note"></p>
     <table class="text-sm border-collapse" id="compare-table"></table>
-    <p class="text-xs text-gray-400 mt-4" id="weights-note"></p>
   </div>
 </div>
 {% endblock %}
@@ -64,7 +67,7 @@
       if (!d.plans || !d.plans.length) { box.innerHTML = '<span class="text-gray-400">No saved plans yet.</span>'; return; }
       box.innerHTML = d.plans.map((p) =>
         `<label class="flex items-center gap-2"><input type="checkbox" class="psel" value="${p.plan_id}" ${selected.has(String(p.plan_id)) ? "checked" : ""}>
-          <span>${esc(p.name)} <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} areas</span></span></label>`).join("");
+          <span>${esc(p.name)} <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} area${p.work_areas === 1 ? "" : "s"}</span></span></label>`).join("");
       box.querySelectorAll(".psel").forEach((cb) => cb.addEventListener("change", () => {
         if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
         syncUrl(); renderCompare();
@@ -89,10 +92,27 @@
       $("compare-status").textContent = "";
       const plans = d.plans;
       const base = plans[0];
+      // Per-row best highlight. For each metric row that has a direction
+      // (lower/higher better), compute the winning value across the picked
+      // plans so we can pill it. Without this the reader has to mentally
+      // scan the row to spot the outlier — the data tells the story but
+      // the screen makes them hunt for it.
+      function bestIndex(row) {
+        if (!row.better) return -1;
+        const vals = plans.map(p => row.get(p));
+        const numIdx = vals.map((v, i) => [v, i]).filter(([v]) => typeof v === "number");
+        if (!numIdx.length) return -1;
+        const winner = numIdx.reduce((acc, cur) =>
+          (row.better === "lower" ? cur[0] < acc[0] : cur[0] > acc[0]) ? cur : acc
+        );
+        // If every value ties, no "best" to highlight.
+        return numIdx.every(([v]) => v === winner[0]) ? -1 : winner[1];
+      }
       let html = `<thead><tr><th class="text-left p-2"></th>${plans.map((e) =>
-        `<th class="p-2 text-left">${esc(e.name)}<div class="text-xs font-normal text-gray-400">${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
+        `<th class="p-2 text-left">${esc(e.name)}<div class="text-xs font-normal text-gray-400">Created ${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
       ROWS.forEach((row) => {
         const baseVal = row.get(base);
+        const bestIdx = bestIndex(row);
         html += `<tr class="border-t"><td class="p-2 text-gray-600">${row.label}</td>`;
         plans.forEach((e, i) => {
           const v = row.get(e);
@@ -104,13 +124,22 @@
               delta = ` <span class="text-xs ${good ? "text-green-600" : "text-red-500"}">(${diff > 0 ? "+" : ""}${diff})</span>`;
             }
           }
-          html += `<td class="p-2">${row.fmt(v)}${delta}</td>`;
+          // Bold + emerald pill on the winning cell. Reader's eye lands on
+          // the per-row best at a glance; comparison work becomes scan-able.
+          const isBest = i === bestIdx;
+          const cellCls = isBest
+            ? "p-2 font-semibold text-emerald-700"
+            : "p-2";
+          const cellInner = isBest
+            ? `<span class="inline-flex items-baseline gap-1"><span>${row.fmt(v)}</span><span class="text-[10px] text-emerald-600 uppercase tracking-wide font-medium">best</span></span>${delta}`
+            : `${row.fmt(v)}${delta}`;
+          html += `<td class="${cellCls}">${cellInner}</td>`;
         });
         html += `</tr>`;
       });
       html += `</tbody>`;
       $("compare-table").innerHTML = html;
-      $("weights-note").textContent = "Deltas (the small +/− numbers) are vs the first plan. Green = better on that metric, red = worse.";
+      $("weights-note").innerHTML = 'The <span class="font-semibold text-emerald-700">best</span> value on each metric is highlighted. Deltas (the small +/− numbers) compare each later plan to the first; green = better on that metric, red = worse.';
     } catch (e) {
       if (e.aborted) return;  // superseded by a newer selection
       $("compare-status").textContent = "Request failed: " + e.message;
