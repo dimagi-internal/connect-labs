@@ -211,6 +211,14 @@
             <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">Generate sample</button>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
             <dl class="space-y-0.5" id="sampling-arm-stats"></dl>
+            <div id="sampling-comparability" class="hidden text-[10px] border-t border-gray-100 pt-2">
+              <div class="font-semibold text-gray-700 mb-1">Arm comparability</div>
+              <div id="comparability-body"></div>
+            </div>
+            <details id="sampling-rationale" class="hidden mt-1 border-t border-gray-100 pt-2">
+              <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Why this sample</summary>
+              <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
+            </details>
           </div>
 
           <dl class="space-y-0.5 pt-2 border-t border-gray-100">
@@ -460,6 +468,7 @@
   const REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
   const PREVIEW_COVERAGE_URL = "{{ preview_coverage_url|default:''|escapejs }}";
   const PREVIEW_FRAME_URL = "{{ preview_frame_url|default:''|escapejs }}";
+  const COMPARABILITY_URL = "{{ arm_comparability_url|default:''|escapejs }}";
   // Sampling-mode state (two-arm rooftop study). Declared early so the
   // service-delivery derive-boundary handler can tag derived polys to the arm.
   let mpMode = "coverage";          // "coverage" | "sampling"
@@ -1597,6 +1606,7 @@
     const fitData = (pins.features && pins.features.length) ? pins : hulls;
     if (fitData.features && fitData.features.length) Microplans.fitTo(map, fitData, { maxZoom: 16, animate: false, duration: 0 });
     renderArmStats(result.stats || []);
+    renderRationale(result.stats || []);
   }
 
   function renderArmStats(stats) {
@@ -1609,6 +1619,68 @@
     }).join("");
   }
 
+  // "Why this sample" — turn the per-arm engine stats into a plain-language,
+  // methodology-faithful explanation so a non-specialist can defend the sample.
+  function renderRationale(stats) {
+    const wrap = $("sampling-rationale"), body = $("sampling-rationale-body");
+    if (!wrap || !body) return;
+    if (!stats || !stats.length) { wrap.classList.add("hidden"); return; }
+    wrap.classList.remove("hidden");
+    const step = (n, title, txt) => `<li class="text-[10px] text-gray-600"><b>${n}. ${esc(title)}</b> — ${txt}</li>`;
+    body.innerHTML = stats.map((s) => {
+      const c = ARM_COLOR[s.arm] || ARM_COLOR.intervention;
+      const fetched = s.fetched || 0, kept = s.after_filters || 0;
+      const tiny = s.removed_tiny_isolated || 0, large = s.removed_large || 0;
+      const psusFormed = s.clusters_formed || 0, psusSel = s.psus_selected || 0;
+      const prim = s.primaries || 0, alt = s.alternates || 0;
+      return `<div>
+        <div class="text-[11px] font-medium text-gray-700"><span style="color:${c}">●</span> ${esc(s.arm)} arm</div>
+        <ol class="space-y-1 mt-1 ml-1 list-none">
+          ${step(1, "Building frame", `${fetched} rooftops fetched; dropped ${tiny} tiny/isolated (&lt;9 m²) and ${large} oversized (&gt;330 m²) &rarr; <b>${kept}</b> in the frame.`)}
+          ${step(2, "PSUs formed", `grouped into <b>${psusFormed}</b> candidate clusters; under-16-building clusters merge into their nearest neighbour.`)}
+          ${step(3, "PPS selection", `<b>${psusSel}</b> PSUs drawn with probability proportional to building count &mdash; denser clusters are likelier, so the sample mirrors where people actually live.`)}
+          ${step(4, "Pins per PSU", `<b>${prim}</b> primary + <b>${alt}</b> alternate, spaced &ge;15 m apart; an alternate is the 15 m substitute when a primary roof can't be surveyed.`)}
+          ${step(5, "Design weight", `each primary carries weight = 1 &divide; its inclusion probability, so coverage estimates stay unbiased despite the unequal draw.`)}
+        </ol>
+      </div>`;
+    }).join("");
+  }
+
+  // Comparability — is the control a fair counterfactual? Server computes area +
+  // density from the arm geometries + the sample's building counts; we show the
+  // two arms side by side with a matched / not-matched flag.
+  async function updateComparability(areas, stats) {
+    const wrap = $("sampling-comparability"), body = $("comparability-body");
+    if (!wrap || !body) return;
+    const armSet = new Set(areas.map((a) => a.arm));
+    if (armSet.size < 2 || !COMPARABILITY_URL) { wrap.classList.add("hidden"); return; }
+    const counts = {};
+    (stats || []).forEach((s) => { counts[s.arm] = s.after_filters || 0; });
+    try {
+      const r = await Microplans.post(COMPARABILITY_URL, { areas, building_counts: counts }, { csrf: CSRF });
+      if (!r || r.status !== "ok" || !(r.arms || []).length) { wrap.classList.add("hidden"); return; }
+      const byArm = {}; r.arms.forEach((a) => { byArm[a.arm] = a; });
+      const iv = byArm.intervention || r.arms[0], cm = byArm.comparison || r.arms[1] || r.arms[0];
+      const cell = (v) => `<td class="text-right tabular-nums px-1">${esc(String(v))}</td>`;
+      const badge = r.matched
+        ? `<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">matched</span>`
+        : `<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">not matched</span>`;
+      const why = (r.matched === false && (r.reasons || []).length) ? ` <span class="text-gray-500">${esc(r.reasons.join("; "))}</span>` : "";
+      body.innerHTML = `
+        <table class="w-full"><thead><tr class="text-gray-500">
+          <th class="text-left"></th>
+          <th class="text-right px-1"><span style="color:${ARM_COLOR.intervention}">●</span> Interv.</th>
+          <th class="text-right px-1"><span style="color:${ARM_COLOR.comparison}">●</span> Control</th></tr></thead>
+          <tbody class="text-gray-700">
+            <tr><td>Buildings</td>${cell(iv.building_count)}${cell(cm.building_count)}</tr>
+            <tr><td>Area (km²)</td>${cell(iv.area_km2)}${cell(cm.area_km2)}</tr>
+            <tr><td>Density /km²</td>${cell(iv.density_per_km2)}${cell(cm.density_per_km2)}</tr>
+          </tbody></table>
+        <div class="mt-1">${badge}${why}</div>`;
+      wrap.classList.remove("hidden");
+    } catch (e) { wrap.classList.add("hidden"); }
+  }
+
   on("btn-generate-sample", "click", async () => {
     const statusEl = $("generate-sample-status");
     if (!PREVIEW_FRAME_URL) { if (statusEl) statusEl.textContent = "Sampling endpoint unavailable."; return; }
@@ -1619,6 +1691,7 @@
     try {
       const result = await Microplans.enqueueAndPoll(PREVIEW_FRAME_URL, { areas, config: samplingConfig() }, { csrf: CSRF });
       renderSample(result);
+      updateComparability(areas, result.stats || []);
       const arms = new Set(areas.map((a) => a.arm));
       if (statusEl) statusEl.textContent = `Sampled ${arms.size} arm${arms.size === 1 ? "" : "s"}.`;
     } catch (e) {
