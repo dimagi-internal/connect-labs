@@ -56,6 +56,8 @@ def plan_to_json(plan) -> dict:
         "status": "ok",
         "plan_id": plan.id,
         "mode": plan.mode,
+        # Optimistic-concurrency token the UI echoes back on saves (409 if stale).
+        "revision": plan.data.get("revision", 0),
         # Round geometry for the wire; KPIs/summary stay on the full-precision source.
         "work_areas": slim_work_areas(work_areas),
         "summary": plan_lib.summarize(work_areas),

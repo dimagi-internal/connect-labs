@@ -402,7 +402,7 @@ class ProgramPlanTransitionView(LoginRequiredMixin, View):
     """Advance a plan's lifecycle status (Deploy binds the live opportunity_id)."""
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         try:
             payload = json.loads(request.body)
@@ -412,8 +412,14 @@ class ProgramPlanTransitionView(LoginRequiredMixin, View):
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             plan = da.transition_plan(
-                int(plan_id), to, request.user.get_username(), opportunity_id=payload.get("opportunity_id")
+                int(plan_id),
+                to,
+                request.user.get_username(),
+                opportunity_id=payload.get("opportunity_id"),
+                base_revision=payload.get("revision"),
             )
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
@@ -612,7 +618,7 @@ class ProgramPlanView(LoginRequiredMixin, View):
 
 class ProgramPlanEditView(LoginRequiredMixin, View):
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
         from commcare_connect.microplans.core.plan import ACTIONS
 
         try:
@@ -628,12 +634,19 @@ class ProgramPlanEditView(LoginRequiredMixin, View):
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        params = {k: v for k, v in payload.items() if k not in ("action", "wa_id", "wa_ids")}
+        params = {k: v for k, v in payload.items() if k not in ("action", "wa_id", "wa_ids", "revision")}
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
             plan = da.apply_plan_edits(
-                int(plan_id), [str(w) for w in wa_ids], action, params, request.user.get_username()
+                int(plan_id),
+                [str(w) for w in wa_ids],
+                action,
+                params,
+                request.user.get_username(),
+                base_revision=payload.get("revision"),
             )
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
@@ -705,17 +718,21 @@ class ProgramPlanReassignView(LoginRequiredMixin, View):
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         try:
             payload = json.loads(request.body or "{}")
-            assignment = payload if isinstance(payload, dict) else {}
+            payload = payload if isinstance(payload, dict) else {}
+            base_revision = payload.pop("revision", None)
+            assignment = payload
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plan = da.reassign_plan(int(plan_id), assignment, request.user.get_username())
+            plan = da.reassign_plan(int(plan_id), assignment, request.user.get_username(), base_revision=base_revision)
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
@@ -733,7 +750,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         empty_fc = {"type": "FeatureCollection", "features": []}
         try:
@@ -759,7 +776,10 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
                 hulls=hulls,
                 input_areas=input_areas,
                 grouping=grouping,
+                base_revision=payload.get("revision"),
             )
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except Exception:  # noqa: BLE001
             logger.exception("microplans regenerate failed (program=%s plan=%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Regenerate failed."}, status=502)
@@ -775,17 +795,21 @@ class ProgramPlanRegroupView(LoginRequiredMixin, View):
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
 
         try:
             payload = json.loads(request.body or "{}")
-            grouping = payload if isinstance(payload, dict) else {}
+            payload = payload if isinstance(payload, dict) else {}
+            base_revision = payload.pop("revision", None)
+            grouping = payload
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            plan = da.regroup_plan(int(plan_id), grouping, request.user.get_username())
+            plan = da.regroup_plan(int(plan_id), grouping, request.user.get_username(), base_revision=base_revision)
+        except StalePlanError as e:
+            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
         except ValueError as e:
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
@@ -910,12 +934,17 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": "no plans selected"}, status=400)
 
         da = ProgramPlanDataAccess(program_id, request=request)
+        # One API round-trip for the whole program, then filter — instead of one
+        # get_plan() per id (the comparison set is a handful of a program's plans).
+        try:
+            by_id = {p.id: p for p in da.list_plans()}
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans program compare: list_plans failed (program=%s)", program_id)
+            return JsonResponse({"status": "error", "detail": "Could not load plans."}, status=502)
         entries = []
-        for pid in ids:
-            try:
-                p = da.get_plan(pid)
-            except Exception:  # noqa: BLE001
-                logger.exception("microplans program compare: plan %s load failed", pid)
+        for pid in ids:  # preserve the requested order
+            p = by_id.get(pid)
+            if p is None:
                 continue
             entries.append(
                 {
