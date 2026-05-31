@@ -160,10 +160,10 @@
         <label><input id="toggle-footprints" type="checkbox" class="rounded"> <span id="footprints-label">Show building footprints</span></label>
       </div>
       <div class="map-overlay map-legend" style="bottom: 0.5rem; left: 0.5rem;">
-        <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Status</div>
-        <div class="legend-row"><span class="sw" style="background:#06b6d4;opacity:0.6"></span><span class="lbl">Active (assigned)</span></div>
-        <div class="legend-row"><span class="sw" style="background:#cbd5e1;opacity:0.6"></span><span class="lbl">Unassigned</span></div>
-        <div class="legend-row"><span class="sw" style="background:#9ca3af;opacity:0.25"></span><span class="lbl">Excluded</span></div>
+        <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Encoding</div>
+        <div class="legend-row" id="legend-fill"><span class="sw" style="background:#06b6d4;opacity:0.55"></span><span class="lbl">Fill: <span id="legend-fill-dim">worker</span></span></div>
+        <div class="legend-row" id="legend-outline"><span class="sw" style="background:transparent;border:1.5px solid #a855f7;height:0.7rem"></span><span class="lbl">Outline: <span id="legend-outline-dim">group</span></span></div>
+        <div class="legend-row mt-0.5"><span class="sw" style="background:#9ca3af;opacity:0.25"></span><span class="lbl">Excluded</span></div>
       </div>
       <!-- Drag handle on the bottom edge -->
       <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
@@ -267,10 +267,24 @@
       0.55];
   }
   function fc() {
-    return { type: "FeatureCollection", features: WAS.filter((w) => w.geometry).map((w) => ({
-      type: "Feature", id: w.id, geometry: w.geometry,
-      properties: { id: w.id, status: w.status, group: w.work_area_group || "",
-                    worker: w.opportunity_access || "", fill: colorFor(keyOf(w)) } })) };
+    // Pre-compute BOTH worker and group colors per feature so the fill and
+    // outline encode different dimensions simultaneously. Whichever colorDim
+    // is active becomes the fill; the OTHER one becomes the outline (bolder
+    // stroke), so the user sees both at once.
+    return { type: "FeatureCollection", features: WAS.filter((w) => w.geometry).map((w) => {
+      const workerColor = colorFor((w.opportunity_access || "").trim());
+      const groupColor = colorFor((w.work_area_group || "").trim());
+      const fill = colorDim === "worker" ? workerColor : groupColor;
+      const outline = colorDim === "worker" ? groupColor : workerColor;
+      return {
+        type: "Feature", id: w.id, geometry: w.geometry,
+        properties: {
+          id: w.id, status: w.status,
+          group: w.work_area_group || "", worker: w.opportunity_access || "",
+          fill, outline,
+        },
+      };
+    }) };
   }
   // ---- hover tooltip on cells (cell ID, worker, group, counts, status) ----
   let hoverPopup = null;
@@ -304,8 +318,17 @@
       map.addSource("wa", { type: "geojson", data, promoteId: "id" });
       map.addLayer({ id: "wa-fill", type: "fill", source: "wa",
                      paint: { "fill-color": colorExpr(), "fill-opacity": opacityExpr() } });
+      // Outline = the OTHER dim from the fill. Thick stroke, near-opaque, so
+      // it remains visible over the semi-transparent fill — that's how worker
+      // and group end up visually encoded simultaneously.
       map.addLayer({ id: "wa-line", type: "line", source: "wa",
-                     paint: { "line-color": "#0f172a", "line-width": 0.5, "line-opacity": 0.4 } });
+                     paint: {
+                       "line-color": ["case",
+                         ["==", ["get", "status"], "EXCLUDED"], "#9ca3af",
+                         ["get", "outline"]],
+                       "line-width": 1.4,
+                       "line-opacity": 0.95,
+                     } });
       map.on("click", "wa-fill", (e) => { const id = e.features[0].properties.id; toggleSelect(id); });
       map.on("mouseenter", "wa-fill", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "wa-fill", () => { map.getCanvas().style.cursor = ""; ensurePopup().remove(); });
@@ -489,7 +512,11 @@
     $("dim-group").classList.toggle("is-on", d === "group");
     $("dim-label").textContent = d === "worker" ? "Workers" : "Groups";
     $("dim-label2").textContent = d === "worker" ? "worker" : "group";
-    // Recompute per-feature fill color (map source has it baked in), then re-render.
+    // Legend reflects which dim is in the fill vs the outline.
+    const fillLbl = $("legend-fill-dim"), outLbl = $("legend-outline-dim");
+    if (fillLbl) fillLbl.textContent = d;
+    if (outLbl) outLbl.textContent = d === "worker" ? "group" : "worker";
+    // Recompute per-feature fill + outline colors and push to the source.
     if (map && mapReady) {
       const src = map.getSource("wa");
       if (src) src.setData(fc());
