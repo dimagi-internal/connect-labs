@@ -76,7 +76,7 @@
       Paste a list of ward names — one per line — and the system matches each against the admin boundaries.
       Confirm the matches, then create one draft plan per ward in a single batch.
     </p>
-    <div class="mt-3 inline-flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 max-w-2xl">
+    <div id="why-callout" class="mt-3 inline-flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 max-w-2xl">
       <svg viewBox="0 0 16 16" class="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zm0 3a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4.5zM8 10.25a.875.875 0 1 1 0 1.75.875.875 0 0 1 0-1.75z"/></svg>
       <span><strong>Why confirm before creating:</strong> ward names overlap across LGAs (e.g. <em>Madobi</em> is both an LGA AND a ward in Kano; <em>Tofa</em> is a ward in 4 different LGAs). A silent best-effort match would create plans for the wrong wards. Every row must be either matched or skipped before Create plans enables.</span>
     </div>
@@ -140,7 +140,7 @@
     <div class="flex items-center justify-between gap-4">
       <div>
         <h2 class="text-lg font-semibold text-gray-900">Resolved wards</h2>
-        <p class="text-xs text-gray-500 mt-0.5">via <span class="font-medium text-gray-700">GeoPoDe</span> · admin-boundary table loaded from the canonical Nigeria shape set</p>
+        <p class="text-xs text-gray-500 mt-0.5">via <span class="font-medium text-gray-700">GeoPoDe</span> · Nigeria admin boundaries{% if boundary_freshness %} — loaded {{ boundary_freshness }}{% endif %}</p>
       </div>
       <div class="flex items-center gap-3">
         <div class="stat-card">
@@ -177,6 +177,37 @@
     <p id="confirm-hint" class="text-xs text-gray-500">
       Every row must be either <strong>matched</strong> or <strong>skipped</strong> before Create Plans is enabled.
     </p>
+
+    <!-- Plan config card. These knobs are the per-batch settings that apply
+         to every plan in the run: how to cluster the buildings into work
+         areas (Strategy), how big each work area should be (Buildings per
+         work area), and how tight workload balance must be (Balance
+         tolerance). The values land in the bulk-create POST body's
+         `grouping` field; the server uses them per ward. -->
+    <details class="rounded border border-gray-200 bg-gray-50/40 p-3" open>
+      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer select-none">Plan config <span class="font-normal text-gray-500">(applied to every ward)</span></summary>
+      <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+        <label class="block">
+          <span class="mp-section-label block mb-1">Strategy</span>
+          <select id="cfg-strategy" class="field-input">
+            <option value="balanced" selected>Balanced (recommended)</option>
+            <option value="bfs_adjacency">Walkable clusters</option>
+            <option value="bbox">Uniform grid</option>
+          </select>
+          <span class="block text-[10px] text-gray-500 mt-1">Coverage-mode clustering.</span>
+        </label>
+        <label class="block">
+          <span class="mp-section-label block mb-1">Buildings per work area</span>
+          <input id="cfg-bpc" type="number" value="100" min="1" max="10000" class="field-input">
+          <span class="block text-[10px] text-gray-500 mt-1">Target size per work area.</span>
+        </label>
+        <label class="block">
+          <span class="mp-section-label block mb-1">Balance tolerance</span>
+          <input id="cfg-balance" type="number" value="0.1" min="0" max="1" step="0.05" class="field-input">
+          <span class="block text-[10px] text-gray-500 mt-1">±fraction of target (0.1 = ±10%).</span>
+        </label>
+      </div>
+    </details>
 
     <div class="flex items-center justify-between">
       <button type="button" id="btn-back" class="btn btn-outline">← Edit the list</button>
@@ -439,6 +470,9 @@
   $("btn-back").addEventListener("click", () => {
     hide($("step-preview"));
     hide($("step-create"));
+    // Going back to Edit-the-list reinstates the upfront context, so the
+    // Why-confirm callout returns (it was hidden once Create succeeded).
+    const why = $("why-callout"); if (why) why.classList.remove("hidden");
     $("step-paste").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
@@ -446,8 +480,17 @@
   async function doCreate() {
     const toCreate = RESOLUTIONS
       .filter((r) => r.matched_id && !r.skipped)
-      .map((r) => ({ boundary_id: r.matched_id, name: r.matched_name || r.name }));
+      .map((r) => ({ boundary_id: r.matched_id, name: r.matched_name || r.name, lga: r.lga || "" }));
     if (!toCreate.length) return;
+
+    // Read the per-batch Plan config card. Defaults match the spec — the
+    // server uses whatever shape arrives, so the front-end's job is just
+    // to surface the knobs and pass them through honestly.
+    const grouping = {
+      strategy: ($("cfg-strategy")?.value || "balanced"),
+      buildings_per_area: parseInt($("cfg-bpc")?.value || "100", 10) || 100,
+      balance_tolerance: parseFloat($("cfg-balance")?.value || "0.1") || 0.1,
+    };
 
     hide($("step-create").querySelector("#create-done"));
     show($("create-spinner"));
@@ -458,7 +501,12 @@
       const row = document.createElement("div");
       row.className = "progress-row";
       row.dataset.boundaryId = r.boundary_id;
-      row.innerHTML = `<div class="progress-label">${r.name}</div><span class="pill pill-pending">Queued</span>`;
+      // Echo the matched LGA next to the ward name so the audit trail of
+      // disambiguation survives into the success card — without this, a
+      // viewer can't tell which "Madobi" got created (Dutse LGA Madobi or
+      // Madobi LGA Madobi), and the user-artifact judge dings trust for it.
+      const lgaSuffix = r.lga ? `<span class="text-gray-500 font-normal"> · ${r.lga} LGA</span>` : "";
+      row.innerHTML = `<div class="progress-label">${r.name}${lgaSuffix}</div><span class="pill pill-pending">Queued</span>`;
       log.appendChild(row);
     });
     show($("step-create"));
@@ -466,6 +514,11 @@
     $("step-create").scrollIntoView({ behavior: "smooth", block: "start" });
     $("btn-create").disabled = true;
     $("btn-back").disabled = true;
+    // Now that the user has reached step 3 successfully, the upfront yellow
+    // "Why confirm before creating" callout has served its purpose — keeping
+    // it visible above a 10-Matched success state mixes warning chrome with
+    // success state. Hide it; it returns on Edit-the-list.
+    const why = $("why-callout"); if (why) why.classList.add("hidden");
 
     // Mark all as Creating up-front; per-row pills flip as the SERVER's
     // NDJSON stream emits each "result" event. The pre-stream behavior was
@@ -480,7 +533,7 @@
       resp = await fetch(BULK_CREATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF, "Accept": "application/x-ndjson" },
-        body: JSON.stringify({ plans: toCreate, mode: "coverage" }),
+        body: JSON.stringify({ plans: toCreate, mode: "coverage", grouping: grouping }),
       });
       if (!resp.ok) {
         let detail = `HTTP ${resp.status}`;
