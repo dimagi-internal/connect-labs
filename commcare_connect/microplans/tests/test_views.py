@@ -898,3 +898,57 @@ def test_program_plan_footprints_sets_cache_control(client, django_user_model, m
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
     assert "max-age" in resp.headers.get("Cache-Control", "")
+
+
+# --- arm comparability (two-arm study guardrail) ------------------------------
+
+
+def _square(lon, lat, d=0.02):
+    return {
+        "type": "Polygon",
+        "coordinates": [[[lon, lat], [lon + d, lat], [lon + d, lat + d], [lon, lat + d], [lon, lat]]],
+    }
+
+
+def test_arm_comparability_matched_when_similar(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "areas": [
+                    {"arm": "intervention", "geometry": _square(8.30, 11.78)},
+                    {"arm": "comparison", "geometry": _square(8.40, 11.78)},
+                ],
+                "building_counts": {"intervention": 100, "comparison": 110},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert {a["arm"] for a in body["arms"]} == {"intervention", "comparison"}
+    assert all("area_km2" in a and "density_per_km2" in a for a in body["arms"])
+    assert body["matched"] is True
+
+
+def test_arm_comparability_not_matched_when_counts_diverge(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "areas": [
+                    {"arm": "intervention", "geometry": _square(8.30, 11.78)},
+                    {"arm": "comparison", "geometry": _square(8.40, 11.78)},
+                ],
+                "building_counts": {"intervention": 100, "comparison": 300},
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["matched"] is False
+    assert body["reasons"]

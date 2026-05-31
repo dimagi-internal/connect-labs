@@ -20,6 +20,13 @@ from commcare_connect.microplans import serialization
 logger = logging.getLogger(__name__)
 
 
+def _float_or_none(raw):
+    try:
+        return float(raw) if raw not in (None, "") else None
+    except (ValueError, TypeError):
+        return None
+
+
 class _LabsContextSyncMixin:
     """Sync the labs context picker pill to the program_id / opp_id in this view's
     URL kwargs. Without it, the picker stays on "Select Context" on every
@@ -286,6 +293,91 @@ class AdminAreaGeometryView(LoginRequiredMixin, View):
         if not geom:
             return JsonResponse({"status": "error", "detail": "Area not found."}, status=404)
         return JsonResponse({"status": "ok", "name": area.name, "geometry": geom})
+
+
+class BoundaryViewportView(LoginRequiredMixin, View):
+    """Admin boundaries intersecting the map viewport, for the 'Boundaries' layer.
+
+    GET query params:
+      * ``bbox`` (required) — ``minLng,minLat,maxLng,maxLat`` (WGS84).
+      * ``zoom`` — map zoom; coarser zoom → more outline simplification.
+      * ``source`` — pick a boundary system (``labs`` / ``overture``); falls back to
+        the country default. Exactly one source renders at a time.
+      * ``iso`` — alpha-3 country; optional for labs (a filter), **required for
+        Overture** (parquet partition pruning).
+      * ``level`` — restrict to one canonical admin level (1/2/3).
+
+    Returns a GeoJSON FeatureCollection plus the source actually used and the
+    pickable-source list (so the layer can offer a single-select source dropdown).
+    """
+
+    LIMIT = 1500
+
+    def get(self, request):
+        from commcare_connect.microplans.core.admin_boundaries import SOURCE_LABELS, get_resolver
+
+        bbox = self._parse_bbox(request.GET.get("bbox"))
+        if bbox is None:
+            return JsonResponse(
+                {"status": "error", "detail": "bbox=minLng,minLat,maxLng,maxLat is required."}, status=400
+            )
+        zoom = _float_or_none(request.GET.get("zoom"))
+        source = request.GET.get("source") or None
+        iso = request.GET.get("iso") or None
+        levels = [int(request.GET["level"])] if (request.GET.get("level") or "").isdigit() else None
+
+        resolver = get_resolver()
+        try:
+            features, truncated = resolver.boundaries_in_bbox(
+                bbox, source=source, iso=iso, levels=levels, zoom=zoom, limit=self.LIMIT
+            )
+            used = resolver.bbox_source_name(source, iso)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans boundary viewport failed (iso=%s source=%s)", iso, source)
+            return JsonResponse({"status": "error", "detail": "Boundary viewport lookup failed."}, status=502)
+
+        available = self._available_sources(resolver, iso)
+        return JsonResponse(
+            {
+                "status": "ok",
+                "type": "FeatureCollection",
+                "features": [f.to_feature() for f in features],
+                "truncated": truncated,
+                "source": used,
+                "available_sources": available,
+                "source_labels": {n: SOURCE_LABELS.get(n, n) for n in available},
+            }
+        )
+
+    @staticmethod
+    def _parse_bbox(raw):
+        from django.contrib.gis.geos import Polygon
+
+        if not raw:
+            return None
+        try:
+            minx, miny, maxx, maxy = (float(v) for v in raw.split(","))
+        except (ValueError, TypeError):
+            return None
+        if minx >= maxx or miny >= maxy:
+            return None
+        poly = Polygon.from_bbox((minx, miny, maxx, maxy))
+        poly.srid = 4326
+        return poly
+
+    @staticmethod
+    def _available_sources(resolver, iso):
+        """Sources with data for this region (preference order), for the picker.
+        Without an iso we can't scope to a country, so offer all known sources."""
+        if not iso:
+            return list(resolver._sources)
+        seen, out = set(), []
+        for level in (1, 2, 3):
+            for name in resolver.sources_for(iso, level):
+                if name not in seen:
+                    seen.add(name)
+                    out.append(name)
+        return out or list(resolver._sources)
 
 
 # --- Planning-phase plan review/edit (the LLO validation layer; pre-upload) ---
@@ -590,9 +682,12 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         # exactly as the setup page does. The endpoints don't actually require
         # a real opp; the path arg is just historical.
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
+        context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
+        context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
+        context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         context["regenerate_url"] = reverse("microplans:program_plan_regenerate", args=[program_id, plan_id])
         from django.conf import settings as _s
 
@@ -898,9 +993,12 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["back_url"] = context["program_url"]
         context.update(_sd_urls())
         context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
+        context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
+        context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
+        context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
         # Review-only URLs that don't apply pre-create. JS will skip the
         # buttons that depend on them.
         for k in (
@@ -1127,6 +1225,74 @@ class DeriveBoundaryView(LoginRequiredMixin, View):
                 "point_count": len(points),
             }
         )
+
+
+class ArmComparabilityView(LoginRequiredMixin, View):
+    """Compare two study arms so the control reads as a fair counterfactual.
+
+    POST {areas: [{arm, geometry}, ...], building_counts: {arm: int}}. Unions the
+    geometries per arm, computes accurate area (UTM) + building density from the
+    counts the sample already produced (no second Overture fetch), and returns a
+    matched flag when the arms are within tolerance on building count and density.
+    """
+
+    RATIO_TOLERANCE = 1.5
+
+    def post(self, request, opp_id):
+        from shapely.geometry import shape
+        from shapely.ops import transform, unary_union
+
+        from commcare_connect.microplans.core.geo import utm_epsg_for
+
+        try:
+            payload = json.loads(request.body)
+            areas = payload["areas"]
+            counts = payload.get("building_counts", {}) or {}
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        by_arm: dict[str, list] = {}
+        for a in areas:
+            try:
+                by_arm.setdefault(a.get("arm", "intervention"), []).append(shape(a["geometry"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        out = []
+        for arm, geoms in by_arm.items():
+            try:
+                from pyproj import Transformer
+
+                geom = unary_union(geoms)
+                c = geom.centroid
+                tf = Transformer.from_crs(4326, utm_epsg_for(c.x, c.y), always_xy=True).transform
+                area_km2 = transform(tf, geom).area / 1e6
+            except Exception:  # noqa: BLE001
+                logger.exception("arm_comparability area failed (opp=%s arm=%s)", opp_id, arm)
+                area_km2 = 0.0
+            bc = int(counts.get(arm) or 0)
+            density = round(bc / area_km2, 1) if area_km2 > 0 else 0.0
+            out.append({"arm": arm, "building_count": bc, "area_km2": round(area_km2, 3), "density_per_km2": density})
+
+        matched = None
+        reasons: list[str] = []
+        if len(out) >= 2:
+
+            def _ratio(x: float, y: float) -> float:
+                lo, hi = sorted((float(x), float(y)))
+                return (hi / lo) if lo > 0 else float("inf")
+
+            interv = next((x for x in out if x["arm"] == "intervention"), out[0])
+            comp = next((x for x in out if x["arm"] == "comparison"), out[1])
+            bc_r = _ratio(interv["building_count"], comp["building_count"])
+            d_r = _ratio(interv["density_per_km2"], comp["density_per_km2"])
+            matched = bc_r <= self.RATIO_TOLERANCE and d_r <= self.RATIO_TOLERANCE
+            if bc_r > self.RATIO_TOLERANCE:
+                reasons.append(f"building counts differ {bc_r:.1f}×")
+            if d_r > self.RATIO_TOLERANCE:
+                reasons.append(f"densities differ {d_r:.1f}×")
+
+        return JsonResponse({"status": "ok", "arms": out, "matched": matched, "reasons": reasons})
 
 
 # Bulk-create flow — the "paste a ward list" form + the server-side
