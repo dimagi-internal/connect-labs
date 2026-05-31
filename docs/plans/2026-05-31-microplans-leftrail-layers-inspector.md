@@ -53,6 +53,36 @@ Two other agents are editing the same surface:
 component system, adopt it — these tasks describe *what* must exist, the refactor
 decides *where*. Re-derive exact paths in Task 1 before writing any code.
 
+### ✅ Reconcile result (after #336 unify + #338 shared FE module)
+
+- **The unified page is `templates/microplans/review.html`** — `ProgramSetupView`
+  (create), `ProgramReviewView` + `ReviewView` (edit) all render it. **This is the
+  build target.** `setup.html` is now the **legacy opp-scoped** create page
+  (`SetupView` only); we build on `review.html` and leave `setup.html` alone
+  (deprecate later, out of scope).
+- **Foundation = `static/microplans/shared.js` → `window.Microplans`** (vanilla, no
+  build): `apiCall`, `post`, `esc`, `getCsrf`, `colorFor`, **`oppColorFor` /
+  `OPP_COLORS`** (palette now centralized — drop the local copy in C1/C5),
+  `boundsOf` / `fitTo`, `upsertSource`, **`removeSourceAndLayers`** (frees map
+  resources on layer toggle-off — exactly what C3 layer toggles need), `debounce`,
+  `chip`. Build all layers/panel/picker on these.
+- **No map-controller / layer-registry / Alpine map component exists** → C2/C3/C6
+  are net-new (no collision). **D1 settled:** map JS stays **vanilla** per page;
+  `x-data` is on `review.html`'s root, so the **C1 picker stays an Alpine island**
+  mounted inside the SD layer; the panel + inspector stay vanilla using
+  `window.Microplans`.
+- **The hover popup is still there** (`cellTooltipHTML` + `hoverPopup` +
+  `mousemove` wiring in `review.html`) → C6 replaces it. Confirmed target.
+- **The Draw/Admin/Pin area input is still there** (`#area-admin`, `#area-pin`) →
+  C4's admin layer subsumes the Admin part.
+- **Service delivery is NOT in the unified page yet** (it lives only in legacy
+  `setup.html`). So **C5 also *introduces* SD to the unified flow**, not merely
+  relocates it — re-home `service_delivery_layer.js` (already shared-ified by #338)
+  into `review.html` as a Layers-panel layer.
+- **Verdict: plan holds, and is cleaner** — every contract maps onto
+  `review.html` + `window.Microplans`; the refactor *helps* (centralized colors,
+  `removeSourceAndLayers`, `apiCall`). No contract obsoleted; no rework.
+
 ---
 
 ## Component contracts (the durable spec)
