@@ -1,7 +1,9 @@
 {% load static %}
-{# Context selector component for labs header.
-   Logic lives in the shared labs/context_picker.js factory (also drives the
-   microplans service-delivery multi-select opportunity picker). #}
+{% comment %}
+Context selector component for labs header. Logic lives in the shared
+labs/context_picker.js factory (also drives the microplans service-delivery
+multi-select opportunity picker).
+{% endcomment %}
 
 {{ user_organizations|json_script:"org-data" }}
 {{ user_programs|json_script:"program-data" }}
