@@ -9,7 +9,7 @@ saved manifest.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, ValidationError, model_validator
@@ -197,6 +197,42 @@ class Timeline(BaseModel):
         return self
 
 
+# ---------- Geography (visit GPS placement) ----------
+
+
+class Geography(BaseModel):
+    """Spread synthetic visit GPS across a real area so the service-delivery
+    overlay renders points 'on the ground' instead of blank locations.
+
+    Households are placed in a handful of settlement clusters inside ``polygon``;
+    each beneficiary keeps a fixed household location, so repeat visits to the
+    same beneficiary stack at the same point (realistic, appropriately spaced).
+    The placement is deterministic given the manifest ``random_seed``.
+    """
+
+    # GeoJSON geometry (Polygon or MultiPolygon), coordinates in [lon, lat].
+    polygon: dict[str, Any]
+    # How many settlement clusters to scatter households across the polygon.
+    settlements: PositiveInt = 6
+    # Village radius (km) — households are gaussian-offset from a settlement center.
+    settlement_spread_km: float = Field(gt=0, default=1.2)
+    # Reported GPS altitude (m) and accuracy (m) ranges for the packed location string.
+    altitude_m: MeanStddev = Field(default_factory=lambda: MeanStddev(mean=480.0, stddev=15.0))
+    accuracy_m_min: float = Field(ge=0, default=4.0)
+    accuracy_m_max: float = Field(ge=0, default=12.0)
+
+    @model_validator(mode="after")
+    def _check_polygon(self):
+        gtype = self.polygon.get("type") if isinstance(self.polygon, dict) else None
+        if gtype not in ("Polygon", "MultiPolygon"):
+            raise ValueError("geography.polygon must be a GeoJSON Polygon or MultiPolygon geometry")
+        if not self.polygon.get("coordinates"):
+            raise ValueError("geography.polygon is missing coordinates")
+        if self.accuracy_m_max < self.accuracy_m_min:
+            raise ValueError("geography.accuracy_m_max must be >= accuracy_m_min")
+        return self
+
+
 # ---------- Top-level manifest ----------
 
 
@@ -212,6 +248,8 @@ class Manifest(BaseModel):
     coaching_arcs: list[CoachingArc] = Field(default_factory=list)
     tasks: list[TaskSpec] = Field(default_factory=list)
     image_config: ImageConfig | None = None
+    # Optional: place visit GPS across a real area (renders on the delivery overlay).
+    geography: Geography | None = None
 
     @classmethod
     def from_yaml(cls, source: str | bytes) -> Manifest:
