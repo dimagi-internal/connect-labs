@@ -721,7 +721,7 @@
       }
       adminBoundaries = MicroplansAdminBoundaries.register({
         panel: mapPanel, map, csrf: CSRF,
-        urls: { viewport: BOUNDARY_VIEWPORT_URL, geometry: ADMIN_AREA_GEOMETRY_URL },
+        urls: { viewport: BOUNDARY_VIEWPORT_URL, geometry: ADMIN_AREA_GEOMETRY_URL, areas: ADMIN_AREAS_URL },
         getCountryIso: () => (typeof OPP_COUNTRY_ISO !== "undefined" && OPP_COUNTRY_ISO) || null,
         isAreaPhase: () => {
           const d = document.querySelector("details.area-def");

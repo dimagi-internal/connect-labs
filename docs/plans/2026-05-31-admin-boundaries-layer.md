@@ -167,10 +167,10 @@ Mirrors `service_delivery_layer.js` (the worked panel-layer example). Built on
 - **Built (this branch):** viewport endpoint + resolver bbox methods (TDD, 33 passing
   tests), `admin_boundaries_layer.js`, `review.html` wiring (relabel + dropdown removal +
   draw integration), DDD walkthrough scenes.
-- **Search scope nuance:** the layer's name-search currently filters the **in-view**
-  loaded boundaries (client-side) — it satisfies "select without clicking the map" for
-  what's rendered, but is not yet a country-wide search. Country-wide typed search can
-  reuse `AdminAreasView` in a follow-up.
+- **Search:** the layer's name-search is **country-wide across all levels** via the
+  resolver-backed `AdminAreasView` (`urls.areas`), scoped to the active source + the
+  resolved country; it falls back to an in-view client-side filter only when the country
+  isn't known yet (before first viewport load) or on a network error.
 - **Pending:** live `gstack browse` validation across ≥2 countries — blocked on deploy,
   which is gated to `main` (merge the PR first, then deploy + validate live).
 

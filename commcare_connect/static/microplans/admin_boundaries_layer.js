@@ -99,7 +99,7 @@
       }
       let km2 = 0;
       selected.forEach((v) => {
-        km2 += (v.feature.properties && v.feature.properties.area_km2) || 0;
+        km2 += (v.desc && v.desc.area_km2) || 0;
       });
       summaryEl.textContent = `${selected.size} selected · ${Math.round(
         km2,
@@ -300,7 +300,7 @@
       const node = document.createElement('div');
       node.innerHTML = body.join('');
       const act = node.querySelector('.mp-ab-act');
-      if (act) act.addEventListener('click', () => toggleSelect(f));
+      if (act) act.addEventListener('click', () => toggleSelect(featToDesc(f)));
       const par = node.querySelector('.mp-ab-parent');
       if (par && point) {
         par.addEventListener('click', () => {
@@ -331,13 +331,40 @@
       pinned = node.cloneNode(true);
       // re-bind handlers on the pinned clone
       const act = pinned.querySelector('.mp-ab-act');
-      if (act) act.addEventListener('click', () => toggleSelect(f));
+      if (act) act.addEventListener('click', () => toggleSelect(featToDesc(f)));
       panel.setInspect(node, true);
     }
 
     // ---- area selection ----
-    async function toggleSelect(f) {
-      const id = f.properties.boundary_id;
+    // Both map features and country-wide search rows funnel through a normalised
+    // "descriptor" so selection + geometry-fetch is identical for either path.
+    function featToDesc(f) {
+      const p = f.properties || {};
+      return {
+        key: p.boundary_id,
+        name: p.name,
+        level: p.admin_level,
+        source: p.source,
+        country: p.iso_code,
+        ref: p.ref || {},
+        area_km2: p.area_km2,
+      };
+    }
+    function rowToDesc(a) {
+      const ref = a.ref || {};
+      const key = ref.boundary_id || `${a.source}:${a.region || ''}:${a.name}`;
+      return {
+        key,
+        name: a.name,
+        level: a.level,
+        source: a.source,
+        country: a.country,
+        ref,
+        area_km2: a.area_km2,
+      };
+    }
+    async function toggleSelect(desc) {
+      const id = desc.key;
       if (selected.has(id)) {
         selected.delete(id);
         onAreaRemove(id);
@@ -348,11 +375,11 @@
       setStatus('Fetching geometry…');
       try {
         const area = {
-          name: f.properties.name,
-          level: f.properties.admin_level,
-          source: f.properties.source,
-          country: f.properties.iso_code,
-          ref: f.properties.ref || {},
+          name: desc.name,
+          level: desc.level,
+          source: desc.source,
+          country: desc.country,
+          ref: desc.ref || {},
         };
         const resp = await post(urls.geometry, { area });
         const d = await resp.json();
@@ -360,8 +387,8 @@
           setStatus(d.detail || 'Geometry lookup failed');
           return;
         }
-        selected.set(id, { feature: f, geometry: d.geometry });
-        onAreaAdd(id, d.geometry, f);
+        selected.set(id, { desc, geometry: d.geometry });
+        onAreaAdd(id, d.geometry, desc);
         syncSelectedSource();
         renderSummary();
         setStatus('');
@@ -380,31 +407,87 @@
         .setData({ type: 'FeatureCollection', features: feats });
     }
 
-    // ---- search (client-side over loaded viewport features) ----
-    function applySearch() {
-      const q = (searchEl.value || '').trim().toLowerCase();
+    // ---- search ----
+    // Country-wide by name across all levels via the resolver-backed areas endpoint
+    // (reuses urls.areas), scoped to the active source + the resolved country. Falls
+    // back to a client-side filter over the in-view features when we don't yet know
+    // the country (e.g. before the first viewport load) or the endpoint is absent.
+    let searchCtrl = null;
+    function renderResults(items) {
       resultsEl.innerHTML = '';
-      if (!q) return;
-      features
+      items.slice(0, 40).forEach(({ desc, label }) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className =
+          'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
+        b.textContent = label;
+        b.addEventListener('click', () => {
+          if (isAreaPhase()) toggleSelect(desc);
+          else setStatus('Switch to the area phase to add boundaries.');
+        });
+        resultsEl.appendChild(b);
+      });
+    }
+    function clientFilter(q) {
+      return features
         .filter((f) => (f.properties.name || '').toLowerCase().includes(q))
-        .slice(0, 30)
-        .forEach((f) => {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className =
-            'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
+        .map((f) => {
           const p = f.properties;
-          b.textContent =
-            `${p.name} · ADM${p.admin_level}` +
-            (p.area_km2 ? ` · ${Math.round(p.area_km2)} km²` : '');
-          b.addEventListener('click', () => {
-            if (isAreaPhase()) toggleSelect(f);
-            else pinInspect(f, null);
-          });
-          resultsEl.appendChild(b);
+          return {
+            desc: featToDesc(f),
+            label:
+              `${p.name} · ADM${p.admin_level}` +
+              (p.area_km2 ? ` · ${Math.round(p.area_km2)} km²` : ''),
+          };
         });
     }
-    searchEl.addEventListener('input', M.debounce(applySearch, 200));
+    async function runSearch() {
+      const q = (searchEl.value || '').trim();
+      resultsEl.innerHTML = '';
+      if (!q) {
+        setStatus('');
+        return;
+      }
+      const country = getCountryIso() || detectedIso;
+      if (!country || !urls.areas) {
+        renderResults(clientFilter(q.toLowerCase()));
+        return;
+      }
+      if (searchCtrl) searchCtrl.abort();
+      searchCtrl = new AbortController();
+      setStatus('Searching…');
+      try {
+        const perLevel = await Promise.all(
+          [1, 2, 3].map((level) =>
+            M.post(
+              urls.areas,
+              { country, level, q, source: source || undefined },
+              { csrf: opts.csrf, signal: searchCtrl.signal },
+            )
+              .then((r) => r.json())
+              .catch(() => null),
+          ),
+        );
+        const items = [];
+        perLevel.forEach((d) => {
+          if (d && d.status === 'ok')
+            (d.areas || []).forEach((a) =>
+              items.push({
+                desc: rowToDesc(a),
+                label:
+                  `${a.name} · ${a.level_label || 'ADM' + a.level}` +
+                  (a.area_km2 ? ` · ${Math.round(a.area_km2)} km²` : ''),
+              }),
+            );
+        });
+        renderResults(items);
+        setStatus(items.length ? `${items.length} match(es)` : 'No matches');
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        renderResults(clientFilter(q.toLowerCase())); // network error → best-effort
+      }
+    }
+    searchEl.addEventListener('input', M.debounce(runSearch, 250));
 
     sourceSel.addEventListener('change', () => {
       source = sourceSel.value || null;
@@ -435,7 +518,7 @@
           (e.originalEvent.shiftKey || e.originalEvent.metaKey) &&
           isAreaPhase()
         ) {
-          toggleSelect(f);
+          toggleSelect(featToDesc(f));
         }
         pinInspect(f, e.point);
       });
