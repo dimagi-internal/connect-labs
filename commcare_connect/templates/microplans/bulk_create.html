@@ -252,6 +252,9 @@
 
   // ---------- helpers ----------
   const $ = (id) => document.getElementById(id);
+  // Escape server-derived strings (boundary/LGA names) before innerHTML.
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   function show(el) { el.classList.remove("hidden"); }
   function hide(el) { el.classList.add("hidden"); }
   function fmtPop(p) {
@@ -505,8 +508,8 @@
       // disambiguation survives into the success card — without this, a
       // viewer can't tell which "Madobi" got created (Dutse LGA Madobi or
       // Madobi LGA Madobi), and the user-artifact judge dings trust for it.
-      const lgaSuffix = r.lga ? `<span class="text-gray-500 font-normal"> · ${r.lga} LGA</span>` : "";
-      row.innerHTML = `<div class="progress-label">${r.name}${lgaSuffix}</div><span class="pill pill-pending">Queued</span>`;
+      const lgaSuffix = r.lga ? `<span class="text-gray-500 font-normal"> · ${esc(r.lga)} LGA</span>` : "";
+      row.innerHTML = `<div class="progress-label">${esc(r.name)}${lgaSuffix}</div><span class="pill pill-pending">Queued</span>`;
       log.appendChild(row);
     });
     show($("step-create"));
