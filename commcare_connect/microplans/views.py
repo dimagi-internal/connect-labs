@@ -1221,26 +1221,47 @@ class ProgramPlanCSVView(LoginRequiredMixin, View):
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
-    """Create a plan in a program: reuses the setup/generation page, but the save
-    step creates a program-scoped Draft plan (rather than an opp-scoped frame).
+    """New-plan landing page. Renders the same template as the per-plan review
+    page (review.html) but with plan_id=None — the template branches once on
+    that to show the area-definition section open by default, no work areas,
+    no result viewers. The first "Apply geographic frame" creates the plan via
+    /plan/create/ and the page redirects to /plan/<id>/review/.
+    """
 
-    The preview/boundary endpoints are stateless generation that ignore the id in
-    their URL, so we reuse them by passing opp_id=program_id."""
-
-    template_name = "microplans/setup.html"
+    template_name = "microplans/review.html"
 
     def get_context_data(self, **kwargs):
         from django.urls import reverse
 
         context = super().get_context_data(**kwargs)
         program_id = kwargs.get("program_id")
-        context["opp_id"] = program_id  # harmless: preview/boundary views ignore the id
         context["program_id"] = program_id
+        context["plan_id"] = None
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
         if not settings.MAPBOX_TOKEN:
             context["error"] = "MAPBOX_TOKEN is not configured; the map cannot load."
+        # URLs shared with the review page. plan_url/edit/csv/etc. don't exist
+        # yet (no plan), so leave them empty; the JS guards on null.
         context["create_plan_url"] = reverse("microplans:program_create_plan", args=[program_id])
         context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
+        context["back_url"] = context["program_url"]
+        context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
+        context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
+        context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
+        context["countries_url"] = reverse("microplans:countries")
+        # Review-only URLs that don't apply pre-create. JS will skip the
+        # buttons that depend on them.
+        for k in (
+            "plan_url",
+            "edit_url",
+            "csv_url",
+            "footprints_url",
+            "regroup_url",
+            "reassign_url",
+            "regenerate_url",
+            "compare_url",
+        ):
+            context[k] = ""
         return context
 
 

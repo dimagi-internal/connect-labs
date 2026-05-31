@@ -77,23 +77,43 @@
   <!-- Left: sticky sidebar that stays visible while the center column scrolls -->
   <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white p-4 space-y-4 text-sm sticky top-0 self-start max-h-screen overflow-y-auto">
     <div>
+      {% if plan_id %}
       <h1 class="text-lg font-bold text-gray-900">Microplan review</h1>
       <p class="text-xs text-gray-500">Plan #{{ plan_id }}</p>
       <p class="text-xs text-gray-400 mt-1">Planning phase — edits here happen before upload to Connect.</p>
+      {% else %}
+      <h1 class="text-lg font-bold text-gray-900">New microplan</h1>
+      <p class="text-xs text-gray-500">Program #{{ program_id }}</p>
+      <p class="text-xs text-gray-400 mt-1">Define the area + cell size, then Apply to generate the plan.</p>
+      {% endif %}
       {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to program</a>{% endif %}
     </div>
 
-    <!-- AREA DEFINITION — collapsible. Lets the LLO redraw the boundary or
-         change the cell size on this plan and regenerate. Destructive: every
-         work area is rebuilt; CHW assignments + per-area edits wiped. -->
+    {% if not plan_id %}
+    <!-- Plan name + region — pre-create. Used by the Apply geographic frame
+         action on a no-plan page; harmless to omit on existing plans. -->
     <section>
-      <details class="area-def">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Plan name</h2>
+      <div class="space-y-1.5 text-xs">
+        <label class="block"><span class="text-gray-600">Name</span>
+          <input id="inp-plan-name" type="text" placeholder="auto-filled from picked area" class="base-input mt-0.5 text-xs"></label>
+        <label class="block"><span class="text-gray-600">Region / area label <span class="text-gray-400">(optional)</span></span>
+          <input id="inp-plan-region" type="text" placeholder="Madobi LGA · Gora ward" class="base-input mt-0.5 text-xs"></label>
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- AREA DEFINITION — collapsible on existing plans (Apply = destructive
+         regenerate); open by default on a no-plan page (Apply = create). -->
+    <section>
+      <details class="area-def"{% if not plan_id %} open{% endif %}>
         <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
-          <span class="chev">▶</span> Edit area &amp; cell size
+          <span class="chev">▶</span> {% if plan_id %}Edit area &amp; cell size{% else %}Define area &amp; cell size{% endif %}
         </summary>
         <div class="space-y-3 mt-2 text-xs">
-          <p class="text-[10px] text-gray-500 leading-snug">
-            Regenerates every work area. CHW assignments and per-area edits are reset.
+          <p class="text-[10px] text-gray-500 leading-snug" id="area-def-help">
+            {% if plan_id %}Regenerates every work area. CHW assignments and per-area edits are reset.
+            {% else %}Pick the area, choose a cell size, then Apply. The plan is created on Apply.{% endif %}
           </p>
 
           <div>
@@ -158,13 +178,14 @@
           </dl>
 
           <button type="button" id="btn-apply-area" class="button button-sm primary-dark w-full">
-            Apply geographic frame
+            {% if plan_id %}Apply geographic frame{% else %}Create plan{% endif %}
           </button>
           <p class="text-[10px] text-gray-500" id="apply-area-status"></p>
         </div>
       </details>
     </section>
 
+    {% if plan_id %}
     <section>
       <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Map colors</h2>
       <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
@@ -245,6 +266,10 @@
       <button type="button" id="btn-export" class="button button-sm outline-style w-full">Download Connect import CSV</button>
       <div id="status" class="text-xs text-gray-500 mt-2"></div>
     </section>
+    {% else %}
+    <!-- No plan yet — show only the status line for Apply feedback. -->
+    <div id="status" class="text-xs text-gray-500"></div>
+    {% endif %}
   </aside>
 
   <!-- Center: map + metrics + table -->
@@ -265,6 +290,7 @@
       <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
     </div>
 
+    {% if plan_id %}
     <!-- What the map is showing: summary + the dim-keyed list (Workers / Groups).
          Moved below the map so the sidebar stays "actions you take" only. -->
     <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm grid grid-cols-3 gap-3">
@@ -319,6 +345,7 @@
         <tbody id="wa-body"></tbody>
       </table>
     </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
@@ -343,9 +370,19 @@
   const COUNTRIES_URL = "{{ countries_url|default:''|escapejs }}";
   const ADMIN_AREAS_URL = "{{ admin_areas_url|default:''|escapejs }}";
   const ADMIN_AREA_GEOMETRY_URL = "{{ admin_area_geometry_url|default:''|escapejs }}";
-  document.getElementById("compare-link").href = COMPARE_URL;
+  const CREATE_PLAN_URL = "{{ create_plan_url|default:''|escapejs }}";
+  const PROGRAM_URL = "{{ program_url|default:''|escapejs }}";
+  const PLAN_ID = "{{ plan_id|default:''|escapejs }}";
+  // No plan yet → many widgets are absent from the DOM. Guarded everywhere.
+  const compareLink = document.getElementById("compare-link");
+  if (compareLink) compareLink.href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
   const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF }, body: JSON.stringify(body) });
+  // The new-plan page shares this template with the per-plan review page;
+  // many widgets (table, KPIs, dim sidebar) aren't rendered until a plan
+  // exists. `on(id, evt, fn)` no-ops when the element is missing so all the
+  // existing listener attachments stay one-liners without explicit guards.
+  function on(id, evt, fn) { const el = $(id); if (el) el.addEventListener(evt, fn); }
   // Escape user-controlled values before innerHTML interpolation (group, worker,
   // reason are LLO-typed and could carry HTML).
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -517,12 +554,12 @@
       if (lbl) lbl.textContent = "Show building footprints";
     }
   }
-  $("toggle-footprints").addEventListener("change", () => {
-    const on = $("toggle-footprints").checked;
-    if (on && !footprintsLoaded) { loadFootprints(); return; }
+  on("toggle-footprints", "change", () => {
+    const isOn = $("toggle-footprints").checked;
+    if (isOn && !footprintsLoaded) { loadFootprints(); return; }
     if (map && mapReady) {
       ["plan-fp-fill", "plan-fp-dots"].forEach((id) => {
-        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", isOn ? "visible" : "none");
       });
     }
   });
@@ -732,13 +769,13 @@
   let lastSummary = {};
   const origRenderSummary = renderSummary;
   renderSummary = function (s) { lastSummary = s; origRenderSummary(s); };
-  $("by-dim").addEventListener("click", (e) => {
+  on("by-dim", "click", (e) => {
     const row = e.target.closest(".worker-row"); if (!row) return;
     setActiveDim(row.dataset.dim);
   });
-  $("dim-clear").addEventListener("click", () => { activeDim = null; renderDimSidebar(lastSummary); renderTable(); setSelState(); });
-  $("dim-worker").addEventListener("click", () => setColorDim("worker"));
-  $("dim-group").addEventListener("click", () => setColorDim("group"));
+  on("dim-clear", "click", () => { activeDim = null; renderDimSidebar(lastSummary); renderTable(); setSelState(); });
+  on("dim-worker", "click", () => setColorDim("worker"));
+  on("dim-group", "click", () => setColorDim("group"));
 
   // ---- edits ----
   async function edit(body) {
@@ -754,7 +791,7 @@
   function toggleSelect(id) { if (selected.has(id)) selected.delete(id); else selected.add(id); renderTable(); setSelState(); }
 
   // table interactions (delegated)
-  $("wa-body").addEventListener("click", (e) => {
+  on("wa-body", "click", (e) => {
     const ex = e.target.closest("[data-exclude]"); const rs = e.target.closest("[data-restore]");
     if (ex) { const reason = prompt("Reason for excluding this work area?"); if (reason !== null) edit({ action: "exclude", wa_id: ex.dataset.exclude, reason }); return; }
     if (rs) { edit({ action: "unexclude", wa_id: rs.dataset.restore }); return; }
@@ -762,30 +799,30 @@
     // Click on a group header row → toggle collapse for that group.
     const hdr = e.target.closest("[data-group-toggle]"); if (hdr) { toggleGroupCollapse(hdr.dataset.groupToggle); }
   });
-  $("wa-body").addEventListener("change", (e) => {
+  on("wa-body", "change", (e) => {
     const inp = e.target.closest("[data-act]"); if (!inp) return;
     const body = { action: inp.dataset.act, wa_id: inp.dataset.id };
     body[inp.dataset.field] = inp.dataset.act === "resize" ? +inp.value : inp.value;
     edit(body);
   });
-  $("sel-all").addEventListener("change", (e) => { selected.clear(); if (e.target.checked) WAS.forEach((w) => selected.add(w.id)); renderTable(); setSelState(); });
+  on("sel-all", "change", (e) => { selected.clear(); if (e.target.checked) WAS.forEach((w) => selected.add(w.id)); renderTable(); setSelState(); });
 
   // bulk
-  $("bulk-exclude").addEventListener("click", () => {
+  on("bulk-exclude", "click", () => {
     if (!selected.size) return; const reason = prompt(`Reason for excluding ${selected.size} work areas?`);
     if (reason !== null) edit({ action: "exclude", wa_ids: [...selected], reason });
   });
-  $("bulk-regroup").addEventListener("click", () => { if (selected.size && $("bulk-group").value) edit({ action: "regroup", wa_ids: [...selected], work_area_group: $("bulk-group").value }); });
-  $("bulk-reassign").addEventListener("click", () => { if (selected.size) edit({ action: "reassign", wa_ids: [...selected], opportunity_access: $("bulk-worker").value }); });
+  on("bulk-regroup", "click", () => { if (selected.size && $("bulk-group").value) edit({ action: "regroup", wa_ids: [...selected], work_area_group: $("bulk-group").value }); });
+  on("bulk-reassign", "click", () => { if (selected.size) edit({ action: "reassign", wa_ids: [...selected], opportunity_access: $("bulk-worker").value }); });
 
   // export
   // ---- Phase-1: re-group cells ----
-  $("grp-strategy").addEventListener("change", () => {
+  on("grp-strategy", "change", () => {
     const s = $("grp-strategy").value;
     $("grp-bfs-params").classList.toggle("hidden", s !== "bfs_adjacency");
     $("grp-bbox-params").classList.toggle("hidden", s !== "bbox");
   });
-  $("btn-regroup").addEventListener("click", async () => {
+  on("btn-regroup", "click", async () => {
     if (!REGROUP_URL) { $("status").textContent = "Regroup URL not available."; return; }
     const strategy = $("grp-strategy").value;
     const body = { strategy };
@@ -824,11 +861,11 @@
   });
 
   // ---- Phase-2: re-assign CHWs ----
-  $("asg-strategy").addEventListener("change", () => {
+  on("asg-strategy", "change", () => {
     const s = $("asg-strategy").value;
     $("asg-restarts-wrap").classList.toggle("hidden", s !== "minimax_spread");
   });
-  $("btn-reassign").addEventListener("click", async () => {
+  on("btn-reassign", "click", async () => {
     if (!REASSIGN_URL) { $("status").textContent = "Reassign URL not available."; return; }
     const strategy = $("asg-strategy").value;
     const workers = ($("asg-workers").value || "").trim();
@@ -859,7 +896,7 @@
     }
   });
 
-  $("btn-export").addEventListener("click", async () => {
+  on("btn-export", "click", async () => {
     const resp = await post(CSV_URL, {});
     if (!resp.ok) { $("status").textContent = "Export failed."; return; }
     const blob = await resp.blob(); const url = URL.createObjectURL(blob);
@@ -1122,47 +1159,70 @@
     const polys = (draw ? draw.getAll().features : []).map((f) => ({ geometry: f.geometry }));
     return polys.concat(circleAreas);
   }
-  $("btn-apply-area").addEventListener("click", async () => {
-    if (!REGENERATE_URL) { $("apply-area-status").textContent = "Regenerate URL not available."; return; }
+  on("btn-apply-area", "click", async () => {
     const areas = collectAreas();
     if (!areas.length) { $("apply-area-status").textContent = "Define an area first (draw / admin / pin)."; return; }
-    if (!confirm("Regenerate work areas? CHW assignments and per-area edits will be wiped.")) return;
+    // Existing plan: confirm before destroying. New plan: just go.
+    if (PLAN_ID) {
+      if (!REGENERATE_URL) { $("apply-area-status").textContent = "Regenerate URL not available."; return; }
+      if (!confirm("Regenerate work areas? CHW assignments and per-area edits will be wiped.")) return;
+    } else {
+      if (!CREATE_PLAN_URL) { $("apply-area-status").textContent = "Create URL not available."; return; }
+    }
     $("btn-apply-area").disabled = true;
     $("apply-area-status").textContent = "Previewing work areas…";
     try {
       const prev = await (await post(PREVIEW_COVERAGE_URL, { areas, config: { cell_size_m: cellSizeM } })).json();
       if (prev.status !== "ok") { $("apply-area-status").textContent = prev.detail || "preview failed"; return; }
-      $("apply-area-status").textContent = `Generating ${prev.areas.features.length} work areas…`;
-      const resp = await post(REGENERATE_URL, {
-        mode: "coverage",
-        coverage_areas: prev.areas,
-        input_areas: areas,
-        grouping: {
-          strategy: $("grp-strategy").value,
-          max_buildings: +$("grp-max-buildings").value,
-          buffer_distance_m: +$("grp-buffer-m").value,
-        },
-      });
-      const data = await resp.json();
-      if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
-      $("apply-area-status").textContent = `Regenerated ${data.work_areas.length} work areas.`;
-      // Clear drawn polygons + circles so the next "Apply" starts clean.
-      if (draw) draw.deleteAll();
-      circleAreas = [];
-      refreshAreaStats();
-      // Re-render the page from the new plan data.
-      prefillSetupForm(data);
-      render(data);
+      const n = prev.areas.features.length;
+      $("apply-area-status").textContent = `Generating ${n} work areas…`;
+      // Grouping fields only exist when there's a plan UI on the page (review
+      // mode); on new-plan mode the backend falls back to its defaults.
+      const grpStrategy = $("grp-strategy"); const grpMax = $("grp-max-buildings"); const grpBuf = $("grp-buffer-m");
+      const grouping = grpStrategy ? {
+        strategy: grpStrategy.value,
+        max_buildings: +grpMax.value,
+        buffer_distance_m: +grpBuf.value,
+      } : {};
+      if (PLAN_ID) {
+        const resp = await post(REGENERATE_URL, { mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
+        $("apply-area-status").textContent = `Regenerated ${data.work_areas.length} work areas.`;
+        if (draw) draw.deleteAll();
+        circleAreas = []; refreshAreaStats();
+        prefillSetupForm(data); render(data);
+      } else {
+        // New plan: name + region from the inputs (fall back to picked area's
+        // label or a sensible default). The server requires at least one of
+        // name/region to be non-empty.
+        const name = ($("inp-plan-name").value || "").trim();
+        const region = ($("inp-plan-region").value || "").trim();
+        if (!name && !region) { $("apply-area-status").textContent = "Give the plan a name (or region label) first."; return; }
+        const resp = await post(CREATE_PLAN_URL, {
+          name, region, mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping,
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
+        // Navigate to the new plan's review URL. The base URL is the
+        // back-to-program link's parent + "plan/<id>/review/".
+        window.location = PROGRAM_URL + "plan/" + data.plan_id + "/review/";
+      }
     } catch (e) { $("apply-area-status").textContent = "Apply failed: " + e; }
     finally { $("btn-apply-area").disabled = false; }
   });
 
-  // initial load
-  fetch(PLAN_URL).then((r) => r.json()).then((d) => {
-    if (d.status === "ok") { prefillSetupForm(d); render(d); }
-    else $("status").textContent = d.detail || "load failed";
+  // initial load — only fetch the plan when one exists.
+  if (PLAN_URL) {
+    fetch(PLAN_URL).then((r) => r.json()).then((d) => {
+      if (d.status === "ok") { prefillSetupForm(d); render(d); }
+      else { const s = $("status"); if (s) s.textContent = d.detail || "load failed"; }
+      setupAreaDef();
+    }).catch((e) => { const s = $("status"); if (s) s.textContent = "load failed: " + e; });
+  } else {
+    // No plan yet: just init the area-definition surface.
     setupAreaDef();
-  }).catch((e) => $("status").textContent = "load failed: " + e);
+  }
 
   window.__review = { get was() { return WAS; }, get selected() { return [...selected]; }, edit,
                       get activeDim() { return activeDim; }, get colorDim() { return colorDim; },
