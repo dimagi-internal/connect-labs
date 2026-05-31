@@ -55,11 +55,23 @@ ok(/^hsl\(/.test(M.colorFor('group-a')), 'colorFor returns an hsl()');
 // ---- oppColorFor (wraparound incl. negatives) -----------------------------
 ok(M.oppColorFor(0) === M.OPP_COLORS[0], 'oppColorFor(0) → first');
 ok(M.oppColorFor(M.OPP_COLORS.length) === M.OPP_COLORS[0], 'wraps at length');
-ok(M.oppColorFor(-1) === M.OPP_COLORS[M.OPP_COLORS.length - 1], 'negative wraps to last');
+ok(
+  M.oppColorFor(-1) === M.OPP_COLORS[M.OPP_COLORS.length - 1],
+  'negative wraps to last',
+);
 
 // ---- walkCoords (leaf [lng,lat] extraction) -------------------------------
 let leaves = 0;
-M.walkCoords([[[0, 0], [1, 1], [2, 2]]], () => leaves++);
+M.walkCoords(
+  [
+    [
+      [0, 0],
+      [1, 1],
+      [2, 2],
+    ],
+  ],
+  () => leaves++,
+);
 ok(leaves === 3, 'walkCoords visits each leaf pair once');
 leaves = 0;
 M.walkCoords([0, 0], () => leaves++);
@@ -70,20 +82,36 @@ ok(leaves === 1, 'walkCoords ignores non-arrays');
 // ---- boundsOf -------------------------------------------------------------
 const poly = {
   type: 'Feature',
-  geometry: { type: 'Polygon', coordinates: [[[0, 0], [0, 1], [1, 1], [0, 0]]] },
+  geometry: {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 0],
+        [0, 1],
+        [1, 1],
+        [0, 0],
+      ],
+    ],
+  },
 };
 ok(M.boundsOf(poly).pts.length === 4, 'boundsOf extends over a Feature');
 const fc = { type: 'FeatureCollection', features: [poly, poly] };
 ok(M.boundsOf(fc).pts.length === 8, 'boundsOf walks a FeatureCollection');
 ok(M.boundsOf([poly, poly]).pts.length === 8, 'boundsOf accepts an array');
 ok(M.boundsOf(null) === null, 'boundsOf(null) → null');
-ok(M.boundsOf({ type: 'FeatureCollection', features: [] }) === null, 'empty FC → null');
+ok(
+  M.boundsOf({ type: 'FeatureCollection', features: [] }) === null,
+  'empty FC → null',
+);
 
 // ---- fitTo ----------------------------------------------------------------
 let fit = null;
 const fitMap = { fitBounds: (b, o) => (fit = { b, o }) };
 M.fitTo(fitMap, poly, { maxZoom: 15 });
-ok(fit && fit.b.pts.length === 4 && fit.o.maxZoom === 15 && fit.o.padding === 40, 'fitTo merges opts + defaults');
+ok(
+  fit && fit.b.pts.length === 4 && fit.o.maxZoom === 15 && fit.o.padding === 40,
+  'fitTo merges opts + defaults',
+);
 fit = null;
 M.fitTo(fitMap, { type: 'FeatureCollection', features: [] });
 ok(fit === null, 'fitTo no-ops on empty geometry');
@@ -94,10 +122,20 @@ ok(true, 'fitTo tolerates a null map');
 const sources = {};
 const srcMap = {
   getSource: (id) => sources[id],
-  addSource: (id, cfg) => (sources[id] = { cfg, data: cfg.data, setData(d) { this.data = d; } }),
+  addSource: (id, cfg) =>
+    (sources[id] = {
+      cfg,
+      data: cfg.data,
+      setData(d) {
+        this.data = d;
+      },
+    }),
 };
 M.upsertSource(srcMap, 's1', { a: 1 });
-ok(sources.s1 && sources.s1.cfg.type === 'geojson', 'upsertSource creates a geojson source');
+ok(
+  sources.s1 && sources.s1.cfg.type === 'geojson',
+  'upsertSource creates a geojson source',
+);
 M.upsertSource(srcMap, 's1', { a: 2 });
 ok(sources.s1.data.a === 2, 'upsertSource setData on an existing source');
 
@@ -110,11 +148,17 @@ const rmMap = {
   removeSource: (id) => present.delete(id),
 };
 M.removeSourceAndLayers(rmMap, 'src-x', ['lyr-a', 'lyr-b', 'absent']);
-ok(!present.has('lyr-a') && !present.has('lyr-b') && !present.has('src-x'), 'removeSourceAndLayers frees layers + source');
+ok(
+  !present.has('lyr-a') && !present.has('lyr-b') && !present.has('src-x'),
+  'removeSourceAndLayers frees layers + source',
+);
 
 // ---- chip -----------------------------------------------------------------
 const c = M.chip('Buildings', '1,024');
-ok(c.includes('Buildings') && c.includes('1,024') && c.includes('<b>'), 'chip renders label + bold value');
+ok(
+  c.includes('Buildings') && c.includes('1,024') && c.includes('<b>'),
+  'chip renders label + bold value',
+);
 ok(M.chip('<x>', '<y>').includes('&lt;x&gt;'), 'chip escapes its label');
 
 // ---- debounce (trailing edge) ---------------------------------------------
@@ -131,26 +175,47 @@ ok(calls === 1, 'debounce fires once on the trailing edge');
 function stubFetch(impl) {
   global.fetch = impl;
 }
-stubFetch(async () => ({ ok: true, status: 200, json: async () => ({ status: 'ok', value: 7 }) }));
-ok((await M.apiCall('/u', {})).value === 7, 'apiCall resolves parsed JSON on 2xx');
+stubFetch(async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ status: 'ok', value: 7 }),
+}));
+ok(
+  (await M.apiCall('/u', {})).value === 7,
+  'apiCall resolves parsed JSON on 2xx',
+);
 
-stubFetch(async () => ({ ok: false, status: 500, json: async () => ({ detail: 'kaboom' }) }));
+stubFetch(async () => ({
+  ok: false,
+  status: 500,
+  json: async () => ({ detail: 'kaboom' }),
+}));
 let err = null;
 try {
   await M.apiCall('/u', {});
 } catch (e) {
   err = e;
 }
-ok(err && err.message === 'kaboom', 'apiCall rejects with the server detail on non-2xx');
+ok(
+  err && err.message === 'kaboom',
+  'apiCall rejects with the server detail on non-2xx',
+);
 
-stubFetch(async () => ({ ok: true, status: 200, json: async () => ({ status: 'error', error: 'bad input' }) }));
+stubFetch(async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ status: 'error', error: 'bad input' }),
+}));
 err = null;
 try {
   await M.apiCall('/u', {});
 } catch (e) {
   err = e;
 }
-ok(err && err.message === 'bad input', 'apiCall treats {status:"error"} as a failure');
+ok(
+  err && err.message === 'bad input',
+  'apiCall treats {status:"error"} as a failure',
+);
 
 stubFetch(async () => {
   const e = new Error('x');
@@ -174,7 +239,10 @@ try {
 } catch (e) {
   err = e;
 }
-ok(err && /Network error/.test(err.message), 'apiGet maps network errors to a friendly message');
+ok(
+  err && /Network error/.test(err.message),
+  'apiGet maps network errors to a friendly message',
+);
 
 // ---- enqueueAndPoll (202 enqueue → poll to completion) --------------------
 // Routes POST (enqueue) vs GET (poll) on the same fetch stub; poll responses
@@ -195,9 +263,16 @@ pollSeq = [
 ];
 routeEnqueuePoll({ task_id: 't1', poll_url: '/poll/t1' });
 const progress = [];
-const done = await M.enqueueAndPoll('/enqueue', {}, { interval: 5, onProgress: (m) => progress.push(m) });
+const done = await M.enqueueAndPoll(
+  '/enqueue',
+  {},
+  { interval: 5, onProgress: (m) => progress.push(m) },
+);
 ok(done.count === 3, 'enqueueAndPoll resolves the completed result envelope');
-ok(progress.length === 1 && progress[0] === 'Fetching building footprints…', 'enqueueAndPoll forwards progress messages');
+ok(
+  progress.length === 1 && progress[0] === 'Fetching building footprints…',
+  'enqueueAndPoll forwards progress messages',
+);
 
 routeEnqueuePoll({ task_id: 't2' }); // no poll_url
 err = null;
@@ -206,7 +281,10 @@ try {
 } catch (e) {
   err = e;
 }
-ok(err && /poll URL/.test(err.message), 'enqueueAndPoll throws when the server omits poll_url');
+ok(
+  err && /poll URL/.test(err.message),
+  'enqueueAndPoll throws when the server omits poll_url',
+);
 
 pollSeq = [{ state: 'failed', detail: 'area too big' }];
 routeEnqueuePoll({ task_id: 't3', poll_url: '/poll/t3' });
@@ -216,7 +294,10 @@ try {
 } catch (e) {
   err = e;
 }
-ok(err && err.message === 'area too big', 'enqueueAndPoll rejects a failed task with its detail');
+ok(
+  err && err.message === 'area too big',
+  'enqueueAndPoll rejects a failed task with its detail',
+);
 
 console.log(fails === 0 ? '\nALL PASS' : `\n${fails} FAILED`);
 process.exit(fails ? 1 : 0);
