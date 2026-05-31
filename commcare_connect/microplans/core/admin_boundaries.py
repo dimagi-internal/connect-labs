@@ -33,6 +33,10 @@ from commcare_connect.microplans.core import boundaries, iso
 
 logger = logging.getLogger(__name__)
 
+# Alias for methods that take a kwarg named ``iso`` (which would otherwise shadow
+# the ``iso`` module inside the method body).
+_iso = iso
+
 LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY = 1, 2, 3
 LEVEL_LABELS = {
     LEVEL_REGION: "Region / State",
@@ -98,10 +102,74 @@ class AdminArea:
         )
 
 
+@dataclass(frozen=True)
+class BoundaryFeature:
+    """One boundary *with geometry*, normalised across sources, for viewport rendering.
+
+    Unlike ``AdminArea`` (a picker row, no geometry), this carries the (possibly
+    simplified) GeoJSON geometry so the map layer can draw an outline. ``ref`` carries
+    the source keys needed to later fetch the *full-resolution* geometry on select.
+    """
+
+    name: str
+    level: int  # canonical 1/2/3
+    source: str
+    country: str  # alpha-3 (labs) / alpha-3 passthrough (overture)
+    boundary_id: str
+    geometry: dict  # GeoJSON geometry (WGS84)
+    area_km2: float | None = None
+    population: float | None = None
+    name_local: str = ""
+    parent_name: str = ""
+    ref: dict = field(default_factory=dict)
+
+    def to_feature(self) -> dict:
+        """As a GeoJSON Feature for a FeatureCollection."""
+        return {
+            "type": "Feature",
+            "geometry": self.geometry,
+            "properties": {
+                "name": self.name,
+                "name_local": self.name_local,
+                "admin_level": self.level,
+                "iso_code": self.country,
+                "source": self.source,
+                "boundary_id": self.boundary_id,
+                "area_km2": self.area_km2,
+                "population": self.population,
+                "parent_name": self.parent_name,
+                "ref": self.ref,
+            },
+        }
+
+
+# Tolerance (in WGS84 degrees) used to simplify rendered outlines, by map zoom.
+# Coarser when zoomed out; ~0 when zoomed in so smallest-wins hit-testing stays sharp.
+def tolerance_for_zoom(zoom: float | None) -> float:
+    if zoom is None:
+        return 0.005
+    if zoom >= 12:
+        return 0.0
+    if zoom >= 10:
+        return 0.0005
+    if zoom >= 8:
+        return 0.002
+    if zoom >= 6:
+        return 0.01
+    return 0.03
+
+
 class BoundarySource:
     name = "base"
 
     def covers(self, country3: str, level: int) -> bool:
+        raise NotImplementedError
+
+    def list_in_bbox(
+        self, bbox, *, iso: str | None = None, levels=None, tolerance: float = 0.0, limit: int = 1500
+    ) -> list[BoundaryFeature]:
+        """Boundaries (with geometry) intersecting ``bbox`` (a WGS84 GEOS polygon),
+        across all available levels by default, largest-area first."""
         raise NotImplementedError
 
     def list_areas(
@@ -163,6 +231,35 @@ class OvertureBoundarySource(BoundarySource):
             region=area.ref.get("region") or None,
         )
 
+    def list_in_bbox(self, bbox, *, iso=None, levels=None, tolerance=0.0, limit=1500):
+        # Overture's parquet is partitioned by country, so we need an iso to prune
+        # the scan — without it a bbox query would read the whole global file.
+        a2 = _iso.to_alpha2(iso) if iso else None
+        if not a2:
+            return []
+        subtypes = [_LEVEL_TO_OVERTURE[lvl] for lvl in (levels or _LEVEL_TO_OVERTURE) if lvl in _LEVEL_TO_OVERTURE]
+        rows = boundaries.list_admin_areas_in_bbox(
+            a2, bbox.wkt, subtypes=subtypes, simplify=(tolerance or None), limit=limit
+        )
+        a3 = _iso.to_alpha3(iso) or iso
+        out = []
+        for r in rows:
+            subtype = r.get("subtype")
+            region = r.get("region") or ""
+            out.append(
+                BoundaryFeature(
+                    name=r["name"],
+                    level=_OVERTURE_TO_LEVEL.get(subtype, 0),
+                    source=self.name,
+                    country=a3,
+                    boundary_id=f"{subtype}:{region}:{r['name']}",
+                    geometry=r.get("geometry"),
+                    area_km2=r.get("area_km2"),
+                    ref={"alpha2": a2, "subtype": subtype, "region": region, "name": r["name"]},
+                )
+            )
+        return out
+
 
 class LabsAdminBoundarySource(BoundarySource):
     """labs.admin_boundaries (PostGIS) — bespoke per-country, spatial narrowing."""
@@ -212,6 +309,50 @@ class LabsAdminBoundarySource(BoundarySource):
     def get_geometry(self, area: AdminArea) -> dict | None:
         obj = self._fetch(area)
         return json.loads(obj.geometry.geojson) if obj else None
+
+    def list_in_bbox(self, bbox, *, iso=None, levels=None, tolerance=0.0, limit=1500):
+        from django.contrib.gis.db.models.functions import Area, Transform
+
+        qs = self._model().objects.filter(geometry__intersects=bbox)
+        if iso:
+            qs = qs.filter(iso_code=(_iso.to_alpha3(iso) or iso))
+        if levels:
+            qs = qs.filter(admin_level__in=[int(lvl) for lvl in levels])
+        # Equal-area projection (EPSG:6933) so the area + largest-first ordering are
+        # in real km², not square degrees. Ordering in SQL keeps the cap server-side.
+        qs = qs.annotate(_area=Area(Transform("geometry", 6933))).order_by("-_area")
+        out = []
+        for obj in qs[: int(limit)]:
+            geom = obj.geometry
+            if tolerance:
+                geom = geom.simplify(tolerance, preserve_topology=True)
+            out.append(
+                BoundaryFeature(
+                    name=obj.name,
+                    level=obj.admin_level,
+                    source=self.name,
+                    country=obj.iso_code,
+                    boundary_id=obj.boundary_id,
+                    geometry=json.loads(geom.geojson),
+                    area_km2=round(obj._area.sq_km, 1) if obj._area is not None else None,
+                    population=obj.population,
+                    name_local=obj.name_local or "",
+                    parent_name=_labs_parent_name(obj),
+                    ref={"boundary_id": obj.boundary_id, "source": self.name},
+                )
+            )
+        return out
+
+
+def _labs_parent_name(obj) -> str:
+    """Best-effort parent chain for the Inspect panel, from the denormalised
+    ``extra.parent_names`` the loaders store (shape varies by source)."""
+    names = (getattr(obj, "extra", None) or {}).get("parent_names")
+    if isinstance(names, dict):
+        return " › ".join(str(v) for v in names.values() if v)
+    if isinstance(names, (list, tuple)):
+        return " › ".join(str(v) for v in names if v)
+    return ""
 
 
 def _geos_from_geojson(geom: dict | None):
@@ -299,6 +440,38 @@ class BoundaryResolver:
     def geometry(self, area: AdminArea) -> dict | None:
         source = self._sources.get(area.source) or self.source_for(area.country, area.level)
         return source.get_geometry(area)
+
+    def _default_bbox_source(self, iso_code: str | None) -> str:
+        """Source for a viewport query when the user hasn't picked one: the country's
+        preferred source that has *any* data, else Overture."""
+        if iso_code:
+            a3 = _iso.to_alpha3(iso_code) or iso_code
+            for name in self._order_for(a3):
+                src = self._sources.get(name)
+                if src and any(src.covers(a3, lvl) for lvl in (LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY)):
+                    return name
+        return "overture" if "overture" in self._sources else next(iter(self._sources))
+
+    def bbox_source_name(self, source: str | None, iso: str | None) -> str:
+        """The source name a viewport query will use: the picked one if known, else
+        the country default. (Lets a view report the used source without re-querying.)"""
+        return source if (source and source in self._sources) else self._default_bbox_source(iso)
+
+    def boundaries_in_bbox(
+        self, bbox, *, source: str | None = None, iso: str | None = None, levels=None, zoom=None, limit: int = 1500
+    ) -> tuple[list[BoundaryFeature], bool]:
+        """Boundaries intersecting ``bbox`` from a single source (the picked one, or the
+        country default). Returns ``(features, truncated)`` — ``truncated`` is True when
+        the intersect set exceeded ``limit`` (the FE prompts "zoom in")."""
+        name = self.bbox_source_name(source, iso)
+        src = self._sources[name]
+        tolerance = tolerance_for_zoom(zoom)
+        # Fetch one past the cap so we can detect (and report) truncation.
+        feats = src.list_in_bbox(bbox, iso=iso, levels=levels, tolerance=tolerance, limit=int(limit) + 1)
+        truncated = len(feats) > limit
+        if truncated:
+            logger.info("viewport boundaries truncated to %d (source=%s iso=%s)", limit, name, iso)
+        return feats[:limit], truncated
 
 
 def get_resolver() -> BoundaryResolver:
