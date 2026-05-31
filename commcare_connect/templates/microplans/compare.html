@@ -59,7 +59,7 @@
 
   async function loadPicker() {
     try {
-      const d = await (await fetch(LIST_URL)).json();
+      const d = await Microplans.apiGet(LIST_URL);
       const box = $("plan-picker");
       if (!d.plans || !d.plans.length) { box.innerHTML = '<span class="text-gray-400">No saved plans yet.</span>'; return; }
       box.innerHTML = d.plans.map((p) =>
@@ -69,19 +69,23 @@
         if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
         syncUrl(); renderCompare();
       }));
-    } catch (e) { $("picker-status").textContent = "Could not load plans: " + e; }
+    } catch (e) { $("picker-status").textContent = "Could not load plans: " + e.message; }
   }
   function syncUrl() {
     const u = new URL(window.location); u.searchParams.set("plans", [...selected].join(",")); history.replaceState(null, "", u);
   }
 
+  let cmpCtrl = null;
   async function renderCompare() {
     const ids = [...selected];
     if (ids.length < 1) { $("compare-status").textContent = "Select plans to compare."; $("compare-table").innerHTML = ""; return; }
     $("compare-status").textContent = "Loading…";
+    // Cancel any in-flight compare so a slow earlier response can't overwrite a
+    // newer selection (rapid checkbox toggling races otherwise).
+    if (cmpCtrl) cmpCtrl.abort();
+    cmpCtrl = new AbortController();
     try {
-      const d = await (await fetch(COMPARE_URL + "?plans=" + ids.join(","))).json();
-      if (d.status !== "ok") { $("compare-status").textContent = d.detail || "compare failed"; return; }
+      const d = await Microplans.apiGet(COMPARE_URL + "?plans=" + ids.join(","), { signal: cmpCtrl.signal });
       $("compare-status").textContent = "";
       const plans = d.plans;
       const base = plans[0];
@@ -107,7 +111,10 @@
       html += `</tbody>`;
       $("compare-table").innerHTML = html;
       $("weights-note").textContent = "Deltas (the small +/− numbers) are vs the first plan. Green = better on that metric, red = worse.";
-    } catch (e) { $("compare-status").textContent = "Request failed: " + e; }
+    } catch (e) {
+      if (e.aborted) return;  // superseded by a newer selection
+      $("compare-status").textContent = "Request failed: " + e.message;
+    }
   }
 
   loadPicker(); renderCompare();
