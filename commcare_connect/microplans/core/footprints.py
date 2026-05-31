@@ -33,6 +33,14 @@ _COLUMNS_WITH_GEOM = ["lon", "lat", "area_m2", "confidence", "geom_json"]
 # generous ceiling that still blocks "the whole country" mistakes.
 MAX_AREA_KM2 = 2000.0
 
+# Result-row backstop on the Overture scan. The bbox MAX_AREA_KM2 guard + Overture's
+# hive partitioning already bound the *scan*; this caps *materialization* so a
+# pathological dense area can't pull an unbounded DataFrame into worker memory. A
+# real coverage area is far below this — hitting it is logged as likely truncation.
+# (DuckDB has no statement_timeout; a true time bound / per-user rate limit would
+# need an interrupt thread and is left as follow-up.)
+MAX_BUILDING_ROWS = 1_000_000
+
 
 def _area_cache_key(wkt: str) -> str:
     # Geometry-only (confidence-agnostic): we store every building + filter by
@@ -153,8 +161,15 @@ def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.Data
           AND bbox.ymin >= ? AND bbox.ymax <= ?
           AND ST_Within(ST_Centroid(geometry), ST_GeomFromText(?))
           {conf_clause}
+        LIMIT {MAX_BUILDING_ROWS}
     """
     df = con.execute(query, params).df()
+    if len(df) >= MAX_BUILDING_ROWS:
+        logger.warning(
+            "overture fetch hit the %d-row cap (bbox=%s) — footprints may be truncated",
+            MAX_BUILDING_ROWS,
+            (minx, miny, maxx, maxy),
+        )
     # ST_AsGeoJSON returns a string; the JSONField wants a dict.
     if "geom_json" in df.columns:
         import json as _json
