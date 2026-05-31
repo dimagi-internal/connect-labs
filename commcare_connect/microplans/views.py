@@ -100,7 +100,7 @@ class PreviewFrameView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": str(e)}, status=400)
         except Exception:  # noqa: BLE001
             # Unexpected — log server-side, return a generic message (no internal leak).
-            logger.exception("rooftop preview_frame failed (opp=%s)", opp_id)
+            logger.exception("microplans preview_frame failed (opp=%s)", opp_id)
             return JsonResponse(
                 {"status": "error", "detail": "Frame generation failed. Check server logs."},
                 status=502,
