@@ -349,8 +349,17 @@ class BoundaryViewportView(LoginRequiredMixin, View):
             }
         )
 
-    @staticmethod
-    def _parse_bbox(raw):
+    # Snap the viewport bbox to a coarse grid before querying. The cache (and the
+    # DuckDB/PostGIS scan) key on the bbox, so raw continuous pan/zoom floats made
+    # every frame a unique, never-reused entry. Snapping outward to a ~5.5 km tile
+    # means nearby pans reuse one cached result; the layer renders the small
+    # superset fine. Snapping the *query* (not just the key) keeps it correct.
+    SNAP_DEG = 0.05
+
+    @classmethod
+    def _parse_bbox(cls, raw):
+        import math
+
         from django.contrib.gis.geos import Polygon
 
         if not raw:
@@ -361,6 +370,11 @@ class BoundaryViewportView(LoginRequiredMixin, View):
             return None
         if minx >= maxx or miny >= maxy:
             return None
+        s = cls.SNAP_DEG
+        minx = round(math.floor(minx / s) * s, 4)
+        miny = round(math.floor(miny / s) * s, 4)
+        maxx = round(math.ceil(maxx / s) * s, 4)
+        maxy = round(math.ceil(maxy / s) * s, 4)
         poly = Polygon.from_bbox((minx, miny, maxx, maxy))
         poly.srid = 4326
         return poly
@@ -370,14 +384,14 @@ class BoundaryViewportView(LoginRequiredMixin, View):
         """Sources with data for this region (preference order), for the picker.
         Without an iso we can't scope to a country, so offer all known sources."""
         if not iso:
-            return list(resolver._sources)
+            return resolver.source_names()
         seen, out = set(), []
         for level in (1, 2, 3):
             for name in resolver.sources_for(iso, level):
                 if name not in seen:
                     seen.add(name)
                     out.append(name)
-        return out or list(resolver._sources)
+        return out or resolver.source_names()
 
 
 # --- Planning-phase plan review/edit (the LLO validation layer; pre-upload) ---
