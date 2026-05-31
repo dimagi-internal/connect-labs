@@ -925,6 +925,17 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["footprints_url"] = reverse("microplans:program_plan_footprints", args=[program_id, plan_id])
         context["regroup_url"] = reverse("microplans:program_plan_regroup", args=[program_id, plan_id])
         context["reassign_url"] = reverse("microplans:program_plan_reassign", args=[program_id, plan_id])
+        # Area-definition URLs are program-scoped via a placeholder opp_id (123),
+        # exactly as the setup page does. The endpoints don't actually require
+        # a real opp; the path arg is just historical.
+        context["preview_coverage_url"] = reverse("microplans:preview_coverage", args=[123])
+        context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
+        context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
+        context["countries_url"] = reverse("microplans:countries")
+        context["regenerate_url"] = reverse("microplans:program_plan_regenerate", args=[program_id, plan_id])
+        from django.conf import settings as _s
+
+        context["mapbox_token"] = _s.MAPBOX_TOKEN or context.get("mapbox_token", "")
         context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + f"?plans={plan_id}"
         context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         return context
