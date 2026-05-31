@@ -3,7 +3,7 @@ auth:
 base_url: https://labs.connect.dimagi.com
 build_order:
 - dana-opens-the-program-workspace-for-the-kano-arm-of-the-rct
-- dana-pastes-the-ward-names-the-system-resolves-them-and-shows-back-the-matches-for-confirmation
+- dana-pastes-the-ward-names-the-system-resolves-them-and-dana-disambiguates-each-ambiguous-row-inline-before-any-plan-is-created
 - dana-confirms-picks-the-config-and-hits-create-plans-the-bulk-operation-runs-with-progress
 - dana-spots-the-outliers-via-the-comparison-page
 - dana-bundles-the-batch-and-shares-it-with-the-llo
@@ -45,8 +45,11 @@ narrative: 'Dana opens her program''s workspace in labs to start the Kano arm of
   Jibga, Kadan Dani, Durma, Rimin Gado, Dawakin Gulu, Tofa, and Kwami (each roughly
   20–30K people, spread across the four shortlisted Kano LGAs: Nassarawa, Fagge, Tofa,
   Madobi). She opens the bulk-create form, pastes the ten ward names, and the system
-  matches them against the admin boundaries and presents back the matched ward data
-  so Dana can confirm all ten were found before proceeding. She confirms the matches,
+  matches them against the admin boundaries — six come back uniquely matched (their LGA
+  + population shown), and four come back ambiguous (Madobi, Gora, Tofa, Kwami each map
+  to multiple LGAs); a Pick LGA dropdown beside each ambiguous row lists the candidate
+  LGAs with populations so Dana picks which one she means inline, lifting the matched
+  count to ten before any plan is created. She confirms the matches,
   picks the per-batch config (Coverage, Balanced, 100 buildings per work area, ±10%
   balance tolerance), and hits Create Plans — the system materializes one plan per
   ward in a single bulk operation against real building footprints, showing per-ward
@@ -113,33 +116,43 @@ scenes:
     Rimin Gado, Dawakin Gulu, Tofa, Kwami) visible as the day's assignment.
   title: Dana opens the program workspace for the Kano arm of the RCT
 - concept_claim: The bulk-create form resolves each pasted ward name against the admin
-    boundaries and shows Dana the matched ward data (LGA, population, ID) so she confirms
-    all wards were found before the system commits to creating any plans.
-  design_intent: Confirmation before commit is what makes paste-the-list trustworthy
-    — without it the form would silently best-effort-match typo'd names and create
-    wrong plans.
+    boundaries and shows Dana the matched ward data (LGA, population, ID) for unique
+    names, an explicit unresolved_reason for typos/unknown names, and a per-row LGA
+    picker (with candidate LGA + population) for names that collide across multiple
+    LGAs — so she confirms or disambiguates every row inline before the system commits
+    to creating any plans.
+  design_intent: Confirmation-or-disambiguation before commit is what makes paste-the-list
+    trustworthy — without it the form would silently best-effort-match typo'd names
+    and create plans against the wrong of several same-named wards.
   features:
   - description: An admin_boundaries endpoint that takes a list of ward names + a
       country/level scope and returns per-name {matched_id, matched_name, lga, population,
-      unresolved_reason}.
+      unresolved_reason, candidates}. The candidates field is non-empty when the name
+      matches more than one boundary, listing each candidate's {matched_id, matched_name,
+      lga, population} sorted by population desc.
     id: resolve-many-endpoint
-    verify: POST /api/admin_boundaries/resolve-many/ with names=[Galinja, FakeWardName]
-      returns a JSON list with one matched_id non-null and one unresolved_reason non-empty.
+    verify: POST /labs/explorer/boundaries/resolve_many/ with names=[Galinja, Madobi,
+      FakeWardName] returns a JSON list with one matched_id non-null (Galinja), one
+      candidates list of length 2 (Madobi → Dutse LGA / Madobi LGA), and one unresolved_reason
+      non-empty (FakeWardName "not found").
   - description: The bulk-create form renders the resolved table and disables the
-      "Create Plans" action until the lead explicitly confirms (or fixes/skips) every
-      row.
+      "Create N plans" action until every row is either matched, picked-from-candidates,
+      or explicitly skipped. Ambiguous rows show a Pick LGA dropdown alongside Skip;
+      "not found" rows only show Skip.
     id: confirm-step-before-create
-    verify: After paste + resolve, the Create Plans button is disabled until a confirm-resolved-list
-      action is fired; the action is rejected if any row is still unresolved without
-      being explicitly skipped.
+    verify: After paste + resolve, the "Create N plans" button is disabled until every
+      unresolved row has been resolved-via-picker or skipped; the button's count reflects
+      the live matched count.
   persona: lead
   provenance: name-match-and-confirm
   show: Open the bulk-create form, paste the ten Kano ward names, and read back the
-    resolved ward list — each name matched to its admin boundary (LGA + population
-    + ID), with any unresolved names called out explicitly so Dana can confirm or
-    fix before proceeding.
-  title: Dana pastes the ward names; the system resolves them and shows back the matches
-    for confirmation
+    resolved table — Galinja/Jibga/Kadan Dani/Durma/Rimin Gado/Dawakin Gulu come back
+    Matched (their LGA + population shown), while Madobi/Gora/Tofa/Kwami come back
+    ambiguous with a Pick LGA dropdown listing each candidate's LGA + population so
+    Dana picks which one she means inline. "Create 6 plans" updates to "Create 10 plans"
+    as she picks; Skip remains a fallback for genuinely uncertain rows.
+  title: Dana pastes the ward names; the system resolves them and Dana disambiguates
+    each ambiguous row inline before any plan is created
 - concept_claim: Confirmed names + one config commits one Create Plans call that materializes
     one plan per ward in a single bulk operation, with per-ward progress shown so
     the lead knows the long-running call is working.
