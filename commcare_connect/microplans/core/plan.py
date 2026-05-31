@@ -265,11 +265,34 @@ def _haversine_km(p: list[float], q: list[float]) -> float:
 def _territory_diameter_km(centroids: list[list[float]]) -> float:
     """Max pairwise great-circle distance between an FLW's work-area centroids —
     the territory *diameter* (matches Neal's calculate_max_distance), not a radius.
-    0 for a single area."""
+    0 for a single area.
+
+    The diameter always lies between two convex-hull vertices, so for large
+    territories we hull-reduce first and do the O(h²) pairwise max over the few
+    hull points instead of O(n²) over every cell — pre-assignment a coverage plan
+    collapses to one territory of up to MAX_WORK_AREAS centroids, and this runs
+    per-plan on every workspace load. Result is identical (exact, not sampled)."""
     n = len(centroids)
     if n < 2:
         return 0.0
-    return max(_haversine_km(centroids[i], centroids[j]) for i in range(n) for j in range(i + 1, n))
+    pts = centroids
+    if n > 50:
+        try:
+            from shapely.geometry import MultiPoint
+
+            hull = MultiPoint([(float(c[0]), float(c[1])) for c in centroids]).convex_hull
+            if hull.geom_type == "Polygon":
+                pts = [list(xy) for xy in hull.exterior.coords]
+            elif hull.geom_type == "LineString":
+                pts = [list(xy) for xy in hull.coords]
+            elif hull.geom_type == "Point":
+                return 0.0  # all coincident
+        except Exception:  # noqa: BLE001 — never let a hull edge case break KPIs
+            pts = centroids
+    m = len(pts)
+    if m < 2:
+        return 0.0
+    return max(_haversine_km(pts[i], pts[j]) for i in range(m) for j in range(i + 1, m))
 
 
 def _imbalance_pct(values: list[float], target: float) -> float | None:
