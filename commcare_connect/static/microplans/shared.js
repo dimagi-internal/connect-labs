@@ -70,18 +70,14 @@
   // Error. Use for new call sites so status/parse handling lives in one place.
   // Throws Error with `.aborted === true` when the request was cancelled, so
   // callers can ignore those silently.
-  async function apiCall(url, body, opts) {
-    let resp;
-    try {
-      resp = await post(url, body, opts);
-    } catch (e) {
-      if (e && e.name === 'AbortError') {
-        const err = new Error('aborted');
-        err.aborted = true;
-        throw err;
-      }
-      throw new Error('Network error — check your connection and try again.');
-    }
+  function _abortError() {
+    const err = new Error('aborted');
+    err.aborted = true;
+    return err;
+  }
+  // Shared status/parse handling for apiCall + apiGet: guard JSON parsing and
+  // reject with the server-supplied detail on a non-2xx or {status:"error"}.
+  async function _parseJsonResponse(resp) {
     let data = null;
     try {
       data = await resp.json();
@@ -95,6 +91,31 @@
       throw new Error(detail);
     }
     return data;
+  }
+
+  async function apiCall(url, body, opts) {
+    let resp;
+    try {
+      resp = await post(url, body, opts);
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw _abortError();
+      throw new Error('Network error — check your connection and try again.');
+    }
+    return _parseJsonResponse(resp);
+  }
+
+  // GET + parse JSON, same handling as apiCall. Pass {signal} for an
+  // AbortController; rejects with `.aborted === true` when cancelled.
+  async function apiGet(url, opts) {
+    opts = opts || {};
+    let resp;
+    try {
+      resp = await fetch(url, { signal: opts.signal });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw _abortError();
+      throw new Error('Network error — check your connection and try again.');
+    }
+    return _parseJsonResponse(resp);
   }
 
   // ---- color ----------------------------------------------------------------
@@ -234,6 +255,7 @@
     getCsrf,
     post,
     apiCall,
+    apiGet,
     colorFor,
     OPP_COLORS,
     oppColorFor,
