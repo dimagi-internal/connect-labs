@@ -138,7 +138,10 @@
   <!-- Step 2: Resolved preview -->
   <section id="step-preview" class="hidden border border-gray-200 rounded-lg bg-white p-5 space-y-4">
     <div class="flex items-center justify-between gap-4">
-      <h2 class="text-lg font-semibold text-gray-900">Resolved wards</h2>
+      <div>
+        <h2 class="text-lg font-semibold text-gray-900">Resolved wards</h2>
+        <p class="text-xs text-gray-500 mt-0.5">via <span class="font-medium text-gray-700">GeoPoDe</span> · admin-boundary table loaded from the canonical Nigeria shape set</p>
+      </div>
       <div class="flex items-center gap-3">
         <div class="stat-card">
           <div class="stat-num ok" id="stat-matched">0</div>
@@ -467,6 +470,10 @@
           if (res.status === "ok") {
             pill.className = "pill pill-ok pill-just-flipped";
             pill.textContent = res.plan_id ? `✓ Created · #${res.plan_id}` : "✓ Created";
+            // Live-update the section title as plans land so the eye reads
+            // progress, not just "still creating".
+            const sofar = okCount + 1;
+            $("create-title").textContent = `Created ${sofar} of ${results.length} plans…`;
             // Wrap the row label in a deep-link if we got a plan_id.
             if (res.plan_id) {
               const labelEl = row.querySelector(".progress-label");
