@@ -393,7 +393,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             plans[pid] = _FakeProgramPlan(pid, mode, was, name=name, region=region)
             return plans[pid]
 
-        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None):
+        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None):
             was = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
             p = plans[int(pid)]
             p.work_areas = was
@@ -405,7 +405,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             p.data["assignment"] = {}
             return p
 
-        def apply_plan_edits(self, pid, wa_ids, action, params, actor):
+        def apply_plan_edits(self, pid, wa_ids, action, params, actor, base_revision=None):
             p = plans[int(pid)]
             for wa_id in wa_ids:
                 wa = plan_lib.find(p.work_areas, wa_id)
@@ -414,7 +414,7 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
                 plan_lib.apply_action(wa, action, params, actor)
             return p
 
-        def transition_plan(self, pid, to, actor, opportunity_id=None):
+        def transition_plan(self, pid, to, actor, opportunity_id=None, base_revision=None):
             p = plans[int(pid)]
             data = dict(p.data)
             plan_lib.transition_plan(data, to, actor, opportunity_id=opportunity_id)
@@ -703,6 +703,51 @@ def test_program_compare_json_bad_ids_400(client, django_user_model, monkeypatch
     _make_fake_program_da(monkeypatch, {}, {})
     resp = client.get(reverse("microplans:program_plan_compare", kwargs={"program_id": 25}) + "?plans=abc")
     assert resp.status_code == 400
+
+
+def test_program_compare_uses_list_plans_not_per_id(client, django_user_model, monkeypatch):
+    """N+1 guard: compare must fetch the program once (list_plans), not get_plan per id."""
+    _login(client, django_user_model)
+
+    class CountDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def list_plans(self):
+            return [_FakeProgramPlan(1, "coverage", []), _FakeProgramPlan(2, "coverage", [])]
+
+        def get_plan(self, pid):
+            raise AssertionError("compare must not call get_plan per id (N+1)")
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", CountDA)
+    resp = client.get(reverse("microplans:program_plan_compare", kwargs={"program_id": 1}) + "?plans=2,1")
+    assert resp.status_code == 200
+    assert [e["plan_id"] for e in resp.json()["plans"]] == [2, 1]  # requested order preserved
+
+
+def test_program_regenerate_stale_revision_returns_409(client, django_user_model, monkeypatch):
+    """A save against a stale revision surfaces as 409 (not a silent clobber)."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core.data_access import StalePlanError
+
+    class ConflictDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def regenerate_plan(self, *a, **k):
+            raise StalePlanError("This plan changed since you opened it (you have r0, it's now r3). Reload…")
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", ConflictDA)
+    resp = client.post(
+        reverse("microplans:program_plan_regenerate", kwargs={"program_id": 1, "plan_id": 2}),
+        data=json.dumps(
+            {"mode": "coverage", "coverage_areas": {"type": "FeatureCollection", "features": []}, "revision": 0}
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 409
+    assert resp.json()["status"] == "error"
+    assert "changed" in resp.json()["detail"].lower()
 
 
 def test_program_compare_page_renders(client, django_user_model):

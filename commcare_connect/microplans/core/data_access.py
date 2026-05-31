@@ -20,6 +20,13 @@ from commcare_connect.workflow.data_access import BaseDataAccess
 SCHEMA_VERSION = 4
 
 
+class StalePlanError(Exception):
+    """A save was attempted against a revision older than the stored one — i.e. the
+    plan changed (another tab/session, or a `regenerate`) since the caller loaded
+    it. The view turns this into a 409 so the UI can warn + reload instead of
+    silently clobbering the newer state. See ``ProgramPlanDataAccess._save_plan``."""
+
+
 class ProgramPlanDataAccess(BaseDataAccess):
     """Program-scoped CRUD for microplans + plan groups.
 
@@ -69,12 +76,16 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "input_areas": list(input_areas or []),
                 "grouping": dict(grouping or {}),
                 "status_log": [],
+                # Optimistic-concurrency counter; bumped on every _save_plan.
+                "revision": 0,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
         return PlanRecord(record.to_api_dict())
 
-    def reassign_plan(self, plan_id: int, assignment: dict, actor: str) -> PlanRecord:
+    def reassign_plan(
+        self, plan_id: int, assignment: dict, actor: str, base_revision: int | None = None
+    ) -> PlanRecord:
         """Re-apply CHW assignment to a plan's groups.
 
         Phase 2 of the two-phase pipeline. Snapshots each cell's old worker,
@@ -97,9 +108,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 plan_lib.apply_action(w, "reassign", {"opportunity_access": new_workers[w["id"]]}, actor)
         data["work_areas"] = work_areas
         data["assignment"] = assignment
-        return self._save_plan(plan, data)
+        return self._save_plan(plan, data, base_revision)
 
-    def regroup_plan(self, plan_id: int, grouping: dict, actor: str) -> PlanRecord:
+    def regroup_plan(self, plan_id: int, grouping: dict, actor: str, base_revision: int | None = None) -> PlanRecord:
         """Re-apply grouping (cells → work_area_group) to an existing plan.
 
         Phase 1 of the two-phase pipeline. Snapshots each cell's old group, runs
@@ -124,7 +135,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
             plan_lib.apply_action(w, "regroup", {"work_area_group": new_groups[w["id"]]}, actor)
         data["work_areas"] = work_areas
         data["grouping"] = grouping
-        return self._save_plan(plan, data)
+        return self._save_plan(plan, data, base_revision)
 
     def regenerate_plan(
         self,
@@ -134,6 +145,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         hulls: dict,
         input_areas: list,
         grouping: dict | None = None,
+        base_revision: int | None = None,
     ) -> PlanRecord:
         """Destructive re-creation of the work areas for an existing plan.
 
@@ -155,7 +167,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["mode"] = mode
         data["grouping"] = dict(grouping or {})
         data["assignment"] = {}  # destructive reset — no CHWs carried over
-        return self._save_plan(plan, data)
+        return self._save_plan(plan, data, base_revision)
 
     def list_plans(self) -> list[PlanRecord]:
         return self.labs_api.get_records(
@@ -170,7 +182,24 @@ class ProgramPlanDataAccess(BaseDataAccess):
             int(plan_id), experiment=self._experiment, type=TYPE_PLAN, model_class=PlanRecord
         )
 
-    def _save_plan(self, plan: PlanRecord, data: dict) -> PlanRecord:
+    def _save_plan(self, plan: PlanRecord, data: dict, base_revision: int | None = None) -> PlanRecord:
+        """Persist mutated plan ``data``, bumping the optimistic-concurrency
+        ``revision``. If ``base_revision`` is given (the revision the caller loaded)
+        and it no longer matches the freshly-read plan, raise ``StalePlanError`` —
+        the plan changed underneath us, so saving would clobber the newer state.
+
+        ``plan`` was just read by the calling method, so ``plan.data['revision']`` is
+        the current stored value. There's a tiny residual TOCTOU window before the
+        write (the Labs Record API has no conditional update), which is acceptable
+        for single-reviewer planning — this catches the common stale-tab case the
+        UI surfaces as a reload prompt, not distributed locking."""
+        current_rev = int(plan.data.get("revision", 0))
+        if base_revision is not None and int(base_revision) != current_rev:
+            raise StalePlanError(
+                f"This plan changed since you opened it (you have r{int(base_revision)}, "
+                f"it's now r{current_rev}). Reload to get the latest before saving."
+            )
+        data["revision"] = current_rev + 1
         record = self.labs_api.update_record(
             record_id=plan.id,
             experiment=self._experiment,
@@ -181,7 +210,9 @@ class ProgramPlanDataAccess(BaseDataAccess):
         )
         return PlanRecord(record.to_api_dict())
 
-    def apply_plan_edits(self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str) -> PlanRecord:
+    def apply_plan_edits(
+        self, plan_id: int, wa_ids: list[str], action: str, params: dict, actor: str, base_revision: int | None = None
+    ) -> PlanRecord:
         """Apply one edit to one or more work areas in a single read-modify-write
         (phase=planning audit per area). Last-write-wins across concurrent requests
         — acceptable for single-reviewer planning."""
@@ -194,15 +225,17 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 raise ValueError(f"work area {wa_id!r} not in plan {plan_id}")
             plan_lib.apply_action(wa, action, params, actor)
         data["work_areas"] = work_areas
-        return self._save_plan(plan, data)
+        return self._save_plan(plan, data, base_revision)
 
-    def transition_plan(self, plan_id: int, to: str, actor: str, opportunity_id=None) -> PlanRecord:
+    def transition_plan(
+        self, plan_id: int, to: str, actor: str, opportunity_id=None, base_revision: int | None = None
+    ) -> PlanRecord:
         """Advance a plan's lifecycle status (Draft→In review→Approved→Deployed /
         Archived). Deploying binds the live Connect opportunity_id."""
         plan = self.get_plan(plan_id)
         data = dict(plan.data)
         plan_lib.transition_plan(data, to, actor, opportunity_id=opportunity_id)
-        return self._save_plan(plan, data)
+        return self._save_plan(plan, data, base_revision)
 
     def delete_plan(self, plan_id: int) -> None:
         """Hard-delete a plan record. Use sparingly — Archive (status transition) is

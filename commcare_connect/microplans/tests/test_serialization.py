@@ -45,6 +45,12 @@ def test_plan_lookup_geometry_none_when_no_geometry():
     assert serialization.plan_lookup_geometry(plan) is None
 
 
+def test_plan_to_json_includes_revision():
+    assert serialization.plan_to_json(_Plan(data={"revision": 7}))["revision"] == 7
+    # legacy plans without the field default to 0 (so the UI can still echo it back)
+    assert serialization.plan_to_json(_Plan())["revision"] == 0
+
+
 def test_plan_to_json_rounds_geometry_coords():
     wa = [{"geometry": {"type": "Point", "coordinates": [13.123456789, 11.987654321]}, "building_count": 5}]
     out = serialization.plan_to_json(_Plan(work_areas=wa))
