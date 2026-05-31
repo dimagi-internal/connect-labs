@@ -375,6 +375,42 @@
         pill.className = "pill pill-err";
         pill.textContent = r.unresolved_reason || "Not found";
         tdStat.appendChild(pill);
+
+        // When the row is ambiguous AND we have candidate boundaries, give
+        // the lead an inline picker so she can pick "Madobi (Madobi LGA)"
+        // or "Madobi (Kano Municipal LGA)" without losing the row. Skip
+        // stays as the fallback. For "not found" (no candidates), only
+        // Skip applies — no disambiguation possible.
+        if (Array.isArray(r.candidates) && r.candidates.length > 0) {
+          const pick = document.createElement("select");
+          pick.className = "ml-2 text-xs rounded border border-gray-300 px-1 py-0.5 max-w-[18rem]";
+          pick.title = "Pick which boundary this name refers to";
+          const opt0 = document.createElement("option");
+          opt0.value = "";
+          opt0.textContent = "Pick LGA…";
+          pick.appendChild(opt0);
+          r.candidates.forEach((c, ci) => {
+            const o = document.createElement("option");
+            o.value = String(ci);
+            const popStr = (c.population != null && !isNaN(c.population)) ? ` — ${fmtPop(c.population)}` : "";
+            o.textContent = `${c.lga || "(no LGA)"}${popStr}`;
+            pick.appendChild(o);
+          });
+          pick.onchange = (e) => {
+            const ci = parseInt(e.target.value, 10);
+            if (!isNaN(ci) && r.candidates[ci]) {
+              const c = r.candidates[ci];
+              RESOLUTIONS[i].matched_id = c.matched_id;
+              RESOLUTIONS[i].matched_name = c.matched_name;
+              RESOLUTIONS[i].lga = c.lga;
+              RESOLUTIONS[i].population = c.population;
+              RESOLUTIONS[i].unresolved_reason = "";
+              renderPreview();
+            }
+          };
+          tdStat.appendChild(pick);
+        }
+
         const skip = document.createElement("button");
         skip.type = "button";
         skip.className = "ml-2 text-xs text-brand-cornflower-blue hover:underline";

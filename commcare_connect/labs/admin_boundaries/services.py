@@ -2064,6 +2064,17 @@ class NameResolution:
     """Per-name resolution returned by `resolve_many_by_name`.
 
     Exactly one of (matched_id, unresolved_reason) is non-empty.
+
+    When ``unresolved_reason`` is ``ambiguous: N candidates``, ``candidates``
+    lists each candidate boundary so the front-end can render a pick-the-LGA
+    affordance per row instead of forcing Skip-and-lose-the-row. Without this,
+    Dana pastes 10 wards, 4 come back ambiguous, and "Create 6 plans" is the
+    only path forward — a task-completion failure. With the candidate list
+    surfaced, she picks "Madobi (Madobi LGA)" or "Tofa (Bagwai LGA)" inline
+    and proceeds with all 10 wards.
+
+    ``candidates`` is ALWAYS present (empty list for ``not found`` / clean
+    matches) so the front-end can iterate unconditionally.
     """
 
     name: str
@@ -2072,6 +2083,7 @@ class NameResolution:
     lga: str = ""
     population: float | None = None
     unresolved_reason: str = ""
+    candidates: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -2081,6 +2093,7 @@ class NameResolution:
             "lga": self.lga,
             "population": self.population,
             "unresolved_reason": self.unresolved_reason,
+            "candidates": self.candidates,
         }
 
 
@@ -2161,10 +2174,26 @@ def resolve_many_by_name(
             results.append(NameResolution(name=raw, unresolved_reason="not found"))
             continue
         if len(matches) > 1:
+            # Surface each candidate so the front-end can render a picker
+            # ("Madobi (Madobi LGA, pop 7,452)" / "Madobi (Kano Municipal LGA,
+            # pop 23K)") instead of forcing Skip. Order by population desc
+            # then name asc so the highest-signal candidate is first — gives
+            # Dana a sensible default to compare against.
+            cands = [
+                {
+                    "matched_id": b.boundary_id,
+                    "matched_name": b.name,
+                    "lga": parent_name_by_id.get(b.parent_boundary_id, ""),
+                    "population": b.population,
+                }
+                for b in matches
+            ]
+            cands.sort(key=lambda c: (-(c["population"] or 0), c["matched_name"]))
             results.append(
                 NameResolution(
                     name=raw,
                     unresolved_reason=f"ambiguous: {len(matches)} candidates",
+                    candidates=cands,
                 )
             )
             continue
