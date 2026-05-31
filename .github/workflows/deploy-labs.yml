@@ -18,8 +18,30 @@ env:
   ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
 
 jobs:
+  guard:
+    # Hard gate: this workflow only deploys from labs-main. If somebody (human
+    # or agent) triggers it on any other branch it fails fast, before pushing
+    # an image. The previous behavior — workflow_dispatch on any ref — was
+    # easy to misuse: a branch deploy can land code that hasn't been reviewed
+    # AND it makes "what is prod running?" ambiguous. labs-main is the
+    # canonical source of truth; deploys come from there or not at all.
+    name: Guard — branch must be labs-main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse deploys from non-labs-main refs
+        run: |
+          ref="${GITHUB_REF:-}"
+          echo "triggered on ref=$ref"
+          if [ "$ref" != "refs/heads/labs-main" ]; then
+            echo "::error::Deploys are only allowed from labs-main. Got: $ref"
+            echo "::error::Land your changes on labs-main first (PR + merge), then re-run this workflow."
+            exit 1
+          fi
+          echo "ref OK — proceeding to deploy"
+
   deploy:
     name: Deploy to Fargate
+    needs: guard
     runs-on: ubuntu-latest
 
     permissions:
