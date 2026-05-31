@@ -395,7 +395,12 @@ class DownloadWorkAreaCSVView(LoginRequiredMixin, View):
 
 
 def _plan_json(plan):
-    """Serialize a plan for the review UI: work areas + headline summary."""
+    """Serialize a plan for the review UI: work areas + headline summary.
+
+    Includes the most recent grouping + assignment configs so the review
+    sidebar can pre-fill its form controls with whatever produced the current
+    layout — the LLO sees ``what was used`` without a separate config header.
+    """
     from commcare_connect.microplans.core import plan as plan_lib
 
     return {
@@ -405,6 +410,8 @@ def _plan_json(plan):
         "work_areas": plan.work_areas,
         "summary": plan_lib.summarize(plan.work_areas),
         "kpis": plan_lib.plan_kpis(plan.work_areas),
+        "grouping": plan.data.get("grouping") or {},
+        "assignment": plan.data.get("assignment") or {},
     }
 
 
