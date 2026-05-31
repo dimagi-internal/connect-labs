@@ -1460,3 +1460,149 @@ class DeriveBoundaryView(LoginRequiredMixin, View):
                 "point_count": len(points),
             }
         )
+
+
+# Bulk-create flow — the "paste a ward list" form + the server-side
+# materializer that turns confirmed boundary IDs into N draft plans in one
+# call. See spec: docs/walkthroughs/microplans-10-wards.yaml scene 2/3, spine
+# items `name-match-and-confirm` + `bulk-input-ui`.
+# ---------------------------------------------------------------------------
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
+    """Render the bulk-create form (paste textarea + resolution preview + Create Plans)."""
+
+    template_name = "microplans/bulk_create.html"
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        context["program_id"] = program_id
+        context["program_url"] = reverse("microplans:program_workspace", args=[program_id])
+        context["bulk_create_url"] = reverse("microplans:program_bulk_create", args=[program_id])
+        context["resolve_many_url"] = "/labs/explorer/boundaries/resolve_many/"
+        # Sensible defaults for the Kano RCT demo arm.
+        context["default_iso"] = "NGA"
+        context["default_admin_level"] = 3
+        context["default_source"] = "geopode"
+        context["default_mode"] = "coverage"
+        return context
+
+
+class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
+    """Create N draft plans in one batch from confirmed boundary IDs.
+
+    Request body (JSON)::
+
+        {
+          "plans": [{"boundary_id": "NGA-W-galinja", "name": "Galinja"}, ...],
+          "mode": "coverage",
+          "grouping": { ... }
+        }
+
+    Per-plan: looks up the boundary's geometry, builds a one-feature hulls
+    FeatureCollection, and calls ProgramPlanDataAccess.create_plan() with the
+    same shape the single-ward setup form uses. Returns a per-plan result list
+    so the front-end can render per-row progress.
+    """
+
+    def post(self, request, program_id):
+        from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        try:
+            payload = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"status": "error", "detail": "invalid JSON"}, status=400)
+
+        plans_input = payload.get("plans") or []
+        mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
+        grouping = payload.get("grouping") or {}
+        if not isinstance(plans_input, list) or not plans_input:
+            return JsonResponse(
+                {"status": "error", "detail": "`plans` must be a non-empty list"},
+                status=400,
+            )
+        if not isinstance(grouping, dict):
+            grouping = {}
+
+        # Bulk-load the boundaries we'll need.
+        boundary_ids = [str((p or {}).get("boundary_id") or "").strip() for p in plans_input if isinstance(p, dict)]
+        wanted = [bid for bid in boundary_ids if bid]
+        boundary_by_id = {b.boundary_id: b for b in AdminBoundary.objects.filter(boundary_id__in=wanted)}
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        results = []
+        for spec in plans_input:
+            if not isinstance(spec, dict):
+                results.append({"status": "error", "detail": "invalid plan spec"})
+                continue
+            name = (spec.get("name") or "").strip()[:255]
+            boundary_id = (spec.get("boundary_id") or "").strip()
+            if not boundary_id:
+                results.append({"name": name, "status": "error", "detail": "missing boundary_id"})
+                continue
+            boundary = boundary_by_id.get(boundary_id)
+            if not boundary:
+                results.append({"name": name, "status": "error", "detail": "boundary not found"})
+                continue
+            try:
+                geom_geojson = json.loads(boundary.geometry.geojson)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("bulk_create: geometry parse failed for %s", boundary_id)
+                results.append({"name": name, "status": "error", "detail": f"bad geometry: {e}"})
+                continue
+            hulls = {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "boundary_id": boundary_id,
+                            "name": boundary.name,
+                        },
+                        "geometry": geom_geojson,
+                    }
+                ],
+            }
+            display_name = name or boundary.name
+            try:
+                plan = da.create_plan(
+                    region=display_name,
+                    name=display_name,
+                    mode=mode,
+                    pins={"type": "FeatureCollection", "features": []},
+                    hulls=hulls,
+                    input_areas=[
+                        {
+                            "kind": "admin_boundary",
+                            "boundary_id": boundary_id,
+                            "name": boundary.name,
+                        }
+                    ],
+                    grouping=grouping,
+                )
+                results.append(
+                    {
+                        "name": display_name,
+                        "status": "ok",
+                        "plan_id": plan.id,
+                        "boundary_id": boundary_id,
+                    }
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("bulk_create: create_plan failed (program=%s, ward=%s)", program_id, name)
+                results.append({"name": display_name, "status": "error", "detail": "create_plan failed"})
+
+        ok_count = sum(1 for r in results if r.get("status") == "ok")
+        return JsonResponse(
+            {
+                "status": "ok",
+                "created": ok_count,
+                "total": len(results),
+                "results": results,
+            }
+        )
