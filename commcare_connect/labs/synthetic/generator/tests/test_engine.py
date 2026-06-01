@@ -197,3 +197,45 @@ def test_generate_with_geography_places_visits_in_polygon():
     # Determinism: same seed → identical locations.
     out2 = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
     assert [v["location"] for v in out2["user_visits"]] == [v["location"] for v in visits]
+
+
+def test_geography_gps_lands_where_the_service_delivery_pipeline_reads_it():
+    """Integration guard: the service-delivery GPS pipeline reads device location
+    from form_json.metadata.location, NOT the top-level `location` field. A geography
+    visit must mirror its GPS into metadata.location, or the map overlay shows
+    0% with-GPS (the exact bug that shipped opp 10007 with 333 visits and no points).
+    """
+    from commcare_connect.microplans.service_delivery.points import _parse_packed_location
+
+    base_yaml = (GOLDEN / "manifest.yaml").read_text()
+    geo_yaml = (
+        "geography:\n"
+        "  settlements: 4\n"
+        "  settlement_spread_km: 0.8\n"
+        "  polygon:\n"
+        "    type: Polygon\n"
+        "    coordinates:\n"
+        "      - - [8.30, 11.78]\n"
+        "        - [8.40, 11.78]\n"
+        "        - [8.40, 11.88]\n"
+        "        - [8.30, 11.88]\n"
+        "        - [8.30, 11.78]\n"
+    )
+    manifest = Manifest.from_yaml(base_yaml + geo_yaml)
+    detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
+    schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits = out["user_visits"]
+    assert visits
+
+    for v in visits:
+        meta_loc = v["form_json"].get("metadata", {}).get("location")
+        assert meta_loc, "GPS must be mirrored into form_json.metadata.location for the SD pipeline"
+        assert meta_loc == v["location"], "metadata.location must match the top-level packed location"
+        # The pipeline's own parser must read it as a valid (lon, lat).
+        parsed = _parse_packed_location(meta_loc)
+        assert parsed is not None, f"SD pipeline could not parse {meta_loc!r}"
+        lon, lat = parsed
+        assert 8.30 <= lon <= 8.40 and 11.78 <= lat <= 11.88

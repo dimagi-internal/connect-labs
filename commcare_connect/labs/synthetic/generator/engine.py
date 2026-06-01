@@ -125,6 +125,12 @@ def generate(
         # household GPS so repeat visits to the same beneficiary share a location.
         beneficiary_idx = rng.randint(1, cohort.size)
         location = _packed_location(household_locations, beneficiary_idx, manifest.geography, rng)
+        # The service-delivery GPS pipeline (SERVICE_DELIVERY_GPS_SCHEMA) reads the
+        # device location from form_json.metadata.location (packed "lat lon alt acc"),
+        # mirroring real CommCare submissions. The top-level `location` field alone is
+        # invisible to that pipeline, so mirror it into metadata.location here.
+        if location:
+            form_json.setdefault("metadata", {})["location"] = location
         # Visit id MUST be a PostgreSQL bigint-compatible integer — the audit
         # data-access layer and labs cache both type the column as int, and a
         # UUID-string id breaks `filter_visit_ids=set([...])` lookups + the
