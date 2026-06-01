@@ -1372,8 +1372,8 @@ class ProgramBulkCreatePlanPageView(_LabsContextSyncMixin, LoginRequiredMixin, T
         # no boundaries are loaded for the default — UI just hides the line.
         latest = (
             AdminBoundary.objects.filter(iso_code="NGA", source="geopode")
-            .order_by("-updated_at")
-            .values_list("updated_at", flat=True)
+            .order_by("-downloaded_at")
+            .values_list("downloaded_at", flat=True)
             .first()
         )
         context["boundary_freshness"] = latest.date().isoformat() if latest else ""
