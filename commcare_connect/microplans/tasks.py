@@ -89,6 +89,45 @@ def fetch_footprints_task(self, areas):
 
 
 @celery_app.task(bind=True)
+def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, access_token):
+    """Run a heavy plan mutation (regroup / reassign / regenerate) off the web tier.
+
+    These re-run BFS grouping / minimax assignment / re-materialization over up to
+    MAX_WORK_AREAS cells — synchronously in a request they pin a gthread (same
+    starvation class as the previews #352 offloaded). Returns ``plan_to_json`` on
+    success, ``{status: conflict}`` on a stale-revision clash (#355) so the client
+    can warn+reload, or ``{status: error}`` for an actionable failure."""
+    from commcare_connect.microplans import serialization
+    from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
+
+    da = ProgramPlanDataAccess(int(program_id), access_token=access_token)
+    base_revision = params.get("revision")
+    set_task_progress(self, "Applying…")
+    try:
+        if op == "regroup":
+            plan = da.regroup_plan(int(plan_id), params.get("grouping") or {}, actor, base_revision=base_revision)
+        elif op == "reassign":
+            plan = da.reassign_plan(int(plan_id), params.get("assignment") or {}, actor, base_revision=base_revision)
+        elif op == "regenerate":
+            plan = da.regenerate_plan(
+                int(plan_id),
+                mode=params.get("mode"),
+                pins=params.get("pins"),
+                hulls=params.get("hulls"),
+                input_areas=params.get("input_areas") or [],
+                grouping=params.get("grouping") or {},
+                base_revision=base_revision,
+            )
+        else:
+            return {"status": "error", "detail": f"unknown op {op!r}"}
+    except StalePlanError as e:
+        return {"status": "conflict", "detail": str(e)}
+    except ValueError as e:
+        return {"status": "error", "detail": str(e)}
+    return serialization.plan_to_json(plan)
+
+
+@celery_app.task(bind=True)
 def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token):
     """Create N draft plans from confirmed admin boundaries — one per ward.
 

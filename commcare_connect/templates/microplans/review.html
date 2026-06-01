@@ -853,6 +853,14 @@
     setTimeout(() => location.reload(), 2000);
     return true;
   }
+  // Celery-offloaded mutations (regroup/reassign/regenerate) surface the same
+  // conflict as a completed task result {status:"conflict"} rather than a 409.
+  function conflictResult(data, setMsg) {
+    if (!data || data.status !== "conflict") return false;
+    setMsg((data.detail ? data.detail + " " : "") + "Reloading to the latest…");
+    setTimeout(() => location.reload(), 2000);
+    return true;
+  }
   function render(data) {
     if (data && data.revision !== undefined) planRevision = data.revision;
     WAS = data.work_areas || [];
@@ -1158,11 +1166,11 @@
     const t0 = performance.now();
     try {
       body.revision = planRevision;
-      const resp = await post(REGROUP_URL, body);
-      const data = await resp.json();
-      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
-      if (!resp.ok || data.status !== "ok") {
-        $("status").textContent = data.detail || ("HTTP " + resp.status);
+      // Offloaded to Celery (BFS grouping over all cells) — enqueue + poll.
+      const data = await Microplans.enqueueAndPoll(REGROUP_URL, body, { csrf: CSRF, onProgress: (m) => $("status").textContent = m });
+      if (conflictResult(data, (m) => $("status").textContent = m)) return;
+      if (data.status !== "ok") {
+        $("status").textContent = data.detail || "Re-group failed.";
       } else {
         const dt = ((performance.now() - t0) / 1000).toFixed(1);
         // Count distinct groups from the new work_areas response.
@@ -1200,11 +1208,11 @@
     const t0 = performance.now();
     try {
       body.revision = planRevision;
-      const resp = await post(REASSIGN_URL, body);
-      const data = await resp.json();
-      if (handleConflict(resp, data, (m) => $("status").textContent = m)) return;
-      if (!resp.ok || data.status !== "ok") {
-        $("status").textContent = data.detail || ("HTTP " + resp.status);
+      // Offloaded to Celery (minimax assignment over all groups) — enqueue + poll.
+      const data = await Microplans.enqueueAndPoll(REASSIGN_URL, body, { csrf: CSRF, onProgress: (m) => $("status").textContent = m });
+      if (conflictResult(data, (m) => $("status").textContent = m)) return;
+      if (data.status !== "ok") {
+        $("status").textContent = data.detail || "Re-assign failed.";
       } else {
         const dt = ((performance.now() - t0) / 1000).toFixed(1);
         const assigned = new Set((data.work_areas || []).map((w) => w.opportunity_access).filter(Boolean));
@@ -1456,10 +1464,14 @@
         buffer_distance_m: +grpBuf.value,
       } : {};
       if (PLAN_ID) {
-        const resp = await post(REGENERATE_URL, { mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping, revision: planRevision });
-        const data = await resp.json();
-        if (handleConflict(resp, data, (m) => $("apply-area-status").textContent = m)) return;
-        if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
+        // Offloaded to Celery (re-materialize + BFS grouping over all cells) — enqueue + poll.
+        const data = await Microplans.enqueueAndPoll(
+          REGENERATE_URL,
+          { mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping, revision: planRevision },
+          { csrf: CSRF, onProgress: (m) => $("apply-area-status").textContent = m },
+        );
+        if (conflictResult(data, (m) => $("apply-area-status").textContent = m)) return;
+        if (data.status !== "ok") { $("apply-area-status").textContent = data.detail || "Regenerate failed."; return; }
         $("apply-area-status").textContent = `Regenerated ${data.work_areas.length} work areas.`;
         if (draw) draw.deleteAll();
         circleAreas = []; refreshAreaStats();
