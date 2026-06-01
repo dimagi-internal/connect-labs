@@ -86,3 +86,96 @@ def fetch_footprints_task(self, areas):
         "footprints": {"type": "FeatureCollection", "features": features},
         "count": len(features),
     }
+
+
+@celery_app.task(bind=True)
+def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token):
+    """Create N draft plans from confirmed admin boundaries — one per ward.
+
+    Unlike the old inline streaming view, each ward is GRIDDED here: coverage plans
+    run ``generate_coverage_frame`` over the ward boundary (the Overture fetch +
+    clustering, which is why this is on the worker, not the web tier) so the plan is
+    a real grid of work areas rather than one cell covering the whole ward.
+
+    Reports incremental per-ward progress via ``set_task_progress`` (a growing
+    ``results`` list in the task meta) so the front-end can flip each row's pill as
+    its ward finishes. Returns the final ``{results, created, total}`` summary."""
+    from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+    from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+    da = ProgramPlanDataAccess(int(program_id), access_token=access_token)
+    total = len(plans_input)
+    results: list[dict] = []
+    ok = 0
+
+    # One DB round-trip for all wards' geometries.
+    wanted = [str((p or {}).get("boundary_id") or "").strip() for p in plans_input]
+    boundary_by_id = {b.boundary_id: b for b in AdminBoundary.objects.filter(boundary_id__in=[w for w in wanted if w])}
+
+    def _emit(progress_msg):
+        set_task_progress(self, progress_msg, results=list(results), created=ok, total=total)
+
+    for index, spec in enumerate(plans_input):
+        spec = spec if isinstance(spec, dict) else {}
+        name = (spec.get("name") or "").strip()[:255]
+        boundary_id = (spec.get("boundary_id") or "").strip()
+        row = {"index": index, "name": name, "boundary_id": boundary_id}
+
+        boundary = boundary_by_id.get(boundary_id) if boundary_id else None
+        if not boundary:
+            results.append(
+                {**row, "status": "error", "detail": "boundary not found" if boundary_id else "missing boundary_id"}
+            )
+            _emit(f"{index + 1}/{total}")
+            continue
+
+        display_name = name or boundary.name
+        row["name"] = display_name
+        try:
+            ward_geojson = _ward_grid_hulls(boundary, mode, cell_size_m)
+            plan = da.create_plan(
+                region=display_name,
+                name=display_name,
+                mode=mode,
+                pins={"type": "FeatureCollection", "features": []},
+                hulls=ward_geojson,
+                input_areas=[{"kind": "admin_boundary", "boundary_id": boundary_id, "name": boundary.name}],
+                grouping=grouping,
+            )
+            ok += 1
+            results.append({**row, "status": "ok", "plan_id": plan.id, "work_areas": len(plan.work_areas)})
+        except ValueError as e:
+            # Actionable (e.g. area too large / too many cells) — surface to the row.
+            results.append({**row, "status": "error", "detail": str(e)})
+        except Exception:  # noqa: BLE001
+            logger.exception("bulk_create: ward failed (program=%s, ward=%s)", program_id, boundary_id)
+            results.append({**row, "status": "error", "detail": "create failed"})
+        _emit(f"{index + 1}/{total}")
+
+    return {"status": "ok", "results": results, "created": ok, "total": total}
+
+
+def _ward_grid_hulls(boundary, mode, cell_size_m):
+    """Grid a ward boundary into the ``hulls`` FeatureCollection create_plan expects.
+
+    Coverage: tile the ward via ``generate_coverage_frame`` (one cell per work area).
+    Sampling/other: fall back to the single-feature boundary (one work area)."""
+    import json
+
+    geom_geojson = json.loads(boundary.geometry.geojson)
+    if mode == "coverage":
+        from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
+
+        cfg = CoverageConfig.from_payload({"cell_size_m": cell_size_m})
+        result = generate_coverage_frame([{"geometry": geom_geojson}], cfg)
+        return result.areas_geojson
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"boundary_id": boundary.boundary_id, "name": boundary.name},
+                "geometry": geom_geojson,
+            }
+        ],
+    }
