@@ -532,6 +532,10 @@
 (function () {
   const TOKEN = "{{ mapbox_token|escapejs }}";
   const CSRF = "{{ csrf_token }}";
+  // Country (alpha-3) to seed the boundary layer/search on a cold new-plan page,
+  // derived server-side from the program's footprint ("" when unknown → the layer
+  // auto-detects from whatever boundaries load once the user navigates).
+  const OPP_COUNTRY_ISO = "{{ map_country_iso|default:''|escapejs }}";
   const PLAN_URL = "{{ plan_url|escapejs }}";
   const EDIT_URL = "{{ edit_url|escapejs }}";
   const CSV_URL = "{{ csv_url|escapejs }}";
@@ -592,7 +596,7 @@
   if (TOKEN) {
     mapboxgl.accessToken = TOKEN;
     try {
-      map = new mapboxgl.Map({ container: "review-map", style: "mapbox://styles/mapbox/satellite-streets-v12", center: [8.6753, 9.082], zoom: 5 });
+      map = new mapboxgl.Map({ container: "review-map", style: "mapbox://styles/mapbox/satellite-streets-v12", center: [{{ map_center_lng|default:"8.6753" }}, {{ map_center_lat|default:"9.082" }}], zoom: {{ map_zoom|default:"5" }} });
       map.on("load", () => { mapReady = true; refreshMap(); });
     } catch (e) { /* headless / no webgl */ }
   }
