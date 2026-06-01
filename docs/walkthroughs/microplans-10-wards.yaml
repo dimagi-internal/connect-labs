@@ -7,7 +7,7 @@ build_order:
 - dana-opens-the-program-workspace-for-the-madobi-lga-arm-of-the-rct
 - dana-pastes-the-ward-names-the-system-resolves-them-and-dana-disambiguates-each-ambiguous-row-inline-before-any-plan-is-created
 - dana-confirms-picks-the-config-and-hits-create-plans-the-bulk-operation-runs-with-progress
-- dana-reads-the-per-plan-metrics-on-the-comparison-table
+- dana-reads-the-per-plan-metrics-on-the-comparison-table-then-drills-into-an-outlier-on-the-map
 - dana-checks-the-metric-definitions-in-the-glossary
 - dana-bundles-the-batch-and-shares-it-with-the-llo
 - kim-eliminates-work-areas-on-plan-1-with-reasons-school-unsafe
@@ -58,9 +58,12 @@ narrative: 'Dana opens her program''s workspace in labs to start the Madobi LGA 
   operation against real building footprints, showing per-ward progress since it''s
   long-running. She reads the per-plan KPIs in the workspace, opens the comparison
   page, picks a few plans, sorts on a metric she cares about, and decides whether
-  any plan is a true outlier worth retuning. She bundles the ten plans into one
-  group for Kim (the Madobi LGA LLO), sets the share so Kim can open it without a
-  Dimagi account, and sends one link. Kim opens plan 1 on the map and eliminates
+  any plan is a true outlier worth retuning. She clicks one of the outliers in
+  the sidebar to drill into its map view — per-territory work areas color-coded
+  by group, with the per-territory KPIs alongside — confirming her sort-driven
+  hunch before bundling. She bundles the ten plans into one group for Kim (the
+  Madobi LGA LLO), sets the share so Kim can open it without a Dimagi account,
+  and sends one link. Kim opens plan 1 on the map and eliminates
   several work areas on the far east/right — one she marks as a school footprint,
   another as an unsafe stretch — tagging each with its reason. She moves three work
   areas from one group to another to balance workload, and reassigns an entire
@@ -236,12 +239,19 @@ scenes:
 - concept_claim: The comparison page shows one row per picked plan and one column
     per plan-quality metric — population, buildings, pop per building, longest /
     avg / spread of worker travel, worker load gap and spread, coverage,
-    exclusions, and territory count — with every column sortable. No color coding,
-    no win/loss tally, no "best" badges; the reader reads the numbers and decides.
-  design_intent: Plain numbers in a plain sortable table. Every chrome-y comparison
-    affordance we tried (best pills, deltas vs first column, win/loss tally) was
-    busy without being more honest. A standard sortable table matches the rest of
-    the labs UI and lets the lead form her own judgment from the raw numbers.
+    exclusions, and territory count — with every column sortable and every plan
+    name in the sidebar clickable into its review page, so the sort that
+    surfaces an outlier flows directly into a map-level drill-down. No color
+    coding, no win/loss tally, no "best" badges; the reader reads the numbers,
+    sorts on what she cares about, and clicks the outlier to inspect it.
+  design_intent: Plain numbers in a plain sortable table, with the plan name as
+    a working link out of the table. Every chrome-y comparison affordance we
+    tried (best pills, deltas vs first column, win/loss tally) was busy without
+    being more honest. A standard sortable table matches the rest of the labs
+    UI and lets the lead form her own judgment from the raw numbers; the
+    clickable name in the sidebar is what turns a sort into a real decision
+    by letting her verify the outlier on the map without rebuilding her
+    selection on a separate page.
   features:
   - description: ProgramComparePageView renders the comparison UI; ProgramComparePlansView
       returns the per-plan KPI rows for the picked plans.
@@ -266,6 +276,16 @@ scenes:
     verify: Clicking the "Longest worker travel" header once sorts plans ascending
       by that metric; clicking again sorts descending; clicking a third time clears
       the sort and reverts to URL pick order.
+  - description: Each plan name in the compare sidebar's plan picker is a link to
+      that plan's program-scoped review page (/microplans/program/<id>/plan/<plan_id>/review/),
+      so the lead can drill from the sorted compare table directly into the map view
+      of the outlier. The link uses event.stopPropagation so it doesn't toggle the
+      adjacent selection checkbox.
+    id: clickable-plan-name-in-picker
+    verify: View source of /microplans/program/<id>/compare/ — the picker template
+      wraps each plan name in an anchor with href pointing at
+      /microplans/program/<id>/plan/<plan_id>/review/; clicking the name in a
+      browser navigates without toggling the checkbox.
   persona: lead
   provenance: compare-and-tune
   show: >-
@@ -278,7 +298,9 @@ scenes:
     again to flip descending; click a third time to clear and revert to pick
     order. There are no badges, deltas, or tally — the lead reads the numbers
     and decides which plan she wants to retune (or whether none of them need
-    it).
+    it). Once a sort surfaces a candidate outlier, she clicks the plan's name
+    in the sidebar to land on its review page and inspect the work areas on
+    the map — confirming the sort-driven hunch before bundling for the LLO.
   url: "/microplans/program/133/compare/"
   actions:
     # Leading wait_for is the settle — canopy 0.2.151+ skips the recorder's
@@ -302,7 +324,16 @@ scenes:
     - { kind: click, target: "Coverage", note: "switch sort to Coverage" }
     - { kind: hold, seconds: 2.0, note: "the lowest-coverage plan drops to the bottom" }
     - { kind: hold, seconds: 1.5 }
-  title: Dana reads the per-plan metrics on the comparison table
+    # Drill-through: the lowest-coverage plan after sorting is Dana's outlier
+    # hunch — she clicks its name in the sidebar (the first <a> in the picker
+    # is the leftmost-checked plan) to inspect its work areas on the map.
+    - { kind: click, target: "css:#plan-picker a", note: "click the first selected plan's name to drill into the map view" }
+    - { kind: wait_for, target: "Microplan review" }
+    - { kind: hold, seconds: 2.5, note: "frame the work-area map + per-territory metrics" }
+    - { kind: scroll_to, target: "Plan metrics", note: "let the eye read the per-territory KPIs in the sidebar" }
+    - { kind: hold, seconds: 2.0 }
+  title: Dana reads the per-plan metrics on the comparison table — then drills
+    into an outlier on the map
 - concept_claim: A glossary page defines every metric on the comparison table —
     what it measures, how it's computed, what the input data is — so the lead
     can sanity-check her own read of the numbers without guessing what a label
