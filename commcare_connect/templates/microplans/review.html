@@ -210,6 +210,13 @@
               <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Why this sample</summary>
               <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
             </details>
+            <div id="save-study-row" class="hidden border-t border-gray-100 pt-2 space-y-1">
+              <label class="block"><span class="text-gray-600">Study name</span>
+                <input id="study-name" type="text" placeholder="e.g. Madobi RS pilot" class="base-input mt-0.5 text-xs"></label>
+              <button type="button" id="btn-save-study" class="button button-sm primary-dark w-full">Save study</button>
+              <p class="text-[10px] text-gray-500">Saves both arms as one named plan. Arm assignment stays labs-side — the shared plan is blind.</p>
+              <p class="text-[10px] text-gray-500" id="save-study-status"></p>
+            </div>
           </div>
 
           <dl class="space-y-0.5 pt-2 border-t border-gray-100">
@@ -465,6 +472,7 @@
   // service-delivery derive-boundary handler can tag derived polys to the arm.
   let mpMode = "coverage";          // "coverage" | "sampling"
   let currentArm = "intervention";  // "intervention" | "comparison"
+  let lastSample = null;            // { pins, hulls } from the most recent Generate
   const ARM_COLOR = { intervention: "#10b981", comparison: "#3b82f6" };
   const COUNTRIES_URL = "{{ countries_url|default:''|escapejs }}";
   const BOUNDARY_VIEWPORT_URL = "{{ boundary_viewport_url|default:''|escapejs }}";
@@ -1569,6 +1577,8 @@
     if (!map || !mapReady) return;
     const hulls = result.hulls || result.hulls_geojson || { type: "FeatureCollection", features: [] };
     const pins = result.pins || result.pins_geojson || { type: "FeatureCollection", features: [] };
+    lastSample = { pins, hulls };
+    $("save-study-row")?.classList.toggle("hidden", !(pins.features && pins.features.length));
     Microplans.upsertSource(map, "samp-hulls", hulls);
     if (!map.getLayer("samp-hull-fill")) {
       map.addLayer({ id: "samp-hull-fill", type: "fill", source: "samp-hulls",
@@ -1680,6 +1690,32 @@
       if (statusEl) statusEl.textContent = `Sampled ${arms.size} arm${arms.size === 1 ? "" : "s"}.`;
     } catch (e) {
       if (statusEl) statusEl.textContent = "Sampling failed: " + (e && e.message ? e.message : e);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  // Save the two-arm sample as one named plan. mode="sampling" → the server
+  // materializes one tiny work area per pin, with arm stored labs-side (in the
+  // plan JSON), so the shared plan is blind to arm assignment.
+  on("btn-save-study", "click", async () => {
+    const statusEl = $("save-study-status");
+    if (!lastSample || !(lastSample.pins.features || []).length) { if (statusEl) statusEl.textContent = "Generate a sample first."; return; }
+    if (!CREATE_PLAN_URL) { if (statusEl) statusEl.textContent = "Save unavailable on this page."; return; }
+    const name = ($("study-name")?.value || "").trim() || "Two-arm rooftop study";
+    const btn = $("btn-save-study"); if (btn) btn.disabled = true;
+    if (statusEl) statusEl.textContent = "Saving study…";
+    try {
+      const resp = await post(CREATE_PLAN_URL, {
+        name, region: name, mode: "sampling",
+        pins: lastSample.pins, hulls: lastSample.hulls,
+        input_areas: collectArmAreas(), grouping: {},
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.status !== "ok") { if (statusEl) statusEl.textContent = data.detail || ("HTTP " + resp.status); return; }
+      window.location = PROGRAM_URL + "plan/" + data.plan_id + "/review/";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = "Save failed: " + (e && e.message ? e.message : e);
     } finally {
       if (btn) btn.disabled = false;
     }

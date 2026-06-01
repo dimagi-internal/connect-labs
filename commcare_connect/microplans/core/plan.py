@@ -140,12 +140,25 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | 
 
     fc = hulls if mode == "coverage" else pins
     out: list[dict] = []
+    # Sampling groups neutrally by PSU (arm + cluster → an arm-free "PSU N" label) so
+    # the study arm never appears as a group. Arm itself is stored as a LABS-SIDE
+    # field (and stripped from the shared `properties`), keeping the LLO review +
+    # any Connect push blind to which arm a work area belongs to.
+    psu_group: dict = {}
     for i, feat in enumerate(fc.get("features", [])):
         props = feat.get("properties", {}) or {}
         geom = feat.get("geometry")
         building_count = int(props.get("building_count", 1))
         # coverage carries expected_visit_count == building_count; sampling pin = 1 visit
         expected = int(props.get("expected_visit_count", building_count if mode == "coverage" else 1))
+        arm = props.get("arm", "")
+        if mode == "coverage":
+            group = props.get("arm", "intervention")  # placeholder; overridden by grouping below
+        else:
+            key = (arm, props.get("cluster", ""))
+            if key not in psu_group:
+                psu_group[key] = f"PSU {len(psu_group) + 1}"
+            group = psu_group[key]
         out.append(
             {
                 "id": _wa_id(props, i),
@@ -155,11 +168,12 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | 
                 "expected_visit_count": expected,
                 "target_population": int(props.get("target_population", 0)),
                 "status": STATUS_UNASSIGNED,
-                "work_area_group": props.get("arm", "intervention"),  # placeholder; overridden for coverage
+                "work_area_group": group,
+                "arm": arm,  # labs-side analysis metadata only — never shared/pushed
                 "opportunity_access": None,  # unassigned worker at planning time
                 "excluded_by": "",
                 "excluded_reason": "",
-                "properties": dict(props),
+                "properties": {k: v for k, v in props.items() if k != "arm"},
                 "audit": [],
             }
         )
