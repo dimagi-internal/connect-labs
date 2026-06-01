@@ -136,6 +136,94 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None, wit
 
 
 def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
+    """Fetch buildings for an area from the fastest available source.
+
+    If the area sits fully inside a pre-extracted same-region country
+    (``overture.EXTRACT_REGIONS``) on the matching release, read those local
+    us-east-1 tiles — sub-second. Otherwise fall back to the live planet-scale
+    Overture read, which costs minutes for a first-seen area on the labs worker
+    (us-east-1 -> us-west-2 cross-region). The result is identical either way; only
+    the read source and speed differ. The caller (``fetch_buildings``) still
+    persists whatever this returns to the per-area Postgres cache.
+    """
+    region = overture.covering_region(area.bounds)
+    if region is not None:
+        try:
+            return _query_extract(area, region, min_confidence)
+        except Exception:
+            # The extract is an optimization, never a hard dependency. If it can't
+            # be read (IAM on the extract bucket, a missing tile, a transient S3
+            # error), degrade to the live Overture read rather than failing the
+            # whole sample.
+            logger.warning(
+                "same-region extract read failed (region=%s); falling back to live Overture",
+                region,
+                exc_info=True,
+            )
+    return _query_overture_live(area, min_confidence)
+
+
+def _parse_geom_json(df: pd.DataFrame) -> pd.DataFrame:
+    """ST_AsGeoJSON returns a string; the JSONField wants a dict."""
+    if "geom_json" in df.columns:
+        import json as _json
+
+        df["geom_json"] = df["geom_json"].apply(lambda s: _json.loads(s) if isinstance(s, str) else None)
+    return df
+
+
+def _query_extract(area: BaseGeometry, region: str, min_confidence: float | None) -> pd.DataFrame:
+    """Read buildings from a same-region country extract.
+
+    The extract is one Parquet per 1-degree tile, hive-partitioned by ``tx``/``ty``.
+    We bound the read to the tiles the area's bbox spans (partition pruning), then
+    apply the same bbox + centroid-in-area filter as the live read.
+    """
+    import math
+
+    minx, miny, maxx, maxy = area.bounds
+    wkt = area.wkt
+    con = overture.connect()
+    glob = overture.extract_glob(region)
+
+    conf_clause = ""
+    params = [
+        math.floor(minx),
+        math.floor(maxx),
+        math.floor(miny),
+        math.floor(maxy),
+        minx,
+        maxx,
+        miny,
+        maxy,
+        wkt,
+    ]
+    if min_confidence is not None:
+        conf_clause = "AND confidence >= ?"
+        params.append(float(min_confidence))
+
+    query = f"""
+        SELECT lon, lat, area_m2, confidence,
+               ST_AsGeoJSON(ST_GeomFromWKB(geom_wkb)) AS geom_json
+        FROM read_parquet('{glob}', hive_partitioning=true)
+        WHERE tx BETWEEN ? AND ? AND ty BETWEEN ? AND ?
+          AND bbox.xmin >= ? AND bbox.xmax <= ?
+          AND bbox.ymin >= ? AND bbox.ymax <= ?
+          AND ST_Within(ST_Point(lon, lat), ST_GeomFromText(?))
+          {conf_clause}
+        LIMIT {MAX_BUILDING_ROWS}
+    """
+    df = con.execute(query, params).df()
+    if len(df) >= MAX_BUILDING_ROWS:
+        logger.warning(
+            "overture extract hit the %d-row cap (bbox=%s) — footprints may be truncated",
+            MAX_BUILDING_ROWS,
+            (minx, miny, maxx, maxy),
+        )
+    return _parse_geom_json(df)
+
+
+def _query_overture_live(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
     minx, miny, maxx, maxy = area.bounds
     wkt = area.wkt
 
@@ -170,9 +258,4 @@ def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.Data
             MAX_BUILDING_ROWS,
             (minx, miny, maxx, maxy),
         )
-    # ST_AsGeoJSON returns a string; the JSONField wants a dict.
-    if "geom_json" in df.columns:
-        import json as _json
-
-        df["geom_json"] = df["geom_json"].apply(lambda s: _json.loads(s) if isinstance(s, str) else None)
-    return df
+    return _parse_geom_json(df)
