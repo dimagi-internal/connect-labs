@@ -4,7 +4,7 @@ base_url: https://labs.connect.dimagi.com
 record_video: true
 video_pace: medium
 build_order:
-- dana-opens-the-program-workspace-for-the-kano-arm-of-the-rct
+- dana-opens-the-program-workspace-for-the-madobi-lga-arm-of-the-rct
 - dana-pastes-the-ward-names-the-system-resolves-them-and-dana-disambiguates-each-ambiguous-row-inline-before-any-plan-is-created
 - dana-confirms-picks-the-config-and-hits-create-plans-the-bulk-operation-runs-with-progress
 - dana-reads-the-per-plan-metrics-on-the-comparison-table
@@ -42,38 +42,34 @@ getting_started:
   moves, user reassignments, accept/exclude calls — Accept-all to sign off, then
   Deploy to a (synthetic, for now) Connect opportunity with per-group user mapping.
 name: microplans-10-wards
-narrative: 'Dana opens her program''s workspace in labs to start the Kano arm of the
-  CHC implementation RCT — 40 wards across four states (Gombe, Kaduna, Kano, Jigawa,
-  one LLO per state), of which today''s ten Kano wards are Galinja, Madobi, Gora,
-  Jibga, Kadan Dani, Durma, Rimin Gado, Dawakin Gulu, Tofa, and Kwami (each roughly
-  20–30K people, spread across the four shortlisted Kano LGAs: Nassarawa, Fagge, Tofa,
-  Madobi). She opens the bulk-create form, pastes the ten ward names, and the system
-  matches them against the admin boundaries — six come back uniquely matched (their LGA
-  + population shown), and four come back ambiguous (Madobi, Gora, Tofa, Kwami each map
-  to multiple LGAs); a Pick LGA dropdown beside each ambiguous row lists the candidate
-  LGAs with populations so Dana picks which one she means inline, lifting the matched
-  count to ten before any plan is created. She confirms the matches,
-  picks the per-batch config (Coverage, Balanced, 100 buildings per work area, ±10%
-  balance tolerance), and hits Create Plans — the system materializes one plan per
-  ward in a single bulk operation against real building footprints, showing per-ward
-  progress since it''s long-running. She reads the per-plan KPIs in the workspace,
-  opens the comparison page, picks a few plans, reads the stacked KPI rows (per-row
-  BEST in emerald, green/red deltas), sorts on a metric she cares about, reads the
-  per-plan win/loss tally at the bottom, and decides whether any plan is a true
-  outlier worth retuning (in this batch v1 and v2 are; on another batch the answer
-  might be no outliers, just a balanced set).
-  She bundles the ten plans into one group for Kim (the Kano State LLO), sets the
-  share so Kim can open it without a Dimagi account, and sends one link. Kim opens
-  plan 1 on the map and eliminates several work areas on the far east/right — one
-  she marks as a school footprint, another as an unsafe stretch — tagging each with
-  its reason. She moves three work areas from one group to another to balance
-  workload, and reassigns an entire work-area group from one user to another who
-  will actually be available. She then approves plan 1 and accepts the remaining
-  plans as-is, leaving them for Dana''s sign-off. Dana reviews Kim''s edits on the
-  audit panel and accepts them all, advancing the batch to fully Approved. Once
-  the plans are approved, she enters a UI to sync a plan to Connect which lets her
-  pick the opp to push the plan to, and map the users from the Connect opp to the
-  workareagroups.'
+narrative: 'Dana opens her program''s workspace in labs to start the Madobi LGA arm of
+  the CHC implementation RCT — one LGA per LLO, and Madobi (Kano State, Nigeria) is
+  the LGA Kim covers, which contains today''s ten wards: Burji, Cinkoso, Galinja,
+  Gora, Kafin Agur, Kanwa, Kauran Mata, Kwankwaso, Madobi, and Rikadawa. She opens
+  the bulk-create form, pastes the ten ward names, and the system matches them
+  against the admin boundaries — seven come back uniquely matched in Madobi LGA
+  (LGA + population shown), and three come back nationally ambiguous (Gora, Kanwa,
+  and Madobi each share a ward name with one or more other Nigerian LGAs); a Pick
+  LGA dropdown beside each ambiguous row lists the candidate LGAs with populations
+  so Dana picks Madobi LGA for each, lifting the matched count to ten before any
+  plan is created. She confirms the matches, picks the per-batch config (Coverage,
+  Walkable clusters, 100 buildings per work area, ±10% balance tolerance), and hits
+  Create Plans — the system materializes one plan per ward in a single bulk
+  operation against real building footprints, showing per-ward progress since it''s
+  long-running. She reads the per-plan KPIs in the workspace, opens the comparison
+  page, picks a few plans, sorts on a metric she cares about, and decides whether
+  any plan is a true outlier worth retuning. She bundles the ten plans into one
+  group for Kim (the Madobi LGA LLO), sets the share so Kim can open it without a
+  Dimagi account, and sends one link. Kim opens plan 1 on the map and eliminates
+  several work areas on the far east/right — one she marks as a school footprint,
+  another as an unsafe stretch — tagging each with its reason. She moves three work
+  areas from one group to another to balance workload, and reassigns an entire
+  work-area group from one user to another who will actually be available. She
+  then approves plan 1 and accepts the remaining plans as-is, leaving them for
+  Dana''s sign-off. Dana reviews Kim''s edits on the audit panel and accepts them
+  all, advancing the batch to fully Approved. Once the plans are approved, she
+  enters a UI to sync a plan to Connect which lets her pick the opp to push the
+  plan to, and map the users from the Connect opp to the workareagroups.'
 personas:
   lead:
     color: '#3B82F6'
@@ -88,12 +84,12 @@ personas:
   llo:
     color: '#10B981'
     intro: 'Kim supplies the local taste no Cambridge-side review can: Gora is flooding
-      right now, Tofa has an insecurity situation, that road on Jibga is impassable.
-      Her accepts and exclusions are first-class — every one lands in the phase-tagged
-      planning audit.'
+      right now, Kanwa has an insecurity situation, that road through Rikadawa is
+      impassable. Her accepts and exclusions are first-class — every one lands in
+      the phase-tagged planning audit.'
     name: Kim
-    org: Kano State LLO
-    role: Kano State LLO (placeholder name — drives beats 6 / 7 / 8 — eliminates
+    org: Madobi LGA LLO
+    role: Madobi LGA LLO (placeholder name — drives beats 6 / 7 / 8 — eliminates
       work areas on plan 1 with reasons, rebalances by moving work areas between
       groups and reassigning a group to a different user, then approves plan 1 and
       accepts the rest as-is; the local accept/exclude
@@ -118,16 +114,17 @@ scenes:
       each include kpis with max_spread_km / territory_count / balance, plus lifecycle_status.
   persona: lead
   provenance: portfolio-open
-  show: Open the program workspace for the RCT program; confirm the Kano arm is empty
-    so far, with the ten ward names (Galinja, Madobi, Gora, Jibga, Kadan Dani, Durma,
-    Rimin Gado, Dawakin Gulu, Tofa, Kwami) visible as the day's assignment.
+  show: Open the program workspace for the RCT program; confirm the Madobi LGA arm
+    is empty so far, with the ten ward names (Burji, Cinkoso, Galinja, Gora,
+    Kafin Agur, Kanwa, Kauran Mata, Kwankwaso, Madobi, Rikadawa) visible as the
+    day's assignment.
   actions:
     - { kind: goto, target: "/microplans/program/133/" }
     - { kind: wait_for, target: "Microplan portfolio" }
     - { kind: hold, seconds: 2.0, note: "frame the empty portfolio" }
     - { kind: scroll_to, target: "+ Bulk paste list", note: "scroll the bulk-paste CTA into view" }
     - { kind: hold, seconds: 1.5 }
-  title: Dana opens the program workspace for the Kano arm of the RCT
+  title: Dana opens the program workspace for the Madobi LGA arm of the RCT
 - concept_claim: The bulk-create form resolves each pasted ward name against the admin
     boundaries and shows Dana the matched ward data (LGA, population, ID) for unique
     names, an explicit unresolved_reason for typos/unknown names, and a per-row LGA
@@ -158,38 +155,39 @@ scenes:
       the live matched count.
   persona: lead
   provenance: name-match-and-confirm
-  show: Open the bulk-create form, paste the ten Kano ward names, and read back the
-    resolved table — Galinja/Jibga/Kadan Dani/Durma/Rimin Gado/Dawakin Gulu come back
-    Matched (their LGA + population shown), while Madobi/Gora/Tofa/Kwami come back
-    ambiguous with a Pick LGA dropdown listing each candidate's LGA + population so
-    Dana picks which one she means inline. "Create 6 plans" updates to "Create 10 plans"
-    as she picks; Skip remains a fallback for genuinely uncertain rows.
+  show: Open the bulk-create form, paste the ten Madobi-LGA ward names, and read
+    back the resolved table — Burji/Cinkoso/Galinja/Kafin Agur/Kauran Mata/Kwankwaso/Rikadawa
+    come back Matched (all in Madobi LGA, with population shown), while Gora/Kanwa/Madobi
+    come back ambiguous because each ward name also exists in other Nigerian LGAs.
+    The Pick LGA dropdown beside each ambiguous row lists candidate LGAs + population
+    so Dana picks "Madobi" inline. "Create 7 plans" updates to "Create 10 plans" as
+    she picks; Skip remains a fallback for genuinely uncertain rows.
   actions:
     - { kind: click, target: "+ Bulk paste list", note: "from the portfolio CTA" }
     - { kind: wait_for, target: "Bulk-create plans from a ward list" }
     - { kind: hold, seconds: 1.5, note: "frame the bulk-create form" }
-    - { kind: fill, target: "#ward-list", value: "Galinja\nMadobi\nGora\nJibga\nKadan Dani\nDurma\nRimin Gado\nDawakin Gulu\nTofa\nKwami", note: "paste 10 wards" }
+    - { kind: fill, target: "#ward-list", value: "Burji\nCinkoso\nGalinja\nGora\nKafin Agur\nKanwa\nKauran Mata\nKwankwaso\nMadobi\nRikadawa", note: "paste 10 wards (all in Madobi LGA)" }
     - { kind: hold, seconds: 1.0 }
     - { kind: click, target: "#btn-resolve", note: "resolve names against admin boundaries" }
     - { kind: wait_for, target: "Resolved wards" }
     - { kind: hold, seconds: 2.5, note: "read 6 matched + 4 ambiguous" }
-    - { kind: scroll_to, target: "Madobi", note: "frame the first ambiguous row" }
+    - { kind: scroll_to, target: "Gora", note: "frame the first ambiguous row" }
     - { kind: hold, seconds: 1.5 }
   title: Dana pastes the ward names; the system resolves them and Dana disambiguates
     each ambiguous row inline before any plan is created
 - concept_claim: Confirmed names + one config commits one Create Plans call that materializes
     one plan per ward in a single bulk operation, with per-ward progress shown so
     the lead knows the long-running call is working.
-  design_intent: The settings have to be named (Coverage, Balanced, 100, ±10%) and
+  design_intent: The settings have to be named (Coverage, Walkable clusters, 100, ±10%) and
     visible so the demo and the spec hold each other accountable to the actual UI
     knobs — not idealized ones.
   features:
-  - description: setup.html exposes Strategy=Balanced (cfg-strategy default), Buildings/work
+  - description: setup.html exposes Strategy=Walkable clusters (cfg-strategy default), Buildings/work
       area=100 (cfg-bpc), Balance tolerance=0.1 (cfg-balance) as the Coverage-mode
       core knobs.
     id: coverage-mode-config
     verify: View source of /microplans/<opp_id>/setup/ contains input ids cfg-bpc
-      / cfg-balance + select option "balanced".
+      / cfg-balance + select option "bfs_adjacency" (label "Walkable clusters").
   - description: ProgramCreatePlanView accepts the ten ADM3 boundary IDs + the config
       and creates ten plans in one POST.
     id: program-scoped-batch-create
@@ -208,27 +206,29 @@ scenes:
       that updates from "0 of 10" to "10 of 10" as each plan's materialize completes.
   persona: lead
   provenance: bulk-input-ui
-  show: Confirm the matched ward list, pick the per-batch config (Coverage mode, Balanced
+  show: Confirm the matched ward list, pick the per-batch config (Coverage mode, Walkable clusters
     strategy, 100 buildings per work area, ±10% balance tolerance), and hit Create
     Plans; watch per-ward progress as the system materializes one plan per ward in
     a single bulk operation against real building footprints (long-running, so progress
     matters).
   actions:
-    - { kind: select, target: "tr.is-unresolved:nth-of-type(2) select", value: "0", note: "pick first candidate (Dutse) for Madobi" }
-    - { kind: hold, seconds: 0.5 }
-    - { kind: select, target: "tr.is-unresolved:first-of-type select", value: "0", note: "pick first candidate for Gora" }
-    - { kind: hold, seconds: 0.5 }
-    - { kind: select, target: "tr.is-unresolved:first-of-type select", value: "0", note: "pick first candidate for Tofa" }
-    - { kind: hold, seconds: 0.5 }
-    - { kind: select, target: "tr.is-unresolved:first-of-type select", value: "0", note: "pick first candidate for Kwami" }
-    - { kind: hold, seconds: 0.5 }
+    # Three ambiguous rows in input order: Gora (Madobi LGA is candidate 0), Kanwa
+    # (Madobi LGA is candidate 1), Madobi (Madobi LGA is candidate 1). After each
+    # pick the row class flips to is-matched and the next "first unresolved" is the
+    # next ambiguous ward, so the same selector finds the right row each time.
+    - { kind: select, target: "#resolved-tbody tr.is-unresolved select", value: "0", note: "pick Madobi LGA for Gora (candidate 0)" }
+    - { kind: hold, seconds: 0.6 }
+    - { kind: select, target: "#resolved-tbody tr.is-unresolved select", value: "1", note: "pick Madobi LGA for Kanwa (candidate 1 — Zurmi LGA is candidate 0)" }
+    - { kind: hold, seconds: 0.6 }
+    - { kind: select, target: "#resolved-tbody tr.is-unresolved select", value: "1", note: "pick Madobi LGA for Madobi (candidate 1 — Dutse LGA is candidate 0)" }
+    - { kind: hold, seconds: 0.6 }
     - { kind: scroll_to, target: "Plan config", note: "frame the config card" }
-    - { kind: hold, seconds: 2.0, note: "let the eye read Balanced / 100 / 0.1 named defaults" }
+    - { kind: hold, seconds: 2.0, note: "let the eye read Walkable clusters / 100 / 0.1 named defaults" }
     - { kind: click, target: "Create 10 plans", note: "fire the bulk POST for all 10 wards" }
     - { kind: wait_for, target: "Creating 10 plan", note: "NDJSON stream begins" }
-    - { kind: hold, seconds: 18.0, note: "per-ward progress: Creating → ✓ Created · #id flips one ward at a time as the stream advances" }
+    - { kind: hold, seconds: 90.0, note: "per-ward progress: Creating → ✓ Created · #id flips one ward at a time as the stream advances (bulk-create takes ~60-90s for 10 wards on labs)" }
     - { kind: wait_for, target: "Created 10 of 10 plans" }
-    - { kind: hold, seconds: 2.0, note: "frame the success card with all 10 plan IDs + LGA echo visible" }
+    - { kind: hold, seconds: 2.5, note: "frame the success card with all 10 plan IDs + LGA echo visible" }
   title: Dana confirms, picks the config, and hits Create Plans — the bulk operation
     runs with progress
 - concept_claim: The comparison page shows one row per picked plan and one column
@@ -278,17 +278,26 @@ scenes:
     and decides which plan she wants to retune (or whether none of them need
     it).
   actions:
-    - { kind: goto, target: "/microplans/program/133/compare/?plans=3322,3321,3323,3325" }
-    - { kind: wait_for, target: "Compare plans" }
-    - { kind: hold, seconds: 1.5, note: "settle the table" }
+    - { kind: goto, target: "/microplans/program/133/compare/" }
+    - { kind: wait_for, target: "Pick plans to compare" }
+    - { kind: hold, seconds: 1.5, note: "settle the picker" }
+    - { kind: click, target: "#plan-picker > label:nth-of-type(1) input.psel", note: "pick first plan" }
+    - { kind: hold, seconds: 0.6 }
+    - { kind: click, target: "#plan-picker > label:nth-of-type(2) input.psel", note: "pick second plan" }
+    - { kind: hold, seconds: 0.6 }
+    - { kind: click, target: "#plan-picker > label:nth-of-type(3) input.psel", note: "pick third plan" }
+    - { kind: hold, seconds: 0.6 }
+    - { kind: click, target: "#plan-picker > label:nth-of-type(4) input.psel", note: "pick fourth plan" }
+    - { kind: wait_for, target: "Pop / building" }
+    - { kind: hold, seconds: 1.5, note: "let the table settle" }
     - { kind: scroll_to, target: "Plan", note: "frame the table header" }
     - { kind: hold, seconds: 1.0 }
-    - { kind: click, target: "Longest worker travel", note: "sort ascending → Kano South leads" }
+    - { kind: click, target: "Longest worker travel", note: "sort ascending" }
     - { kind: hold, seconds: 2.0, note: "let the eye read the asc order" }
-    - { kind: click, target: "Longest worker travel", note: "click again → sort descending, v1 with 7.77 km goes to the top" }
+    - { kind: click, target: "Longest worker travel", note: "sort descending" }
     - { kind: hold, seconds: 2.0, note: "the longest-travel outlier is now first" }
     - { kind: click, target: "Coverage", note: "switch sort to Coverage" }
-    - { kind: hold, seconds: 2.0, note: "v2 at 87.2% drops to the bottom" }
+    - { kind: hold, seconds: 2.0, note: "the lowest-coverage plan drops to the bottom" }
     - { kind: hold, seconds: 1.5 }
   title: Dana reads the per-plan metrics on the comparison table
 - concept_claim: A glossary page defines every metric on the comparison table —
@@ -534,12 +543,12 @@ tagline: Microplans turns a fixed list of wards into Connect-ready WorkAreas in 
   compare on KPIs and retune outliers, hand the LLO one no-account-needed link so she
   can eliminate areas, move work between groups, reassign users with reasons (all
   audited), sign off on her edits, and Deploy to a Connect opportunity with
-  user-to-work-area-group mapping. Built for the IPA ×
-  Dimagi CHC implementation RCT (40 wards across four states, one LLO per state).
+  user-to-work-area-group mapping. Built for the IPA × Dimagi CHC implementation
+  RCT (one LGA per LLO, ten wards per LGA in a Northern Nigeria pilot).
 why_brief: ../superpowers/microplans/microplans/why-brief.yaml
-why_summary: The IPA × Dimagi CHC implementation RCT plans 40 wards across four states
-  (Gombe, Kaduna, Kano, Jigawa), with one LLO per state working ten randomly selected
-  wards. The program lead has a fixed list of wards to plan per state, needs each
+why_summary: The IPA × Dimagi CHC implementation RCT plans the rollout one LGA at a
+  time, one LLO per LGA. Each LGA has ten wards the LLO covers — the demo here is
+  Madobi LGA (Kano State, Nigeria), where Kim is the LLO. The program lead has a fixed list of wards to plan per state, needs each
   ward sign-off-ready with the local LLO who lives outside the program team, and needs
   the approved set pushed into a live Connect opportunity so the FLW app picks them
   up. Microplans gives one bulk operation for the whole list, per-plan KPIs that flag
