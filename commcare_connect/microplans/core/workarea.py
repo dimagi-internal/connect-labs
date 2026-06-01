@@ -7,9 +7,12 @@ exact-building pinning inside Connect's first-class microplanning feature
 (assignment, mobile delivery, visit tracking, the inaccessibility/substitution
 flow) without inventing a parallel mechanism.
 
-`role` (primary/alternate), `cluster`, `arm`, and `order_in_cluster` ride in
+`role` (primary/alternate), `cluster`, and `order_in_cluster` ride in
 `case_properties` so the FLW app and dashboards can distinguish targets from
-their 15m substitutes.
+their 15m substitutes. The study `arm` (intervention/comparison) is a LABS-SIDE
+field, deliberately kept OUT of `case_properties` — arm assignment must stay
+blind to the LLO/FLWs (a shared two-arm plan that reveals which side is which is
+an anti-pattern), so it never enters the Connect-facing bucket.
 
 Two output shapes:
   * `to_api_payload` — for the (proposed) `POST /export/opportunity/<id>/work_areas/`
@@ -52,6 +55,9 @@ class WorkAreaPayload:
     building_count: int = 1
     expected_visit_count: int = 1
     target_population: int = 0
+    # Study arm (intervention/comparison) is LABS-SIDE only — deliberately NOT in
+    # case_properties (the Connect/FLW-facing bucket) so the shared plan stays blind.
+    arm: str = "intervention"
     case_properties: dict = field(default_factory=dict)
 
 
@@ -95,10 +101,10 @@ def build_work_areas(
                 building_count=1,
                 expected_visit_count=1,
                 target_population=0,
+                arm=arm,  # labs-side only — never pushed to Connect
                 case_properties={
                     "role": role,
                     "cluster": cluster,
-                    "arm": arm,
                     "order_in_cluster": order,
                     "lga": lga,
                     "state": state,
