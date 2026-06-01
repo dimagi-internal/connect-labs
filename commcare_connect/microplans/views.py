@@ -82,6 +82,37 @@ def _sd_urls(opp_id=123):
     }
 
 
+def _program_map_seed(plans) -> dict | None:
+    """Where to open the new-plan map so the Boundaries layer actually loads.
+
+    The new-plan map otherwise opens zoomed out to a whole country with nothing
+    drawn — so no boundary is clickable AND the country never auto-detects (the
+    global Overture source needs an iso, which is itself inferred from loaded
+    boundaries: a cold-start chicken-and-egg). Seeding the map over the program's
+    existing footprint breaks it: boundaries load there, the country detects, and
+    the by-name search starts working.
+
+    Scans the program's plans newest-first for an admin-area country (carried on
+    ``input_areas``) and a centroid (mean of work-area centroids). Returns
+    ``{iso, lng, lat, zoom}`` or ``None`` when the program has no usable footprint
+    yet (a brand-new program — the map keeps its default and the user pans)."""
+    for p in sorted(plans, key=lambda x: x.data.get("created_at", ""), reverse=True):
+        data = p.data
+        iso = ""
+        for area in data.get("input_areas") or []:
+            if isinstance(area, dict) and area.get("country"):
+                iso = str(area["country"])
+                break
+        pts = [w.get("centroid") for w in (data.get("work_areas") or []) if w.get("centroid")]
+        if pts:
+            lng = sum(pt[0] for pt in pts) / len(pts)
+            lat = sum(pt[1] for pt in pts) / len(pts)
+            return {"iso": iso, "lng": round(lng, 5), "lat": round(lat, 5), "zoom": 10}
+        if iso:
+            return {"iso": iso, "lng": None, "lat": None, "zoom": None}
+    return None
+
+
 def _queued(task):
     """202 envelope for an enqueued generation task: id + where to poll it."""
     from django.urls import reverse
@@ -418,8 +449,25 @@ class ProgramWorkspaceView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["program_id"] = kwargs.get("program_id")
+        program_id = kwargs.get("program_id")
+        context["program_id"] = program_id
         context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        # Seed the new-plan map over the program's existing footprint so boundaries
+        # load + the country auto-detects (see _program_map_seed). Absent any plans,
+        # the template keeps its default view and the user navigates.
+        try:
+            from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+            seed = _program_map_seed(ProgramPlanDataAccess(program_id, request=self.request).list_plans())
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans new-plan map seed failed (program=%s)", program_id)
+            seed = None
+        if seed:
+            context["map_country_iso"] = seed.get("iso") or ""
+            if seed.get("lng") is not None:
+                context["map_center_lng"] = seed["lng"]
+                context["map_center_lat"] = seed["lat"]
+                context["map_zoom"] = seed["zoom"]
         return context
 
 
