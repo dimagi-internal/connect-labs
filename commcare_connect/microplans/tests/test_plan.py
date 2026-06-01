@@ -363,3 +363,31 @@ class TestRecordModels:
         # round-trip too
         rec2 = PlanGroupRecord(LocalLabsRecord(api_data).to_api_dict())
         assert rec2.plan_ids == [1, 2]
+
+
+def test_sampling_materialize_keeps_arm_labs_side_and_blind():
+    """A saved sampling plan must be blind to study arm: arm is a labs-side field,
+    NOT the work_area_group and NOT in the shared properties — so the LLO review +
+    any Connect push can't tell intervention from control."""
+    pins = {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [3.0, 6.0]},
+             "properties": {"arm": "intervention", "cluster": "C1", "role": "primary", "order_in_cluster": 1}},
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [3.5, 6.0]},
+             "properties": {"arm": "comparison", "cluster": "C1", "role": "primary", "order_in_cluster": 1}},
+        ],
+    }
+    was = plan.materialize_work_areas("sampling", pins, {"type": "FeatureCollection", "features": []})
+    assert len(was) == 2
+    arms = {w["arm"] for w in was}
+    assert arms == {"intervention", "comparison"}  # system knows arm
+    for w in was:
+        # arm must not leak via the group or the shared properties
+        assert w["arm"] not in (w["work_area_group"] or "")
+        assert "intervention" not in (w["work_area_group"] or "")
+        assert "comparison" not in (w["work_area_group"] or "")
+        assert "arm" not in w["properties"]
+        assert w["work_area_group"].startswith("PSU")
+    # same cluster id in different arms must NOT merge into one group (they're distinct PSUs)
+    assert was[0]["work_area_group"] != was[1]["work_area_group"]
