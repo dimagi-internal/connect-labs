@@ -123,9 +123,11 @@ scenes:
       - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', note: "the draft card we just built" }
       - { kind: hold, seconds: 1.0 }
       - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Submit for review")', note: "Draft → In review (this plan's card, not a sibling's)" }
-      - { kind: hold, seconds: 2.0, note: "the transition saves and the card re-renders" }
+      - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "the card re-renders to In review and the Approve button appears" }
+      - { kind: hold, seconds: 1.2 }
       - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "In review → Approved" }
-      - { kind: hold, seconds: 2.0 }
+      - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Deploy")', note: "the card re-renders to Approved and the Deploy button appears" }
+      - { kind: hold, seconds: 1.2 }
   - persona: maya
     title: "Maya binds the plan to a live opportunity"
     show: "On the Approved card click Deploy, pick the live Connect opportunity from the searchable list (the ai-demo-space opportunity 'LEEP Paint Surveillance - India (run 20260522-1241)' — id 1834 in labs, the same opportunity that is d99e4422-e11a-476e-b885-fdf92026ea54 in Connect), and show the plan move into the Live column tagged with that opportunity"
@@ -138,7 +140,8 @@ scenes:
         verify: "pytest: transition approved to deployed without an opportunity_id raises ValueError; with one, plan.opportunity_id is set and status is deployed"
     actions:
       - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Deploy")', note: "open the opportunity picker" }
-      - { kind: hold, seconds: 1.2, note: "the Deploy-to-opportunity modal opens" }
+      - { kind: wait_for, target: "#deploy-search", note: "the Deploy-to-opportunity modal opens" }
+      - { kind: hold, seconds: 1.0 }
       - { kind: fill, target: "#deploy-search", value: "20260522-1241", note: "filter to the exact live opportunity (no id to type)" }
       - { kind: hold, seconds: 1.0 }
       - { kind: wait_for, target: "css:.deploy-opp", note: "the matching opportunity" }
