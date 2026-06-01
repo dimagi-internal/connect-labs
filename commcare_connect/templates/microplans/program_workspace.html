@@ -70,6 +70,12 @@
   const esc = Microplans.esc;
   const post = (url, body, opts) => Microplans.post(url, body, Object.assign({ csrf: CSRF }, opts || {}));
 
+  // The owner's live Connect opportunities (for the Deploy picker + to label a
+  // deployed plan by name instead of a raw id).
+  const OPPS = (() => { try { return JSON.parse($("opps-data").textContent) || []; } catch (e) { return []; } })();
+  const OPP_BY_ID = Object.fromEntries(OPPS.map((o) => [String(o.id), o]));
+  const oppLabel = (id) => { const o = OPP_BY_ID[String(id)]; return o && o.name ? o.name : "opportunity " + id; };
+
   const PHASES = [
     { key: "planning", label: "Planning", statuses: ["draft", "in_review", "approved"], hint: "labs — being designed & reviewed with the LLO/funder" },
     { key: "live", label: "Live", statuses: ["deployed"], hint: "pushed to a Connect opportunity — Connect runs execution" },
@@ -102,19 +108,25 @@
     const countChip = p.assigned ? chip("workers", p.territory_count) : chip("areas", p.work_areas);
     const travelChip = p.assigned ? chip("worst travel", p.max_spread_km + " km") : "";
     const exclChip = p.excluded ? chip("excluded", p.excluded) : "";
+    // Subtitle: only the parts that exist (no dangling "— ·" when region is blank),
+    // and a deployed plan reads "→ <opportunity name>" rather than a raw id.
+    const sub = [];
+    if (p.region) sub.push(esc(p.region));
+    if (p.mode) sub.push(esc(p.mode));
+    if (p.opportunity_id) sub.push("→ " + esc(oppLabel(p.opportunity_id)));
     return `<div class="border rounded-lg p-3 bg-white">
       <div class="flex items-start justify-between gap-2">
         <label class="flex items-start gap-2">
           <input type="checkbox" class="plan-sel mt-1" value="${p.plan_id}" ${selected.has(p.plan_id) ? "checked" : ""}>
           <span>
             <a class="font-semibold text-brand-cornflower-blue" href="${reviewUrl(p.plan_id)}">${esc(p.name)}</a>
-            <div class="text-xs text-gray-500">${esc(p.region || "—")} · ${esc(p.mode)}${p.opportunity_id ? " · opp " + esc(p.opportunity_id) : ""}</div>
+            <div class="text-xs text-gray-500">${sub.join(" · ")}</div>
           </span>
         </label>
         <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
       </div>
       <div class="flex flex-wrap gap-1 mt-2">
-        ${countChip}${travelChip}${chip("coverage", p.coverage_pct + "%")}${exclChip}
+        ${countChip}${travelChip}${p.coverage_pct < 100 ? chip("coverage", p.coverage_pct + "%") : ""}${exclChip}
       </div>
       <div class="flex flex-wrap gap-1 mt-3">${actions}${p.status !== "deployed" ? `<button class="button button-sm outline-style text-red-600 border-red-200 hover:bg-red-50" data-delete="${p.plan_id}" title="Permanently delete this plan">Delete</button>` : ""}</div>
     </div>`;
@@ -180,7 +192,6 @@
   }
 
   // --- Deploy picker modal: choose a live opportunity by clicking, not typing an id ---
-  const OPPS = (() => { try { return JSON.parse($("opps-data").textContent) || []; } catch (e) { return []; } })();
   let deployPid = null;
   async function doTransition(pid, body, btn) {
     if (btn) btn.disabled = true;
@@ -192,10 +203,13 @@
     const q = (filter || "").toLowerCase();
     const rows = OPPS
       .filter((o) => !q || (`${o.name} ${o.program_name || ""} ${o.organization || ""} ${o.id}`).toLowerCase().includes(q))
-      .map((o) => `<button type="button" class="deploy-opp w-full text-left border border-gray-200 rounded px-3 py-2 hover:bg-brand-cornflower-blue/10 hover:border-brand-cornflower-blue" data-opp="${esc(String(o.id))}">
+      .map((o) => {
+        const meta = [o.organization, o.program_name, o.end_date ? "ends " + o.end_date : ""].filter(Boolean).map(esc).join(" · ");
+        return `<button type="button" class="deploy-opp w-full text-left border border-gray-200 rounded px-3 py-2 hover:bg-brand-cornflower-blue/10 hover:border-brand-cornflower-blue" data-opp="${esc(String(o.id))}" title="opportunity id ${esc(String(o.id))}">
           <div class="font-medium text-gray-900 text-sm">${esc(o.name || ("Opportunity " + o.id))}</div>
-          <div class="text-xs text-gray-500">${esc(o.program_name || "—")} · ${esc(o.organization || "")} · id ${esc(String(o.id))}</div>
-        </button>`).join("");
+          <div class="text-xs text-gray-500">${meta || "Connect opportunity"}</div>
+        </button>`;
+      }).join("");
     $("deploy-list").innerHTML = rows || '<p class="text-sm text-gray-400 p-2">No live opportunities available to deploy to.</p>';
   }
   function openDeployModal(pid) {
