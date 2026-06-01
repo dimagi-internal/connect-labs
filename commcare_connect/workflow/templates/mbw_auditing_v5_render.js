@@ -1619,14 +1619,24 @@ function WorkflowUI({
   // then replicates the core follow-up-rate and still-eligible computation
   // from v5_computeFollowupRates using that cutoff as "today".
   // =========================================================================
-  var computeMonthlySnapshot = function (visitsRows, regRows, snapDateStr) {
+  // activeUsernames: optional array — when provided only mothers attributed to
+  // those FLWs are included (used to scope lines to eligible-for-renewal FLWs).
+  var computeMonthlySnapshot = function (visitsRows, regRows, snapDateStr, activeUsernames) {
     var visitsByMother = {};
     var ancOkMothers = {};
+    var motherToFlw = {};
+    var activeSet = null;
+    if (activeUsernames && activeUsernames.length) {
+      activeSet = {};
+      for (var k = 0; k < activeUsernames.length; k++) activeSet[activeUsernames[k].toLowerCase()] = true;
+    }
     for (var i = 0; i < visitsRows.length; i++) {
       var row = visitsRows[i];
       if (!row.visit_datetime || row.visit_datetime.substring(0, 10) > snapDateStr) continue;
       var mid = (row.mother_case_id || '').toLowerCase();
       if (!mid) continue;
+      var uname = ((row.username || row._username || '') + '').toLowerCase();
+      if (uname) motherToFlw[mid] = uname;
       var formName = (V5_FORM_NAME_ALIASES && V5_FORM_NAME_ALIASES[row.form_name]) || row.form_name || '';
       if ((row.antenatal_visit_completion || '').toString().trim() === 'ok') {
         ancOkMothers[mid] = true;
@@ -1644,6 +1654,10 @@ function WorkflowUI({
 
     for (var mid2 in r.motherSchedules) {
       if (!Object.prototype.hasOwnProperty.call(r.motherSchedules, mid2)) continue;
+      if (activeSet) {
+        var flw2 = motherToFlw[mid2];
+        if (!flw2 || !activeSet[flw2]) continue;
+      }
       var schedules = r.motherSchedules[mid2];
       var isEligible = !!(r.motherEligibility[mid2] && ancOkMothers[mid2]);
       var motherVisits = visitsByMother[mid2] || {};
@@ -3958,8 +3972,23 @@ function WorkflowUI({
       setTimeout(function () {
         var visitsRows = (pipelines.visits && pipelines.visits.rows) || [];
         var regRows = (pipelines.registrations && pipelines.registrations.rows) || [];
+
+        // Scope lines to eligible-for-renewal FLWs only
+        var eligibleUsernames = [];
+        var seenU = {};
+        for (var u in workerResults) {
+          var wr = workerResults[u];
+          if (wr && (wr.result || wr) === 'eligible_for_renewal') eligibleUsernames.push(u);
+          seenU[u] = true;
+        }
+        for (var u2 in prevCategories) {
+          if (seenU[u2]) continue;
+          var wr2 = prevCategories[u2];
+          if (wr2 && (wr2.result || wr2) === 'eligible_for_renewal') eligibleUsernames.push(u2);
+        }
+
         var result = months.map(function (mo) {
-          return Object.assign({}, mo, computeMonthlySnapshot(visitsRows, regRows, mo.snapDate));
+          return Object.assign({}, mo, computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligibleUsernames));
         });
         setMonthlyMetrics(result);
         setComputing(false);
