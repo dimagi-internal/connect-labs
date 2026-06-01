@@ -3928,7 +3928,7 @@ function WorkflowUI({
     // Monthly snap dates from Jan 2026 to today
     var months = React.useMemo(function () {
       var result = [];
-      var sY = 2026, sM = 1;
+      var sY = 2026, sM = 3;
       var now = new Date();
       var eY = now.getFullYear(), eM = now.getMonth() + 1;
       var y = sY, m = sM;
