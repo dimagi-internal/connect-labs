@@ -65,15 +65,14 @@ scenes:
       - { kind: wait_for, target: ".mp-ab-results button", note: "place results" }
       - { kind: hold, seconds: 0.8 }
       - { kind: click, target: ".mp-ab-results button", note: "fly the map to Kano (and seed the country)" }
-      - { kind: hold, seconds: 9, note: "boundaries load over Kano" }
+      - { kind: hold, seconds: 5, note: "the map flies to Kano" }
       - { kind: fill, target: ".mp-ab-search", value: "Kano", note: "now search the admin boundaries there" }
       - { kind: wait_for, target: "Kano Municipal", note: "boundary results (Region / LGA / Ward)" }
       - { kind: hold, seconds: 0.8 }
       - { kind: click, target: "Kano Municipal", note: "select the LGA (not the whole state) so the grid is a sane size" }
       - { kind: hold, seconds: 4, note: "the selected boundary's geometry resolves (1 selected · 15 km²)" }
       - { kind: click, target: "Create plan", note: "generate the work areas from the chosen boundary" }
-      - { kind: hold, seconds: 40, note: "the grid generates (Celery)" }
-      - { kind: wait_for, target: "WORKERS", note: "the new plan's work areas + per-worker metrics" }
+      - { kind: wait_for, target: "WORKERS", seconds: 90, note: "the grid generates on Celery, then the review page appears (early-exits the moment it's ready)" }
       - { kind: hold, seconds: 1.5 }
   - persona: maya
     title: "The grid balances itself across field workers"
@@ -89,13 +88,16 @@ scenes:
       - { kind: scroll_to, target: "Group work areas", note: "the two-phase group-then-assign controls" }
       - { kind: fill, target: "#grp-max-buildings", value: "2500", note: "size each cluster to a sane field territory" }
       - { kind: click, target: "#btn-regroup", note: "Phase 1 — cluster the work areas into walkable groups" }
-      - { kind: wait_for, target: "Re-grouped into", note: "the clustering finishes (runs on Celery)" }
+      - { kind: hold, seconds: 0.8, note: "the grouping job is dispatched (Re-grouping…)" }
+      - { kind: wait_for, target: "Re-grouped into", seconds: 40, note: "the clustering finishes and the map recolors by group (early-exit)" }
       - { kind: hold, seconds: 1.5 }
       - { kind: click, target: "Assign workers", note: "open the worker-assignment panel" }
       - { kind: hold, seconds: 0.6 }
       - { kind: fill, target: "#asg-workers", value: "Amina Bello\nIbrahim Sani\nFatima Yusuf\nMusa Garba\nHauwa Aliyu\nSani Abdullahi", note: "the six named field workers" }
+      - { kind: hover, target: "#btn-reassign", seconds: 0.8, note: "minimize-travel strategy, six workers" }
       - { kind: click, target: "#btn-reassign", note: "Phase 2 — balance the clusters across workers, minimizing travel" }
-      - { kind: wait_for, target: "Assigned to", note: "minimax-spread assignment finishes (Celery)" }
+      - { kind: hold, seconds: 0.9, note: "the assignment job runs (Re-assigning…)" }
+      - { kind: wait_for, target: "Assigned to", seconds: 40, note: "minimax-spread assignment finishes and the map recolors by worker (early-exit)" }
       - { kind: hold, seconds: 1.0 }
       - { kind: scroll_to, target: "WORKERS", note: "each worker now holds a contiguous territory, color-coded on the map" }
       - { kind: hold, seconds: 2.0 }
@@ -122,6 +124,7 @@ scenes:
       - { kind: hold, seconds: 1.8 }
   - persona: maya
     title: "Maya walks the plan to Approved"
+    url: "/microplans/program/133/"
     show: "Back on the workspace, click Submit for review on the draft, then Approve, and show the card move through Draft to In review to Approved"
     concept_claim: "A plan advances Draft to In review to Approved through controlled lifecycle transitions the owner drives before Connect."
     provenance: S5
@@ -131,15 +134,14 @@ scenes:
         description: "Plan transition endpoint enforcing the allowed Draft to In review to Approved moves and logging each with actor and timestamp"
         verify: "pytest: POST transition draft to in_review then in_review to approved succeeds and each appends a status_log entry; an illegal jump returns 400"
     actions:
-      - { kind: goto, target: "/microplans/program/133/", note: "back to the portfolio to drive the lifecycle" }
       - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', note: "the draft card we just built" }
-      - { kind: hold, seconds: 1.0 }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.0, note: "the status chip reads Draft" }
       - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Submit for review")', note: "Draft → In review (this plan's card, not a sibling's)" }
       - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "the card re-renders to In review and the Approve button appears" }
-      - { kind: hold, seconds: 1.2 }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.4, note: "the status chip now reads In review" }
       - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "In review → Approved" }
       - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Deploy")', note: "the card re-renders to Approved and the Deploy button appears" }
-      - { kind: hold, seconds: 1.2 }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.8, note: "now Approved — ready to deploy" }
   - persona: maya
     title: "Maya binds the plan to a live opportunity"
     show: "On the Approved card click Deploy, pick the live Connect opportunity from the searchable list (the ai-demo-space opportunity 'LEEP Paint Surveillance - India (run 20260522-1241)' — id 1834 in labs, the same opportunity that is d99e4422-e11a-476e-b885-fdf92026ea54 in Connect), and show the plan move into the Live column tagged with that opportunity"
