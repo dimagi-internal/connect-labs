@@ -211,7 +211,9 @@ executing==2.2.1
 fastavro==1.12.1
     # via cohere
 fastmcp==3.1.1
-    # via pydantic-ai-slim
+    # via
+    #   -r requirements/base.in
+    #   pydantic-ai-slim
 filelock==3.25.2
     # via huggingface-hub
 flatten-dict==0.4.2
@@ -704,6 +706,7 @@ urllib3==2.6.3
     #   types-requests
 uvicorn==0.42.0
     # via
+    #   -r requirements/base.in
     #   fastmcp
     #   mcp
 vine==5.1.0
