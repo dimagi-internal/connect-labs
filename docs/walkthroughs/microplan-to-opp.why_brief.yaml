@@ -1,0 +1,115 @@
+schema_version: 1
+feature: microplan-to-opp
+problem: >-
+  A program owner and their LLO partner have no place to design and validate a
+  field-worker microplan before a Connect opportunity goes live, so work areas
+  end up improvised inside Connect at execution time — with no chance to balance
+  travel across workers, eliminate invalid areas, or get the partner's sign-off
+  first.
+
+spine:
+  - id: S1
+    claim: >-
+      Microplanning belongs in a shared planning phase that happens before
+      Connect execution, not inside Connect at the moment workers are assigned.
+    rationale: >-
+      Connect owns execution; once an opportunity is live, assignment is
+      operational and hard to renegotiate. A separate planning surface lets the
+      program owner and the LLO agree on the plan first, then hand a finished
+      plan to Connect.
+    status: grounded
+    evidence:
+      - kind: documented
+        ref: EV-007
+
+  - id: S2
+    claim: >-
+      A microplan starts from a real administrative boundary and generates its
+      grid of work areas automatically, instead of being hand-drawn on a blank
+      map.
+    rationale: >-
+      Drawing coverage by hand is slow and unauditable. Generating work areas
+      from an official boundary makes the plan reproducible and grounds every
+      area in a real place.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-001
+
+  - id: S3
+    claim: >-
+      Work areas are grouped and balanced across named field workers by a real
+      assignment algorithm that minimizes travel spread — not split by eye.
+    rationale: >-
+      Even coverage is worthless if one worker draws a sprawling territory and
+      another a tight one. A grouping + minimax-spread assignment turns a raw
+      grid into an equitable, walkable set of routes.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-002
+
+  - id: S4
+    claim: >-
+      The partner validates and tunes the plan before any upload — excluding
+      invalid areas, regrouping, and reassigning — and watches per-worker travel
+      and workload update live.
+    rationale: >-
+      The people who know the ground catch the bad squares and the unfair loads.
+      Letting them edit in the planning phase, with metrics that move as they
+      edit, is what makes the eventual plan trustworthy.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-003
+
+  - id: S5
+    claim: >-
+      A microplan carries a real lifecycle — Draft, In review, Approved — that
+      the program owner drives with the partner before Connect ever sees it.
+    rationale: >-
+      A plan that matters needs a record of agreement, not a silent edit. The
+      lifecycle makes the planning-phase hand-off explicit and reviewable.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-004
+
+  - id: S6
+    claim: >-
+      Pushing an approved plan to an opportunity binds it to a specific live
+      Connect opp and hands execution to Connect — a clean one-way handoff at
+      the approved-plan boundary.
+    rationale: >-
+      The planning phase has to end somewhere definite. Binding the approved
+      plan to a real opportunity id and flipping it to Live is the moment labs
+      stops and Connect takes over.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-005
+      - kind: documented
+        ref: EV-007
+
+  - id: S7
+    claim: >-
+      The plan reaches Connect in Connect's own work-area import format,
+      field-for-field — the work areas you tuned are exactly the work areas
+      Connect receives.
+    rationale: >-
+      A handoff is only trustworthy if nothing is lost in translation. Exporting
+      in Connect's WorkAreaCSVImporter column shape guarantees the tuned plan
+      and the executed plan are the same set of areas.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-006
+
+gaps: []
+
+# Scope (2026-06-01): the demo stops at S7 — the plan designed, validated,
+# approved, and EXPORTED in Connect's import format. The actual upload into a
+# Connect opportunity (formerly spine item S8) is intentionally out of this
+# narrative; it's a manual download-then-upload a person performs in Connect
+# (no labs-to-Connect write API by design). The LGA/State export fix that makes
+# that file import cleanly shipped in PR #384 (see CONNECT_IMPORT_CONTRACT.md).
