@@ -85,6 +85,12 @@
     const u = new URL(window.location); u.searchParams.set("plans", [...selected].join(",")); history.replaceState(null, "", u);
   }
 
+  // Active sort key — index into ROWS. Null = the order the user picked them in.
+  // Clicking a row label toggles sorting by that metric (best first); clicking
+  // the same metric again clears the sort and reverts to pick-order. The active
+  // metric gets a chevron + emerald accent on the row label.
+  let sortRowIdx = null;
+
   let cmpCtrl = null;
   async function renderCompare() {
     const ids = [...selected];
@@ -97,7 +103,23 @@
     try {
       const d = await Microplans.apiGet(COMPARE_URL + "?plans=" + ids.join(","), { signal: cmpCtrl.signal });
       $("compare-status").textContent = "";
-      const plans = d.plans;
+      // Apply the active sort: shallow-copy d.plans, then order by the sort
+      // metric (best first). Plans whose value isn't a number sort last in
+      // pick-order. The compare API returns plans in URL-pick order; sort is
+      // a render-time concern only.
+      let plans = d.plans.slice();
+      if (sortRowIdx != null && ROWS[sortRowIdx]?.better) {
+        const sortRow = ROWS[sortRowIdx];
+        const dir = sortRow.better === "lower" ? 1 : -1;
+        plans.sort((a, b) => {
+          const av = sortRow.get(a), bv = sortRow.get(b);
+          const aNum = typeof av === "number", bNum = typeof bv === "number";
+          if (aNum && bNum) return dir * (av - bv);
+          if (aNum) return -1;
+          if (bNum) return 1;
+          return 0;
+        });
+      }
       const base = plans[0];
       // Per-row best highlight. For each metric row that has a direction
       // (lower/higher better), compute the SET of plans whose value ties for
@@ -105,27 +127,41 @@
       // first-in-order tie-break broke its own logic: when three plans
       // tied on Coverage at 100 %, only v1 (the first column) got the BEST
       // pill, falsely implying v1 was uniquely best.
-      function bestIndices(row) {
+      function extremaIndices(row, direction) {
+        // direction: "best" or "worst". Returns the Set of column indices
+        // whose value ties for the extreme value on this row. Empty set when
+        // every plan ties (the row is uninformative). Shared by the BEST pill
+        // logic AND the per-plan tally row so wins/losses stay consistent
+        // with what the screen highlights.
         if (!row.better) return new Set();
         const numIdx = plans
           .map((p, i) => [row.get(p), i])
           .filter(([v]) => typeof v === "number");
         if (!numIdx.length) return new Set();
-        const winningValue = numIdx.reduce(
-          (best, [v]) => (row.better === "lower" ? Math.min(best, v) : Math.max(best, v)),
+        const wantLower = (row.better === "lower") === (direction === "best");
+        const extreme = numIdx.reduce(
+          (acc, [v]) => (wantLower ? Math.min(acc, v) : Math.max(acc, v)),
           numIdx[0][0]
         );
-        // If every plan ties on this metric, no "best" to highlight — the row
-        // is uninformative.
-        if (numIdx.every(([v]) => v === winningValue)) return new Set();
-        return new Set(numIdx.filter(([v]) => v === winningValue).map(([, i]) => i));
+        if (numIdx.every(([v]) => v === extreme)) return new Set();
+        return new Set(numIdx.filter(([v]) => v === extreme).map(([, i]) => i));
       }
+      const bestSets = ROWS.map(r => extremaIndices(r, "best"));
+      const worstSets = ROWS.map(r => extremaIndices(r, "worst"));
       let html = `<thead><tr><th class="text-left p-2"></th>${plans.map((e) =>
         `<th class="p-2 text-left">${esc(e.name)}<div class="text-xs font-normal text-gray-400">Created ${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
-      ROWS.forEach((row) => {
+      ROWS.forEach((row, ri) => {
         const baseVal = row.get(base);
-        const bestIdxSet = bestIndices(row);
-        html += `<tr class="border-t"><td class="p-2 text-gray-600">${row.label}</td>`;
+        const bestIdxSet = bestSets[ri];
+        const isActiveSort = ri === sortRowIdx;
+        const sortable = !!row.better;
+        // Sortable rows are click targets — the metric name becomes the
+        // affordance. We add a chevron on the active sort row, and an unobtrusive
+        // sort hint on hover for the rest.
+        const labelHtml = sortable
+          ? `<button type="button" data-sort-idx="${ri}" class="text-left ${isActiveSort ? "font-semibold text-emerald-700" : "text-gray-600 hover:text-gray-900"} cursor-pointer">${row.label}${isActiveSort ? ` <span class="text-[10px] uppercase tracking-wide">▼ sorted</span>` : ""}</button>`
+          : `<span class="text-gray-600">${row.label}</span>`;
+        html += `<tr class="border-t"><td class="p-2">${labelHtml}</td>`;
         plans.forEach((e, i) => {
           const v = row.get(e);
           let delta = "";
@@ -148,9 +184,31 @@
         });
         html += `</tr>`;
       });
+      // Per-plan tally row at the bottom. For each plan, count rows it's in
+      // the BEST set vs the WORST set. Surfaces outlier candidacy as a single
+      // number per plan without claiming. A balanced batch has small spreads
+      // here; a plan with 0 wins and many losses is the candidate to retune.
+      // Rows without `better` (Worker territories) don't contribute.
+      const wins = plans.map((_, i) => bestSets.reduce((n, s) => n + (s.has(i) ? 1 : 0), 0));
+      const losses = plans.map((_, i) => worstSets.reduce((n, s) => n + (s.has(i) ? 1 : 0), 0));
+      const totalContestedRows = bestSets.filter(s => s.size > 0).length;
+      const tallyCells = plans.map((_, i) =>
+        `<td class="p-2"><span class="text-emerald-700 font-semibold">${wins[i]} win${wins[i] === 1 ? "" : "s"}</span> <span class="text-gray-500">·</span> <span class="text-red-600">${losses[i]} loss${losses[i] === 1 ? "" : "es"}</span></td>`
+      ).join("");
+      html += `<tr class="border-t bg-gray-50/60"><td class="p-2 text-gray-700 font-medium">Across ${totalContestedRows} contested metric${totalContestedRows === 1 ? "" : "s"}</td>${tallyCells}</tr>`;
       html += `</tbody>`;
       $("compare-table").innerHTML = html;
-      $("weights-note").innerHTML = 'The <span class="font-semibold text-emerald-700">best</span> value on each metric is highlighted. Deltas (the small +/− numbers) compare each later plan to the first; green = better on that metric, red = worse.';
+      // Wire up the sort click handlers (event delegation would also work,
+      // but the per-row buttons are small enough that direct binding is
+      // simpler to reason about).
+      $("compare-table").querySelectorAll("button[data-sort-idx]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(btn.dataset.sortIdx, 10);
+          sortRowIdx = (sortRowIdx === idx) ? null : idx;
+          renderCompare();
+        });
+      });
+      $("weights-note").innerHTML = 'The <span class="font-semibold text-emerald-700">best</span> value on each metric is highlighted. Deltas (the small +/− numbers) compare each later plan to the first column; green = better, red = worse. <strong>Click any row label to sort columns by that metric</strong> (best first) — then read the per-plan tally at the bottom to see which plans are consistently winning or losing.';
     } catch (e) {
       if (e.aborted) return;  // superseded by a newer selection
       $("compare-status").textContent = "Request failed: " + e.message;
