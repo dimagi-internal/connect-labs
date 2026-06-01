@@ -1628,9 +1628,10 @@ function WorkflowUI({
       var mid = (row.mother_case_id || '').toLowerCase();
       if (!mid) continue;
       var formName = (V5_FORM_NAME_ALIASES && V5_FORM_NAME_ALIASES[row.form_name]) || row.form_name || '';
-      if (formName === 'ANC Visit') {
+      if ((row.antenatal_visit_completion || '').toString().trim() === 'ok') {
         ancOkMothers[mid] = true;
-      } else if (formName) {
+      }
+      if (formName && formName !== 'ANC Visit') {
         if (!visitsByMother[mid]) visitsByMother[mid] = {};
         if (!visitsByMother[mid][formName]) visitsByMother[mid][formName] = row.visit_datetime;
       }
@@ -4012,8 +4013,8 @@ function WorkflowUI({
     }, [months, runHistory]);
 
     // SVG layout
-    var svgW = 640, svgH = 260;
-    var padL = 44, padR = 16, padT = 20, padB = 40;
+    var svgW = 640, svgH = 195;
+    var padL = 44, padR = 16, padT = 16, padB = 36;
     var chartW = svgW - padL - padR;
     var chartH = svgH - padT - padB;
     var n = months.length || 1;
