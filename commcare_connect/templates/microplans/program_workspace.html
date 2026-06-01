@@ -104,8 +104,15 @@
   }
 
   function render() {
+    // Plans already bundled into a plan group are shown under their group below
+    // (and on the group's share page), not repeated in the top lifecycle columns —
+    // otherwise a program with many grouped candidates floods the Planning section.
+    const grouped = new Set((DATA.groups || []).flatMap((g) => g.plan_ids || []));
     const byStatus = {};
-    DATA.plans.forEach((p) => (byStatus[p.status] = byStatus[p.status] || []).push(p));
+    DATA.plans.forEach((p) => {
+      if (grouped.has(p.plan_id)) return; // lives under its group, not the flat list
+      (byStatus[p.status] = byStatus[p.status] || []).push(p);
+    });
     $("phases").innerHTML = PHASES.map((ph) => {
       const plans = ph.statuses.flatMap((s) => byStatus[s] || []);
       if (!plans.length && ph.key === "archived") return "";
@@ -115,18 +122,29 @@
           ${plans.length ? plans.map(planCard).join("") : '<p class="text-sm text-gray-400">none</p>'}
         </div></section>`;
     }).join("");
-    $("groups").innerHTML = (DATA.groups || []).map((g) =>
-      `<div class="border rounded-lg p-3 bg-white">
+    const planById = Object.fromEntries(DATA.plans.map((p) => [p.plan_id, p]));
+    $("groups").innerHTML = (DATA.groups || []).map((g) => {
+      // List the group's member plans here (they're hidden from the top columns)
+      // so each grouped plan stays one click from its review page.
+      const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
+      const memberRows = members.map((p) =>
+        `<a class="flex items-center justify-between gap-2 py-1 text-xs hover:bg-gray-50 rounded px-1" href="${reviewUrl(p.plan_id)}">
+          <span class="truncate text-brand-cornflower-blue">${esc(p.name)}</span>
+          <span class="px-1.5 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
+        </a>`).join("") || '<p class="text-xs text-gray-400 py-1">(plans not in this program)</p>';
+      return `<div class="border rounded-lg p-3 bg-white">
         <div class="flex items-center justify-between">
           <a class="font-semibold text-brand-cornflower-blue" href="${groupShareUrl(g.group_id)}">${esc(g.name)}</a>
           <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${g.shared ? "shared" : "not shared"}</span>
         </div>
         <div class="text-xs text-gray-500">${g.plan_ids.length} plans${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
+        <div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>
         <div class="mt-2 flex gap-2">
           <a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
           <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>
         </div>
-      </div>`).join("") || '<p class="text-sm text-gray-400">No groups yet.</p>';
+      </div>`;
+    }).join("") || '<p class="text-sm text-gray-400">No groups yet.</p>';
     document.querySelectorAll(".plan-sel").forEach((cb) => cb.addEventListener("change", () => {
       const id = +cb.value; if (cb.checked) selected.add(id); else selected.delete(id);
       $("new-group").disabled = selected.size === 0;
