@@ -1,0 +1,151 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "web",
+      "image": "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-commcare-connect:latest",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "command": ["bash", "/app/docker/start"],
+      "environment": [
+        {
+          "name": "LABS_EXPORTS_BUCKET",
+          "value": "labs-jj-exports-dev-858923557655-us-east-1-an"
+        },
+        {
+          "name": "CELERY_BROKER_URL",
+          "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
+        },
+        {
+          "name": "LABS_ANALYSIS_BACKEND",
+          "value": "sql"
+        },
+        {
+          "name": "LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID",
+          "value": "1wDP7784aBx47BM9VEq72W1X0d-UHBh2_"
+        },
+        {
+          "name": "DJANGO_DEBUG",
+          "value": "False"
+        },
+        {
+          "name": "SCOUT_URL",
+          "value": "https://scout.dimagi.com"
+        },
+        {
+          "name": "OCS_URL",
+          "value": "https://www.openchatstudio.com"
+        },
+        {
+          "name": "DJANGO_SETTINGS_MODULE",
+          "value": "config.settings.labs_aws"
+        },
+        {
+          "name": "DJANGO_ALLOWED_HOSTS",
+          "value": "*"
+        },
+        {
+          "name": "WEB_CONCURRENCY",
+          "value": "3"
+        },
+        {
+          "name": "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID",
+          "value": "1e-9rKzJAlyDerGhxCxBBxGLbxnnOllrp"
+        },
+        {
+          "name": "SCALE_VALIDATION_API_URL",
+          "value": "https://image-pipeline-scale-gw-4pc8jsfa.uc.gateway.dev"
+        },
+        {
+          "name": "COMMCARE_HQ_URL",
+          "value": "https://www.commcarehq.org"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "DJANGO_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-django-secret-key-iB1rtG"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-database-url-adP4GQ"
+        },
+        {
+          "name": "CONNECT_OAUTH_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-connect-oauth-client-id-9obT8Q"
+        },
+        {
+          "name": "CONNECT_OAUTH_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-connect-oauth-client-secret-as2RFY"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-openai-api-key-tjvcF2"
+        },
+        {
+          "name": "COMMCARE_OAUTH_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-commcare-oauth-client-id-JKsDA0"
+        },
+        {
+          "name": "COMMCARE_OAUTH_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-commcare-oauth-client-secret-AvOUsA"
+        },
+        {
+          "name": "SENTRY_DSN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs/SENTRY_DSN-xyMCrH"
+        },
+        {
+          "name": "OCS_OAUTH_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-oauth-client-id-wNuzz6"
+        },
+        {
+          "name": "OCS_OAUTH_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-oauth-client-secret-xDfhky"
+        },
+        {
+          "name": "SCALE_VALIDATION_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-scale-validation-api-key-OR5xdE"
+        },
+        {
+          "name": "LABS_SYNTHETIC_GDRIVE_SA_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-synthetic-gdrive-sa-key-P6IuFV"
+        },
+        {
+          "name": "MAPBOX_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-mapbox-token-36222B"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/labs-jj-web",
+          "awslogs-create-group": "true",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "web"
+        }
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "labs-jj-web",
+  "taskRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-role",
+  "executionRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-execution-role",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "4096"
+}

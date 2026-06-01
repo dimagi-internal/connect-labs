@@ -1,0 +1,105 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "worker",
+      "image": "858923557655.dkr.ecr.us-east-1.amazonaws.com/labs-jj-commcare-connect:latest",
+      "cpu": 0,
+      "portMappings": [],
+      "essential": true,
+      "command": ["bash", "/app/docker/start_celery"],
+      "environment": [
+        {
+          "name": "OCS_URL",
+          "value": "https://www.openchatstudio.com"
+        },
+        {
+          "name": "LABS_EXPORTS_BUCKET",
+          "value": "labs-jj-exports-dev-858923557655-us-east-1-an"
+        },
+        {
+          "name": "DJANGO_SETTINGS_MODULE",
+          "value": "config.settings.labs_aws"
+        },
+        {
+          "name": "CELERY_BROKER_URL",
+          "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
+        },
+        {
+          "name": "LABS_ANALYSIS_BACKEND",
+          "value": "sql"
+        },
+        {
+          "name": "LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID",
+          "value": "1wDP7784aBx47BM9VEq72W1X0d-UHBh2_"
+        },
+        {
+          "name": "LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID",
+          "value": "1e-9rKzJAlyDerGhxCxBBxGLbxnnOllrp"
+        },
+        {
+          "name": "SCALE_VALIDATION_API_URL",
+          "value": "https://image-pipeline-scale-gw-4pc8jsfa.uc.gateway.dev"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "redis://labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com:6379/0"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "DJANGO_SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-django-secret-key-iB1rtG"
+        },
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-database-url-adP4GQ"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-openai-api-key-tjvcF2"
+        },
+        {
+          "name": "SENTRY_DSN",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs/SENTRY_DSN-xyMCrH"
+        },
+        {
+          "name": "OCS_OAUTH_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-oauth-client-id-wNuzz6"
+        },
+        {
+          "name": "OCS_OAUTH_CLIENT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-ocs-oauth-client-secret-xDfhky"
+        },
+        {
+          "name": "SCALE_VALIDATION_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-scale-validation-api-key-OR5xdE"
+        },
+        {
+          "name": "LABS_SYNTHETIC_GDRIVE_SA_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-synthetic-gdrive-sa-key-P6IuFV"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/labs-jj-worker",
+          "awslogs-create-group": "true",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "worker"
+        }
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "labs-jj-worker",
+  "taskRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-role",
+  "executionRoleArn": "arn:aws:iam::858923557655:role/labs-jj-ecs-task-execution-role",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "8192"
+}
