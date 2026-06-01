@@ -1614,6 +1614,68 @@ function WorkflowUI({
   );
 
   // =========================================================================
+  // Monthly snapshot metrics — used by the improvement-over-time chart.
+  // Filters visits to those submitted on or before snapDateStr (YYYY-MM-DD),
+  // then replicates the core follow-up-rate and still-eligible computation
+  // from v5_computeFollowupRates using that cutoff as "today".
+  // =========================================================================
+  var computeMonthlySnapshot = function (visitsRows, regRows, snapDateStr) {
+    var visitsByMother = {};
+    var ancOkMothers = {};
+    for (var i = 0; i < visitsRows.length; i++) {
+      var row = visitsRows[i];
+      if (!row.visit_datetime || row.visit_datetime.substring(0, 10) > snapDateStr) continue;
+      var mid = (row.mother_case_id || '').toLowerCase();
+      if (!mid) continue;
+      var formName = (V5_FORM_NAME_ALIASES && V5_FORM_NAME_ALIASES[row.form_name]) || row.form_name || '';
+      if (formName === 'ANC Visit') {
+        ancOkMothers[mid] = true;
+      } else if (formName) {
+        if (!visitsByMother[mid]) visitsByMother[mid] = {};
+        if (!visitsByMother[mid][formName]) visitsByMother[mid][formName] = row.visit_datetime;
+      }
+    }
+
+    var r = v5_processRegistrations(regRows);
+    var graceCutoff = v5_subtractDays(snapDateStr, V5_GRACE_PERIOD_DAYS);
+
+    var totDenom = 0, totCompleted = 0, totEligible = 0, totStillEligible = 0;
+
+    for (var mid2 in r.motherSchedules) {
+      if (!Object.prototype.hasOwnProperty.call(r.motherSchedules, mid2)) continue;
+      var schedules = r.motherSchedules[mid2];
+      var isEligible = !!(r.motherEligibility[mid2] && ancOkMothers[mid2]);
+      var motherVisits = visitsByMother[mid2] || {};
+      var missedCount = 0;
+
+      for (var j = 0; j < schedules.length; j++) {
+        var s = schedules[j];
+        if (!s || s.visit_type === 'ANC Visit') continue;
+        var scheduledStr = v5_dateStr(s.visit_date_scheduled);
+        var expiryStr = v5_dateStr(s.visit_expiry_date);
+        var isComp = !!motherVisits[s.visit_type];
+        var pastGrace = scheduledStr && scheduledStr <= graceCutoff;
+
+        if (!isComp && expiryStr && expiryStr < snapDateStr) missedCount++;
+        if (pastGrace) {
+          totDenom++;
+          if (isComp) totCompleted++;
+        }
+      }
+
+      if (isEligible) {
+        totEligible++;
+        if (missedCount < 2) totStillEligible++;
+      }
+    }
+
+    return {
+      followup_rate: totDenom > 0 ? Math.round((totCompleted / totDenom) * 100) : null,
+      pct_still_eligible: totEligible > 0 ? Math.round((totStillEligible / totEligible) * 100) : null,
+    };
+  };
+
+  // =========================================================================
   // Performance band summary (Tab 3)
   // =========================================================================
   var computePerfBands = function () {
@@ -3848,6 +3910,203 @@ function WorkflowUI({
   // =========================================================================
   // Tab 3: Summary by Performance Band
   // =========================================================================
+  // =========================================================================
+  // Improvement over time chart (Tab 3 — Program monitoring)
+  // =========================================================================
+  var ImprovementOverTimeChart = function () {
+    var _rh = React.useState(null);
+    var runHistory = _rh[0];
+    var setRunHistory = _rh[1];
+
+    React.useEffect(function () {
+      fetch('/labs/workflow/api/run-category-history/', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : { runs: [] }; })
+        .then(function (d) { setRunHistory(d.runs || []); })
+        .catch(function () { setRunHistory([]); });
+    }, []);
+
+    // Monthly snap dates from Jan 2026 to today
+    var months = React.useMemo(function () {
+      var result = [];
+      var sY = 2026, sM = 1;
+      var now = new Date();
+      var eY = now.getFullYear(), eM = now.getMonth() + 1;
+      var y = sY, m = sM;
+      while (y < eY || (y === eY && m <= eM)) {
+        var mm = m < 10 ? '0' + m : '' + m;
+        result.push({
+          label: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] + ' \'' + (y % 100 < 10 ? '0' + (y % 100) : '' + (y % 100)),
+          snapDate: y + '-' + mm + '-15',
+        });
+        m++;
+        if (m > 12) { m = 1; y++; }
+      }
+      return result;
+    }, []);
+
+    // Monthly metrics from pipeline data
+    var monthlyMetrics = React.useMemo(function () {
+      var visitsRows = (pipelines.visits && pipelines.visits.rows) || [];
+      var regRows = (pipelines.registrations && pipelines.registrations.rows) || [];
+      return months.map(function (mo) {
+        return Object.assign({}, mo, computeMonthlySnapshot(visitsRows, regRows, mo.snapDate));
+      });
+    }, [months]);
+
+    // Category distribution per month using step-constant interpolation across runs
+    var monthlyCats = React.useMemo(function () {
+      if (!runHistory) return null;
+
+      // Build current distribution from workerResults + prevCategories
+      var curDist = { eligible_for_renewal: 0, requires_improvement: 0, suspended: 0 };
+      var seen = {};
+      for (var u in workerResults) {
+        var wr = workerResults[u];
+        var cat = wr && (wr.result || wr);
+        if (cat === 'probation') cat = 'requires_improvement';
+        if (cat in curDist) curDist[cat]++;
+        seen[u] = true;
+      }
+      for (var u2 in prevCategories) {
+        if (seen[u2]) continue;
+        var wr2 = prevCategories[u2];
+        var cat2 = wr2 && (wr2.result || wr2);
+        if (cat2 === 'probation') cat2 = 'requires_improvement';
+        if (cat2 in curDist) curDist[cat2]++;
+      }
+      var curTotal = curDist.eligible_for_renewal + curDist.requires_improvement + curDist.suspended;
+
+      // Append current as a virtual run at today
+      var today = new Date().toISOString().substring(0, 10);
+      var allRuns = runHistory.concat(
+        curTotal > 0 ? [{ completed_at: today, dist: curDist, total: curTotal }] : []
+      );
+
+      return months.map(function (mo) {
+        var best = null;
+        for (var i = 0; i < allRuns.length; i++) {
+          var runDate = (allRuns[i].completed_at || '').substring(0, 10);
+          if (runDate <= mo.snapDate) best = allRuns[i];
+        }
+        if (!best) return null;
+        var d = best.dist;
+        var t = best.total || 1;
+        return {
+          elig: (d.eligible_for_renewal || 0) / t,
+          req: (d.requires_improvement || 0) / t,
+          susp: (d.suspended || 0) / t,
+        };
+      });
+    }, [months, runHistory]);
+
+    // SVG layout
+    var svgW = 640, svgH = 260;
+    var padL = 44, padR = 16, padT = 20, padB = 40;
+    var chartW = svgW - padL - padR;
+    var chartH = svgH - padT - padB;
+    var n = months.length || 1;
+    var slotW = chartW / n;
+    var barW = slotW * 0.55;
+
+    if (runHistory === null) {
+      return React.createElement('div', { className: 'bg-white rounded-lg shadow-sm p-6 text-sm text-gray-400 text-center' }, 'Loading chart…');
+    }
+
+    var gridYs = [0, 25, 50, 75, 100];
+    var elems = [];
+
+    // Grid + y-labels
+    gridYs.forEach(function (v) {
+      var cy = padT + chartH * (1 - v / 100);
+      elems.push(React.createElement('line', { key: 'g' + v, x1: padL, y1: cy, x2: padL + chartW, y2: cy, stroke: '#e5e7eb', strokeWidth: 1 }));
+      elems.push(React.createElement('text', { key: 'yl' + v, x: padL - 5, y: cy + 4, textAnchor: 'end', fontSize: 10, fill: '#9ca3af' }, v + '%'));
+    });
+
+    // X-axis baseline
+    elems.push(React.createElement('line', { key: 'xax', x1: padL, y1: padT + chartH, x2: padL + chartW, y2: padT + chartH, stroke: '#d1d5db', strokeWidth: 1 }));
+
+    // Bars + x-labels
+    months.forEach(function (mo, i) {
+      var cx = padL + i * slotW + slotW / 2;
+      var bx = cx - barW / 2;
+      var by = padT + chartH;
+
+      elems.push(React.createElement('text', { key: 'xl' + i, x: cx, y: padT + chartH + 14, textAnchor: 'middle', fontSize: 10, fill: '#6b7280' }, mo.label));
+
+      var cats = monthlyCats && monthlyCats[i];
+      if (cats) {
+        var yBot = by;
+        // Suspended (red)
+        if (cats.susp > 0) {
+          var hS = chartH * cats.susp;
+          elems.push(React.createElement('rect', { key: 'susp' + i, x: bx, y: yBot - hS, width: barW, height: hS, fill: '#fca5a5', fillOpacity: 0.85 }));
+          yBot -= hS;
+        }
+        // Requires improvement (yellow)
+        if (cats.req > 0) {
+          var hR = chartH * cats.req;
+          elems.push(React.createElement('rect', { key: 'req' + i, x: bx, y: yBot - hR, width: barW, height: hR, fill: '#fde68a', fillOpacity: 0.85 }));
+          yBot -= hR;
+        }
+        // Eligible for renewal (green)
+        if (cats.elig > 0) {
+          var hE = chartH * cats.elig;
+          elems.push(React.createElement('rect', { key: 'elig' + i, x: bx, y: yBot - hE, width: barW, height: hE, fill: '#86efac', fillOpacity: 0.85 }));
+        }
+      }
+    });
+
+    // Follow-up rate line
+    var fuPts = [];
+    var sePts = [];
+    monthlyMetrics.forEach(function (mo, i) {
+      var cx = padL + i * slotW + slotW / 2;
+      if (mo.followup_rate != null) fuPts.push([cx, padT + chartH * (1 - mo.followup_rate / 100)]);
+      if (mo.pct_still_eligible != null) sePts.push([cx, padT + chartH * (1 - mo.pct_still_eligible / 100)]);
+    });
+
+    if (fuPts.length >= 2) {
+      elems.push(React.createElement('polyline', { key: 'fu-line', points: fuPts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#2563eb', strokeWidth: 2.5 }));
+    }
+    fuPts.forEach(function (p, i) {
+      elems.push(React.createElement('circle', { key: 'fu-dot' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#2563eb' }));
+    });
+
+    if (sePts.length >= 2) {
+      elems.push(React.createElement('polyline', { key: 'se-line', points: sePts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#9333ea', strokeWidth: 2.5, strokeDasharray: '6,3' }));
+    }
+    sePts.forEach(function (p, i) {
+      elems.push(React.createElement('circle', { key: 'se-dot' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#9333ea' }));
+    });
+
+    return React.createElement(
+      'div',
+      { className: 'bg-white rounded-lg shadow-sm p-4' },
+      React.createElement('h3', { className: 'text-sm font-semibold text-gray-800 mb-1' }, 'Improvement over time'),
+      React.createElement('p', { className: 'text-xs text-gray-400 mb-3' }, 'Monthly snapshots (15th of each month). Bars show % of FLWs per performance category; lines show project-level follow-up rate and % still eligible.'),
+      React.createElement('svg', { viewBox: '0 0 ' + svgW + ' ' + svgH, width: '100%', style: { display: 'block' } }, elems),
+      React.createElement(
+        'div',
+        { className: 'flex flex-wrap gap-x-5 gap-y-1 mt-2 text-xs text-gray-600' },
+        React.createElement('span', { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 12, height: 12, background: '#86efac', borderRadius: 2 } }),
+          'Eligible for Renewal'),
+        React.createElement('span', { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 12, height: 12, background: '#fde68a', borderRadius: 2 } }),
+          'Requires Improvement'),
+        React.createElement('span', { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 12, height: 12, background: '#fca5a5', borderRadius: 2 } }),
+          'Suspended'),
+        React.createElement('span', { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 3, background: '#2563eb', borderRadius: 2 } }),
+          'Follow-up Rate'),
+        React.createElement('span', { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '3px dashed #9333ea' } }),
+          '% Still Eligible'),
+      ),
+    );
+  };
+
   var Tab3 = function () {
     var bands = perfData || computePerfBands();
     var bandColor = {
@@ -3860,6 +4119,7 @@ function WorkflowUI({
     return React.createElement(
       'div',
       { className: 'space-y-4' },
+      React.createElement(ImprovementOverTimeChart, null),
       React.createElement(
         'div',
         { className: 'flex items-center justify-between' },
@@ -4184,7 +4444,7 @@ function WorkflowUI({
   var tabs = [
     { id: 'audit', label: 'Audit Report', icon: 'fa-table' },
     { id: 'improvement', label: 'Improvement in Audit', icon: 'fa-chart-line' },
-    { id: 'summary', label: 'Summary by Band', icon: 'fa-layer-group' },
+    { id: 'summary', label: 'Program monitoring', icon: 'fa-chart-area' },
     { id: 'guide', label: 'Guide', icon: 'fa-book' },
   ];
 
