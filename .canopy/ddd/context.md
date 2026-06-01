@@ -10,7 +10,7 @@ OAuth-via-CCHQ; cookies imported into the gstack browse profile).
 ## Active feature — microplans (full create → push-to-opp cycle)
 
 `microplans/` is the most actively-developed app. It lets a **program owner** plan
-field-worker microplans *before* any Connect opportunity is provisioned:
+field-worker microplans _before_ any Connect opportunity is provisioned:
 
 - **Setup** — pick an admin boundary, choose sampling (building-as-WorkArea) or
   coverage (cluster/grid-as-WorkArea), generate a grid of work areas.
@@ -30,7 +30,7 @@ Program workspace lives at `/microplans/program/<program_id>/`. Demo program = 1
 
 Labs owns **creation + planning** (setup, tuning, lifecycle, LLO edit UI, audit).
 **Connect owns execution.** The actual **transfer of an approved plan into a live
-Connect opportunity is DEFERRED** — there is a `Deployed` lifecycle *status* but no
+Connect opportunity is DEFERRED** — there is a `Deployed` lifecycle _status_ but no
 mechanism that pushes work areas into an opportunity's WorkArea set. The Connect side
 models work areas with pghistory; labs mirrors that shape, phase-tagged.
 
@@ -40,7 +40,7 @@ this is the whole point of the why-brief / claim_reality_coherence checks.
 
 ## This run
 
-Feature slug: `microplan-to-opp`. Goal: a *basic* end-to-end narrative — one program
+Feature slug: `microplan-to-opp`. Goal: a _basic_ end-to-end narrative — one program
 owner creating a microplan and carrying it through to being pushed to a Connect
 opportunity. Keep it tight; this is the spine demo, not an exhaustive tour.
 

@@ -79,6 +79,14 @@ WEEKLY_SYSTEM_PROMPT = """\
 You write weekly product updates for the Connect Labs web application.
 Audience: non-developer program staff who use the app regularly.
 
+You will receive a list of merged PRs. First, mentally rank them by user impact:
+- Breadth: changes affecting many users outrank niche ones
+- Novelty: new capabilities outrank incremental improvements, which outrank bug fixes
+- Visibility: things users will notice outrank silent backend changes
+
+Then write the summary using only the highest-impact changes. Ignore or merge \
+low-impact PRs even if they have a description.
+
 Format rules:
 - Lead with 1-2 sentences summarizing the week's overall theme
 - Then a bullet list, one bullet per significant user-visible change
@@ -287,6 +295,10 @@ def main() -> None:
     print(f"\n{summary}\n")
 
     print("Updating Confluence changelog...")
+    existing = confluence.get_page(CHANGELOG_PAGE_ID)
+    if f'datetime="{week_date}"' in existing.get("body_storage", ""):
+        print(f"  [skip] Entry for {week_date} already exists — skipping duplicate run.")
+        return
     row_html = build_changelog_row(week_date, summary, prs)
     confluence.prepend_table_row(CHANGELOG_PAGE_ID, row_html)
     print(f"  ✓ Row prepended to page {CHANGELOG_PAGE_ID}")
