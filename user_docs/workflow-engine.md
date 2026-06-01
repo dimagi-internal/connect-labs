@@ -232,6 +232,29 @@ To use synthetic data capabilities, ask your program administrator or raise a re
 
 5. **Iterate.** Describe changes in plain English or use the `/workflow-author` skill to keep Claude on track with the correct design patterns.
 
+### Deploy-Free Template Iteration
+
+If you are editing a seed template `.py` file and don't want to wait 15 minutes for a full Labs redeploy between each tweak, use `workflow_sync_from_template_file` to push your local `.py` (plus any `_render.js` sidecar) straight to a live preview workflow with no redeploy.
+
+**Why this matters — the anti-pattern it prevents:** The slow deploy cycle was nudging authors into editing the live workflow directly via MCP and then forgetting to back-port those changes to the template `.py` file. Git quietly lost authority over the live workflow. The next time anyone pushed from a local file, those MCP-only changes were silently overwritten with no warning and no recovery from version control. The sync tool removes the speed incentive to do that — the `.py` stays the source of truth at every step.
+
+**Recommended process** (copy this into Claude to get started):
+
+1. Create the template `.py` file once, checked into git — this is your version-controlled source.
+2. Spin up a live preview workflow from it: `workflow_create_from_template`.
+3. Tell Claude: _"Iterate on the `<template_name>` template against workflow `<id>` in opp `<id>` using `workflow_sync_from_template_file`."_
+4. Edit the `.py` in git, sync, refresh Labs in your browser, repeat.
+5. Commit when it looks right. The template file is always current — no back-porting needed.
+
+**Pick the right loop:**
+
+| What you're doing | Tool to use |
+| --- | --- |
+| One-off edit to a live workflow (not going back to git) | `workflow_update_render_code` / `workflow_patch_render_code` |
+| Authoring or updating a seed template `.py` file | `workflow_sync_from_template_file` |
+
+**Caveats:** The sync parser is strict — it handles literals, dicts/lists, name references, and the `Path(__file__).parent / "X.js").read_text()` sidecar pattern. Six templates currently use Python features outside that grammar and still require a full deploy: `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_monitoring_v3`, `program_admin_audit`, `sam_followup`. Pipeline schema updates are not transactional — if a schema fails mid-sync you'll get a `PARTIAL_SYNC` response showing what landed.
+
 ### You Don't Need a Local Instance
 
 For workflow development, **do not run Connect Labs locally.** Even when running locally, data is still fetched from Connect prod — so there is no isolation benefit. The only reason to run locally is if you are modifying the core Connect Labs application code (the Django app
