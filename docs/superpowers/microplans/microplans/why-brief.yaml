@@ -94,15 +94,18 @@ spine:
 
   - id: compare-and-tune
     claim: >-
-      Dana reads each plan's assignment-aware KPIs (max travel km, workload imbalance, fit
-      score) in the workspace, then opens the comparison page on the top picks plus a couple
-      of suspects, and uses the fit ranking to surface the highest-imbalance and lowest-fit
-      wards as the actionable outliers.
+      Dana opens the comparison page on a few plans she's interested in (or versions of the same
+      plan), reads the stacked KPI rows with per-row BEST highlights and green/red deltas, sorts
+      on a metric that matters to her, reads the per-plan win/loss tally at the bottom, and decides
+      whether any plan is a true outlier worth retuning — OR whether the batch is uniformly tight
+      and no retuning is needed.
     rationale: >-
-      Outliers in a batch of ten are invisible without side-by-side; the comparison page is what
-      makes batch authorship trustable, and the tool catching a real imbalance is itself a
-      first-class demo moment — it shows the system surfacing real problems, not papering over
-      them.
+      Outliers in a batch of ten are invisible without side-by-side, but a tool that always names
+      an outlier is dishonest when the batch is balanced. The honest comparison page reports what
+      it knows (best per row, sort by any metric, win/loss tally) and stays out of the way of the
+      lead's judgment. The lead's investigation IS the demo moment — sometimes the answer is "v1
+      and v2 are the outliers", sometimes it's "no outliers, this batch is balanced", and both are
+      valid findings.
     status: grounded
     evidence:
       - kind: implemented
