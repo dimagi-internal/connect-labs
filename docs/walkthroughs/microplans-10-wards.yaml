@@ -5,7 +5,7 @@ build_order:
 - dana-opens-the-program-workspace-for-the-kano-arm-of-the-rct
 - dana-pastes-the-ward-names-the-system-resolves-them-and-dana-disambiguates-each-ambiguous-row-inline-before-any-plan-is-created
 - dana-confirms-picks-the-config-and-hits-create-plans-the-bulk-operation-runs-with-progress
-- dana-spots-the-outliers-via-the-comparison-page
+- dana-investigates-whether-any-plan-is-an-outlier-via-the-comparison-page
 - dana-bundles-the-batch-and-shares-it-with-the-llo
 - kim-eliminates-work-areas-on-plan-1-with-reasons-school-unsafe
 - kim-rebalances-plan-1-moves-work-areas-between-groups-reassigns-a-group-to-a-different-user
@@ -54,7 +54,11 @@ narrative: 'Dana opens her program''s workspace in labs to start the Kano arm of
   balance tolerance), and hits Create Plans — the system materializes one plan per
   ward in a single bulk operation against real building footprints, showing per-ward
   progress since it''s long-running. She reads the per-plan KPIs in the workspace,
-  opens the comparison page, and uses the ranking to find the outliers worth retuning.
+  opens the comparison page, picks a few plans, reads the stacked KPI rows (per-row
+  BEST in emerald, green/red deltas), sorts on a metric she cares about, reads the
+  per-plan win/loss tally at the bottom, and decides whether any plan is a true
+  outlier worth retuning (in this batch v1 and v2 are; on another batch the answer
+  might be no outliers, just a balanced set).
   She bundles the ten plans into one group for Kim (the Kano State LLO), sets the
   share so Kim can open it without a Dimagi account, and sends one link. Kim opens
   plan 1 on the map and eliminates several work areas on the far east/right — one
@@ -191,12 +195,15 @@ scenes:
     matters).
   title: Dana confirms, picks the config, and hits Create Plans — the bulk operation
     runs with progress
-- concept_claim: The comparison page stacks the per-plan KPIs side by side so the
-    tool surfaces the outliers and the lead can retune just those without rebuilding
-    the whole batch.
-  design_intent: The tool catching the outlier is itself a first-class demo moment
-    — better than a polished-but-fake comparison; the LLO faced with the real outlier
-    can act on it.
+- concept_claim: The comparison page stacks the per-plan KPIs side by side, highlights
+    the per-row best, sorts on click by any metric, and tallies wins/losses per plan
+    — so the lead can read across the metrics that matter to her and decide whether
+    any plan is a true outlier worth retuning, or whether the batch is uniformly tight
+    and no retuning is needed.
+  design_intent: Letting the lead investigate is the demo moment — the tool reports
+    what it knows (best per row, sort by any metric, win/loss tally) and stays out
+    of the way of her judgment. A page that always names an outlier is dishonest when
+    the batch is balanced; this one lets the data answer that question.
   features:
   - description: ProgramComparePageView renders the comparison UI; ProgramComparePlansView
       returns the per-plan KPI rows for the picked plans.
@@ -211,9 +218,16 @@ scenes:
       with non-null max_spread_km and a fit_score between 0 and 100.
   persona: lead
   provenance: compare-and-tune
-  show: Read the per-plan KPIs in the workspace, open the comparison page, and use
-    the ranking to identify the outliers worth retuning.
-  title: Dana spots the outliers via the comparison page
+  show: Open the comparison page, pick a few plans from the sidebar, and read the
+    stacked KPI rows. Each row highlights the per-row BEST in emerald and shows green/red
+    deltas. Click any row's metric label to sort the columns by that metric (best
+    on the left) so the per-row outlier is at the right. A per-plan tally at the
+    bottom counts how many rows each plan won and lost across the contested metrics
+    — the lead reads across the metrics that matter to her and decides whether any
+    plan stands out (in this Kano demo: v1 wins 0/8, v2 wins 1/8 — both outlier candidates
+    — or, on a different batch, the tally may be balanced, which is a valid outcome
+    too).
+  title: Dana investigates whether any plan is an outlier via the comparison page
 - concept_claim: The share issues one link the LLO opens without a Dimagi account,
     so sign-off lives outside the program team without OAuth/membership friction.
   design_intent: LLO sign-off lives outside the program team and outside Dimagi auth;
