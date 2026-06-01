@@ -404,6 +404,12 @@ def plan_kpis(work_areas: list[dict]) -> dict:
 def derive_lga_state(plan_data: dict) -> tuple[str, str]:
     """Best (LGA, State) labels for a plan's Connect work-area export.
 
+    ⚠ NIGERIA-HARDCODED: "LGA"/"State" are Nigeria's ADM2/ADM1 tiers, hardcoded to
+    match Connect's importer column names. Labs is country-generic internally
+    (canonical admin levels) — generalize this (and ``workarea.CSV_HEADERS``,
+    ``models.PlanRecord.lga/state``) once Connect generalizes its importer. See
+    the note on ``workarea.CSV_HEADERS`` and ``microplans/CONNECT_IMPORT_CONTRACT.md``.
+
     Connect's WorkAreaCSVImporter REQUIRES both LGA and State to be non-empty on
     every row (see ``microplans/CONNECT_IMPORT_CONTRACT.md``); a blank value gets
     the whole file rejected. We resolve them from the plan with this precedence:
