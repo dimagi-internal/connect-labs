@@ -109,7 +109,30 @@ spine:
     status: grounded
     evidence:
       - kind: implemented
-        ref: "PRs #305 (plan KPIs), #306 (assignment-aware KPIs + clearer lifecycle controls), #308 (program-scoped comparison page); plan_lib.plan_kpis() returns max_spread_km/territory_count; the prior real run on program 135 produced one ward with >100% workload imbalance and a low-double-digit fit score (the actionable outlier shape this demo expects to reproduce on re-materialize)."
+        ref: "PRs #305 (plan KPIs), #306 (assignment-aware KPIs + clearer lifecycle controls), #308 (program-scoped comparison page); plan_lib.plan_kpis() returns max_spread_km/territory_count + total_population/total_buildings/pop_per_building workload totals; the prior real run on program 135 produced one ward with >100% workload imbalance and a low-double-digit fit score (the actionable outlier shape this demo expects to reproduce on re-materialize)."
+
+  - id: metric-definitions
+    claim: >-
+      The plan-quality vocabulary (Population, Buildings, Pop per building,
+      Longest worker travel, Avg worker travel, Travel spread, Worker load gap,
+      Worker load spread, Coverage, Excluded areas, Excluded buildings, Worker
+      territories) is defined on a single program-scope-agnostic glossary page,
+      linked from the compare page sidebar, so the lead can sanity-check her
+      reading of the numbers without guessing what a label means or where the
+      input data comes from.
+    rationale: >-
+      The compare page is intentionally chrome-free (no badges, deltas, or
+      tally), which puts the full weight on the column labels. A glossary that
+      lives next to the compare page — one URL, one vocabulary, every metric
+      defined with what it measures + how it's computed + what the input data
+      is — is what makes "plain numbers" honest instead of opaque. Without it,
+      the lead is either guessing or paging back to PR descriptions.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: "commcare_connect/microplans/views.py:MetricGlossaryView + templates/microplans/metric_glossary.html (one page, five sections: Workload, Travel burden, Workload balance, Coverage + exclusions, Structure)"
+      - kind: implemented
+        ref: "commcare_connect/templates/microplans/compare.html sidebar 'What do these metrics mean?' link → reverse('microplans:metric_glossary')"
 
   - id: bundle-and-share
     claim: >-

@@ -5,7 +5,8 @@ build_order:
 - dana-opens-the-program-workspace-for-the-kano-arm-of-the-rct
 - dana-pastes-the-ward-names-the-system-resolves-them-and-dana-disambiguates-each-ambiguous-row-inline-before-any-plan-is-created
 - dana-confirms-picks-the-config-and-hits-create-plans-the-bulk-operation-runs-with-progress
-- dana-investigates-whether-any-plan-is-an-outlier-via-the-comparison-page
+- dana-reads-the-per-plan-metrics-on-the-comparison-table
+- dana-checks-the-metric-definitions-in-the-glossary
 - dana-bundles-the-batch-and-shares-it-with-the-llo
 - kim-eliminates-work-areas-on-plan-1-with-reasons-school-unsafe
 - kim-rebalances-plan-1-moves-work-areas-between-groups-reassigns-a-group-to-a-different-user
@@ -195,39 +196,91 @@ scenes:
     matters).
   title: Dana confirms, picks the config, and hits Create Plans — the bulk operation
     runs with progress
-- concept_claim: The comparison page stacks the per-plan KPIs side by side, highlights
-    the per-row best, sorts on click by any metric, and tallies wins/losses per plan
-    — so the lead can read across the metrics that matter to her and decide whether
-    any plan is a true outlier worth retuning, or whether the batch is uniformly tight
-    and no retuning is needed.
-  design_intent: Letting the lead investigate is the demo moment — the tool reports
-    what it knows (best per row, sort by any metric, win/loss tally) and stays out
-    of the way of her judgment. A page that always names an outlier is dishonest when
-    the batch is balanced; this one lets the data answer that question.
+- concept_claim: The comparison page shows one row per picked plan and one column
+    per plan-quality metric — population, buildings, pop per building, longest /
+    avg / spread of worker travel, worker load gap and spread, coverage,
+    exclusions, and territory count — with every column sortable. No color coding,
+    no win/loss tally, no "best" badges; the reader reads the numbers and decides.
+  design_intent: Plain numbers in a plain sortable table. Every chrome-y comparison
+    affordance we tried (best pills, deltas vs first column, win/loss tally) was
+    busy without being more honest. A standard sortable table matches the rest of
+    the labs UI and lets the lead form her own judgment from the raw numbers.
   features:
   - description: ProgramComparePageView renders the comparison UI; ProgramComparePlansView
       returns the per-plan KPI rows for the picked plans.
     id: program-compare-page
-    verify: GET /microplans/program/135/compare/?plans=3334,3339,3333,3335 returns
-      200 and the response contains rows for max_spread_km / workload_imbalance /
-      fit_score for each plan id.
-  - description: plan_lib.plan_kpis returns max_spread_km / territory_count / balance
-      / fit_score, all derived from real Overture footprint geometry.
+    verify: GET /microplans/program/133/compare/?plans=3322,3321,3323,3325 returns
+      200 and the response contains one row per picked plan with the workload
+      (Population, Buildings, Pop/building) and quality (travel, balance, coverage,
+      exclusions, territories) columns.
+  - description: plan_lib.plan_kpis returns the workload totals (total_population,
+      total_buildings, pop_per_building) AND the per-territory derived metrics
+      (max_spread_km / mean_spread_km / std_spread_km / pop_imbalance_pct /
+      pop_std / coverage_pct / excluded.count / excluded.buildings /
+      territory_count), all derived from real Overture footprint geometry.
     id: assignment-aware-kpis
     verify: plan_lib.plan_kpis(plan.work_areas) for a non-empty plan returns a dict
-      with non-null max_spread_km and a fit_score between 0 and 100.
+      with non-null max_spread_km, total_population, total_buildings, and
+      pop_per_building.
+  - description: Every column header on the compare page is a sortable click target
+      using the labs-standard cmp-th/sort-ind pattern (matches the work-area review
+      table's wa-th). Click cycles ascending → descending → cleared.
+    id: sortable-columns
+    verify: Clicking the "Longest worker travel" header once sorts plans ascending
+      by that metric; clicking again sorts descending; clicking a third time clears
+      the sort and reverts to URL pick order.
   persona: lead
   provenance: compare-and-tune
-  show: Open the comparison page, pick a few plans from the sidebar, and read the
-    stacked KPI rows. Each row highlights the per-row BEST in emerald and shows green/red
-    deltas. Click any row's metric label to sort the columns by that metric (best
-    on the left) so the per-row outlier is at the right. A per-plan tally at the
-    bottom counts how many rows each plan won and lost across the contested metrics
-    — the lead reads across the metrics that matter to her and decides whether any
-    plan stands out (in this Kano demo: v1 wins 0/8, v2 wins 1/8 — both outlier candidates
-    — or, on a different batch, the tally may be balanced, which is a valid outcome
-    too).
-  title: Dana investigates whether any plan is an outlier via the comparison page
+  show: >-
+    Open the comparison page and pick a few plans from the sidebar. The picked
+    plans become rows of a plain table. Read across the columns — Population /
+    Buildings / Pop per building (the workload), then Longest worker travel /
+    Avg / Spread / Worker load gap / Worker load spread / Coverage / Excluded
+    areas / Excluded buildings / Worker territories (the derived quality
+    metrics). Click any column header to sort by that metric ascending; click
+    again to flip descending; click a third time to clear and revert to pick
+    order. There are no badges, deltas, or tally — the lead reads the numbers
+    and decides which plan she wants to retune (or whether none of them need
+    it).
+  title: Dana reads the per-plan metrics on the comparison table
+- concept_claim: A glossary page defines every metric on the comparison table —
+    what it measures, how it's computed, what the input data is — so the lead
+    can sanity-check her own read of the numbers without guessing what a label
+    means.
+  design_intent: The compare page is intentionally chrome-free, which means the
+    column labels carry the full weight. A linked glossary makes those labels
+    legible without crowding the table itself. Same vocabulary across the whole
+    portfolio, one page everyone links to.
+  features:
+  - description: MetricGlossaryView renders metric_glossary.html at
+      /microplans/glossary/ — a program-scope-agnostic definitions page covering
+      every column on the compare table.
+    id: metric-glossary-page
+    verify: GET /microplans/glossary/ returns 200 and the rendered page contains
+      sections for "Workload (the input data)", "Travel burden", "Workload
+      balance", "Coverage + exclusions", and "Structure", with definitions for
+      Population, Buildings, Pop / building, Longest worker travel, Avg worker
+      travel, Travel spread, Worker load gap, Worker load spread, Coverage,
+      Excluded areas, Excluded buildings, and Worker territories.
+  - description: The compare page sidebar carries a "What do these metrics mean?"
+      link that navigates to the glossary.
+    id: glossary-link-from-compare
+    verify: View source of /microplans/program/<id>/compare/ contains a link with
+      href matching the glossary URL.
+  persona: lead
+  provenance: metric-definitions
+  show: >-
+    From the comparison page, click "What do these metrics mean?" in the sidebar.
+    The glossary page lists every column from the compare table in five groups —
+    Workload (Population, Buildings, Pop / building), Travel burden (Longest / Avg /
+    Spread of worker travel), Workload balance (Worker load gap, Worker load
+    spread), Coverage + exclusions, and Structure (Worker territories). Each
+    entry names what the metric measures, how it's computed, and where the input
+    data comes from. Dana reads the Population / Buildings / Pop per building
+    definitions to confirm her workload sanity check — pop/building values
+    outside the realistic 2-10 range hint at stale population data or a building
+    set that includes non-residential structures.
+  title: Dana checks the metric definitions in the glossary
 - concept_claim: The share issues one link the LLO opens without a Dimagi account,
     so sign-off lives outside the program team without OAuth/membership friction.
   design_intent: LLO sign-off lives outside the program team and outside Dimagi auth;
