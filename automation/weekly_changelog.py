@@ -296,7 +296,7 @@ def main() -> None:
 
     print("Updating Confluence changelog...")
     existing = confluence.get_page(CHANGELOG_PAGE_ID)
-    if f'datetime="{week_date}"' in existing["body_storage"]:
+    if f'datetime="{week_date}"' in existing.get("body_storage", ""):
         print(f"  [skip] Entry for {week_date} already exists — skipping duplicate run.")
         return
     row_html = build_changelog_row(week_date, summary, prs)
