@@ -33,8 +33,13 @@ def test_one_workarea_per_pin_with_tiny_area_semantics():
     a, b = was
     assert a.case_properties["role"] == "primary"
     assert a.case_properties["cluster"] == "C3"
-    assert b.case_properties["arm"] == "comparison"
     assert a.case_properties["lga"] == "Maiduguri"
+    # arm is a labs-side field, intentionally NOT in case_properties (keeps the
+    # shared/pushed plan blind to study-arm assignment).
+    assert a.arm == "intervention"
+    assert b.arm == "comparison"
+    assert "arm" not in a.case_properties
+    assert "arm" not in b.case_properties
     assert a.slug != b.slug  # unique slugs
 
 
