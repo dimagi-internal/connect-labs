@@ -659,7 +659,7 @@ class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateV
                 p = plans_by_id.get(pid)
                 if p is None:
                     continue
-                kpis = plan_lib.plan_kpis(p.work_areas)
+                kpis = plan_lib.plan_kpis(p.work_areas, input_areas=p.data.get("input_areas") or [])
                 entries.append(
                     {
                         "plan_id": pid,
@@ -1081,7 +1081,7 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
                     "region": p.region,
                     "mode": p.mode,
                     "created_at": p.created_at,
-                    "kpis": plan_lib.plan_kpis(p.work_areas),
+                    "kpis": plan_lib.plan_kpis(p.work_areas, input_areas=p.data.get("input_areas") or []),
                 }
             )
         if not entries:
