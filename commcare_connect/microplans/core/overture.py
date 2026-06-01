@@ -32,4 +32,16 @@ def connect():
     con.execute(f"SET extension_directory='{ext_dir}';")
     con.execute("INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;")
     con.execute("SET s3_region='us-west-2';")
+    # A footprint/boundary read globs the planet-scale Overture release (~512 Parquet
+    # files) and prunes row groups by the bbox column statistics — work dominated by
+    # reading each file's footer over S3 (network I/O), not CPU. The labs worker runs
+    # on 1 vCPU, so DuckDB defaults its thread pool to a single thread and reads those
+    # 512 footers sequentially, cross-region (worker us-east-1 -> bucket us-west-2):
+    # a cold Madobi-scale area takes ~4-8 min. Because the reads are I/O-bound, extra
+    # threads overlap the network waits even on a single core, so we raise the pool
+    # explicitly — measured: the same cold query drops from ~230s (threads=1) to ~20s.
+    # http_metadata_cache lets the second arm in a two-arm generate reuse the first
+    # arm's already-read Parquet footers within the same connection.
+    con.execute("SET threads TO 8;")
+    con.execute("SET enable_http_metadata_cache=true;")
     return con

@@ -32,6 +32,22 @@ from shapely.ops import transform
 from commcare_connect.microplans.core.geo import utm_epsg_for
 
 # Connect's WorkAreaCSVImporter column labels.
+#
+# ⚠ NIGERIA-HARDCODED VOCABULARY. "Ward" / "LGA" / "State" are Nigeria's
+# administrative tiers (ADM3 / ADM2 / ADM1). They are hardcoded HERE only to
+# mirror Connect's importer, which hardcodes these exact column names
+# (dimagi/commcare-connect microplanning/tasks.py WorkAreaCSVImporter.HEADERS).
+# Labs itself is already country-generic — the admin-boundary resolver speaks
+# canonical levels (1=region/state, 2=county/district/LGA, 3=locality/ward; see
+# core/admin_boundaries.py), so a Kenyan "County" or Indian "District" is the
+# same canonical level 2 we shove into the "LGA" column on export.
+#
+# TODO(generalize): when Connect generalizes its work-area importer to canonical
+# admin levels (or per-country vocabulary), generalize this mapping and the
+# plan's lga/state fields (core/plan.derive_lga_state, models.PlanRecord) to
+# match — drop the Nigeria-specific column names. Until then a non-Nigeria plan
+# still exports under "LGA"/"State" headers (the values are just labels; Connect
+# only checks them non-empty, so it imports, but the column names lie).
 CSV_HEADERS = {
     "slug": "Area Slug",
     "ward": "Ward",
@@ -40,8 +56,8 @@ CSV_HEADERS = {
     "building_count": "Building Count",
     "expected_visit_count": "Expected Visit Count",
     "target_population": "Target Population",
-    "lga": "LGA",
-    "state": "State",
+    "lga": "LGA",  # Nigeria ADM2 — see note above
+    "state": "State",  # Nigeria ADM1 — see note above
 }
 
 
@@ -172,7 +188,12 @@ def to_api_payload(payloads: list[WorkAreaPayload]) -> list[dict]:
 
 
 def to_csv_rows(payloads: list[WorkAreaPayload]) -> list[dict]:
-    """Shape for Connect's existing web CSV importer (keyed by column labels)."""
+    """Shape for Connect's existing web CSV importer (keyed by column labels).
+
+    Connect REQUIRES LGA + State non-empty on every row, or it rejects the whole
+    file (full contract: ``microplans/CONNECT_IMPORT_CONTRACT.md``). They come from
+    each payload's ``case_properties`` — populate them upstream (see
+    ``plan.derive_lga_state`` / ``ProgramPlanCSVView``) so the export is importable."""
     h = CSV_HEADERS
     return [
         {

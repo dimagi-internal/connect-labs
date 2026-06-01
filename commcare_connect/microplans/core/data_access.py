@@ -63,12 +63,19 @@ class ProgramPlanDataAccess(BaseDataAccess):
         hulls: dict,
         input_areas: list | None = None,
         grouping: dict | None = None,
+        lga: str = "",
+        state: str = "",
     ) -> PlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
         per cluster/pin). ``input_areas`` is the original draw/admin/pin payload
         (stored so footprints overlay can reuse the cached fetch geometry).
         ``grouping`` is the Phase-1 strategy/params for cell→group bucketing
-        (defaults to BFS adjacency — Connect-GIS parity)."""
+        (defaults to BFS adjacency — Connect-GIS parity).
+
+        ``lga``/``state`` are the administrative labels Connect's work-area importer
+        requires non-empty (see ``microplans/CONNECT_IMPORT_CONTRACT.md``); stored at
+        creation so the Connect-import CSV export populates them without the caller
+        re-supplying them. ``lga`` falls back to ``region`` when blank."""
         work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
         record = self.labs_api.create_record(
             experiment=self._experiment,
@@ -80,6 +87,8 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "opportunity_id": None,
                 "status": plan_lib.PLAN_DRAFT,
                 "region": region,
+                "lga": (lga or region or "").strip(),
+                "state": (state or "").strip(),
                 "name": name,
                 "mode": mode,
                 "work_areas": work_areas,

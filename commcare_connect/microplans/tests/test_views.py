@@ -328,10 +328,13 @@ _EMPTY_FC = {"type": "FeatureCollection", "features": []}
 
 
 class _FakeProgramPlan:
-    def __init__(self, pid, mode, work_areas, name="", region="", status="draft", opportunity_id=None):
+    def __init__(
+        self, pid, mode, work_areas, name="", region="", status="draft", opportunity_id=None, lga="", state=""
+    ):
         self.id, self.mode, self.work_areas = pid, mode, work_areas
         self.name = name or f"Plan {pid}"
         self.region, self.status, self.opportunity_id = region, status, opportunity_id
+        self.lga, self.state = (lga or region), state
         self.status_log = []
         self.created_at = "2026-05-28T00:00:00Z"
         # Real backing dict for `data` so tests can mutate e.g. plan.data["grouping"]
@@ -340,6 +343,8 @@ class _FakeProgramPlan:
             "work_areas": self.work_areas,
             "status": self.status,
             "region": self.region,
+            "lga": self.lga,
+            "state": self.state,
             "opportunity_id": self.opportunity_id,
             "status_log": self.status_log,
             "mode": self.mode,
@@ -386,11 +391,11 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
         def get_plan(self, pid):
             return plans[int(pid)]
 
-        def create_plan(self, region, name, mode, pins, hulls, input_areas=None, grouping=None):
+        def create_plan(self, region, name, mode, pins, hulls, input_areas=None, grouping=None, lga="", state=""):
             was = plan_lib.materialize_work_areas(mode, pins, hulls)
             pid = seq["plan"]
             seq["plan"] += 1
-            plans[pid] = _FakeProgramPlan(pid, mode, was, name=name, region=region)
+            plans[pid] = _FakeProgramPlan(pid, mode, was, name=name, region=region, lga=lga, state=state)
             return plans[pid]
 
         def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None):
@@ -503,13 +508,66 @@ def test_program_create_plan(client, django_user_model, monkeypatch):
     plans, _ = _make_fake_program_da(monkeypatch, {}, {})
     resp = client.post(
         reverse("microplans:program_create_plan", kwargs={"program_id": 25}),
-        data=json.dumps({"region": "Zaria", "name": "Zaria v1", "mode": "coverage", "coverage_areas": _HULL_FC}),
+        data=json.dumps(
+            {"region": "Zaria", "name": "Zaria v1", "mode": "coverage", "coverage_areas": _HULL_FC, "state": "Kaduna"}
+        ),
         content_type="application/json",
     )
     assert resp.status_code == 200
     pid = resp.json()["plan_id"]
     assert plans[pid].region == "Zaria" and plans[pid].status == "draft"
     assert len(plans[pid].work_areas) == 2
+    # lga/state captured at creation for the Connect import (lga defaults to region)
+    assert plans[pid].data["lga"] == "Zaria"
+    assert plans[pid].data["state"] == "Kaduna"
+
+
+def test_program_plan_csv_defaults_lga_state_and_flags_readiness(client, django_user_model, monkeypatch):
+    """The Connect-import CSV defaults LGA/State from the plan (LGA falls back to
+    region) and flags via response headers whether Connect will accept the file."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    was = plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC)
+    # Plan created before State was captured: region present, no state.
+    no_state = _FakeProgramPlan(1, "coverage", was, name="Zaria v1", region="Zaria LGA")
+    # Plan with both labels.
+    ready = _FakeProgramPlan(
+        2, "coverage", was, name="Kano", region="Kano North LGA", lga="Kano North LGA", state="Kano"
+    )
+    _make_fake_program_da(monkeypatch, {1: no_state, 2: ready}, {})
+
+    # No-state plan: LGA column filled from region, State blank, NOT Connect-ready.
+    r1 = client.post(
+        reverse("microplans:program_plan_csv", kwargs={"program_id": 25, "plan_id": 1}),
+        data="{}",
+        content_type="application/json",
+    )
+    assert r1.status_code == 200
+    assert r1["X-Microplan-Connect-Ready"] == "false"
+    assert "State" in r1["X-Microplan-Missing"]
+    body1 = r1.content.decode()
+    assert "Zaria LGA" in body1  # LGA defaulted from region
+
+    # Ready plan: both labels present → Connect-ready, no missing header.
+    r2 = client.post(
+        reverse("microplans:program_plan_csv", kwargs={"program_id": 25, "plan_id": 2}),
+        data="{}",
+        content_type="application/json",
+    )
+    assert r2.status_code == 200
+    assert r2["X-Microplan-Connect-Ready"] == "true"
+    body2 = r2.content.decode()
+    assert "Kano North LGA" in body2 and "Kano" in body2
+
+    # Explicit body values override the plan.
+    r3 = client.post(
+        reverse("microplans:program_plan_csv", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"lga": "Override LGA", "state": "Override State"}),
+        content_type="application/json",
+    )
+    assert r3["X-Microplan-Connect-Ready"] == "true"
+    assert "Override LGA" in r3.content.decode()
 
 
 def test_program_regenerate_enqueues(client, django_user_model, monkeypatch):
