@@ -108,6 +108,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ------------------------------------------------------------------------------
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
+# The MCP server (FastMCP 3.x Streamable-HTTP) requires ASGI + lifespan, so
+# the deploy entrypoint serves config.asgi:application under an ASGI worker.
+ASGI_APPLICATION = "config.asgi.application"
 
 # APPS
 # ------------------------------------------------------------------------------
@@ -154,7 +157,7 @@ LOCAL_APPS = [
     "commcare_connect.organization",
     "commcare_connect.prelogin",
     "commcare_connect.program",
-    "commcare_connect.rooftop_surveys",
+    "commcare_connect.microplans",
     "commcare_connect.solicitations",
     "commcare_connect.users",
     "commcare_connect.web",

@@ -11,6 +11,9 @@ app_name = "admin_boundaries"
 urlpatterns = [
     # Admin Boundaries Manager
     path("", views.AdminBoundariesView.as_view(), name="index"),
+    # Bulk name resolution — used by microplans' paste-the-ward-list bulk-create
+    # form to render a confirmable resolution preview before plan creation.
+    path("resolve_many/", views.ResolveManyByNameAPIView.as_view(), name="resolve_many"),
     path("load/", views.LoadBoundariesView.as_view(), name="load"),
     path("load/stream/", views.LoadBoundariesStreamView.as_view(), name="load_stream"),
     path("delete/", views.DeleteBoundariesView.as_view(), name="delete"),

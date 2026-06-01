@@ -1879,8 +1879,7 @@ function WorkflowUI({
       '- EBF Rate: ' + (flw.ebf_pct != null ? flw.ebf_pct + '%' : '—'),
     );
     lines.push(
-      '- GPS Dist Ratio: ' +
-        (flw.dist_ratio != null ? flw.dist_ratio : '—'),
+      '- GPS Dist Ratio: ' + (flw.dist_ratio != null ? flw.dist_ratio : '—'),
     );
     lines.push(
       '- Revisit Distance: ' +

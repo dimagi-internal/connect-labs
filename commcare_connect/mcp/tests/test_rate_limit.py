@@ -1,11 +1,9 @@
-import json
-
 import pytest
 from django.core.cache import cache
 from django.test import override_settings
-from django.urls import reverse
 
 from commcare_connect.mcp.models import MCPAccessToken
+from commcare_connect.mcp.testing import call_tool
 from commcare_connect.mcp.tool_registry import _REGISTRY, register
 from commcare_connect.users.models import User
 
@@ -49,19 +47,9 @@ def write_tool():
 
 
 def _call(client, raw):
-    return client.post(
-        reverse("mcp:endpoint"),
-        data=json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": "workflow_update_ratetest", "arguments": {}},
-            }
-        ),
-        content_type="application/json",
-        HTTP_AUTHORIZATION=f"Bearer {raw}",
-    )
+    # client unused — call_tool drives the FastMCP path in-process. Returns a
+    # JSON-RPC-shaped dict directly (no .json() needed).
+    return call_tool(raw, "workflow_update_ratetest", {})
 
 
 @pytest.mark.django_db
@@ -72,11 +60,10 @@ def test_rate_limit_kicks_in_after_threshold(client, write_tool):
 
     resp1 = _call(client, raw)
     resp2 = _call(client, raw)
-    assert resp1.json()["result"]["isError"] is False
-    assert resp2.json()["result"]["isError"] is False
+    assert resp1["result"]["isError"] is False
+    assert resp2["result"]["isError"] is False
 
-    resp3 = _call(client, raw)
-    data = resp3.json()
+    data = _call(client, raw)
     assert data["result"]["isError"] is True
     assert data["result"]["structuredContent"]["error"]["code"] == "RATE_LIMITED"
 
@@ -92,7 +79,7 @@ def test_rate_limit_is_per_user(client, write_tool):
     _call(client, a_raw)  # alice hits her cap
     # Bob should still be allowed
     resp = _call(client, b_raw)
-    assert resp.json()["result"]["isError"] is False
+    assert resp["result"]["isError"] is False
 
 
 @pytest.fixture
@@ -116,17 +103,5 @@ def test_read_tool_bypasses_rate_limit(client, read_only_tool):
     """Reads are not rate-limited even if writes cap is 0."""
     user = User.objects.create(username="read-nolimit")
     _, raw = MCPAccessToken.create_token(user, name="t")
-    resp = client.post(
-        reverse("mcp:endpoint"),
-        data=json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": "workflow_get_readtest", "arguments": {}},
-            }
-        ),
-        content_type="application/json",
-        HTTP_AUTHORIZATION=f"Bearer {raw}",
-    )
-    assert resp.json()["result"]["isError"] is False
+    resp = call_tool(raw, "workflow_get_readtest", {})
+    assert resp["result"]["isError"] is False

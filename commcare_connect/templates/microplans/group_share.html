@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ group_name|default:"Plan group" }} — microplans{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6 space-y-6">
+  <header class="border-b border-gray-200 pb-4">
+    <p class="text-xs uppercase tracking-wide text-gray-400">Microplan proposal</p>
+    <h1 class="text-2xl font-bold text-gray-900">{{ group_name|default:"Plan group" }}</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      {% if offered_to %}Prepared for <span class="font-medium text-gray-700">{{ offered_to }}</span> · {% endif %}
+      {{ entries|length }} candidate plan{{ entries|length|pluralize }} · Program #{{ program_id }}
+    </p>
+  </header>
+
+  {% if error %}
+  <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
+  {% elif not entries %}
+  <p class="text-sm text-gray-400">No plans in this group yet.</p>
+  {% else %}
+
+  <p class="text-sm text-gray-600">
+    Each plan below covers one candidate region. The metrics summarise how the work splits across
+    field workers — lower <b>worst travel</b>, lower <b>workload imbalance</b>, and higher <b>coverage</b> are better.
+  </p>
+
+  <div class="overflow-x-auto border border-gray-200 rounded-lg">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600">
+        <tr>
+          <th class="text-left font-semibold px-3 py-2">Plan</th>
+          <th class="text-right font-semibold px-3 py-2" title="Number of field-worker territories">Workers</th>
+          <th class="text-right font-semibold px-3 py-2" title="Largest single worker's travel diameter">Worst travel</th>
+          <th class="text-right font-semibold px-3 py-2" title="Spread of workload across workers (lower is more even)">Imbalance</th>
+          <th class="text-right font-semibold px-3 py-2" title="Share of buildings still included after exclusions">Coverage</th>
+          <th class="text-right font-semibold px-3 py-2" title="Work areas the reviewer removed">Excluded</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for e in entries %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-3 py-2">
+            <div class="font-medium">
+              {% if e.review_url %}<a class="text-brand-cornflower-blue hover:underline" href="{{ e.review_url }}">{{ e.name|default:"Untitled plan" }}</a>
+              {% else %}<span class="text-gray-900">{{ e.name|default:"Untitled plan" }}</span>{% endif %}
+              {% if e.status_label %}<span class="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded
+                {% if e.status == 'approved' %}bg-green-100 text-green-800
+                {% elif e.status == 'in_review' %}bg-amber-100 text-amber-800
+                {% elif e.status == 'deployed' %}bg-cyan-100 text-cyan-800
+                {% else %}bg-gray-100 text-gray-600{% endif %} align-middle">{{ e.status_label }}</span>{% endif %}
+            </div>
+            <div class="text-xs text-gray-500">{{ e.region|default:"—" }}{% if not e.assigned %} · <span class="text-amber-600">workers not yet assigned</span>{% endif %}</div>
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if e.assigned %}{{ e.kpis.plan.territory_count }}{% else %}<span class="text-gray-400">{{ e.work_areas }} areas</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if e.assigned %}{{ e.kpis.plan.max_spread_km }} km{% else %}<span class="text-gray-400">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">
+            {% if not e.assigned %}<span class="text-gray-400">—</span>
+            {% elif e.kpis.plan.has_population %}
+              {% if e.kpis.plan.pop_imbalance_pct is not None %}{{ e.kpis.plan.pop_imbalance_pct }}%{% else %}—{% endif %}
+            {% else %}
+              {% if e.kpis.plan.building_imbalance_pct is not None %}{{ e.kpis.plan.building_imbalance_pct }}%{% else %}—{% endif %}
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.coverage_pct }}%</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ e.kpis.excluded.count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-gray-400">
+    Imbalance is measured on population where available, otherwise on building counts.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Compare microplans{% endblock %}
+
+{% block content %}
+<style>
+  /* Match the sortable-column pattern from review.html so the compare page
+     reads as the same kind of table the rest of the labs UI uses. The
+     `cmp-th` class is the labs convention copy of review.html's `wa-th`:
+     pointer + hover bg on every sortable header; `is-sorted` bolds the
+     active column and reveals the ↑/↓ indicator. */
+  .cmp-th { cursor: pointer; user-select: none; transition: background-color .12s; }
+  .cmp-th:hover { background: #e5e7eb; }
+  .cmp-th.is-sorted { color: #111827; font-weight: 600; }
+  .sort-ind { color: #6b7280; font-size: 0.7rem; margin-left: 0.15rem; opacity: 0; }
+  .cmp-th.is-sorted .sort-ind { opacity: 1; }
+  /* Stripes for readability across many columns. Matches the row hover used
+     on review.html's work-area table. */
+  #compare-table tbody tr:nth-child(even) { background: #f9fafb; }
+  #compare-table tbody tr:hover { background: #eff6ff; }
+  #compare-table th, #compare-table td { white-space: nowrap; }
+</style>
+<div class="flex h-[calc(100vh-4rem)]" x-data>
+  <!-- Plan picker -->
+  <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-3 text-sm">
+    <div>
+      <h1 class="text-lg font-bold text-gray-900">Compare plans</h1>
+      <p class="text-xs text-gray-500">{{ scope_label }}</p>
+      <p class="text-xs text-gray-400 mt-1">Pick plans to compare. Click any column header to sort.</p>
+      <p class="text-xs mt-2"><a href="{% url 'microplans:metric_glossary' %}" class="text-brand-cornflower-blue">What do these metrics mean?</a></p>
+      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue block mt-1">← Back to portfolio</a>{% endif %}
+    </div>
+    <div id="plan-picker" class="space-y-1"></div>
+    <div id="picker-status" class="text-xs text-gray-500"></div>
+  </aside>
+
+  <!-- Comparison table — one row per plan, metrics as sortable columns -->
+  <div class="flex-1 overflow-auto p-5">
+    <div id="compare-status" class="text-sm text-gray-500 mb-3"></div>
+    <table class="text-sm border-collapse" id="compare-table"></table>
+  </div>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="{% static 'microplans/shared.js' %}"></script>
+<script>
+(function () {
+  const LIST_URL = "{{ list_url|escapejs }}";
+  const COMPARE_URL = "{{ compare_url|escapejs }}";
+  const $ = (id) => document.getElementById(id);
+  const esc = Microplans.esc;
+
+  const params = new URLSearchParams(window.location.search);
+  const selected = new Set((params.get("plans") || "").split(",").filter(Boolean));
+
+  // Column definitions. Plans are ROWS; these are the columns shown for each
+  // plan. Plan name first (sortable alphabetically), then the underlying
+  // workload columns (Population, Buildings, Pop/bldg) so the reader sees
+  // what's being measured before the derived metrics (travel, balance,
+  // coverage, exclusions, territories).
+  const fmtKm  = (v) => (v == null ? "—" : v + " km");
+  const fmtPct = (v) => (v == null ? "—" : v + " %");
+  const fmtNum = (v) => (v == null ? "—" : Number(v).toLocaleString());
+  const fmtDec = (v) => (v == null ? "—" : Number(v).toFixed(2));
+  const balVal = (e) => { const p = e.kpis?.plan; return p?.has_population ? p.pop_imbalance_pct : p?.building_imbalance_pct; };
+  const stdVal = (e) => { const p = e.kpis?.plan; return p?.has_population ? p.pop_std : p?.building_std; };
+  const COLS = [
+    { key: "name",                label: "Plan",                   get: (e) => e.name,                          fmt: (v) => esc(String(v ?? "—")), align: "left",  sortable: true },
+    { key: "population",          label: "Population",             get: (e) => e.kpis?.plan?.total_population,  fmt: fmtNum,  align: "right", sortable: true },
+    { key: "buildings",           label: "Buildings",              get: (e) => e.kpis?.plan?.total_buildings,   fmt: fmtNum,  align: "right", sortable: true },
+    { key: "pop_per_building",    label: "Pop / building",         get: (e) => e.kpis?.plan?.pop_per_building,  fmt: fmtDec,  align: "right", sortable: true },
+    { key: "longest_travel",      label: "Longest worker travel",  get: (e) => e.kpis?.plan?.max_spread_km,     fmt: fmtKm,   align: "right", sortable: true },
+    { key: "avg_travel",          label: "Avg worker travel",      get: (e) => e.kpis?.plan?.mean_spread_km,    fmt: fmtKm,   align: "right", sortable: true },
+    { key: "travel_spread",       label: "Travel spread",          get: (e) => e.kpis?.plan?.std_spread_km,     fmt: fmtKm,   align: "right", sortable: true },
+    { key: "worker_load_gap",     label: "Worker load gap",        get: balVal,                                 fmt: fmtPct,  align: "right", sortable: true },
+    { key: "worker_load_spread",  label: "Worker load spread",     get: stdVal,                                 fmt: fmtNum,  align: "right", sortable: true },
+    { key: "coverage",            label: "Coverage",               get: (e) => e.kpis?.coverage_pct,            fmt: fmtPct,  align: "right", sortable: true },
+    { key: "excluded_areas",      label: "Excluded areas",         get: (e) => e.kpis?.excluded?.count,         fmt: fmtNum,  align: "right", sortable: true },
+    { key: "excluded_buildings",  label: "Excluded buildings",     get: (e) => e.kpis?.excluded?.buildings,     fmt: fmtNum,  align: "right", sortable: true },
+    { key: "territories",         label: "Worker territories",     get: (e) => e.kpis?.plan?.territory_count,   fmt: fmtNum,  align: "right", sortable: true },
+  ];
+
+  async function loadPicker() {
+    try {
+      const d = await Microplans.apiGet(LIST_URL);
+      const box = $("plan-picker");
+      if (!d.plans || !d.plans.length) { box.innerHTML = '<span class="text-gray-400">No saved plans yet.</span>'; return; }
+      box.innerHTML = d.plans.map((p) =>
+        `<label class="flex items-center gap-2"><input type="checkbox" class="psel" value="${p.plan_id}" ${selected.has(String(p.plan_id)) ? "checked" : ""}>
+          <span>${esc(p.name)} <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} area${p.work_areas === 1 ? "" : "s"}</span></span></label>`).join("");
+      box.querySelectorAll(".psel").forEach((cb) => cb.addEventListener("change", () => {
+        if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
+        syncUrl(); renderCompare();
+      }));
+    } catch (e) { $("picker-status").textContent = "Could not load plans: " + e.message; }
+  }
+  function syncUrl() {
+    const u = new URL(window.location); u.searchParams.set("plans", [...selected].join(",")); history.replaceState(null, "", u);
+  }
+
+  // Click cycles: unsorted → asc → desc → cleared.
+  let sortColKey = null;
+  let sortDir = "asc";
+
+  let cmpCtrl = null;
+  async function renderCompare() {
+    const ids = [...selected];
+    if (ids.length < 1) { $("compare-status").textContent = "Select plans to compare."; $("compare-table").innerHTML = ""; return; }
+    $("compare-status").textContent = "Loading…";
+    if (cmpCtrl) cmpCtrl.abort();
+    cmpCtrl = new AbortController();
+    try {
+      const d = await Microplans.apiGet(COMPARE_URL + "?plans=" + ids.join(","), { signal: cmpCtrl.signal });
+      $("compare-status").textContent = "";
+      let plans = d.plans.slice();
+      if (sortColKey) {
+        const col = COLS.find(c => c.key === sortColKey);
+        if (col) {
+          const dir = sortDir === "asc" ? 1 : -1;
+          plans.sort((a, b) => {
+            const av = col.get(a), bv = col.get(b);
+            const aNum = typeof av === "number", bNum = typeof bv === "number";
+            if (aNum && bNum) return dir * (av - bv);
+            if (aNum) return -1;
+            if (bNum) return 1;
+            const as = String(av ?? ""), bs = String(bv ?? "");
+            return dir * as.localeCompare(bs);
+          });
+        }
+      }
+
+      // Headers — match the review.html `wa-th + sort-ind` pattern.
+      const headerCells = COLS.map(col => {
+        const isActive = col.key === sortColKey;
+        const arrow = isActive ? (sortDir === "asc" ? "↑" : "↓") : "";
+        const alignCls = col.align === "right" ? "text-right" : "text-left";
+        const sortedCls = isActive ? " is-sorted" : "";
+        return `<th class="p-2 cmp-th${sortedCls} ${alignCls} text-gray-500 font-medium" data-sort-key="${col.key}">${esc(col.label)}<span class="sort-ind">${arrow}</span></th>`;
+      }).join("");
+
+      const bodyRows = plans.map(plan => {
+        const cells = COLS.map(col => {
+          const v = col.get(plan);
+          const alignCls = col.align === "right" ? "text-right" : "text-left";
+          return `<td class="p-2 ${alignCls} text-gray-900">${col.fmt(v)}</td>`;
+        }).join("");
+        return `<tr class="border-t">${cells}</tr>`;
+      }).join("");
+
+      $("compare-table").innerHTML = `<thead><tr class="border-b text-gray-500">${headerCells}</tr></thead><tbody>${bodyRows}</tbody>`;
+      $("compare-table").querySelectorAll(".cmp-th").forEach(th => {
+        th.addEventListener("click", () => {
+          const key = th.dataset.sortKey;
+          if (sortColKey === key) {
+            if (sortDir === "asc") { sortDir = "desc"; }
+            else { sortColKey = null; sortDir = "asc"; }
+          } else {
+            sortColKey = key; sortDir = "asc";
+          }
+          renderCompare();
+        });
+      });
+    } catch (e) {
+      if (e.aborted) return;
+      $("compare-status").textContent = "Request failed: " + e.message;
+    }
+  }
+
+  loadPicker(); renderCompare();
+})();
+</script>
+{% endblock %}

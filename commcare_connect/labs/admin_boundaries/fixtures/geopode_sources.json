@@ -1,0 +1,64 @@
+{
+  "_comment": "Canonical GeoPoDe boundary sources, loaded by `manage.py load_geopode_from_drive`. Each country's GeoPoDe ZIP lives in the shared Drive folder below (shared with connect-labs-sa). `iso` is the real ISO 3166-1 alpha-3 (note the DRC file is keyed COD). Pinned drive_file_id is authoritative; the folder id lets a future refresh re-list by GeoPoDe_<code>_ filename.",
+  "drive_folder_id": "1Hr-EfhdZP5cCFcLeirvN0J15iGiBaNOp",
+  "countries": [
+    {
+      "iso": "CAF",
+      "drive_file_id": "1dm12tpzka9u-MHv5fgED3Q8p4pNts6K1",
+      "provider": "WHO"
+    },
+    {
+      "iso": "CIV",
+      "drive_file_id": "1mz7wqqaGtHE5YqlXVMKsilXwEa2Cns93",
+      "provider": "WHO"
+    },
+    {
+      "iso": "COD",
+      "drive_file_id": "11fcplRzGX5Yk_MhhGbRdc6eyUTiixuwH",
+      "provider": "WHO",
+      "note": "Drive filename uses DRC; real ISO-3 is COD"
+    },
+    {
+      "iso": "ETH",
+      "drive_file_id": "1c63hB3s_6cyA_q_3t9ONojmdDT3vNA3I",
+      "provider": "WHO"
+    },
+    {
+      "iso": "KEN",
+      "drive_file_id": "1d_8sZmaP_OQqIbneUObmYNwGhE4hJkwE",
+      "provider": "WHO"
+    },
+    {
+      "iso": "LBR",
+      "drive_file_id": "1CKuEevoH3LZ3_hZJ_NyAQGzW6F5k0cvi",
+      "provider": "HDX"
+    },
+    {
+      "iso": "MOZ",
+      "drive_file_id": "1sOfH-tYzRBWiwkeUuYF3rZ3LKCMTD8E7",
+      "provider": "WHO"
+    },
+    {
+      "iso": "MWI",
+      "drive_file_id": "1wvhQVNIzIW1jkXyM38bBoEHUxmJY9E-2",
+      "provider": "WHO"
+    },
+    {
+      "iso": "NGA",
+      "drive_file_id": "1ChY8W_AtpHxdeE0Utt_rIWQm6hq-BED0",
+      "provider": "WHO",
+      "note": "country/state/lga/ward (9308 wards)"
+    },
+    {
+      "iso": "SLE",
+      "drive_file_id": "18ODbOTln_7YiPZW-bPL4YJckh6d4D3T2",
+      "provider": "WHO"
+    },
+    {
+      "iso": "ZMB",
+      "drive_file_id": "1dqT96lsuo2KYSAAcZ5OI4zRxlnPWEncq",
+      "provider": "GRID3",
+      "note": "no country level; province/district only"
+    }
+  ]
+}

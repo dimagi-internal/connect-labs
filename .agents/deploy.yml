@@ -10,60 +10,67 @@ instructions: |
   ## Deployment Architecture
   - **Environment**: AWS ECS Fargate (labs-jj-cluster)
   - **Deployment Method**: GitHub Actions workflow (manual trigger)
-  - **Repository**: jjackson/commcare-connect (your fork)
-  - **Branch**: labs-main usually, but use the branch name that is being worked on.
+  - **Repository**: jjackson/connect-labs (this repo — it used to be a fork of
+    dimagi/commcare-connect with a `labs-main` branch, but it has been split
+    into its own repo and `main` is the default branch now)
+  - **Deploy branch**: `main` — the workflow has a hard guard that refuses any
+    other ref. Land changes via PR + merge first, then deploy.
   - **URL**: https://labs.connect.dimagi.com
 
   ## Standard Deployment Process
 
-  ### Step 1: Verify Code is Ready
+  ### Step 1: Land Code on `main`
   ```bash
-  # Check git status
+  # Work on a feature branch
   git status
-
-  # Ensure code is committed
   git add <files>
   git commit -m "Description"
+  git push origin <feature-branch>
 
-  # Push to fork
-  git push fork labs-main
+  # Open a PR + merge to main (don't push directly to main)
+  gh pr create --base main --title "..." --body "..."
+  gh pr merge --squash --admin   # or wait for review
   ```
 
   ### Step 2: Trigger Deployment
   ```bash
   # Deploy WITHOUT migrations (most common)
   gh workflow run deploy-labs.yml \
-    --repo jjackson/commcare-connect \
-    --ref labs-main \
+    --repo jjackson/connect-labs \
+    --ref main \
     --field run_migrations=false
 
   # Deploy WITH migrations (if models changed)
   gh workflow run deploy-labs.yml \
-    --repo jjackson/commcare-connect \
-    --ref labs-main \
+    --repo jjackson/connect-labs \
+    --ref main \
     --field run_migrations=true
   ```
+
+  The workflow's `guard` job hard-fails if you pass any `--ref` other than
+  `main`. This is intentional: it ensures prod always reflects what's on main,
+  not someone's in-flight branch.
 
   ### Step 3: Monitor Deployment
   ```bash
   # Watch deployment progress
-  gh run watch --repo jjackson/commcare-connect
+  gh run watch --repo jjackson/connect-labs
 
   # List recent runs
-  gh run list --repo jjackson/commcare-connect --workflow=deploy-labs.yml --limit 5
+  gh run list --repo jjackson/connect-labs --workflow=deploy-labs.yml --limit 5
 
   # View specific run
-  gh run view <run-id> --repo jjackson/commcare-connect --log
+  gh run view <run-id> --repo jjackson/connect-labs --log
   ```
 
   ## Important Notes
 
-  1. **Code Location**: The workflow runs from `jjackson/commcare-connect:labs-main` (your fork)
-  2. **Fork vs Origin**:
-     - `fork` remote = `jjackson/commcare-connect` (your fork)
-     - `origin` remote = `dimagi/commcare-connect` (upstream main repo, for reference only)
+  1. **Code Location**: The workflow runs from `jjackson/connect-labs:main`
+  2. **Single remote**: `origin` is `jjackson/connect-labs`. The historical
+     `fork` remote pointing at the old commcare-connect fork is dead — if you
+     see it in any docs or scripts, replace it with `origin`.
   3. **Migrations**: Only set `run_migrations=true` if you've modified database models
-  4. **Permissions**: User needs workflow trigger permissions on their fork
+  4. **Permissions**: User needs workflow trigger permissions on the repo
 
   ## When to Run Migrations
   Set `run_migrations=true` if changes include:
@@ -81,8 +88,12 @@ instructions: |
 
   ## Troubleshooting
 
+  ### "Guard — branch must be main" fails
+  - You triggered the workflow from a non-`main` ref. The guard is doing its
+    job — land the change on `main` first, then re-trigger with `--ref main`.
+
   ### "workflow not found"
-  - Ensure `.github/workflows/deploy-labs.yml` exists in the target branch
+  - Ensure `.github/workflows/deploy-labs.yml` exists on `main`
   - Check that you're targeting the correct repository and branch
 
   ### "permissions denied"
@@ -91,7 +102,7 @@ instructions: |
   - May need to create PR instead of direct trigger
 
   ### Deployment fails
-  1. Check logs: `gh run view <run-id> --repo jjackson/commcare-connect --log`
+  1. Check logs: `gh run view <run-id> --repo jjackson/connect-labs --log`
   2. Common issues:
      - Docker build failures (check Dockerfile)
      - Migration failures (check model changes)
@@ -112,31 +123,31 @@ instructions: |
   gh auth status
 
   # View current workflow runs
-  gh run list --repo jjackson/commcare-connect --workflow=deploy-labs.yml
+  gh run list --repo jjackson/connect-labs --workflow=deploy-labs.yml
 
   # Cancel a running deployment
-  gh run cancel <run-id> --repo jjackson/commcare-connect
+  gh run cancel <run-id> --repo jjackson/connect-labs
 
   # Rerun failed deployment
-  gh run rerun <run-id> --repo jjackson/commcare-connect
+  gh run rerun <run-id> --repo jjackson/connect-labs
 
   # Open workflow in browser
-  gh workflow view deploy-labs.yml --repo jjackson/commcare-connect --web
+  gh workflow view deploy-labs.yml --repo jjackson/connect-labs --web
   ```
 
   ## Pre-Deployment Checklist
 
   Before triggering deployment, verify:
-  - [ ] Code is committed and pushed to fork
+  - [ ] Code is merged into `main` (PR closed + merged, not just pushed to a branch)
   - [ ] All tests pass (`pytest`)
   - [ ] No linter errors (`pre-commit run --all-files`)
   - [ ] Changes don't require migrations (or set migrations=true)
-  - [ ] Code is in `jjackson/commcare-connect:labs-main` (your fork)
+  - [ ] `gh workflow run` will be invoked with `--ref main`
 
   ## Post-Deployment Verification
 
   After deployment:
-  - [ ] Check deployment completed: `gh run list --repo jjackson/commcare-connect --workflow=deploy-labs.yml --limit 1`
+  - [ ] Check deployment completed: `gh run list --repo jjackson/connect-labs --workflow=deploy-labs.yml --limit 1`
   - [ ] Test changes at https://labs.connect.dimagi.com
   - [ ] Check CloudWatch logs if issues occur
   - [ ] Verify services are running in AWS ECS Console
@@ -147,13 +158,13 @@ instructions: |
   ```bash
   # Find last successful deployment
   gh run list \
-    --repo jjackson/commcare-connect \
+    --repo jjackson/connect-labs \
     --workflow=deploy-labs.yml \
     --status=success \
     --limit 1
 
   # Rerun that deployment
-  gh run rerun <previous-successful-run-id> --repo jjackson/commcare-connect
+  gh run rerun <previous-successful-run-id> --repo jjackson/connect-labs
   ```
 
 files:

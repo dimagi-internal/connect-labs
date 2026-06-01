@@ -18,8 +18,34 @@ env:
   ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
 
 jobs:
+  guard:
+    # Hard gate: this workflow only deploys from main. If somebody (human or
+    # agent) triggers it on any other branch it fails fast, before pushing an
+    # image. The previous behavior — workflow_dispatch on any ref — was easy
+    # to misuse: a branch deploy can land code that hasn't been reviewed AND
+    # it makes "what is prod running?" ambiguous. main is the canonical
+    # source of truth; deploys come from there or not at all.
+    #
+    # (Legacy note: this repo used to be a fork off commcare-connect, and its
+    # canonical deploy branch was 'labs-main'. That label is dead — this is
+    # its own repo now and 'main' is the default branch.)
+    name: Guard — branch must be main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse deploys from non-main refs
+        run: |
+          ref="${GITHUB_REF:-}"
+          echo "triggered on ref=$ref"
+          if [ "$ref" != "refs/heads/main" ]; then
+            echo "::error::Deploys are only allowed from main. Got: $ref"
+            echo "::error::Land your changes on main first (PR + merge), then re-run this workflow."
+            exit 1
+          fi
+          echo "ref OK — proceeding to deploy"
+
   deploy:
     name: Deploy to Fargate
+    needs: guard
     runs-on: ubuntu-latest
 
     permissions:
@@ -188,6 +214,27 @@ jobs:
             exit 1
           fi
 
+      - name: Register task definitions from repo
+        id: taskdefs
+        run: |
+          # The web/worker task definitions are version-controlled in
+          # deploy/task-definitions/. Registering them from the repo on every deploy
+          # makes the repo the single source of truth: the container command, CPU,
+          # env, and roles can no longer silently drift in the AWS console — which is
+          # exactly how the MCP broke (docker/start moved to ASGI but the registered
+          # command stayed WSGI, and the deploy only reused the in-AWS task def).
+          # Secrets stay as Secrets Manager ARN references in the JSON, never values.
+          WEB_TD=$(aws ecs register-task-definition \
+            --cli-input-json file://deploy/task-definitions/web.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          WORKER_TD=$(aws ecs register-task-definition \
+            --cli-input-json file://deploy/task-definitions/worker.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered web:    $WEB_TD"
+          echo "Registered worker: $WORKER_TD"
+          echo "web_td=$WEB_TD" >> "$GITHUB_OUTPUT"
+          echo "worker_td=$WORKER_TD" >> "$GITHUB_OUTPUT"
+
       - name: Deploy services (hard cutover)
         run: |
           # Stop existing tasks first for instant cutover (no rolling deploy)
@@ -206,18 +253,18 @@ jobs:
             fi
           done
 
-          echo "Forcing new deployment..."
+          echo "Forcing new deployment onto the repo-defined task definitions..."
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_WEB_SERVICE }} \
-            --task-definition ${{ env.ECS_WEB_SERVICE }} \
+            --task-definition ${{ steps.taskdefs.outputs.web_td }} \
             --force-new-deployment \
             --output text > /dev/null
 
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_WORKER_SERVICE }} \
-            --task-definition ${{ env.ECS_WORKER_SERVICE }} \
+            --task-definition ${{ steps.taskdefs.outputs.worker_td }} \
             --force-new-deployment \
             --output text > /dev/null
 

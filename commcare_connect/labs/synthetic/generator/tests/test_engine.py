@@ -140,3 +140,102 @@ def test_generate_flags_visits_when_anomaly_scheduled(tmp_path):
     for v in asha_flagged:
         assert v["status"] in {"pending", "rejected"}
         assert v["flag_reason"]
+
+
+def test_generate_without_geography_leaves_location_empty():
+    """The default manifest (no geography) keeps visit location blank."""
+    manifest, detail, schema = _load_inputs()
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    assert all(v["location"] == "" for v in out["user_visits"])
+
+
+def test_generate_with_geography_places_visits_in_polygon():
+    """A geography block scatters visit GPS inside the polygon, one fixed household
+    point per beneficiary, formatted as a CommCare packed 'lat lon alt acc' string."""
+    from shapely.geometry import Point, shape
+
+    base_yaml = (GOLDEN / "manifest.yaml").read_text()
+    # A small square around Madobi (Kano): lon 8.30-8.40, lat 11.78-11.88.
+    geo_yaml = (
+        "geography:\n"
+        "  settlements: 4\n"
+        "  settlement_spread_km: 0.8\n"
+        "  polygon:\n"
+        "    type: Polygon\n"
+        "    coordinates:\n"
+        "      - - [8.30, 11.78]\n"
+        "        - [8.40, 11.78]\n"
+        "        - [8.40, 11.88]\n"
+        "        - [8.30, 11.88]\n"
+        "        - [8.30, 11.78]\n"
+    )
+    manifest = Manifest.from_yaml(base_yaml + geo_yaml)
+    detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
+    schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits = out["user_visits"]
+    assert len(visits) > 0
+
+    poly = shape(manifest.geography.polygon)
+    seen_points = set()
+    for v in visits:
+        assert v["location"], "geography visit should carry a non-empty location"
+        parts = v["location"].split()
+        assert len(parts) == 4, f"packed location should be 'lat lon alt acc', got {v['location']!r}"
+        lat, lon = float(parts[0]), float(parts[1])
+        assert poly.contains(Point(lon, lat)), f"visit GPS {lon},{lat} fell outside the polygon"
+        seen_points.add((v["entity_name"], lon, lat))
+
+    # Repeat visits to the same beneficiary stack at the same household point.
+    by_name = {}
+    for name, lon, lat in seen_points:
+        by_name.setdefault(name, set()).add((round(lon, 6), round(lat, 6)))
+    assert all(len(pts) == 1 for pts in by_name.values()), "each beneficiary should have one fixed household location"
+
+    # Determinism: same seed → identical locations.
+    out2 = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    assert [v["location"] for v in out2["user_visits"]] == [v["location"] for v in visits]
+
+
+def test_geography_gps_lands_where_the_service_delivery_pipeline_reads_it():
+    """Integration guard: the service-delivery GPS pipeline reads device location
+    from form_json.metadata.location, NOT the top-level `location` field. A geography
+    visit must mirror its GPS into metadata.location, or the map overlay shows
+    0% with-GPS (the exact bug that shipped opp 10007 with 333 visits and no points).
+    """
+    from commcare_connect.microplans.service_delivery.points import _parse_packed_location
+
+    base_yaml = (GOLDEN / "manifest.yaml").read_text()
+    geo_yaml = (
+        "geography:\n"
+        "  settlements: 4\n"
+        "  settlement_spread_km: 0.8\n"
+        "  polygon:\n"
+        "    type: Polygon\n"
+        "    coordinates:\n"
+        "      - - [8.30, 11.78]\n"
+        "        - [8.40, 11.78]\n"
+        "        - [8.40, 11.88]\n"
+        "        - [8.30, 11.88]\n"
+        "        - [8.30, 11.78]\n"
+    )
+    manifest = Manifest.from_yaml(base_yaml + geo_yaml)
+    detail = json.loads((GOLDEN / "opportunity_detail.json").read_text())
+    schema_data = json.loads((GOLDEN / "form_schema.json").read_text())
+    schema = FormSchema(questions=[QuestionSpec(**q) for q in schema_data["questions"]])
+
+    out = generate(manifest=manifest, opportunity_detail=detail, form_schema=schema)
+    visits = out["user_visits"]
+    assert visits
+
+    for v in visits:
+        meta_loc = v["form_json"].get("metadata", {}).get("location")
+        assert meta_loc, "GPS must be mirrored into form_json.metadata.location for the SD pipeline"
+        assert meta_loc == v["location"], "metadata.location must match the top-level packed location"
+        # The pipeline's own parser must read it as a valid (lon, lat).
+        parsed = _parse_packed_location(meta_loc)
+        assert parsed is not None, f"SD pipeline could not parse {meta_loc!r}"
+        lon, lat = parsed
+        assert 8.30 <= lon <= 8.40 and 11.78 <= lat <= 11.88

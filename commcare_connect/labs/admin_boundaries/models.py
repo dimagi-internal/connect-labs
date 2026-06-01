@@ -166,7 +166,7 @@ class AdminBoundary(models.Model):
     )
     name = models.CharField(max_length=255, help_text="Name of the administrative unit")
     name_local = models.CharField(max_length=255, blank=True, help_text="Local/native name if available")
-    boundary_id = models.CharField(max_length=100, unique=True, help_text="Unique ID from source (shapeID or OSM ID)")
+    boundary_id = models.CharField(max_length=100, help_text="ID from source (shapeID/OSM ID); unique per source")
     geometry = gis_models.MultiPolygonField(srid=4326, help_text="Boundary polygon in WGS84")
 
     # Source tracking
@@ -180,11 +180,30 @@ class AdminBoundary(models.Model):
     source_url = models.URLField(blank=True, help_text="URL where boundary data was downloaded from")
     downloaded_at = models.DateTimeField(auto_now_add=True, help_text="When this boundary was downloaded")
 
+    # Population for the unit, when the source provides it (e.g. GeoPoDe population_1).
+    population = models.FloatField(null=True, blank=True, help_text="Population of the unit, if known")
+    # Immediate parent's boundary_id (e.g. an LGA points at its State). Lets callers
+    # walk the hierarchy and narrow children by an indexed key instead of a spatial join.
+    parent_boundary_id = models.CharField(
+        max_length=100, blank=True, db_index=True, help_text="boundary_id of the immediate parent unit"
+    )
+    # Provider/provenance + denormalized parent codes/names that don't have their own
+    # columns (e.g. {"provider": "WHO", "source_date": "...", "global_id": "...",
+    # "parent_codes": {...}, "parent_names": {...}}). Source-specific, kept verbatim.
+    extra = models.JSONField(default=dict, blank=True, help_text="Provider + denormalized hierarchy metadata")
+
     class Meta:
         db_table = "labs_admin_boundary"
         indexes = [
             models.Index(fields=["iso_code", "admin_level"]),
             models.Index(fields=["source", "iso_code"]),
+        ]
+        constraints = [
+            # boundary_id need only be unique per source (matches migration 0002).
+            models.UniqueConstraint(
+                fields=["source", "boundary_id"],
+                name="labs_admin_boundary_source_boundary_id_uniq",
+            ),
         ]
         verbose_name = "Admin boundary"
         verbose_name_plural = "Admin boundaries"
