@@ -386,6 +386,29 @@ class TestProgramPlanDataAccessContract:
         refetched_workers = [w.get("opportunity_access") for w in refetched.work_areas]
         assert refetched_workers == workers
 
+    def test_regenerate_plan_replaces_work_areas_and_wipes_assignment(self):
+        """regenerate_plan rebuilds the work areas from a new frame, applies the new
+        grouping, and resets the assignment — keeping the plan's id."""
+        da = _make_program_da()
+        plan = da.create_plan(region="R", name="N", mode="coverage", pins=_EMPTY_FC, hulls=_HULLS_2)
+        # Seed an assignment + grouping so we can confirm they're reset/replaced.
+        da.reassign_plan(plan_id=plan.id, assignment={"strategy": "round_robin", "workers": ["flw-a"]}, actor="m")
+
+        updated = da.regenerate_plan(
+            plan.id,
+            mode="coverage",
+            pins=_EMPTY_FC,
+            hulls=_HULLS_2,
+            input_areas=[{"geometry": _HULLS_2["features"][0]["geometry"]}],
+            grouping={"strategy": "bbox", "target_size": 30},
+        )
+        assert updated.id == plan.id  # same plan
+        assert len(updated.work_areas) == 2  # _HULLS_2 has 2 features → 2 work areas
+        assert updated.data["grouping"] == {"strategy": "bbox", "target_size": 30}
+        assert updated.data["assignment"] == {}  # CHW assignment wiped
+        # No worker survives the destructive rebuild.
+        assert all(w.get("opportunity_access") is None for w in updated.work_areas)
+
     def test_transition_plan_draft_to_in_review_status_log_persists(self):
         """transition_plan(in_review) appends status_log entry + updates status."""
         da = _make_program_da()
