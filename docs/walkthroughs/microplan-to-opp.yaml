@@ -86,14 +86,23 @@ scenes:
         description: "Two-phase group (bbox or BFS-adjacency) then assign (round-robin or Neal-Lesh minimax spread) over the work areas, run on Celery"
         verify: "pytest: assigning a plan leaves every non-excluded work area with a work_area_group and an assignee"
     actions:
-      - { kind: hover, target: "MAP COLORS", seconds: 0.8, note: "the color-coded, per-worker work areas on the map" }
-      - { kind: scroll_to, target: "WORKERS", note: "the per-worker breakdown" }
-      - { kind: hover, target: "Apply grouping", seconds: 1.0, note: "the group-and-assign control" }
+      - { kind: scroll_to, target: "Group work areas", note: "the two-phase group-then-assign controls" }
+      - { kind: fill, target: "#grp-max-buildings", value: "2500", note: "size each cluster to a sane field territory" }
+      - { kind: click, target: "#btn-regroup", note: "Phase 1 — cluster the work areas into walkable groups" }
+      - { kind: wait_for, target: "Re-grouped into", note: "the clustering finishes (runs on Celery)" }
+      - { kind: hold, seconds: 1.5 }
+      - { kind: click, target: "Assign workers", note: "open the worker-assignment panel" }
+      - { kind: hold, seconds: 0.6 }
+      - { kind: fill, target: "#asg-workers", value: "Amina Bello\nIbrahim Sani\nFatima Yusuf\nMusa Garba\nHauwa Aliyu\nSani Abdullahi", note: "the six named field workers" }
+      - { kind: click, target: "#btn-reassign", note: "Phase 2 — balance the clusters across workers, minimizing travel" }
+      - { kind: wait_for, target: "Assigned to", note: "minimax-spread assignment finishes (Celery)" }
       - { kind: hold, seconds: 1.0 }
+      - { kind: scroll_to, target: "WORKERS", note: "each worker now holds a contiguous territory, color-coded on the map" }
+      - { kind: hold, seconds: 2.0 }
   - persona: maya
-    title: "Maya tunes the plan with the partner"
-    show: "Open the plan review page /microplans/program/133/plan/<plan_id>/review/, exclude a work area that is not a real settlement, reassign one worker, and watch the per-field-worker metrics table update"
-    concept_claim: "Excluding an invalid work area or reassigning a worker updates the per-worker travel and workload metrics on the same page."
+    title: "Maya reads the per-worker numbers with the partner"
+    show: "On the plan review page, read the live PLAN METRICS (worst/mean travel, balance, coverage) computed from the assignment, then click one field worker to filter the map and table to her territory and her own areas/buildings/travel numbers"
+    concept_claim: "The per-worker travel and workload metrics are computed from the assignment and the owner can drill into any single worker's territory on the same page."
     provenance: S4
     design_intent: "Bet that letting the people who know the ground edit in the planning phase, with metrics that move as they edit, is what makes the final plan trustworthy."
     features:
@@ -104,10 +113,13 @@ scenes:
         description: "Per-field-worker metrics table (areas, workload, travel) that recomputes after an edit without a full page reload"
         verify: "Playwright: exclude a work area on the review page and assert the metrics table row totals change"
     actions:
-      - { kind: scroll_to, target: "PLAN METRICS", note: "spread / balance / coverage / exclusions" }
-      - { kind: hover, target: "Excluded", seconds: 0.8, note: "areas the partner dropped as invalid" }
-      - { kind: scroll_to, target: "Download Connect import CSV", note: "the editable work-area list + export" }
-      - { kind: hold, seconds: 1.2 }
+      - { kind: scroll_to, target: "PLAN METRICS", note: "worst / mean travel, balance, coverage — all computed from the live assignment" }
+      - { kind: hold, seconds: 1.5 }
+      - { kind: hover, target: "WORST TRAVEL", seconds: 1.0, note: "the longest distance any one worker must cover" }
+      - { kind: click, target: 'css:.worker-row:has-text("Amina Bello")', note: "drill into one worker — her territory filters on the map and table" }
+      - { kind: hold, seconds: 2.0 }
+      - { kind: scroll_to, target: "Worker", note: "the per-worker breakdown: areas, buildings, expected visits, travel" }
+      - { kind: hold, seconds: 1.8 }
   - persona: maya
     title: "Maya walks the plan to Approved"
     show: "Back on the workspace, click Submit for review on the draft, then Approve, and show the card move through Draft to In review to Approved"
@@ -163,6 +175,10 @@ scenes:
     actions:
       - { kind: click, target: 'css:a:has-text("Kano North — DDD demo")', note: "open the plan we just built (now Live)" }
       - { kind: wait_for, target: "Download Connect import CSV" }
+      - { kind: click, target: "Collapse all groups", note: "fold the 1,444 work areas into their worker territories" }
+      - { kind: hold, seconds: 0.6 }
+      - { kind: scroll_to, target: "css:#toggle-collapse-all", note: "each group summarized with its assigned worker, buildings and visits" }
+      - { kind: hold, seconds: 2.2 }
       - { kind: scroll_to, target: "Download Connect import CSV", note: "the export control" }
       - { kind: click, target: "Download Connect import CSV", note: "download the Connect-ready CSV (LGA/State populated)" }
       - { kind: hold, seconds: 2.5 }
