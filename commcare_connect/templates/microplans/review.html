@@ -136,7 +136,7 @@
       <div class="sub">Plan #{{ plan_id }} · planning phase</div>
       {% else %}
       <h1>New microplan</h1>
-      <div class="sub">Program #{{ program_id }} · define area + cell size</div>
+      <div class="sub">Program #{{ program_id }} · define area + work area size</div>
       {% endif %}
       {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue" style="display:inline-block;margin-top:6px;">← Back to program</a>{% endif %}
     </div>
@@ -168,13 +168,13 @@
       <details class="area-def mp-card"{% if not plan_id %} open{% endif %}>
         <summary>
           <span class="ic">◧</span>
-          <span class="lbl">{% if plan_id %}Edit area &amp; cell size{% else %}Define area &amp; cell size{% endif %}</span>
+          <span class="lbl">{% if plan_id %}Edit area &amp; work area size{% else %}Define area &amp; work area size{% endif %}</span>
           <span class="chev">›</span>
         </summary>
         <div class="space-y-3 mt-2 text-xs">
           <p class="text-[10px] text-gray-500 leading-snug" id="area-def-help">
             {% if plan_id %}Regenerates every work area. CHW assignments and per-area edits are reset.
-            {% else %}Pick the area, choose a cell size, then Apply. The plan is created on Apply.{% endif %}
+            {% else %}Pick the area, choose a work area size, then Apply. The plan is created on Apply.{% endif %}
           </p>
 
           <div>
@@ -1396,7 +1396,7 @@
   ASG_FIELDS.forEach((id) => { const el = $(id); if (el) { el.addEventListener("input", syncApplyButtons); el.addEventListener("change", syncApplyButtons); } });
 
   // ----------------------------------------------------------------------
-  //  Area definition (Edit area & cell size) — destructive regenerate flow.
+  //  Area definition (Edit area & work area size) — destructive regenerate flow.
   //  Adds a MapboxDraw control to the existing map so the LLO can draw a new
   //  boundary; offers admin-area picker + pin-and-radius as alternatives;
   //  Apply geographic frame posts to /plan/<id>/regenerate/ and re-renders.
