@@ -29,9 +29,11 @@ jobs:
           # GitHub Actions runs on Ubuntu — GNU date only
           SINCE=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
 
-          # Fetch closed PRs merged to main in the last 7 days
-          gh api "repos/${{ github.repository }}/pulls?state=closed&base=main&per_page=100" \
-            | jq --arg since "$SINCE" '[.[] | select(.merged_at != null and .merged_at >= $since)]' \
+          # Use search API: filters by merged_at server-side, no sort/pagination bias
+          # --paginate fetches all pages; jq -s slurps NDJSON lines into one array
+          gh api --paginate "search/issues?q=repo:${{ github.repository }}+is:pr+is:merged+base:main+merged:>=${SINCE}&per_page=100" \
+            --jq '.items[] | {number: .number, title: .title, body: .body, html_url: .html_url, merged_at: .pull_request.merged_at}' \
+            | jq -s '.' \
             > /tmp/merged_prs.json
 
           COUNT=$(jq length /tmp/merged_prs.json)

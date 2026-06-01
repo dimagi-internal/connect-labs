@@ -130,6 +130,12 @@ The power of this loop is: describe change → Claude pushes → reload browser 
 
 **Note:** changes to the MCP server itself (the Labs code that powers these tools) _do_ require a code deploy. But for all workflow edits, the MCP push is sufficient.
 
+### Template authoring (regular Claude session only)
+
+Safe Mode is for editing **live workflow instances**. If you are authoring or updating a **seed template** (a `.py` file in the repository that other workflows are cloned from), you need a regular Claude Code session instead — Safe Mode blocks the file writes that template authoring requires.
+
+In a regular session, you can use `workflow_sync_from_template_file` to push a local `.py` file straight to a live preview workflow without a full redeploy. See [Deploy-Free Template Iteration](workflow-engine.md#deploy-free-template-iteration) for the full loop.
+
 ---
 
 ## Safe Mode: What It Protects Against
