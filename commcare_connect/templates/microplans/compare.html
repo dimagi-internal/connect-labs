@@ -60,6 +60,14 @@
   const params = new URLSearchParams(window.location.search);
   const selected = new Set((params.get("plans") || "").split(",").filter(Boolean));
 
+  // Plan-review URL builder — mirrors the program_workspace.html pattern so the
+  // plan name in the sidebar links to the same /microplans/program/<id>/plan/<id>/review/
+  // page that the workspace anchors to. Without a clickable name, a lead who
+  // spots an outlier in the sort has nowhere to go to inspect it; with this
+  // link, the sort flows naturally into a map-level drill-down.
+  const PROGRAM_ID = "{{ program_id|escapejs }}";
+  const reviewUrl = (pid) => "/microplans/program/" + PROGRAM_ID + "/plan/" + pid + "/review/";
+
   // Relative timestamp helper. Plan KPIs are a snapshot taken at create/regenerate
   // time; the lead needs to know if she's reading numbers from this morning or
   // from a stale plan from last month (DDD user-artifact judge: trust). Compact
@@ -121,7 +129,7 @@
       if (!d.plans || !d.plans.length) { box.innerHTML = '<span class="text-gray-400">No saved plans yet.</span>'; return; }
       box.innerHTML = d.plans.map((p) =>
         `<label class="flex items-center gap-2"><input type="checkbox" class="psel" value="${p.plan_id}" ${selected.has(String(p.plan_id)) ? "checked" : ""}>
-          <span>${esc(p.name)} <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} area${p.work_areas === 1 ? "" : "s"} · ${esc(fmtRelative(p.created_at))}</span></span></label>`).join("");
+          <span><a href="${reviewUrl(p.plan_id)}" class="text-brand-cornflower-blue hover:underline" onclick="event.stopPropagation()">${esc(p.name)}</a> <span class="text-gray-400 text-xs">· ${p.mode} · ${p.work_areas} area${p.work_areas === 1 ? "" : "s"} · ${esc(fmtRelative(p.created_at))}</span></span></label>`).join("");
       box.querySelectorAll(".psel").forEach((cb) => cb.addEventListener("change", () => {
         if (cb.checked) selected.add(cb.value); else selected.delete(cb.value);
         syncUrl(); renderCompare();
