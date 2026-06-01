@@ -172,7 +172,12 @@ def to_api_payload(payloads: list[WorkAreaPayload]) -> list[dict]:
 
 
 def to_csv_rows(payloads: list[WorkAreaPayload]) -> list[dict]:
-    """Shape for Connect's existing web CSV importer (keyed by column labels)."""
+    """Shape for Connect's existing web CSV importer (keyed by column labels).
+
+    Connect REQUIRES LGA + State non-empty on every row, or it rejects the whole
+    file (full contract: ``microplans/CONNECT_IMPORT_CONTRACT.md``). They come from
+    each payload's ``case_properties`` — populate them upstream (see
+    ``plan.derive_lga_state`` / ``ProgramPlanCSVView``) so the export is importable."""
     h = CSV_HEADERS
     return [
         {
