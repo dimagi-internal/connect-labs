@@ -499,6 +499,10 @@
     </section>
 
     <div class="border-t border-gray-200">
+      <div class="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
+        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Work areas</span>
+        <button type="button" id="toggle-collapse-all" class="text-xs text-brand-cornflower-blue">Collapse all groups</button>
+      </div>
       <table class="min-w-full text-sm">
         <thead class="bg-gray-50 sticky top-0">
           <tr class="text-left text-gray-500">
@@ -1027,6 +1031,16 @@
     status: (w) => String(w.status || ""),
   };
 
+  // In the planning phase every active area is "UNASSIGNED" — the execution
+  // default that flips to VISITED once Connect runs the plan. Shown next to an
+  // assigned worker the raw word reads as "no worker", so render it as the
+  // planning-phase "Planned" (muted); execution states pass through verbatim.
+  function statusLabel(status) {
+    const s = String(status || "UNASSIGNED");
+    if (s === "UNASSIGNED") return '<span class="text-gray-400">Planned</span>';
+    return esc(s);
+  }
+
   function _cellRow(w) {
     const excluded = w.status === "EXCLUDED";
     const id = esc(w.id);
@@ -1044,7 +1058,7 @@
       <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${id}" value="${esc(w.opportunity_access || "")}"></td>
       <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
       <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${id}" value="${w.expected_visit_count ?? 0}"></td>
-      <td class="p-2 text-xs">${excluded ? `<span title="${esc(w.excluded_reason || "")}">EXCLUDED</span>` : esc(w.status || "")}</td>
+      <td class="p-2 text-xs">${excluded ? `<span class="text-gray-500" title="${esc(w.excluded_reason || "")}">Excluded</span>` : statusLabel(w.status)}</td>
       <td class="p-2">${excluded
         ? `<button class="text-xs text-brand-cornflower-blue" data-restore="${id}">restore</button>`
         : `<button class="text-xs text-red-600" data-exclude="${id}">exclude</button>`}</td>`;
@@ -1223,6 +1237,18 @@
     edit(body);
   });
   on("sel-all", "change", (e) => { selected.clear(); if (e.target.checked) WAS.forEach((w) => selected.add(w.id)); renderTable(); setSelState(); });
+
+  // Collapse / expand every group at once — a 1444-row plan reads as ~N group
+  // summary rows (each carrying its worker + counts) when collapsed.
+  on("toggle-collapse-all", "click", () => {
+    const names = new Set((WAS || []).map((w) => w.work_area_group || "(no group)"));
+    const anyExpanded = [...names].some((n) => !collapsedGroups.has(n));
+    if (anyExpanded) { names.forEach((n) => collapsedGroups.add(n)); }
+    else { collapsedGroups.clear(); }
+    const btn = $("toggle-collapse-all");
+    if (btn) btn.textContent = anyExpanded ? "Expand all groups" : "Collapse all groups";
+    renderTable();
+  });
 
   // bulk
   on("bulk-exclude", "click", () => {
