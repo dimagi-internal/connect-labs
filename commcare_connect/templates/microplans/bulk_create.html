@@ -190,8 +190,7 @@
         <label class="block">
           <span class="mp-section-label block mb-1">Strategy</span>
           <select id="cfg-strategy" class="field-input">
-            <option value="balanced" selected>Balanced (recommended)</option>
-            <option value="bfs_adjacency">Walkable clusters</option>
+            <option value="bfs_adjacency" selected>Walkable clusters (recommended)</option>
             <option value="bbox">Uniform grid</option>
           </select>
           <span class="block text-[10px] text-gray-500 mt-1">Coverage-mode clustering.</span>
@@ -495,7 +494,7 @@
     // server uses whatever shape arrives, so the front-end's job is just
     // to surface the knobs and pass them through honestly.
     const grouping = {
-      strategy: ($("cfg-strategy")?.value || "balanced"),
+      strategy: ($("cfg-strategy")?.value || "bfs_adjacency"),
       buildings_per_area: parseInt($("cfg-bpc")?.value || "100", 10) || 100,
       balance_tolerance: parseFloat($("cfg-balance")?.value || "0.1") || 0.1,
     };
