@@ -1184,3 +1184,41 @@ def test_bulk_create_status_completed(client, django_user_model, monkeypatch):
     resp = client.get(reverse("microplans:bulk_create_status", kwargs={"task_id": "abc"}))
     body = resp.json()
     assert body["state"] == "completed" and body["created"] == 1
+
+
+class TestProgramMapSeed:
+    """`_program_map_seed` opens the new-plan map over the program's footprint so
+    the boundary layer loads + the country auto-detects (else cold-start dead end)."""
+
+    @staticmethod
+    def _plan(created_at, country=None, centroids=None):
+        from types import SimpleNamespace
+
+        input_areas = [{"name": "A", "country": country}] if country else []
+        was = [{"centroid": c} for c in (centroids or [])]
+        return SimpleNamespace(data={"created_at": created_at, "input_areas": input_areas, "work_areas": was})
+
+    def test_centroids_and_country(self):
+        from commcare_connect.microplans.views import _program_map_seed
+
+        seed = _program_map_seed([self._plan("2026-05-01", "NGA", [[8.5, 12.0], [8.7, 12.2]])])
+        assert seed == {"iso": "NGA", "lng": 8.6, "lat": 12.1, "zoom": 10}
+
+    def test_newest_wins(self):
+        from commcare_connect.microplans.views import _program_map_seed
+
+        old = self._plan("2026-01-01", "KEN", [[36.8, -1.3]])
+        new = self._plan("2026-06-01", "NGA", [[8.5, 12.0]])
+        assert _program_map_seed([old, new])["iso"] == "NGA"
+
+    def test_country_only_no_centroids(self):
+        from commcare_connect.microplans.views import _program_map_seed
+
+        seed = _program_map_seed([self._plan("2026-05-01", "NGA", [])])
+        assert seed == {"iso": "NGA", "lng": None, "lat": None, "zoom": None}
+
+    def test_empty_program_returns_none(self):
+        from commcare_connect.microplans.views import _program_map_seed
+
+        assert _program_map_seed([]) is None
+        assert _program_map_seed([self._plan("2026-05-01", None, [])]) is None
