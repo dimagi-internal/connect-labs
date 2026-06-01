@@ -1622,21 +1622,30 @@ function WorkflowUI({
   // activeUsernames: optional array — when provided only mothers attributed to
   // those FLWs are included (used to scope lines to eligible-for-renewal FLWs).
   var computeMonthlySnapshot = function (visitsRows, regRows, snapDateStr, activeUsernames) {
-    var visitsByMother = {};
-    var ancOkMothers = {};
+    // Pass 1: build motherToFlw from ALL visits (no date cutoff), matching
+    // v5_processVisits behaviour where attribution = last-visit-wins globally.
     var motherToFlw = {};
+    for (var a = 0; a < visitsRows.length; a++) {
+      var ar = visitsRows[a];
+      var amid = (ar.mother_case_id || '').toLowerCase();
+      var auname = ((ar.username || ar._username || '') + '').toLowerCase();
+      if (amid && auname) motherToFlw[amid] = auname;
+    }
+
     var activeSet = null;
     if (activeUsernames && activeUsernames.length) {
       activeSet = {};
       for (var k = 0; k < activeUsernames.length; k++) activeSet[activeUsernames[k].toLowerCase()] = true;
     }
+
+    // Pass 2: track completed visits and ANC-ok up to snapDate only.
+    var visitsByMother = {};
+    var ancOkMothers = {};
     for (var i = 0; i < visitsRows.length; i++) {
       var row = visitsRows[i];
       if (!row.visit_datetime || row.visit_datetime.substring(0, 10) > snapDateStr) continue;
       var mid = (row.mother_case_id || '').toLowerCase();
       if (!mid) continue;
-      var uname = ((row.username || row._username || '') + '').toLowerCase();
-      if (uname) motherToFlw[mid] = uname;
       var formName = (V5_FORM_NAME_ALIASES && V5_FORM_NAME_ALIASES[row.form_name]) || row.form_name || '';
       if ((row.antenatal_visit_completion || '').toString().trim() === 'ok') {
         ancOkMothers[mid] = true;
