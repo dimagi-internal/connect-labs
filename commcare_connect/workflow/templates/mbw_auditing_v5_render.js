@@ -3943,14 +3943,27 @@ function WorkflowUI({
       return result;
     }, []);
 
-    // Monthly metrics from pipeline data
-    var monthlyMetrics = React.useMemo(function () {
-      var visitsRows = (pipelines.visits && pipelines.visits.rows) || [];
-      var regRows = (pipelines.registrations && pipelines.registrations.rows) || [];
-      return months.map(function (mo) {
-        return Object.assign({}, mo, computeMonthlySnapshot(visitsRows, regRows, mo.snapDate));
-      });
-    }, [months]);
+    // Monthly metrics — computed on demand (expensive: 5× over all visit rows)
+    var _mm = React.useState(null);
+    var monthlyMetrics = _mm[0];
+    var setMonthlyMetrics = _mm[1];
+    var _computing = React.useState(false);
+    var computing = _computing[0];
+    var setComputing = _computing[1];
+
+    var computeMetrics = function () {
+      setComputing(true);
+      // Defer to next tick so the button state updates before the heavy work
+      setTimeout(function () {
+        var visitsRows = (pipelines.visits && pipelines.visits.rows) || [];
+        var regRows = (pipelines.registrations && pipelines.registrations.rows) || [];
+        var result = months.map(function (mo) {
+          return Object.assign({}, mo, computeMonthlySnapshot(visitsRows, regRows, mo.snapDate));
+        });
+        setMonthlyMetrics(result);
+        setComputing(false);
+      }, 0);
+    };
 
     // Category distribution per month using step-constant interpolation across runs
     var monthlyCats = React.useMemo(function () {
@@ -4055,34 +4068,50 @@ function WorkflowUI({
       }
     });
 
-    // Follow-up rate line
-    var fuPts = [];
-    var sePts = [];
-    monthlyMetrics.forEach(function (mo, i) {
-      var cx = padL + i * slotW + slotW / 2;
-      if (mo.followup_rate != null) fuPts.push([cx, padT + chartH * (1 - mo.followup_rate / 100)]);
-      if (mo.pct_still_eligible != null) sePts.push([cx, padT + chartH * (1 - mo.pct_still_eligible / 100)]);
-    });
+    // Follow-up rate + % still eligible lines (only after user clicks Compute)
+    if (monthlyMetrics) {
+      var fuPts = [];
+      var sePts = [];
+      monthlyMetrics.forEach(function (mo, i) {
+        var cx = padL + i * slotW + slotW / 2;
+        if (mo.followup_rate != null) fuPts.push([cx, padT + chartH * (1 - mo.followup_rate / 100)]);
+        if (mo.pct_still_eligible != null) sePts.push([cx, padT + chartH * (1 - mo.pct_still_eligible / 100)]);
+      });
 
-    if (fuPts.length >= 2) {
-      elems.push(React.createElement('polyline', { key: 'fu-line', points: fuPts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#2563eb', strokeWidth: 2.5 }));
-    }
-    fuPts.forEach(function (p, i) {
-      elems.push(React.createElement('circle', { key: 'fu-dot' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#2563eb' }));
-    });
+      if (fuPts.length >= 2) {
+        elems.push(React.createElement('polyline', { key: 'fu-line', points: fuPts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#2563eb', strokeWidth: 2.5 }));
+      }
+      fuPts.forEach(function (p, i) {
+        elems.push(React.createElement('circle', { key: 'fu-dot' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#2563eb' }));
+      });
 
-    if (sePts.length >= 2) {
-      elems.push(React.createElement('polyline', { key: 'se-line', points: sePts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#9333ea', strokeWidth: 2.5, strokeDasharray: '6,3' }));
+      if (sePts.length >= 2) {
+        elems.push(React.createElement('polyline', { key: 'se-line', points: sePts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#9333ea', strokeWidth: 2.5, strokeDasharray: '6,3' }));
+      }
+      sePts.forEach(function (p, i) {
+        elems.push(React.createElement('circle', { key: 'se-dot' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#9333ea' }));
+      });
     }
-    sePts.forEach(function (p, i) {
-      elems.push(React.createElement('circle', { key: 'se-dot' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#9333ea' }));
-    });
 
     return React.createElement(
       'div',
       { className: 'bg-white rounded-lg shadow-sm p-4' },
       React.createElement('h3', { className: 'text-sm font-semibold text-gray-800 mb-1' }, 'Improvement over time'),
-      React.createElement('p', { className: 'text-xs text-gray-400 mb-3' }, 'Monthly snapshots (15th of each month). Bars show % of FLWs per performance category; lines show project-level follow-up rate and % still eligible.'),
+      React.createElement(
+        'div',
+        { className: 'flex items-center justify-between mb-3' },
+        React.createElement('p', { className: 'text-xs text-gray-400' }, 'Bars: FLW category distribution per month. Lines: follow-up rate & % still eligible (computed on demand).'),
+        React.createElement(
+          'button',
+          {
+            className: 'px-3 py-1.5 text-xs rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50 shrink-0 ml-3 inline-flex items-center gap-1 disabled:opacity-50',
+            onClick: computeMetrics,
+            disabled: computing,
+          },
+          React.createElement('i', { className: 'fa-solid ' + (computing ? 'fa-spinner fa-spin' : 'fa-chart-line') }),
+          computing ? 'Computing…' : 'Compute trend lines',
+        ),
+      ),
       React.createElement('svg', { viewBox: '0 0 ' + svgW + ' ' + svgH, width: '100%', style: { display: 'block' } }, elems),
       React.createElement(
         'div',
