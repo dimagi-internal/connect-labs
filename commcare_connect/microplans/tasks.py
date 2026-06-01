@@ -178,7 +178,19 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
                 mode=mode,
                 pins={"type": "FeatureCollection", "features": []},
                 hulls=ward_geojson,
-                input_areas=[{"kind": "admin_boundary", "boundary_id": boundary_id, "name": boundary.name}],
+                input_areas=[
+                    {
+                        "kind": "admin_boundary",
+                        "boundary_id": boundary_id,
+                        "name": boundary.name,
+                        # Carry the boundary's population estimate onto the plan so
+                        # plan_kpis().plan.total_population reports the boundary's
+                        # known population, not a bottom-up sum of work-area
+                        # apportionments. None when the boundary has no population
+                        # estimate loaded; plan_kpis falls back gracefully.
+                        "population": int(boundary.population) if boundary.population is not None else None,
+                    }
+                ],
                 grouping=grouping,
             )
             ok += 1
