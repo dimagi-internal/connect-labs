@@ -81,8 +81,8 @@ def generate_coverage_frame(areas: list[dict], config: CoverageConfig) -> Covera
     n_cells = len(out.psu_frame)
     if n_cells > MAX_WORK_AREAS:
         raise ValueError(
-            f"This area at {config.cell_size_m:.0f} m cells produces {n_cells:,} work areas "
-            f"(limit {MAX_WORK_AREAS:,}). Increase the cell size, or split the area into separate plans."
+            f"This area at {config.cell_size_m:.0f} m work areas produces {n_cells:,} work areas "
+            f"(limit {MAX_WORK_AREAS:,}). Increase the work-area size, or split the area into separate plans."
         )
 
     features: list[dict] = []

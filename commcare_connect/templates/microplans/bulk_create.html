@@ -197,7 +197,7 @@
           <span class="block text-[10px] text-gray-500 mt-1">Coverage-mode clustering.</span>
         </label>
         <label class="block">
-          <span class="mp-section-label block mb-1">Cell size (m)</span>
+          <span class="mp-section-label block mb-1">Work area size (m)</span>
           <input id="cfg-cell-size" type="number" value="100" min="10" max="2000" step="10" class="field-input">
           <span class="block text-[10px] text-gray-500 mt-1">Grid each ward into square cells of this size.</span>
         </label>
@@ -499,7 +499,7 @@
       buildings_per_area: parseInt($("cfg-bpc")?.value || "100", 10) || 100,
       balance_tolerance: parseFloat($("cfg-balance")?.value || "0.1") || 0.1,
     };
-    // Coverage cell size (m) — drives the grid each ward is tiled into.
+    // Coverage work-area size (m) — drives the grid each ward is tiled into.
     const cellSize = parseInt($("cfg-cell-size")?.value || "100", 10) || 100;
 
     hide($("step-create").querySelector("#create-done"));
