@@ -264,11 +264,14 @@ class AdminAreasView(LoginRequiredMixin, View):
     """
 
     def post(self, request, opp_id):
+        from commcare_connect.microplans.core import iso as iso_codes
         from commcare_connect.microplans.core.admin_boundaries import SOURCE_LABELS, AdminArea, get_resolver
 
         try:
             payload = json.loads(request.body)
-            country = payload["country"]
+            # Accept alpha-2 or alpha-3 (the place-search flow supplies alpha-2 from
+            # a geocode result); the resolver keys on alpha-3.
+            country = iso_codes.to_alpha3(payload["country"]) or payload["country"]
             level = int(payload["level"])
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
@@ -352,9 +355,14 @@ class BoundaryViewportView(LoginRequiredMixin, View):
             return JsonResponse(
                 {"status": "error", "detail": "bbox=minLng,minLat,maxLng,maxLat is required."}, status=400
             )
+        from commcare_connect.microplans.core import iso as iso_codes
+
         zoom = _float_or_none(request.GET.get("zoom"))
         source = request.GET.get("source") or None
-        iso = request.GET.get("iso") or None
+        # Accept alpha-2 or alpha-3; the resolver keys on alpha-3. The place-search
+        # flow sets the country from a Mapbox geocode result, which is alpha-2.
+        raw_iso = request.GET.get("iso") or None
+        iso = (iso_codes.to_alpha3(raw_iso) or raw_iso) if raw_iso else None
         levels = [int(request.GET["level"])] if (request.GET.get("level") or "").isdigit() else None
 
         resolver = get_resolver()
