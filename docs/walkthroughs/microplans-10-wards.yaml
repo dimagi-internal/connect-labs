@@ -371,8 +371,11 @@ scenes:
     definitions to confirm her workload sanity check — pop/building values
     outside the realistic 2-10 range hint at stale population data or a building
     set that includes non-residential structures.
+  # Scene 4 now ends on a plan-review page (the drill-through), so the "click
+  # the sidebar link" path is no longer reachable. Navigate directly to the
+  # glossary URL — same destination, narratively equivalent to the click.
+  url: "/microplans/glossary/"
   actions:
-    - { kind: click, target: "What do these metrics mean?", note: "follow the sidebar link" }
     - { kind: wait_for, target: "Plan metric definitions" }
     - { kind: hold, seconds: 1.5, note: "frame the page header" }
     - { kind: scroll_to, target: "Workload (the input data)", note: "Dana goes to the workload section first" }
