@@ -469,6 +469,10 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
             payload = json.loads(request.body)
             region = str(payload.get("region", "")).strip()[:255]
             name = str(payload.get("name", "") or region or "Untitled plan").strip()[:255]
+            # Administrative labels Connect's work-area importer requires non-empty
+            # (see microplans/CONNECT_IMPORT_CONTRACT.md). lga falls back to region.
+            lga = str(payload.get("lga", "") or region).strip()[:255]
+            state = str(payload.get("state", "")).strip()[:255]
             mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
             pins = payload.get("pins") or empty_fc
             hulls = (payload.get("coverage_areas") or payload.get("hulls")) or empty_fc
@@ -497,6 +501,8 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
                 hulls=hulls,
                 input_areas=input_areas,
                 grouping=grouping,
+                lga=lga,
+                state=state,
             )
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
@@ -943,6 +949,19 @@ class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
 
 
 class ProgramPlanCSVView(LoginRequiredMixin, View):
+    """Serve the plan's work areas as a Connect-import CSV.
+
+    Connect's WorkAreaCSVImporter REQUIRES non-empty LGA + State on every row (see
+    microplans/CONNECT_IMPORT_CONTRACT.md) — a blank value gets the whole file
+    rejected. LGA/State default from the plan (captured at creation; LGA falls back
+    to the plan's region) so the "Download Connect import CSV" button — which POSTs
+    an empty body — produces an importable file. An explicit lga/state in the
+    request body overrides the plan values. State has no safe fallback: if the plan
+    has none, the response carries an ``X-Microplan-Connect-Ready: false`` header +
+    ``X-Microplan-Missing`` so the caller can warn before handing the file to
+    Connect, rather than shipping a file that will be rejected.
+    """
+
     def post(self, request, program_id, plan_id):
         from commcare_connect.microplans.core import plan as plan_lib
         from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
@@ -957,11 +976,18 @@ class ProgramPlanCSVView(LoginRequiredMixin, View):
             plan = da.get_plan(int(plan_id))
         except Exception:  # noqa: BLE001
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
-        rows = to_csv_rows(
-            plan_lib.to_workarea_payloads(plan.work_areas, lga=payload.get("lga", ""), state=payload.get("state", ""))
-        )
+        # Default LGA/State from the plan (LGA falls back to region); body overrides.
+        plan_lga, plan_state = plan_lib.derive_lga_state(plan.data)
+        lga = str(payload.get("lga") or plan_lga or "").strip()
+        state = str(payload.get("state") or plan_state or "").strip()
+        rows = to_csv_rows(plan_lib.to_workarea_payloads(plan.work_areas, lga=lga, state=state))
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="microplan_program{program_id}_plan{plan_id}.csv"'
+        # Signal whether the file will be accepted by Connect (both labels present).
+        missing = [k for k, v in (("LGA", lga), ("State", state)) if not v]
+        response["X-Microplan-Connect-Ready"] = "false" if missing else "true"
+        if missing:
+            response["X-Microplan-Missing"] = ", ".join(missing)
         if rows:
             writer = csv.DictWriter(response, fieldnames=list(rows[0].keys()))
             writer.writeheader()

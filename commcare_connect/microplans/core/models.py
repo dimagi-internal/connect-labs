@@ -36,6 +36,18 @@ class PlanRecord(LocalLabsRecord):
         return self.data.get("region", "")
 
     @property
+    def lga(self) -> str:
+        """LGA label for the Connect work-area export (Connect requires it
+        non-empty). Captured at creation; falls back to ``region``."""
+        return self.data.get("lga", "") or self.data.get("region", "")
+
+    @property
+    def state(self) -> str:
+        """State label for the Connect work-area export (Connect requires it
+        non-empty). Captured at creation; "" if never set."""
+        return self.data.get("state", "")
+
+    @property
     def mode(self) -> str:
         return self.data.get("mode", "sampling")
 

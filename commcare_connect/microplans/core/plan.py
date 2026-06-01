@@ -401,6 +401,33 @@ def plan_kpis(work_areas: list[dict]) -> dict:
 # The share + compare UIs show those directly and let the reader decide.
 
 
+def derive_lga_state(plan_data: dict) -> tuple[str, str]:
+    """Best (LGA, State) labels for a plan's Connect work-area export.
+
+    ⚠ NIGERIA-HARDCODED: "LGA"/"State" are Nigeria's ADM2/ADM1 tiers, hardcoded to
+    match Connect's importer column names. Labs is country-generic internally
+    (canonical admin levels) — generalize this (and ``workarea.CSV_HEADERS``,
+    ``models.PlanRecord.lga/state``) once Connect generalizes its importer. See
+    the note on ``workarea.CSV_HEADERS`` and ``microplans/CONNECT_IMPORT_CONTRACT.md``.
+
+    Connect's WorkAreaCSVImporter REQUIRES both LGA and State to be non-empty on
+    every row (see ``microplans/CONNECT_IMPORT_CONTRACT.md``); a blank value gets
+    the whole file rejected. We resolve them from the plan with this precedence:
+
+      1. explicit ``lga`` / ``state`` stored on the plan (captured at creation),
+      2. the plan's ``region`` label as a fallback for LGA (the region a plan is
+         drawn from is, in practice, its LGA — e.g. "Kano North LGA"),
+      3. empty string if nothing is known (State has no safe fallback — callers
+         must surface that rather than invent a value).
+
+    Returned values are stripped. State may still be "" for plans created before
+    it was captured; callers should treat an empty State as "must be supplied".
+    """
+    lga = (plan_data.get("lga") or plan_data.get("region") or "").strip()
+    state = (plan_data.get("state") or "").strip()
+    return lga, state
+
+
 def to_workarea_payloads(work_areas: list[dict], lga: str = "", state: str = ""):
     """Non-excluded work areas → WorkAreaPayload list (for CSV / the Connect API),
     honoring LLO edits (group→ward, expected_visit_count, exclusions)."""

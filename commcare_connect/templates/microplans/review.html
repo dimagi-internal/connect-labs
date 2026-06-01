@@ -109,6 +109,12 @@
           <input id="inp-plan-name" type="text" placeholder="auto-filled from picked area" class="base-input mt-0.5 text-xs"></label>
         <label class="block"><span class="text-gray-600">Region / area label <span class="text-gray-400">(optional)</span></span>
           <input id="inp-plan-region" type="text" placeholder="Madobi LGA · Gora ward" class="base-input mt-0.5 text-xs"></label>
+        {# NIGERIA-HARDCODED: Region→LGA + State mirror Connect's importer (Nigeria ADM2/ADM1).
+           Labs is country-generic; generalize once Connect generalizes. See CONNECT_IMPORT_CONTRACT.md. #}
+        <label class="block"><span class="text-gray-600">State <span class="text-gray-400">(for Connect import)</span></span>
+          <input id="inp-plan-state" type="text" placeholder="Kano" class="base-input mt-0.5 text-xs"></label>
+        <p class="text-[11px] text-gray-400 leading-snug">Region becomes the LGA and State is required by Connect's
+          work-area importer — set them now so the “Download Connect import CSV” file uploads without edits.</p>
       </div>
     </section>
     {% endif %}
@@ -1243,6 +1249,14 @@
     const blob = await resp.blob(); const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `microplan_plan{{ plan_id }}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    // Connect's importer rejects rows with a blank LGA/State. The server flags
+    // that here so we can warn rather than let the upload fail downstream.
+    if (resp.headers.get("X-Microplan-Connect-Ready") === "false") {
+      const missing = resp.headers.get("X-Microplan-Missing") || "LGA/State";
+      $("status").textContent = `Downloaded — but Connect needs ${missing}. Set ${missing} on the plan, then re-download before importing.`;
+    } else {
+      $("status").textContent = "Downloaded Connect-ready CSV.";
+    }
   });
 
   // ---- map resize (drag the handle on the bottom edge) ----
@@ -1494,9 +1508,12 @@
         // name/region to be non-empty.
         const name = ($("inp-plan-name").value || "").trim();
         const region = ($("inp-plan-region").value || "").trim();
+        const state = ($("inp-plan-state")?.value || "").trim();
         if (!name && !region) { $("apply-area-status").textContent = "Give the plan a name (or region label) first."; return; }
+        // lga/state captured here so the Connect-import CSV export is upload-ready
+        // (Connect requires both non-empty). lga defaults to region server-side.
         const resp = await post(CREATE_PLAN_URL, {
-          name, region, mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping,
+          name, region, lga: region, state, mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping,
         });
         const data = await resp.json();
         if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
@@ -1707,7 +1724,7 @@
     if (statusEl) statusEl.textContent = "Saving study…";
     try {
       const resp = await post(CREATE_PLAN_URL, {
-        name, region: name, mode: "sampling",
+        name, region: name, lga: name, state: ($("inp-plan-state")?.value || "").trim(), mode: "sampling",
         pins: lastSample.pins, hulls: lastSample.hulls,
         input_areas: collectArmAreas(), grouping: {},
       });
