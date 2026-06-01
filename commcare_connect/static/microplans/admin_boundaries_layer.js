@@ -476,6 +476,18 @@
             'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
           b.textContent = f.place_name || f.text;
           b.addEventListener('click', () => {
+            // Seed the country from the geocode result so the boundary layer can
+            // load on arrival — the global Overture source needs an iso, and it's
+            // otherwise only inferred from boundaries that haven't loaded yet. The
+            // viewport endpoint normalizes alpha-2 (Mapbox) → alpha-3 (resolver).
+            const ctry = (f.context || []).find((c) =>
+              (c.id || '').startsWith('country'),
+            );
+            const code =
+              (ctry && ctry.short_code) ||
+              (f.properties && f.properties.short_code) ||
+              '';
+            if (code && !detectedIso) detectedIso = code.toUpperCase();
             map.flyTo({ center: f.center, zoom: 9 });
             searchEl.value = '';
             resultsEl.innerHTML = '';
