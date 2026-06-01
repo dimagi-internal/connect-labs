@@ -1,6 +1,8 @@
 auth:
   type: session
 base_url: https://labs.connect.dimagi.com
+record_video: true
+video_pace: medium
 build_order:
 - dana-opens-the-program-workspace-for-the-kano-arm-of-the-rct
 - dana-pastes-the-ward-names-the-system-resolves-them-and-dana-disambiguates-each-ambiguous-row-inline-before-any-plan-is-created
@@ -119,6 +121,12 @@ scenes:
   show: Open the program workspace for the RCT program; confirm the Kano arm is empty
     so far, with the ten ward names (Galinja, Madobi, Gora, Jibga, Kadan Dani, Durma,
     Rimin Gado, Dawakin Gulu, Tofa, Kwami) visible as the day's assignment.
+  actions:
+    - { kind: goto, target: "/microplans/program/133/" }
+    - { kind: wait_for, target: "Microplan portfolio" }
+    - { kind: hold, seconds: 2.0, note: "frame the empty portfolio" }
+    - { kind: scroll_to, target: "+ Bulk paste list", note: "scroll the bulk-paste CTA into view" }
+    - { kind: hold, seconds: 1.5 }
   title: Dana opens the program workspace for the Kano arm of the RCT
 - concept_claim: The bulk-create form resolves each pasted ward name against the admin
     boundaries and shows Dana the matched ward data (LGA, population, ID) for unique
@@ -156,6 +164,17 @@ scenes:
     ambiguous with a Pick LGA dropdown listing each candidate's LGA + population so
     Dana picks which one she means inline. "Create 6 plans" updates to "Create 10 plans"
     as she picks; Skip remains a fallback for genuinely uncertain rows.
+  actions:
+    - { kind: click, target: "+ Bulk paste list", note: "from the portfolio CTA" }
+    - { kind: wait_for, target: "Bulk-create plans from a ward list" }
+    - { kind: hold, seconds: 1.5, note: "frame the bulk-create form" }
+    - { kind: fill, target: "#ward-list", value: "Galinja\nMadobi\nGora\nJibga\nKadan Dani\nDurma\nRimin Gado\nDawakin Gulu\nTofa\nKwami", note: "paste 10 wards" }
+    - { kind: hold, seconds: 1.0 }
+    - { kind: click, target: "#btn-resolve", note: "resolve names against admin boundaries" }
+    - { kind: wait_for, target: "Resolved wards" }
+    - { kind: hold, seconds: 2.5, note: "read 6 matched + 4 ambiguous" }
+    - { kind: scroll_to, target: "Madobi", note: "frame the first ambiguous row" }
+    - { kind: hold, seconds: 1.5 }
   title: Dana pastes the ward names; the system resolves them and Dana disambiguates
     each ambiguous row inline before any plan is created
 - concept_claim: Confirmed names + one config commits one Create Plans call that materializes
@@ -194,6 +213,22 @@ scenes:
     Plans; watch per-ward progress as the system materializes one plan per ward in
     a single bulk operation against real building footprints (long-running, so progress
     matters).
+  actions:
+    - { kind: select, target: "tr.is-unresolved:nth-of-type(2) select", value: "0", note: "pick first candidate (Dutse) for Madobi" }
+    - { kind: hold, seconds: 0.5 }
+    - { kind: select, target: "tr.is-unresolved:first-of-type select", value: "0", note: "pick first candidate for Gora" }
+    - { kind: hold, seconds: 0.5 }
+    - { kind: select, target: "tr.is-unresolved:first-of-type select", value: "0", note: "pick first candidate for Tofa" }
+    - { kind: hold, seconds: 0.5 }
+    - { kind: select, target: "tr.is-unresolved:first-of-type select", value: "0", note: "pick first candidate for Kwami" }
+    - { kind: hold, seconds: 0.5 }
+    - { kind: scroll_to, target: "Plan config", note: "frame the config card" }
+    - { kind: hold, seconds: 2.0, note: "let the eye read Balanced / 100 / 0.1 named defaults" }
+    - { kind: click, target: "Create 10 plans", note: "fire the bulk POST for all 10 wards" }
+    - { kind: wait_for, target: "Creating 10 plan", note: "NDJSON stream begins" }
+    - { kind: hold, seconds: 18.0, note: "per-ward progress: Creating → ✓ Created · #id flips one ward at a time as the stream advances" }
+    - { kind: wait_for, target: "Created 10 of 10 plans" }
+    - { kind: hold, seconds: 2.0, note: "frame the success card with all 10 plan IDs + LGA echo visible" }
   title: Dana confirms, picks the config, and hits Create Plans — the bulk operation
     runs with progress
 - concept_claim: The comparison page shows one row per picked plan and one column
@@ -242,6 +277,19 @@ scenes:
     order. There are no badges, deltas, or tally — the lead reads the numbers
     and decides which plan she wants to retune (or whether none of them need
     it).
+  actions:
+    - { kind: goto, target: "/microplans/program/133/compare/?plans=3322,3321,3323,3325" }
+    - { kind: wait_for, target: "Compare plans" }
+    - { kind: hold, seconds: 1.5, note: "settle the table" }
+    - { kind: scroll_to, target: "Plan", note: "frame the table header" }
+    - { kind: hold, seconds: 1.0 }
+    - { kind: click, target: "Longest worker travel", note: "sort ascending → Kano South leads" }
+    - { kind: hold, seconds: 2.0, note: "let the eye read the asc order" }
+    - { kind: click, target: "Longest worker travel", note: "click again → sort descending, v1 with 7.77 km goes to the top" }
+    - { kind: hold, seconds: 2.0, note: "the longest-travel outlier is now first" }
+    - { kind: click, target: "Coverage", note: "switch sort to Coverage" }
+    - { kind: hold, seconds: 2.0, note: "v2 at 87.2% drops to the bottom" }
+    - { kind: hold, seconds: 1.5 }
   title: Dana reads the per-plan metrics on the comparison table
 - concept_claim: A glossary page defines every metric on the comparison table —
     what it measures, how it's computed, what the input data is — so the lead
@@ -280,6 +328,20 @@ scenes:
     definitions to confirm her workload sanity check — pop/building values
     outside the realistic 2-10 range hint at stale population data or a building
     set that includes non-residential structures.
+  actions:
+    - { kind: click, target: "What do these metrics mean?", note: "follow the sidebar link" }
+    - { kind: wait_for, target: "Plan metric definitions" }
+    - { kind: hold, seconds: 1.5, note: "frame the page header" }
+    - { kind: scroll_to, target: "Workload (the input data)", note: "Dana goes to the workload section first" }
+    - { kind: hold, seconds: 2.5, note: "let the eye read Population / Buildings / Pop per building" }
+    - { kind: scroll_to, target: "Travel burden", note: "scroll to the travel metrics" }
+    - { kind: hold, seconds: 2.0 }
+    - { kind: scroll_to, target: "Workload balance" }
+    - { kind: hold, seconds: 2.0 }
+    - { kind: scroll_to, target: "Coverage + exclusions" }
+    - { kind: hold, seconds: 2.0 }
+    - { kind: scroll_to, target: "Structure", note: "structure section closes the page" }
+    - { kind: hold, seconds: 1.5 }
   title: Dana checks the metric definitions in the glossary
 - concept_claim: The share issues one link the LLO opens without a Dimagi account,
     so sign-off lives outside the program team without OAuth/membership friction.
