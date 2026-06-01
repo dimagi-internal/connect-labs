@@ -377,6 +377,15 @@ def plan_kpis(work_areas: list[dict]) -> dict:
         "target_buildings_per_unit": round(bld_total / n) if n else 0,
         "building_imbalance_pct": _imbalance_pct(blds, bld_total / n) if n else None,
         "building_std": _std(blds),
+        # Plan-level totals (active only; excluded reported separately in the
+        # `excluded` block below). Surfaced on the compare-page table so the
+        # reader can see the underlying workload alongside the derived spread
+        # / balance / coverage metrics. `pop_per_building` is the per-structure
+        # population estimate the rest of the plan_kpis math derives from —
+        # exposing it sanity-checks the input.
+        "total_population": pop_total,
+        "total_buildings": bld_total,
+        "pop_per_building": round(pop_total / bld_total, 2) if bld_total else None,
     }
 
     excl_bld = sum(int(w.get("building_count", 0)) for w in excluded)
