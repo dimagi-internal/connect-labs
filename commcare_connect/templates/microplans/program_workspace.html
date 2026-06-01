@@ -74,7 +74,13 @@
   // deployed plan by name instead of a raw id).
   const OPPS = (() => { try { return JSON.parse($("opps-data").textContent) || []; } catch (e) { return []; } })();
   const OPP_BY_ID = Object.fromEntries(OPPS.map((o) => [String(o.id), o]));
-  const oppLabel = (id) => { const o = OPP_BY_ID[String(id)]; return o && o.name ? o.name : "opportunity " + id; };
+  // On a card we want the readable opportunity name, not the trailing "(run …)"
+  // build slug (that disambiguator stays in the Deploy picker where it matters).
+  const oppLabel = (id) => {
+    const o = OPP_BY_ID[String(id)];
+    if (!o || !o.name) return "opportunity " + id;
+    return o.name.replace(/\s*\(run [^)]*\)\s*$/, "");
+  };
 
   const PHASES = [
     { key: "planning", label: "Planning", statuses: ["draft", "in_review", "approved"], hint: "labs — being designed & reviewed with the LLO/funder" },
