@@ -9,20 +9,16 @@
     <div>
       <h1 class="text-lg font-bold text-gray-900">Compare plans</h1>
       <p class="text-xs text-gray-500">{{ scope_label }}</p>
-      <p class="text-xs text-gray-400 mt-1">Pick two or more plans (or versions) to stack their KPIs.</p>
+      <p class="text-xs text-gray-400 mt-1">Pick plans to compare. Click any column header to sort.</p>
       {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to portfolio</a>{% endif %}
     </div>
     <div id="plan-picker" class="space-y-1"></div>
     <div id="picker-status" class="text-xs text-gray-500"></div>
   </aside>
 
-  <!-- Comparison table -->
+  <!-- Comparison table — one row per plan, metrics as columns -->
   <div class="flex-1 overflow-auto p-5">
     <div id="compare-status" class="text-sm text-gray-500 mb-3"></div>
-    <!-- Legend above the table so a reader sees how to interpret the highlights
-         and deltas BEFORE scanning numbers — without this, the per-row best
-         pill and the green/red delta colors read as decoration on first pass. -->
-    <p class="text-xs text-gray-500 mb-2" id="weights-note"></p>
     <table class="text-sm border-collapse" id="compare-table"></table>
   </div>
 </div>
@@ -41,31 +37,26 @@
   const params = new URLSearchParams(window.location.search);
   const selected = new Set((params.get("plans") || "").split(",").filter(Boolean));
 
-  // metric rows: label, accessor(entry), format, direction (lower/higher better)
+  // Column definitions. Each plan becomes a ROW; these are the columns shown
+  // for it. Plan name comes first (sortable alphabetically); the rest are
+  // numeric metrics. Format functions degrade gracefully to "—" on null/undefined.
   const fmtKm = (v) => (v == null ? "—" : v + " km");
   const fmtPct = (v) => (v == null ? "—" : v + " %");
   const fmtNum = (v) => (v == null ? "—" : Number(v).toLocaleString());
-  // Accessors are null-safe: a plan whose KPIs failed to load (or an unassigned
-  // plan) must degrade to "—" in its column, not throw and blank the whole table.
   const balVal = (e) => { const p = e.kpis?.plan; return p?.has_population ? p.pop_imbalance_pct : p?.building_imbalance_pct; };
   const stdVal = (e) => { const p = e.kpis?.plan; return p?.has_population ? p.pop_std : p?.building_std; };
-  // Plain-language labels. Earlier wording ("Worst travel (max spread)",
-  // "Workload imbalance", "Workload std", "Travel std") clipped under the
-  // jargon deduction in the user-artifact rubric — a program lead reading
-  // these for the first time needed a guided tour. New labels describe the
-  // metric in language a non-technical reader can parse on first pass.
-  const ROWS = [
-    { label: "Longest worker travel", get: (e) => e.kpis?.plan?.max_spread_km, fmt: fmtKm, better: "lower" },
-    { label: "Avg worker travel", get: (e) => e.kpis?.plan?.mean_spread_km, fmt: fmtKm, better: "lower" },
-    { label: "Travel spread (worker-to-worker)", get: (e) => e.kpis?.plan?.std_spread_km, fmt: fmtKm, better: "lower" },
-    { label: "Worker load gap", get: balVal, fmt: fmtPct, better: "lower" },
-    { label: "Worker load spread", get: stdVal, fmt: fmtNum, better: "lower" },
-    { label: "Coverage", get: (e) => e.kpis?.coverage_pct, fmt: fmtPct, better: "higher" },
-    { label: "Excluded areas", get: (e) => e.kpis?.excluded?.count, fmt: fmtNum, better: "lower" },
-    { label: "Excluded buildings", get: (e) => e.kpis?.excluded?.buildings, fmt: fmtNum, better: "lower" },
-    { label: e_dim_label(), get: (e) => e.kpis?.plan?.territory_count, fmt: fmtNum, better: null },
+  const COLS = [
+    { key: "name",                label: "Plan",                       get: (e) => e.name,                       fmt: esc,    sortable: true,  align: "left" },
+    { key: "longest_travel",      label: "Longest worker travel",      get: (e) => e.kpis?.plan?.max_spread_km,  fmt: fmtKm,  sortable: true,  align: "right" },
+    { key: "avg_travel",          label: "Avg worker travel",          get: (e) => e.kpis?.plan?.mean_spread_km, fmt: fmtKm,  sortable: true,  align: "right" },
+    { key: "travel_spread",       label: "Travel spread",              get: (e) => e.kpis?.plan?.std_spread_km,  fmt: fmtKm,  sortable: true,  align: "right" },
+    { key: "worker_load_gap",     label: "Worker load gap",            get: balVal,                              fmt: fmtPct, sortable: true,  align: "right" },
+    { key: "worker_load_spread",  label: "Worker load spread",         get: stdVal,                              fmt: fmtNum, sortable: true,  align: "right" },
+    { key: "coverage",            label: "Coverage",                   get: (e) => e.kpis?.coverage_pct,         fmt: fmtPct, sortable: true,  align: "right" },
+    { key: "excluded_areas",      label: "Excluded areas",             get: (e) => e.kpis?.excluded?.count,      fmt: fmtNum, sortable: true,  align: "right" },
+    { key: "excluded_buildings",  label: "Excluded buildings",         get: (e) => e.kpis?.excluded?.buildings,  fmt: fmtNum, sortable: true,  align: "right" },
+    { key: "territories",         label: "Worker territories",         get: (e) => e.kpis?.plan?.territory_count, fmt: fmtNum, sortable: true,  align: "right" },
   ];
-  function e_dim_label() { return "Worker territories"; }
 
   async function loadPicker() {
     try {
@@ -85,140 +76,76 @@
     const u = new URL(window.location); u.searchParams.set("plans", [...selected].join(",")); history.replaceState(null, "", u);
   }
 
-  // Active sort key — index into ROWS. Null = the order the user picked them in.
-  // Clicking a row label toggles sorting by that metric (best first); clicking
-  // the same metric again clears the sort and reverts to pick-order. The active
-  // metric gets a chevron + emerald accent on the row label.
-  let sortRowIdx = null;
+  // Active sort: column key + direction. Click a header to sort ascending;
+  // click the same header again to flip direction; click a third time to clear.
+  // null = pick-order (the API returns plans in URL-pick order).
+  let sortColKey = null;
+  let sortDir = "asc";  // "asc" | "desc"
 
   let cmpCtrl = null;
   async function renderCompare() {
     const ids = [...selected];
     if (ids.length < 1) { $("compare-status").textContent = "Select plans to compare."; $("compare-table").innerHTML = ""; return; }
     $("compare-status").textContent = "Loading…";
-    // Cancel any in-flight compare so a slow earlier response can't overwrite a
-    // newer selection (rapid checkbox toggling races otherwise).
     if (cmpCtrl) cmpCtrl.abort();
     cmpCtrl = new AbortController();
     try {
       const d = await Microplans.apiGet(COMPARE_URL + "?plans=" + ids.join(","), { signal: cmpCtrl.signal });
       $("compare-status").textContent = "";
-      // Apply the active sort: shallow-copy d.plans, then order by the sort
-      // metric (best first). Plans whose value isn't a number sort last in
-      // pick-order. The compare API returns plans in URL-pick order; sort is
-      // a render-time concern only.
       let plans = d.plans.slice();
-      if (sortRowIdx != null && ROWS[sortRowIdx]?.better) {
-        const sortRow = ROWS[sortRowIdx];
-        const dir = sortRow.better === "lower" ? 1 : -1;
-        plans.sort((a, b) => {
-          const av = sortRow.get(a), bv = sortRow.get(b);
-          const aNum = typeof av === "number", bNum = typeof bv === "number";
-          if (aNum && bNum) return dir * (av - bv);
-          if (aNum) return -1;
-          if (bNum) return 1;
-          return 0;
-        });
+      if (sortColKey) {
+        const col = COLS.find(c => c.key === sortColKey);
+        if (col) {
+          const dir = sortDir === "asc" ? 1 : -1;
+          plans.sort((a, b) => {
+            const av = col.get(a), bv = col.get(b);
+            const aNum = typeof av === "number", bNum = typeof bv === "number";
+            if (aNum && bNum) return dir * (av - bv);
+            if (aNum) return -1;
+            if (bNum) return 1;
+            // String compare for the name column.
+            const as = String(av ?? ""), bs = String(bv ?? "");
+            return dir * as.localeCompare(bs);
+          });
+        }
       }
-      const base = plans[0];
-      // Per-row best highlight. For each metric row that has a direction
-      // (lower/higher better), compute the SET of plans whose value ties for
-      // the winning value, so we can pill every one of them. The earlier
-      // first-in-order tie-break broke its own logic: when three plans
-      // tied on Coverage at 100 %, only v1 (the first column) got the BEST
-      // pill, falsely implying v1 was uniquely best.
-      function extremaIndices(row, direction) {
-        // direction: "best" or "worst". Returns the Set of column indices
-        // whose value ties for the extreme value on this row. Empty set when
-        // every plan ties (the row is uninformative). Shared by the BEST pill
-        // logic AND the per-plan tally row so wins/losses stay consistent
-        // with what the screen highlights.
-        if (!row.better) return new Set();
-        const numIdx = plans
-          .map((p, i) => [row.get(p), i])
-          .filter(([v]) => typeof v === "number");
-        if (!numIdx.length) return new Set();
-        const wantLower = (row.better === "lower") === (direction === "best");
-        const extreme = numIdx.reduce(
-          (acc, [v]) => (wantLower ? Math.min(acc, v) : Math.max(acc, v)),
-          numIdx[0][0]
-        );
-        if (numIdx.every(([v]) => v === extreme)) return new Set();
-        return new Set(numIdx.filter(([v]) => v === extreme).map(([, i]) => i));
-      }
-      const bestSets = ROWS.map(r => extremaIndices(r, "best"));
-      const worstSets = ROWS.map(r => extremaIndices(r, "worst"));
-      let html = `<thead><tr><th class="text-left p-2"></th>${plans.map((e) =>
-        `<th class="p-2 text-left">${esc(e.name)}<div class="text-xs font-normal text-gray-400">Created ${(e.created_at || "").slice(0, 10)}</div></th>`).join("")}</tr></thead><tbody>`;
-      ROWS.forEach((row, ri) => {
-        const baseVal = row.get(base);
-        const bestIdxSet = bestSets[ri];
-        const isActiveSort = ri === sortRowIdx;
-        const sortable = !!row.better;
-        // Sortable rows are click targets — the metric name becomes the
-        // affordance. Active sort row gets emerald accent + ▼ SORTED.
-        // Inactive sortable rows show an unobtrusive ↕ glyph that brightens
-        // on hover, so the click-to-sort pattern is discoverable without
-        // reading the banner.
-        const labelHtml = sortable
-          ? `<button type="button" data-sort-idx="${ri}" class="group text-left ${isActiveSort ? "font-semibold text-emerald-700" : "text-gray-600 hover:text-gray-900"} cursor-pointer">${row.label}${isActiveSort ? ` <span class="text-[10px] uppercase tracking-wide">▼ sorted</span>` : ` <span class="text-[10px] text-gray-300 group-hover:text-gray-500">↕</span>`}</button>`
-          : `<span class="text-gray-600">${row.label}</span>`;
-        html += `<tr class="border-t"><td class="p-2">${labelHtml}</td>`;
-        plans.forEach((e, i) => {
-          const v = row.get(e);
-          let delta = "";
-          if (i > 0 && row.better && typeof v === "number" && typeof baseVal === "number") {
-            const diff = +(v - baseVal).toFixed(2);
-            if (diff !== 0) {
-              const good = (row.better === "lower") ? diff < 0 : diff > 0;
-              delta = ` <span class="text-xs ${good ? "text-green-600" : "text-red-500"}">(${diff > 0 ? "+" : ""}${diff})</span>`;
-            }
-          }
-          // Bold + emerald pill on every winning cell (ties get pilled too).
-          const isBest = bestIdxSet.has(i);
-          const cellCls = isBest
-            ? "p-2 font-semibold text-emerald-700"
-            : "p-2";
-          const cellInner = isBest
-            ? `<span class="inline-flex items-baseline gap-1"><span>${row.fmt(v)}</span><span class="text-[10px] text-emerald-600 uppercase tracking-wide font-medium">best</span></span>${delta}`
-            : `${row.fmt(v)}${delta}`;
-          html += `<td class="${cellCls}">${cellInner}</td>`;
-        });
-        html += `</tr>`;
-      });
-      // Per-plan tally row at the bottom. For each plan, count rows it's in
-      // the BEST set, the WORST set, and the "middle" (neither best nor
-      // worst) on contested rows. Wins + losses + middle = total contested
-      // rows, per plan, always. Without the middle bucket the math reads
-      // inconsistent (v1 = 4+2 = 6, v2 = 1+6 = 7) on a screen labeled "across
-      // 8 contested metrics" — the user-artifact judge clocked this as a
-      // clarity break in iter5. Rows where every plan ties (e.g. all 100 %
-      // on Coverage among the 4 picked) aren't counted as contested.
-      const wins = plans.map((_, i) => bestSets.reduce((n, s) => n + (s.has(i) ? 1 : 0), 0));
-      const losses = plans.map((_, i) => worstSets.reduce((n, s) => n + (s.has(i) ? 1 : 0), 0));
-      // A row is contested iff it has at least one BEST winner (which also
-      // implies it has at least one WORST loser).
-      const totalContestedRows = bestSets.filter(s => s.size > 0).length;
-      const middle = plans.map((_, i) => totalContestedRows - wins[i] - losses[i]);
-      const tallyCells = plans.map((_, i) =>
-        `<td class="p-2"><span class="text-emerald-700 font-semibold">${wins[i]} win${wins[i] === 1 ? "" : "s"}</span> <span class="text-gray-500">·</span> <span class="text-red-600">${losses[i]} loss${losses[i] === 1 ? "" : "es"}</span> <span class="text-gray-500">·</span> <span class="text-gray-500">${middle[i]} middle</span></td>`
-      ).join("");
-      html += `<tr class="border-t bg-gray-50/60"><td class="p-2 text-gray-700 font-medium">Across ${totalContestedRows} contested metric${totalContestedRows === 1 ? "" : "s"}</td>${tallyCells}</tr>`;
-      html += `</tbody>`;
-      $("compare-table").innerHTML = html;
-      // Wire up the sort click handlers (event delegation would also work,
-      // but the per-row buttons are small enough that direct binding is
-      // simpler to reason about).
-      $("compare-table").querySelectorAll("button[data-sort-idx]").forEach(btn => {
+
+      // Render: column headers as a single thead row; one tr per plan.
+      const headerCells = COLS.map(col => {
+        const isActive = col.key === sortColKey;
+        const arrow = isActive ? (sortDir === "asc" ? "↑" : "↓") : "";
+        const alignCls = col.align === "right" ? "text-right" : "text-left";
+        if (!col.sortable) {
+          return `<th class="p-2 ${alignCls} font-medium text-gray-600">${esc(col.label)}</th>`;
+        }
+        return `<th class="p-2 ${alignCls} font-medium text-gray-600"><button type="button" data-sort-key="${col.key}" class="hover:text-gray-900 cursor-pointer">${esc(col.label)}${arrow ? ` <span class="text-gray-500">${arrow}</span>` : ""}</button></th>`;
+      }).join("");
+
+      const bodyRows = plans.map(plan => {
+        const cells = COLS.map(col => {
+          const v = col.get(plan);
+          const alignCls = col.align === "right" ? "text-right" : "text-left";
+          const formatted = col.key === "name" ? col.fmt(v) : col.fmt(v);
+          return `<td class="p-2 ${alignCls} text-gray-900">${formatted}</td>`;
+        }).join("");
+        return `<tr class="border-t">${cells}</tr>`;
+      }).join("");
+
+      $("compare-table").innerHTML = `<thead><tr class="border-b">${headerCells}</tr></thead><tbody>${bodyRows}</tbody>`;
+      $("compare-table").querySelectorAll("button[data-sort-key]").forEach(btn => {
         btn.addEventListener("click", () => {
-          const idx = parseInt(btn.dataset.sortIdx, 10);
-          sortRowIdx = (sortRowIdx === idx) ? null : idx;
+          const key = btn.dataset.sortKey;
+          if (sortColKey === key) {
+            if (sortDir === "asc") { sortDir = "desc"; }
+            else { sortColKey = null; sortDir = "asc"; }
+          } else {
+            sortColKey = key; sortDir = "asc";
+          }
           renderCompare();
         });
       });
-      $("weights-note").innerHTML = 'The <span class="font-semibold text-emerald-700">best</span> value on each <em>contested</em> metric is highlighted (rows without a clear direction, like worker territories, are shown for context). Deltas (the small +/− numbers) compare each later plan to the first column; green = better, red = worse. <strong>Click any row label to sort columns by that metric</strong> (best first) — then read the per-plan tally at the bottom to see which plans are consistently winning or losing.';
     } catch (e) {
-      if (e.aborted) return;  // superseded by a newer selection
+      if (e.aborted) return;
       $("compare-status").textContent = "Request failed: " + e.message;
     }
   }
