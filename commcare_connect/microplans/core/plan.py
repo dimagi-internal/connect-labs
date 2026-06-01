@@ -320,9 +320,17 @@ def _std(values: list[float]) -> float | None:
     return round(statistics.pstdev(values), 1) if len(values) >= 1 else None
 
 
-def plan_kpis(work_areas: list[dict]) -> dict:
+def plan_kpis(work_areas: list[dict], input_areas: list[dict] | None = None) -> dict:
     """Plan-quality KPIs (Neal Lesh's microplan spec): per-FLW territory spread +
     population/building balance + exclusions.
+
+    ``input_areas`` is the plan's source admin boundaries (or None for legacy plans
+    that were created before populations were tracked). When supplied, the plan's
+    ``total_population`` reports the sum of the source boundaries' population
+    estimates — the "real" area population, not a bottom-up sum of per-work-area
+    apportionments. The per-territory population balance math still uses the
+    work-area population field (that's a different concept — population assigned
+    to each worker).
 
     Territories group by ``opportunity_access`` (the worker). Before any worker is
     assigned, falls back to ``work_area_group`` so the metrics are still meaningful
@@ -377,16 +385,27 @@ def plan_kpis(work_areas: list[dict]) -> dict:
         "target_buildings_per_unit": round(bld_total / n) if n else 0,
         "building_imbalance_pct": _imbalance_pct(blds, bld_total / n) if n else None,
         "building_std": _std(blds),
-        # Plan-level totals (active only; excluded reported separately in the
-        # `excluded` block below). Surfaced on the compare-page table so the
-        # reader can see the underlying workload alongside the derived spread
-        # / balance / coverage metrics. `pop_per_building` is the per-structure
-        # population estimate the rest of the plan_kpis math derives from —
-        # exposing it sanity-checks the input.
-        "total_population": pop_total,
+        # Plan-level workload totals (active only; excluded reported separately
+        # in the `excluded` block below). Surfaced on the compare-page table so
+        # the reader can see the underlying workload alongside the derived
+        # spread / balance / coverage metrics. `pop_per_building` is the
+        # per-structure population estimate — a sanity check on the input.
+        #
+        # `total_population` reads the source admin boundary population from
+        # `input_areas` when available (top-down — "the area's known
+        # population"). Falls back to the bottom-up sum of work-area
+        # populations for legacy plans that don't carry boundary population
+        # on input_areas yet.
+        "total_population": (
+            sum(int(ia.get("population") or 0) for ia in (input_areas or []) if isinstance(ia, dict))
+            if input_areas and any(isinstance(ia, dict) and ia.get("population") for ia in input_areas)
+            else pop_total
+        ),
         "total_buildings": bld_total,
-        "pop_per_building": round(pop_total / bld_total, 2) if bld_total else None,
+        "pop_per_building": None,  # set after total_population is known, below
     }
+    if plan["total_buildings"]:
+        plan["pop_per_building"] = round(plan["total_population"] / plan["total_buildings"], 2)
 
     excl_bld = sum(int(w.get("building_count", 0)) for w in excluded)
     excluded_block = {

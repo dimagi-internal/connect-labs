@@ -61,7 +61,7 @@ def plan_to_json(plan) -> dict:
         # Round geometry for the wire; KPIs/summary stay on the full-precision source.
         "work_areas": slim_work_areas(work_areas),
         "summary": plan_lib.summarize(work_areas),
-        "kpis": plan_lib.plan_kpis(work_areas),
+        "kpis": plan_lib.plan_kpis(work_areas, input_areas=plan.data.get("input_areas") or []),
         "grouping": plan.data.get("grouping") or {},
         "assignment": plan.data.get("assignment") or {},
     }
@@ -71,7 +71,7 @@ def plan_summary_row(plan) -> dict:
     """Compact per-plan row for the workspace (status, region, headline KPIs)."""
     from commcare_connect.microplans.core import plan as plan_lib
 
-    k = plan_lib.plan_kpis(plan.work_areas)
+    k = plan_lib.plan_kpis(plan.work_areas, input_areas=plan.data.get("input_areas") or [])
     # Travel/balance KPIs are only meaningful once areas are split across workers.
     # Pre-assignment everything collapses to one territory, so flag it so the UI can
     # show the area count instead of a misleading "1 worker / whole-region travel".
