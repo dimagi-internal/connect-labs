@@ -1,4 +1,5 @@
 {% load static %}
+{% load labs_context %}
 {% comment %}
 Context selector component for labs header. Logic lives in the shared
 labs/context_picker.js factory (also drives the microplans service-delivery
@@ -20,17 +21,17 @@ multi-select opportunity picker).
       <div class="flex items-center space-x-2 text-sm">
         {% if request.labs_context.organization %}
           <span class="font-medium text-gray-700">Org:</span>
-          <span class="text-gray-900">{{ request.labs_context.organization.name }}</span>
+          <span class="text-gray-900">{{ request.labs_context.organization|labs_display_name:"Org" }}</span>
         {% endif %}
         {% if request.labs_context.program %}
           {% if request.labs_context.organization %}<span class="text-gray-400">|</span>{% endif %}
           <span class="font-medium text-gray-700">Program:</span>
-          <span class="text-gray-900">{{ request.labs_context.program.name }}</span>
+          <span class="text-gray-900">{{ request.labs_context.program|labs_display_name:"Program" }}</span>
         {% endif %}
         {% if request.labs_context.opportunity %}
           {% if request.labs_context.organization or request.labs_context.program %}<span class="text-gray-400">|</span>{% endif %}
           <span class="font-medium text-gray-700">Opp:</span>
-          <span class="text-gray-900">{{ request.labs_context.opportunity.name }} <span class="text-gray-500">(id: {{ request.labs_context.opportunity.id }} visits: {{ request.labs_context.opportunity.visit_count|default:0 }})</span></span>
+          <span class="text-gray-900">{{ request.labs_context.opportunity|labs_display_name:"Opp" }} <span class="text-gray-500">(id: {{ request.labs_context.opportunity.id }} visits: {{ request.labs_context.opportunity.visit_count|default:0 }})</span></span>
         {% endif %}
       </div>
       <svg class="w-4 h-4 text-gray-500" :class="{'rotate-180': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
