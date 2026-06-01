@@ -70,3 +70,47 @@ def test_oversized_area_rejected_before_any_fetch(monkeypatch):
     with pytest.raises(ValueError, match="too large"):
         footprints.fetch_buildings(huge)
     assert calls["n"] == 0 and FootprintArea.objects.count() == 0
+
+
+def test_query_overture_routes_to_same_region_extract_inside_nigeria(monkeypatch):
+    """An area inside an extracted region reads the same-region extract, not live."""
+    calls = {"extract": 0, "live": 0}
+    monkeypatch.setattr(
+        footprints,
+        "_query_extract",
+        lambda a, r, mc: (calls.__setitem__("extract", calls["extract"] + 1), _fake_buildings())[1],
+    )
+    monkeypatch.setattr(
+        footprints,
+        "_query_overture_live",
+        lambda a, mc: (calls.__setitem__("live", calls["live"] + 1), _fake_buildings())[1],
+    )
+    footprints._query_overture(box(8.282, 11.770, 8.288, 11.775), None)  # Madobi, Nigeria
+    assert calls == {"extract": 1, "live": 0}
+
+
+def test_query_overture_falls_back_to_live_outside_extracted_region(monkeypatch):
+    """An area with no same-region extract still works via the live Overture read."""
+    calls = {"extract": 0, "live": 0}
+    monkeypatch.setattr(
+        footprints,
+        "_query_extract",
+        lambda a, r, mc: (calls.__setitem__("extract", calls["extract"] + 1), _fake_buildings())[1],
+    )
+    monkeypatch.setattr(
+        footprints,
+        "_query_overture_live",
+        lambda a, mc: (calls.__setitem__("live", calls["live"] + 1), _fake_buildings())[1],
+    )
+    footprints._query_overture(box(36.80, -1.30, 36.81, -1.29), None)  # Nairobi, not extracted
+    assert calls == {"extract": 0, "live": 1}
+
+
+def test_extract_release_guard_falls_back_when_release_bumped(monkeypatch):
+    """If the active Overture release no longer matches the extract, fall back to
+    live rather than serving stale buildings."""
+    from commcare_connect.microplans.core import overture
+
+    assert overture.covering_region((8.282, 11.770, 8.288, 11.775)) == "nigeria"
+    monkeypatch.setattr(overture, "OVERTURE_RELEASE", "9999-99-99.0")
+    assert overture.covering_region((8.282, 11.770, 8.288, 11.775)) is None
