@@ -4094,6 +4094,72 @@ function WorkflowUI({
       });
     }
 
+    // Focused line chart — auto-scaled y-axis, only visible after compute
+    var FocusedLineChart = function () {
+      if (!monthlyMetrics) return null;
+
+      var fuVals = [], seVals = [];
+      monthlyMetrics.forEach(function (mo) {
+        if (mo.followup_rate != null) fuVals.push(mo.followup_rate);
+        if (mo.pct_still_eligible != null) seVals.push(mo.pct_still_eligible);
+      });
+      var allVals = fuVals.concat(seVals);
+      if (allVals.length === 0) return null;
+
+      var rawMin = Math.min.apply(null, allVals);
+      var yMin = Math.max(0, Math.floor((rawMin - 5) / 5) * 5);
+      var yMax = Math.min(100, Math.ceil((Math.max.apply(null, allVals) + 5) / 5) * 5);
+      var yRange = yMax - yMin || 1;
+
+      var lW = 640, lH = 160;
+      var lPadL = 44, lPadR = 16, lPadT = 14, lPadB = 36;
+      var lChartW = lW - lPadL - lPadR;
+      var lChartH = lH - lPadT - lPadB;
+      var lSlotW = lChartW / (n || 1);
+
+      var lElems = [];
+
+      // Gridlines — 5% steps within range
+      for (var gv = yMin; gv <= yMax; gv += 5) {
+        var gcy = lPadT + lChartH * (1 - (gv - yMin) / yRange);
+        lElems.push(React.createElement('line', { key: 'lg' + gv, x1: lPadL, y1: gcy, x2: lPadL + lChartW, y2: gcy, stroke: gv % 10 === 0 ? '#e5e7eb' : '#f3f4f6', strokeWidth: 1 }));
+        if (gv % 10 === 0) {
+          lElems.push(React.createElement('text', { key: 'lyl' + gv, x: lPadL - 5, y: gcy + 4, textAnchor: 'end', fontSize: 10, fill: '#9ca3af' }, gv + '%'));
+        }
+      }
+
+      // X-axis
+      lElems.push(React.createElement('line', { key: 'lxax', x1: lPadL, y1: lPadT + lChartH, x2: lPadL + lChartW, y2: lPadT + lChartH, stroke: '#d1d5db', strokeWidth: 1 }));
+
+      // X-labels
+      months.forEach(function (mo, i) {
+        var lcx = lPadL + i * lSlotW + lSlotW / 2;
+        lElems.push(React.createElement('text', { key: 'lxl' + i, x: lcx, y: lPadT + lChartH + 14, textAnchor: 'middle', fontSize: 10, fill: '#6b7280' }, mo.label));
+      });
+
+      // Lines
+      var lFuPts = [], lSePts = [];
+      monthlyMetrics.forEach(function (mo, i) {
+        var lcx = lPadL + i * lSlotW + lSlotW / 2;
+        if (mo.followup_rate != null) lFuPts.push([lcx, lPadT + lChartH * (1 - (mo.followup_rate - yMin) / yRange)]);
+        if (mo.pct_still_eligible != null) lSePts.push([lcx, lPadT + lChartH * (1 - (mo.pct_still_eligible - yMin) / yRange)]);
+      });
+
+      if (lFuPts.length >= 2) lElems.push(React.createElement('polyline', { key: 'lfu', points: lFuPts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#2563eb', strokeWidth: 2.5 }));
+      lFuPts.forEach(function (p, i) { lElems.push(React.createElement('circle', { key: 'lfud' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#2563eb' })); });
+
+      if (lSePts.length >= 2) lElems.push(React.createElement('polyline', { key: 'lse', points: lSePts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: '#9333ea', strokeWidth: 2.5, strokeDasharray: '6,3' }));
+      lSePts.forEach(function (p, i) { lElems.push(React.createElement('circle', { key: 'lsed' + i, cx: p[0], cy: p[1], r: 3.5, fill: '#9333ea' })); });
+
+      return React.createElement(
+        'div',
+        { className: 'mt-4 bg-white rounded-lg shadow-sm p-4' },
+        React.createElement('h3', { className: 'text-sm font-semibold text-gray-800 mb-1' }, 'Trend lines (focused view)'),
+        React.createElement('p', { className: 'text-xs text-gray-400 mb-2' }, 'Y-axis auto-scaled to data range (' + yMin + '–' + yMax + '%) to highlight changes.'),
+        React.createElement('svg', { viewBox: '0 0 ' + lW + ' ' + lH, width: '100%', style: { display: 'block' } }, lElems),
+      );
+    };
+
     return React.createElement(
       'div',
       { className: 'bg-white rounded-lg shadow-sm p-4' },
@@ -4133,6 +4199,7 @@ function WorkflowUI({
           React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '3px dashed #9333ea' } }),
           '% Still Eligible'),
       ),
+      React.createElement(FocusedLineChart, null),
     );
   };
 

@@ -2790,12 +2790,14 @@ def run_category_history_api(request):
         runs = wf_access.list_runs()
         wf_access.close()
 
-        # Include any run that has categories set, not just officially-completed ones.
-        # Older runs may lack completed_at — fall back to created_at for sorting/display.
+        # Only include completed runs — in-progress runs may have partial/test categories
+        # that shouldn't appear in the historical chart.
+        # Older completed runs may lack completed_at; fall back to created_at so they
+        # still get a date rather than being sorted to the front.
         def _run_date(r):
             return r.completed_at or r.data.get("created_at") or ""
 
-        candidates = [r for r in runs if (r.data.get("state") or {}).get("worker_results")]
+        candidates = [r for r in runs if r.is_completed and (r.data.get("state") or {}).get("worker_results")]
         result = []
         for run in sorted(candidates, key=_run_date):
             wr = (run.data.get("state") or {}).get("worker_results") or {}
