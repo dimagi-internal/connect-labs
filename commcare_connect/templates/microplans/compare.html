@@ -208,7 +208,7 @@
           renderCompare();
         });
       });
-      $("weights-note").innerHTML = 'The <span class="font-semibold text-emerald-700">best</span> value on each metric is highlighted. Deltas (the small +/− numbers) compare each later plan to the first column; green = better, red = worse. <strong>Click any row label to sort columns by that metric</strong> (best first) — then read the per-plan tally at the bottom to see which plans are consistently winning or losing.';
+      $("weights-note").innerHTML = 'The <span class="font-semibold text-emerald-700">best</span> value on each <em>contested</em> metric is highlighted (rows without a clear direction, like worker territories, are shown for context). Deltas (the small +/− numbers) compare each later plan to the first column; green = better, red = worse. <strong>Click any row label to sort columns by that metric</strong> (best first) — then read the per-plan tally at the bottom to see which plans are consistently winning or losing.';
     } catch (e) {
       if (e.aborted) return;  // superseded by a newer selection
       $("compare-status").textContent = "Request failed: " + e.message;
