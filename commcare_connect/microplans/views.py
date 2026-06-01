@@ -790,6 +790,23 @@ class ProgramPlanView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
         return JsonResponse(serialization.plan_to_json(plan))
 
+    def delete(self, request, program_id, plan_id):
+        """Hard-delete a draft plan. Archive (a status transition) is the normal
+        way to retire a candidate region; this is the explicit remove for plans
+        the owner wants gone for good (e.g. demo/sample plans). Program-scoped:
+        ``delete_plan`` refuses ids that aren't in this program."""
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, RecordNotInProgramError
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            da.delete_plan(int(plan_id))
+        except RecordNotInProgramError:
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans program plan delete failed (%s/%s)", program_id, plan_id)
+            return JsonResponse({"status": "error", "detail": "Delete failed."}, status=502)
+        return JsonResponse({"status": "ok", "deleted": int(plan_id)})
+
 
 class ProgramPlanEditView(LoginRequiredMixin, View):
     def post(self, request, program_id, plan_id):
