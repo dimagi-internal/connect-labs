@@ -1222,3 +1222,49 @@ class TestProgramMapSeed:
 
         assert _program_map_seed([]) is None
         assert _program_map_seed([self._plan("2026-05-01", None, [])]) is None
+
+
+# --- ProgramPlanView DELETE (hard-delete a plan) -----------------------------
+
+
+def test_plan_delete_ok(client, django_user_model, monkeypatch):
+    """DELETE on a plan calls delete_plan and returns ok."""
+    _login(client, django_user_model)
+    deleted = {}
+
+    class FakeDA:
+        def __init__(self, program_id, request=None):
+            pass
+
+        def delete_plan(self, plan_id):
+            deleted["id"] = plan_id
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", FakeDA)
+    resp = client.delete(reverse("microplans:program_plan", kwargs={"program_id": 133, "plan_id": 555}))
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "deleted": 555}
+    assert deleted["id"] == 555
+
+
+def test_plan_delete_not_in_program_is_404(client, django_user_model, monkeypatch):
+    """A plan id outside this program (delete_plan raises RecordNotInProgramError) → 404."""
+    from commcare_connect.microplans.core.data_access import RecordNotInProgramError
+
+    _login(client, django_user_model)
+
+    class FakeDA:
+        def __init__(self, program_id, request=None):
+            pass
+
+        def delete_plan(self, plan_id):
+            raise RecordNotInProgramError("nope")
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", FakeDA)
+    resp = client.delete(reverse("microplans:program_plan", kwargs={"program_id": 133, "plan_id": 999}))
+    assert resp.status_code == 404
+    assert resp.json()["status"] == "error"
+
+
+def test_plan_delete_requires_login(client):
+    resp = client.delete(reverse("microplans:program_plan", kwargs={"program_id": 133, "plan_id": 1}))
+    assert resp.status_code in (301, 302, 403)
