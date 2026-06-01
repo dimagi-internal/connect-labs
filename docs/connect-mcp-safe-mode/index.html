@@ -780,6 +780,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#template-authoring-regular-claude-session-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template authoring (regular Claude session only)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -966,6 +977,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#template-authoring-regular-claude-session-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template authoring (regular Claude session only)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1141,6 +1163,9 @@ inv<span class="w"> </span>safe-claude<span class="w"> </span>--auth<span class=
 <p>Workflow definitions are user-generated content stored in Connect prod — updating them requires no pull request and no code review. Keep a low bar for pushing changes: if something looks wrong, describe the fix and let Claude push again. To revert, tell Claude what to undo and it will push a corrected version. If you can't resolve an issue after a few iterations, ask in <strong>#connect-labs</strong>.</p>
 <p>The power of this loop is: describe change → Claude pushes → reload browser → verify → repeat. Get comfortable with that cadence rather than doing a lot of intermediate work to validate locally first.</p>
 <p><strong>Note:</strong> changes to the MCP server itself (the Labs code that powers these tools) <em>do</em> require a code deploy. But for all workflow edits, the MCP push is sufficient.</p>
+<h3 id="template-authoring-regular-claude-session-only">Template authoring (regular Claude session only)<a class="headerlink" href="#template-authoring-regular-claude-session-only" title="Permanent link">&para;</a></h3>
+<p>Safe Mode is for editing <strong>live workflow instances</strong>. If you are authoring or updating a <strong>seed template</strong> (a <code>.py</code> file in the repository that other workflows are cloned from), you need a regular Claude Code session instead — Safe Mode blocks the file writes that template authoring requires.</p>
+<p>In a regular session, you can use <code>workflow_sync_from_template_file</code> to push a local <code>.py</code> file straight to a live preview workflow without a full redeploy. See <a href="../workflow-engine/#deploy-free-template-iteration">Deploy-Free Template Iteration</a> for the full loop.</p>
 <hr />
 <h2 id="safe-mode-what-it-protects-against">Safe Mode: What It Protects Against<a class="headerlink" href="#safe-mode-what-it-protects-against" title="Permanent link">&para;</a></h2>
 <p>Safe Mode prevents accidental exposure of patient data when an AI assistant has access to real program information.</p>
