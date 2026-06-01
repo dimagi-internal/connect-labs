@@ -109,6 +109,8 @@
           <input id="inp-plan-name" type="text" placeholder="auto-filled from picked area" class="base-input mt-0.5 text-xs"></label>
         <label class="block"><span class="text-gray-600">Region / area label <span class="text-gray-400">(optional)</span></span>
           <input id="inp-plan-region" type="text" placeholder="Madobi LGA · Gora ward" class="base-input mt-0.5 text-xs"></label>
+        {# NIGERIA-HARDCODED: Region→LGA + State mirror Connect's importer (Nigeria ADM2/ADM1).
+           Labs is country-generic; generalize once Connect generalizes. See CONNECT_IMPORT_CONTRACT.md. #}
         <label class="block"><span class="text-gray-600">State <span class="text-gray-400">(for Connect import)</span></span>
           <input id="inp-plan-state" type="text" placeholder="Kano" class="base-input mt-0.5 text-xs"></label>
         <p class="text-[11px] text-gray-400 leading-snug">Region becomes the LGA and State is required by Connect's
