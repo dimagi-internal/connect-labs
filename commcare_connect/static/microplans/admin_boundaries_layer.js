@@ -65,7 +65,7 @@
         <select class="mp-ab-source base-input mt-0.5 text-xs"></select>
       </label>
       <input class="mp-ab-search base-input text-xs w-full" type="text"
-             placeholder="search boundaries in view…">
+             placeholder="search a place to jump there, then click a boundary…">
       <div class="mp-ab-status text-[10px] text-gray-500 mt-1"></div>
       <div class="mp-ab-results max-h-32 overflow-y-auto"></div>
       <div class="mp-ab-summary text-[11px] font-medium text-purple-700 mt-1"></div>
@@ -441,6 +441,55 @@
           };
         });
     }
+    // Place search (Mapbox geocoding) used on a cold map with no country yet:
+    // type a place name → results → click one → fly the map there so boundaries
+    // load. Independent of the admin-area resolver (which needs a country), so it
+    // works from a blank new-plan page.
+    let geocodeCtrl = null;
+    async function geocodeAndFly(q) {
+      const token = (window.mapboxgl && mapboxgl.accessToken) || '';
+      if (!token) {
+        renderResults(clientFilter(q.toLowerCase()));
+        return;
+      }
+      if (geocodeCtrl) geocodeCtrl.abort();
+      geocodeCtrl = new AbortController();
+      setStatus('Searching places…');
+      try {
+        const url =
+          'https://api.mapbox.com/geocoding/v5/mapbox.places/' +
+          encodeURIComponent(q) +
+          '.json?limit=6&types=region,district,place,locality&access_token=' +
+          encodeURIComponent(token);
+        const r = await fetch(url, { signal: geocodeCtrl.signal });
+        const d = await r.json();
+        const feats = (d && d.features) || [];
+        resultsEl.innerHTML = '';
+        if (!feats.length) {
+          setStatus('No places found');
+          return;
+        }
+        feats.forEach((f) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className =
+            'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
+          b.textContent = f.place_name || f.text;
+          b.addEventListener('click', () => {
+            map.flyTo({ center: f.center, zoom: 9 });
+            searchEl.value = '';
+            resultsEl.innerHTML = '';
+            setStatus('Moved — click a boundary on the map to add it.');
+          });
+          resultsEl.appendChild(b);
+        });
+        setStatus(feats.length + ' place(s) — click to go there');
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        renderResults(clientFilter(q.toLowerCase()));
+      }
+    }
+
     async function runSearch() {
       const q = (searchEl.value || '').trim();
       resultsEl.innerHTML = '';
@@ -450,8 +499,13 @@
       }
       const country = getCountryIso() || detectedIso;
       if (!country || !urls.areas) {
-        renderResults(clientFilter(q.toLowerCase()));
-        return;
+        // Cold start (e.g. a fresh new-plan map): no country detected yet, so the
+        // admin-area search can't run and there's nothing in view to filter. Treat
+        // the query as a PLACE search instead — geocode it and fly the map there.
+        // Boundaries then load for that view and the country auto-detects, after
+        // which this box reverts to the admin-area name search below and the user
+        // clicks a boundary on the map.
+        return geocodeAndFly(q);
       }
       if (searchCtrl) searchCtrl.abort();
       searchCtrl = new AbortController();
