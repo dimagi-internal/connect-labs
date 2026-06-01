@@ -66,6 +66,21 @@
     });
   }
 
+  // DELETE counterpart of `post`: returns the raw fetch Promise. Body optional
+  // (most DELETE endpoints key off the URL); CSRF + signal handled like `post`.
+  function del(url, opts) {
+    opts = opts || {};
+    return fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': opts.csrf || getCsrf(),
+      },
+      body: opts.body != null ? JSON.stringify(opts.body) : undefined,
+      signal: opts.signal,
+    });
+  }
+
   // Higher-level: POST and resolve to parsed JSON, or reject with a useful
   // Error. Use for new call sites so status/parse handling lives in one place.
   // Throws Error with `.aborted === true` when the request was cancelled, so
@@ -302,6 +317,7 @@
     setCsrf,
     getCsrf,
     post,
+    del,
     apiCall,
     apiGet,
     enqueueAndPoll,
