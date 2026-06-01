@@ -118,10 +118,13 @@ scenes:
     is empty so far, with the ten ward names (Burji, Cinkoso, Galinja, Gora,
     Kafin Agur, Kanwa, Kauran Mata, Kwankwaso, Madobi, Rikadawa) visible as the
     day's assignment.
+  url: "/microplans/program/133/"
   actions:
-    - { kind: goto, target: "/microplans/program/133/" }
+    # Leading wait_for is the settle — canopy 0.2.151+ skips initial_hold_ms +
+    # goto_settle_ms when it sees this, recovering ~2.7s of blind hold at the
+    # top of the scene. No leading goto here: scene.url already navigates the
+    # recorder there, and a duplicate goto would cause a visible reload.
     - { kind: wait_for, target: "Microplan portfolio" }
-    - { kind: hold, seconds: 2.0, note: "frame the empty portfolio" }
     - { kind: scroll_to, target: "+ Bulk paste list", note: "scroll the bulk-paste CTA into view" }
     - { kind: hold, seconds: 1.5 }
   title: Dana opens the program workspace for the Madobi LGA arm of the RCT
@@ -276,10 +279,11 @@ scenes:
     order. There are no badges, deltas, or tally — the lead reads the numbers
     and decides which plan she wants to retune (or whether none of them need
     it).
+  url: "/microplans/program/133/compare/"
   actions:
-    - { kind: goto, target: "/microplans/program/133/compare/" }
+    # Leading wait_for is the settle — canopy 0.2.151+ skips the recorder's
+    # blind initial_hold_ms + goto_settle_ms when it sees this.
     - { kind: wait_for, target: "Pick plans to compare" }
-    - { kind: hold, seconds: 1.5, note: "settle the picker" }
     - { kind: click, target: "#plan-picker > label:nth-of-type(1) input.psel", note: "pick first plan" }
     - { kind: hold, seconds: 0.6 }
     - { kind: click, target: "#plan-picker > label:nth-of-type(2) input.psel", note: "pick second plan" }
