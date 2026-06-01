@@ -372,10 +372,16 @@ def test_sampling_materialize_keeps_arm_labs_side_and_blind():
     pins = {
         "type": "FeatureCollection",
         "features": [
-            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [3.0, 6.0]},
-             "properties": {"arm": "intervention", "cluster": "C1", "role": "primary", "order_in_cluster": 1}},
-            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [3.5, 6.0]},
-             "properties": {"arm": "comparison", "cluster": "C1", "role": "primary", "order_in_cluster": 1}},
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [3.0, 6.0]},
+                "properties": {"arm": "intervention", "cluster": "C1", "role": "primary", "order_in_cluster": 1},
+            },
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [3.5, 6.0]},
+                "properties": {"arm": "comparison", "cluster": "C1", "role": "primary", "order_in_cluster": 1},
+            },
         ],
     }
     was = plan.materialize_work_areas("sampling", pins, {"type": "FeatureCollection", "features": []})
@@ -391,3 +397,33 @@ def test_sampling_materialize_keeps_arm_labs_side_and_blind():
         assert w["work_area_group"].startswith("PSU")
     # same cluster id in different arms must NOT merge into one group (they're distinct PSUs)
     assert was[0]["work_area_group"] != was[1]["work_area_group"]
+
+
+class TestDeriveLgaState:
+    """``derive_lga_state`` resolves the LGA/State labels Connect's importer
+    requires non-empty (see microplans/CONNECT_IMPORT_CONTRACT.md)."""
+
+    def test_explicit_lga_state_win(self):
+        assert plan.derive_lga_state({"lga": "Kano North LGA", "state": "Kano", "region": "ignored"}) == (
+            "Kano North LGA",
+            "Kano",
+        )
+
+    def test_lga_falls_back_to_region(self):
+        # plans created before lga was captured carry only `region`
+        assert plan.derive_lga_state({"region": "Kano North LGA"}) == ("Kano North LGA", "")
+
+    def test_explicit_lga_overrides_region(self):
+        assert plan.derive_lga_state({"lga": "Real LGA", "region": "label"}) == ("Real LGA", "")
+
+    def test_state_has_no_fallback(self):
+        # State is never invented — an empty State is reported as empty so the
+        # caller can warn instead of shipping a file Connect will reject.
+        lga, state = plan.derive_lga_state({"region": "Somewhere"})
+        assert state == ""
+
+    def test_values_are_stripped(self):
+        assert plan.derive_lga_state({"lga": "  L  ", "state": "  S  "}) == ("L", "S")
+
+    def test_empty_plan(self):
+        assert plan.derive_lga_state({}) == ("", "")
