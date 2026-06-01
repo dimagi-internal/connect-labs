@@ -117,9 +117,9 @@
           <div class="mp-lyr-nm">${esc(cfg.label)}${badge}</div>
           <div class="mp-lyr-meta"></div>
         </div>
-        <button type="button" class="mp-lyr-sw-toggle" aria-label="toggle ${esc(
-          cfg.label,
-        )}"><i></i></button>`;
+        <button type="button" class="mp-lyr-sw-toggle" data-testid="layer-toggle-${esc(
+          cfg.id || '',
+        )}" aria-label="toggle ${esc(cfg.label)}"><i></i></button>`;
       const metaEl = row.querySelector('.mp-lyr-meta');
       const toggleEl = row.querySelector('.mp-lyr-sw-toggle');
       const bodyEl = el('div', 'mp-lyr-body');
