@@ -512,38 +512,104 @@ def test_program_create_plan(client, django_user_model, monkeypatch):
     assert len(plans[pid].work_areas) == 2
 
 
-def test_program_regenerate_replaces_work_areas(client, django_user_model, monkeypatch):
-    # Regenerate wipes the work areas + resets grouping / assignment configs
-    # — destructive equivalent of "create new plan with these settings", but
-    # the plan keeps its id, name, region.
+def test_program_regenerate_enqueues(client, django_user_model, monkeypatch):
+    # Regenerate is Celery-offloaded now: the view validates + enqueues (202 + a
+    # pollable task id). The destructive logic itself is exercised against the DA
+    # (test_data_access_contract) and the dispatcher task (below).
     _login(client, django_user_model)
-    plans, _ = _seed_program_plans(monkeypatch)
-    # Seed a CHW assignment so we can confirm it gets wiped
-    plans[1].data["assignment"] = {"strategy": "minimax_spread", "workers": ["chw-1"]}
-    plans[1].data["grouping"] = {"strategy": "bfs_adjacency", "max_buildings": 200}
+    from commcare_connect.microplans.tasks import apply_plan_mutation_task
+
+    monkeypatch.setattr(apply_plan_mutation_task, "delay", _fake_delay("regen-1"))
     resp = client.post(
         reverse("microplans:program_plan_regenerate", kwargs={"program_id": 25, "plan_id": 1}),
-        data=json.dumps(
-            {
-                "mode": "coverage",
-                "coverage_areas": _HULL_FC,
-                "input_areas": [{"geometry": _HULL_FC["features"][0]["geometry"]}],
-                "grouping": {"strategy": "bbox", "target_size": 30},
-            }
-        ),
+        data=json.dumps({"mode": "coverage", "coverage_areas": _HULL_FC, "grouping": {"strategy": "bbox"}}),
         content_type="application/json",
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     body = resp.json()
-    assert body["status"] == "ok"
-    # New work areas were generated
-    assert len(body["work_areas"]) == 2  # _HULL_FC has 2 features
-    # Grouping config got replaced
-    assert plans[1].data["grouping"] == {"strategy": "bbox", "target_size": 30}
-    # Assignment is wiped
-    assert plans[1].data["assignment"] == {}
-    # Plan identity preserved
-    assert plans[1].id == 1
+    assert body["task_id"] == "regen-1" and "regen-1" in body["poll_url"]
+
+
+def test_program_regroup_enqueues(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import apply_plan_mutation_task
+
+    monkeypatch.setattr(apply_plan_mutation_task, "delay", _fake_delay("regrp-1"))
+    resp = client.post(
+        reverse("microplans:program_plan_regroup", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"strategy": "bbox", "target_size": 30, "revision": 2}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202 and resp.json()["task_id"] == "regrp-1"
+
+
+def test_program_reassign_enqueues(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import apply_plan_mutation_task
+
+    monkeypatch.setattr(apply_plan_mutation_task, "delay", _fake_delay("reasg-1"))
+    resp = client.post(
+        reverse("microplans:program_plan_reassign", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"strategy": "round_robin", "workers": "a,b", "revision": 2}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202 and resp.json()["task_id"] == "reasg-1"
+
+
+def test_program_mutation_requires_token(client, django_user_model):
+    user = django_user_model.objects.create(username="mut-notoken", email="mn@example.com")
+    client.force_login(user)  # no labs_oauth
+    resp = client.post(
+        reverse("microplans:program_plan_regroup", kwargs={"program_id": 25, "plan_id": 1}),
+        data=json.dumps({"strategy": "bbox"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 401
+
+
+def test_apply_plan_mutation_task_dispatches_and_returns_plan_json(monkeypatch):
+    from commcare_connect.microplans import tasks
+
+    monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
+    seen = {}
+
+    class FakeDA:
+        def __init__(self, pid, access_token=None):
+            seen["pid"], seen["token"] = pid, access_token
+
+        def regroup_plan(self, plan_id, grouping, actor, base_revision=None):
+            seen["call"] = ("regroup", plan_id, grouping, actor, base_revision)
+            return "PLAN"
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", FakeDA)
+    monkeypatch.setattr(
+        "commcare_connect.microplans.serialization.plan_to_json", lambda p: {"status": "ok", "plan": p}
+    )
+
+    out = tasks.apply_plan_mutation_task.run(
+        "regroup", 25, 1, {"grouping": {"strategy": "bbox"}, "revision": 3}, "act", "tok"
+    )
+    assert out == {"status": "ok", "plan": "PLAN"}
+    assert seen["call"] == ("regroup", 1, {"strategy": "bbox"}, "act", 3)
+    assert seen["token"] == "tok"
+
+
+def test_apply_plan_mutation_task_maps_conflict(monkeypatch):
+    from commcare_connect.microplans import tasks
+    from commcare_connect.microplans.core.data_access import StalePlanError
+
+    monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
+
+    class FakeDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def regenerate_plan(self, *a, **k):
+            raise StalePlanError("This plan changed since you opened it (r0→r3).")
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", FakeDA)
+    out = tasks.apply_plan_mutation_task.run("regenerate", 1, 2, {"revision": 0}, "act", "tok")
+    assert out["status"] == "conflict" and "changed" in out["detail"]
 
 
 def test_program_create_plan_page_renders(client, django_user_model, settings):
@@ -723,31 +789,6 @@ def test_program_compare_uses_list_plans_not_per_id(client, django_user_model, m
     resp = client.get(reverse("microplans:program_plan_compare", kwargs={"program_id": 1}) + "?plans=2,1")
     assert resp.status_code == 200
     assert [e["plan_id"] for e in resp.json()["plans"]] == [2, 1]  # requested order preserved
-
-
-def test_program_regenerate_stale_revision_returns_409(client, django_user_model, monkeypatch):
-    """A save against a stale revision surfaces as 409 (not a silent clobber)."""
-    _login(client, django_user_model)
-    from commcare_connect.microplans.core.data_access import StalePlanError
-
-    class ConflictDA:
-        def __init__(self, *a, **k):
-            pass
-
-        def regenerate_plan(self, *a, **k):
-            raise StalePlanError("This plan changed since you opened it (you have r0, it's now r3). Reload…")
-
-    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", ConflictDA)
-    resp = client.post(
-        reverse("microplans:program_plan_regenerate", kwargs={"program_id": 1, "plan_id": 2}),
-        data=json.dumps(
-            {"mode": "coverage", "coverage_areas": {"type": "FeatureCollection", "features": []}, "revision": 0}
-        ),
-        content_type="application/json",
-    )
-    assert resp.status_code == 409
-    assert resp.json()["status"] == "error"
-    assert "changed" in resp.json()["detail"].lower()
 
 
 def test_program_plan_delete_foreign_record_returns_404(client, django_user_model, monkeypatch):
@@ -983,3 +1024,105 @@ def test_boundary_viewport_bbox_snaps_to_grid():
     # already-on-grid stays put; degenerate/invalid → None
     assert BoundaryViewportView._parse_bbox("8.5,11.5,8.5,11.6") is None  # minx == maxx
     assert BoundaryViewportView._parse_bbox("nope") is None
+
+
+# --- bulk-create: gridding (#5) + Celery offload (#4) -------------------------
+
+
+def test_ward_grid_hulls_coverage_grids_via_frame(monkeypatch):
+    """The #5 fix: a coverage ward is gridded into many cells, not one feature."""
+    from commcare_connect.microplans import tasks
+
+    cells = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": []},
+                "properties": {"building_count": 5},
+            }
+            for _ in range(3)
+        ],
+    }
+    monkeypatch.setattr(
+        "commcare_connect.microplans.coverage.frame.generate_coverage_frame",
+        lambda areas, config: SimpleNamespace(areas_geojson=cells, stats=[]),
+    )
+    boundary = SimpleNamespace(
+        boundary_id="NGA-W-x",
+        name="X",
+        geometry=SimpleNamespace(geojson='{"type":"Polygon","coordinates":[[[0,0],[0,0.01],[0.01,0.01],[0,0]]]}'),
+    )
+    out = tasks._ward_grid_hulls(boundary, "coverage", 100)
+    assert len(out["features"]) == 3  # gridded — NOT a single whole-ward cell
+
+
+def test_ward_grid_hulls_non_coverage_is_single_feature():
+    from commcare_connect.microplans import tasks
+
+    boundary = SimpleNamespace(
+        boundary_id="b",
+        name="B",
+        geometry=SimpleNamespace(geojson='{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[0,0]]]}'),
+    )
+    out = tasks._ward_grid_hulls(boundary, "sampling", 100)
+    assert len(out["features"]) == 1
+
+
+def test_bulk_create_enqueues(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)  # sets labs_oauth.access_token
+    from commcare_connect.microplans.tasks import bulk_create_plans_task
+
+    monkeypatch.setattr(bulk_create_plans_task, "delay", _fake_delay("bulk-1"))
+    resp = client.post(
+        reverse("microplans:program_bulk_create", kwargs={"program_id": 1}),
+        data=json.dumps({"plans": [{"boundary_id": "b", "name": "B"}], "mode": "coverage", "cell_size_m": 150}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["task_id"] == "bulk-1" and "bulk-1" in body["poll_url"]
+
+
+def test_bulk_create_requires_token(client, django_user_model):
+    user = django_user_model.objects.create(username="notoken", email="nt@example.com")
+    client.force_login(user)  # NO labs_oauth in session
+    resp = client.post(
+        reverse("microplans:program_bulk_create", kwargs={"program_id": 1}),
+        data=json.dumps({"plans": [{"boundary_id": "b"}], "mode": "coverage"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 401
+
+
+def test_bulk_create_empty_plans_400(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:program_bulk_create", kwargs={"program_id": 1}),
+        data=json.dumps({"plans": [], "mode": "coverage"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_bulk_create_status_running_carries_results(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    meta = {"results": [{"index": 0, "status": "ok", "plan_id": 5}], "created": 1, "total": 2}
+    monkeypatch.setattr(
+        "celery.result.AsyncResult", lambda tid: SimpleNamespace(state="PROGRESS", info=meta, result=None)
+    )
+    resp = client.get(reverse("microplans:bulk_create_status", kwargs={"task_id": "abc"}))
+    body = resp.json()
+    assert body["state"] == "running" and body["created"] == 1 and body["total"] == 2
+    assert body["results"][0]["plan_id"] == 5
+
+
+def test_bulk_create_status_completed(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    res = {"status": "ok", "results": [{"index": 0, "status": "ok", "plan_id": 5}], "created": 1, "total": 1}
+    monkeypatch.setattr(
+        "celery.result.AsyncResult", lambda tid: SimpleNamespace(state="SUCCESS", info=res, result=res)
+    )
+    resp = client.get(reverse("microplans:bulk_create_status", kwargs={"task_id": "abc"}))
+    body = resp.json()
+    assert body["state"] == "completed" and body["created"] == 1

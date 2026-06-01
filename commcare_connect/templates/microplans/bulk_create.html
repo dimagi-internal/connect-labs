@@ -197,6 +197,11 @@
           <span class="block text-[10px] text-gray-500 mt-1">Coverage-mode clustering.</span>
         </label>
         <label class="block">
+          <span class="mp-section-label block mb-1">Cell size (m)</span>
+          <input id="cfg-cell-size" type="number" value="100" min="10" max="2000" step="10" class="field-input">
+          <span class="block text-[10px] text-gray-500 mt-1">Grid each ward into square cells of this size.</span>
+        </label>
+        <label class="block">
           <span class="mp-section-label block mb-1">Buildings per work area</span>
           <input id="cfg-bpc" type="number" value="100" min="1" max="10000" class="field-input">
           <span class="block text-[10px] text-gray-500 mt-1">Target size per work area.</span>
@@ -494,6 +499,8 @@
       buildings_per_area: parseInt($("cfg-bpc")?.value || "100", 10) || 100,
       balance_tolerance: parseFloat($("cfg-balance")?.value || "0.1") || 0.1,
     };
+    // Coverage cell size (m) — drives the grid each ward is tiled into.
+    const cellSize = parseInt($("cfg-cell-size")?.value || "100", 10) || 100;
 
     hide($("step-create").querySelector("#create-done"));
     show($("create-spinner"));
@@ -531,18 +538,19 @@
     // moment the server actually finished materializing that ward.
     log.querySelectorAll(".pill").forEach((p) => { p.className = "pill pill-creating"; p.textContent = "Creating"; });
 
-    let resp;
+    // Enqueue the batch (each ward is gridded on the Celery worker — real Overture
+    // work that can't block the web tier), then poll for incremental per-ward
+    // results, flipping each pill as its ward finishes. (Was an NDJSON stream, but
+    // ECS's ALB buffered it and gridding moved off the request anyway.)
+    let enq;
     try {
-      resp = await fetch(BULK_CREATE_URL, {
+      const resp = await fetch(BULK_CREATE_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF, "Accept": "application/x-ndjson" },
-        body: JSON.stringify({ plans: toCreate, mode: "coverage", grouping: grouping }),
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        body: JSON.stringify({ plans: toCreate, mode: "coverage", grouping: grouping, cell_size_m: cellSize }),
       });
-      if (!resp.ok) {
-        let detail = `HTTP ${resp.status}`;
-        try { const j = await resp.json(); detail = j.detail || detail; } catch (_) {}
-        throw new Error(detail);
-      }
+      enq = await resp.json();
+      if (resp.status !== 202 || !enq.poll_url) throw new Error(enq.detail || `HTTP ${resp.status}`);
     } catch (e) {
       alert("Create failed: " + e.message);
       $("btn-create").disabled = false;
@@ -551,14 +559,8 @@
       return;
     }
 
-    // Consume NDJSON: one JSON object per \n-terminated line. Each "result"
-    // event names which ward (by index + boundary_id) just finished and
-    // whether it succeeded; the final "done" event carries the rolled-up
-    // count. We update the matching pill in real time.
+    // Apply each per-ward result (by index, once) to its pill in real time.
     let okCount = 0, errCount = 0;
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
     const handleEvent = (evt) => {
       if (!evt || typeof evt !== "object") return;
       if (evt.event === "result") {
@@ -590,21 +592,24 @@
           }
         }
       }
-      // "done" events are summary-only; the final counts come from
-      // okCount/errCount accumulated above.
     };
+    // Poll the task; apply each result row once (the worker returns the growing
+    // cumulative list, so dedup by index).
+    const applied = new Set();
+    const applyResults = (results) => (results || []).forEach((evt) => {
+      if (applied.has(evt.index)) return;
+      applied.add(evt.index);
+      handleEvent({ event: "result", ...evt });
+    });
+    const deadline = Date.now() + 600000; // 10 min ceiling
     while (true) {
-      const { value, done } = await reader.read();
-      if (value) buffer += decoder.decode(value, { stream: true });
-      if (done) buffer += decoder.decode();
-      let nl;
-      while ((nl = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, nl).trim();
-        buffer = buffer.slice(nl + 1);
-        if (!line) continue;
-        try { handleEvent(JSON.parse(line)); } catch (_) { /* skip malformed */ }
-      }
-      if (done) break;
+      await new Promise((r) => setTimeout(r, 1500));
+      let st;
+      try { st = await (await fetch(enq.poll_url)).json(); } catch (_) { continue; }
+      applyResults(st.results);
+      if (st.state === "completed") break;
+      if (st.state === "failed") { alert("Create failed: " + (st.detail || "server error")); break; }
+      if (Date.now() > deadline) { alert("Timed out waiting for the server."); break; }
     }
 
     hide($("create-spinner"));

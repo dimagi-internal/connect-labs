@@ -1,14 +1,13 @@
 """Tests for the list_templates MCP tool."""
 
-import json
 from datetime import timedelta
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from commcare_connect.labs.models import UserConnectToken
 from commcare_connect.mcp.models import MCPAccessToken
+from commcare_connect.mcp.testing import call_tool
 from commcare_connect.users.models import User
 
 
@@ -25,15 +24,8 @@ def auth_user(db):
 
 
 def _call_tool(client, raw_pat, tool_name, arguments):
-    resp = client.post(
-        reverse("mcp:endpoint"),
-        data=json.dumps(
-            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool_name, "arguments": arguments}}
-        ),
-        content_type="application/json",
-        HTTP_AUTHORIZATION=f"Bearer {raw_pat}",
-    )
-    return resp.json()
+    # client unused — call_tool drives the FastMCP path in-process.
+    return call_tool(raw_pat, tool_name, arguments)
 
 
 @pytest.mark.django_db
