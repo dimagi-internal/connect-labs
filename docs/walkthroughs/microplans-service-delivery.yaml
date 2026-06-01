@@ -1,0 +1,74 @@
+name: "Microplans — Service Delivery Overlay"
+narrative: "A planner uses real service-delivery GPS to decide where to plan: overlay an opportunity's visits on the map, then turn the delivery footprint itself into a planning area"
+base_url: "https://labs.connect.dimagi.com"
+
+record_video: true
+video_pace: medium
+
+# Auth is established out-of-band via `/ace:labs-login` (headless OAuth-via-CCHQ,
+# cookies imported into the gstack browse profile). No in-spec auth step.
+# The map is Mapbox GL (WebGL) — headless rendering requires the gstack browse
+# SwiftShader patch (`/canopy:patch-gstack-browse`).
+
+personas:
+  maya:
+    name: "Maya Okonkwo"
+    role: "Senior Program Manager, Dimagi"
+    color: "#2563eb"
+    intro: "Maya is deciding how to plan field coverage for a region. Before she draws a single boundary, she wants to see where service delivery has actually happened — and ideally let that real footprint do the work of defining the area."
+
+scenes:
+  - persona: maya
+    title: "The setup map, with a new way in"
+    show: "The microplan setup map at /microplans/1237/setup/. The left panel shows two tabs — 'Plan' (the default drawing workflow) and a new 'Service delivery' tab. The satellite map fills the rest."
+    impressive_because: "The rare, powerful operation — pulling in real delivery data — is one click away but kept off the main planning flow, so the everyday Plan workflow stays uncluttered"
+    ai_quality: "Both tabs are clearly labelled and the Plan tab is the active default — nothing about the service-delivery feature crowds the primary flow"
+
+  - persona: maya
+    title: "Find an opportunity by name, not by scrolling"
+    show: "On the 'Service delivery' tab, the opportunity picker: a search box with 'Demo Opp' already added as a removable chip. Typing in the search filters the opportunities by name / program / id, mirroring the labs context picker — no giant checkbox list."
+    impressive_because: "Across ~90 opportunities, you find the one you want by typing a few letters instead of hunting a wall of checkboxes — and you can stack several, each as its own coloured chip"
+    ai_quality: "The picker shows the opportunity name plus id and visit count, and the selected opp appears as a coloured chip — no raw dropdown of indistinguishable rows"
+
+  - persona: maya
+    title: "Where delivery actually happened"
+    show: "After clicking 'Show service delivery points', the map renders ~1,001 service-delivery visit GPS points for Demo Opp as coloured dots, with a legend reading '1,001 pts · 100% w/ GPS'. The points are the real device locations from every visit."
+    impressive_because: "Every CommCare visit already carries a device GPS reading, so with zero per-app setup the planner sees exactly where work occurred — 1,001 real points, colour-coded by opportunity, hover for the FLW and visit details"
+    ai_quality: "The legend is honest and specific — a real point count and GPS percentage, not a vague 'data loaded' — and points are coloured per opportunity"
+
+  - persona: maya
+    title: "Let the data draw the boundary"
+    show: "The 'Boundary from points' panel with a concave/convex toggle, a tightness slider and an outward-buffer field. After clicking 'Add boundary as planning area', a polygon is drawn tightly around the point cloud and added to the map's editable draw layer."
+    impressive_because: "Instead of guessing a boundary, the planner turns the actual delivery footprint into the planning area — a tight concave hull that hugs the real cloud rather than over-covering across empty gaps"
+    ai_quality: "The derived polygon visibly follows the shape of the point cloud and lands as an editable area, not a static image"
+
+  - persona: maya
+    title: "Straight into planning"
+    show: "Back on the 'Plan' tab, the derived boundary is now a normal editable work area — the same shape the service-delivery points implied — ready for a coverage or sampling preview like any hand-drawn area."
+    impressive_because: "The whole loop closes: real delivery GPS becomes a boundary becomes a plannable area, with no export, no redraw, no leaving the map"
+    ai_quality: "The boundary carried over from the Service delivery tab is intact and editable on the Plan tab — one continuous workflow, not two disconnected tools"
+
+  # --- Admin-boundaries (Boundaries) layer — issue #347 -------------------------
+  - persona: maya
+    title: "Official boundaries, every level at once"
+    show: "On the unified create/edit page, Maya turns on the 'Boundaries' layer in the map panel (top-right). Purple outlines fill the viewport — state, LGA and ward lines together — finer levels drawn with thinner strokes. The layer body shows a source dropdown ('Local data (bespoke)' selected) and a search box."
+    impressive_because: "One toggle renders the whole administrative hierarchy for the region at once, generic over any country's depth — no picking a level first, no hardcoded State/LGA/Ward"
+    ai_quality: "All levels render together as a readable nested outline; the source dropdown names the active boundary system rather than an opaque code"
+
+  - persona: maya
+    title: "Hover the smallest thing under your cursor"
+    show: "Maya moves the cursor over a dense area where a ward sits inside an LGA inside a state. The Inspect tab shows the WARD — the smallest boundary at that point — with its name, admin level, parent chain, area in km² and population. Nothing floats over the map; the info is all in the panel."
+    impressive_because: "Smallest-wins hit-testing means the cursor always resolves to the most specific unit you're pointing at, even where levels nest — and the read-out lives in the panel, so the map stays clean"
+    ai_quality: "The inspected unit is the granular ward (not the enclosing state), and its parent chain is shown — proving the resolution is by admin level, not draw order"
+
+  - persona: maya
+    title: "Build the area from boundaries — or just type a name"
+    show: "In the area phase, Maya Shift-clicks three wards; each fills purple and the panel summary reads '3 selected · 412 km²'. She then types a ward name in the search box and clicks the result to add a fourth without hunting on the map. Each selected boundary becomes an editable polygon on the draw layer."
+    impressive_because: "The plan area is built directly from official units — click them on the map or search by name — replacing the old country/level/search dropdown with a faster, map-native multi-select that still keeps a typed-search path"
+    ai_quality: "The running '<n> selected · <km²>' summary updates per pick and selected boundaries are real editable areas, not a static highlight"
+
+  - persona: maya
+    title: "Switch the boundary source, same gestures"
+    show: "Maya opens the source dropdown and switches from 'Local data (bespoke)' to 'Overture (global)'. The outlines re-render from the global dataset for the same viewport; hover-inspect and Shift-click area-select work identically. Only one source is active at a time."
+    impressive_because: "Where we have a bespoke high-quality upload she uses it; elsewhere the global Overture set covers any country — both render as viewport outlines through the same layer, fully interchangeable"
+    ai_quality: "The switch visibly re-renders boundaries from a different system without changing the interaction model — one active source, no mixed overlays"

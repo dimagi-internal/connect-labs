@@ -3,16 +3,15 @@
 Mocks WorkflowDataAccess to avoid hitting the real Connect API.
 """
 
-import json
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from commcare_connect.labs.models import UserConnectToken
 from commcare_connect.mcp.models import MCPAccessToken
+from commcare_connect.mcp.testing import call_tool
 from commcare_connect.users.models import User
 
 
@@ -30,20 +29,10 @@ def auth_user(db):
 
 
 def _call_tool(client, raw_pat, tool_name, arguments):
-    resp = client.post(
-        reverse("mcp:endpoint"),
-        data=json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": tool_name, "arguments": arguments},
-            }
-        ),
-        content_type="application/json",
-        HTTP_AUTHORIZATION=f"Bearer {raw_pat}",
-    )
-    return resp.json()
+    # client is unused: the MCP protocol endpoint is now a FastMCP ASGI app,
+    # not a Django view. call_tool drives the same auth/handler/audit/rate-limit
+    # path in-process and returns the same JSON-RPC-shaped envelope.
+    return call_tool(raw_pat, tool_name, arguments)
 
 
 @pytest.mark.django_db
@@ -600,6 +589,183 @@ def test_create_from_template_unknown_template(client, auth_user):
     )
     err = data["result"]["structuredContent"]["error"]
     assert err["code"] in ("NOT_FOUND", "UPSTREAM_ERROR")
+
+
+# =============================================================================
+# workflow_create (from scratch) tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_create_blank(mock_wda_cls, client, auth_user):
+    """name + opportunity_id only → valid blank workflow, defaults applied,
+    no render_code persisted."""
+    _, raw = auth_user
+    mock_wda_cls.return_value.create_definition.return_value = MagicMock(id=501)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create",
+        {"opportunity_id": 100, "name": "From Scratch"},
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["workflow_id"] == 501
+    assert content["render_code_version"] is None
+    assert content["opportunity_ids"] == []
+    assert "_version_before" not in content
+    assert "_version_after" not in content
+
+    # create_definition called with name + description only — optional fields
+    # omitted so create_definition's own defaults apply.
+    call_kwargs = mock_wda_cls.return_value.create_definition.call_args.kwargs
+    assert call_kwargs["name"] == "From Scratch"
+    assert "statuses" not in call_kwargs
+    assert "config" not in call_kwargs
+    assert "pipeline_sources" not in call_kwargs
+    # No render_code → save_render_code never called.
+    mock_wda_cls.return_value.save_render_code.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_create_with_full_payload(mock_wda_cls, client, auth_user):
+    """statuses / config / pipeline_sources / render_code all authored in one call."""
+    _, raw = auth_user
+    mock_wda_cls.return_value.create_definition.return_value = MagicMock(id=502)
+    mock_wda_cls.return_value.save_render_code.return_value = MagicMock(version=1)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create",
+        {
+            "opportunity_id": 100,
+            "name": "Full",
+            "description": "desc",
+            "statuses": [{"id": "open", "label": "Open"}],
+            "config": {"showFilters": False},
+            "pipeline_sources": [{"pipeline_id": 7, "alias": "data"}],
+            "render_code": VALID_JSX,
+        },
+    )
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    assert content["workflow_id"] == 502
+    assert content["render_code_version"] == 1
+
+    call_kwargs = mock_wda_cls.return_value.create_definition.call_args.kwargs
+    assert call_kwargs["description"] == "desc"
+    assert call_kwargs["statuses"] == [{"id": "open", "label": "Open"}]
+    assert call_kwargs["config"] == {"showFilters": False}
+    assert call_kwargs["pipeline_sources"] == [{"pipeline_id": 7, "alias": "data"}]
+
+    save_kwargs = mock_wda_cls.return_value.save_render_code.call_args.kwargs
+    assert save_kwargs["definition_id"] == 502
+    assert save_kwargs["component_code"] == VALID_JSX
+    assert save_kwargs["version"] == 1
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_create_rejects_empty_render_code(mock_wda_cls, client, auth_user):
+    """Empty render_code is rejected before any write."""
+    _, raw = auth_user
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create",
+        {"opportunity_id": 100, "name": "X", "render_code": "   "},
+    )
+    assert data["result"]["structuredContent"]["error"]["code"] == "INVALID_JSX"
+    mock_wda_cls.return_value.create_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_create_rejects_oversized_render_code(mock_wda_cls, client, auth_user):
+    """Oversized render_code is rejected before any write."""
+    _, raw = auth_user
+    huge = "function WorkflowUI(){return null;} /* " + ("x" * (512 * 1024 + 1)) + " */"
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create",
+        {"opportunity_id": 100, "name": "X", "render_code": huge},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "INVALID_JSX"
+    assert "512" in err["message"]
+    mock_wda_cls.return_value.create_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_create_validates_opportunity_ids(mock_wda_cls, mock_fetch, client, auth_user):
+    """opportunity_ids must all be in the caller's access — mirrors the other tools."""
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}]}
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create",
+        {"opportunity_id": 100, "name": "X", "opportunity_ids": [100, 999]},
+    )
+    err = data["result"]["structuredContent"]["error"]
+    assert err["code"] == "PERMISSION_DENIED"
+    assert err["details"]["invalid_opportunity_ids"] == [999]
+    mock_wda_cls.return_value.create_definition.assert_not_called()
+
+
+@pytest.mark.django_db
+@patch("commcare_connect.mcp.tools.workflows.fetch_user_organization_data")
+@patch("commcare_connect.mcp.tools.workflows.WorkflowDataAccess")
+def test_workflow_create_forwards_valid_opportunity_ids(mock_wda_cls, mock_fetch, client, auth_user):
+    """Valid multi-opp ids are de-duped and forwarded to create_definition."""
+    _, raw = auth_user
+    mock_fetch.return_value = {"opportunities": [{"id": 100}, {"id": 200}]}
+    mock_wda_cls.return_value.create_definition.return_value = MagicMock(id=503)
+
+    data = _call_tool(
+        client,
+        raw,
+        "workflow_create",
+        {"opportunity_id": 100, "name": "X", "opportunity_ids": [100, 200, 100]},
+    )
+    assert data["result"]["isError"] is False, data
+    assert data["result"]["structuredContent"]["opportunity_ids"] == [100, 200]
+    call_kwargs = mock_wda_cls.return_value.create_definition.call_args.kwargs
+    assert call_kwargs["opportunity_ids"] == [100, 200]
+
+
+@pytest.mark.django_db
+def test_workflow_create_rejects_user_without_connect_token(client, db):
+    user = User.objects.create(username="create-no-connect")
+    _, raw = MCPAccessToken.create_token(user, name="t")
+    data = _call_tool(client, raw, "workflow_create", {"opportunity_id": 1, "name": "X"})
+    assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
+
+
+# =============================================================================
+# workflow_authoring_guide tests
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_workflow_authoring_guide_returns_reference(client, auth_user):
+    """Returns the current WORKFLOW_REFERENCE.md contents with a byte length."""
+    _, raw = auth_user
+    data = _call_tool(client, raw, "workflow_authoring_guide", {})
+    assert data["result"]["isError"] is False, data
+    content = data["result"]["structuredContent"]
+    # Anchor on stable headings the reference is guaranteed to carry.
+    assert "Render Code Contract" in content["content"]
+    assert content["byte_length"] == len(content["content"].encode("utf-8"))
+    assert content["byte_length"] > 1000
 
 
 # =============================================================================

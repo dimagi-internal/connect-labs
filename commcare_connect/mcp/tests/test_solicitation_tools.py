@@ -8,16 +8,15 @@ Each write tool also has an is_write registry check to confirm rate-limiting
 and audit apply.
 """
 
-import json
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from commcare_connect.labs.models import UserConnectToken
 from commcare_connect.mcp.models import MCPAccessToken
+from commcare_connect.mcp.testing import call_tool
 from commcare_connect.mcp.tool_registry import get_tool
 from commcare_connect.users.models import User
 
@@ -40,20 +39,10 @@ def auth_user(db):
 
 
 def _call_tool(client, raw_pat, tool_name, arguments):
-    resp = client.post(
-        reverse("mcp:endpoint"),
-        data=json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": tool_name, "arguments": arguments},
-            }
-        ),
-        content_type="application/json",
-        HTTP_AUTHORIZATION=f"Bearer {raw_pat}",
-    )
-    return resp.json()
+    # client is unused: the MCP protocol endpoint is now a FastMCP ASGI app,
+    # not a Django view. call_tool drives the same auth/handler/audit/rate-limit
+    # path in-process and returns the same JSON-RPC-shaped envelope.
+    return call_tool(raw_pat, tool_name, arguments)
 
 
 def _make_mock_record(record_id, rtype, experiment="25", program_id=25, data=None, labs_record_id=None, public=False):

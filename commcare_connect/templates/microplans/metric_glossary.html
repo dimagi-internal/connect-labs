@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Plan metric definitions{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto p-6 text-sm text-gray-900 space-y-6">
+  <header class="space-y-1">
+    <h1 class="text-2xl font-bold">Plan metric definitions</h1>
+    <p class="text-gray-600">What each column on the plan comparison table means, and how it's computed.</p>
+    <p class="text-xs text-gray-500">All metrics are computed over the plan's <em>active</em> work areas — excluded areas (those the lead removed during plan review) are reported in their own columns and are not included in the travel / balance / coverage math.</p>
+  </header>
+
+  <section>
+    <h2 class="text-base font-semibold border-b pb-1 mb-2">Workload (the input data)</h2>
+    <p class="text-xs text-gray-500 mb-3">These columns describe the underlying population and building footprint each plan covers — the workload the rest of the metrics measure against.</p>
+    <dl class="space-y-3">
+      <div>
+        <dt class="font-medium">Population</dt>
+        <dd class="text-gray-700 mt-0.5">Estimated number of people living in the plan's source admin boundary. Carried directly from the boundary's population estimate at plan-creation time (top-down, a single number for the area) — NOT a bottom-up sum of per-work-area apportionments. For a plan that spans multiple boundaries, it's the sum of the source boundaries' populations.</dd>
+      </div>
+      <div>
+        <dt class="font-medium">Buildings</dt>
+        <dd class="text-gray-700 mt-0.5">Total building footprints in the plan's active area, summed across work areas. Source: Overture Maps building footprints, cached per boundary at generation time.</dd>
+      </div>
+      <div>
+        <dt class="font-medium">Pop / building</dt>
+        <dd class="text-gray-700 mt-0.5">Population ÷ Buildings — the implied per-structure population estimate. A sanity check on the input: values that fall outside the realistic range for the country (typically 2-10) are usually a sign that the boundary's population estimate is stale or that the building set includes non-residential structures.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section>
+    <h2 class="text-base font-semibold border-b pb-1 mb-2">Travel burden (per-worker territory diameter)</h2>
+    <p class="text-xs text-gray-500 mb-3">Distance a worker would have to cover to reach the farthest points of their assigned territory. Lower = easier to operate.</p>
+    <dl class="space-y-3">
+      <div>
+        <dt class="font-medium">Longest worker travel</dt>
+        <dd class="text-gray-700 mt-0.5">The maximum territory diameter across all workers' territories in this plan, in km. Territory diameter = the longest haversine distance between any two work-area centroids assigned to the same worker. The worker with the largest diameter sets this value.</dd>
+      </div>
+      <div>
+        <dt class="font-medium">Avg worker travel</dt>
+        <dd class="text-gray-700 mt-0.5">Arithmetic mean of every worker's territory diameter, in km.</dd>
+      </div>
+      <div>
+        <dt class="font-medium">Travel spread</dt>
+        <dd class="text-gray-700 mt-0.5">Population standard deviation of the per-worker territory diameters, in km. Surfaces unevenness — a plan with one outlier 12 km territory has a higher spread than a plan where every worker walks 5 km.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section>
+    <h2 class="text-base font-semibold border-b pb-1 mb-2">Workload balance</h2>
+    <p class="text-xs text-gray-500 mb-3">How evenly the work is distributed across workers. Lower = more balanced.</p>
+    <dl class="space-y-3">
+      <div>
+        <dt class="font-medium">Worker load gap</dt>
+        <dd class="text-gray-700 mt-0.5">(Max − Min) ÷ Target × 100, expressed as a percent. When population data is available, target = total population ÷ number of territories; otherwise target = total buildings ÷ number of territories. A 0% gap means every worker has exactly the same load; 80% means the busiest worker has nearly twice the target.</dd>
+      </div>
+      <div>
+        <dt class="font-medium">Worker load spread</dt>
+        <dd class="text-gray-700 mt-0.5">Population standard deviation of per-worker workloads (population if available, buildings otherwise). Catches plans where most workers are at target but one is over- or under-loaded.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section>
+    <h2 class="text-base font-semibold border-b pb-1 mb-2">Coverage + exclusions</h2>
+    <dl class="space-y-3">
+      <div>
+        <dt class="font-medium">Coverage</dt>
+        <dd class="text-gray-700 mt-0.5">Active buildings ÷ (active + excluded) buildings × 100, expressed as a percent. A coverage below 100% means some work areas were excluded during plan review.</dd>
+      </div>
+      <div>
+        <dt class="font-medium">Excluded areas</dt>
+        <dd class="text-gray-700 mt-0.5">Count of work areas the lead removed during plan review (with a reason — water body, school, unsafe, etc.). Not included in the travel / balance / coverage math above.</dd>
+      </div>
+      <div>
+        <dt class="font-medium">Excluded buildings</dt>
+        <dd class="text-gray-700 mt-0.5">Total buildings inside the excluded work areas. Reported alongside Excluded areas so the reader can see whether the exclusions were small (one school) or large (a residential block).</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section>
+    <h2 class="text-base font-semibold border-b pb-1 mb-2">Structure</h2>
+    <dl class="space-y-3">
+      <div>
+        <dt class="font-medium">Worker territories</dt>
+        <dd class="text-gray-700 mt-0.5">Number of distinct workers (or unassigned groups, before assignment) the plan's work areas are partitioned across. Each worker has one territory; all metrics above are computed per-territory.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <footer class="pt-4 text-xs text-gray-500">
+    Source: <code>commcare_connect/microplans/core/plan.py:plan_kpis</code>. Definitions follow Neal Lesh's microplan-quality spec; the territory-diameter computation uses a convex hull for performance on plans with &gt;50 work areas (exact, not sampled).
+  </footer>
+</div>
+{% endblock %}

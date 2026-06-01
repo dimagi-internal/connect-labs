@@ -7,6 +7,7 @@ into the five fixture dicts the labs synthetic system serves.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import random
 import uuid
 from typing import Any
@@ -48,6 +49,47 @@ def _default_deliver_unit(detail: dict[str, Any]) -> int | None:
     return units[0]["id"] if units else None
 
 
+def _build_household_locations(geography, cohort_size: int, rng: random.Random) -> dict[int, tuple[float, float]]:
+    """Place one fixed household point (lon, lat) per beneficiary index, scattered
+    across a few settlement clusters inside the geography polygon. Deterministic
+    given ``rng``. Visits to the same beneficiary then stack at the same point."""
+    from shapely.geometry import Point, shape
+
+    poly = shape(geography.polygon)
+    minx, miny, maxx, maxy = poly.bounds
+
+    def rand_in_poly() -> Point:
+        for _ in range(20000):
+            p = Point(rng.uniform(minx, maxx), rng.uniform(miny, maxy))
+            if poly.contains(p):
+                return p
+        return poly.representative_point()
+
+    centers = [rand_in_poly() for _ in range(int(geography.settlements))]
+    spread = float(geography.settlement_spread_km)
+    locations: dict[int, tuple[float, float]] = {}
+    for bidx in range(1, cohort_size + 1):
+        c = centers[rng.randrange(len(centers))]
+        dlat = rng.gauss(0.0, spread) / 111.0
+        dlon = rng.gauss(0.0, spread) / (111.0 * max(0.1, math.cos(math.radians(c.y))))
+        p = Point(c.x + dlon, c.y + dlat)
+        if not poly.contains(p):
+            p = c  # offset wandered outside the ward — clamp to the settlement center
+        locations[bidx] = (p.x, p.y)
+    return locations
+
+
+def _packed_location(locations, bidx: int, geography, rng: random.Random) -> str:
+    """CommCare packed GPS string 'lat lon altitude accuracy' for a beneficiary's
+    household; empty string when no geography is configured."""
+    if not geography or locations is None:
+        return ""
+    lon, lat = locations[bidx]
+    alt = rng.gauss(geography.altitude_m.mean, geography.altitude_m.stddev)
+    acc = rng.uniform(geography.accuracy_m_min, geography.accuracy_m_max)
+    return f"{lat:.6f} {lon:.6f} {alt:.0f} {acc:.0f}"
+
+
 def generate(
     *,
     manifest: Manifest,
@@ -60,6 +102,9 @@ def generate(
     cohort = manifest.beneficiary_cohorts[0]  # v1 supports the primary cohort
     deliver_unit_id = _default_deliver_unit(opportunity_detail)
     payment_units = _payment_units(opportunity_detail)
+    household_locations = (
+        _build_household_locations(manifest.geography, cohort.size, rng) if manifest.geography else None
+    )
 
     slots = expand_visit_schedule(manifest.timeline, personas, random_seed=manifest.random_seed)
     slots.sort(key=lambda s: (s.visit_date, s.flw_id))
@@ -76,6 +121,16 @@ def generate(
             persona=persona,
         )
         status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
+        # One beneficiary index per visit, reused for the display name AND the
+        # household GPS so repeat visits to the same beneficiary share a location.
+        beneficiary_idx = rng.randint(1, cohort.size)
+        location = _packed_location(household_locations, beneficiary_idx, manifest.geography, rng)
+        # The service-delivery GPS pipeline (SERVICE_DELIVERY_GPS_SCHEMA) reads the
+        # device location from form_json.metadata.location (packed "lat lon alt acc"),
+        # mirroring real CommCare submissions. The top-level `location` field alone is
+        # invisible to that pipeline, so mirror it into metadata.location here.
+        if location:
+            form_json.setdefault("metadata", {})["location"] = location
         # Visit id MUST be a PostgreSQL bigint-compatible integer — the audit
         # data-access layer and labs cache both type the column as int, and a
         # UUID-string id breaks `filter_visit_ids=set([...])` lookups + the
@@ -91,11 +146,11 @@ def generate(
                 "deliver_unit": str(deliver_unit_id) if deliver_unit_id is not None else "",
                 "deliver_unit_id": deliver_unit_id,
                 "entity_id": str(uuid.UUID(int=rng.getrandbits(128))),
-                "entity_name": f"Beneficiary {rng.randint(1, cohort.size)}",
+                "entity_name": f"Beneficiary {beneficiary_idx}",
                 "visit_date": slot.visit_date.isoformat(),
                 "status": status.status,
                 "reason": None,
-                "location": "",
+                "location": location,
                 "flagged": status.flagged,
                 "flag_reason": status.flag_reason,
                 "form_json": form_json,

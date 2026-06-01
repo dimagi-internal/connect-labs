@@ -1,0 +1,37 @@
+name: "Microplans Program Portfolio"
+narrative: "Plan microplans before any opportunity exists — a program owns a portfolio of candidate plans, scored and shareable with an LLO"
+base_url: "https://labs.connect.dimagi.com"
+
+# Auth is established out-of-band via `/ace:labs-login` (headless OAuth-via-CCHQ,
+# cookies imported into the gstack browse profile). No in-spec auth step.
+
+personas:
+  maya:
+    name: "Maya Okonkwo"
+    role: "Senior Program Manager, Dimagi"
+    color: "#059669"
+    intro: "Maya designs microplans for a program months before any Connect opportunity is provisioned. She manages a portfolio of candidate regions, tunes each plan with the partner, and decides which to offer."
+
+scenes:
+  - persona: maya
+    title: "Program portfolio"
+    show: "The microplan program workspace at /microplans/program/133/ — candidate plans grouped by lifecycle phase (Planning / Live / Archived), each card with headline KPIs and its next lifecycle action"
+    impressive_because: "A whole portfolio of candidate regions managed before any opportunity is live — each plan moves Draft → In review → Approved → Deployed with one clear next step, and un-assigned plans honestly show area counts instead of fake worker/travel numbers"
+    ai_quality: "KPI chips and status are specific and honest — un-assigned plans must not claim a worker count or travel distance they don't have yet"
+
+  - persona: maya
+    title: "Review and tune a plan"
+    show: "The review page for the Approved plan (Kano North — coverage v2, /microplans/program/133/plan/3321/review/): the work areas on the map, the per-field-worker metrics table below it, and the editable work-area list with exclude / regroup / reassign controls"
+    impressive_because: "The partner validates the plan before upload — eliminate invalid squares, rebalance workers — and immediately sees per-worker travel and workload update, all in the planning phase before Connect ever sees it"
+    ai_quality: "Per-FLW metrics are concrete numbers tied to the actual work areas, not placeholders"
+
+  - persona: maya
+    title: "Compare candidate plans"
+    show: "The plan comparison view at /microplans/program/133/ comparing the two Kano North versions head-to-head with a normalized composite fit score"
+    impressive_because: "Different regions, or versions of the same region, ranked head-to-head on travel / balance / coverage with one composite score — so the choice of which plan to run is evidence-based, not a hunch"
+
+  - persona: maya
+    title: "Share a proposal with the LLO"
+    show: "The plan group share page (/microplans/program/133/group/3331/share/) — the curated subset of plans offered to Hilltop Health, each with its metrics and fit score"
+    impressive_because: "A clean, stakeholder-ready proposal — 'here are the regions we'd like you to run' — with the fit score and an honest 'workers not yet assigned' where a plan still needs assignment"
+    ai_quality: "The proposal reads like something you'd send a partner: clear region labels, real metrics, no debug artifacts or raw ids"

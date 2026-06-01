@@ -219,11 +219,23 @@ def validate_context_access(request: HttpRequest, context: dict) -> dict:
     if "program_id" in context:
         program_id = context["program_id"]
         programs = org_data.get("programs", [])
+        program_found = False
         for program in programs:
             if program.get("id") == program_id:
                 validated["program_id"] = program_id
                 validated["program"] = program
+                program_found = True
                 break
+
+        # If program not found in cached data, still pass through the ID — same
+        # fallback as opportunity_id below. The cached OAuth org_data can be
+        # incomplete (membership granted after login, or paginated short), and the
+        # downstream LabsRecord API enforces real access per request. Without this,
+        # /microplans/program/N/ for an accessible-but-not-cached program left the
+        # context unset and the picker pill stuck on the previous (stale) selection.
+        if not program_found:
+            logger.info(f"Program {program_id} not in cached OAuth data, passing through for API validation")
+            validated["program_id"] = program_id
 
     # Validate opportunity_id
     if "opportunity_id" in context:

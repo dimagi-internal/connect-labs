@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Program microplans{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto p-6 space-y-6" x-data>
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Microplan portfolio</h1>
+      <p class="text-sm text-gray-500">Program #{{ program_id }} — candidate plans across regions, before any opportunity is live.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" id="compare-sel" class="button button-sm outline-style" disabled title="Tick 2+ plans to compare">Compare selected</button>
+      <a href="{% url 'microplans:program_bulk_create_page' program_id=program_id %}" class="button button-sm outline-style" title="Paste a list of ward names and create one plan per ward in one batch">+ Bulk paste list</a>
+      <a href="{% url 'microplans:program_create_plan_page' program_id=program_id %}" class="button button-sm primary-dark">+ New plan</a>
+    </div>
+  </div>
+
+  <div id="status" class="text-sm text-gray-500"></div>
+
+  <!-- Plans by lifecycle phase -->
+  <div id="phases" class="space-y-6"></div>
+
+  <!-- Plan groups -->
+  <section class="border-t border-gray-200 pt-5">
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold text-gray-900">Plan groups</h2>
+      <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
+    </div>
+    <p class="text-xs text-gray-500 mb-3">A bundle of plans to offer a specific LLO. Tick plans above, then group them and share a read-only link.</p>
+    <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block inline_javascript %}
+{{ block.super }}
+<script src="{% static 'microplans/shared.js' %}"></script>
+<script>
+(function () {
+  const PROGRAM = "{{ program_id|escapejs }}";
+  const CSRF = "{{ csrf_token }}";
+  const PLANS_URL = "{% url 'microplans:program_plans' program_id=program_id %}";
+  const CREATE_GROUP_URL = "{% url 'microplans:program_group_create' program_id=program_id %}";
+  const base = "/microplans/program/" + PROGRAM + "/";
+  const reviewUrl = (pid) => base + "plan/" + pid + "/review/";
+  const transitionUrl = (pid) => base + "plan/" + pid + "/transition/";
+  const groupShareUrl = (gid) => base + "group/" + gid + "/share/";
+  const groupUpdateUrl = (gid) => base + "group/" + gid + "/";
+  const compareUrl = () => base + "compare/?plans=" + [...selected].join(",");
+  const $ = (id) => document.getElementById(id);
+  Microplans.setCsrf(CSRF);
+  const esc = Microplans.esc;
+  const post = (url, body, opts) => Microplans.post(url, body, Object.assign({ csrf: CSRF }, opts || {}));
+
+  const PHASES = [
+    { key: "planning", label: "Planning", statuses: ["draft", "in_review", "approved"], hint: "labs — being designed & reviewed with the LLO/funder" },
+    { key: "live", label: "Live", statuses: ["deployed"], hint: "pushed to a Connect opportunity — Connect runs execution" },
+    { key: "archived", label: "Archived", statuses: ["archived"], hint: "candidate regions not chosen" },
+  ];
+  const BADGE = { draft: "bg-gray-100 text-gray-700", in_review: "bg-amber-100 text-amber-800", approved: "bg-green-100 text-green-800", deployed: "bg-cyan-100 text-cyan-800", archived: "bg-gray-100 text-gray-400" };
+  // Lifecycle ordering so we can render forward moves as the primary (solid) action
+  // and backward moves as muted "← back" controls.
+  const ORDER = { draft: 0, in_review: 1, approved: 2, deployed: 3 };
+  const FWD_LABEL = { in_review: "Submit for review", approved: "Approve", deployed: "Deploy →" };
+
+  const selected = new Set();
+  let DATA = { plans: [], groups: [], transitions: {}, status_labels: {} };
+
+  const chip = Microplans.chip;
+
+  function transitionBtn(p, to) {
+    let label, cls;
+    if (to === "archived") { label = "Archive"; cls = "outline-style"; }
+    else if (p.status === "archived" && to === "draft") { label = "Restore to draft"; cls = "outline-style"; }
+    else if ((ORDER[to] ?? 0) > (ORDER[p.status] ?? 0)) { label = FWD_LABEL[to] || to; cls = "primary-dark"; }   // forward → primary
+    else { label = "← " + (DATA.status_labels[to] || to); cls = "outline-style"; }                    // backward → muted
+    return `<button class="button button-sm ${cls}" data-transition="${p.plan_id}" data-to="${to}">${esc(label)}</button>`;
+  }
+
+  function planCard(p) {
+    const actions = (DATA.transitions[p.status] || []).map((to) => transitionBtn(p, to)).join(" ");
+    // Pre-assignment, "workers/worst travel" are degenerate (one territory), so show
+    // the work-area count and omit travel until the plan is split across workers.
+    const countChip = p.assigned ? chip("workers", p.territory_count) : chip("areas", p.work_areas);
+    const travelChip = p.assigned ? chip("worst travel", p.max_spread_km + " km") : "";
+    const exclChip = p.excluded ? chip("excluded", p.excluded) : "";
+    return `<div class="border rounded-lg p-3 bg-white">
+      <div class="flex items-start justify-between gap-2">
+        <label class="flex items-start gap-2">
+          <input type="checkbox" class="plan-sel mt-1" value="${p.plan_id}" ${selected.has(p.plan_id) ? "checked" : ""}>
+          <span>
+            <a class="font-semibold text-brand-cornflower-blue" href="${reviewUrl(p.plan_id)}">${esc(p.name)}</a>
+            <div class="text-xs text-gray-500">${esc(p.region || "—")} · ${esc(p.mode)}${p.opportunity_id ? " · opp " + esc(p.opportunity_id) : ""}</div>
+          </span>
+        </label>
+        <span class="text-xs px-2 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
+      </div>
+      <div class="flex flex-wrap gap-1 mt-2">
+        ${countChip}${travelChip}${chip("coverage", p.coverage_pct + "%")}${exclChip}
+      </div>
+      <div class="flex flex-wrap gap-1 mt-3">${actions}</div>
+    </div>`;
+  }
+
+  function render() {
+    // Plans already bundled into a plan group are shown under their group below
+    // (and on the group's share page), not repeated in the top lifecycle columns —
+    // otherwise a program with many grouped candidates floods the Planning section.
+    const grouped = new Set((DATA.groups || []).flatMap((g) => g.plan_ids || []));
+    const byStatus = {};
+    DATA.plans.forEach((p) => {
+      if (grouped.has(p.plan_id)) return; // lives under its group, not the flat list
+      (byStatus[p.status] = byStatus[p.status] || []).push(p);
+    });
+    $("phases").innerHTML = PHASES.map((ph) => {
+      const plans = ph.statuses.flatMap((s) => byStatus[s] || []);
+      if (!plans.length && ph.key === "archived") return "";
+      return `<section>
+        <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">${ph.label} <span class="text-gray-400 normal-case font-normal">· ${ph.hint}</span></h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
+          ${plans.length ? plans.map(planCard).join("") : '<p class="text-sm text-gray-400">none</p>'}
+        </div></section>`;
+    }).join("");
+    const planById = Object.fromEntries(DATA.plans.map((p) => [p.plan_id, p]));
+    $("groups").innerHTML = (DATA.groups || []).map((g) => {
+      // List the group's member plans here (they're hidden from the top columns)
+      // so each grouped plan stays one click from its review page.
+      const members = (g.plan_ids || []).map((pid) => planById[pid]).filter(Boolean);
+      const memberRows = members.map((p) =>
+        `<a class="flex items-center justify-between gap-2 py-1 text-xs hover:bg-gray-50 rounded px-1" href="${reviewUrl(p.plan_id)}">
+          <span class="truncate text-brand-cornflower-blue">${esc(p.name)}</span>
+          <span class="px-1.5 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
+        </a>`).join("") || '<p class="text-xs text-gray-400 py-1">(plans not in this program)</p>';
+      return `<div class="border rounded-lg p-3 bg-white">
+        <div class="flex items-center justify-between">
+          <a class="font-semibold text-brand-cornflower-blue" href="${groupShareUrl(g.group_id)}">${esc(g.name)}</a>
+          <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${g.shared ? "shared" : "not shared"}</span>
+        </div>
+        <div class="text-xs text-gray-500">${g.plan_ids.length} plans${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
+        <div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>
+        <div class="mt-2 flex gap-2">
+          <a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
+          <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>
+        </div>
+      </div>`;
+    }).join("") || '<p class="text-sm text-gray-400">No groups yet.</p>';
+    document.querySelectorAll(".plan-sel").forEach((cb) => cb.addEventListener("change", () => {
+      const id = +cb.value; if (cb.checked) selected.add(id); else selected.delete(id);
+      $("new-group").disabled = selected.size === 0;
+      $("compare-sel").disabled = selected.size < 2;
+    }));
+  }
+
+  async function load() {
+    $("status").textContent = "Loading…";
+    try {
+      const d = await (await fetch(PLANS_URL)).json();
+      if (d.status !== "ok") { $("status").textContent = d.detail || "load failed"; return; }
+      DATA = d; $("status").textContent = "";
+      render();
+    } catch (e) { $("status").textContent = "Load failed: " + e; }
+  }
+
+  // transitions (delegated)
+  $("phases").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-transition]"); if (!b) return;
+    const pid = b.dataset.transition, to = b.dataset.to;
+    const body = { to };
+    if (to === "deployed") {
+      const opp = prompt("Connect opportunity ID to deploy this plan to (it should already be live in Connect):");
+      if (!opp) return; body.opportunity_id = opp.trim();
+    }
+    b.disabled = true;
+    const r = await post(transitionUrl(pid), body); const j = await r.json();
+    if (!r.ok || j.status !== "ok") { $("status").textContent = j.detail || ("HTTP " + r.status); b.disabled = false; return; }
+    load();
+  });
+
+  // groups
+  $("new-group").addEventListener("click", async () => {
+    if (!selected.size) return;
+    const name = prompt(`Name this group of ${selected.size} plan(s):`); if (!name) return;
+    const offered_to = prompt("Which LLO is this bundle for? (optional)") || "";
+    const r = await post(CREATE_GROUP_URL, { name, plan_ids: [...selected], offered_to });
+    const j = await r.json();
+    if (!r.ok || j.status !== "ok") { $("status").textContent = j.detail || "group create failed"; return; }
+    selected.clear(); load();
+  });
+  $("groups").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-share]"); if (!b) return;
+    const r = await post(groupUpdateUrl(b.dataset.share), { shared: b.dataset.shared !== "true" });
+    if (r.ok) load();
+  });
+
+  // compare the ticked plans head-to-head
+  $("compare-sel").addEventListener("click", () => { if (selected.size >= 2) window.location = compareUrl(); });
+
+  load();
+})();
+</script>
+{% endblock %}
