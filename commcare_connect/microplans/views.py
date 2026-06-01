@@ -1089,6 +1089,18 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "plans": entries})
 
 
+class MetricGlossaryView(LoginRequiredMixin, TemplateView):
+    """Definitions for every metric shown on the compare page.
+
+    Program-scope-agnostic — the vocabulary is the same across programs, so
+    there's one glossary page everyone links to. Linked from compare.html via
+    a "What do these metrics mean?" link in the sidebar; future plan-review
+    surfaces can link the same URL.
+    """
+
+    template_name = "microplans/metric_glossary.html"
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class ProgramComparePageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Program-scoped plan comparison page (reuses compare.html via context URLs)."""
