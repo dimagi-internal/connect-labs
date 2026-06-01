@@ -48,6 +48,12 @@ urlpatterns = [
         views.ProgramBulkCreatePlansView.as_view(),
         name="program_bulk_create",
     ),
+    # Poll a queued bulk-create batch (incremental per-ward results).
+    path(
+        "bulk_create_status/<str:task_id>/",
+        views.ProgramBulkCreateStatusView.as_view(),
+        name="bulk_create_status",
+    ),
     path("program/<int:program_id>/plan/<int:plan_id>/", views.ProgramPlanView.as_view(), name="program_plan"),
     path(
         "program/<int:program_id>/plan/<int:plan_id>/edit/",
