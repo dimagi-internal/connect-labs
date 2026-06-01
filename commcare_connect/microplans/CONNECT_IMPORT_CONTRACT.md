@@ -18,6 +18,30 @@ export imported cleanly ("Successfully created 5 work area(s)").
 
 ---
 
+## ⚠ Nigeria-hardcoded vocabulary (tech debt)
+
+The column names **`Ward`**, **`LGA`**, and **`State`** are **Nigeria's**
+administrative tiers (ADM3 / ADM2 / ADM1). They are hardcoded on **Connect's**
+side (`WorkAreaCSVImporter.HEADERS`), and labs mirrors them verbatim
+(`core/workarea.py:CSV_HEADERS`, `PlanRecord.lga/.state`,
+`plan.derive_lga_state`) **only** so the export matches.
+
+Labs itself is **already country-generic**: the admin-boundary resolver speaks
+canonical levels (1 = region/state, 2 = county/district/LGA, 3 = locality/ward;
+`core/admin_boundaries.py`). So a Kenyan **County** or an Indian **District** is
+the same canonical level-2 area we currently push into the **`LGA`** column. The
+import still succeeds (Connect only checks the values are non-empty, not that
+they're really LGAs), but **the column names lie** for any non-Nigeria program.
+
+**TODO — generalize once Connect generalizes.** When Connect's work-area
+importer moves to canonical admin levels (or per-country vocabulary), update:
+`core/workarea.py:CSV_HEADERS`, `core/plan.derive_lga_state`,
+`core/models.PlanRecord.lga/.state`, `views.ProgramCreatePlanView` /
+`ProgramPlanCSVView`, and the `review.html` "State" field — to drop the
+Nigeria-specific names. Track the Connect-side change as the trigger.
+
+---
+
 ## Upload mechanics
 
 - **Endpoint:** `POST /a/<org>/microplanning/<opp_id>/upload_work_areas/`
