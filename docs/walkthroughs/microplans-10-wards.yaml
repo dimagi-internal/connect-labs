@@ -226,8 +226,7 @@ scenes:
     - { kind: hold, seconds: 2.0, note: "let the eye read Walkable clusters / 100 / 0.1 named defaults" }
     - { kind: click, target: "Create 10 plans", note: "fire the bulk POST for all 10 wards" }
     - { kind: wait_for, target: "Creating 10 plan", note: "NDJSON stream begins" }
-    - { kind: hold, seconds: 90.0, note: "per-ward progress: Creating → ✓ Created · #id flips one ward at a time as the stream advances (bulk-create takes ~60-90s for 10 wards on labs)" }
-    - { kind: wait_for, target: "Created 10 of 10 plans" }
+    - { kind: wait_for, target: "Created 10 of 10 plans", seconds: 120, note: "exit early when bulk-create finishes — replaces the old blind 90s hold (canopy 0.2.148 wait_for seconds: override)" }
     - { kind: hold, seconds: 2.5, note: "frame the success card with all 10 plan IDs + LGA echo visible" }
   title: Dana confirms, picks the config, and hits Create Plans — the bulk operation
     runs with progress
