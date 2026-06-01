@@ -26,8 +26,20 @@ from commcare_connect.microplans.core import overture
 logger = logging.getLogger(__name__)
 
 OVERTURE_BUILDINGS = overture.theme_path("buildings", "building")
-_COLUMNS = ["lon", "lat", "area_m2", "confidence"]
-_COLUMNS_WITH_GEOM = ["lon", "lat", "area_m2", "confidence", "geom_json"]
+_COLUMNS = ["lon", "lat", "area_m2", "confidence", "dataset"]
+_COLUMNS_WITH_GEOM = ["lon", "lat", "area_m2", "confidence", "dataset", "geom_json"]
+
+# Overture conflates several building providers; each footprint's primary source is
+# the `dataset` on its first `sources[]` entry. These are the providers that appear
+# in our regions. Google carries a per-building confidence; OSM and Microsoft don't.
+SOURCE_GOOGLE = "Google Open Buildings"
+SOURCE_OSM = "OpenStreetMap"
+SOURCE_MICROSOFT = "Microsoft ML Buildings"
+KNOWN_SOURCES = [SOURCE_GOOGLE, SOURCE_OSM, SOURCE_MICROSOFT]
+# Default for sampling/coverage: Google Open Buildings, matching the rooftop pilot.
+# (Historically this was achieved implicitly via min_confidence dropping the
+# null-confidence OSM/Microsoft footprints; the source filter now makes it explicit.)
+DEFAULT_SOURCES = [SOURCE_GOOGLE]
 # Reject absurdly large areas before they pull gigabytes from S3 and OOM the
 # worker. A survey area is a ward/LGA (Maiduguri LGA ≈ 107 km²); 2000 km² is a
 # generous ceiling that still blocks "the whole country" mistakes.
@@ -43,18 +55,42 @@ MAX_BUILDING_ROWS = 1_000_000
 
 
 def _area_cache_key(wkt: str) -> str:
-    # Geometry-only (confidence-agnostic): we store every building + filter by
-    # confidence at read, so a ward is fetched once for both sampling and coverage.
-    return hashlib.sha256(f"{overture.OVERTURE_RELEASE}|{wkt}".encode()).hexdigest()
+    # Geometry-only (source/confidence-agnostic): we store every building with its
+    # source + confidence and filter at read, so a ward is fetched once and serves
+    # any source/confidence combination for both sampling and coverage. The `fp2`
+    # token versions the stored schema — bumped when `dataset` capture was added so
+    # pre-source-aware cache entries re-fetch instead of returning sourceless rows.
+    return hashlib.sha256(f"{overture.OVERTURE_RELEASE}|fp2|{wkt}".encode()).hexdigest()
 
 
-def _apply_confidence(df: pd.DataFrame, min_confidence: float | None) -> pd.DataFrame:
-    """Drop low/null-confidence buildings when a threshold is set (matches the
-    pilot's Google-Open-Buildings input). No-op when min_confidence is None."""
-    if min_confidence is None or df.empty:
+def _apply_filters(
+    df: pd.DataFrame, sources: list[str] | None = None, min_confidence: float | None = None
+) -> pd.DataFrame:
+    """Filter cached buildings at read time by source and/or Google confidence.
+
+    `sources`: keep only buildings whose `dataset` is in this list (None = all
+    sources). `min_confidence`: drop buildings whose confidence is below the
+    threshold; buildings with no confidence (OSM/Microsoft) are kept, since the
+    threshold only applies to the Google source that carries one — source inclusion
+    is the `sources` filter's job, not a side effect of the confidence slider.
+    """
+    if df.empty:
         return df
-    keep = df["confidence"].notna() & (df["confidence"] >= float(min_confidence))
+    keep = pd.Series(True, index=df.index)
+    if sources is not None and "dataset" in df.columns:
+        keep &= df["dataset"].isin(sources)
+    if min_confidence is not None and "confidence" in df.columns:
+        keep &= df["confidence"].isna() | (df["confidence"] >= float(min_confidence))
     return df[keep].reset_index(drop=True)
+
+
+def source_counts(df: pd.DataFrame) -> dict[str, int]:
+    """Per-source building counts for an (unfiltered) footprint DataFrame, so the UI
+    can show how many buildings each provider contributes before the user picks."""
+    if df.empty or "dataset" not in df.columns:
+        return {}
+    counts = df["dataset"].fillna("Other").value_counts()
+    return {str(k): int(v) for k, v in counts.items()}
 
 
 def _approx_area_km2(area: BaseGeometry) -> float:
@@ -68,20 +104,27 @@ def _approx_area_km2(area: BaseGeometry) -> float:
     return abs(width_km * height_km)
 
 
-def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None, with_geom: bool = False) -> pd.DataFrame:
+def fetch_buildings(
+    area: BaseGeometry,
+    min_confidence: float | None = None,
+    with_geom: bool = False,
+    sources: list[str] | None = None,
+) -> pd.DataFrame:
     """Fetch building footprints whose centroid falls inside `area`.
 
     Args:
         area: a shapely Polygon/MultiPolygon in WGS84 (lon/lat).
         min_confidence: if set, drop buildings whose Google-source confidence is
-            below this. Null-confidence footprints (Microsoft/OSM) are dropped too
-            when this is set — matching the pilot's Google-Open-Buildings input.
+            below this. Buildings without a confidence (Microsoft/OSM) are kept —
+            use `sources` to control which providers are included.
         with_geom: include the GeoJSON polygon column (`geom_json`) when True.
             Adds significant payload weight; pipelines that only need centroids
             (sampling, coverage clustering) keep this off.
+        sources: keep only buildings from these Overture providers (e.g.
+            ["Google Open Buildings"]). None = every source. See KNOWN_SOURCES.
 
     Returns:
-        DataFrame[lon, lat, area_m2, confidence] (+ geom_json if with_geom).
+        DataFrame[lon, lat, area_m2, confidence, dataset] (+ geom_json if with_geom).
 
     Raises:
         ValueError: if the area's bounding box exceeds MAX_AREA_KM2.
@@ -101,7 +144,7 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None, wit
     if cached is not None:
         df = pd.DataFrame(list(cached.buildings.values(*cols)), columns=cols)
         logger.info("microplans footprints cache hit (%s, %d buildings)", area_hash[:12], len(df))
-        return _apply_confidence(df, min_confidence)
+        return _apply_filters(df, sources=sources, min_confidence=min_confidence)
 
     # Miss: fetch every building once (confidence-agnostic) and persist as rows.
     # Always pull the polygon from Overture so the cache is review-ready; pipelines
@@ -120,6 +163,7 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None, wit
                         lat=r.lat,
                         area_m2=(None if pd.isna(r.area_m2) else r.area_m2),
                         confidence=(None if pd.isna(r.confidence) else r.confidence),
+                        dataset=(getattr(r, "dataset", None) or None),
                         geom_json=(None if not getattr(r, "geom_json", None) else r.geom_json),
                     )
                     for r in df_all.itertuples(index=False)
@@ -132,7 +176,7 @@ def fetch_buildings(area: BaseGeometry, min_confidence: float | None = None, wit
         logger.info("microplans footprints concurrent fill (%s); using stored rows", area_hash[:12])
         fa = FootprintArea.objects.get(area_hash=area_hash)
         df_all = pd.DataFrame(list(fa.buildings.values(*cols)), columns=cols)
-    return _apply_confidence(df_all, min_confidence)
+    return _apply_filters(df_all, sources=sources, min_confidence=min_confidence)
 
 
 def _query_overture(area: BaseGeometry, min_confidence: float | None) -> pd.DataFrame:
@@ -203,7 +247,7 @@ def _query_extract(area: BaseGeometry, region: str, min_confidence: float | None
         params.append(float(min_confidence))
 
     query = f"""
-        SELECT lon, lat, area_m2, confidence,
+        SELECT lon, lat, area_m2, confidence, dataset,
                ST_AsGeoJSON(ST_GeomFromWKB(geom_wkb)) AS geom_json
         FROM read_parquet('{glob}', hive_partitioning=true)
         WHERE tx BETWEEN ? AND ? AND ty BETWEEN ? AND ?
@@ -243,6 +287,7 @@ def _query_overture_live(area: BaseGeometry, min_confidence: float | None) -> pd
             ST_Y(ST_Centroid(geometry)) AS lat,
             ST_Area_Spheroid(geometry)  AS area_m2,
             sources[1].confidence       AS confidence,
+            sources[1].dataset          AS dataset,
             ST_AsGeoJSON(geometry)      AS geom_json
         FROM read_parquet('{OVERTURE_BUILDINGS}', filename=false, hive_partitioning=true)
         WHERE bbox.xmin >= ? AND bbox.xmax <= ?

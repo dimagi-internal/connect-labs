@@ -16,7 +16,9 @@ from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_
 def test_coverage_caps_work_area_count(monkeypatch):
     """A pathological cell/area combo that yields > MAX_WORK_AREAS cells is a user
     error with an actionable message — not a silently-huge, multi-MB plan."""
-    monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(10, seed=1))
+    monkeypatch.setattr(
+        coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _scatter(10, seed=1)
+    )
     monkeypatch.setattr(
         coverage_frame.clustering,
         "grid_clusters",
@@ -50,7 +52,9 @@ _AREA = [
 
 class TestCoverageFrame:
     def test_grid_cells_cover_all_buildings(self, monkeypatch):
-        monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(120, seed=7))
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _scatter(120, seed=7)
+        )
         res = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=150))
         feats = res.areas_geojson["features"]
         # grid is deterministic; every building lands in exactly one cell
@@ -73,14 +77,18 @@ class TestCoverageFrame:
         assert cfg.area_min_m2 <= 1.0 and cfg.area_max_m2 >= 1000.0
 
     def test_smaller_cells_make_more_work_areas(self, monkeypatch):
-        monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(200, seed=9))
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _scatter(200, seed=9)
+        )
         coarse = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=400))
         fine = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=50))
         assert len(fine.areas_geojson["features"]) > len(coarse.areas_geojson["features"])
 
     def test_no_arms_in_output(self, monkeypatch):
         # coverage has no intervention/comparison arms — single coverage zone.
-        monkeypatch.setattr(coverage_frame, "fetch_buildings", lambda area, min_confidence=None: _scatter(50, seed=11))
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _scatter(50, seed=11)
+        )
         res = generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=150))
         for f in res.areas_geojson["features"]:
             assert "arm" not in f["properties"]
@@ -89,7 +97,7 @@ class TestCoverageFrame:
     def test_circle_area_input(self, monkeypatch):
         seen = {}
 
-        def fake_fetch(area, min_confidence=None):
+        def fake_fetch(area, min_confidence=None, sources=None):
             seen["area"] = area
             return _scatter(40, seed=8)
 

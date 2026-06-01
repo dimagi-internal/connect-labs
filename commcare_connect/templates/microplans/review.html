@@ -250,6 +250,26 @@
               <label class="block"><span class="text-gray-600">Alternate</span>
                 <input id="cfg-alternate" type="number" value="8" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
             </div>
+            <div class="border-t border-gray-100 pt-2">
+              <div class="text-gray-600 mb-1">Building source</div>
+              <div id="source-picker" class="space-y-0.5 text-[11px]">
+                <label class="flex items-center justify-between gap-2">
+                  <span class="flex items-center gap-1"><input type="checkbox" class="src-cb" value="Google Open Buildings" checked> Google Open Buildings</span>
+                  <span class="src-count text-gray-400 tabular-nums" data-src="Google Open Buildings"></span>
+                </label>
+                <label class="flex items-center justify-between gap-2">
+                  <span class="flex items-center gap-1"><input type="checkbox" class="src-cb" value="OpenStreetMap"> OpenStreetMap</span>
+                  <span class="src-count text-gray-400 tabular-nums" data-src="OpenStreetMap"></span>
+                </label>
+                <label class="flex items-center justify-between gap-2">
+                  <span class="flex items-center gap-1"><input type="checkbox" class="src-cb" value="Microsoft ML Buildings"> Microsoft ML Buildings</span>
+                  <span class="src-count text-gray-400 tabular-nums" data-src="Microsoft ML Buildings"></span>
+                </label>
+              </div>
+              <label class="block mt-1"><span class="text-gray-600">Min Google confidence</span>
+                <input id="cfg-min-confidence" type="number" value="0.7" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs"></label>
+              <p class="text-[10px] text-gray-500 mt-0.5">Google carries a per-building confidence; OSM/Microsoft don't. Counts appear after you generate.</p>
+            </div>
             <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">Generate sample</button>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
             <dl class="space-y-0.5" id="sampling-arm-stats"></dl>
@@ -1628,11 +1648,28 @@
   }
 
   function samplingConfig() {
+    const sources = [...document.querySelectorAll(".src-cb:checked")].map((c) => c.value);
+    const conf = parseFloat($("cfg-min-confidence")?.value);
     return {
       target_clusters: parseInt($("cfg-target-clusters")?.value || "25", 10),
       primary_per_psu: parseInt($("cfg-primary")?.value || "8", 10),
       alternates_per_psu: parseInt($("cfg-alternate")?.value || "8", 10),
+      sources: sources,
+      min_confidence: isNaN(conf) ? null : conf,
     };
+  }
+
+  // After a sample, show how many buildings each provider contributed (totalled
+  // across arms) next to the source checkboxes, so the next pick is informed.
+  function renderSourceCounts(stats) {
+    const totals = {};
+    (stats || []).forEach((s) => {
+      Object.entries(s.source_counts || {}).forEach(([k, v]) => { totals[k] = (totals[k] || 0) + v; });
+    });
+    document.querySelectorAll(".src-count").forEach((el) => {
+      const n = totals[el.dataset.src];
+      el.textContent = n == null ? "" : n.toLocaleString();
+    });
   }
 
   function armPaint(prop, intervention, comparison) {
@@ -1667,6 +1704,7 @@
     if (fitData.features && fitData.features.length) Microplans.fitTo(map, fitData, { maxZoom: 16, animate: false, duration: 0 });
     renderArmStats(result.stats || []);
     renderRationale(result.stats || []);
+    renderSourceCounts(result.stats || []);
   }
 
   function renderArmStats(stats) {
@@ -1693,9 +1731,13 @@
       const tiny = s.removed_tiny_isolated || 0, large = s.removed_large || 0;
       const psusFormed = s.clusters_formed || 0, psusSel = s.psus_selected || 0;
       const prim = s.primaries || 0, alt = s.alternates || 0;
+      const shortName = (k) => k.replace(" Open Buildings", "").replace(" ML Buildings", "");
+      const used = (s.sources_used || []).map(shortName).join(" + ") || "all sources";
+      const avail = Object.entries(s.source_counts || {}).map(([k, v]) => `${esc(shortName(k))} ${v.toLocaleString()}`).join(", ");
       return `<div>
         <div class="text-[11px] font-medium text-gray-700"><span style="color:${c}">●</span> ${esc(s.arm)} arm</div>
         <ol class="space-y-1 mt-1 ml-1 list-none">
+          ${step(0, "Source", `<b>${esc(used)}</b>${avail ? ` &mdash; available in this area: ${avail}` : ""}.`)}
           ${step(1, "Building frame", `${fetched} rooftops fetched; dropped ${tiny} tiny/isolated (&lt;9 m²) and ${large} oversized (&gt;330 m²) &rarr; <b>${kept}</b> in the frame.`)}
           ${step(2, "PSUs formed", `grouped into <b>${psusFormed}</b> candidate clusters; under-16-building clusters merge into their nearest neighbour.`)}
           ${step(3, "PPS selection", `<b>${psusSel}</b> PSUs drawn with probability proportional to building count &mdash; denser clusters are likelier, so the sample mirrors where people actually live.`)}
