@@ -45,15 +45,19 @@ class CoverageConfig:
     # (>10000m²) footprints which are typically OSM landmass artifacts.
     area_min_m2: float = 1.0
     area_max_m2: float = 10000.0
+    # coverage wants completeness → all providers by default (None = every source).
+    sources: list[str] | None = None
 
     @classmethod
     def from_payload(cls, d: dict) -> CoverageConfig:
         conf = d.get("min_confidence")
+        src = d.get("sources")
         return cls(
             cell_size_m=_clamp(float(d.get("cell_size_m", 100)), 10.0, 100000.0),
             min_confidence=(None if conf in (None, "", 0) else _clamp(float(conf), 0.0, 1.0)),
             area_min_m2=_clamp(float(d.get("area_min_m2", 1)), 0.0, 1e6),
             area_max_m2=_clamp(float(d.get("area_max_m2", 10000)), 1.0, 1e7),
+            sources=([str(s) for s in src] if isinstance(src, list) and src else None),
         )
 
 
@@ -72,7 +76,7 @@ def generate_coverage_frame(areas: list[dict], config: CoverageConfig) -> Covera
 
     geoms = [resolve_area(a) for a in areas]
     area = unary_union(geoms)
-    buildings = fetch_buildings(area, min_confidence=config.min_confidence)
+    buildings = fetch_buildings(area, min_confidence=config.min_confidence, sources=config.sources)
     filtered = apply_frame_filters(
         buildings, FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2)
     )

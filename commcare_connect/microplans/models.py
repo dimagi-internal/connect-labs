@@ -47,6 +47,10 @@ class FootprintBuilding(models.Model):
     lat = models.FloatField()
     area_m2 = models.FloatField(null=True, blank=True)
     confidence = models.FloatField(null=True, blank=True)  # Google-source confidence; null for MS/OSM
+    # Overture primary source / provider (e.g. "Google Open Buildings",
+    # "OpenStreetMap", "Microsoft ML Buildings"). Drives the source picker. Null for
+    # rows cached before source capture (those areas re-fetch on the bumped cache key).
+    dataset = models.CharField(max_length=64, null=True, blank=True)
     # GeoJSON coordinates of the actual polygon (e.g. [[[lon,lat],...]] for Polygon).
     # Stored as JSON to keep the model GIS-free; the review-page footprints overlay
     # reads this when present, otherwise falls back to a centroid marker.
