@@ -5,16 +5,15 @@ Connect API. Calls go through the JSON-RPC transport, same as the rest of
 the MCP test suite — keeps schema validation and error formatting honest.
 """
 
-import json
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from commcare_connect.labs.models import UserConnectToken
 from commcare_connect.mcp.models import MCPAccessToken
+from commcare_connect.mcp.testing import call_tool
 from commcare_connect.users.models import User
 
 
@@ -31,23 +30,9 @@ def auth_user(db):
 
 
 def _call_tool(client, raw, arguments):
-    resp = client.post(
-        reverse("mcp:endpoint"),
-        data=json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": "workflow_sync_from_template_file",
-                    "arguments": arguments,
-                },
-            }
-        ),
-        content_type="application/json",
-        HTTP_AUTHORIZATION=f"Bearer {raw}",
-    )
-    return resp.json()
+    # client unused — the MCP endpoint is now a FastMCP ASGI app; call_tool
+    # drives the same in-process path and returns the JSON-RPC-shaped envelope.
+    return call_tool(raw, "workflow_sync_from_template_file", arguments)
 
 
 _SIMPLE_TEMPLATE_SOURCE = """

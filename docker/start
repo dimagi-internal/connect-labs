@@ -6,4 +6,9 @@ set -o nounset
 
 
 WORKERS=${WEB_CONCURRENCY:-3}
-gunicorn config.wsgi --bind 0.0.0.0:8000 --chdir=/app --timeout 600 -k gthread --threads 4 -w "$WORKERS"
+# Serve the ASGI app: the MCP server (FastMCP Streamable-HTTP) needs ASGI +
+# lifespan, which the gthread WSGI worker cannot provide. UvicornWorker keeps
+# the gunicorn process model (WEB_CONCURRENCY workers, graceful reloads) while
+# running config.asgi:application as a native ASGI app.
+gunicorn config.asgi:application --bind 0.0.0.0:8000 --chdir=/app --timeout 600 \
+    -k uvicorn.workers.UvicornWorker -w "$WORKERS"
