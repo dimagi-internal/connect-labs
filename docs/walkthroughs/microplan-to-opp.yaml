@@ -28,6 +28,7 @@ personas:
 scenes:
   - persona: maya
     title: "The workspace before any opportunity exists"
+    url: "/microplans/program/133/"
     show: "Navigate to /microplans/program/133/ and show the candidate plans grouped into the Planning and Live columns, each card carrying its lifecycle status and headline KPIs"
     concept_claim: "Candidate microplans live and are reviewed in a program workspace before any Connect opportunity is provisioned to run them."
     provenance: S1
@@ -45,6 +46,7 @@ scenes:
       - { kind: hold, seconds: 1.2 }
   - persona: maya
     title: "Maya turns a district into a draft plan"
+    url: "/microplans/program/133/new/"
     show: "From the workspace click New plan, go to /microplans/program/133/new/, pick an administrative boundary, choose coverage mode, and generate the work-area grid"
     concept_claim: "Selecting an administrative boundary generates a grid of work areas covering that district instead of requiring areas to be hand-drawn."
     provenance: S2
@@ -118,24 +120,33 @@ scenes:
         verify: "pytest: POST transition draft to in_review then in_review to approved succeeds and each appends a status_log entry; an illegal jump returns 400"
     actions:
       - { kind: goto, target: "/microplans/program/133/", note: "back to the portfolio to drive the lifecycle" }
-      - { kind: click, target: "Submit for review", note: "Draft → In review" }
+      - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', note: "the draft card we just built" }
       - { kind: hold, seconds: 1.0 }
-      - { kind: click, target: "Approve", note: "In review → Approved" }
-      - { kind: hold, seconds: 1.2 }
+      - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Submit for review")', note: "Draft → In review (this plan's card, not a sibling's)" }
+      - { kind: hold, seconds: 2.0, note: "the transition saves and the card re-renders" }
+      - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "In review → Approved" }
+      - { kind: hold, seconds: 2.0 }
   - persona: maya
     title: "Maya binds the plan to a live opportunity"
-    show: "On the Approved card click Deploy, enter the live Connect opportunity the plan will run under (the ai-demo-space opportunity d99e4422-e11a-476e-b885-fdf92026ea54), and show the plan move into the Live column tagged with that opportunity"
-    concept_claim: "Deploying an approved plan binds it to a specific live Connect opportunity and moves it to Live as a one-way handoff."
+    show: "On the Approved card click Deploy, pick the live Connect opportunity from the searchable list (the ai-demo-space opportunity 'LEEP Paint Surveillance - India (run 20260522-1241)' — id 1834 in labs, the same opportunity that is d99e4422-e11a-476e-b885-fdf92026ea54 in Connect), and show the plan move into the Live column tagged with that opportunity"
+    concept_claim: "Deploying an approved plan binds it to a specific live Connect opportunity picked from the owner's own list and moves it to Live as a one-way handoff."
     provenance: S6
-    design_intent: "Bet that the planning phase needs a definite end — binding the plan to a real opportunity id is the moment labs stops and Connect takes over."
+    design_intent: "Bet that the planning phase needs a definite end — binding the plan to a real opportunity the owner clicks from their own live list is the moment labs stops and Connect takes over."
     features:
       - id: deploy-bind
-        description: "Deploy transition that requires an opportunity_id, stores it on the plan, and sets status to deployed (terminal in labs)"
+        description: "Deploy opens a searchable picker of the owner's live opportunities; choosing one binds its opportunity_id and sets status to deployed (terminal in labs)"
         verify: "pytest: transition approved to deployed without an opportunity_id raises ValueError; with one, plan.opportunity_id is set and status is deployed"
     actions:
-      - { kind: scroll_to, target: "LIVE", note: "the Live column — plans already bound to an opportunity" }
-      - { kind: hover, target: "Deploy", seconds: 1.0, note: "bind an approved plan to a live Connect opportunity" }
+      - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Deploy")', note: "open the opportunity picker" }
+      - { kind: hold, seconds: 1.2, note: "the Deploy-to-opportunity modal opens" }
+      - { kind: fill, target: "#deploy-search", value: "20260522-1241", note: "filter to the exact live opportunity (no id to type)" }
       - { kind: hold, seconds: 1.0 }
+      - { kind: wait_for, target: "css:.deploy-opp", note: "the matching opportunity" }
+      - { kind: click, target: "css:.deploy-opp", note: "bind this plan to the LEEP Paint Surveillance opportunity" }
+      - { kind: hold, seconds: 2.5, note: "the plan moves to Live, tagged with the opportunity" }
+      - { kind: scroll_to, target: "css:div.border.rounded-lg.p-3.bg-white:has-text(\"Kano North — DDD demo\")", note: "follow the plan into the Live column" }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.4, note: "now Live → LEEP Paint Surveillance — the handoff has landed" }
+      - { kind: hold, seconds: 1.6 }
   - persona: maya
     title: "The plan leaves in Connect's own format"
     show: "On the plan, click Download Connect import CSV and show the file downloads with the column headers of Connect's work-area importer"
@@ -147,7 +158,7 @@ scenes:
         description: "CSV export of non-excluded work areas in the exact column order of Connect's WorkAreaCSVImporter headers, with LGA/State populated so it imports without edits"
         verify: "pytest: the exported CSV header row equals WorkAreaCSVImporter.HEADERS, one row per non-excluded work area, and LGA/State are non-empty"
     actions:
-      - { kind: click, target: "Kano North — DDD demo", note: "open the plan we just built" }
+      - { kind: click, target: 'css:a:has-text("Kano North — DDD demo")', note: "open the plan we just built (now Live)" }
       - { kind: wait_for, target: "Download Connect import CSV" }
       - { kind: scroll_to, target: "Download Connect import CSV", note: "the export control" }
       - { kind: click, target: "Download Connect import CSV", note: "download the Connect-ready CSV (LGA/State populated)" }
