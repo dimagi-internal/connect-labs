@@ -7,6 +7,7 @@
 {{ block.super }}
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
 <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
 <style>
   #review-map { position: absolute; inset: 0; }
   .hidden { display: none !important; }
@@ -79,25 +80,67 @@
   .wa-group-hdr .gn-sw { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 0.15rem; vertical-align: middle; margin-right: 0.4rem; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
   .wa-group-hdr .ghdr-check { display: inline-block; margin-right: 0.35rem; cursor: pointer; }
   .wa-group-hdr .ghdr-check input { vertical-align: middle; }
+
+  /* ===== v3 left-rail design language (ported from the approved /tmp/microplans-leftrail/v3.html mockup) =====
+     Scoped to .mp-rail so it can't leak into the center column or table. Keeps every
+     existing id / Alpine hook; this is presentation only. */
+  .mp-rail {
+    --brand:#3843d0; --brand-ink:#2d36b3; --brand-tint:#eef0ff;
+    --ink:#0f1222; --muted:#6b7280; --faint:#9ca3af; --line:#e5e7eb; --line2:#eceef1;
+    --display:"Bricolage Grotesque","Work Sans",ui-sans-serif,system-ui,sans-serif;
+    display:flex; flex-direction:column; padding:0; gap:0;
+  }
+  .mp-rail .railhead { flex:0 0 auto; padding:14px 16px 12px; border-bottom:1px solid var(--line2); }
+  .mp-rail .railhead h1 { font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:-.01em; color:var(--ink); margin:0; }
+  .mp-rail .railhead .sub { font-size:11px; color:var(--faint); margin-top:2px; }
+  .mp-rail .railscroll { flex:1 1 auto; overflow-y:auto; padding:13px; display:flex; flex-direction:column; gap:9px; }
+  .mp-rail .railscroll::-webkit-scrollbar { width:8px; }
+  .mp-rail .railscroll::-webkit-scrollbar-thumb { background:#e3e6eb; border-radius:8px; }
+  .mp-rail .railfoot { flex:0 0 auto; border-top:1px solid var(--line2); background:#fff; padding:11px 13px; }
+  .mp-rail > section { margin:0; }
+
+  /* accordion steps as bordered cards with an icon chip + display-font title + rotating chevron */
+  .mp-rail details.mp-card { border:1px solid var(--line); border-radius:11px; background:#fff; overflow:hidden; margin:0; }
+  .mp-rail details.mp-card[open] { box-shadow:0 6px 18px -13px rgba(16,18,34,.32); }
+  .mp-rail details.mp-card > summary {
+    list-style:none; cursor:pointer; user-select:none; display:flex; align-items:center; gap:9px;
+    padding:11px 12px; font-family:var(--display); font-weight:700; font-size:13px; color:var(--ink);
+    text-transform:none; letter-spacing:0; margin:0;
+  }
+  .mp-rail details.mp-card > summary::-webkit-details-marker { display:none; }
+  .mp-rail details.mp-card > summary .ic {
+    flex:0 0 auto; width:22px; height:22px; border-radius:6px; background:var(--brand-tint);
+    color:var(--brand); display:grid; place-items:center; font-size:12px; font-weight:700; line-height:1;
+  }
+  .mp-rail details.mp-card > summary .lbl { flex:1 1 auto; min-width:0; }
+  .mp-rail details.mp-card > summary .acc-sum { font-family:"Work Sans",sans-serif; font-weight:500; font-size:11px; color:var(--faint); }
+  .mp-rail details.mp-card > summary .chev {
+    display:inline-block; color:var(--faint); font-size:14px; line-height:1; margin:0;
+    transition:transform .15s; transform:rotate(0);
+  }
+  .mp-rail details.mp-card[open] > summary .chev { transform:rotate(90deg); }
+  .mp-rail details.mp-card[open] > summary { border-bottom:1px solid var(--line2); }
+  .mp-rail details.mp-card > *:not(summary) { padding-left:12px; padding-right:12px; }
+  .mp-rail details.mp-card > summary + * { padding-top:11px; margin-top:0; }
+  .mp-rail details.mp-card > *:not(summary):last-child { padding-bottom:13px; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="flex" x-data>
   <!-- Left: sticky sidebar that stays visible while the center column scrolls -->
-  <aside class="w-72 flex-shrink-0 border-r border-gray-200 bg-white p-4 space-y-4 text-sm sticky top-0 self-start max-h-screen overflow-y-auto">
-    <div>
+  <aside class="mp-rail w-72 flex-shrink-0 border-r border-gray-200 bg-white text-sm sticky top-0 self-start h-screen max-h-screen">
+    <div class="railhead">
       {% if plan_id %}
-      <h1 class="text-lg font-bold text-gray-900">Microplan review</h1>
-      <p class="text-xs text-gray-500">Plan #{{ plan_id }}</p>
-      <p class="text-xs text-gray-400 mt-1">Planning phase — edits here happen before upload to Connect.</p>
+      <h1>Microplan review</h1>
+      <div class="sub">Plan #{{ plan_id }} · planning phase</div>
       {% else %}
-      <h1 class="text-lg font-bold text-gray-900">New microplan</h1>
-      <p class="text-xs text-gray-500">Program #{{ program_id }}</p>
-      <p class="text-xs text-gray-400 mt-1">Define the area + cell size, then Apply to generate the plan.</p>
+      <h1>New microplan</h1>
+      <div class="sub">Program #{{ program_id }} · define area + cell size</div>
       {% endif %}
-      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to program</a>{% endif %}
+      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue" style="display:inline-block;margin-top:6px;">← Back to program</a>{% endif %}
     </div>
+    <div class="railscroll">
 
     {% if not plan_id %}
     <!-- Plan name + region — pre-create. Used by the Apply geographic frame
@@ -122,9 +165,11 @@
     <!-- AREA DEFINITION — collapsible on existing plans (Apply = destructive
          regenerate); open by default on a no-plan page (Apply = create). -->
     <section>
-      <details class="area-def"{% if not plan_id %} open{% endif %}>
-        <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
-          <span class="chev">▶</span> {% if plan_id %}Edit area &amp; cell size{% else %}Define area &amp; cell size{% endif %}
+      <details class="area-def mp-card"{% if not plan_id %} open{% endif %}>
+        <summary>
+          <span class="ic">◧</span>
+          <span class="lbl">{% if plan_id %}Edit area &amp; cell size{% else %}Define area &amp; cell size{% endif %}</span>
+          <span class="chev">›</span>
         </summary>
         <div class="space-y-3 mt-2 text-xs">
           <p class="text-[10px] text-gray-500 leading-snug" id="area-def-help">
@@ -239,8 +284,8 @@
     </section>
 
     {% if plan_id %}
-    <details class="mp-acc" open>
-      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Map colors</summary>
+    <details class="mp-acc mp-card" open>
+      <summary><span class="ic">◑</span><span class="lbl">Map colors</span><span class="chev">›</span></summary>
       <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
         <button type="button" id="dim-worker" class="seg-tab is-on">By worker</button>
         <button type="button" id="dim-group" class="seg-tab">By group</button>
@@ -248,8 +293,8 @@
       <p class="text-[10px] text-gray-400 mt-1">Fill colors the chosen dimension; outline always carries the other.</p>
     </details>
 
-    <details class="mp-acc border-t pt-3" open>
-      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Group work areas</summary>
+    <details class="mp-acc mp-card" open>
+      <summary><span class="ic">⬡</span><span class="lbl">Group work areas</span><span class="chev">›</span></summary>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
           <span class="text-gray-600">How to group</span>
@@ -277,8 +322,8 @@
       </div>
     </details>
 
-    <details class="mp-acc border-t pt-3">
-      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Assign workers</summary>
+    <details class="mp-acc mp-card">
+      <summary><span class="ic">◎</span><span class="lbl">Assign workers</span><span class="chev">›</span></summary>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
           <span class="text-gray-600">How to assign</span>
@@ -301,8 +346,8 @@
       </div>
     </details>
 
-    <details class="mp-acc border-t pt-3">
-      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide"><span class="chev">▶</span> Bulk (selected)</summary>
+    <details class="mp-acc mp-card">
+      <summary><span class="ic">☰</span><span class="lbl">Bulk (selected)</span><span class="chev">›</span></summary>
       <div class="flex flex-col gap-2">
         <button type="button" id="bulk-exclude" class="button button-sm primary-dark">Exclude selected…</button>
         <div class="grid grid-cols-2 gap-1">
@@ -315,13 +360,17 @@
       </div>
     </details>
 
-    <section class="border-t pt-3">
+    </div><!-- /railscroll -->
+    <div class="railfoot">
       <button type="button" id="btn-export" class="button button-sm outline-style w-full">Download Connect import CSV</button>
       <div id="status" class="text-xs text-gray-500 mt-2"></div>
-    </section>
+    </div>
     {% else %}
-    <!-- No plan yet — show only the status line for Apply feedback. -->
-    <div id="status" class="text-xs text-gray-500"></div>
+    </div><!-- /railscroll -->
+    <div class="railfoot">
+      <!-- No plan yet — show only the status line for Apply feedback. -->
+      <div id="status" class="text-xs text-gray-500"></div>
+    </div>
     {% endif %}
   </aside>
 
