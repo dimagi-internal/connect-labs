@@ -2779,6 +2779,48 @@ def prev_categories_api(request):
 
 
 @login_required
+def run_category_history_api(request):
+    """
+    Return completed runs with category distributions for the improvement-over-time
+    chart. Each entry has completed_at + per-category counts so the frontend can
+    build a step-constant stacked bar per month.
+    """
+    try:
+        wf_access = WorkflowDataAccess(request=request)
+        runs = wf_access.list_runs()
+        wf_access.close()
+
+        result = []
+        for run in sorted(
+            (r for r in runs if r.is_completed and r.completed_at),
+            key=lambda r: r.completed_at or "",
+        ):
+            wr = (run.data.get("state") or {}).get("worker_results") or {}
+            if not wr:
+                continue
+            dist = {"eligible_for_renewal": 0, "requires_improvement": 0, "suspended": 0}
+            for entry in wr.values():
+                cat = entry.get("result") if isinstance(entry, dict) else str(entry or "")
+                if cat == "probation":
+                    cat = "requires_improvement"
+                if cat in dist:
+                    dist[cat] += 1
+            result.append(
+                {
+                    "id": run.id,
+                    "completed_at": run.completed_at,
+                    "dist": dist,
+                    "total": len(wr),
+                }
+            )
+
+        return JsonResponse({"runs": result})
+    except Exception:
+        logger.exception("Failed to fetch run category history")
+        return JsonResponse({"error": "An internal error occurred"}, status=500)
+
+
+@login_required
 def open_run_state_api(request):
     """
     Return merged worker_results and audit_statuses across all open (in-progress
