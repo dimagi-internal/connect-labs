@@ -16,7 +16,7 @@ from shapely.ops import unary_union
 
 from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
-from commcare_connect.microplans.core.footprints import fetch_buildings
+from commcare_connect.microplans.core.footprints import DEFAULT_SOURCES, fetch_buildings, source_counts
 from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
 from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
 
@@ -39,6 +39,9 @@ class FrameConfig:
     min_confidence: float | None = 0.7
     area_min_m2: float = 9.0
     area_max_m2: float = 330.0
+    # Building providers to sample from (Overture `dataset` names). Defaults to
+    # Google Open Buildings, matching the rooftop pilot.
+    sources: list[str] = field(default_factory=lambda: list(DEFAULT_SOURCES))
     # Optional (lon, lat) of the verification reference point. When set, clusters
     # are stratified High/Medium/Low on distance_to_visit; otherwise single pool.
     reference_point: tuple[float, float] | None = None
@@ -47,6 +50,7 @@ class FrameConfig:
     def from_payload(cls, d: dict) -> FrameConfig:
         rp = d.get("reference_point")
         conf = d.get("min_confidence")
+        src = d.get("sources")
         return cls(
             # clamp to sane bounds so a malformed payload can't crash or stall sampling
             target_clusters=_clamp(int(d.get("target_clusters", 25)), 1, 500),
@@ -55,6 +59,9 @@ class FrameConfig:
             min_confidence=(None if conf in (None, "", 0) else _clampf(float(conf), 0.0, 1.0)),
             area_min_m2=_clampf(float(d.get("area_min_m2", 9)), 0.0, 1e6),
             area_max_m2=_clampf(float(d.get("area_max_m2", 330)), 1.0, 1e7),
+            # A non-empty list selects those providers; missing/empty falls back to
+            # the pilot default so a sample is never silently empty.
+            sources=([str(s) for s in src] if isinstance(src, list) and src else list(DEFAULT_SOURCES)),
             reference_point=(float(rp[0]), float(rp[1])) if rp else None,
         )
 
@@ -82,7 +89,15 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
 
     for arm, geoms in by_arm.items():
         area = unary_union(geoms)
-        buildings = fetch_buildings(area, min_confidence=config.min_confidence)
+        # Fetch once across all providers (confidence-filtered) so we can report the
+        # per-source breakdown, then sample only from the chosen sources.
+        all_buildings = fetch_buildings(area, min_confidence=config.min_confidence)
+        src_counts = source_counts(all_buildings)
+        buildings = (
+            all_buildings
+            if not config.sources
+            else all_buildings[all_buildings["dataset"].isin(config.sources)].reset_index(drop=True)
+        )
         filtered = apply_frame_filters(
             buildings, FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2)
         )
@@ -127,6 +142,8 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
         stats.append(
             {
                 "arm": arm,
+                "sources_used": list(config.sources),
+                "source_counts": src_counts,
                 "fetched": filtered.n_in,
                 "after_filters": filtered.n_out,
                 "removed_tiny_isolated": filtered.removed_tiny_isolated,

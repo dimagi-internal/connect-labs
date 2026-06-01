@@ -17,14 +17,20 @@ from commcare_connect.microplans.models import FootprintArea, FootprintBuilding
 pytestmark = pytest.mark.django_db
 
 
+GOOGLE = footprints.SOURCE_GOOGLE
+MICROSOFT = footprints.SOURCE_MICROSOFT
+OSM = footprints.SOURCE_OSM
+
+
 def _fake_buildings():
-    # 4 buildings: two high-confidence, one low, one null (Microsoft/OSM).
+    # 4 buildings: three Google (conf 0.9 / 0.8 / 0.5) + one Microsoft (null conf).
     return pd.DataFrame(
         {
             "lon": [3.00, 3.01, 3.02, 3.03],
             "lat": [6.00, 6.01, 6.02, 6.03],
             "area_m2": [120.0, 95.0, 210.0, None],
             "confidence": [0.9, 0.8, 0.5, None],
+            "dataset": [GOOGLE, GOOGLE, GOOGLE, MICROSOFT],
         }
     )
 
@@ -53,14 +59,51 @@ def test_miss_fetches_once_then_hits_from_postgres(monkeypatch):
     assert FootprintArea.objects.count() == 1  # no duplicate area
 
 
-def test_confidence_filter_applied_at_read(monkeypatch):
+def test_confidence_filter_applies_to_google_keeps_sourceless(monkeypatch):
     area = box(3.0, 6.0, 3.05, 6.05)
     monkeypatch.setattr(footprints, "_query_overture", lambda a, min_confidence=None: _fake_buildings())
 
-    # Stored unfiltered (4); a 0.7 threshold drops the 0.5 and the null → 2 remain.
+    # Stored unfiltered (4). A 0.7 threshold drops the 0.5 Google building but KEEPS
+    # the null-confidence Microsoft one (the threshold only gates the source that
+    # carries a confidence; source inclusion is the `sources` filter's job).
     footprints.fetch_buildings(area, min_confidence=None)
     df = footprints.fetch_buildings(area, min_confidence=0.7)
+    assert len(df) == 3
+    assert sorted(df["confidence"].dropna()) == [0.8, 0.9]
+    assert MICROSOFT in set(df["dataset"])
+
+
+def test_source_filter_selects_providers(monkeypatch):
+    area = box(3.0, 6.0, 3.05, 6.05)
+    monkeypatch.setattr(footprints, "_query_overture", lambda a, min_confidence=None: _fake_buildings())
+    footprints.fetch_buildings(area, min_confidence=None)  # cache all 4
+
+    google_only = footprints.fetch_buildings(area, sources=[GOOGLE])
+    assert len(google_only) == 3 and set(google_only["dataset"]) == {GOOGLE}
+
+    ms_only = footprints.fetch_buildings(area, sources=[MICROSOFT])
+    assert len(ms_only) == 1 and set(ms_only["dataset"]) == {MICROSOFT}
+
+    both = footprints.fetch_buildings(area, sources=[GOOGLE, MICROSOFT])
+    assert len(both) == 4
+
+    osm_only = footprints.fetch_buildings(area, sources=[OSM])  # none present
+    assert len(osm_only) == 0
+
+
+def test_source_and_confidence_compose(monkeypatch):
+    area = box(3.0, 6.0, 3.05, 6.05)
+    monkeypatch.setattr(footprints, "_query_overture", lambda a, min_confidence=None: _fake_buildings())
+    footprints.fetch_buildings(area, min_confidence=None)
+
+    # Google + 0.7: the two high-confidence Google buildings (0.5 dropped, MS excluded).
+    df = footprints.fetch_buildings(area, sources=[GOOGLE], min_confidence=0.7)
     assert len(df) == 2 and set(df["confidence"]) == {0.9, 0.8}
+
+
+def test_source_counts_breakdown():
+    counts = footprints.source_counts(_fake_buildings())
+    assert counts == {GOOGLE: 3, MICROSOFT: 1}
 
 
 def test_oversized_area_rejected_before_any_fetch(monkeypatch):
