@@ -822,113 +822,99 @@ class ProgramPlanFootprintsView(LoginRequiredMixin, View):
         return resp
 
 
-class ProgramPlanReassignView(LoginRequiredMixin, View):
-    """Phase-2 op: re-apply the assignment strategy to a plan's groups.
+def _enqueue_plan_mutation(request, op, program_id, plan_id, params):
+    """Offload a heavy plan mutation (regroup/reassign/regenerate) to Celery and
+    return 202 + a pollable task id. The client polls ``microplans:preview_status``
+    and reads the task's result (``plan_to_json`` on success, or a
+    ``{status: conflict|error}`` envelope). The worker writes via the LabsRecord
+    API, so it needs the caller's OAuth token (same pattern as bulk-create)."""
+    from django.urls import reverse
 
-    Body: ``{"strategy": "manual" | "round_robin" | "minimax_spread",
-    "workers": ["chw-1", "chw-2", ...], "restarts": int, "seed": int}``.
-    See ``core.assignment.AssignmentConfig`` for defaults.
+    from commcare_connect.microplans.tasks import apply_plan_mutation_task
+
+    access_token = (request.session.get("labs_oauth") or {}).get("access_token")
+    if not access_token:
+        return JsonResponse(
+            {"status": "error", "detail": "Not authenticated with Connect — sign in again."}, status=401
+        )
+    task = apply_plan_mutation_task.delay(
+        op, int(program_id), int(plan_id), params, request.user.get_username(), access_token
+    )
+    return JsonResponse(
+        {"status": "queued", "task_id": task.id, "poll_url": reverse("microplans:preview_status", args=[task.id])},
+        status=202,
+    )
+
+
+class ProgramPlanReassignView(LoginRequiredMixin, View):
+    """Phase-2 op: re-apply the assignment strategy to a plan's groups (Celery-offloaded).
+
+    Body: ``{"strategy", "workers", "restarts", "seed", "revision"}``. See
+    ``core.assignment.AssignmentConfig`` for defaults.
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
-
         try:
             payload = json.loads(request.body or "{}")
             payload = payload if isinstance(payload, dict) else {}
-            base_revision = payload.pop("revision", None)
-            assignment = payload
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
-
-        da = ProgramPlanDataAccess(program_id, request=request)
-        try:
-            plan = da.reassign_plan(int(plan_id), assignment, request.user.get_username(), base_revision=base_revision)
-        except StalePlanError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans reassign failed (program=%s plan=%s)", program_id, plan_id)
-            return JsonResponse({"status": "error", "detail": "Reassign failed."}, status=502)
-        return JsonResponse(serialization.plan_to_json(plan))
+        base_revision = payload.pop("revision", None)
+        return _enqueue_plan_mutation(
+            request, "reassign", program_id, plan_id, {"assignment": payload, "revision": base_revision}
+        )
 
 
 class ProgramPlanRegenerateView(LoginRequiredMixin, View):
-    """Destructive regenerate: wipe + rebuild a plan's work areas from a new
-    boundary/cell-size payload. Same body shape as ProgramCreatePlanView, sans
-    name/region (those stay on the plan).
-
-    The plan keeps its id; CHW assignments + per-area edits are reset.
-    """
+    """Destructive regenerate: wipe + rebuild a plan's work areas (Celery-offloaded).
+    Same body shape as ProgramCreatePlanView sans name/region. Keeps the plan id;
+    CHW assignments + per-area edits are reset."""
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
-
         empty_fc = {"type": "FeatureCollection", "features": []}
         try:
             payload = json.loads(request.body)
             mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
             pins = payload.get("pins") or empty_fc
             hulls = (payload.get("coverage_areas") or payload.get("hulls")) or empty_fc
-            input_areas = payload.get("input_areas") or []
-            if not isinstance(input_areas, list):
-                input_areas = []
-            grouping = payload.get("grouping") or {}
-            if not isinstance(grouping, dict):
-                grouping = {}
+            input_areas = payload.get("input_areas") if isinstance(payload.get("input_areas"), list) else []
+            grouping = payload.get("grouping") if isinstance(payload.get("grouping"), dict) else {}
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        da = ProgramPlanDataAccess(program_id, request=request)
-        try:
-            plan = da.regenerate_plan(
-                int(plan_id),
-                mode=mode,
-                pins=pins,
-                hulls=hulls,
-                input_areas=input_areas,
-                grouping=grouping,
-                base_revision=payload.get("revision"),
-            )
-        except StalePlanError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans regenerate failed (program=%s plan=%s)", program_id, plan_id)
-            return JsonResponse({"status": "error", "detail": "Regenerate failed."}, status=502)
-        return JsonResponse(serialization.plan_to_json(plan))
+        return _enqueue_plan_mutation(
+            request,
+            "regenerate",
+            program_id,
+            plan_id,
+            {
+                "mode": mode,
+                "pins": pins,
+                "hulls": hulls,
+                "input_areas": input_areas,
+                "grouping": grouping,
+                "revision": payload.get("revision"),
+            },
+        )
 
 
 class ProgramPlanRegroupView(LoginRequiredMixin, View):
-    """Phase-1 op: re-apply the grouping strategy to a plan's cells.
+    """Phase-1 op: re-apply the grouping strategy to a plan's cells (Celery-offloaded).
 
-    Body: ``{"strategy": "bbox" | "bfs_adjacency", "max_buildings": int,
-    "buffer_distance_m": int, "target_size": int}``. All params optional; see
-    `core.grouping.GroupingConfig` for defaults.
+    Body: ``{"strategy", "max_buildings", "buffer_distance_m", "target_size", "revision"}``.
+    All params optional; see `core.grouping.GroupingConfig` for defaults.
     """
 
     def post(self, request, program_id, plan_id):
-        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess, StalePlanError
-
         try:
             payload = json.loads(request.body or "{}")
             payload = payload if isinstance(payload, dict) else {}
-            base_revision = payload.pop("revision", None)
-            grouping = payload
         except json.JSONDecodeError as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
-
-        da = ProgramPlanDataAccess(program_id, request=request)
-        try:
-            plan = da.regroup_plan(int(plan_id), grouping, request.user.get_username(), base_revision=base_revision)
-        except StalePlanError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=409)
-        except ValueError as e:
-            return JsonResponse({"status": "error", "detail": str(e)}, status=400)
-        except Exception:  # noqa: BLE001
-            logger.exception("microplans regroup failed (program=%s plan=%s)", program_id, plan_id)
-            return JsonResponse({"status": "error", "detail": "Regroup failed."}, status=502)
-        return JsonResponse(serialization.plan_to_json(plan))
+        base_revision = payload.pop("revision", None)
+        return _enqueue_plan_mutation(
+            request, "regroup", program_id, plan_id, {"grouping": payload, "revision": base_revision}
+        )
 
 
 class ProgramPlanFootprintsRefreshView(LoginRequiredMixin, View):
