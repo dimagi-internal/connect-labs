@@ -4051,30 +4051,42 @@ function WorkflowUI({
         var regRows =
           (pipelines.registrations && pipelines.registrations.rows) || [];
 
-        // Build eligible-for-renewal username set
+        // Build per-category username sets from current run + prev run fallback.
+        // 'probation' is treated as 'requires_improvement' (legacy alias).
         var eligibleUsernames = [];
+        var reqUsernames = [];
+        var suspendedUsernames = [];
         var seenU = {};
+        function _pushCat(cat, uname) {
+          if (cat === 'eligible_for_renewal') eligibleUsernames.push(uname);
+          else if (cat === 'requires_improvement' || cat === 'probation') reqUsernames.push(uname);
+          else if (cat === 'suspended') suspendedUsernames.push(uname);
+        }
         for (var u in workerResults) {
           var wr = workerResults[u];
-          if (wr && (wr.result || wr) === 'eligible_for_renewal')
-            eligibleUsernames.push(u);
+          _pushCat(wr && (wr.result || wr), u);
           seenU[u] = true;
         }
         for (var u2 in prevCategories) {
           if (seenU[u2]) continue;
           var wr2 = prevCategories[u2];
-          if (wr2 && (wr2.result || wr2) === 'eligible_for_renewal')
-            eligibleUsernames.push(u2);
+          _pushCat(wr2 && (wr2.result || wr2), u2);
         }
 
         var result = months.map(function (mo) {
-          var allSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, null);
+          var allSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, null);
           var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligibleUsernames);
+          var reqSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, reqUsernames);
+          var susSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, suspendedUsernames);
           return Object.assign({}, mo, {
-            followup_rate: eligSnap.followup_rate,
-            pct_still_eligible: eligSnap.pct_still_eligible,
-            followup_rate_all: allSnap.followup_rate,
-            pct_still_eligible_all: allSnap.pct_still_eligible,
+            followup_rate:           eligSnap.followup_rate,
+            pct_still_eligible:      eligSnap.pct_still_eligible,
+            followup_rate_req:       reqSnap.followup_rate,
+            pct_still_eligible_req:  reqSnap.pct_still_eligible,
+            followup_rate_sus:       susSnap.followup_rate,
+            pct_still_eligible_sus:  susSnap.pct_still_eligible,
+            followup_rate_all:       allSnap.followup_rate,
+            pct_still_eligible_all:  allSnap.pct_still_eligible,
           });
         });
         setMonthlyMetrics(result);
@@ -4284,13 +4296,17 @@ function WorkflowUI({
       }
     });
 
-    // Lines — drawn after compute. Grey = all FLWs, dark green = eligible only.
+    // Lines — drawn after compute. Solid = follow-up rate, dashed = % still eligible.
     if (monthlyMetrics) {
       var LINE_SERIES = [
-        { key: 'followup_rate_all',       color: '#9ca3af', dash: null,    dotKey: 'fua' },
-        { key: 'pct_still_eligible_all',  color: '#9ca3af', dash: '5,3',   dotKey: 'sea' },
-        { key: 'followup_rate',           color: '#15803d', dash: null,    dotKey: 'fue' },
-        { key: 'pct_still_eligible',      color: '#15803d', dash: '5,3',   dotKey: 'see' },
+        { key: 'followup_rate_all',          color: '#9ca3af', dash: null,  dotKey: 'fua' },
+        { key: 'pct_still_eligible_all',     color: '#9ca3af', dash: '5,3', dotKey: 'sea' },
+        { key: 'followup_rate',              color: '#15803d', dash: null,  dotKey: 'fue' },
+        { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dotKey: 'see' },
+        { key: 'followup_rate_req',          color: '#b45309', dash: null,  dotKey: 'fur' },
+        { key: 'pct_still_eligible_req',     color: '#b45309', dash: '5,3', dotKey: 'ser' },
+        { key: 'followup_rate_sus',          color: '#dc2626', dash: null,  dotKey: 'fus' },
+        { key: 'pct_still_eligible_sus',     color: '#dc2626', dash: '5,3', dotKey: 'ses' },
       ];
       LINE_SERIES.forEach(function (s) {
         var pts = [];
@@ -4316,7 +4332,7 @@ function WorkflowUI({
 
       var allVals = [];
       monthlyMetrics.forEach(function (mo) {
-        ['followup_rate', 'pct_still_eligible', 'followup_rate_all', 'pct_still_eligible_all'].forEach(function (k) {
+        ['followup_rate', 'pct_still_eligible', 'followup_rate_req', 'pct_still_eligible_req', 'followup_rate_sus', 'pct_still_eligible_sus', 'followup_rate_all', 'pct_still_eligible_all'].forEach(function (k) {
           if (mo[k] != null) allVals.push(mo[k]);
         });
       });
@@ -4406,12 +4422,16 @@ function WorkflowUI({
         );
       });
 
-      // Lines — grey = all FLWs, dark green = eligible only
+      // Lines — solid = follow-up rate, dashed = % still eligible
       var L_SERIES = [
-        { key: 'followup_rate_all',      color: '#9ca3af', dash: null,  dk: 'lfua' },
-        { key: 'pct_still_eligible_all', color: '#9ca3af', dash: '5,3', dk: 'lsea' },
-        { key: 'followup_rate',          color: '#15803d', dash: null,  dk: 'lfue' },
-        { key: 'pct_still_eligible',     color: '#15803d', dash: '5,3', dk: 'lsee' },
+        { key: 'followup_rate_all',          color: '#9ca3af', dash: null,  dk: 'lfua' },
+        { key: 'pct_still_eligible_all',     color: '#9ca3af', dash: '5,3', dk: 'lsea' },
+        { key: 'followup_rate',              color: '#15803d', dash: null,  dk: 'lfue' },
+        { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dk: 'lsee' },
+        { key: 'followup_rate_req',          color: '#b45309', dash: null,  dk: 'lfur' },
+        { key: 'pct_still_eligible_req',     color: '#b45309', dash: '5,3', dk: 'lser' },
+        { key: 'followup_rate_sus',          color: '#dc2626', dash: null,  dk: 'lfus' },
+        { key: 'pct_still_eligible_sus',     color: '#dc2626', dash: '5,3', dk: 'lses' },
       ];
       L_SERIES.forEach(function (s) {
         var pts = [];
