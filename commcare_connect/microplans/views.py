@@ -586,6 +586,9 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
             grouping = payload.get("grouping") or {}
             if not isinstance(grouping, dict):
                 grouping = {}
+            # Optional: drop the new plan straight into a group (the group-page
+            # "add a plan in the editor" path).
+            group_id = payload.get("group_id")
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
@@ -611,6 +614,21 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
+        if group_id is not None:
+            try:
+                da.add_plan_to_group(int(group_id), plan.id)
+            except Exception:  # noqa: BLE001
+                # The plan was created; failing to file it into the group shouldn't
+                # lose the plan. Log + report so the UI can surface a soft warning.
+                logger.exception(
+                    "microplans create_plan: add to group failed (program=%s group=%s plan=%s)",
+                    program_id,
+                    group_id,
+                    plan.id,
+                )
+                return JsonResponse(
+                    {"status": "ok", "plan_id": plan.id, "group_warning": "added plan but not to group"}
+                )
         return JsonResponse({"status": "ok", "plan_id": plan.id})
 
 

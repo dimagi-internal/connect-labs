@@ -899,6 +899,37 @@ def test_program_group_manage_remove_plan_drops_plan_and_arm(client, django_user
     assert groups[7].arm_for(501) == "intervention"
 
 
+def test_program_create_plan_into_group_adds_membership(client, django_user_model, monkeypatch):
+    """Creating a plan with group_id drops it into that group (the editor 'add to group' path)."""
+    _login(client, django_user_model)
+    groups = {7: _FakeGroup(7, "Madobi CHC study", [], kind="study")}
+    _make_fake_program_da(monkeypatch, {}, groups)
+
+    resp = client.post(
+        reverse("microplans:program_create_plan", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "Gora ward", "region": "Gora", "mode": "sampling", "group_id": 7}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    pid = resp.json()["plan_id"]
+    assert groups[7].plan_ids == [pid]
+
+
+def test_program_create_plan_without_group_id_is_unchanged(client, django_user_model, monkeypatch):
+    """No group_id → plain create, no membership side effect."""
+    _login(client, django_user_model)
+    groups = {7: _FakeGroup(7, "Study", [], kind="study")}
+    _make_fake_program_da(monkeypatch, {}, groups)
+
+    resp = client.post(
+        reverse("microplans:program_create_plan", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "Standalone", "region": "X", "mode": "sampling"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert groups[7].plan_ids == []
+
+
 def test_program_compare_json(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     _seed_program_plans(monkeypatch)  # plans 1 (approved/assigned) + 2 (approved/unassigned)
