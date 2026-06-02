@@ -80,27 +80,30 @@
       LAYERS.forEach((L) => {
         const src = "plan-" + L.plan_id;
         map.addSource(src, { type: "geojson", data: L.geojson, promoteId: "plan_id" });
+        // Polygon work areas (coverage cells / hulls): filled outline.
         map.addLayer({ id: src + "-fill", type: "fill", source: src,
-          paint: { "fill-color": L.color, "fill-opacity": 0.45 },
+          paint: { "fill-color": L.color, "fill-opacity": 0.4 },
           filter: ["==", ["geometry-type"], "Polygon"] });
         map.addLayer({ id: src + "-line", type: "line", source: src,
           paint: { "line-color": L.color, "line-width": 1.5 },
           filter: ["==", ["geometry-type"], "Polygon"] });
+        // Sampling work areas are PINS (Point geometry): coloured dots.
+        map.addLayer({ id: src + "-pt", type: "circle", source: src,
+          paint: { "circle-color": L.color, "circle-radius": 4, "circle-opacity": 0.85,
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 0.6 },
+          filter: ["==", ["geometry-type"], "Point"] });
+        const sublayers = [src + "-fill", src + "-line", src + "-pt"];
         // Click → inspect (which plan/arm this area belongs to)
-        map.on("click", src + "-fill", () => {
-          if (panel) { panel.setInspect(
-            `<div style="font-weight:600">${L.name}</div>` +
-            (L.arm ? `<div style="color:${L.color}">● ${L.arm}</div>` : "") +
-            `<div style="font-size:.7rem;color:#6b7280">${L.work_areas} work area(s)</div>`); }
-        });
+        const inspect = () => { if (panel) panel.setInspect(
+          `<div style="font-weight:600">${L.name}</div>` +
+          (L.arm ? `<div style="color:${L.color}">● ${L.arm}</div>` : "") +
+          `<div style="font-size:.7rem;color:#6b7280">${L.work_areas} work area(s)</div>`); };
+        map.on("click", src + "-fill", inspect);
+        map.on("click", src + "-pt", inspect);
         if (panel) {
           const layer = panel.registerLayer({ id: src, label: L.name, color: L.color,
             meta: (L.arm ? L.arm + " · " : "") + L.work_areas + " areas",
-            onToggle: (on) => {
-              const v = on ? "visible" : "none";
-              map.setLayoutProperty(src + "-fill", "visibility", v);
-              map.setLayoutProperty(src + "-line", "visibility", v);
-            } });
+            onToggle: (on) => sublayers.forEach((s) => map.setLayoutProperty(s, "visibility", on ? "visible" : "none")) });
           layer.setEnabled(true, false);
         }
       });

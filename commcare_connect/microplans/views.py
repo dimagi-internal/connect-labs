@@ -981,20 +981,32 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                 "plan_count": len(entries),
             }
             context["entries"] = entries
-            # Study comparability — is the control a fair counterfactual? Built from each
-            # sampled arm's work-area geometry + building counts (no extra Overture fetch).
+            # Study comparability — is the control a fair counterfactual? Density is
+            # buildings per WARD km², so the area comes from each arm's ward geometry
+            # (input_areas), NOT the sampled pins (which are zero-area Points). The
+            # building count is the sampled pin count (no extra Overture fetch).
             if group.kind == "study":
-                arms_data = [
-                    {
-                        "arm": group.arm_for(pid),
-                        "building_count": int(w.get("building_count") or 0),
-                        "geometry": w["geometry"],
-                    }
-                    for pid in group.plan_ids
-                    if group.arm_for(pid) and plans_by_id.get(pid)
-                    for w in plans_by_id[pid].work_areas
-                    if w.get("geometry")
-                ]
+                from commcare_connect.microplans.core.plan import plan_sample_areas
+
+                def _resolve_boundary(bid):
+                    from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+
+                    b = AdminBoundary.objects.filter(boundary_id=bid).first()
+                    return json.loads(b.geometry.geojson) if (b and b.geometry) else None
+
+                arms_data = []
+                for pid in group.plan_ids:
+                    pl = plans_by_id.get(pid)
+                    arm = group.arm_for(pid)
+                    if pl is None or not arm or not pl.work_areas:
+                        continue
+                    bc = sum(int(w.get("building_count") or 0) for w in pl.work_areas) or len(pl.work_areas)
+                    ward_areas = plan_sample_areas(pl.data.get("input_areas") or [], arm, _resolve_boundary)
+                    for j, a in enumerate(ward_areas):
+                        # building count on the first ward area only — comparability sums per arm
+                        arms_data.append(
+                            {"arm": arm, "building_count": bc if j == 0 else 0, "geometry": a["geometry"]}
+                        )
                 if len({a["arm"] for a in arms_data}) >= 2:
                     from commcare_connect.microplans.core.comparability import arm_comparability
 
