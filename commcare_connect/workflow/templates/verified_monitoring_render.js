@@ -1,7 +1,9 @@
 // Verified Monitoring (N1) — funder-facing verified-coverage dashboard.
 // Self-contained: reads everything from instance.state (seeded payload); never
-// fetches. Financial-dashboard styling. Map (Leaflet) added in a later iteration.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V1
+// fetches. Financial-dashboard styling with a two-ward Leaflet overlay.
+// Show-don't-tell: presents results neutrally; no causal claims, no caveat
+// banner — the viewer draws the conclusion.
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V8
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -153,8 +155,7 @@ function WorkflowUI(props) {
 
   var tCov = latest.intervention_pct,
     cCov = latest.comparison_pct,
-    gap = latest.gap_pp,
-    ci = latest.gap_ci || [];
+    gap = latest.gap_pp;
   var tWard = prog.treatment_ward || 'Treatment',
     cWard = prog.control_ward || 'Control';
   function _delta(arr) {
@@ -316,8 +317,8 @@ function WorkflowUI(props) {
             stroke={LINE}
             strokeWidth="1"
           />
-          <text x={6} y={y + 3} fill={MUT} fontSize="9" fontFamily={mono}>
-            {g}
+          <text x={4} y={y + 3} fill={MUT} fontSize="9" fontFamily={mono}>
+            {g + '%'}
           </text>
         </g>
       );
@@ -428,34 +429,18 @@ function WorkflowUI(props) {
       </div>
       <div
         style={{
-          color: '#cbd5e1',
+          color: MUT,
           fontSize: 13,
           marginTop: 4,
+          marginBottom: 16,
           lineHeight: 1.5,
+          fontFamily: mono,
         }}
       >
-        Independent survey: <b style={{ color: PURPLE }}>{tWard}</b> at{' '}
-        <b>{pct(tCov)}</b> verified vitamin-A coverage vs{' '}
-        <b style={{ color: PINK }}>{cWard}</b> at <b>{pct(cCov)}</b> — a{' '}
-        <b style={{ color: GREEN }}>{pp(gap)}</b> gap that held across six
-        rounds, while the program's own logged delivery (
-        {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} visits) never
-        crossed into the control ward (0).
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          marginBottom: 14,
-          color: '#fcd34d',
-          background: '#3a2f0b',
-          border: '1px solid #5b4a12',
-          borderRadius: 8,
-          padding: '6px 10px',
-          fontSize: 12,
-        }}
-      >
-        {data.caveat ||
-          'Repeated cross-sectional snapshot — not a difference-in-differences estimate.'}
+        Independent rooftop survey · {prog.cadence || 'bi-monthly'} · latest
+        round R{latest.round || (byArm.intervention || []).length} ·{' '}
+        <b style={{ color: PURPLE }}>{tWard}</b> (treatment) vs{' '}
+        <b style={{ color: PINK }}>{cWard}</b> (control)
       </div>
 
       {/* Hero KPI tiles */}
@@ -465,7 +450,7 @@ function WorkflowUI(props) {
           tWard + ' (treatment)',
           pct(tCov),
           latest.intervention_n != null
-            ? 'n=' + latest.intervention_n
+            ? latest.intervention_n + ' children surveyed'
             : 'independent survey',
           PURPLE,
           byArm.intervention,
@@ -481,12 +466,10 @@ function WorkflowUI(props) {
           cDelta,
         )}
         {tile(
-          'Cross-sectional gap',
+          'Difference',
           tWard + ' − ' + cWard,
           pp(gap),
-          ci.length === 2
-            ? '95% CI [' + ci[0] + ', ' + ci[1] + ']'
-            : 'snapshot',
+          'latest round',
           GREEN,
           null,
         )}
@@ -546,9 +529,9 @@ function WorkflowUI(props) {
               }}
             >
               Two adjacent wards — program service delivery ({tWard}{' '}
-              {sd[tWard] != null ? sd[tWard] : 0} · {cWard}{' '}
-              {sd[cWard] != null ? sd[cWard] : 0}) with independent survey pins
-              on top
+              {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} · {cWard}{' '}
+              {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}) with
+              independent survey pins on top
             </div>
             <div
               style={{
@@ -635,7 +618,7 @@ function WorkflowUI(props) {
         )}
       </div>
 
-      {/* Trust, then verify */}
+      {/* Self-reported vs independently verified */}
       <div
         style={{
           marginTop: 18,
@@ -653,7 +636,7 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Trust, then verify ({tWard})
+          Self-reported vs independently verified ({tWard})
         </div>
         <div
           style={{
@@ -688,8 +671,9 @@ function WorkflowUI(props) {
         <div
           style={{ color: MUT, fontSize: 12, marginTop: 10, fontFamily: mono }}
         >
-          Program-logged visits — {tWard}: {sd[tWard] != null ? sd[tWard] : '—'}{' '}
-          · {cWard}: {sd[cWard] != null ? sd[cWard] : '—'}
+          Program-logged visits — {tWard}:{' '}
+          {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} · {cWard}:{' '}
+          {sd[cWard] != null ? sd[cWard].toLocaleString() : '—'}
         </div>
       </div>
     </div>
