@@ -1633,11 +1633,20 @@ function WorkflowUI({
     snapDateStr,
     activeUsernames,
   ) {
+    // Sort chronologically so last-visit-wins attribution matches v5_processVisits.
+    // Without the sort, "last wins" is DB row order (case_id / insert order), not
+    // visit time — mothers with cross-FLW visits get attributed to the wrong FLW.
+    var sortedVisits = visitsRows.slice().sort(function (a, b) {
+      var ad = a.visit_datetime || '';
+      var bd = b.visit_datetime || '';
+      return ad < bd ? -1 : ad > bd ? 1 : 0;
+    });
+
     // Pass 1: build motherToFlw from ALL visits (no date cutoff), matching
     // v5_processVisits behaviour where attribution = last-visit-wins globally.
     var motherToFlw = {};
-    for (var a = 0; a < visitsRows.length; a++) {
-      var ar = visitsRows[a];
+    for (var a = 0; a < sortedVisits.length; a++) {
+      var ar = sortedVisits[a];
       var amid = (ar.mother_case_id || '').toLowerCase();
       var auname = ((ar.username || ar._username || '') + '').toLowerCase();
       if (amid && auname) motherToFlw[amid] = auname;
