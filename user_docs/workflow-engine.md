@@ -224,13 +224,13 @@ The **MBW Auditing V5** template includes an improvement-over-time chart on its 
 
 - **Grey lines** — all FLWs in the cohort (overall reference)
 - **Green lines** — FLWs marked eligible for renewal
-- **Amber lines** — FLWs marked as requiring improvement
-- **Red lines** — FLWs marked as suspended
+- **Yellow lines** — FLWs marked as requiring improvement
 
 Within each colour, **solid lines** represent follow-up rate and **dashed lines** represent the percentage still eligible. This lets you compare how each performance category is trending on both measures at the same time.
 
-If you previously saw only a single eligible-FLW line (green) alongside the grey overall line, you were viewing an earlier version of the chart. The dashboard now shows the full three-category breakdown — open the dashboard and the updated chart will load automatically.
+!!! note "Suspended category removed from this chart"
+    The suspended FLW series is no longer shown on this chart. It was removed because the colour previously used for suspended FLWs was visually indistinguishable from the requires-improvement line on screen, making the two categories impossible to tell apart at a glance.
 
-If the two lines looked almost identical — the green eligible-FLW line tracking so closely to the grey all-FLW line that the distinction was not meaningful — this was a known display issue that has now been corrected. The category lines now correctly reflect only their respective cohorts, so differences between groups are visible when they exist.
+If you previously saw only a single eligible-FLW line (green) alongside the grey overall line, you were viewing an earlier version of the chart. The dashboard now shows the two-category breakdown (green and yellow) alongside the grey reference line — open the dashboard and the updated chart will load automatically.
 
-If you were using this chart to assess the eligible cohort and noticed the lines were nearly indistinguish
+If the two lines looked almost identical — the green eligible-FLW line tracking so closely to the grey all-FL
