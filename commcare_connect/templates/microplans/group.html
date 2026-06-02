@@ -6,7 +6,11 @@
   <header class="border-b border-gray-200 pb-4">
     {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to program</a>{% endif %}
     <div class="flex items-center gap-3 mt-1">
-      <h1 class="text-2xl font-bold text-gray-900">{{ group.name|default:"Plan group" }}</h1>
+      <input id="group-name" class="text-2xl font-bold text-gray-900 bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-brand-cornflower-blue focus:outline-none px-0 py-0.5 -ml-0.5 min-w-0 flex-1"
+             value="{{ group.name|default:'' }}" placeholder="Untitled study"
+             aria-label="Study name" autocomplete="off" title="Click to rename this study"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+             onblur="renameStudy(this.value)">
       {% if group.is_study %}
       <span class="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">Study</span>
       {% else %}
@@ -128,6 +132,24 @@
 <script>
   function csrftoken() {
     return (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+  }
+  // Rename the study in place — POST the new name to the group update endpoint.
+  let _lastName = "{{ group.name|escapejs }}";
+  async function renameStudy(name) {
+    name = (name || "").trim();
+    if (name === _lastName) return;
+    try {
+      const r = await fetch("{{ remove_plan_url }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken() },
+        body: JSON.stringify({ name }),
+      });
+      if (!r.ok) throw new Error("rename failed (" + r.status + ")");
+      _lastName = name;
+      document.title = (name || "Plan group") + " — microplans";
+    } catch (e) {
+      alert(String(e.message || e));
+    }
   }
   async function removePlan(planId, name) {
     if (!confirm("Remove " + name + " from this group?")) return;
