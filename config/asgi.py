@@ -51,12 +51,33 @@ from commcare_connect.mcp.server import build_http_app  # noqa: E402
 # i.e. /mcp/ (the preserved public URL).
 _mcp_app = build_http_app()
 
+
+class _ReprefixApp:
+    """Re-prepend the stripped Starlette Mount prefix before forwarding to app.
+
+    Starlette's Mount strips its prefix from scope["path"] before calling the
+    child app, so Mount("/mcp/admin", django) gives Django path "/create-token/"
+    instead of "/mcp/admin/create-token/".  This wrapper re-adds the prefix so
+    Django's URL router sees the full path and can match mcp/admin/create-token/.
+    """
+
+    def __init__(self, prefix: str, app):
+        self.prefix = prefix
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") in ("http", "websocket"):
+            scope = dict(scope)
+            scope["path"] = self.prefix + scope["path"]
+        await self.app(scope, receive, send)
+
+
 application = Starlette(
     routes=[
-        # Keep the Django token-management browser routes on Django. Mounted
-        # ahead of the MCP app so /mcp/admin/... resolves to Django, not the
-        # FastMCP protocol endpoint.
-        Mount("/mcp/admin", app=_django_asgi_app),
+        # Keep the Django token-management browser routes on Django. The
+        # _ReprefixApp wrapper re-adds /mcp/admin so Django's URL router sees
+        # the full path and can match mcp/admin/create-token/.
+        Mount("/mcp/admin", app=_ReprefixApp("/mcp/admin", _django_asgi_app)),
         # FastMCP Streamable-HTTP protocol endpoint at /mcp/.
         Mount("/mcp", app=_mcp_app),
         # Django handles everything else (catch-all, mounted last).
