@@ -4073,22 +4073,17 @@ function WorkflowUI({
           _pushCat(wr2 && (wr2.result || wr2), u2);
         }
 
-        // For months before the first real run, use null (all FLWs) for the
-        // green line — everyone was eligible pre-March — and [] for yellow
-        // so no requires-improvement dot appears before auditing started.
-        var firstRunDate = null;
-        for (var ri = 0; ri < runHistory.length; ri++) {
-          var rd = (runHistory[ri].completed_at || '').substring(0, 10);
-          if (rd && (!firstRunDate || rd < firstRunDate)) firstRunDate = rd;
-        }
-
         var result = months.map(function (mo) {
-          var isPreRun = firstRunDate && mo.snapDate < firstRunDate;
+          // Months before March 2026 are the pre-audit baseline: all FLWs
+          // were eligible, so use null (all-FLW) for the green filter and []
+          // for requires-improvement (no yellow dot before auditing started).
+          var isPreRun = mo.snapDate < '2026-03-01';
           var eligFilter = isPreRun ? null : eligibleUsernames;
           var reqFilter  = isPreRun ? []   : reqUsernames;
           var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligFilter);
           var reqSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, reqFilter);
           return Object.assign({}, mo, {
+            followup_rate:          eligSnap.followup_rate,
             pct_still_eligible:     eligSnap.pct_still_eligible,
             pct_still_eligible_req: reqSnap.pct_still_eligible,
           });
@@ -4306,9 +4301,10 @@ function WorkflowUI({
       }
     });
 
-    // Lines — % mothers still eligible to receive 5+ visits, per category.
+    // Lines — solid = follow-up rate, dashed = % still eligible.
     if (monthlyMetrics) {
       var LINE_SERIES = [
+        { key: 'followup_rate',          color: '#15803d', dash: null,  dotKey: 'fue' },
         { key: 'pct_still_eligible',     color: '#15803d', dash: '5,3', dotKey: 'see' },
         { key: 'pct_still_eligible_req', color: '#ca8a04', dash: '5,3', dotKey: 'ser' },
       ];
@@ -4336,7 +4332,7 @@ function WorkflowUI({
       React.createElement(
         'h3',
         { className: 'text-sm font-semibold text-gray-800 mb-1' },
-        '% mothers still eligible to receive 5+ visits',
+        'Performance trends by category',
       ),
       React.createElement(
         'div',
@@ -4344,7 +4340,7 @@ function WorkflowUI({
         React.createElement(
           'p',
           { className: 'text-xs text-gray-400' },
-          'Bars: category distribution per month. Lines: % mothers still eligible to receive 5+ visits by performance category (computed on demand).',
+          'Bars: category distribution. Solid line: follow-up rate. Dashed line: % mothers still eligible to receive 5+ visits. Green = Eligible for Renewal (Feb uses all FLWs as baseline). Yellow = Requires Improvement (from March only).',
         ),
         React.createElement(
           'button',
@@ -4418,6 +4414,12 @@ function WorkflowUI({
             },
           }),
           'Suspended',
+        ),
+        React.createElement(
+          'span',
+          { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 2, background: '#15803d', borderRadius: 2 } }),
+          'Follow-up rate (Eligible for Renewal)',
         ),
         React.createElement(
           'span',
