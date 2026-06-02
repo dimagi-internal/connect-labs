@@ -2,7 +2,12 @@ auth:
   type: session
 base_url: https://labs.connect.dimagi.com
 record_video: true
+record_video_size:
+  width: 1440
+  height: 900
 video_pace: medium
+video_viewport_width: 1440
+video_viewport_height: 900
 build_order:
 - dana-opens-the-program-workspace-for-the-madobi-lga-arm-of-the-rct
 - dana-pastes-the-ward-names-the-system-resolves-them-and-dana-disambiguates-each-ambiguous-row-inline-before-any-plan-is-created
@@ -117,10 +122,11 @@ scenes:
       each include kpis with max_spread_km / territory_count / balance, plus lifecycle_status.
   persona: lead
   provenance: portfolio-open
-  show: Open the program workspace for the RCT program; confirm the Madobi LGA arm
-    is empty so far, with the ten ward names (Burji, Cinkoso, Galinja, Gora,
-    Kafin Agur, Kanwa, Kauran Mata, Kwankwaso, Madobi, Rikadawa) visible as the
-    day's assignment.
+  show: Open the program workspace for the RCT program; confirm today's Madobi
+    LGA batch (Burji, Cinkoso, Galinja, Gora, Kafin Agur, Kanwa, Kauran Mata,
+    Kwankwaso, Madobi, Rikadawa) hasn't been created yet — the portfolio shows
+    only the previously-planned Madobi rooftop study and the deployed Kano North
+    demo, so the ten new ward plans are about to land in the PLANNING swimlane.
   url: "/microplans/program/133/"
   actions:
     # Leading wait_for is the settle — canopy 0.2.151+ skips initial_hold_ms +
@@ -328,9 +334,14 @@ scenes:
     # is the leftmost-checked plan) to inspect its work areas on the map.
     - { kind: click, target: "css:#plan-picker a", note: "click the first selected plan's name to drill into the map view" }
     - { kind: wait_for, target: "Microplan review" }
-    - { kind: hold, seconds: 2.5, note: "frame the work-area map + per-territory metrics" }
-    - { kind: scroll_to, target: "Plan metrics", note: "let the eye read the per-territory KPIs in the sidebar" }
-    - { kind: hold, seconds: 2.0 }
+    # Mapbox needs ~5s after the page settles to finish loading the satellite
+    # basemap + footprint overlay tiles. Without this hold the snapshot lands
+    # on a half-painted map. After Mapbox settles, scroll back to top so the
+    # H1 + map + PLAN METRICS row are all framed (the canopy 0.2.153 viewport
+    # widening to 1440x900 fits these without label wrap).
+    - { kind: hold, seconds: 5.0, note: "let Mapbox tiles + footprint overlay settle" }
+    - { kind: scroll_to, target: "Microplan review", note: "scroll back to top so H1 + map + PLAN METRICS row are all framed" }
+    - { kind: hold, seconds: 3.0, note: "frame the work-area map with per-territory metrics row visible" }
   title: Dana reads the per-plan metrics on the comparison table — then drills
     into an outlier on the map
 - concept_claim: A glossary page defines every metric on the comparison table —
