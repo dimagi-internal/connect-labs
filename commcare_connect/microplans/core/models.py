@@ -64,6 +64,16 @@ class PlanRecord(LocalLabsRecord):
         return self.data.get("work_areas", [])
 
     @property
+    def phase(self) -> str:
+        """Whether the sampling/gridding algorithm has run yet.
+
+        ``"boundary"`` — the plan's area is defined (``input_areas``) but no work
+        areas have been generated; ``"sampled"`` — work areas exist. Group
+        management branches on this (e.g. "Generate samples" acts on the
+        boundary-only members)."""
+        return "sampled" if self.work_areas else "boundary"
+
+    @property
     def status_log(self) -> list[dict]:
         return self.data.get("status_log", [])
 
@@ -92,6 +102,36 @@ class PlanGroupRecord(LocalLabsRecord):
     @property
     def shared(self) -> bool:
         return bool(self.data.get("shared", False))
+
+    @property
+    def kind(self) -> str:
+        """``"bundle"`` (a curated set offered to an LLO — the original use) or
+        ``"study"`` (a two-/multi-arm study, ``arms`` assigned)."""
+        return self.data.get("kind", "bundle")
+
+    @property
+    def arms(self) -> dict[str, str]:
+        """Per-member arm assignment ``{plan_id: "intervention"|"control"|…}``.
+
+        Labs-side only — the arm is NEVER written onto a plan or its work areas,
+        so execution stays blind by construction. Keys are stringified plan ids
+        (JSON object keys); use :meth:`arm_for` for lookups by int id."""
+        return self.data.get("arms", {})
+
+    def arm_for(self, plan_id) -> str | None:
+        """The arm of ``plan_id`` in this study, or ``None`` if unassigned."""
+        return self.arms.get(str(plan_id))
+
+    @property
+    def sampling_config(self) -> dict:
+        """Shared sampling config applied across every member plan, so the only
+        intended difference between arms is the area each covers."""
+        return self.data.get("sampling_config", {})
+
+    @property
+    def status(self) -> str:
+        """``defining`` → ``sampled`` → ``reviewed`` → ``exported``."""
+        return self.data.get("status", "defining")
 
     @property
     def created_at(self) -> str:

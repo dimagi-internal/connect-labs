@@ -122,4 +122,9 @@ urlpatterns = [
         views.ProgramGroupShareView.as_view(),
         name="program_group_share",
     ),
+    path(
+        "program/<int:program_id>/group/<int:group_id>/manage/",
+        views.ProgramGroupPageView.as_view(),
+        name="program_group_page",
+    ),
 ]

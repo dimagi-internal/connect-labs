@@ -128,7 +128,7 @@ def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, acces
 
 
 @celery_app.task(bind=True)
-def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token):
+def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token, group_id=None):
     """Create N draft plans from confirmed admin boundaries — one per ward.
 
     Unlike the old inline streaming view, each ward is GRIDDED here: coverage plans
@@ -194,6 +194,13 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
                 grouping=grouping,
             )
             ok += 1
+            if group_id is not None:
+                # File the new plan into the group. Don't fail the ward on a
+                # group hiccup — the plan exists; surface a soft warning instead.
+                try:
+                    da.add_plan_to_group(int(group_id), plan.id)
+                except Exception:  # noqa: BLE001
+                    logger.exception("bulk_create: add to group failed (group=%s plan=%s)", group_id, plan.id)
             results.append({**row, "status": "ok", "plan_id": plan.id, "work_areas": len(plan.work_areas)})
         except ValueError as e:
             # Actionable (e.g. area too large / too many cells) — surface to the row.

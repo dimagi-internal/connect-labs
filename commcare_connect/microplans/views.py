@@ -586,6 +586,9 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
             grouping = payload.get("grouping") or {}
             if not isinstance(grouping, dict):
                 grouping = {}
+            # Optional: drop the new plan straight into a group (the group-page
+            # "add a plan in the editor" path).
+            group_id = payload.get("group_id")
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
@@ -611,6 +614,21 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
+        if group_id is not None:
+            try:
+                da.add_plan_to_group(int(group_id), plan.id)
+            except Exception:  # noqa: BLE001
+                # The plan was created; failing to file it into the group shouldn't
+                # lose the plan. Log + report so the UI can surface a soft warning.
+                logger.exception(
+                    "microplans create_plan: add to group failed (program=%s group=%s plan=%s)",
+                    program_id,
+                    group_id,
+                    plan.id,
+                )
+                return JsonResponse(
+                    {"status": "ok", "plan_id": plan.id, "group_warning": "added plan but not to group"}
+                )
         return JsonResponse({"status": "ok", "plan_id": plan.id})
 
 
@@ -697,13 +715,17 @@ class ProgramGroupsAPIView(LoginRequiredMixin, View):
             name = str(payload["name"]).strip()[:255]
             plan_ids = [int(p) for p in payload.get("plan_ids", [])]
             offered_to = str(payload.get("offered_to", "")).strip()[:255]
-            if not name or not plan_ids:
+            kind = "study" if payload.get("kind") == "study" else "bundle"
+            arms = payload.get("arms") if isinstance(payload.get("arms"), dict) else {}
+            # A bundle is a curated subset of EXISTING plans (needs ≥1). A study
+            # starts empty — you add its ward plans afterwards from the group page.
+            if not name or (kind != "study" and not plan_ids):
                 raise ValueError("name and at least one plan are required")
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            group = da.create_group(name=name, plan_ids=plan_ids, offered_to=offered_to)
+            group = da.create_group(name=name, plan_ids=plan_ids, offered_to=offered_to, kind=kind, arms=arms)
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_group failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the group."}, status=502)
@@ -722,6 +744,14 @@ class ProgramGroupUpdateView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
+            # Membership edits use the dedicated helpers so a study's arm map stays
+            # consistent (removing a plan also drops its arm assignment).
+            if payload.get("remove_plan_id") is not None:
+                group = da.remove_plan_from_group(int(group_id), int(payload["remove_plan_id"]))
+                return JsonResponse({"status": "ok", "group_id": group.id, "plan_ids": group.plan_ids})
+            if payload.get("add_plan_id") is not None:
+                group = da.add_plan_to_group(int(group_id), int(payload["add_plan_id"]))
+                return JsonResponse({"status": "ok", "group_id": group.id, "plan_ids": group.plan_ids})
             group = da.update_group(
                 int(group_id),
                 name=payload.get("name"),
@@ -782,6 +812,80 @@ class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateV
             context["entries"] = entries
         except Exception:  # noqa: BLE001
             logger.exception("microplans group share failed (program=%s group=%s)", program_id, group_id)
+            context["error"] = "Could not load the group."
+        return context
+
+
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
+    """Planner-facing plan-group management landing page.
+
+    The holistic hub for a group: its member plans (each with mode/phase/arm),
+    add/remove, and entry points to the multi-plan map, compare, and (for studies)
+    arm assignment. A *study* group (``kind="study"``) shows each plan's arm —
+    arm lives only here, never on the plans, so execution stays blind."""
+
+    template_name = "microplans/group.html"
+
+    def get_context_data(self, **kwargs):
+        from django.urls import reverse
+
+        from commcare_connect.microplans.core import plan as plan_lib
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        group_id = int(kwargs.get("group_id"))
+        context["program_id"] = program_id
+        context["group_id"] = group_id
+        da = ProgramPlanDataAccess(program_id, request=self.request)
+        try:
+            group = da.get_group(group_id)
+            plans_by_id = {p.id: p for p in da.list_plans()}
+            entries = []
+            for pid in group.plan_ids:
+                p = plans_by_id.get(pid)
+                if p is None:
+                    continue
+                entries.append(
+                    {
+                        "plan_id": pid,
+                        "name": p.name,
+                        "region": p.region,
+                        "mode": p.mode,
+                        "phase": p.phase,  # boundary | sampled
+                        "arm": group.arm_for(pid),  # study only; None otherwise
+                        "work_areas": len(p.work_areas),
+                        "status": p.status,
+                        "status_label": plan_lib.PLAN_STATUS_LABELS.get(p.status, p.status),
+                        "review_url": reverse("microplans:program_review", args=[program_id, pid]),
+                    }
+                )
+            context["group"] = {
+                "name": group.name,
+                "kind": group.kind,
+                "is_study": group.kind == "study",
+                "status": group.status,
+                "offered_to": group.offered_to,
+                "plan_count": len(entries),
+            }
+            context["entries"] = entries
+            # Action URLs (reuse existing surfaces; map/generate land in later steps)
+            ids_csv = ",".join(str(e["plan_id"]) for e in entries)
+            context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + (
+                f"?plans={ids_csv}" if ids_csv else ""
+            )
+            # Carry the group id so plans created via either add-path file into THIS group.
+            context["bulk_create_url"] = (
+                reverse("microplans:program_bulk_create_page", args=[program_id]) + f"?group={group_id}"
+            )
+            context["new_plan_url"] = (
+                reverse("microplans:program_create_plan_page", args=[program_id]) + f"?group={group_id}"
+            )
+            context["remove_plan_url"] = reverse("microplans:program_group_update", args=[program_id, group_id])
+            context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans group page failed (program=%s group=%s)", program_id, group_id)
             context["error"] = "Could not load the group."
         return context
 
@@ -1522,6 +1626,8 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
         plans_input = payload.get("plans") or []
         mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
         grouping = payload.get("grouping") if isinstance(payload.get("grouping"), dict) else {}
+        # Optional: file every created plan into this group (group-page "Add wards").
+        group_id = payload.get("group_id")
         try:
             cell_size_m = float(payload.get("cell_size_m")) if payload.get("cell_size_m") is not None else 100.0
         except (TypeError, ValueError):
@@ -1537,7 +1643,15 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
 
         from django.urls import reverse
 
-        task = bulk_create_plans_task.delay(int(program_id), plans_input, mode, grouping, cell_size_m, access_token)
+        task = bulk_create_plans_task.delay(
+            int(program_id),
+            plans_input,
+            mode,
+            grouping,
+            cell_size_m,
+            access_token,
+            group_id=int(group_id) if group_id is not None else None,
+        )
         return JsonResponse(
             {
                 "status": "queued",
