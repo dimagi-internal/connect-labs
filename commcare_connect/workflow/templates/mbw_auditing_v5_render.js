@@ -469,6 +469,28 @@ function v5_computeMbwAuditingData({
   }
   targetSet.sort();
 
+  // Per-FLW count of eligible mothers who completed 5+ scheduled visit types.
+  // ANC is already required for eligibility (counts as 1 automatically).
+  var V5_NON_ANC_VISIT_TYPES = [
+    'Postnatal Delivery Visit',
+    '1 Week Visit',
+    '1 Month Visit',
+    '3 Month Visit',
+    '6 Month Visit',
+  ];
+  var fivePlusCountByFlw = {};
+  Object.keys(v.motherToFlw).forEach(function (mid) {
+    var flwU = v.motherToFlw[mid];
+    if (!flwU) return;
+    if (!(r.motherEligibility[mid] && v.ancOkMothers[mid])) return;
+    var count = 1; // ANC confirmed (required for eligibility)
+    var motherVisits = v.visitsByMother[mid] || {};
+    for (var vti = 0; vti < V5_NON_ANC_VISIT_TYPES.length; vti++) {
+      if (motherVisits[V5_NON_ANC_VISIT_TYPES[vti]]) count++;
+    }
+    if (count >= 5) fivePlusCountByFlw[flwU] = (fivePlusCountByFlw[flwU] || 0) + 1;
+  });
+
   var summaries = [];
   for (var n = 0; n < targetSet.length; n++) {
     var username = targetSet[n];
@@ -544,6 +566,7 @@ function v5_computeMbwAuditingData({
       num_mothers: numMothers,
       num_mothers_eligible: totalEligible,
       num_eligible_mothers_visited: eligibleMothersVisited,
+      num_mothers_five_plus: fivePlusCountByFlw[u] || 0,
       visits_completed: visitsCompleted,
       gs_score: gsScore,
       followup_rate: followupRate,
@@ -1790,6 +1813,11 @@ function WorkflowUI({
       }, 0);
       var pctStillElig =
         totalElig > 0 ? Math.round((totalStillElig / totalElig) * 100) : null;
+      var totalFivePlus = catFlws.reduce(function (s, f) {
+        return s + (f.num_mothers_five_plus || 0);
+      }, 0);
+      var pctFivePlus =
+        totalElig > 0 ? Math.round((totalFivePlus / totalElig) * 100) : null;
       return Object.assign({}, band, {
         num_flws: catFlws.length,
         total_mothers: catFlws.reduce(function (s, f) {
@@ -1798,6 +1826,8 @@ function WorkflowUI({
         total_eligible: totalElig,
         total_still_eligible: totalStillElig,
         pct_still_eligible: pctStillElig,
+        total_five_plus: totalFivePlus,
+        pct_five_plus: pctFivePlus,
         avg_fu: avgFu,
         avg_gs: avgGs,
       });
@@ -4072,6 +4102,14 @@ function WorkflowUI({
                   className:
                     'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
                 },
+                '% Received 5+ Visits',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
                 'Avg Follow-up %',
               ),
               React.createElement(
@@ -4162,6 +4200,11 @@ function WorkflowUI({
                   band.pct_still_eligible != null
                     ? band.pct_still_eligible + '%'
                     : '—',
+                ),
+                React.createElement(
+                  'td',
+                  { className: 'px-3 py-2 text-right text-sm text-gray-700' },
+                  band.pct_five_plus != null ? band.pct_five_plus + '%' : '—',
                 ),
                 React.createElement(
                   'td',
