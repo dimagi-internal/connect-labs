@@ -823,7 +823,7 @@ class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateV
 
 # Arm → fill colour (matches review.html's ARM_COLOR); plain bundles fall back to a
 # per-plan palette so each plan still reads as its own layer on the overlay.
-_ARM_COLORS = {"intervention": "#10b981", "control": "#3b82f6"}
+_ARM_COLORS = {"intervention": "#22c55e", "control": "#3b82f6"}
 _PLAN_PALETTE = ["#6366f1", "#f59e0b", "#ef4444", "#14b8a6", "#a855f7", "#84cc16"]
 
 

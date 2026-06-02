@@ -21,6 +21,12 @@
     <p class="text-sm text-gray-500 mt-1">
       {{ group.plan_count }} plan{{ group.plan_count|pluralize }} · Program #{{ program_id }}
     </p>
+    {% if group.is_study %}
+    <p class="text-xs text-gray-500 mt-1">
+      Two-arm controlled study — one plan and one Connect opportunity per ward.
+      <span class="text-gray-400">The intervention/control arm is set here on the study and is never exported to a ward's field plan, so the study stays blind by construction.</span>
+    </p>
+    {% endif %}
   </header>
 
   {% if error %}
@@ -93,6 +99,11 @@
       </tbody>
     </table>
   </div>
+  {% if group.is_study %}
+  <p class="text-[11px] text-gray-400 mt-1">
+    <span class="text-gray-500">Connect CSV is blind:</span> each ward exports as an ordinary work-area file with no arm column, so the field organisation only ever receives a ward to cover.
+  </p>
+  {% endif %}
 
   {% if comparability %}
   <section class="mt-5">
