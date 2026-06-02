@@ -2564,7 +2564,7 @@ function WorkflowUI({
           className:
             'inline-block text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium whitespace-nowrap',
         },
-        'Audit Required',
+        'Task Required',
       );
     }
     // Yellow flag
@@ -2586,7 +2586,7 @@ function WorkflowUI({
               handleSetAuditStatus(flw.username, 'audit_required');
             },
           },
-          'Audit Required',
+          'Task Required',
         ),
         React.createElement(
           'button',
@@ -2612,7 +2612,7 @@ function WorkflowUI({
             className:
               'text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap',
           },
-          '✓ Audit Required',
+          '✓ Task Required',
         ),
         !hasTask &&
           React.createElement(
@@ -2937,7 +2937,7 @@ function WorkflowUI({
                 className:
                   'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
               },
-              'Audit Status',
+              'Task',
             )
           : null,
         React.createElement(
@@ -2946,7 +2946,7 @@ function WorkflowUI({
             className:
               'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
           },
-          'Task',
+          'Task Status',
         ),
         React.createElement(
           'th',
