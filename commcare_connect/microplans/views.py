@@ -496,6 +496,8 @@ class ProgramPlansAPIView(LoginRequiredMixin, View):
                     "plan_ids": g.plan_ids,
                     "offered_to": g.offered_to,
                     "shared": g.shared,
+                    "kind": g.kind,  # "bundle" | "study" — drives the workspace card affordances
+                    "status": g.status,
                 }
                 for g in da.list_groups()
             ]
