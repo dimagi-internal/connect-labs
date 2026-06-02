@@ -131,7 +131,10 @@
 
 <script>
   function csrftoken() {
-    return (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+    // Prefer the template-rendered token (matches the session even when the
+    // csrftoken cookie is absent/stale, e.g. a fresh OAuth session or
+    // CSRF_USE_SESSIONS). Fall back to the cookie only if it's blank.
+    return "{{ csrf_token }}" || (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
   }
   // Rename the study in place — POST the new name to the group update endpoint.
   let _lastName = "{{ group.name|escapejs }}";
