@@ -30,11 +30,18 @@ def _build_new_definition_data(current: dict, parsed_definition: dict, new_versi
     (`opportunity_ids`, `is_template`, `template_scope`, `templateType` from
     the template config). Lifts only the fields the template authoritatively
     sets: name, description, statuses, config, pipeline_sources.
+
+    pipeline_sources is only overwritten when the template provides a non-empty
+    list. Seed templates ship with [] because pipeline IDs are assigned at
+    workflow-creation time; an empty list means "preserve the live workflow's
+    existing associations" rather than "clear them".
     """
     out = dict(current)
-    for key in ("name", "description", "statuses", "config", "pipeline_sources"):
+    for key in ("name", "description", "statuses", "config"):
         if key in parsed_definition:
             out[key] = parsed_definition[key]
+    if parsed_definition.get("pipeline_sources"):
+        out["pipeline_sources"] = parsed_definition["pipeline_sources"]
     out["version"] = new_version
     return out
 
