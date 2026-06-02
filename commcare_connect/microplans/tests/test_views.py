@@ -544,6 +544,19 @@ def test_program_plans_json(client, django_user_model, monkeypatch):
     assert "draft" in body["transitions"] and "status_labels" in body
 
 
+def test_program_plans_json_groups_carry_kind(client, django_user_model, monkeypatch):
+    # The workspace cards branch on kind (study vs bundle) to pick the
+    # "Open study" / manage link, so the JSON must surface it.
+    _login(client, django_user_model)
+    plan = _FakeProgramPlan(501, "sampling", [], name="Madobi ward")
+    groups = {7: _FakeGroup(7, "Kano study", [501], kind="study", status="defining")}
+    _make_fake_program_da(monkeypatch, {501: plan}, groups)
+    resp = client.get(reverse("microplans:program_plans", kwargs={"program_id": 25}))
+    assert resp.status_code == 200
+    g = next(g for g in resp.json()["groups"] if g["group_id"] == 7)
+    assert g["kind"] == "study" and g["status"] == "defining"
+
+
 def test_program_create_plan(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     plans, _ = _make_fake_program_da(monkeypatch, {}, {})
