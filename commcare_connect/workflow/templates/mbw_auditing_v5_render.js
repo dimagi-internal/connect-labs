@@ -4037,13 +4037,12 @@ function WorkflowUI({
 
     var computeMetrics = function () {
       setComputing(true);
-      // Defer to next tick so the button state updates before the heavy work
       setTimeout(function () {
         var visitsRows = (pipelines.visits && pipelines.visits.rows) || [];
         var regRows =
           (pipelines.registrations && pipelines.registrations.rows) || [];
 
-        // Scope lines to eligible-for-renewal FLWs only
+        // Build eligible-for-renewal username set
         var eligibleUsernames = [];
         var seenU = {};
         for (var u in workerResults) {
@@ -4060,16 +4059,14 @@ function WorkflowUI({
         }
 
         var result = months.map(function (mo) {
-          return Object.assign(
-            {},
-            mo,
-            computeMonthlySnapshot(
-              visitsRows,
-              regRows,
-              mo.snapDate,
-              eligibleUsernames,
-            ),
-          );
+          var allSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, null);
+          var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligibleUsernames);
+          return Object.assign({}, mo, {
+            followup_rate: eligSnap.followup_rate,
+            pct_still_eligible: eligSnap.pct_still_eligible,
+            followup_rate_all: allSnap.followup_rate,
+            pct_still_eligible_all: allSnap.pct_still_eligible,
+          });
         });
         setMonthlyMetrics(result);
         setComputing(false);
@@ -4278,71 +4275,29 @@ function WorkflowUI({
       }
     });
 
-    // Follow-up rate + % still eligible lines (only after user clicks Compute)
+    // Lines — drawn after compute. Grey = all FLWs, dark green = eligible only.
     if (monthlyMetrics) {
-      var fuPts = [];
-      var sePts = [];
-      monthlyMetrics.forEach(function (mo, i) {
-        var cx = padL + i * slotW + slotW / 2;
-        if (mo.followup_rate != null)
-          fuPts.push([cx, padT + chartH * (1 - mo.followup_rate / 100)]);
-        if (mo.pct_still_eligible != null)
-          sePts.push([cx, padT + chartH * (1 - mo.pct_still_eligible / 100)]);
-      });
-
-      if (fuPts.length >= 2) {
-        elems.push(
-          React.createElement('polyline', {
-            key: 'fu-line',
-            points: fuPts
-              .map(function (p) {
-                return p[0] + ',' + p[1];
-              })
-              .join(' '),
-            fill: 'none',
-            stroke: '#2563eb',
-            strokeWidth: 2.5,
-          }),
-        );
-      }
-      fuPts.forEach(function (p, i) {
-        elems.push(
-          React.createElement('circle', {
-            key: 'fu-dot' + i,
-            cx: p[0],
-            cy: p[1],
-            r: 3.5,
-            fill: '#2563eb',
-          }),
-        );
-      });
-
-      if (sePts.length >= 2) {
-        elems.push(
-          React.createElement('polyline', {
-            key: 'se-line',
-            points: sePts
-              .map(function (p) {
-                return p[0] + ',' + p[1];
-              })
-              .join(' '),
-            fill: 'none',
-            stroke: '#9333ea',
-            strokeWidth: 2.5,
-            strokeDasharray: '6,3',
-          }),
-        );
-      }
-      sePts.forEach(function (p, i) {
-        elems.push(
-          React.createElement('circle', {
-            key: 'se-dot' + i,
-            cx: p[0],
-            cy: p[1],
-            r: 3.5,
-            fill: '#9333ea',
-          }),
-        );
+      var LINE_SERIES = [
+        { key: 'followup_rate_all',       color: '#9ca3af', dash: null,    dotKey: 'fua' },
+        { key: 'pct_still_eligible_all',  color: '#9ca3af', dash: '5,3',   dotKey: 'sea' },
+        { key: 'followup_rate',           color: '#15803d', dash: null,    dotKey: 'fue' },
+        { key: 'pct_still_eligible',      color: '#15803d', dash: '5,3',   dotKey: 'see' },
+      ];
+      LINE_SERIES.forEach(function (s) {
+        var pts = [];
+        monthlyMetrics.forEach(function (mo, i) {
+          var cx = padL + i * slotW + slotW / 2;
+          if (mo[s.key] != null)
+            pts.push([cx, padT + chartH * (1 - mo[s.key] / 100)]);
+        });
+        if (pts.length >= 2) {
+          var lineProps = { key: s.dotKey + '-line', points: pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: s.color, strokeWidth: 2 };
+          if (s.dash) lineProps.strokeDasharray = s.dash;
+          elems.push(React.createElement('polyline', lineProps));
+        }
+        pts.forEach(function (p, i) {
+          elems.push(React.createElement('circle', { key: s.dotKey + '-dot' + i, cx: p[0], cy: p[1], r: 3, fill: s.color }));
+        });
       });
     }
 
@@ -4350,13 +4305,12 @@ function WorkflowUI({
     var FocusedLineChart = function () {
       if (!monthlyMetrics) return null;
 
-      var fuVals = [],
-        seVals = [];
+      var allVals = [];
       monthlyMetrics.forEach(function (mo) {
-        if (mo.followup_rate != null) fuVals.push(mo.followup_rate);
-        if (mo.pct_still_eligible != null) seVals.push(mo.pct_still_eligible);
+        ['followup_rate', 'pct_still_eligible', 'followup_rate_all', 'pct_still_eligible_all'].forEach(function (k) {
+          if (mo[k] != null) allVals.push(mo[k]);
+        });
       });
-      var allVals = fuVals.concat(seVals);
       if (allVals.length === 0) return null;
 
       var rawMin = Math.min.apply(null, allVals);
@@ -4443,74 +4397,28 @@ function WorkflowUI({
         );
       });
 
-      // Lines
-      var lFuPts = [],
-        lSePts = [];
-      monthlyMetrics.forEach(function (mo, i) {
-        var lcx = lPadL + i * lSlotW + lSlotW / 2;
-        if (mo.followup_rate != null)
-          lFuPts.push([
-            lcx,
-            lPadT + lChartH * (1 - (mo.followup_rate - yMin) / yRange),
-          ]);
-        if (mo.pct_still_eligible != null)
-          lSePts.push([
-            lcx,
-            lPadT + lChartH * (1 - (mo.pct_still_eligible - yMin) / yRange),
-          ]);
-      });
-
-      if (lFuPts.length >= 2)
-        lElems.push(
-          React.createElement('polyline', {
-            key: 'lfu',
-            points: lFuPts
-              .map(function (p) {
-                return p[0] + ',' + p[1];
-              })
-              .join(' '),
-            fill: 'none',
-            stroke: '#2563eb',
-            strokeWidth: 2.5,
-          }),
-        );
-      lFuPts.forEach(function (p, i) {
-        lElems.push(
-          React.createElement('circle', {
-            key: 'lfud' + i,
-            cx: p[0],
-            cy: p[1],
-            r: 3.5,
-            fill: '#2563eb',
-          }),
-        );
-      });
-
-      if (lSePts.length >= 2)
-        lElems.push(
-          React.createElement('polyline', {
-            key: 'lse',
-            points: lSePts
-              .map(function (p) {
-                return p[0] + ',' + p[1];
-              })
-              .join(' '),
-            fill: 'none',
-            stroke: '#9333ea',
-            strokeWidth: 2.5,
-            strokeDasharray: '6,3',
-          }),
-        );
-      lSePts.forEach(function (p, i) {
-        lElems.push(
-          React.createElement('circle', {
-            key: 'lsed' + i,
-            cx: p[0],
-            cy: p[1],
-            r: 3.5,
-            fill: '#9333ea',
-          }),
-        );
+      // Lines — grey = all FLWs, dark green = eligible only
+      var L_SERIES = [
+        { key: 'followup_rate_all',      color: '#9ca3af', dash: null,  dk: 'lfua' },
+        { key: 'pct_still_eligible_all', color: '#9ca3af', dash: '5,3', dk: 'lsea' },
+        { key: 'followup_rate',          color: '#15803d', dash: null,  dk: 'lfue' },
+        { key: 'pct_still_eligible',     color: '#15803d', dash: '5,3', dk: 'lsee' },
+      ];
+      L_SERIES.forEach(function (s) {
+        var pts = [];
+        monthlyMetrics.forEach(function (mo, i) {
+          var lcx = lPadL + i * lSlotW + lSlotW / 2;
+          if (mo[s.key] != null)
+            pts.push([lcx, lPadT + lChartH * (1 - (mo[s.key] - yMin) / yRange)]);
+        });
+        if (pts.length >= 2) {
+          var lp = { key: s.dk + '-line', points: pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: s.color, strokeWidth: 2 };
+          if (s.dash) lp.strokeDasharray = s.dash;
+          lElems.push(React.createElement('polyline', lp));
+        }
+        pts.forEach(function (p, i) {
+          lElems.push(React.createElement('circle', { key: s.dk + '-d' + i, cx: p[0], cy: p[1], r: 3, fill: s.color }));
+        });
       });
 
       return React.createElement(
@@ -4556,7 +4464,7 @@ function WorkflowUI({
         React.createElement(
           'p',
           { className: 'text-xs text-gray-400' },
-          'Bars: FLW category distribution per month. Lines: follow-up rate & % still eligible (computed on demand).',
+          'Bars: category distribution per month. Lines: follow-up rate & % still eligible — grey = all FLWs, green = Eligible for Renewal only (computed on demand).',
         ),
         React.createElement(
           'button',
@@ -4634,29 +4542,26 @@ function WorkflowUI({
         React.createElement(
           'span',
           { className: 'flex items-center gap-1' },
-          React.createElement('span', {
-            style: {
-              display: 'inline-block',
-              width: 20,
-              height: 3,
-              background: '#2563eb',
-              borderRadius: 2,
-            },
-          }),
-          'Follow-up Rate',
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 2, background: '#9ca3af', borderRadius: 2 } }),
+          'Follow-up Rate (all)',
         ),
         React.createElement(
           'span',
           { className: 'flex items-center gap-1' },
-          React.createElement('span', {
-            style: {
-              display: 'inline-block',
-              width: 20,
-              height: 0,
-              borderTop: '3px dashed #9333ea',
-            },
-          }),
-          '% Still Eligible',
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '2px dashed #9ca3af' } }),
+          '% Still Eligible (all)',
+        ),
+        React.createElement(
+          'span',
+          { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 2, background: '#15803d', borderRadius: 2 } }),
+          'Follow-up Rate (eligible)',
+        ),
+        React.createElement(
+          'span',
+          { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '2px dashed #15803d' } }),
+          '% Still Eligible (eligible)',
         ),
       ),
       React.createElement(FocusedLineChart, null),
