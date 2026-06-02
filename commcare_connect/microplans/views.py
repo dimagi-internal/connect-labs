@@ -967,6 +967,9 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                         "status": p.status,
                         "status_label": plan_lib.PLAN_STATUS_LABELS.get(p.status, p.status),
                         "review_url": reverse("microplans:program_review", args=[program_id, pid]),
+                        # Each plan exports to its OWN opportunity's work-area CSV (one opp
+                        # per plan) — and the CSV carries no arm (blind by construction).
+                        "csv_url": reverse("microplans:program_plan_csv", args=[program_id, pid]),
                     }
                 )
             context["group"] = {
