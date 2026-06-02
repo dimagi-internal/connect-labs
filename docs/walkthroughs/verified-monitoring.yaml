@@ -27,12 +27,12 @@ personas:
 scenes:
 - persona: david
   title: The most recent survey, front and center
-  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3701),
+  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3704),
     the section showing: The most recent bi-monthly survey shows treatment-ward coverage above control-ward
     coverage cross-sectionally.'
   actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3701
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3704
   - kind: wait_for
     target: Verified vitamin-A coverage
   - kind: scroll_to
@@ -57,12 +57,12 @@ scenes:
       element
 - persona: david
   title: The gap has held across six rounds
-  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3701),
+  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3704),
     the section showing: The treatment-minus-control coverage gap persists across all six bi-monthly survey
     rounds.'
   actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3701
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3704
   - kind: wait_for
     target: Verified vitamin-A coverage
   - kind: scroll_to
@@ -87,12 +87,12 @@ scenes:
       that ward''s mean, and the last round equals 68.1% (treatment) and 8.9% (control)'
 - persona: david
   title: Proving the ruler is the same on both sides
-  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3701),
+  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3704),
     the section showing: The survey applied balanced quality gates across both adjacent wards, ruling
     out a biased instrument.'
   actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3701
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3704
   - kind: wait_for
     target: Verified vitamin-A coverage
   - kind: scroll_to
@@ -117,12 +117,12 @@ scenes:
       per ward (427 treatment, 409 control)
 - persona: david
   title: The map where the program stops at the line
-  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3701),
+  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3704),
     the section showing: The program''s own logged service-delivery visits fall only inside the treatment
     ward and stop at the boundary.'
   actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3701
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3704
   - kind: wait_for
     target: Verified vitamin-A coverage
   - kind: scroll_to
@@ -154,12 +154,12 @@ scenes:
       round
 - persona: david
   title: Independent pins prove the survey covered both wards
-  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3701),
+  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3704),
     the section showing: Independent monitoring pins appear in both wards regardless of program presence,
     so the gap is not survey effort.'
   actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3701
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3704
   - kind: wait_for
     target: Verified vitamin-A coverage
   - kind: scroll_to
@@ -184,12 +184,12 @@ scenes:
       and toggling off flips its visibility to none
 - persona: david
   title: Trust, then verify the implementer's claim
-  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3701),
+  show: 'On the live verified-monitoring dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3704),
     the section showing: The independent coverage falls below the implementer''s self-reported coverage
     by a measurable premium.'
   actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3701
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3704
   - kind: wait_for
     target: Verified vitamin-A coverage
   - kind: scroll_to

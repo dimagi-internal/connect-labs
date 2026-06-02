@@ -1,0 +1,75 @@
+{
+  "_comment": "Reproduces the Verified Monitoring (N1) dashboard demo on synthetic opp 10008. The dashboard render (commcare_connect/workflow/templates/verified_monitoring_render.js) reads this curated state from the workflow run's instance.state and never fetches. 'show-don't-tell': the render presents these results neutrally with no causal claims. regenerate.py builds the full state payload (including the two-ward map overlay GeoJSON, sampled deterministically) and creates a workflow run via the connect_labs MCP.",
+  "opportunity_id": 10008,
+  "workflow_def_id": 3699,
+  "rng_seed": 20260602,
+  "program": {
+    "name": "Vitamin-A CHC home-visit monitoring",
+    "treatment_ward": "Kaura",
+    "control_ward": "Gedawa",
+    "cadence": "bi-monthly"
+  },
+  "_coverage_comment": "Six bi-monthly survey rounds per ward. Each round's verified coverage jitters within a normal survey band; the latest round (R6) equals the hero numbers. coverage_pct paired with (n surveyed, confirmed) per round.",
+  "coverage_rounds": {
+    "intervention": [
+      { "round": 1, "coverage_pct": 52.4, "n": 290, "confirmed": 152 },
+      { "round": 2, "coverage_pct": 61.0, "n": 300, "confirmed": 183 },
+      { "round": 3, "coverage_pct": 58.7, "n": 286, "confirmed": 168 },
+      { "round": 4, "coverage_pct": 70.4, "n": 270, "confirmed": 190 },
+      { "round": 5, "coverage_pct": 64.9, "n": 285, "confirmed": 185 },
+      { "round": 6, "coverage_pct": 68.1, "n": 285, "confirmed": 194 }
+    ],
+    "comparison": [
+      { "round": 1, "coverage_pct": 7.8, "n": 256, "confirmed": 20 },
+      { "round": 2, "coverage_pct": 10.6, "n": 255, "confirmed": 27 },
+      { "round": 3, "coverage_pct": 8.2, "n": 268, "confirmed": 22 },
+      { "round": 4, "coverage_pct": 9.7, "n": 268, "confirmed": 26 },
+      { "round": 5, "coverage_pct": 7.9, "n": 266, "confirmed": 21 },
+      { "round": 6, "coverage_pct": 8.9, "n": 270, "confirmed": 24 }
+    ]
+  },
+  "latest": {
+    "round": 6,
+    "intervention_pct": 68.1,
+    "comparison_pct": 8.9,
+    "gap_pp": 59.2,
+    "gap_ci": [52.8, 65.6],
+    "intervention_n": 285
+  },
+  "verification": {
+    "gps_within_15m_pct": 95.8,
+    "evidence_complete_pct": 97.1,
+    "backcheck_pass_pct": 95.2,
+    "flags_raised": 3,
+    "flags_resolved": 3
+  },
+  "self_report": {
+    "intervention_pct": 88.0,
+    "independent_pct": 68.1,
+    "premium_pp": 19.9
+  },
+  "service_delivery_counts": { "Kaura": 2300, "Gedawa": 0 },
+  "_overlay_comment": "Two adjacent wards in Kaduna State, Nigeria — Kaura (treatment) left, Gedawa (control) right, sharing the lon=8.30 edge. service_delivery_sample points are drawn only inside Kaura (a legible sample of the 2,300 logged visits; the count label stays 2,300). survey_pins are drawn in BOTH wards (independent survey covered both) — purple = vitamin-A confirmed, pink = absent.",
+  "ward_polygons": {
+    "Kaura": [
+      [8.205, 9.56],
+      [8.3, 9.552],
+      [8.3, 9.648],
+      [8.21, 9.655],
+      [8.195, 9.605]
+    ],
+    "Gedawa": [
+      [8.3, 9.552],
+      [8.398, 9.56],
+      [8.405, 9.61],
+      [8.392, 9.652],
+      [8.3, 9.648]
+    ]
+  },
+  "service_delivery_sample": 720,
+  "survey_pins": {
+    "Kaura": { "n": 206, "confirmed_rate": 0.681 },
+    "Gedawa": { "n": 195, "confirmed_rate": 0.089 }
+  },
+  "pin_colors": { "confirmed": "#a78bfa", "absent": "#f472b6" }
+}
