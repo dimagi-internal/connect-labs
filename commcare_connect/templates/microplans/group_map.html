@@ -89,8 +89,12 @@
           filter: ["==", ["geometry-type"], "Polygon"] });
         // Sampling work areas are PINS (Point geometry): coloured dots.
         map.addLayer({ id: src + "-pt", type: "circle", source: src,
-          paint: { "circle-color": L.color, "circle-radius": 4, "circle-opacity": 0.85,
-            "circle-stroke-color": "#ffffff", "circle-stroke-width": 0.6 },
+          paint: {
+            "circle-color": L.color, "circle-opacity": 0.95,
+            // Zoom-scaled so pins stay legible when the study is framed at ward
+            // scale (the two arms must read as two distinct colour clusters).
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 5, 12, 7, 15, 10],
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.4 },
           filter: ["==", ["geometry-type"], "Point"] });
         const sublayers = [src + "-fill", src + "-line", src + "-pt"];
         // Click → inspect (which plan/arm this area belongs to)
@@ -108,7 +112,7 @@
         }
       });
       const b = bounds();
-      if (b) map.fitBounds(b, { padding: 60, maxZoom: 14, duration: 0 });
+      if (b) map.fitBounds(b, { padding: 40, maxZoom: 15, duration: 0 });
     });
   })();
 </script>
