@@ -30,8 +30,9 @@
     {% if entries %}
     <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
     {% endif %}
-    <span class="px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-gray-400" title="Coming next">View on map ·</span>
-    <span class="px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-gray-400" title="Coming next">Generate samples ·</span>
+    {% if entries %}<a href="{{ map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">View on map</a>
+    <button type="button" class="px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
+            :disabled="busy" @click="generateSamples()" x-text="busy ? 'Generating…' : 'Generate samples'"></button>{% endif %}
   </div>
 
   {% if not entries %}
@@ -60,9 +61,14 @@
           </td>
           {% if group.is_study %}
           <td class="px-3 py-2">
-            {% if e.arm == "intervention" %}<span class="text-[11px] px-1.5 py-0.5 rounded" style="background:#10b98122;color:#047857">● intervention</span>
-            {% elif e.arm == "control" %}<span class="text-[11px] px-1.5 py-0.5 rounded" style="background:#3b82f622;color:#1d4ed8">● control</span>
-            {% else %}<span class="text-[11px] text-gray-400">— unassigned</span>{% endif %}
+            <select class="text-[11px] border border-gray-200 rounded px-1 py-0.5 bg-white"
+                    data-arm-for="{{ e.plan_id }}"
+                    :disabled="busy" @change="assignArm({{ e.plan_id }}, $event.target.value)"
+                    style="{% if e.arm == 'intervention' %}color:#047857{% elif e.arm == 'control' %}color:#1d4ed8{% else %}color:#9ca3af{% endif %}">
+              <option value="" {% if not e.arm %}selected{% endif %}>— unassigned</option>
+              <option value="intervention" {% if e.arm == "intervention" %}selected{% endif %}>● intervention</option>
+              <option value="control" {% if e.arm == "control" %}selected{% endif %}>● control</option>
+            </select>
           </td>
           {% endif %}
           <td class="px-3 py-2 text-gray-600">{{ e.mode }}</td>
@@ -99,6 +105,51 @@
         body: JSON.stringify({ remove_plan_id: planId }),
       });
       if (!r.ok) throw new Error("remove failed (" + r.status + ")");
+      window.location.reload();
+    } catch (e) {
+      alert(String(e.message || e));
+    }
+  }
+  // Generate samples across every member plan, then poll until the task finishes.
+  async function generateSamples() {
+    const root = document.querySelector("[x-data]").__x.$data;
+    root.busy = true;
+    try {
+      const r = await fetch("{{ generate_url }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken() },
+        body: "{}",
+      });
+      const d = await r.json();
+      if (!r.ok || !d.poll_url) throw new Error(d.detail || ("HTTP " + r.status));
+      // poll the task status until SUCCESS/FAILURE
+      for (let i = 0; i < 120; i++) {
+        await new Promise((res) => setTimeout(res, 2000));
+        const sr = await fetch(d.poll_url);
+        const sd = await sr.json();
+        if (sd.state === "completed") break;
+        if (sd.state === "error") throw new Error("Generation failed");
+      }
+      window.location.reload();
+    } catch (e) {
+      root.busy = false;
+      alert(String(e.message || e));
+    }
+  }
+  // Arm assignment replaces the group's whole arm map, so collect every row's
+  // current selection (the just-changed one included) and POST them together.
+  async function assignArm(planId, arm) {
+    const arms = {};
+    document.querySelectorAll("select[data-arm-for]").forEach((s) => {
+      if (s.value) arms[s.getAttribute("data-arm-for")] = s.value;
+    });
+    try {
+      const r = await fetch("{{ remove_plan_url }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken() },
+        body: JSON.stringify({ arms }),
+      });
+      if (!r.ok) throw new Error("assign failed (" + r.status + ")");
       window.location.reload();
     } catch (e) {
       alert(String(e.message || e));

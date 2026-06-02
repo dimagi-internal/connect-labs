@@ -494,3 +494,35 @@ class TestDeriveLgaState:
 
     def test_empty_plan(self):
         assert plan.derive_lga_state({}) == ("", "")
+
+
+class TestPlanSampleAreas:
+    """plan_sample_areas: a plan's stored input_areas → [{arm, geometry}] for the engine."""
+
+    def test_inline_geometry_passes_through_tagged_with_arm(self):
+        from commcare_connect.microplans.core.plan import plan_sample_areas
+
+        poly = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+        out = plan_sample_areas(
+            [{"kind": "draw", "geometry": poly}], "intervention", resolve_boundary=lambda bid: None
+        )
+        assert out == [{"arm": "intervention", "geometry": poly}]
+
+    def test_admin_boundary_resolves_geometry_via_injected_resolver(self):
+        from commcare_connect.microplans.core.plan import plan_sample_areas
+
+        poly = {"type": "Polygon", "coordinates": [[[5, 5], [6, 5], [6, 6], [5, 5]]]}
+        out = plan_sample_areas(
+            [{"kind": "admin_boundary", "boundary_id": "NGA-Madobi", "name": "Madobi"}],
+            "control",
+            resolve_boundary=lambda bid: poly if bid == "NGA-Madobi" else None,
+        )
+        assert out == [{"arm": "control", "geometry": poly}]
+
+    def test_unresolvable_area_is_skipped(self):
+        from commcare_connect.microplans.core.plan import plan_sample_areas
+
+        out = plan_sample_areas(
+            [{"kind": "admin_boundary", "boundary_id": "missing"}], "intervention", resolve_boundary=lambda bid: None
+        )
+        assert out == []
