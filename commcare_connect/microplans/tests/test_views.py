@@ -1268,3 +1268,61 @@ def test_plan_delete_not_in_program_is_404(client, django_user_model, monkeypatc
 def test_plan_delete_requires_login(client):
     resp = client.delete(reverse("microplans:program_plan", kwargs={"program_id": 133, "plan_id": 1}))
     assert resp.status_code in (301, 302, 403)
+
+
+# --- State (ADM1) derivation for boundary-created plans -----------------------
+
+
+def _state_square(cx, cy, d=0.1):
+    return {
+        "type": "Polygon",
+        "coordinates": [[[cx - d, cy - d], [cx + d, cy - d], [cx + d, cy + d], [cx - d, cy + d], [cx - d, cy - d]]],
+    }
+
+
+def test_adm1_state_for_matches_containing_boundary(monkeypatch):
+    """A plan polygon whose centroid falls inside an ADM1 boundary picks up its name."""
+    from commcare_connect.microplans import views
+
+    captured = {}
+
+    class FakeQS:
+        def filter(self, **kw):
+            captured.update(kw)
+            return self
+
+        def first(self):
+            return type("B", (), {"name": "Kano"})()
+
+    class FakeManager:
+        objects = FakeQS()
+
+    monkeypatch.setattr("commcare_connect.labs.admin_boundaries.models.AdminBoundary", FakeManager, raising=False)
+    state = views._adm1_state_for([{"geometry": _state_square(8.5, 12.0)}], None)
+    assert state == "Kano"
+    assert captured.get("admin_level") == 1
+    assert "geometry__contains" in captured
+
+
+def test_adm1_state_for_no_match_returns_empty(monkeypatch):
+    from commcare_connect.microplans import views
+
+    class FakeQS:
+        def filter(self, **kw):
+            return self
+
+        def first(self):
+            return None
+
+    class FakeManager:
+        objects = FakeQS()
+
+    monkeypatch.setattr("commcare_connect.labs.admin_boundaries.models.AdminBoundary", FakeManager, raising=False)
+    assert views._adm1_state_for([{"geometry": _state_square(0.0, 0.0)}], None) == ""
+
+
+def test_adm1_state_for_no_geometry_returns_empty():
+    from commcare_connect.microplans import views
+
+    assert views._adm1_state_for([], None) == ""
+    assert views._adm1_state_for(None, {"type": "FeatureCollection", "features": []}) == ""

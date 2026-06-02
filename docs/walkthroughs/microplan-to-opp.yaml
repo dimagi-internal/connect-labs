@@ -41,8 +41,8 @@ scenes:
       - { kind: hover, target: "Microplan portfolio", seconds: 0.7, note: "land on the portfolio" }
       - { kind: scroll, value: "bottom", note: "pan down to Live + Archived + the plan groups" }
       - { kind: scroll, value: "top" }
-      - { kind: hover, target: "New plan", seconds: 0.7, note: "the entry point to a new plan" }
-      - { kind: click, target: "New plan", note: "click into the new-plan flow" }
+      - { kind: hover, target: "text:New plan", seconds: 0.7, note: "the entry point to a new plan" }
+      - { kind: click, target: "text:New plan", note: "click into the new-plan flow" }
       - { kind: hold, seconds: 1.2 }
   - persona: maya
     title: "Maya turns a district into a draft plan"
@@ -65,14 +65,14 @@ scenes:
       - { kind: wait_for, target: ".mp-ab-results button", note: "place results" }
       - { kind: hold, seconds: 0.8 }
       - { kind: click, target: ".mp-ab-results button", note: "fly the map to Kano (and seed the country)" }
-      - { kind: hold, seconds: 5, note: "the map flies to Kano" }
+      - { kind: hold, seconds: 3, note: "the map flies to Kano" }
       - { kind: fill, target: ".mp-ab-search", value: "Kano", note: "now search the admin boundaries there" }
-      - { kind: wait_for, target: "Kano Municipal", note: "boundary results (Region / LGA / Ward)" }
+      - { kind: wait_for, target: "text:Kano Municipal", note: "boundary results (Region / LGA / Ward)" }
       - { kind: hold, seconds: 0.8 }
-      - { kind: click, target: "Kano Municipal", note: "select the LGA (not the whole state) so the grid is a sane size" }
-      - { kind: hold, seconds: 4, note: "the selected boundary's geometry resolves (1 selected · 15 km²)" }
+      - { kind: click, target: "text:Kano Municipal", note: "select the LGA (not the whole state) so the grid is a sane size" }
+      - { kind: hold, seconds: 2.5, note: "the selected boundary resolves (1 selected · 15 km²)" }
       - { kind: click, target: "Create plan", note: "generate the work areas from the chosen boundary" }
-      - { kind: wait_for, target: "WORKERS", seconds: 90, note: "the grid generates on Celery, then the review page appears (early-exits the moment it's ready)" }
+      - { kind: wait_for, target: "text:WORKERS", seconds: 90, note: "the grid generates on Celery, then the review page appears (early-exits the moment it's ready)" }
       - { kind: hold, seconds: 1.5 }
   - persona: maya
     title: "The grid balances itself across field workers"
@@ -89,15 +89,16 @@ scenes:
       - { kind: fill, target: "#grp-max-buildings", value: "2500", note: "size each cluster to a sane field territory" }
       - { kind: click, target: "#btn-regroup", note: "Phase 1 — cluster the work areas into walkable groups" }
       - { kind: hold, seconds: 0.8, note: "the grouping job is dispatched (Re-grouping…)" }
-      - { kind: wait_for, target: "Re-grouped into", seconds: 40, note: "the clustering finishes and the map recolors by group (early-exit)" }
+      - { kind: wait_for, target: "text:Re-grouped into", seconds: 25, note: "the clustering finishes and the map recolors by group (early-exit)" }
       - { kind: hold, seconds: 1.5 }
       - { kind: click, target: "Assign workers", note: "open the worker-assignment panel" }
-      - { kind: hold, seconds: 0.6 }
+      - { kind: wait_for, target: "#asg-workers", note: "the assignment panel expands" }
+      - { kind: hold, seconds: 0.5 }
       - { kind: fill, target: "#asg-workers", value: "Amina Bello\nIbrahim Sani\nFatima Yusuf\nMusa Garba\nHauwa Aliyu\nSani Abdullahi", note: "the six named field workers" }
       - { kind: hover, target: "#btn-reassign", seconds: 0.8, note: "minimize-travel strategy, six workers" }
       - { kind: click, target: "#btn-reassign", note: "Phase 2 — balance the clusters across workers, minimizing travel" }
       - { kind: hold, seconds: 0.9, note: "the assignment job runs (Re-assigning…)" }
-      - { kind: wait_for, target: "Assigned to", seconds: 40, note: "minimax-spread assignment finishes and the map recolors by worker (early-exit)" }
+      - { kind: wait_for, target: "text:Assigned to", seconds: 25, note: "minimax-spread assignment finishes and the map recolors by worker (early-exit)" }
       - { kind: hold, seconds: 1.0 }
       - { kind: scroll_to, target: "WORKERS", note: "each worker now holds a contiguous territory, color-coded on the map" }
       - { kind: hold, seconds: 2.0 }
@@ -117,7 +118,7 @@ scenes:
     actions:
       - { kind: scroll_to, target: "PLAN METRICS", note: "worst / mean travel, balance, coverage — all computed from the live assignment" }
       - { kind: hold, seconds: 1.5 }
-      - { kind: hover, target: "WORST TRAVEL", seconds: 1.0, note: "the longest distance any one worker must cover" }
+      - { kind: hover, target: "text:WORST TRAVEL", seconds: 1.0, note: "the longest distance any one worker must cover" }
       - { kind: click, target: 'css:.worker-row:has-text("Amina Bello")', note: "drill into one worker — her territory filters on the map and table" }
       - { kind: hold, seconds: 2.0 }
       - { kind: scroll_to, target: "Worker", note: "the per-worker breakdown: areas, buildings, expected visits, travel" }
@@ -138,10 +139,10 @@ scenes:
       - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.0, note: "the status chip reads Draft" }
       - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Submit for review")', note: "Draft → In review (this plan's card, not a sibling's)" }
       - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "the card re-renders to In review and the Approve button appears" }
-      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.4, note: "the status chip now reads In review" }
+      - { kind: hold, seconds: 1.8, note: "the status chip now reads In review" }
       - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "In review → Approved" }
       - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Deploy")', note: "the card re-renders to Approved and the Deploy button appears" }
-      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.8, note: "now Approved — ready to deploy" }
+      - { kind: hold, seconds: 2.0, note: "now Approved — ready to deploy" }
   - persona: maya
     title: "Maya binds the plan to a live opportunity"
     show: "On the Approved card click Deploy, pick the live Connect opportunity from the searchable list (the ai-demo-space opportunity 'LEEP Paint Surveillance - India (run 20260522-1241)' — id 1834 in labs, the same opportunity that is d99e4422-e11a-476e-b885-fdf92026ea54 in Connect), and show the plan move into the Live column tagged with that opportunity"
