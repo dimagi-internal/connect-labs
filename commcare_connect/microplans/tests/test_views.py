@@ -366,11 +366,23 @@ class _FakeProgramPlan:
         )
         return self._data
 
+    @property
+    def phase(self):
+        # Mirror PlanRecord.phase: boundary-only until work areas are generated.
+        return "sampled" if self.work_areas else "boundary"
+
 
 class _FakeGroup:
-    def __init__(self, gid, name, plan_ids, offered_to="", shared=False):
+    def __init__(self, gid, name, plan_ids, offered_to="", shared=False, kind="bundle", arms=None, status="defining"):
         self.id, self.name, self.plan_ids = gid, name, list(plan_ids)
         self.offered_to, self.shared = offered_to, shared
+        self.kind = kind
+        self.arms = {str(k): v for k, v in (arms or {}).items()}
+        self.sampling_config = {}
+        self.status = status
+
+    def arm_for(self, plan_id):
+        return self.arms.get(str(plan_id))
 
 
 def _make_fake_program_da(monkeypatch, plans=None, groups=None):
@@ -428,10 +440,12 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             p.status_log = data.get("status_log", [])
             return p
 
-        def create_group(self, name, plan_ids, offered_to=""):
+        def create_group(self, name, plan_ids, offered_to="", kind="bundle", arms=None, sampling_config=None):
             gid = seq["group"]
             seq["group"] += 1
-            groups[gid] = _FakeGroup(gid, name, plan_ids, offered_to)
+            groups[gid] = _FakeGroup(gid, name, plan_ids, offered_to, kind=kind, arms=arms)
+            if sampling_config:
+                groups[gid].sampling_config = dict(sampling_config)
             return groups[gid]
 
         def list_groups(self):
@@ -442,11 +456,27 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
 
         def update_group(self, gid, **fields):
             g = groups[int(gid)]
-            for key in ("name", "offered_to", "shared"):
+            for key in ("name", "offered_to", "shared", "kind", "status"):
                 if fields.get(key) is not None:
                     setattr(g, key, fields[key])
             if fields.get("plan_ids") is not None:
                 g.plan_ids = [int(x) for x in fields["plan_ids"]]
+            if fields.get("arms") is not None:
+                g.arms = {str(k): v for k, v in fields["arms"].items()}
+            return g
+
+        def add_plan_to_group(self, gid, plan_id):
+            g = groups[int(gid)]
+            plan_id = int(plan_id)
+            if plan_id not in g.plan_ids:
+                g.plan_ids.append(plan_id)
+            return g
+
+        def remove_plan_from_group(self, gid, plan_id):
+            g = groups[int(gid)]
+            plan_id = int(plan_id)
+            g.plan_ids = [p for p in g.plan_ids if p != plan_id]
+            g.arms = {k: v for k, v in g.arms.items() if k != str(plan_id)}
             return g
 
     monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", FakeDA)
@@ -678,10 +708,11 @@ def test_program_create_plan_page_renders(client, django_user_model, settings):
     body = resp.content.decode()
     assert resp.context["program_id"] == 25
     assert resp.context["plan_id"] is None
-    # Unified template: new-plan page shows the "New microplan" header + the
-    # Create plan button (vs. the per-plan "Microplan review" + "Apply
-    # geographic frame" button on the existing-plan flow).
-    assert "New microplan" in body
+    # Unified template: new-plan page shows the click-to-edit plan-name title
+    # (placeholder "Untitled microplan") + the Create plan button (vs. the
+    # per-plan "Microplan review" + "Apply geographic frame" button on the
+    # existing-plan flow). The title became an editable input in #412.
+    assert "Untitled microplan" in body
     assert "Create plan" in body
 
 
@@ -809,6 +840,63 @@ def test_program_review_page_uses_program_urls(client, django_user_model, settin
     assert resp.context["plan_id"] == 3
     # the edit URL the page posts to must be the program-scoped route
     assert resp.context["edit_url"] == reverse("microplans:program_plan_edit", kwargs={"program_id": 25, "plan_id": 3})
+
+
+def test_program_group_manage_page_renders_study(client, django_user_model, monkeypatch):
+    """The group management page lists members with arm + phase; a study shows arm badges."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501,
+            "sampling",
+            plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
+            name="Madobi ward",
+            region="Madobi",
+        ),
+        502: _FakeProgramPlan(502, "sampling", [], name="Gora ward", region="Gora"),  # boundary-only
+    }
+    groups = {
+        7: _FakeGroup(7, "Madobi CHC study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})
+    }
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_page", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Madobi CHC study" in body
+    assert "Study" in body  # study badge
+    assert "intervention" in body and "control" in body  # arm badges
+    assert "sampled" in body and "boundary only" in body  # phase badges
+    entries = resp.context["entries"]
+    assert {e["plan_id"]: e["arm"] for e in entries} == {501: "intervention", 502: "control"}
+    assert {e["plan_id"]: e["phase"] for e in entries} == {501: "sampled", 502: "boundary"}
+
+
+def test_program_group_manage_remove_plan_drops_plan_and_arm(client, django_user_model, monkeypatch):
+    """POST remove_plan_id to the group endpoint drops the plan and its arm."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(502, "sampling", [], name="Gora"),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.post(
+        reverse("microplans:program_group_update", kwargs={"program_id": 25, "group_id": 7}),
+        data=json.dumps({"remove_plan_id": 502}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert groups[7].plan_ids == [501]
+    assert groups[7].arm_for(502) is None
+    assert groups[7].arm_for(501) == "intervention"
 
 
 def test_program_compare_json(client, django_user_model, monkeypatch):
