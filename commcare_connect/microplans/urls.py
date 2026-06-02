@@ -127,4 +127,14 @@ urlpatterns = [
         views.ProgramGroupPageView.as_view(),
         name="program_group_page",
     ),
+    path(
+        "program/<int:program_id>/group/<int:group_id>/map/",
+        views.ProgramGroupMapView.as_view(),
+        name="program_group_map",
+    ),
+    path(
+        "program/<int:program_id>/group/<int:group_id>/generate/",
+        views.ProgramGroupGenerateView.as_view(),
+        name="program_group_generate",
+    ),
 ]
