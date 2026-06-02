@@ -4077,10 +4077,8 @@ function WorkflowUI({
           var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligibleUsernames);
           var reqSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, reqUsernames);
           return Object.assign({}, mo, {
-            followup_rate:           eligSnap.followup_rate,
-            pct_still_eligible:      eligSnap.pct_still_eligible,
-            followup_rate_req:       reqSnap.followup_rate,
-            pct_still_eligible_req:  reqSnap.pct_still_eligible,
+            pct_still_eligible:     eligSnap.pct_still_eligible,
+            pct_still_eligible_req: reqSnap.pct_still_eligible,
           });
         });
         setMonthlyMetrics(result);
@@ -4290,13 +4288,11 @@ function WorkflowUI({
       }
     });
 
-    // Lines — drawn after compute. Solid = follow-up rate, dashed = % still eligible.
+    // Lines — % mothers still eligible to receive 5+ visits, per category.
     if (monthlyMetrics) {
       var LINE_SERIES = [
-        { key: 'followup_rate',              color: '#15803d', dash: null,  dotKey: 'fue' },
-        { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dotKey: 'see' },
-        { key: 'followup_rate_req',          color: '#ca8a04', dash: null,  dotKey: 'fur' },
-        { key: 'pct_still_eligible_req',     color: '#ca8a04', dash: '5,3', dotKey: 'ser' },
+        { key: 'pct_still_eligible',     color: '#15803d', dash: '5,3', dotKey: 'see' },
+        { key: 'pct_still_eligible_req', color: '#ca8a04', dash: '5,3', dotKey: 'ser' },
       ];
       LINE_SERIES.forEach(function (s) {
         var pts = [];
@@ -4316,162 +4312,13 @@ function WorkflowUI({
       });
     }
 
-    // Focused line chart — auto-scaled y-axis, only visible after compute
-    var FocusedLineChart = function () {
-      if (!monthlyMetrics) return null;
-
-      var allVals = [];
-      monthlyMetrics.forEach(function (mo) {
-        ['followup_rate', 'pct_still_eligible', 'followup_rate_req', 'pct_still_eligible_req'].forEach(function (k) {
-          if (mo[k] != null) allVals.push(mo[k]);
-        });
-      });
-      if (allVals.length === 0) return null;
-
-      var rawMin = Math.min.apply(null, allVals);
-      var yMin = Math.max(0, Math.floor((rawMin - 5) / 5) * 5);
-      var yMax = Math.min(
-        100,
-        Math.ceil((Math.max.apply(null, allVals) + 5) / 5) * 5,
-      );
-      var yRange = yMax - yMin || 1;
-
-      var lW = 640,
-        lH = 160;
-      var lPadL = 44,
-        lPadR = 16,
-        lPadT = 14,
-        lPadB = 36;
-      var lChartW = lW - lPadL - lPadR;
-      var lChartH = lH - lPadT - lPadB;
-      var lSlotW = lChartW / (n || 1);
-
-      var lElems = [];
-
-      // Gridlines — 5% steps within range
-      for (var gv = yMin; gv <= yMax; gv += 5) {
-        var gcy = lPadT + lChartH * (1 - (gv - yMin) / yRange);
-        lElems.push(
-          React.createElement('line', {
-            key: 'lg' + gv,
-            x1: lPadL,
-            y1: gcy,
-            x2: lPadL + lChartW,
-            y2: gcy,
-            stroke: gv % 10 === 0 ? '#e5e7eb' : '#f3f4f6',
-            strokeWidth: 1,
-          }),
-        );
-        if (gv % 10 === 0) {
-          lElems.push(
-            React.createElement(
-              'text',
-              {
-                key: 'lyl' + gv,
-                x: lPadL - 5,
-                y: gcy + 4,
-                textAnchor: 'end',
-                fontSize: 10,
-                fill: '#9ca3af',
-              },
-              gv + '%',
-            ),
-          );
-        }
-      }
-
-      // X-axis
-      lElems.push(
-        React.createElement('line', {
-          key: 'lxax',
-          x1: lPadL,
-          y1: lPadT + lChartH,
-          x2: lPadL + lChartW,
-          y2: lPadT + lChartH,
-          stroke: '#d1d5db',
-          strokeWidth: 1,
-        }),
-      );
-
-      // X-labels
-      months.forEach(function (mo, i) {
-        var lcx = lPadL + i * lSlotW + lSlotW / 2;
-        lElems.push(
-          React.createElement(
-            'text',
-            {
-              key: 'lxl' + i,
-              x: lcx,
-              y: lPadT + lChartH + 14,
-              textAnchor: 'middle',
-              fontSize: 10,
-              fill: '#6b7280',
-            },
-            mo.label,
-          ),
-        );
-      });
-
-      // Lines — solid = follow-up rate, dashed = % still eligible
-      var L_SERIES = [
-        { key: 'followup_rate',              color: '#15803d', dash: null,  dk: 'lfue' },
-        { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dk: 'lsee' },
-        { key: 'followup_rate_req',          color: '#ca8a04', dash: null,  dk: 'lfur' },
-        { key: 'pct_still_eligible_req',     color: '#ca8a04', dash: '5,3', dk: 'lser' },
-      ];
-      L_SERIES.forEach(function (s) {
-        var pts = [];
-        monthlyMetrics.forEach(function (mo, i) {
-          var lcx = lPadL + i * lSlotW + lSlotW / 2;
-          if (mo[s.key] != null)
-            pts.push([lcx, lPadT + lChartH * (1 - (mo[s.key] - yMin) / yRange)]);
-        });
-        if (pts.length >= 2) {
-          var lp = { key: s.dk + '-line', points: pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: s.color, strokeWidth: 2 };
-          if (s.dash) lp.strokeDasharray = s.dash;
-          lElems.push(React.createElement('polyline', lp));
-        }
-        pts.forEach(function (p, i) {
-          lElems.push(React.createElement('circle', { key: s.dk + '-d' + i, cx: p[0], cy: p[1], r: 3, fill: s.color }));
-        });
-      });
-
-      return React.createElement(
-        'div',
-        { className: 'mt-4 bg-white rounded-lg shadow-sm p-4' },
-        React.createElement(
-          'h3',
-          { className: 'text-sm font-semibold text-gray-800 mb-1' },
-          'Trend lines (focused view)',
-        ),
-        React.createElement(
-          'p',
-          { className: 'text-xs text-gray-400 mb-2' },
-          'Y-axis auto-scaled to data range (' +
-            yMin +
-            '–' +
-            yMax +
-            '%) to highlight changes.',
-        ),
-        React.createElement(
-          'svg',
-          {
-            viewBox: '0 0 ' + lW + ' ' + lH,
-            width: '100%',
-            style: { display: 'block' },
-          },
-          lElems,
-        ),
-      );
-    };
-
     return React.createElement(
       'div',
       { className: 'bg-white rounded-lg shadow-sm p-4' },
       React.createElement(
         'h3',
         { className: 'text-sm font-semibold text-gray-800 mb-1' },
-        'Improvement over time',
+        '% mothers still eligible to receive 5+ visits',
       ),
       React.createElement(
         'div',
@@ -4479,7 +4326,7 @@ function WorkflowUI({
         React.createElement(
           'p',
           { className: 'text-xs text-gray-400' },
-          'Bars: category distribution per month. Lines: follow-up rate & % still eligible — grey = all FLWs, green = Eligible for Renewal only (computed on demand).',
+          'Bars: category distribution per month. Lines: % mothers still eligible to receive 5+ visits by performance category (computed on demand).',
         ),
         React.createElement(
           'button',
@@ -4557,29 +4404,16 @@ function WorkflowUI({
         React.createElement(
           'span',
           { className: 'flex items-center gap-1' },
-          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 2, background: '#9ca3af', borderRadius: 2 } }),
-          'Follow-up Rate (all)',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '2px dashed #9ca3af' } }),
-          '% Still Eligible (all)',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 2, background: '#15803d', borderRadius: 2 } }),
-          'Follow-up Rate (eligible)',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
           React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '2px dashed #15803d' } }),
-          '% Still Eligible (eligible)',
+          '% mothers still eligible to receive 5+ visits (Eligible for Renewal)',
+        ),
+        React.createElement(
+          'span',
+          { className: 'flex items-center gap-1' },
+          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '2px dashed #ca8a04' } }),
+          '% mothers still eligible to receive 5+ visits (Requires Improvement)',
         ),
       ),
-      React.createElement(FocusedLineChart, null),
     );
   };
 
@@ -4595,14 +4429,13 @@ function WorkflowUI({
     return React.createElement(
       'div',
       { className: 'space-y-4' },
-      React.createElement(ImprovementOverTimeChart, null),
       React.createElement(
         'div',
         { className: 'flex items-center justify-between' },
         React.createElement(
           'p',
-          { className: 'text-sm text-gray-500' },
-          'Based on latest performance categories set for each FLW.',
+          { className: 'text-sm font-semibold text-gray-700' },
+          'Follow-up metrics based on latest performance categories set for each FLW.',
         ),
         React.createElement(
           'button',
@@ -4791,6 +4624,7 @@ function WorkflowUI({
           ),
         ),
       ),
+      React.createElement(ImprovementOverTimeChart, null),
     );
   };
 
