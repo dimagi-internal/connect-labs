@@ -917,6 +917,30 @@ def test_program_group_manage_remove_plan_drops_plan_and_arm(client, django_user
     assert groups[7].arm_for(501) == "intervention"
 
 
+def test_program_group_assign_arm(client, django_user_model, monkeypatch):
+    """POST arms to the group endpoint assigns each plan's arm (labs-side study metadata)."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(502, "sampling", [], name="Gora"),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study")}  # no arms yet
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.post(
+        reverse("microplans:program_group_update", kwargs={"program_id": 25, "group_id": 7}),
+        data=json.dumps({"arms": {"501": "intervention", "502": "control"}}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert groups[7].arm_for(501) == "intervention"
+    assert groups[7].arm_for(502) == "control"
+
+
 def test_program_create_plan_into_group_adds_membership(client, django_user_model, monkeypatch):
     """Creating a plan with group_id drops it into that group (the editor 'add to group' path)."""
     _login(client, django_user_model)

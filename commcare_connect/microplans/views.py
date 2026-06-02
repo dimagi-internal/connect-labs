@@ -758,6 +758,9 @@ class ProgramGroupUpdateView(LoginRequiredMixin, View):
                 plan_ids=payload.get("plan_ids"),
                 offered_to=payload.get("offered_to"),
                 shared=payload.get("shared"),
+                kind=payload.get("kind"),
+                arms=payload.get("arms"),  # study arm assignment (labs-side only)
+                status=payload.get("status"),
             )
         except Exception:  # noqa: BLE001
             logger.exception("microplans update_group failed (program=%s group=%s)", program_id, group_id)

@@ -60,9 +60,14 @@
           </td>
           {% if group.is_study %}
           <td class="px-3 py-2">
-            {% if e.arm == "intervention" %}<span class="text-[11px] px-1.5 py-0.5 rounded" style="background:#10b98122;color:#047857">● intervention</span>
-            {% elif e.arm == "control" %}<span class="text-[11px] px-1.5 py-0.5 rounded" style="background:#3b82f622;color:#1d4ed8">● control</span>
-            {% else %}<span class="text-[11px] text-gray-400">— unassigned</span>{% endif %}
+            <select class="text-[11px] border border-gray-200 rounded px-1 py-0.5 bg-white"
+                    data-arm-for="{{ e.plan_id }}"
+                    :disabled="busy" @change="assignArm({{ e.plan_id }}, $event.target.value)"
+                    style="{% if e.arm == 'intervention' %}color:#047857{% elif e.arm == 'control' %}color:#1d4ed8{% else %}color:#9ca3af{% endif %}">
+              <option value="" {% if not e.arm %}selected{% endif %}>— unassigned</option>
+              <option value="intervention" {% if e.arm == "intervention" %}selected{% endif %}>● intervention</option>
+              <option value="control" {% if e.arm == "control" %}selected{% endif %}>● control</option>
+            </select>
           </td>
           {% endif %}
           <td class="px-3 py-2 text-gray-600">{{ e.mode }}</td>
@@ -99,6 +104,25 @@
         body: JSON.stringify({ remove_plan_id: planId }),
       });
       if (!r.ok) throw new Error("remove failed (" + r.status + ")");
+      window.location.reload();
+    } catch (e) {
+      alert(String(e.message || e));
+    }
+  }
+  // Arm assignment replaces the group's whole arm map, so collect every row's
+  // current selection (the just-changed one included) and POST them together.
+  async function assignArm(planId, arm) {
+    const arms = {};
+    document.querySelectorAll("select[data-arm-for]").forEach((s) => {
+      if (s.value) arms[s.getAttribute("data-arm-for")] = s.value;
+    });
+    try {
+      const r = await fetch("{{ remove_plan_url }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken() },
+        body: JSON.stringify({ arms }),
+      });
+      if (!r.ok) throw new Error("assign failed (" + r.status + ")");
       window.location.reload();
     } catch (e) {
       alert(String(e.message || e));
