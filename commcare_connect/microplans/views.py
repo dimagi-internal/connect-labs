@@ -978,6 +978,24 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                 "plan_count": len(entries),
             }
             context["entries"] = entries
+            # Study comparability — is the control a fair counterfactual? Built from each
+            # sampled arm's work-area geometry + building counts (no extra Overture fetch).
+            if group.kind == "study":
+                arms_data = [
+                    {
+                        "arm": group.arm_for(pid),
+                        "building_count": int(w.get("building_count") or 0),
+                        "geometry": w["geometry"],
+                    }
+                    for pid in group.plan_ids
+                    if group.arm_for(pid) and plans_by_id.get(pid)
+                    for w in plans_by_id[pid].work_areas
+                    if w.get("geometry")
+                ]
+                if len({a["arm"] for a in arms_data}) >= 2:
+                    from commcare_connect.microplans.core.comparability import arm_comparability
+
+                    context["comparability"] = arm_comparability(arms_data)
             # Action URLs (reuse existing surfaces; map/generate land in later steps)
             ids_csv = ",".join(str(e["plan_id"]) for e in entries)
             context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + (

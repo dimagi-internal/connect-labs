@@ -88,6 +88,38 @@
       </tbody>
     </table>
   </div>
+
+  {% if comparability %}
+  <section class="mt-5">
+    <div class="flex items-center gap-2 mb-1">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Arm comparability</h2>
+      {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">matched</span>
+      {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">not matched</span>{% endif %}
+      {% if comparability.reasons %}<span class="text-[11px] text-gray-500">{{ comparability.reasons|join:"; " }}</span>{% endif %}
+    </div>
+    <p class="text-[11px] text-gray-400 mb-2">Is the control a fair counterfactual? The arms are compared on sampled building count, area, and density.</p>
+    <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
+      <table class="text-sm">
+        <thead class="bg-gray-50 text-gray-600">
+          <tr><th class="text-left font-semibold px-3 py-2">Arm</th>
+            <th class="text-right font-semibold px-3 py-2">Buildings</th>
+            <th class="text-right font-semibold px-3 py-2">Area (km²)</th>
+            <th class="text-right font-semibold px-3 py-2">Density /km²</th></tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for a in comparability.arms %}
+          <tr><td class="px-3 py-2">
+            {% if a.arm == "intervention" %}<span style="color:#047857">● intervention</span>
+            {% elif a.arm == "control" %}<span style="color:#1d4ed8">● control</span>{% else %}{{ a.arm }}{% endif %}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ a.building_count }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ a.area_km2 }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ a.density_per_km2 }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
   {% endif %}
   {% endif %}
 </div>

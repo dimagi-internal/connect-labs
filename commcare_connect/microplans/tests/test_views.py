@@ -966,6 +966,30 @@ def test_program_group_map_overlays_member_plans_by_arm(client, django_user_mode
     assert fc["features"][0]["properties"]["arm"] == "intervention"
 
 
+def test_program_group_manage_shows_comparability_for_sampled_study(client, django_user_model, monkeypatch):
+    """A sampled study with two arms exposes arm comparability (area/density/matched) in context."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(
+            502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"
+        ),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_page", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    comp = resp.context["comparability"]
+    assert {a["arm"] for a in comp["arms"]} == {"intervention", "control"}
+    assert comp["matched"] in (True, False)
+    assert "Arm comparability" in resp.content.decode()
+
+
 def test_program_group_assign_arm(client, django_user_model, monkeypatch):
     """POST arms to the group endpoint assigns each plan's arm (labs-side study metadata)."""
     from commcare_connect.microplans.core import plan as plan_lib
