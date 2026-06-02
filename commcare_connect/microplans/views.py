@@ -514,6 +514,48 @@ class ProgramPlansAPIView(LoginRequiredMixin, View):
         )
 
 
+def _adm1_state_for(input_areas, hulls) -> str:
+    """Best-effort ADM1 (State) name for a plan whose creator picked an LGA-level
+    boundary but supplied no State.
+
+    Connect's WorkAreaCSVImporter REQUIRES a non-empty State, but the admin-boundary
+    picker's search path resolves an ADM2 (LGA) area that carries no parent State —
+    so a plan created by clicking "Kano Municipal" lands with state="" and its export
+    is rejected ("Connect needs State"). Here we find the ADM1 admin boundary whose
+    polygon contains the plan geometry's centroid and use its name. Returns "" if
+    nothing matches (caller leaves State empty — same warn-and-block as before, no
+    regression). NIGERIA/labs note: admin_level 1 == State in the GeoPoDe layer.
+    """
+    from django.contrib.gis.geos import GEOSGeometry
+
+    try:
+        from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+    except Exception:  # noqa: BLE001
+        return ""
+
+    candidates = list(input_areas or [])
+    if isinstance(hulls, dict):
+        candidates += hulls.get("features") or []
+    pt = None
+    for c in candidates:
+        g = c.get("geometry") if isinstance(c, dict) and "geometry" in c else c
+        if not g:
+            continue
+        try:
+            pt = GEOSGeometry(json.dumps(g), srid=4326).centroid
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    if pt is None:
+        return ""
+    try:
+        adm1 = AdminBoundary.objects.filter(admin_level=1, geometry__contains=pt).first()
+    except Exception:  # noqa: BLE001
+        logger.exception("microplans ADM1 State derivation failed")
+        return ""
+    return (adm1.name if adm1 else "")[:255]
+
+
 class ProgramCreatePlanView(LoginRequiredMixin, View):
     """Create a Draft plan in the program from a generated frame (region + geometry)."""
 
@@ -546,6 +588,12 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
                 grouping = {}
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        # State is the one Connect-importer field the boundary picker can't supply
+        # from an LGA search result. Derive it from the ADM1 boundary containing the
+        # plan so the exported CSV is import-ready without the owner re-typing it.
+        if not state:
+            state = _adm1_state_for(input_areas, hulls)
 
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
