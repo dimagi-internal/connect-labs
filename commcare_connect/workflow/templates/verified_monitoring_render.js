@@ -22,6 +22,15 @@ function WorkflowUI(props) {
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   React.useEffect(function () {
+    if (!document.getElementById('vm-map-style')) {
+      var st = document.createElement('style');
+      st.id = 'vm-map-style';
+      st.textContent =
+        '.leaflet-tooltip.vm-ward-label{background:rgba(11,16,32,.82);border:1px solid #334155;color:#e2e8f0;font:600 11px ui-monospace,Menlo,monospace;box-shadow:none;padding:2px 7px}' +
+        '.leaflet-tooltip.vm-ward-label:before{display:none}' +
+        '.leaflet-container{background:#0b1020}';
+      document.head.appendChild(st);
+    }
     if (window.L) {
       setLeafletReady(true);
       return;
@@ -42,22 +51,41 @@ function WorkflowUI(props) {
       if (!leafletReady || !overlay || !mapDivRef.current) return;
       var L = window.L;
       if (!mapRef.current) {
+        // Self-contained: no external tile layer (clean dark canvas, no CSP/attribution dependency).
         mapRef.current = L.map(mapDivRef.current, {
           scrollWheelZoom: false,
           attributionControl: false,
+          zoomControl: true,
         });
-        L.tileLayer(
-          'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-          {},
-        ).addTo(mapRef.current);
       }
       var map = mapRef.current;
       map.eachLayer(function (l) {
         if (l._ov) map.removeLayer(l);
       });
+      var tw = prog.treatment_ward;
       var wards = L.geoJSON(overlay.ward_boundaries, {
-        style: function () {
-          return { color: '#94a3b8', weight: 1.5, fill: false };
+        style: function (f) {
+          var t = f.properties && f.properties.ward === tw;
+          return {
+            color: t ? '#34d399' : '#64748b',
+            weight: 1.5,
+            fill: true,
+            fillColor: t ? '#16351f' : '#1a2236',
+            fillOpacity: 0.55,
+          };
+        },
+        onEachFeature: function (f, layer) {
+          var w = f.properties && f.properties.ward;
+          var t = w === tw;
+          var cnt = sd[w] != null ? sd[w] : 0;
+          layer.bindTooltip(
+            w +
+              (t ? ' · treatment' : ' · control') +
+              ' — ' +
+              cnt.toLocaleString() +
+              ' program visits',
+            { permanent: true, direction: 'top', className: 'vm-ward-label' },
+          );
         },
       });
       wards._ov = true;
@@ -69,10 +97,10 @@ function WorkflowUI(props) {
         var sdl = L.geoJSON(overlay.service_delivery, {
           pointToLayer: function (f, ll) {
             return L.circleMarker(ll, {
-              radius: 2,
+              radius: 3,
               weight: 0,
               fillColor: '#16a34a',
-              fillOpacity: 0.5,
+              fillOpacity: 0.7,
             });
           },
         });
@@ -83,11 +111,11 @@ function WorkflowUI(props) {
         var pl = L.geoJSON(overlay.survey_pins, {
           pointToLayer: function (f, ll) {
             return L.circleMarker(ll, {
-              radius: 4,
-              weight: 0.5,
+              radius: 3.5,
+              weight: 0.6,
               color: '#0b1020',
               fillColor: (f.properties && f.properties.color) || '#a78bfa',
-              fillOpacity: 0.95,
+              fillOpacity: 0.92,
             });
           },
         });
@@ -129,6 +157,13 @@ function WorkflowUI(props) {
     ci = latest.gap_ci || [];
   var tWard = prog.treatment_ward || 'Treatment',
     cWard = prog.control_ward || 'Control';
+  function _delta(arr) {
+    return arr && arr.length >= 2
+      ? arr[arr.length - 1].coverage_pct - arr[arr.length - 2].coverage_pct
+      : null;
+  }
+  var tDelta = _delta(byArm.intervention),
+    cDelta = _delta(byArm.comparison);
 
   function pct(x) {
     return x == null ? '—' : x.toFixed(1) + '%';
@@ -162,7 +197,28 @@ function WorkflowUI(props) {
     );
   }
 
-  function tile(label, ward, value, sub, color, series) {
+  function deltaChip(d) {
+    if (d == null) return null;
+    var up = d >= 0;
+    return (
+      <span
+        style={{
+          display: 'inline-block',
+          marginTop: 6,
+          padding: '1px 7px',
+          borderRadius: 6,
+          fontFamily: mono,
+          fontSize: 11,
+          color: up ? '#34d399' : '#fca5a5',
+          background: up ? '#0f2a1c' : '#2a1212',
+        }}
+      >
+        {(up ? '▲ +' : '▼ ') + Math.abs(d).toFixed(1) + ' pp vs last round'}
+      </span>
+    );
+  }
+
+  function tile(label, ward, value, sub, color, series, delta) {
     return (
       <div
         style={{
@@ -203,6 +259,7 @@ function WorkflowUI(props) {
         >
           {sub}
         </div>
+        {delta != null ? <div>{deltaChip(delta)}</div> : null}
         {series ? (
           <div style={{ marginTop: 8 }}>{spark(series, color)}</div>
         ) : null}
@@ -210,29 +267,45 @@ function WorkflowUI(props) {
     );
   }
 
-  // --- dual-line trend over rounds ---
+  // --- dual-line trend: gap band + round labels + emphasized latest point ---
   function trend() {
     var ti = byArm.intervention || [],
       tc = byArm.comparison || [];
     var n = Math.max(ti.length, tc.length);
     if (n < 2) return null;
-    var w = 520,
-      h = 180,
-      pad = 28;
-    function line(series, color) {
-      var pts = series
+    var w = 560,
+      h = 200,
+      pad = 30,
+      padB = 26;
+    function X(i) {
+      return pad + (i / (n - 1)) * (w - 2 * pad);
+    }
+    function Y(v) {
+      return h - padB - ((v || 0) / 100) * (h - pad - padB);
+    }
+    function poly(series) {
+      return series
         .map(function (r, i) {
-          var x = pad + (i / (n - 1)) * (w - 2 * pad);
-          var y = h - pad - ((r.coverage_pct || 0) / 100) * (h - 2 * pad);
-          return x.toFixed(1) + ',' + y.toFixed(1);
+          return X(i) + ',' + Y(r.coverage_pct);
         })
         .join(' ');
-      return (
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" />
-      );
     }
+    var band =
+      ti
+        .map(function (r, i) {
+          return X(i) + ',' + Y(r.coverage_pct);
+        })
+        .join(' ') +
+      ' ' +
+      tc
+        .slice()
+        .reverse()
+        .map(function (r, i) {
+          return X(n - 1 - i) + ',' + Y(r.coverage_pct);
+        })
+        .join(' ');
     var grid = [0, 25, 50, 75, 100].map(function (g) {
-      var y = h - pad - (g / 100) * (h - 2 * pad);
+      var y = Y(g);
       return (
         <g key={g}>
           <line
@@ -243,17 +316,65 @@ function WorkflowUI(props) {
             stroke={LINE}
             strokeWidth="1"
           />
-          <text x={4} y={y + 3} fill={MUT} fontSize="9" fontFamily={mono}>
+          <text x={6} y={y + 3} fill={MUT} fontSize="9" fontFamily={mono}>
             {g}
           </text>
         </g>
       );
     });
+    var xlabels = ti.map(function (r, i) {
+      return (
+        <text
+          key={i}
+          x={X(i)}
+          y={h - 8}
+          fill={MUT}
+          fontSize="9"
+          fontFamily={mono}
+          textAnchor="middle"
+        >
+          {'R' + (r.round || i + 1)}
+        </text>
+      );
+    });
+    var last = n - 1;
     return (
       <svg width={w} height={h} style={{ maxWidth: '100%' }}>
         {grid}
-        {line(ti, PURPLE)}
-        {line(tc, PINK)}
+        <polygon points={band} fill={PURPLE} fillOpacity="0.08" stroke="none" />
+        <polyline
+          points={poly(ti)}
+          fill="none"
+          stroke={PURPLE}
+          strokeWidth="2.5"
+        />
+        <polyline
+          points={poly(tc)}
+          fill="none"
+          stroke={PINK}
+          strokeWidth="2.5"
+        />
+        {xlabels}
+        {ti[last] ? (
+          <circle
+            cx={X(last)}
+            cy={Y(ti[last].coverage_pct)}
+            r="4.5"
+            fill={PURPLE}
+            stroke={INK}
+            strokeWidth="1.5"
+          />
+        ) : null}
+        {tc[last] ? (
+          <circle
+            cx={X(last)}
+            cy={Y(tc[last].coverage_pct)}
+            r="4.5"
+            fill={PINK}
+            stroke={INK}
+            strokeWidth="1.5"
+          />
+        ) : null}
       </svg>
     );
   }
@@ -307,6 +428,22 @@ function WorkflowUI(props) {
       </div>
       <div
         style={{
+          color: '#cbd5e1',
+          fontSize: 13,
+          marginTop: 4,
+          lineHeight: 1.5,
+        }}
+      >
+        Independent survey: <b style={{ color: PURPLE }}>{tWard}</b> at{' '}
+        <b>{pct(tCov)}</b> verified vitamin-A coverage vs{' '}
+        <b style={{ color: PINK }}>{cWard}</b> at <b>{pct(cCov)}</b> — a{' '}
+        <b style={{ color: GREEN }}>{pp(gap)}</b> gap that held across six
+        rounds, while the program's own logged delivery (
+        {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} visits) never
+        crossed into the control ward (0).
+      </div>
+      <div
+        style={{
           marginTop: 6,
           marginBottom: 14,
           color: '#fcd34d',
@@ -332,6 +469,7 @@ function WorkflowUI(props) {
             : 'independent survey',
           PURPLE,
           byArm.intervention,
+          tDelta,
         )}
         {tile(
           'Verified vitamin-A coverage',
@@ -340,6 +478,7 @@ function WorkflowUI(props) {
           'independent survey',
           PINK,
           byArm.comparison,
+          cDelta,
         )}
         {tile(
           'Cross-sectional gap',
@@ -455,6 +594,27 @@ function WorkflowUI(props) {
               loading map…
             </div>
           ) : null}
+          <div
+            style={{
+              display: 'flex',
+              gap: 18,
+              marginTop: 8,
+              fontSize: 11,
+              color: MUT,
+              fontFamily: mono,
+            }}
+          >
+            <span>
+              <span style={{ color: GREEN }}>●</span> service-delivery visit
+            </span>
+            <span>
+              <span style={{ color: PURPLE }}>●</span> survey: vitamin-A
+              confirmed
+            </span>
+            <span>
+              <span style={{ color: PINK }}>●</span> survey: absent
+            </span>
+          </div>
         </div>
       ) : null}
 
