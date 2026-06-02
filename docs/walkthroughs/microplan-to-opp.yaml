@@ -1,0 +1,186 @@
+name: microplan-to-opp
+narrative: >-
+  Maya opens her program's microplan workspace, where candidate plans live and are
+  tuned long before any Connect opportunity goes live. She turns an administrative
+  district into a draft plan — the work-area grid is generated from the boundary,
+  not drawn by hand. The grid then balances itself across her named field workers,
+  so no one is handed a sprawling territory while someone else gets a tight one.
+  Maya and her local partner walk the plan on the review page, dropping the squares
+  that aren't real settlements and reassigning a worker, and the per-worker travel
+  and workload numbers move as they edit. Once it reads right, she walks the plan
+  through its lifecycle — Submit for review, then Approve. She deploys the approved
+  plan by binding it to the live Connect opportunity it will run under, then downloads
+  the work areas in Connect's own import format, field-for-field — ready to hand to
+  the opportunity. The plan is designed, validated, approved, and exported, all in
+  the planning phase before Connect runs a thing.
+base_url: https://labs.connect.dimagi.com
+record_video: true
+video_pace: medium
+auth:
+  type: session
+why_brief: microplan-to-opp.why_brief.yaml
+personas:
+  maya:
+    name: "Maya Okonkwo"
+    role: "Senior Program Manager, Dimagi"
+    color: "#059669"
+    intro: "Maya designs and validates field-worker microplans for her program with a local partner, then hands the finished plan to the Connect opportunity that will run it."
+scenes:
+  - persona: maya
+    title: "The workspace before any opportunity exists"
+    url: "/microplans/program/133/"
+    show: "Navigate to /microplans/program/133/ and show the candidate plans grouped into the Planning and Live columns, each card carrying its lifecycle status and headline KPIs"
+    concept_claim: "Candidate microplans live and are reviewed in a program workspace before any Connect opportunity is provisioned to run them."
+    provenance: S1
+    design_intent: "Bet that separating planning from execution — a labs-owned workspace upstream of Connect — is what lets the owner and partner agree on a plan before it becomes operational."
+    features:
+      - id: program-workspace
+        description: "Program workspace at /microplans/program/<id>/ listing candidate plans grouped by lifecycle phase (Planning vs Live)"
+        verify: "Playwright: load /microplans/program/133/, assert a Planning column and a Live column each render plan cards with a status badge"
+    actions:
+      - { kind: hover, target: "Microplan portfolio", seconds: 0.7, note: "land on the portfolio" }
+      - { kind: scroll, value: "bottom", note: "pan down to Live + Archived + the plan groups" }
+      - { kind: scroll, value: "top" }
+      - { kind: hover, target: "New plan", seconds: 0.7, note: "the entry point to a new plan" }
+      - { kind: click, target: "New plan", note: "click into the new-plan flow" }
+      - { kind: hold, seconds: 1.2 }
+  - persona: maya
+    title: "Maya turns a district into a draft plan"
+    url: "/microplans/program/133/new/"
+    show: "From the workspace click New plan, go to /microplans/program/133/new/, pick an administrative boundary, choose coverage mode, and generate the work-area grid"
+    concept_claim: "Selecting an administrative boundary generates a grid of work areas covering that district instead of requiring areas to be hand-drawn."
+    provenance: S2
+    design_intent: "Bet that generating coverage from an official boundary makes a plan reproducible and auditable in a way hand-drawing never is."
+    features:
+      - id: boundary-select
+        description: "Admin-boundary picker on the plan setup page that resolves a district to a polygon"
+        verify: "pytest: POST to the create-plan endpoint with a boundary id returns a plan whose area geometry is the selected district"
+      - id: grid-generate
+        description: "Coverage grid generation that materializes one work area per grid cell inside the boundary"
+        verify: "pytest: a generated coverage plan has work_areas length > 0 each tagged with the source boundary"
+    actions:
+      - { kind: fill, target: "#inp-plan-name", value: "Kano North — DDD demo", note: "name the new plan" }
+      - { kind: click, target: "Boundaries", note: "pick an administrative boundary instead of drawing by hand" }
+      - { kind: fill, target: ".mp-ab-search", value: "Kano", note: "search for the place" }
+      - { kind: wait_for, target: ".mp-ab-results button", note: "place results" }
+      - { kind: hold, seconds: 0.8 }
+      - { kind: click, target: ".mp-ab-results button", note: "fly the map to Kano (and seed the country)" }
+      - { kind: hold, seconds: 5, note: "the map flies to Kano" }
+      - { kind: fill, target: ".mp-ab-search", value: "Kano", note: "now search the admin boundaries there" }
+      - { kind: wait_for, target: "Kano Municipal", note: "boundary results (Region / LGA / Ward)" }
+      - { kind: hold, seconds: 0.8 }
+      - { kind: click, target: "Kano Municipal", note: "select the LGA (not the whole state) so the grid is a sane size" }
+      - { kind: hold, seconds: 4, note: "the selected boundary's geometry resolves (1 selected · 15 km²)" }
+      - { kind: click, target: "Create plan", note: "generate the work areas from the chosen boundary" }
+      - { kind: wait_for, target: "WORKERS", seconds: 90, note: "the grid generates on Celery, then the review page appears (early-exits the moment it's ready)" }
+      - { kind: hold, seconds: 1.5 }
+  - persona: maya
+    title: "The grid balances itself across field workers"
+    show: "On the plan, run group-and-assign and show the work areas grouped and each group assigned to a named field worker, color-coded on the map"
+    concept_claim: "Work areas are grouped and assigned across named field workers by an algorithm that spreads travel rather than splitting the map by eye."
+    provenance: S3
+    design_intent: "Bet that a minimax-spread assignment produces fairer, more walkable routes than a manual split, and that fairness is what a partner will trust."
+    features:
+      - id: group-assign
+        description: "Two-phase group (bbox or BFS-adjacency) then assign (round-robin or Neal-Lesh minimax spread) over the work areas, run on Celery"
+        verify: "pytest: assigning a plan leaves every non-excluded work area with a work_area_group and an assignee"
+    actions:
+      - { kind: scroll_to, target: "Group work areas", note: "the two-phase group-then-assign controls" }
+      - { kind: fill, target: "#grp-max-buildings", value: "2500", note: "size each cluster to a sane field territory" }
+      - { kind: click, target: "#btn-regroup", note: "Phase 1 — cluster the work areas into walkable groups" }
+      - { kind: hold, seconds: 0.8, note: "the grouping job is dispatched (Re-grouping…)" }
+      - { kind: wait_for, target: "Re-grouped into", seconds: 40, note: "the clustering finishes and the map recolors by group (early-exit)" }
+      - { kind: hold, seconds: 1.5 }
+      - { kind: click, target: "Assign workers", note: "open the worker-assignment panel" }
+      - { kind: hold, seconds: 0.6 }
+      - { kind: fill, target: "#asg-workers", value: "Amina Bello\nIbrahim Sani\nFatima Yusuf\nMusa Garba\nHauwa Aliyu\nSani Abdullahi", note: "the six named field workers" }
+      - { kind: hover, target: "#btn-reassign", seconds: 0.8, note: "minimize-travel strategy, six workers" }
+      - { kind: click, target: "#btn-reassign", note: "Phase 2 — balance the clusters across workers, minimizing travel" }
+      - { kind: hold, seconds: 0.9, note: "the assignment job runs (Re-assigning…)" }
+      - { kind: wait_for, target: "Assigned to", seconds: 40, note: "minimax-spread assignment finishes and the map recolors by worker (early-exit)" }
+      - { kind: hold, seconds: 1.0 }
+      - { kind: scroll_to, target: "WORKERS", note: "each worker now holds a contiguous territory, color-coded on the map" }
+      - { kind: hold, seconds: 2.0 }
+  - persona: maya
+    title: "Maya reads the per-worker numbers with the partner"
+    show: "On the plan review page, read the live PLAN METRICS (worst/mean travel, balance, coverage) computed from the assignment, then click one field worker to filter the map and table to her territory and her own areas/buildings/travel numbers"
+    concept_claim: "The per-worker travel and workload metrics are computed from the assignment and the owner can drill into any single worker's territory on the same page."
+    provenance: S4
+    design_intent: "Bet that letting the people who know the ground edit in the planning phase, with metrics that move as they edit, is what makes the final plan trustworthy."
+    features:
+      - id: review-edit
+        description: "Review page work-area list with exclude / regroup / reassign controls that append a planning-phase audit event in Connect's pghistory field shape"
+        verify: "pytest: excluding a work area sets its status to EXCLUDED and appends a planning-phase audit event for that area"
+      - id: live-metrics
+        description: "Per-field-worker metrics table (areas, workload, travel) that recomputes after an edit without a full page reload"
+        verify: "Playwright: exclude a work area on the review page and assert the metrics table row totals change"
+    actions:
+      - { kind: scroll_to, target: "PLAN METRICS", note: "worst / mean travel, balance, coverage — all computed from the live assignment" }
+      - { kind: hold, seconds: 1.5 }
+      - { kind: hover, target: "WORST TRAVEL", seconds: 1.0, note: "the longest distance any one worker must cover" }
+      - { kind: click, target: 'css:.worker-row:has-text("Amina Bello")', note: "drill into one worker — her territory filters on the map and table" }
+      - { kind: hold, seconds: 2.0 }
+      - { kind: scroll_to, target: "Worker", note: "the per-worker breakdown: areas, buildings, expected visits, travel" }
+      - { kind: hold, seconds: 1.8 }
+  - persona: maya
+    title: "Maya walks the plan to Approved"
+    url: "/microplans/program/133/"
+    show: "Back on the workspace, click Submit for review on the draft, then Approve, and show the card move through Draft to In review to Approved"
+    concept_claim: "A plan advances Draft to In review to Approved through controlled lifecycle transitions the owner drives before Connect."
+    provenance: S5
+    design_intent: "Bet that an explicit, recorded lifecycle — not a silent edit — is what makes the planning-phase agreement reviewable later."
+    features:
+      - id: lifecycle-transition
+        description: "Plan transition endpoint enforcing the allowed Draft to In review to Approved moves and logging each with actor and timestamp"
+        verify: "pytest: POST transition draft to in_review then in_review to approved succeeds and each appends a status_log entry; an illegal jump returns 400"
+    actions:
+      - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', note: "the draft card we just built" }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.0, note: "the status chip reads Draft" }
+      - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Submit for review")', note: "Draft → In review (this plan's card, not a sibling's)" }
+      - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "the card re-renders to In review and the Approve button appears" }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.4, note: "the status chip now reads In review" }
+      - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Approve")', note: "In review → Approved" }
+      - { kind: wait_for, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Deploy")', note: "the card re-renders to Approved and the Deploy button appears" }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.8, note: "now Approved — ready to deploy" }
+  - persona: maya
+    title: "Maya binds the plan to a live opportunity"
+    show: "On the Approved card click Deploy, pick the live Connect opportunity from the searchable list (the ai-demo-space opportunity 'LEEP Paint Surveillance - India (run 20260522-1241)' — id 1834 in labs, the same opportunity that is d99e4422-e11a-476e-b885-fdf92026ea54 in Connect), and show the plan move into the Live column tagged with that opportunity"
+    concept_claim: "Deploying an approved plan binds it to a specific live Connect opportunity picked from the owner's own list and moves it to Live as a one-way handoff."
+    provenance: S6
+    design_intent: "Bet that the planning phase needs a definite end — binding the plan to a real opportunity the owner clicks from their own live list is the moment labs stops and Connect takes over."
+    features:
+      - id: deploy-bind
+        description: "Deploy opens a searchable picker of the owner's live opportunities; choosing one binds its opportunity_id and sets status to deployed (terminal in labs)"
+        verify: "pytest: transition approved to deployed without an opportunity_id raises ValueError; with one, plan.opportunity_id is set and status is deployed"
+    actions:
+      - { kind: click, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo") >> button:has-text("Deploy")', note: "open the opportunity picker" }
+      - { kind: wait_for, target: "#deploy-search", note: "the Deploy-to-opportunity modal opens" }
+      - { kind: hold, seconds: 1.0 }
+      - { kind: fill, target: "#deploy-search", value: "20260522-1241", note: "filter to the exact live opportunity (no id to type)" }
+      - { kind: hold, seconds: 1.0 }
+      - { kind: wait_for, target: "css:.deploy-opp", note: "the matching opportunity" }
+      - { kind: click, target: "css:.deploy-opp", note: "bind this plan to the LEEP Paint Surveillance opportunity" }
+      - { kind: hold, seconds: 2.5, note: "the plan moves to Live, tagged with the opportunity" }
+      - { kind: scroll_to, target: "css:div.border.rounded-lg.p-3.bg-white:has-text(\"Kano North — DDD demo\")", note: "follow the plan into the Live column" }
+      - { kind: hover, target: 'css:div.border.rounded-lg.p-3.bg-white:has-text("Kano North — DDD demo")', seconds: 1.4, note: "now Live → LEEP Paint Surveillance — the handoff has landed" }
+      - { kind: hold, seconds: 1.6 }
+  - persona: maya
+    title: "The plan leaves in Connect's own format"
+    show: "On the plan, click Download Connect import CSV and show the file downloads with the column headers of Connect's work-area importer"
+    concept_claim: "The approved plan exports as a CSV whose columns match Connect's work-area importer field-for-field."
+    provenance: S7
+    design_intent: "Bet that exporting in Connect's exact importer shape guarantees the tuned plan and the executed plan are the same set of work areas."
+    features:
+      - id: csv-export
+        description: "CSV export of non-excluded work areas in the exact column order of Connect's WorkAreaCSVImporter headers, with LGA/State populated so it imports without edits"
+        verify: "pytest: the exported CSV header row equals WorkAreaCSVImporter.HEADERS, one row per non-excluded work area, and LGA/State are non-empty"
+    actions:
+      - { kind: click, target: 'css:a:has-text("Kano North — DDD demo")', note: "open the plan we just built (now Live)" }
+      - { kind: wait_for, target: "Download Connect import CSV" }
+      - { kind: click, target: "Collapse all groups", note: "fold the 1,444 work areas into their worker territories" }
+      - { kind: hold, seconds: 0.6 }
+      - { kind: scroll_to, target: "css:#toggle-collapse-all", note: "each group summarized with its assigned worker, buildings and visits" }
+      - { kind: hold, seconds: 2.2 }
+      - { kind: scroll_to, target: "Download Connect import CSV", note: "the export control" }
+      - { kind: click, target: "Download Connect import CSV", note: "download the Connect-ready CSV (LGA/State populated)" }
+      - { kind: hold, seconds: 2.5 }
