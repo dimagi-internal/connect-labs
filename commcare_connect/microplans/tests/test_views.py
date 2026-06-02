@@ -329,7 +329,17 @@ _EMPTY_FC = {"type": "FeatureCollection", "features": []}
 
 class _FakeProgramPlan:
     def __init__(
-        self, pid, mode, work_areas, name="", region="", status="draft", opportunity_id=None, lga="", state=""
+        self,
+        pid,
+        mode,
+        work_areas,
+        name="",
+        region="",
+        status="draft",
+        opportunity_id=None,
+        lga="",
+        state="",
+        input_areas=None,
     ):
         self.id, self.mode, self.work_areas = pid, mode, work_areas
         self.name = name or f"Plan {pid}"
@@ -349,6 +359,7 @@ class _FakeProgramPlan:
             "status_log": self.status_log,
             "mode": self.mode,
             "name": self.name,
+            "input_areas": list(input_areas or []),
         }
 
     @property
@@ -987,17 +998,31 @@ def test_program_group_map_overlays_member_plans_by_arm(client, django_user_mode
     assert fc["features"][0]["properties"]["arm"] == "intervention"
 
 
-def test_program_group_manage_shows_comparability_for_sampled_study(client, django_user_model, monkeypatch):
-    """A sampled study with two arms exposes arm comparability (area/density/matched) in context."""
-    from commcare_connect.microplans.core import plan as plan_lib
+def _pins(n, lon=8.3, lat=11.8):
+    # Sampling work areas are PINS (Point geometry), not polygons.
+    return [
+        {"id": f"p{i}", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "building_count": 1}
+        for i in range(n)
+    ]
 
+
+def _ward(x0):
+    return {
+        "type": "Polygon",
+        "coordinates": [[[x0, 11.7], [x0 + 0.2, 11.7], [x0 + 0.2, 11.9], [x0, 11.9], [x0, 11.7]]],
+    }
+
+
+def test_program_group_manage_comparability_uses_ward_area_not_pins(client, django_user_model, monkeypatch):
+    """Sampling work areas are pins (points) → comparability area must come from the
+    arm's ward (input_areas), not the zero-area pins. Density must be non-zero."""
     _login(client, django_user_model)
     plans = {
         501: _FakeProgramPlan(
-            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+            501, "sampling", _pins(100), name="Madobi", input_areas=[{"kind": "draw", "geometry": _ward(8.2)}]
         ),
         502: _FakeProgramPlan(
-            502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"
+            502, "sampling", _pins(110), name="Gora", input_areas=[{"kind": "draw", "geometry": _ward(8.5)}]
         ),
     }
     groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
@@ -1006,7 +1031,11 @@ def test_program_group_manage_shows_comparability_for_sampled_study(client, djan
     resp = client.get(reverse("microplans:program_group_page", kwargs={"program_id": 25, "group_id": 7}))
     assert resp.status_code == 200
     comp = resp.context["comparability"]
-    assert {a["arm"] for a in comp["arms"]} == {"intervention", "control"}
+    arms = {a["arm"]: a for a in comp["arms"]}
+    assert set(arms) == {"intervention", "control"}
+    assert arms["intervention"]["building_count"] == 100  # number of pins
+    assert arms["intervention"]["area_km2"] > 0  # from the ward, not the pins
+    assert arms["intervention"]["density_per_km2"] > 0
     assert comp["matched"] in (True, False)
     assert "Arm comparability" in resp.content.decode()
 
