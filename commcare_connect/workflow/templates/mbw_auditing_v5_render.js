@@ -4077,14 +4077,11 @@ function WorkflowUI({
           var allSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, null);
           var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligibleUsernames);
           var reqSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, reqUsernames);
-          var susSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, suspendedUsernames);
           return Object.assign({}, mo, {
             followup_rate:           eligSnap.followup_rate,
             pct_still_eligible:      eligSnap.pct_still_eligible,
             followup_rate_req:       reqSnap.followup_rate,
             pct_still_eligible_req:  reqSnap.pct_still_eligible,
-            followup_rate_sus:       susSnap.followup_rate,
-            pct_still_eligible_sus:  susSnap.pct_still_eligible,
             followup_rate_all:       allSnap.followup_rate,
             pct_still_eligible_all:  allSnap.pct_still_eligible,
           });
@@ -4303,10 +4300,8 @@ function WorkflowUI({
         { key: 'pct_still_eligible_all',     color: '#9ca3af', dash: '5,3', dotKey: 'sea' },
         { key: 'followup_rate',              color: '#15803d', dash: null,  dotKey: 'fue' },
         { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dotKey: 'see' },
-        { key: 'followup_rate_req',          color: '#b45309', dash: null,  dotKey: 'fur' },
-        { key: 'pct_still_eligible_req',     color: '#b45309', dash: '5,3', dotKey: 'ser' },
-        { key: 'followup_rate_sus',          color: '#dc2626', dash: null,  dotKey: 'fus' },
-        { key: 'pct_still_eligible_sus',     color: '#dc2626', dash: '5,3', dotKey: 'ses' },
+        { key: 'followup_rate_req',          color: '#ca8a04', dash: null,  dotKey: 'fur' },
+        { key: 'pct_still_eligible_req',     color: '#ca8a04', dash: '5,3', dotKey: 'ser' },
       ];
       LINE_SERIES.forEach(function (s) {
         var pts = [];
@@ -4332,7 +4327,7 @@ function WorkflowUI({
 
       var allVals = [];
       monthlyMetrics.forEach(function (mo) {
-        ['followup_rate', 'pct_still_eligible', 'followup_rate_req', 'pct_still_eligible_req', 'followup_rate_sus', 'pct_still_eligible_sus', 'followup_rate_all', 'pct_still_eligible_all'].forEach(function (k) {
+        ['followup_rate', 'pct_still_eligible', 'followup_rate_req', 'pct_still_eligible_req', 'followup_rate_all', 'pct_still_eligible_all'].forEach(function (k) {
           if (mo[k] != null) allVals.push(mo[k]);
         });
       });
@@ -4428,10 +4423,8 @@ function WorkflowUI({
         { key: 'pct_still_eligible_all',     color: '#9ca3af', dash: '5,3', dk: 'lsea' },
         { key: 'followup_rate',              color: '#15803d', dash: null,  dk: 'lfue' },
         { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dk: 'lsee' },
-        { key: 'followup_rate_req',          color: '#b45309', dash: null,  dk: 'lfur' },
-        { key: 'pct_still_eligible_req',     color: '#b45309', dash: '5,3', dk: 'lser' },
-        { key: 'followup_rate_sus',          color: '#dc2626', dash: null,  dk: 'lfus' },
-        { key: 'pct_still_eligible_sus',     color: '#dc2626', dash: '5,3', dk: 'lses' },
+        { key: 'followup_rate_req',          color: '#ca8a04', dash: null,  dk: 'lfur' },
+        { key: 'pct_still_eligible_req',     color: '#ca8a04', dash: '5,3', dk: 'lser' },
       ];
       L_SERIES.forEach(function (s) {
         var pts = [];
