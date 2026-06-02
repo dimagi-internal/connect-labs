@@ -10,7 +10,14 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from .manifest import Anomaly, BeneficiaryCohort, FlwPersona, NormalDistribution, UniformDistribution
+from .manifest import (
+    Anomaly,
+    BeneficiaryCohort,
+    BinaryDistribution,
+    FlwPersona,
+    NormalDistribution,
+    UniformDistribution,
+)
 from .schema_loader import FormSchema, QuestionSpec
 
 
@@ -28,11 +35,13 @@ def _apply_transform(raw: float, transform: str | None, rng: random.Random) -> A
     return raw
 
 
-def _draw(distribution, rng: random.Random) -> float:
+def _draw(distribution, rng: random.Random, period: int | None = None) -> float:
     if isinstance(distribution, NormalDistribution):
         return rng.gauss(distribution.mean, distribution.stddev)
     if isinstance(distribution, UniformDistribution):
         return rng.uniform(distribution.low, distribution.high)
+    if isinstance(distribution, BinaryDistribution):
+        return 1.0 if rng.random() < distribution.rate_for_period(period) else 0.0
     raise TypeError(f"unknown distribution: {distribution!r}")
 
 
