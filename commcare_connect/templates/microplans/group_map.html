@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ group_name|default:"Plan group" }} — map{% endblock %}
+
+{% block content %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  #gm-wrap { position: relative; height: calc(100vh - 4rem); }
+  #group-map { position: absolute; inset: 0; }
+  .gm-head { position: absolute; top: .6rem; left: .6rem; z-index: 6; background: rgba(255,255,255,.97);
+    border: 1px solid #e5e7eb; border-radius: .6rem; padding: .55rem .7rem; box-shadow: 0 10px 30px -12px rgba(16,18,34,.45);
+    font-size: .8rem; max-width: 320px; }
+  .gm-legend { display: flex; flex-direction: column; gap: .25rem; margin-top: .4rem; }
+  .gm-legend-row { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: #374151; }
+  .gm-sw { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+  .gm-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #6b7280; font-size: .85rem; text-align: center; z-index: 5; pointer-events: none; }
+</style>
+
+<div id="gm-wrap">
+  <div class="gm-head">
+    <a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to group</a>
+    <div class="font-semibold text-gray-900 mt-0.5">{{ group_name|default:"Plan group" }}{% if is_study %} <span class="text-[10px] uppercase tracking-wide text-indigo-600">study</span>{% endif %}</div>
+    <div class="text-[11px] text-gray-500">View-only · {{ plan_layers|length }} plan{{ plan_layers|length|pluralize }}</div>
+    <div class="gm-legend">
+      {% for L in plan_layers %}
+      <div class="gm-legend-row">
+        <span class="gm-sw" style="background:{{ L.color }}"></span>
+        <span>{{ L.name }}{% if L.arm %} · {{ L.arm }}{% endif %}</span>
+        <span class="text-gray-400">· {{ L.work_areas }} area{{ L.work_areas|pluralize }}{% if L.phase == "boundary" %} · boundary only{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% if error %}<div class="gm-empty">{{ error }}</div>{% endif %}
+  <div id="group-map"></div>
+  <div class="gm-empty" id="gm-no-geom" hidden>No work areas to show yet. Generate samples for these plans, then come back.</div>
+</div>
+
+<script id="plan-layers-data" type="application/json">{{ plan_layers_json|default:"[]"|safe }}</script>
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="{% static 'microplans/map_panel.js' %}"></script>
+<script>
+  (function () {
+    const TOKEN = "{{ mapbox_token|escapejs }}";
+    const LAYERS = JSON.parse(document.getElementById("plan-layers-data").textContent || "[]");
+    const totalFeatures = LAYERS.reduce((n, L) => n + ((L.geojson && L.geojson.features) || []).length, 0);
+    if (!totalFeatures) document.getElementById("gm-no-geom").hidden = false;
+    if (!TOKEN) return;
+    mapboxgl.accessToken = TOKEN;
+    let map;
+    try {
+      map = new mapboxgl.Map({
+        container: "group-map",
+        style: "mapbox://styles/mapbox/satellite-streets-v12",
+        center: [8.6753, 9.082], zoom: 5,
+      });
+    } catch (e) { return; } // headless / no webgl
+
+    // Recursively walk any nested coordinate array down to [lng, lat] pairs, so
+    // bounds work regardless of geometry type (Polygon / MultiPolygon / Point / …).
+    function eachCoord(coords, cb) {
+      if (!Array.isArray(coords)) return;
+      if (typeof coords[0] === "number") { cb(coords); return; }
+      coords.forEach((c) => eachCoord(c, cb));
+    }
+    function bounds() {
+      const b = new mapboxgl.LngLatBounds();
+      let any = false;
+      LAYERS.forEach((L) => ((L.geojson && L.geojson.features) || []).forEach((f) => {
+        if (f.geometry && f.geometry.coordinates) eachCoord(f.geometry.coordinates, (c) => { b.extend(c); any = true; });
+      }));
+      return any ? b : null;
+    }
+
+    map.on("load", () => {
+      const panel = window.MicroplansMapPanel
+        ? MicroplansMapPanel.create({ map, mount: document.getElementById("gm-wrap") })
+        : null;
+      LAYERS.forEach((L) => {
+        const src = "plan-" + L.plan_id;
+        map.addSource(src, { type: "geojson", data: L.geojson, promoteId: "plan_id" });
+        // Polygon work areas (coverage cells / hulls): filled outline.
+        map.addLayer({ id: src + "-fill", type: "fill", source: src,
+          paint: { "fill-color": L.color, "fill-opacity": 0.4 },
+          filter: ["==", ["geometry-type"], "Polygon"] });
+        map.addLayer({ id: src + "-line", type: "line", source: src,
+          paint: { "line-color": L.color, "line-width": 1.5 },
+          filter: ["==", ["geometry-type"], "Polygon"] });
+        // Sampling work areas are PINS (Point geometry): coloured dots.
+        map.addLayer({ id: src + "-pt", type: "circle", source: src,
+          paint: {
+            "circle-color": L.color, "circle-opacity": 0.95,
+            // Zoom-scaled so pins stay legible when the study is framed at ward
+            // scale (the two arms must read as two distinct colour clusters).
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 5, 12, 7, 15, 10],
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.4 },
+          filter: ["==", ["geometry-type"], "Point"] });
+        const sublayers = [src + "-fill", src + "-line", src + "-pt"];
+        // Click → inspect (which plan/arm this area belongs to)
+        const inspect = () => { if (panel) panel.setInspect(
+          `<div style="font-weight:600">${L.name}</div>` +
+          (L.arm ? `<div style="color:${L.color}">● ${L.arm}</div>` : "") +
+          `<div style="font-size:.7rem;color:#6b7280">${L.work_areas} work area(s)</div>`); };
+        map.on("click", src + "-fill", inspect);
+        map.on("click", src + "-pt", inspect);
+        if (panel) {
+          const layer = panel.registerLayer({ id: src, label: L.name, color: L.color,
+            meta: (L.arm ? L.arm + " · " : "") + L.work_areas + " areas",
+            onToggle: (on) => sublayers.forEach((s) => map.setLayoutProperty(s, "visibility", on ? "visible" : "none")) });
+          layer.setEnabled(true, false);
+        }
+      });
+      const b = bounds();
+      if (b) map.fitBounds(b, { padding: 40, maxZoom: 15, duration: 0 });
+    });
+  })();
+</script>
+{% endblock %}

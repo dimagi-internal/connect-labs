@@ -128,7 +128,7 @@ def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, acces
 
 
 @celery_app.task(bind=True)
-def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token):
+def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token, group_id=None):
     """Create N draft plans from confirmed admin boundaries — one per ward.
 
     Unlike the old inline streaming view, each ward is GRIDDED here: coverage plans
@@ -194,6 +194,13 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
                 grouping=grouping,
             )
             ok += 1
+            if group_id is not None:
+                # File the new plan into the group. Don't fail the ward on a
+                # group hiccup — the plan exists; surface a soft warning instead.
+                try:
+                    da.add_plan_to_group(int(group_id), plan.id)
+                except Exception:  # noqa: BLE001
+                    logger.exception("bulk_create: add to group failed (group=%s plan=%s)", group_id, plan.id)
             results.append({**row, "status": "ok", "plan_id": plan.id, "work_areas": len(plan.work_areas)})
         except ValueError as e:
             # Actionable (e.g. area too large / too many cells) — surface to the row.
@@ -230,3 +237,66 @@ def _ward_grid_hulls(boundary, mode, cell_size_m):
             }
         ],
     }
+
+
+@celery_app.task(bind=True)
+def generate_group_samples_task(self, program_id, group_id, config, access_token):
+    """Run the rooftop sampling engine across every member plan of a group, using
+    one shared config so the only intended difference between arms is the area.
+
+    Each member plan's stored area (``input_areas``) is resolved to geometry,
+    tagged with the plan's study arm, sampled, and the plan regenerated to
+    ``phase:sampled``. Reports per-plan progress; flips the group to status
+    ``sampled`` at the end. Arm stays labs-side (it shapes colour/comparability,
+    never the plan's work areas)."""
+    import json as _json
+
+    from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+    from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+    from commcare_connect.microplans.core.plan import plan_sample_areas
+    from commcare_connect.microplans.sampling.frame import FrameConfig, generate_frame
+
+    da = ProgramPlanDataAccess(int(program_id), access_token=access_token)
+    group = da.get_group(int(group_id))
+    plans_by_id = {p.id: p for p in da.list_plans()}
+    members = [plans_by_id[pid] for pid in group.plan_ids if pid in plans_by_id]
+    total = len(members)
+    fcfg = FrameConfig.from_payload(config or {})
+    results: list[dict] = []
+    ok = 0
+
+    _geom_cache: dict[str, dict | None] = {}
+
+    def resolve_boundary(bid):
+        if bid not in _geom_cache:
+            b = AdminBoundary.objects.filter(boundary_id=bid).first()
+            _geom_cache[bid] = _json.loads(b.geometry.geojson) if (b and b.geometry) else None
+        return _geom_cache[bid]
+
+    for index, p in enumerate(members):
+        arm = group.arm_for(p.id) or "intervention"
+        input_areas = p.data.get("input_areas") or []
+        areas = plan_sample_areas(input_areas, arm, resolve_boundary)
+        if not areas:
+            results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": "no area to sample"})
+        else:
+            try:
+                res = generate_frame(areas, fcfg)
+                da.regenerate_plan(
+                    p.id, mode="sampling", pins=res.pins_geojson, hulls=res.hulls_geojson, input_areas=input_areas
+                )
+                ok += 1
+                results.append({"plan_id": p.id, "name": p.name, "status": "ok"})
+            except ValueError as e:
+                results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": str(e)})
+            except Exception:  # noqa: BLE001
+                logger.exception("generate_group_samples: plan failed (group=%s plan=%s)", group_id, p.id)
+                results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": "generate failed"})
+        set_task_progress(self, f"{index + 1}/{total}", results=list(results), created=ok, total=total)
+
+    if ok:
+        try:
+            da.update_group(int(group_id), status="sampled")
+        except Exception:  # noqa: BLE001
+            logger.exception("generate_group_samples: status flip failed (group=%s)", group_id)
+    return {"status": "ok", "results": results, "created": ok, "total": total}

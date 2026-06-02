@@ -329,7 +329,17 @@ _EMPTY_FC = {"type": "FeatureCollection", "features": []}
 
 class _FakeProgramPlan:
     def __init__(
-        self, pid, mode, work_areas, name="", region="", status="draft", opportunity_id=None, lga="", state=""
+        self,
+        pid,
+        mode,
+        work_areas,
+        name="",
+        region="",
+        status="draft",
+        opportunity_id=None,
+        lga="",
+        state="",
+        input_areas=None,
     ):
         self.id, self.mode, self.work_areas = pid, mode, work_areas
         self.name = name or f"Plan {pid}"
@@ -349,6 +359,7 @@ class _FakeProgramPlan:
             "status_log": self.status_log,
             "mode": self.mode,
             "name": self.name,
+            "input_areas": list(input_areas or []),
         }
 
     @property
@@ -366,11 +377,23 @@ class _FakeProgramPlan:
         )
         return self._data
 
+    @property
+    def phase(self):
+        # Mirror PlanRecord.phase: boundary-only until work areas are generated.
+        return "sampled" if self.work_areas else "boundary"
+
 
 class _FakeGroup:
-    def __init__(self, gid, name, plan_ids, offered_to="", shared=False):
+    def __init__(self, gid, name, plan_ids, offered_to="", shared=False, kind="bundle", arms=None, status="defining"):
         self.id, self.name, self.plan_ids = gid, name, list(plan_ids)
         self.offered_to, self.shared = offered_to, shared
+        self.kind = kind
+        self.arms = {str(k): v for k, v in (arms or {}).items()}
+        self.sampling_config = {}
+        self.status = status
+
+    def arm_for(self, plan_id):
+        return self.arms.get(str(plan_id))
 
 
 def _make_fake_program_da(monkeypatch, plans=None, groups=None):
@@ -428,10 +451,12 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             p.status_log = data.get("status_log", [])
             return p
 
-        def create_group(self, name, plan_ids, offered_to=""):
+        def create_group(self, name, plan_ids, offered_to="", kind="bundle", arms=None, sampling_config=None):
             gid = seq["group"]
             seq["group"] += 1
-            groups[gid] = _FakeGroup(gid, name, plan_ids, offered_to)
+            groups[gid] = _FakeGroup(gid, name, plan_ids, offered_to, kind=kind, arms=arms)
+            if sampling_config:
+                groups[gid].sampling_config = dict(sampling_config)
             return groups[gid]
 
         def list_groups(self):
@@ -442,11 +467,27 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
 
         def update_group(self, gid, **fields):
             g = groups[int(gid)]
-            for key in ("name", "offered_to", "shared"):
+            for key in ("name", "offered_to", "shared", "kind", "status"):
                 if fields.get(key) is not None:
                     setattr(g, key, fields[key])
             if fields.get("plan_ids") is not None:
                 g.plan_ids = [int(x) for x in fields["plan_ids"]]
+            if fields.get("arms") is not None:
+                g.arms = {str(k): v for k, v in fields["arms"].items()}
+            return g
+
+        def add_plan_to_group(self, gid, plan_id):
+            g = groups[int(gid)]
+            plan_id = int(plan_id)
+            if plan_id not in g.plan_ids:
+                g.plan_ids.append(plan_id)
+            return g
+
+        def remove_plan_from_group(self, gid, plan_id):
+            g = groups[int(gid)]
+            plan_id = int(plan_id)
+            g.plan_ids = [p for p in g.plan_ids if p != plan_id]
+            g.arms = {k: v for k, v in g.arms.items() if k != str(plan_id)}
             return g
 
     monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", FakeDA)
@@ -501,6 +542,19 @@ def test_program_plans_json(client, django_user_model, monkeypatch):
     assert row["status"] == "approved" and row["region"] == "Kano South LGA"
     assert "max_spread_km" in row and "coverage_pct" in row
     assert "draft" in body["transitions"] and "status_labels" in body
+
+
+def test_program_plans_json_groups_carry_kind(client, django_user_model, monkeypatch):
+    # The workspace cards branch on kind (study vs bundle) to pick the
+    # "Open study" / manage link, so the JSON must surface it.
+    _login(client, django_user_model)
+    plan = _FakeProgramPlan(501, "sampling", [], name="Madobi ward")
+    groups = {7: _FakeGroup(7, "Kano study", [501], kind="study", status="defining")}
+    _make_fake_program_da(monkeypatch, {501: plan}, groups)
+    resp = client.get(reverse("microplans:program_plans", kwargs={"program_id": 25}))
+    assert resp.status_code == 200
+    g = next(g for g in resp.json()["groups"] if g["group_id"] == 7)
+    assert g["kind"] == "study" and g["status"] == "defining"
 
 
 def test_program_create_plan(client, django_user_model, monkeypatch):
@@ -568,6 +622,27 @@ def test_program_plan_csv_defaults_lga_state_and_flags_readiness(client, django_
     )
     assert r3["X-Microplan-Connect-Ready"] == "true"
     assert "Override LGA" in r3.content.decode()
+
+
+def test_study_member_plan_csv_export_is_arm_blind(client, django_user_model, monkeypatch):
+    """A study plan exports to its own opportunity's CSV with NO arm anywhere — the
+    arm lives only on the group, so execution stays blind (S5)."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    was = plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC)
+    plan = _FakeProgramPlan(501, "sampling", was, name="Madobi", region="Madobi", lga="Madobi", state="Kano")
+    groups = {7: _FakeGroup(7, "Study", [501], kind="study", arms={"501": "intervention"})}
+    _make_fake_program_da(monkeypatch, {501: plan}, groups)
+
+    r = client.post(
+        reverse("microplans:program_plan_csv", kwargs={"program_id": 25, "plan_id": 501}),
+        data="{}",
+        content_type="application/json",
+    )
+    assert r.status_code == 200
+    body = r.content.decode().lower()
+    assert "arm" not in body and "intervention" not in body and "control" not in body
 
 
 def test_program_regenerate_enqueues(client, django_user_model, monkeypatch):
@@ -678,10 +753,11 @@ def test_program_create_plan_page_renders(client, django_user_model, settings):
     body = resp.content.decode()
     assert resp.context["program_id"] == 25
     assert resp.context["plan_id"] is None
-    # Unified template: new-plan page shows the "New microplan" header + the
-    # Create plan button (vs. the per-plan "Microplan review" + "Apply
-    # geographic frame" button on the existing-plan flow).
-    assert "New microplan" in body
+    # Unified template: new-plan page shows the click-to-edit plan-name title
+    # (placeholder "Untitled microplan") + the Create plan button (vs. the
+    # per-plan "Microplan review" + "Apply geographic frame" button on the
+    # existing-plan flow). The title became an editable input in #412.
+    assert "Untitled microplan" in body
     assert "Create plan" in body
 
 
@@ -809,6 +885,227 @@ def test_program_review_page_uses_program_urls(client, django_user_model, settin
     assert resp.context["plan_id"] == 3
     # the edit URL the page posts to must be the program-scoped route
     assert resp.context["edit_url"] == reverse("microplans:program_plan_edit", kwargs={"program_id": 25, "plan_id": 3})
+
+
+def test_program_group_create_study_allows_empty_and_sets_kind(client, django_user_model, monkeypatch):
+    """A study group is created empty (you add wards after) with kind=study."""
+    _login(client, django_user_model)
+    _plans, groups = _make_fake_program_da(monkeypatch, {}, {})
+    resp = client.post(
+        reverse("microplans:program_group_create", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "Madobi CHC study", "plan_ids": [], "kind": "study"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    gid = resp.json()["group_id"]
+    assert groups[gid].kind == "study"
+    assert groups[gid].plan_ids == []
+
+
+def test_program_group_manage_page_renders_study(client, django_user_model, monkeypatch):
+    """The group management page lists members with arm + phase; a study shows arm badges."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501,
+            "sampling",
+            plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
+            name="Madobi ward",
+            region="Madobi",
+        ),
+        502: _FakeProgramPlan(502, "sampling", [], name="Gora ward", region="Gora"),  # boundary-only
+    }
+    groups = {
+        7: _FakeGroup(7, "Madobi CHC study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})
+    }
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_page", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Madobi CHC study" in body
+    assert "Study" in body  # study badge
+    assert "intervention" in body and "control" in body  # arm badges
+    assert "sampled" in body and "boundary only" in body  # phase badges
+    entries = resp.context["entries"]
+    assert {e["plan_id"]: e["arm"] for e in entries} == {501: "intervention", 502: "control"}
+    assert {e["plan_id"]: e["phase"] for e in entries} == {501: "sampled", 502: "boundary"}
+    # The add-path links must carry ?group=<gid> so plans created there file into THIS group.
+    assert resp.context["bulk_create_url"].endswith("?group=7")
+    assert resp.context["new_plan_url"].endswith("?group=7")
+
+
+def test_program_group_manage_remove_plan_drops_plan_and_arm(client, django_user_model, monkeypatch):
+    """POST remove_plan_id to the group endpoint drops the plan and its arm."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(502, "sampling", [], name="Gora"),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.post(
+        reverse("microplans:program_group_update", kwargs={"program_id": 25, "group_id": 7}),
+        data=json.dumps({"remove_plan_id": 502}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert groups[7].plan_ids == [501]
+    assert groups[7].arm_for(502) is None
+    assert groups[7].arm_for(501) == "intervention"
+
+
+def test_program_group_generate_enqueues_with_group_id(client, django_user_model, monkeypatch):
+    """POST generate → 202, enqueues generate_group_samples_task for the group."""
+    _login(client, django_user_model)
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study")}
+    _make_fake_program_da(monkeypatch, {}, groups)
+    from commcare_connect.microplans.tasks import generate_group_samples_task
+
+    captured = {}
+
+    def fake_delay(*args, **kwargs):
+        captured["args"] = args
+        return SimpleNamespace(id="gen-1")
+
+    monkeypatch.setattr(generate_group_samples_task, "delay", fake_delay)
+    resp = client.post(reverse("microplans:program_group_generate", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["task_id"] == "gen-1" and "gen-1" in body["poll_url"]
+    assert captured["args"][0] == 25 and captured["args"][1] == 7
+
+
+def test_program_group_map_overlays_member_plans_by_arm(client, django_user_model, monkeypatch):
+    """The group map view assembles each member plan's work-area GeoJSON, tagged by arm + color."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(
+            502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"
+        ),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_map", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    layers = {layer["plan_id"]: layer for layer in resp.context["plan_layers"]}
+    assert set(layers) == {501, 502}
+    assert layers[501]["arm"] == "intervention" and layers[502]["arm"] == "control"
+    # distinct colors per arm; each layer carries a GeoJSON FeatureCollection of its work areas
+    assert layers[501]["color"] != layers[502]["color"]
+    fc = layers[501]["geojson"]
+    assert fc["type"] == "FeatureCollection" and len(fc["features"]) >= 1
+    assert fc["features"][0]["properties"]["arm"] == "intervention"
+
+
+def _pins(n, lon=8.3, lat=11.8):
+    # Sampling work areas are PINS (Point geometry), not polygons.
+    return [
+        {"id": f"p{i}", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "building_count": 1}
+        for i in range(n)
+    ]
+
+
+def _ward(x0):
+    return {
+        "type": "Polygon",
+        "coordinates": [[[x0, 11.7], [x0 + 0.2, 11.7], [x0 + 0.2, 11.9], [x0, 11.9], [x0, 11.7]]],
+    }
+
+
+def test_program_group_manage_comparability_uses_ward_area_not_pins(client, django_user_model, monkeypatch):
+    """Sampling work areas are pins (points) → comparability area must come from the
+    arm's ward (input_areas), not the zero-area pins. Density must be non-zero."""
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", _pins(100), name="Madobi", input_areas=[{"kind": "draw", "geometry": _ward(8.2)}]
+        ),
+        502: _FakeProgramPlan(
+            502, "sampling", _pins(110), name="Gora", input_areas=[{"kind": "draw", "geometry": _ward(8.5)}]
+        ),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_page", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    comp = resp.context["comparability"]
+    arms = {a["arm"]: a for a in comp["arms"]}
+    assert set(arms) == {"intervention", "control"}
+    assert arms["intervention"]["building_count"] == 100  # number of pins
+    assert arms["intervention"]["area_km2"] > 0  # from the ward, not the pins
+    assert arms["intervention"]["density_per_km2"] > 0
+    assert comp["matched"] in (True, False)
+    assert "Arm comparability" in resp.content.decode()
+
+
+def test_program_group_assign_arm(client, django_user_model, monkeypatch):
+    """POST arms to the group endpoint assigns each plan's arm (labs-side study metadata)."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(502, "sampling", [], name="Gora"),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study")}  # no arms yet
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.post(
+        reverse("microplans:program_group_update", kwargs={"program_id": 25, "group_id": 7}),
+        data=json.dumps({"arms": {"501": "intervention", "502": "control"}}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert groups[7].arm_for(501) == "intervention"
+    assert groups[7].arm_for(502) == "control"
+
+
+def test_program_create_plan_into_group_adds_membership(client, django_user_model, monkeypatch):
+    """Creating a plan with group_id drops it into that group (the editor 'add to group' path)."""
+    _login(client, django_user_model)
+    groups = {7: _FakeGroup(7, "Madobi CHC study", [], kind="study")}
+    _make_fake_program_da(monkeypatch, {}, groups)
+
+    resp = client.post(
+        reverse("microplans:program_create_plan", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "Gora ward", "region": "Gora", "mode": "sampling", "group_id": 7}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    pid = resp.json()["plan_id"]
+    assert groups[7].plan_ids == [pid]
+
+
+def test_program_create_plan_without_group_id_is_unchanged(client, django_user_model, monkeypatch):
+    """No group_id → plain create, no membership side effect."""
+    _login(client, django_user_model)
+    groups = {7: _FakeGroup(7, "Study", [], kind="study")}
+    _make_fake_program_da(monkeypatch, {}, groups)
+
+    resp = client.post(
+        reverse("microplans:program_create_plan", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "Standalone", "region": "X", "mode": "sampling"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert groups[7].plan_ids == []
 
 
 def test_program_compare_json(client, django_user_model, monkeypatch):
@@ -1140,6 +1437,27 @@ def test_bulk_create_enqueues(client, django_user_model, monkeypatch):
     assert resp.status_code == 202
     body = resp.json()
     assert body["task_id"] == "bulk-1" and "bulk-1" in body["poll_url"]
+
+
+def test_bulk_create_threads_group_id_to_task(client, django_user_model, monkeypatch):
+    """A group_id in the bulk request reaches the task so created plans join the group."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import bulk_create_plans_task
+
+    captured = {}
+
+    def fake_delay(*args, **kwargs):
+        captured["args"], captured["kwargs"] = args, kwargs
+        return SimpleNamespace(id="bulk-g")
+
+    monkeypatch.setattr(bulk_create_plans_task, "delay", fake_delay)
+    resp = client.post(
+        reverse("microplans:program_bulk_create", kwargs={"program_id": 1}),
+        data=json.dumps({"plans": [{"boundary_id": "b", "name": "B"}], "mode": "sampling", "group_id": 7}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202
+    assert captured["kwargs"].get("group_id") == 7 or 7 in captured["args"]
 
 
 def test_bulk_create_requires_token(client, django_user_model):

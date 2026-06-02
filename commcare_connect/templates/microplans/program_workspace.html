@@ -39,10 +39,13 @@
   <!-- Plan groups -->
   <section class="border-t border-gray-200 pt-5">
     <div class="flex items-center justify-between mb-2">
-      <h2 class="text-lg font-semibold text-gray-900">Plan groups</h2>
-      <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
+      <h2 class="text-lg font-semibold text-gray-900">Plan groups &amp; studies</h2>
+      <div class="flex gap-2">
+        <button type="button" id="new-study" class="button button-sm primary-dark" title="Start a controlled two-arm study (intervention + control), then add its wards">+ New study</button>
+        <button type="button" id="new-group" class="button button-sm outline-style" disabled title="Select plans below to bundle">+ Group selected plans</button>
+      </div>
     </div>
-    <p class="text-xs text-gray-500 mb-3">A bundle of plans to offer a specific LLO. Tick plans above, then group them and share a read-only link.</p>
+    <p class="text-xs text-gray-500 mb-3">A <b>study</b> is a controlled set of wards (intervention + control) sampled together. A <b>bundle</b> offers a chosen LLO a read-only set of existing plans — tick plans above, then group them.</p>
     <div id="groups" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
   </section>
 </div>
@@ -63,6 +66,7 @@
   const planUrl = (pid) => base + "plan/" + pid + "/";
   const transitionUrl = (pid) => base + "plan/" + pid + "/transition/";
   const groupShareUrl = (gid) => base + "group/" + gid + "/share/";
+  const groupManageUrl = (gid) => base + "group/" + gid + "/manage/";
   const groupUpdateUrl = (gid) => base + "group/" + gid + "/";
   const compareUrl = () => base + "compare/?plans=" + [...selected].join(",");
   const $ = (id) => document.getElementById(id);
@@ -167,16 +171,25 @@
           <span class="truncate text-brand-cornflower-blue">${esc(p.name)}</span>
           <span class="px-1.5 py-0.5 rounded whitespace-nowrap ${BADGE[p.status] || ''}">${esc(p.status_label)}</span>
         </a>`).join("") || '<p class="text-xs text-gray-400 py-1">(plans not in this program)</p>';
+      const isStudy = g.kind === "study";
+      const primaryLink = isStudy ? groupManageUrl(g.group_id) : groupShareUrl(g.group_id);
+      const badge = isStudy
+        ? '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">study</span>'
+        : '<span class="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">bundle</span>';
       return `<div class="border rounded-lg p-3 bg-white">
         <div class="flex items-center justify-between">
-          <a class="font-semibold text-brand-cornflower-blue" href="${groupShareUrl(g.group_id)}">${esc(g.name)}</a>
-          <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${g.shared ? "shared" : "not shared"}</span>
+          <div class="flex items-center gap-2 min-w-0">
+            <a class="font-semibold text-brand-cornflower-blue truncate" href="${primaryLink}">${esc(g.name)}</a>${badge}
+          </div>
+          <span class="text-xs ${g.shared ? "text-green-600" : "text-gray-400"}">${isStudy ? esc(g.status || "") : (g.shared ? "shared" : "not shared")}</span>
         </div>
-        <div class="text-xs text-gray-500">${g.plan_ids.length} plans${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
+        <div class="text-xs text-gray-500">${g.plan_ids.length} ${isStudy ? "wards" : "plans"}${g.offered_to ? " · for " + esc(g.offered_to) : ""}</div>
         <div class="mt-2 divide-y divide-gray-100 border-y border-gray-100">${memberRows}</div>
         <div class="mt-2 flex gap-2">
-          <a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
-          <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>
+          ${isStudy
+            ? `<a class="button button-sm primary-dark" href="${groupManageUrl(g.group_id)}">Open study</a>`
+            : `<a class="button button-sm outline-style" href="${groupShareUrl(g.group_id)}">Open share page</a>
+               <button class="button button-sm outline-style" data-share="${g.group_id}" data-shared="${g.shared}">${g.shared ? "Unshare" : "Mark shared"}</button>`}
         </div>
       </div>`;
     }).join("") || '<p class="text-sm text-gray-400">No groups yet.</p>';
@@ -254,6 +267,15 @@
   });
 
   // groups
+  $("new-study").addEventListener("click", async () => {
+    // No name dialog — create an "Untitled study" and let the planner name it
+    // in place on the manage page (same click-to-edit pattern as plan names).
+    const btn = $("new-study"); btn.disabled = true;
+    const r = await post(CREATE_GROUP_URL, { name: "Untitled study", plan_ids: [], kind: "study" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.status !== "ok") { $("status").textContent = j.detail || "study create failed"; btn.disabled = false; return; }
+    window.location = groupManageUrl(j.group_id);
+  });
   $("new-group").addEventListener("click", async () => {
     if (!selected.size) return;
     const name = prompt(`Name this group of ${selected.size} plan(s):`); if (!name) return;

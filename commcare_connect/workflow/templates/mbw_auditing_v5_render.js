@@ -15,6 +15,13 @@
 // =========================================================================
 
 var V5_GRACE_PERIOD_DAYS = 5;
+var V5_NON_ANC_VISIT_TYPES = [
+  'Postnatal Delivery Visit',
+  '1 Week Visit',
+  '1 Month Visit',
+  '3 Month Visit',
+  '6 Month Visit',
+];
 
 // Banker's rounding to match Python's round() behavior. JS's Math.round
 // rounds .5 away from zero (16.5 → 17); Python's round rounds .5 to nearest
@@ -482,8 +489,21 @@ function v5_computeMbwAuditingData({
       : Object.keys(mothersVisited).length;
     var totalEligible = fu.total_eligible || 0;
     var eligibleMothersVisited = 0;
+    var fivePlusMothers = 0;
     Object.keys(mothersVisited).forEach(function (mid3) {
       if (r.motherEligibility[mid3]) eligibleMothersVisited += 1;
+    });
+    // Count eligible mothers (bonus flag + ANC) with 5+ scheduled visit types.
+    // Uses motherToFlw for last-visit-wins attribution, consistent with total_eligible.
+    Object.keys(v.motherToFlw).forEach(function (mid3) {
+      if (v.motherToFlw[mid3] !== u) return;
+      if (!(r.motherEligibility[mid3] && v.ancOkMothers[mid3])) return;
+      var cnt = 1; // ANC confirmed (eligibility gate)
+      var mv = v.visitsByMother[mid3] || {};
+      for (var vti = 0; vti < V5_NON_ANC_VISIT_TYPES.length; vti++) {
+        if (mv[V5_NON_ANC_VISIT_TYPES[vti]]) cnt++;
+      }
+      if (cnt >= 5) fivePlusMothers++;
     });
     var visitsCompleted = v.visitsCompletedByFlw[u] || 0;
 
@@ -544,6 +564,7 @@ function v5_computeMbwAuditingData({
       num_mothers: numMothers,
       num_mothers_eligible: totalEligible,
       num_eligible_mothers_visited: eligibleMothersVisited,
+      num_mothers_five_plus: fivePlusMothers,
       visits_completed: visitsCompleted,
       gs_score: gsScore,
       followup_rate: followupRate,
@@ -1671,10 +1692,7 @@ function WorkflowUI({
         continue;
       var mid = (row.mother_case_id || '').toLowerCase();
       if (!mid) continue;
-      var formName =
-        (V5_FORM_NAME_ALIASES && V5_FORM_NAME_ALIASES[row.form_name]) ||
-        row.form_name ||
-        '';
+      var formName = v5_normFormName(row.form_name);
       if ((row.antenatal_visit_completion || '').toString().trim() === 'ok') {
         ancOkMothers[mid] = true;
       }
@@ -1793,6 +1811,11 @@ function WorkflowUI({
       }, 0);
       var pctStillElig =
         totalElig > 0 ? Math.round((totalStillElig / totalElig) * 100) : null;
+      var totalFivePlus = catFlws.reduce(function (s, f) {
+        return s + (f.num_mothers_five_plus || 0);
+      }, 0);
+      var pctFivePlus =
+        totalElig > 0 ? Math.round((totalFivePlus / totalElig) * 100) : null;
       return Object.assign({}, band, {
         num_flws: catFlws.length,
         total_mothers: catFlws.reduce(function (s, f) {
@@ -1801,6 +1824,8 @@ function WorkflowUI({
         total_eligible: totalElig,
         total_still_eligible: totalStillElig,
         pct_still_eligible: pctStillElig,
+        total_five_plus: totalFivePlus,
+        pct_five_plus: pctFivePlus,
         avg_fu: avgFu,
         avg_gs: avgGs,
       });
@@ -2567,7 +2592,7 @@ function WorkflowUI({
           className:
             'inline-block text-xs px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-medium whitespace-nowrap',
         },
-        'Audit Required',
+        'Task Required',
       );
     }
     // Yellow flag
@@ -2589,7 +2614,7 @@ function WorkflowUI({
               handleSetAuditStatus(flw.username, 'audit_required');
             },
           },
-          'Audit Required',
+          'Task Required',
         ),
         React.createElement(
           'button',
@@ -2615,7 +2640,7 @@ function WorkflowUI({
             className:
               'text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 font-medium whitespace-nowrap',
           },
-          '✓ Audit Required',
+          '✓ Task Required',
         ),
         !hasTask &&
           React.createElement(
@@ -2940,7 +2965,7 @@ function WorkflowUI({
                 className:
                   'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
               },
-              'Audit Status',
+              'Task',
             )
           : null,
         React.createElement(
@@ -2949,7 +2974,7 @@ function WorkflowUI({
             className:
               'px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap',
           },
-          'Task',
+          'Task Status',
         ),
         React.createElement(
           'th',
@@ -3972,616 +3997,7 @@ function WorkflowUI({
   // =========================================================================
   // Tab 3: Summary by Performance Band
   // =========================================================================
-  // =========================================================================
-  // Improvement over time chart (Tab 3 — Program monitoring)
-  // =========================================================================
-  var ImprovementOverTimeChart = function () {
-    var _rh = React.useState(null);
-    var runHistory = _rh[0];
-    var setRunHistory = _rh[1];
-
-    React.useEffect(function () {
-      fetch('/labs/workflow/api/run-category-history/', {
-        credentials: 'same-origin',
-      })
-        .then(function (r) {
-          return r.ok ? r.json() : { runs: [] };
-        })
-        .then(function (d) {
-          setRunHistory(d.runs || []);
-        })
-        .catch(function () {
-          setRunHistory([]);
-        });
-    }, []);
-
-    // Monthly snap dates from Jan 2026 to today
-    var months = React.useMemo(function () {
-      var result = [];
-      var sY = 2026,
-        sM = 3;
-      var now = new Date();
-      var eY = now.getFullYear(),
-        eM = now.getMonth() + 1;
-      var y = sY,
-        m = sM;
-      while (y < eY || (y === eY && m <= eM)) {
-        var mm = m < 10 ? '0' + m : '' + m;
-        result.push({
-          label:
-            [
-              'Jan',
-              'Feb',
-              'Mar',
-              'Apr',
-              'May',
-              'Jun',
-              'Jul',
-              'Aug',
-              'Sep',
-              'Oct',
-              'Nov',
-              'Dec',
-            ][m - 1] +
-            " '" +
-            (y % 100 < 10 ? '0' + (y % 100) : '' + (y % 100)),
-          snapDate: y + '-' + mm + '-15',
-        });
-        m++;
-        if (m > 12) {
-          m = 1;
-          y++;
-        }
-      }
-      return result;
-    }, []);
-
-    // Monthly metrics — computed on demand (expensive: 5× over all visit rows)
-    var _mm = React.useState(null);
-    var monthlyMetrics = _mm[0];
-    var setMonthlyMetrics = _mm[1];
-    var _computing = React.useState(false);
-    var computing = _computing[0];
-    var setComputing = _computing[1];
-
-    var computeMetrics = function () {
-      setComputing(true);
-      setTimeout(function () {
-        var visitsRows = (pipelines.visits && pipelines.visits.rows) || [];
-        var regRows =
-          (pipelines.registrations && pipelines.registrations.rows) || [];
-
-        // Build per-category username sets from current run + prev run fallback.
-        // 'probation' is treated as 'requires_improvement' (legacy alias).
-        var eligibleUsernames = [];
-        var reqUsernames = [];
-        var suspendedUsernames = [];
-        var seenU = {};
-        function _pushCat(cat, uname) {
-          if (cat === 'eligible_for_renewal') eligibleUsernames.push(uname);
-          else if (cat === 'requires_improvement' || cat === 'probation') reqUsernames.push(uname);
-          else if (cat === 'suspended') suspendedUsernames.push(uname);
-        }
-        for (var u in workerResults) {
-          var wr = workerResults[u];
-          _pushCat(wr && (wr.result || wr), u);
-          seenU[u] = true;
-        }
-        for (var u2 in prevCategories) {
-          if (seenU[u2]) continue;
-          var wr2 = prevCategories[u2];
-          _pushCat(wr2 && (wr2.result || wr2), u2);
-        }
-
-        var result = months.map(function (mo) {
-          var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligibleUsernames);
-          var reqSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, reqUsernames);
-          return Object.assign({}, mo, {
-            followup_rate:           eligSnap.followup_rate,
-            pct_still_eligible:      eligSnap.pct_still_eligible,
-            followup_rate_req:       reqSnap.followup_rate,
-            pct_still_eligible_req:  reqSnap.pct_still_eligible,
-          });
-        });
-        setMonthlyMetrics(result);
-        setComputing(false);
-      }, 0);
-    };
-
-    // Category distribution per month using step-constant interpolation across runs
-    var monthlyCats = React.useMemo(
-      function () {
-        if (!runHistory) return null;
-
-        // Build current distribution from workerResults + prevCategories
-        var curDist = {
-          eligible_for_renewal: 0,
-          requires_improvement: 0,
-          suspended: 0,
-        };
-        var seen = {};
-        for (var u in workerResults) {
-          var wr = workerResults[u];
-          var cat = wr && (wr.result || wr);
-          if (cat === 'probation') cat = 'requires_improvement';
-          if (cat in curDist) curDist[cat]++;
-          seen[u] = true;
-        }
-        for (var u2 in prevCategories) {
-          if (seen[u2]) continue;
-          var wr2 = prevCategories[u2];
-          var cat2 = wr2 && (wr2.result || wr2);
-          if (cat2 === 'probation') cat2 = 'requires_improvement';
-          if (cat2 in curDist) curDist[cat2]++;
-        }
-        var curTotal =
-          curDist.eligible_for_renewal +
-          curDist.requires_improvement +
-          curDist.suspended;
-
-        // Append current as a virtual run at today
-        var today = new Date().toISOString().substring(0, 10);
-        var allRuns = runHistory.concat(
-          curTotal > 0
-            ? [{ completed_at: today, dist: curDist, total: curTotal }]
-            : [],
-        );
-
-        return months.map(function (mo) {
-          var best = null;
-          for (var i = 0; i < allRuns.length; i++) {
-            var runDate = (allRuns[i].completed_at || '').substring(0, 10);
-            if (runDate <= mo.snapDate) best = allRuns[i];
-          }
-          if (!best) return null;
-          var d = best.dist;
-          var t = best.total || 1;
-          return {
-            elig: (d.eligible_for_renewal || 0) / t,
-            req: (d.requires_improvement || 0) / t,
-            susp: (d.suspended || 0) / t,
-          };
-        });
-      },
-      [months, runHistory],
-    );
-
-    // SVG layout
-    var svgW = 640,
-      svgH = 195;
-    var padL = 44,
-      padR = 16,
-      padT = 16,
-      padB = 36;
-    var chartW = svgW - padL - padR;
-    var chartH = svgH - padT - padB;
-    var n = months.length || 1;
-    var slotW = chartW / n;
-    var barW = slotW * 0.55;
-
-    if (runHistory === null) {
-      return React.createElement(
-        'div',
-        {
-          className:
-            'bg-white rounded-lg shadow-sm p-6 text-sm text-gray-400 text-center',
-        },
-        'Loading chart…',
-      );
-    }
-
-    var gridYs = [0, 25, 50, 75, 100];
-    var elems = [];
-
-    // Grid + y-labels
-    gridYs.forEach(function (v) {
-      var cy = padT + chartH * (1 - v / 100);
-      elems.push(
-        React.createElement('line', {
-          key: 'g' + v,
-          x1: padL,
-          y1: cy,
-          x2: padL + chartW,
-          y2: cy,
-          stroke: '#e5e7eb',
-          strokeWidth: 1,
-        }),
-      );
-      elems.push(
-        React.createElement(
-          'text',
-          {
-            key: 'yl' + v,
-            x: padL - 5,
-            y: cy + 4,
-            textAnchor: 'end',
-            fontSize: 10,
-            fill: '#9ca3af',
-          },
-          v + '%',
-        ),
-      );
-    });
-
-    // X-axis baseline
-    elems.push(
-      React.createElement('line', {
-        key: 'xax',
-        x1: padL,
-        y1: padT + chartH,
-        x2: padL + chartW,
-        y2: padT + chartH,
-        stroke: '#d1d5db',
-        strokeWidth: 1,
-      }),
-    );
-
-    // Bars + x-labels
-    months.forEach(function (mo, i) {
-      var cx = padL + i * slotW + slotW / 2;
-      var bx = cx - barW / 2;
-      var by = padT + chartH;
-
-      elems.push(
-        React.createElement(
-          'text',
-          {
-            key: 'xl' + i,
-            x: cx,
-            y: padT + chartH + 14,
-            textAnchor: 'middle',
-            fontSize: 10,
-            fill: '#6b7280',
-          },
-          mo.label,
-        ),
-      );
-
-      var cats = monthlyCats && monthlyCats[i];
-      if (cats) {
-        var yBot = by;
-        // Suspended (red)
-        if (cats.susp > 0) {
-          var hS = chartH * cats.susp;
-          elems.push(
-            React.createElement('rect', {
-              key: 'susp' + i,
-              x: bx,
-              y: yBot - hS,
-              width: barW,
-              height: hS,
-              fill: '#fca5a5',
-              fillOpacity: 0.85,
-            }),
-          );
-          yBot -= hS;
-        }
-        // Requires improvement (yellow)
-        if (cats.req > 0) {
-          var hR = chartH * cats.req;
-          elems.push(
-            React.createElement('rect', {
-              key: 'req' + i,
-              x: bx,
-              y: yBot - hR,
-              width: barW,
-              height: hR,
-              fill: '#fde68a',
-              fillOpacity: 0.85,
-            }),
-          );
-          yBot -= hR;
-        }
-        // Eligible for renewal (green)
-        if (cats.elig > 0) {
-          var hE = chartH * cats.elig;
-          elems.push(
-            React.createElement('rect', {
-              key: 'elig' + i,
-              x: bx,
-              y: yBot - hE,
-              width: barW,
-              height: hE,
-              fill: '#86efac',
-              fillOpacity: 0.85,
-            }),
-          );
-        }
-      }
-    });
-
-    // Lines — drawn after compute. Solid = follow-up rate, dashed = % still eligible.
-    if (monthlyMetrics) {
-      var LINE_SERIES = [
-        { key: 'followup_rate',              color: '#15803d', dash: null,  dotKey: 'fue' },
-        { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dotKey: 'see' },
-        { key: 'followup_rate_req',          color: '#ca8a04', dash: null,  dotKey: 'fur' },
-        { key: 'pct_still_eligible_req',     color: '#ca8a04', dash: '5,3', dotKey: 'ser' },
-      ];
-      LINE_SERIES.forEach(function (s) {
-        var pts = [];
-        monthlyMetrics.forEach(function (mo, i) {
-          var cx = padL + i * slotW + slotW / 2;
-          if (mo[s.key] != null)
-            pts.push([cx, padT + chartH * (1 - mo[s.key] / 100)]);
-        });
-        if (pts.length >= 2) {
-          var lineProps = { key: s.dotKey + '-line', points: pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: s.color, strokeWidth: 2 };
-          if (s.dash) lineProps.strokeDasharray = s.dash;
-          elems.push(React.createElement('polyline', lineProps));
-        }
-        pts.forEach(function (p, i) {
-          elems.push(React.createElement('circle', { key: s.dotKey + '-dot' + i, cx: p[0], cy: p[1], r: 3, fill: s.color }));
-        });
-      });
-    }
-
-    // Focused line chart — auto-scaled y-axis, only visible after compute
-    var FocusedLineChart = function () {
-      if (!monthlyMetrics) return null;
-
-      var allVals = [];
-      monthlyMetrics.forEach(function (mo) {
-        ['followup_rate', 'pct_still_eligible', 'followup_rate_req', 'pct_still_eligible_req'].forEach(function (k) {
-          if (mo[k] != null) allVals.push(mo[k]);
-        });
-      });
-      if (allVals.length === 0) return null;
-
-      var rawMin = Math.min.apply(null, allVals);
-      var yMin = Math.max(0, Math.floor((rawMin - 5) / 5) * 5);
-      var yMax = Math.min(
-        100,
-        Math.ceil((Math.max.apply(null, allVals) + 5) / 5) * 5,
-      );
-      var yRange = yMax - yMin || 1;
-
-      var lW = 640,
-        lH = 160;
-      var lPadL = 44,
-        lPadR = 16,
-        lPadT = 14,
-        lPadB = 36;
-      var lChartW = lW - lPadL - lPadR;
-      var lChartH = lH - lPadT - lPadB;
-      var lSlotW = lChartW / (n || 1);
-
-      var lElems = [];
-
-      // Gridlines — 5% steps within range
-      for (var gv = yMin; gv <= yMax; gv += 5) {
-        var gcy = lPadT + lChartH * (1 - (gv - yMin) / yRange);
-        lElems.push(
-          React.createElement('line', {
-            key: 'lg' + gv,
-            x1: lPadL,
-            y1: gcy,
-            x2: lPadL + lChartW,
-            y2: gcy,
-            stroke: gv % 10 === 0 ? '#e5e7eb' : '#f3f4f6',
-            strokeWidth: 1,
-          }),
-        );
-        if (gv % 10 === 0) {
-          lElems.push(
-            React.createElement(
-              'text',
-              {
-                key: 'lyl' + gv,
-                x: lPadL - 5,
-                y: gcy + 4,
-                textAnchor: 'end',
-                fontSize: 10,
-                fill: '#9ca3af',
-              },
-              gv + '%',
-            ),
-          );
-        }
-      }
-
-      // X-axis
-      lElems.push(
-        React.createElement('line', {
-          key: 'lxax',
-          x1: lPadL,
-          y1: lPadT + lChartH,
-          x2: lPadL + lChartW,
-          y2: lPadT + lChartH,
-          stroke: '#d1d5db',
-          strokeWidth: 1,
-        }),
-      );
-
-      // X-labels
-      months.forEach(function (mo, i) {
-        var lcx = lPadL + i * lSlotW + lSlotW / 2;
-        lElems.push(
-          React.createElement(
-            'text',
-            {
-              key: 'lxl' + i,
-              x: lcx,
-              y: lPadT + lChartH + 14,
-              textAnchor: 'middle',
-              fontSize: 10,
-              fill: '#6b7280',
-            },
-            mo.label,
-          ),
-        );
-      });
-
-      // Lines — solid = follow-up rate, dashed = % still eligible
-      var L_SERIES = [
-        { key: 'followup_rate',              color: '#15803d', dash: null,  dk: 'lfue' },
-        { key: 'pct_still_eligible',         color: '#15803d', dash: '5,3', dk: 'lsee' },
-        { key: 'followup_rate_req',          color: '#ca8a04', dash: null,  dk: 'lfur' },
-        { key: 'pct_still_eligible_req',     color: '#ca8a04', dash: '5,3', dk: 'lser' },
-      ];
-      L_SERIES.forEach(function (s) {
-        var pts = [];
-        monthlyMetrics.forEach(function (mo, i) {
-          var lcx = lPadL + i * lSlotW + lSlotW / 2;
-          if (mo[s.key] != null)
-            pts.push([lcx, lPadT + lChartH * (1 - (mo[s.key] - yMin) / yRange)]);
-        });
-        if (pts.length >= 2) {
-          var lp = { key: s.dk + '-line', points: pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' '), fill: 'none', stroke: s.color, strokeWidth: 2 };
-          if (s.dash) lp.strokeDasharray = s.dash;
-          lElems.push(React.createElement('polyline', lp));
-        }
-        pts.forEach(function (p, i) {
-          lElems.push(React.createElement('circle', { key: s.dk + '-d' + i, cx: p[0], cy: p[1], r: 3, fill: s.color }));
-        });
-      });
-
-      return React.createElement(
-        'div',
-        { className: 'mt-4 bg-white rounded-lg shadow-sm p-4' },
-        React.createElement(
-          'h3',
-          { className: 'text-sm font-semibold text-gray-800 mb-1' },
-          'Trend lines (focused view)',
-        ),
-        React.createElement(
-          'p',
-          { className: 'text-xs text-gray-400 mb-2' },
-          'Y-axis auto-scaled to data range (' +
-            yMin +
-            '–' +
-            yMax +
-            '%) to highlight changes.',
-        ),
-        React.createElement(
-          'svg',
-          {
-            viewBox: '0 0 ' + lW + ' ' + lH,
-            width: '100%',
-            style: { display: 'block' },
-          },
-          lElems,
-        ),
-      );
-    };
-
-    return React.createElement(
-      'div',
-      { className: 'bg-white rounded-lg shadow-sm p-4' },
-      React.createElement(
-        'h3',
-        { className: 'text-sm font-semibold text-gray-800 mb-1' },
-        'Improvement over time',
-      ),
-      React.createElement(
-        'div',
-        { className: 'flex items-center justify-between mb-3' },
-        React.createElement(
-          'p',
-          { className: 'text-xs text-gray-400' },
-          'Bars: category distribution per month. Lines: follow-up rate & % still eligible — grey = all FLWs, green = Eligible for Renewal only (computed on demand).',
-        ),
-        React.createElement(
-          'button',
-          {
-            className:
-              'px-3 py-1.5 text-xs rounded border bg-white text-gray-700 border-gray-300 hover:bg-gray-50 shrink-0 ml-3 inline-flex items-center gap-1 disabled:opacity-50',
-            onClick: computeMetrics,
-            disabled: computing,
-          },
-          React.createElement('i', {
-            className:
-              'fa-solid ' +
-              (computing ? 'fa-spinner fa-spin' : 'fa-chart-line'),
-          }),
-          computing ? 'Computing…' : 'Compute trend lines',
-        ),
-      ),
-      React.createElement(
-        'svg',
-        {
-          viewBox: '0 0 ' + svgW + ' ' + svgH,
-          width: '100%',
-          style: { display: 'block' },
-        },
-        elems,
-      ),
-      React.createElement(
-        'div',
-        {
-          className:
-            'flex flex-wrap gap-x-5 gap-y-1 mt-2 text-xs text-gray-600',
-        },
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', {
-            style: {
-              display: 'inline-block',
-              width: 12,
-              height: 12,
-              background: '#86efac',
-              borderRadius: 2,
-            },
-          }),
-          'Eligible for Renewal',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', {
-            style: {
-              display: 'inline-block',
-              width: 12,
-              height: 12,
-              background: '#fde68a',
-              borderRadius: 2,
-            },
-          }),
-          'Requires Improvement',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', {
-            style: {
-              display: 'inline-block',
-              width: 12,
-              height: 12,
-              background: '#fca5a5',
-              borderRadius: 2,
-            },
-          }),
-          'Suspended',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 2, background: '#9ca3af', borderRadius: 2 } }),
-          'Follow-up Rate (all)',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '2px dashed #9ca3af' } }),
-          '% Still Eligible (all)',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 2, background: '#15803d', borderRadius: 2 } }),
-          'Follow-up Rate (eligible)',
-        ),
-        React.createElement(
-          'span',
-          { className: 'flex items-center gap-1' },
-          React.createElement('span', { style: { display: 'inline-block', width: 20, height: 0, borderTop: '2px dashed #15803d' } }),
-          '% Still Eligible (eligible)',
-        ),
-      ),
-      React.createElement(FocusedLineChart, null),
-    );
-  };
+  var ImprovementOverTimeChart = function () { return null; };
 
   var Tab3 = function () {
     var bands = perfData || computePerfBands();
@@ -4595,14 +4011,13 @@ function WorkflowUI({
     return React.createElement(
       'div',
       { className: 'space-y-4' },
-      React.createElement(ImprovementOverTimeChart, null),
       React.createElement(
         'div',
         { className: 'flex items-center justify-between' },
         React.createElement(
           'p',
-          { className: 'text-sm text-gray-500' },
-          'Based on latest performance categories set for each FLW.',
+          { className: 'text-sm font-semibold text-gray-700' },
+          'Follow-up metrics based on latest performance categories set for each FLW.',
         ),
         React.createElement(
           'button',
@@ -4678,6 +4093,14 @@ function WorkflowUI({
                     'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
                 },
                 '% Still Eligible',
+              ),
+              React.createElement(
+                'th',
+                {
+                  className:
+                    'px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase',
+                },
+                '% Received 5+ Visits',
               ),
               React.createElement(
                 'th',
@@ -4775,6 +4198,11 @@ function WorkflowUI({
                   band.pct_still_eligible != null
                     ? band.pct_still_eligible + '%'
                     : '—',
+                ),
+                React.createElement(
+                  'td',
+                  { className: 'px-3 py-2 text-right text-sm text-gray-700' },
+                  band.pct_five_plus != null ? band.pct_five_plus + '%' : '—',
                 ),
                 React.createElement(
                   'td',

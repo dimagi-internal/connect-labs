@@ -43,13 +43,91 @@ from django.core.asgi import get_asgi_application  # noqa: E402
 _django_asgi_app = get_asgi_application()
 
 from starlette.applications import Starlette  # noqa: E402
-from starlette.routing import Mount  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
+from starlette.routing import Mount, Route  # noqa: E402
 
 from commcare_connect.mcp.server import build_http_app  # noqa: E402
 
 # Streamable-HTTP ASGI app. path="/" -> the MCP endpoint is the mount root,
 # i.e. /mcp/ (the preserved public URL).
 _mcp_app = build_http_app()
+
+
+class _PlainBearerChallenge:
+    """Rewrite FastMCP's OAuth-style 401 challenge to a plain realm challenge.
+
+    FastMCP 3.x's ``TokenVerifier`` answers a missing/invalid token with
+    ``WWW-Authenticate: Bearer error="invalid_token", error_description=...``.
+    The RFC 6750 ``error="invalid_token"`` parameter marks the endpoint as an
+    OAuth-protected resource, so a spec-compliant MCP client (e.g. Claude Code)
+    responds to the 401 by initiating OAuth discovery — fetching
+    ``/.well-known/oauth-protected-resource`` — instead of simply re-sending the
+    Personal Access Token it already holds. That discovery probe falls through
+    to Django's HTML 404 (see the ``_oauth_metadata_absent`` routes below) and
+    the client crashes parsing HTML as JSON ("Unrecognized token '<'"), which
+    surfaces as a "Failed to reconnect" error.
+
+    connect-labs is a PAT-only resource server (no OAuth authorization server),
+    exactly as the pre-FastMCP hand-rolled transport was — it returned a bare
+    ``Bearer realm="labs-mcp"`` challenge, which clients satisfy by re-sending
+    their bearer. This wrapper restores that behaviour: on a 401 it strips the
+    OAuth-style ``WWW-Authenticate`` and replaces it with the plain realm form.
+    It is otherwise fully transparent (only ``http`` 401 response headers are
+    touched; streaming/SSE 200 responses pass through untouched).
+    """
+
+    _PLAIN_CHALLENGE = b'Bearer realm="labs-mcp"'
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def _send(message):
+            if message["type"] == "http.response.start" and message.get("status") == 401:
+                headers = [(k, v) for (k, v) in message.get("headers", []) if k.lower() != b"www-authenticate"]
+                headers.append((b"www-authenticate", self._PLAIN_CHALLENGE))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, _send)
+
+
+async def _oauth_metadata_absent(request):
+    """Clean JSON 404 for OAuth discovery probes.
+
+    Served for the root ``/.well-known/oauth-*`` paths an MCP client probes
+    after a 401. Without these routes the requests fall through to Django's
+    catch-all and return a styled HTML 404 that the client cannot parse as the
+    expected JSON metadata. A JSON 404 lets discovery fail gracefully; the
+    client then falls back to its configured PAT. connect-labs intentionally
+    serves no OAuth metadata — authentication is a Personal Access Token sent as
+    ``Authorization: Bearer <token>`` (mint at /labs/mcp/tokens/).
+    """
+    return JSONResponse(
+        {
+            "error": "not_found",
+            "error_description": (
+                "connect-labs MCP authenticates with a Personal Access Token "
+                "(Authorization: Bearer <token>); it does not serve OAuth metadata."
+            ),
+        },
+        status_code=404,
+    )
+
+
+# RFC 9728 / RFC 8414 discovery paths clients probe at the host root (both the
+# bare form and the resource-path-suffixed form for the /mcp/ resource).
+_OAUTH_DISCOVERY_PATHS = [
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-authorization-server/mcp",
+    "/.well-known/openid-configuration",
+]
 
 
 class _ReprefixApp:
@@ -74,12 +152,21 @@ class _ReprefixApp:
 
 application = Starlette(
     routes=[
+        # OAuth discovery probes answered with clean JSON (not Django's HTML
+        # 404) so a client that does RFC 9728 discovery after a 401 fails
+        # gracefully instead of crashing on an unparseable body. Mounted ahead
+        # of the Django catch-all. connect-labs serves no OAuth metadata — it is
+        # a PAT-only resource server.
+        *[Route(path, _oauth_metadata_absent, methods=["GET", "POST"]) for path in _OAUTH_DISCOVERY_PATHS],
         # Keep the Django token-management browser routes on Django. The
         # _ReprefixApp wrapper re-adds /mcp/admin so Django's URL router sees
         # the full path and can match mcp/admin/create-token/.
         Mount("/mcp/admin", app=_ReprefixApp("/mcp/admin", _django_asgi_app)),
-        # FastMCP Streamable-HTTP protocol endpoint at /mcp/.
-        Mount("/mcp", app=_mcp_app),
+        # FastMCP Streamable-HTTP protocol endpoint at /mcp/. Wrapped so the
+        # auth 401 carries a plain `Bearer realm` challenge (not FastMCP's
+        # OAuth-style `error="invalid_token"`), keeping PAT clients off the
+        # OAuth-discovery path that breaks reconnect.
+        Mount("/mcp", app=_PlainBearerChallenge(_mcp_app)),
         # Django handles everything else (catch-all, mounted last).
         Mount("/", app=_django_asgi_app),
     ],

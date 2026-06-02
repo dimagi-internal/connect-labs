@@ -218,19 +218,13 @@ To use synthetic data capabilities, ask your program administrator or raise a re
 !!! note "CHC Nutrition Analysis synthetic data and flag direction"
     Synthetic datasets for the CHC Nutrition Analysis dashboard now generate realistic SAM and MAM distributions that match the flag direction used in the live dashboard. Clean FLWs receive baseline SAM/MAM rates that sit comfortably above the flag thresholds, while FLWs meant to represent cherry-picking behaviour receive near-zero SAM/MAM rates that trigger the **SAM rate < 1%** and **MAM rate < 3%** flags as expected. If you re-seed an older CHC Nutrition Analysis demo, the FLW flagging pattern will change to reflect this corrected logic — the previously clean-looking FLWs will no longer auto-flag, and the intended problem FLWs will now flag correctly.
 
-### MBW Auditing V5 — improvement-over-time chart
+### MBW Auditing V5 — Tab 3 layout
 
-The **MBW Auditing V5** template includes an improvement-over-time chart on its third tab. This chart plots monthly performance trends as multiple lines, broken down by performance category:
+The third tab of the **MBW Auditing V5** dashboard is laid out in two sections, in this order:
 
-- **Grey lines** — all FLWs in the cohort (overall reference)
-- **Green lines** — FLWs marked eligible for renewal
-- **Yellow lines** — FLWs marked as requiring improvement
+1. **Follow-up metrics table** — appears first, under the heading "Follow-up metrics based on latest performance categories set for each FLW." This table shows the per-FLW follow-up data broken down by their current performance category. It includes a **% Received 5+ Visits** column, which shows what percentage of eligible mothers — those who had the full intervention bonus flag set at registration and who completed their ANC visit — received at least 5 of the 6 scheduled visit types. This percentage is shown for each FLW, broken down by performance category. The **Eligible at Reg** column shows the count of mothers eligible at registration for each performance band and is correctly populated across all performance categories, not only Eligible for Renewal rows.
 
-Within each colour, **solid lines** represent follow-up rate and **dashed lines** represent the percentage still eligible. This lets you compare how each performance category is trending on both measures at the same time.
+2. **Improvement-over-time chart** — appears below the table. This chart tracks FLW performance across auditing runs using three lines:
 
-!!! note "Suspended category removed from this chart"
-    The suspended FLW series is no longer shown on this chart. It was removed because the colour previously used for suspended FLWs was visually indistinguishable from the requires-improvement line on screen, making the two categories impossible to tell apart at a glance.
-
-If you previously saw only a single eligible-FLW line (green) alongside the grey overall line, you were viewing an earlier version of the chart. The dashboard now shows the two-category breakdown (green and yellow) alongside the grey reference line — open the dashboard and the updated chart will load automatically.
-
-If the two lines looked almost identical — the green eligible-FLW line tracking so closely to the grey all-FL
+    - **Solid green line** — follow-up rate for Eligible for Renewal FLWs. February uses all FLWs as the pre-audit baseline, since no performance categories had been assigned yet at that point.
+    - **Dashed green line** — percentage of mothers still eligible to receive 5+ visits

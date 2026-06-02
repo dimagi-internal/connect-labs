@@ -345,6 +345,24 @@ class TestRecordModels:
         rec = PlanRecord(base.to_api_dict())
         assert rec.id == 501 and rec.program_id == 133 and rec.status == "deployed"
 
+    def test_plan_phase_is_sampled_when_work_areas_present(self):
+        # A plan that has generated work areas is past the boundary-only stage.
+        from commcare_connect.microplans.core.models import PlanRecord
+
+        rec = PlanRecord(self._plan_api_data())  # fixture has one work area
+        assert rec.phase == "sampled"
+
+    def test_plan_phase_is_boundary_when_no_work_areas(self):
+        # A boundary-only plan: its area is defined (input_areas) but the sampling
+        # algorithm has not run, so there are no work areas yet.
+        from commcare_connect.microplans.core.models import PlanRecord
+
+        data = self._plan_api_data()
+        data["data"]["work_areas"] = []
+        data["data"]["input_areas"] = [{"kind": "admin_boundary", "name": "Madobi"}]
+        rec = PlanRecord(data)
+        assert rec.phase == "boundary"
+
     def test_group_record_instantiates_from_api_data(self):
         from commcare_connect.labs.models import LocalLabsRecord
         from commcare_connect.microplans.core.models import PlanGroupRecord
@@ -363,6 +381,55 @@ class TestRecordModels:
         # round-trip too
         rec2 = PlanGroupRecord(LocalLabsRecord(api_data).to_api_dict())
         assert rec2.plan_ids == [1, 2]
+
+    def test_group_record_exposes_study_fields(self):
+        # A study group carries arm assignments (labs-side), a shared sampling
+        # config applied across members, and a status.
+        from commcare_connect.microplans.core.models import PlanGroupRecord
+
+        rec = PlanGroupRecord(
+            {
+                "id": 9,
+                "experiment": "133",
+                "type": "microplan_plan_group",
+                "opportunity_id": None,
+                "program_id": 133,
+                "data": {
+                    "name": "Madobi CHC rooftop study",
+                    "plan_ids": [501, 502],
+                    "kind": "study",
+                    "arms": {"501": "intervention", "502": "control"},
+                    "sampling_config": {"target_clusters": 8},
+                    "status": "defining",
+                },
+            }
+        )
+        assert rec.kind == "study"
+        assert rec.arms == {"501": "intervention", "502": "control"}
+        assert rec.arm_for(501) == "intervention"
+        assert rec.arm_for(502) == "control"
+        assert rec.sampling_config == {"target_clusters": 8}
+        assert rec.status == "defining"
+
+    def test_group_record_defaults_to_plain_bundle(self):
+        # Existing groups (no study fields) read as plain bundles with no arms.
+        from commcare_connect.microplans.core.models import PlanGroupRecord
+
+        rec = PlanGroupRecord(
+            {
+                "id": 9,
+                "experiment": "133",
+                "type": "microplan_plan_group",
+                "opportunity_id": None,
+                "program_id": 133,
+                "data": {"name": "For Hilltop Health", "plan_ids": [1, 2]},
+            }
+        )
+        assert rec.kind == "bundle"
+        assert rec.arms == {}
+        assert rec.arm_for(1) is None
+        assert rec.sampling_config == {}
+        assert rec.status == "defining"
 
 
 def test_sampling_materialize_keeps_arm_labs_side_and_blind():
@@ -427,3 +494,35 @@ class TestDeriveLgaState:
 
     def test_empty_plan(self):
         assert plan.derive_lga_state({}) == ("", "")
+
+
+class TestPlanSampleAreas:
+    """plan_sample_areas: a plan's stored input_areas → [{arm, geometry}] for the engine."""
+
+    def test_inline_geometry_passes_through_tagged_with_arm(self):
+        from commcare_connect.microplans.core.plan import plan_sample_areas
+
+        poly = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+        out = plan_sample_areas(
+            [{"kind": "draw", "geometry": poly}], "intervention", resolve_boundary=lambda bid: None
+        )
+        assert out == [{"arm": "intervention", "geometry": poly}]
+
+    def test_admin_boundary_resolves_geometry_via_injected_resolver(self):
+        from commcare_connect.microplans.core.plan import plan_sample_areas
+
+        poly = {"type": "Polygon", "coordinates": [[[5, 5], [6, 5], [6, 6], [5, 5]]]}
+        out = plan_sample_areas(
+            [{"kind": "admin_boundary", "boundary_id": "NGA-Madobi", "name": "Madobi"}],
+            "control",
+            resolve_boundary=lambda bid: poly if bid == "NGA-Madobi" else None,
+        )
+        assert out == [{"arm": "control", "geometry": poly}]
+
+    def test_unresolvable_area_is_skipped(self):
+        from commcare_connect.microplans.core.plan import plan_sample_areas
+
+        out = plan_sample_areas(
+            [{"kind": "admin_boundary", "boundary_id": "missing"}], "intervention", resolve_boundary=lambda bid: None
+        )
+        assert out == []

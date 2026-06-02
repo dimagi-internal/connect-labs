@@ -456,6 +456,26 @@ def derive_lga_state(plan_data: dict) -> tuple[str, str]:
     return lga, state
 
 
+def plan_sample_areas(input_areas: list, arm, resolve_boundary) -> list[dict]:
+    """Turn a plan's stored ``input_areas`` into the ``[{arm, geometry}]`` list the
+    sampling engine consumes, tagging every area with the plan's study ``arm``.
+
+    Areas drawn/pinned already carry an inline ``geometry``; admin-boundary areas
+    carry only a ``boundary_id`` (the engine's ``resolve_area`` can't read that), so
+    ``resolve_boundary(boundary_id) -> geojson | None`` is injected to fetch the
+    polygon (a DB lookup in production, a stub in tests). Unresolvable areas are
+    skipped."""
+    out = []
+    for a in input_areas or []:
+        if a.get("geometry"):
+            out.append({"arm": arm, "geometry": a["geometry"]})
+        elif a.get("boundary_id"):
+            geom = resolve_boundary(a["boundary_id"])
+            if geom:
+                out.append({"arm": arm, "geometry": geom})
+    return out
+
+
 def to_workarea_payloads(work_areas: list[dict], lga: str = "", state: str = ""):
     """Non-excluded work areas → WorkAreaPayload list (for CSV / the Connect API),
     honoring LLO edits (group→ward, expected_visit_count, exclusions)."""
