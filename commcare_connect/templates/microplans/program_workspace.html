@@ -268,9 +268,10 @@
 
   // groups
   $("new-study").addEventListener("click", async () => {
-    const name = prompt("Name this study (e.g. \"Kano RUTF impact study\"):"); if (!name) return;
+    // No name dialog — create an "Untitled study" and let the planner name it
+    // in place on the manage page (same click-to-edit pattern as plan names).
     const btn = $("new-study"); btn.disabled = true;
-    const r = await post(CREATE_GROUP_URL, { name, plan_ids: [], kind: "study" });
+    const r = await post(CREATE_GROUP_URL, { name: "Untitled study", plan_ids: [], kind: "study" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.status !== "ok") { $("status").textContent = j.detail || "study create failed"; btn.disabled = false; return; }
     window.location = groupManageUrl(j.group_id);
