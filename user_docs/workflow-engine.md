@@ -220,17 +220,17 @@ To use synthetic data capabilities, ask your program administrator or raise a re
 
 ### MBW Auditing V5 — improvement-over-time chart
 
-The **MBW Auditing V5** template includes an improvement-over-time chart on its third tab. This chart plots monthly performance trends as two separate lines:
+The **MBW Auditing V5** template includes an improvement-over-time chart on its third tab. This chart plots monthly performance trends as multiple lines, broken down by performance category:
 
-- A **grey line** for all FLWs in the cohort
-- A **green line** for FLWs marked eligible-for-renewal
+- **Grey lines** — all FLWs in the cohort (overall reference)
+- **Green lines** — FLWs marked eligible for renewal
+- **Amber lines** — FLWs marked as requiring improvement
+- **Red lines** — FLWs marked as suspended
 
-If the two lines looked almost identical — the green eligible-FLW line tracking so closely to the grey all-FLW line that the distinction was not meaningful — this was a known display issue that has now been corrected. The green line now correctly reflects only the eligible-for-renewal cohort, so differences between the two groups are visible when they exist.
+Within each colour, **solid lines** represent follow-up rate and **dashed lines** represent the percentage still eligible. This lets you compare how each performance category is trending on both measures at the same time.
 
-If you were using this chart to assess the eligible cohort and noticed the lines were nearly indistinguishable, re-open the dashboard and the chart will now show the corrected trend data.
+If you previously saw only a single eligible-FLW line (green) alongside the grey overall line, you were viewing an earlier version of the chart. The dashboard now shows the full three-category breakdown — open the dashboard and the updated chart will load automatically.
 
-### Creating a New Workflow with Claude Code
+If the two lines looked almost identical — the green eligible-FLW line tracking so closely to the grey all-FLW line that the distinction was not meaningful — this was a known display issue that has now been corrected. The category lines now correctly reflect only their respective cohorts, so differences between groups are visible when they exist.
 
-1. **Get the connect-labs repo and Claude Code.** Clone the repository — you don't need to run it locally, but having it gives Claude Code the context it needs to understand the system. Install the Claude Code CLI.
-
-2. **Pick a starting template.** Find the closest match in the Starter Templates table. If you're new, a good first project is a one-row-per-FLW weekly performance chart based on **KMC
+If you were using this chart to assess the eligible cohort and noticed the lines were nearly indistinguish
