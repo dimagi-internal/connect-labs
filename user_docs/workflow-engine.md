@@ -222,10 +222,9 @@ To use synthetic data capabilities, ask your program administrator or raise a re
 
 The third tab of the **MBW Auditing V5** dashboard is laid out in two sections, in this order:
 
-1. **Follow-up metrics table** — appears first, under the heading "Follow-up metrics based on latest performance categories set for each FLW." This table shows the per-FLW follow-up data broken down by their current performance category. It includes a **% Received 5+ Visits** column, which shows what percentage of eligible mothers — those who had the full intervention bonus flag set at registration and who completed their ANC visit — received at least 5 of the 6 scheduled visit types. This percentage is shown for each FLW, broken down by performance category.
+1. **Follow-up metrics table** — appears first, under the heading "Follow-up metrics based on latest performance categories set for each FLW." This table shows the per-FLW follow-up data broken down by their current performance category. It includes a **% Received 5+ Visits** column, which shows what percentage of eligible mothers — those who had the full intervention bonus flag set at registration and who completed their ANC visit — received at least 5 of the 6 scheduled visit types. This percentage is shown for each FLW, broken down by performance category. The **Eligible at Reg** column shows the count of mothers eligible at registration for each performance band and is correctly populated across all performance categories, not only Eligible for Renewal rows.
 
 2. **Improvement-over-time chart** — appears below the table. This chart tracks FLW performance across auditing runs using three lines:
 
     - **Solid green line** — follow-up rate for Eligible for Renewal FLWs. February uses all FLWs as the pre-audit baseline, since no performance categories had been assigned yet at that point.
-    - **Dashed green line** — percentage of mothers still eligible to receive 5+ visits, for Eligible for Renewal FLWs.
-    - **Dashed yellow line** — percentage of mothers still eligible to receive 5+ visits, for Requires
+    - **Dashed green line** — percentage of mothers still eligible to receive 5+ visits
