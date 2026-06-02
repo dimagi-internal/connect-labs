@@ -715,13 +715,17 @@ class ProgramGroupsAPIView(LoginRequiredMixin, View):
             name = str(payload["name"]).strip()[:255]
             plan_ids = [int(p) for p in payload.get("plan_ids", [])]
             offered_to = str(payload.get("offered_to", "")).strip()[:255]
-            if not name or not plan_ids:
+            kind = "study" if payload.get("kind") == "study" else "bundle"
+            arms = payload.get("arms") if isinstance(payload.get("arms"), dict) else {}
+            # A bundle is a curated subset of EXISTING plans (needs ≥1). A study
+            # starts empty — you add its ward plans afterwards from the group page.
+            if not name or (kind != "study" and not plan_ids):
                 raise ValueError("name and at least one plan are required")
         except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
         da = ProgramPlanDataAccess(program_id, request=request)
         try:
-            group = da.create_group(name=name, plan_ids=plan_ids, offered_to=offered_to)
+            group = da.create_group(name=name, plan_ids=plan_ids, offered_to=offered_to, kind=kind, arms=arms)
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_group failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the group."}, status=502)

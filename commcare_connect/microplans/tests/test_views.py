@@ -842,6 +842,21 @@ def test_program_review_page_uses_program_urls(client, django_user_model, settin
     assert resp.context["edit_url"] == reverse("microplans:program_plan_edit", kwargs={"program_id": 25, "plan_id": 3})
 
 
+def test_program_group_create_study_allows_empty_and_sets_kind(client, django_user_model, monkeypatch):
+    """A study group is created empty (you add wards after) with kind=study."""
+    _login(client, django_user_model)
+    _plans, groups = _make_fake_program_da(monkeypatch, {}, {})
+    resp = client.post(
+        reverse("microplans:program_group_create", kwargs={"program_id": 25}),
+        data=json.dumps({"name": "Madobi CHC study", "plan_ids": [], "kind": "study"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    gid = resp.json()["group_id"]
+    assert groups[gid].kind == "study"
+    assert groups[gid].plan_ids == []
+
+
 def test_program_group_manage_page_renders_study(client, django_user_model, monkeypatch):
     """The group management page lists members with arm + phase; a study shows arm badges."""
     from commcare_connect.microplans.core import plan as plan_lib
