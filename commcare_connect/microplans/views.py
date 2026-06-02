@@ -819,6 +819,71 @@ class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateV
         return context
 
 
+# Arm → fill colour (matches review.html's ARM_COLOR); plain bundles fall back to a
+# per-plan palette so each plan still reads as its own layer on the overlay.
+_ARM_COLORS = {"intervention": "#10b981", "control": "#3b82f6"}
+_PLAN_PALETTE = ["#6366f1", "#f59e0b", "#ef4444", "#14b8a6", "#a855f7", "#84cc16"]
+
+
+class ProgramGroupMapView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
+    """View-only overlay of every plan in a group on one map, coloured by arm.
+
+    The 'go look at them' surface — reuses the same Mapbox + map-panel machinery as
+    the single-plan review page, but read-only (no draw, no edits) and over N plans
+    at once. Each plan's work areas become one toggleable, arm-coloured layer."""
+
+    template_name = "microplans/group_map.html"
+
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+        from django.urls import reverse
+
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        group_id = int(kwargs.get("group_id"))
+        context["program_id"] = program_id
+        context["group_id"] = group_id
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        context["back_url"] = reverse("microplans:program_group_page", args=[program_id, group_id])
+        da = ProgramPlanDataAccess(program_id, request=self.request)
+        try:
+            group = da.get_group(group_id)
+            plans_by_id = {p.id: p for p in da.list_plans()}
+            layers = []
+            for i, pid in enumerate(group.plan_ids):
+                p = plans_by_id.get(pid)
+                if p is None:
+                    continue
+                arm = group.arm_for(pid)
+                color = _ARM_COLORS.get(arm) or _PLAN_PALETTE[i % len(_PLAN_PALETTE)]
+                feats = [
+                    {"type": "Feature", "geometry": wa["geometry"], "properties": {"plan_id": pid, "arm": arm}}
+                    for wa in p.work_areas
+                    if wa.get("geometry")
+                ]
+                layers.append(
+                    {
+                        "plan_id": pid,
+                        "name": p.name or f"Plan {pid}",
+                        "arm": arm,
+                        "color": color,
+                        "phase": p.phase,
+                        "work_areas": len(feats),
+                        "geojson": {"type": "FeatureCollection", "features": feats},
+                    }
+                )
+            context["group_name"] = group.name
+            context["is_study"] = group.kind == "study"
+            context["plan_layers"] = layers
+            context["plan_layers_json"] = json.dumps(layers)
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans group map failed (program=%s group=%s)", program_id, group_id)
+            context["error"] = "Could not load the group map."
+        return context
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Planner-facing plan-group management landing page.
@@ -886,6 +951,7 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                 reverse("microplans:program_create_plan_page", args=[program_id]) + f"?group={group_id}"
             )
             context["remove_plan_url"] = reverse("microplans:program_group_update", args=[program_id, group_id])
+            context["map_url"] = reverse("microplans:program_group_map", args=[program_id, group_id])
             context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         except Exception:  # noqa: BLE001
             logger.exception("microplans group page failed (program=%s group=%s)", program_id, group_id)

@@ -917,6 +917,34 @@ def test_program_group_manage_remove_plan_drops_plan_and_arm(client, django_user
     assert groups[7].arm_for(501) == "intervention"
 
 
+def test_program_group_map_overlays_member_plans_by_arm(client, django_user_model, monkeypatch):
+    """The group map view assembles each member plan's work-area GeoJSON, tagged by arm + color."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(
+            502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"
+        ),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_map", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    layers = {layer["plan_id"]: layer for layer in resp.context["plan_layers"]}
+    assert set(layers) == {501, 502}
+    assert layers[501]["arm"] == "intervention" and layers[502]["arm"] == "control"
+    # distinct colors per arm; each layer carries a GeoJSON FeatureCollection of its work areas
+    assert layers[501]["color"] != layers[502]["color"]
+    fc = layers[501]["geojson"]
+    assert fc["type"] == "FeatureCollection" and len(fc["features"]) >= 1
+    assert fc["features"][0]["properties"]["arm"] == "intervention"
+
+
 def test_program_group_assign_arm(client, django_user_model, monkeypatch):
     """POST arms to the group endpoint assigns each plan's arm (labs-side study metadata)."""
     from commcare_connect.microplans.core import plan as plan_lib

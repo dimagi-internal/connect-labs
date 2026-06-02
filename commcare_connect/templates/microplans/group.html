@@ -30,7 +30,7 @@
     {% if entries %}
     <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
     {% endif %}
-    <span class="px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-gray-400" title="Coming next">View on map ·</span>
+    {% if entries %}<a href="{{ map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">View on map</a>{% endif %}
     <span class="px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-gray-400" title="Coming next">Generate samples ·</span>
   </div>
 
