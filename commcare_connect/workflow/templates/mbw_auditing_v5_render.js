@@ -301,7 +301,6 @@ function v5_computeFollowupRates({
       var s = schedules[j];
       if (!s || typeof s !== 'object') continue;
       var visitType = s.visit_type || '';
-      if (visitType === 'ANC Visit') continue;
       var scheduledStr = v5_dateStr(s.visit_date_scheduled);
       var expiryStr = v5_dateStr(s.visit_expiry_date);
       var isCompleted = !!motherVisits[visitType];
@@ -368,7 +367,6 @@ function v5_computeBaselineFollowupRates({
         var s = schedules[jj];
         if (!s || typeof s !== 'object') continue;
         var visitType = s.visit_type || '';
-        if (visitType === 'ANC Visit') continue;
         var scheduledStr = v5_dateStr(s.visit_date_scheduled);
         var visitDate = motherVisits[visitType] || '';
         var isCompletedAtTrigger =
@@ -1650,7 +1648,7 @@ function WorkflowUI({
       if ((row.antenatal_visit_completion || '').toString().trim() === 'ok') {
         ancOkMothers[mid] = true;
       }
-      if (formName && formName !== 'ANC Visit') {
+      if (formName) {
         if (!visitsByMother[mid]) visitsByMother[mid] = {};
         if (!visitsByMother[mid][formName]) visitsByMother[mid][formName] = row.visit_datetime;
       }
@@ -1674,7 +1672,7 @@ function WorkflowUI({
 
       for (var j = 0; j < schedules.length; j++) {
         var s = schedules[j];
-        if (!s || s.visit_type === 'ANC Visit') continue;
+        if (!s) continue;
         var scheduledStr = v5_dateStr(s.visit_date_scheduled);
         var expiryStr = v5_dateStr(s.visit_expiry_date);
         var isComp = !!motherVisits[s.visit_type];
