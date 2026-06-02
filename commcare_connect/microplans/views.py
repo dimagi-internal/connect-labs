@@ -871,8 +871,13 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
             context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + (
                 f"?plans={ids_csv}" if ids_csv else ""
             )
-            context["bulk_create_url"] = reverse("microplans:program_bulk_create_page", args=[program_id])
-            context["new_plan_url"] = reverse("microplans:program_create_plan_page", args=[program_id])
+            # Carry the group id so plans created via either add-path file into THIS group.
+            context["bulk_create_url"] = (
+                reverse("microplans:program_bulk_create_page", args=[program_id]) + f"?group={group_id}"
+            )
+            context["new_plan_url"] = (
+                reverse("microplans:program_create_plan_page", args=[program_id]) + f"?group={group_id}"
+            )
             context["remove_plan_url"] = reverse("microplans:program_group_update", args=[program_id, group_id])
             context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         except Exception:  # noqa: BLE001

@@ -872,6 +872,9 @@ def test_program_group_manage_page_renders_study(client, django_user_model, monk
     entries = resp.context["entries"]
     assert {e["plan_id"]: e["arm"] for e in entries} == {501: "intervention", 502: "control"}
     assert {e["plan_id"]: e["phase"] for e in entries} == {501: "sampled", 502: "boundary"}
+    # The add-path links must carry ?group=<gid> so plans created there file into THIS group.
+    assert resp.context["bulk_create_url"].endswith("?group=7")
+    assert resp.context["new_plan_url"].endswith("?group=7")
 
 
 def test_program_group_manage_remove_plan_drops_plan_and_arm(client, django_user_model, monkeypatch):

@@ -578,6 +578,9 @@
   const ADMIN_AREAS_URL = "{{ admin_areas_url|default:''|escapejs }}";
   const ADMIN_AREA_GEOMETRY_URL = "{{ admin_area_geometry_url|default:''|escapejs }}";
   const CREATE_PLAN_URL = "{{ create_plan_url|default:''|escapejs }}";
+  // When the editor is opened from a group page (?group=<id>), the created plan
+  // files into that group — see ProgramCreatePlanView's group_id handling.
+  const GROUP_ID = new URLSearchParams(location.search).get("group");
   const PROGRAM_URL = "{{ program_url|default:''|escapejs }}";
   const PLAN_ID = "{{ plan_id|default:''|escapejs }}";
   // No plan yet → many widgets are absent from the DOM. Guarded everywhere.
@@ -1665,6 +1668,7 @@
         // (Connect requires both non-empty). lga defaults to region server-side.
         const resp = await post(CREATE_PLAN_URL, {
           name, region, lga: region, state, mode: "coverage", coverage_areas: prev.areas, input_areas: areas, grouping,
+          group_id: GROUP_ID || undefined,
         });
         const data = await resp.json();
         if (!resp.ok || data.status !== "ok") { $("apply-area-status").textContent = data.detail || ("HTTP " + resp.status); return; }
@@ -1900,6 +1904,7 @@
         name, region: name, lga: name, state: ($("inp-plan-state")?.value || "").trim(), mode: "sampling",
         pins: lastSample.pins, hulls: lastSample.hulls,
         input_areas: collectArmAreas(), grouping: {},
+        group_id: GROUP_ID || undefined,
       });
       const data = await resp.json();
       if (!resp.ok || data.status !== "ok") { if (statusEl) statusEl.textContent = data.detail || ("HTTP " + resp.status); return; }
