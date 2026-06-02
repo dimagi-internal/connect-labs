@@ -93,6 +93,11 @@
   .mp-rail .railhead { flex:0 0 auto; padding:14px 16px 12px; border-bottom:1px solid var(--line2); }
   .mp-rail .railhead h1 { font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:-.01em; color:var(--ink); margin:0; }
   .mp-rail .railhead .sub { font-size:11px; color:var(--faint); margin-top:2px; }
+  /* Click-to-edit plan-name title: looks like the h1 until hovered/focused. */
+  .mp-rail .railhead .title-edit { display:block; width:100%; box-sizing:border-box; font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:-.01em; color:var(--ink); background:transparent; border:1px solid transparent; border-radius:6px; padding:2px 6px; margin:-2px -6px; transition:background .12s,border-color .12s; }
+  .mp-rail .railhead .title-edit::placeholder { color:var(--faint); font-weight:700; }
+  .mp-rail .railhead .title-edit:hover { background:var(--line2); }
+  .mp-rail .railhead .title-edit:focus { outline:none; background:#fff; border-color:var(--brand-cornflower-blue,#6f8fff); }
   .mp-rail .railscroll { flex:1 1 auto; overflow-y:auto; padding:13px; display:flex; flex-direction:column; gap:9px; }
   .mp-rail .railscroll::-webkit-scrollbar { width:8px; }
   .mp-rail .railscroll::-webkit-scrollbar-thumb { background:#e3e6eb; border-radius:8px; }
@@ -135,32 +140,14 @@
       <h1>Microplan review</h1>
       <div class="sub">Plan #{{ plan_id }} · planning phase</div>
       {% else %}
-      <h1>New microplan</h1>
+      <input id="inp-plan-name" class="title-edit" type="text" placeholder="Untitled microplan"
+             aria-label="Plan name" autocomplete="off" title="Click to name this plan (auto-fills from the area you pick)">
       <div class="sub">Program #{{ program_id }} · define area + work area size</div>
       {% endif %}
       {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue" style="display:inline-block;margin-top:6px;">← Back to program</a>{% endif %}
     </div>
     <div class="railscroll">
 
-    {% if not plan_id %}
-    <!-- Plan name + region — pre-create. Used by the Apply geographic frame
-         action on a no-plan page; harmless to omit on existing plans. -->
-    <section>
-      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Plan name</h2>
-      <div class="space-y-1.5 text-xs">
-        <label class="block"><span class="text-gray-600">Name</span>
-          <input id="inp-plan-name" type="text" placeholder="auto-filled from picked area" class="base-input mt-0.5 text-xs"></label>
-        <label class="block"><span class="text-gray-600">Region / area label <span class="text-gray-400">(optional)</span></span>
-          <input id="inp-plan-region" type="text" placeholder="Madobi LGA · Gora ward" class="base-input mt-0.5 text-xs"></label>
-        {% comment %}NIGERIA-HARDCODED: Region→LGA + State mirror Connect's importer (Nigeria ADM2/ADM1).
-           Labs is country-generic; generalize once Connect generalizes. See CONNECT_IMPORT_CONTRACT.md.{% endcomment %}
-        <label class="block"><span class="text-gray-600">State <span class="text-gray-400">(for Connect import)</span></span>
-          <input id="inp-plan-state" type="text" placeholder="Kano" class="base-input mt-0.5 text-xs"></label>
-        <p class="text-[11px] text-gray-400 leading-snug">Region becomes the LGA and State is required by Connect's
-          work-area importer — set them now so the “Download Connect import CSV” file uploads without edits.</p>
-      </div>
-    </section>
-    {% endif %}
 
     <!-- AREA DEFINITION — collapsible on existing plans (Apply = destructive
          regenerate); open by default on a no-plan page (Apply = create). -->
@@ -303,6 +290,30 @@
       </details>
     </section>
 
+    {% if not plan_id %}
+    <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
+         boundary; only surfaced for manual edit because Connect's work-area
+         importer requires both non-empty (see CONNECT_IMPORT_CONTRACT.md).
+         NIGERIA-HARDCODED vocabulary — generalize once Connect generalizes. -->
+    <section>
+      <details class="mp-acc mp-card" id="connect-import-card">
+        <summary class="flex items-center gap-2 text-xs text-gray-600">
+          <span class="chev">›</span>
+          <span class="font-medium">Connect import labels</span>
+          <span class="text-gray-400 truncate ml-auto" id="ci-summary">auto-filled from area</span>
+        </summary>
+        <div class="space-y-1.5 text-xs mt-2">
+          <p class="text-[10px] text-gray-500 leading-snug">Connect's work-area importer needs an <b>LGA</b> and <b>State</b> on every row.
+            Picking a boundary fills these automatically — edit only if you drew a freehand area.</p>
+          <label class="block"><span class="text-gray-600">LGA / region</span>
+            <input id="inp-plan-region" type="text" placeholder="e.g. Madobi" class="base-input mt-0.5 text-xs"></label>
+          <label class="block"><span class="text-gray-600">State <span class="text-gray-400">(ADM1)</span></span>
+            <input id="inp-plan-state" type="text" placeholder="e.g. Kano" class="base-input mt-0.5 text-xs"></label>
+        </div>
+      </details>
+    </section>
+    {% endif %}
+
     {% if plan_id %}
     <details class="mp-acc mp-card" open>
       <summary><span class="ic">◑</span><span class="lbl">Map colors</span><span class="chev">›</span></summary>
@@ -417,6 +428,7 @@
           <template x-for="opp in filteredOpps" :key="opp.id">
             <button type="button" x-show="matchesSearch(opp.name) || matchesSearch(String(opp.id))"
                     @click="selectOpp(opp)"
+                    :data-testid="'sd-opp-' + opp.id"
                     class="block w-full text-left text-[11px] px-2 py-1 hover:bg-blue-50"
                     :class="isSelected('opp', opp.id) ? 'bg-blue-50 font-medium' : ''">
               <span x-text="opp.name"></span>
@@ -437,7 +449,7 @@
         <select class="sd-pipeline w-full text-[11px] border border-gray-300 rounded px-1 py-1 mb-1">
           <option value="default">Default — device GPS (any app)</option>
         </select>
-        <button type="button" class="sd-show w-full text-[11px] font-semibold bg-brand-cornflower-blue text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
+        <button type="button" data-testid="sd-show" class="sd-show w-full text-[11px] font-semibold bg-brand-cornflower-blue text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
         <div class="border-t border-gray-100 pt-1.5">
           <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Boundary from points</div>
           <div class="flex items-center gap-3 text-[11px] mb-1">
@@ -474,6 +486,7 @@
           </h3>
           <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
         </div>
+        <p class="text-[10px] text-gray-400 mb-0.5 tracking-wide">each row: <span class="font-medium">areas · buildings</span></p>
         <div id="by-dim" class="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-auto"></div>
         <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
       </div>
@@ -498,6 +511,10 @@
     </section>
 
     <div class="border-t border-gray-200">
+      <div class="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
+        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Work areas</span>
+        <button type="button" id="toggle-collapse-all" class="text-xs text-brand-cornflower-blue">Collapse all groups</button>
+      </div>
       <table class="min-w-full text-sm">
         <thead class="bg-gray-50 sticky top-0">
           <tr class="text-left text-gray-500">
@@ -567,6 +584,45 @@
   const compareLink = document.getElementById("compare-link");
   if (compareLink) compareLink.href = COMPARE_URL;
   const $ = (id) => document.getElementById(id);
+
+  // Connect-import auto-fill. Picking an admin boundary carries its canonical
+  // level (1=state, 2=LGA/county, 3=ward) + parent_name, so we can fill the
+  // LGA/State the Connect CSV requires instead of making the user retype them.
+  // Only fills BLANK fields (never clobbers a manual edit), and finally makes
+  // the plan-name "auto-fill from picked area" real.
+  function _setIfEmpty(id, val) {
+    const el = $(id);
+    if (el && !String(el.value || "").trim() && val) el.value = val;
+  }
+  // `desc` is the admin-boundary descriptor from admin_boundaries_layer.js:
+  // { name, level (canonical 1/2/3), parent_name, source, ... }.
+  function autofillFromBoundary(desc) {
+    const d = desc || {};
+    const lvl = Number(d.level || 0);
+    const name = String(d.name || "").trim();
+    const parent = String(d.parent_name || "").trim();
+    if (lvl === 1) {
+      _setIfEmpty("inp-plan-state", name);
+    } else if (lvl === 2) {
+      _setIfEmpty("inp-plan-region", name);
+      _setIfEmpty("inp-plan-state", parent);
+    } else if (lvl >= 3) {
+      _setIfEmpty("inp-plan-region", parent || name);
+    }
+    _setIfEmpty("inp-plan-name", name || parent);
+    updateConnectImportSummary();
+  }
+  function updateConnectImportSummary() {
+    const r = String($("inp-plan-region")?.value || "").trim();
+    const s = String($("inp-plan-state")?.value || "").trim();
+    const el = $("ci-summary");
+    if (el) el.textContent = r || s ? [r, s].filter(Boolean).join(" · ") : "auto-filled from area";
+  }
+  ["inp-plan-region", "inp-plan-state"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("input", updateConnectImportSummary);
+  });
+
   Microplans.setCsrf(CSRF);
   const post = (url, body, opts) => Microplans.post(url, body, Object.assign({ csrf: CSRF }, opts || {}));
   // The new-plan page shares this template with the per-plan review page;
@@ -921,7 +977,7 @@
           const d = document.querySelector("details.area-def");
           return !!(d && d.open);
         },
-        onAreaAdd: (boundaryId, geometry) => adminAddGeometry(boundaryId, geometry),
+        onAreaAdd: (boundaryId, geometry, feature) => { adminAddGeometry(boundaryId, geometry); autofillFromBoundary(feature); },
         onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
       });
     }
@@ -1026,6 +1082,16 @@
     status: (w) => String(w.status || ""),
   };
 
+  // In the planning phase every active area is "UNASSIGNED" — the execution
+  // default that flips to VISITED once Connect runs the plan. Shown next to an
+  // assigned worker the raw word reads as "no worker", so render it as the
+  // planning-phase "Planned" (muted); execution states pass through verbatim.
+  function statusLabel(status) {
+    const s = String(status || "UNASSIGNED");
+    if (s === "UNASSIGNED") return '<span class="text-gray-400">Planned</span>';
+    return esc(s);
+  }
+
   function _cellRow(w) {
     const excluded = w.status === "EXCLUDED";
     const id = esc(w.id);
@@ -1043,7 +1109,7 @@
       <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${id}" value="${esc(w.opportunity_access || "")}"></td>
       <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
       <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${id}" value="${w.expected_visit_count ?? 0}"></td>
-      <td class="p-2 text-xs">${excluded ? `<span title="${esc(w.excluded_reason || "")}">EXCLUDED</span>` : esc(w.status || "")}</td>
+      <td class="p-2 text-xs">${excluded ? `<span class="text-gray-500" title="${esc(w.excluded_reason || "")}">Excluded</span>` : statusLabel(w.status)}</td>
       <td class="p-2">${excluded
         ? `<button class="text-xs text-brand-cornflower-blue" data-restore="${id}">restore</button>`
         : `<button class="text-xs text-red-600" data-exclude="${id}">exclude</button>`}</td>`;
@@ -1222,6 +1288,18 @@
     edit(body);
   });
   on("sel-all", "change", (e) => { selected.clear(); if (e.target.checked) WAS.forEach((w) => selected.add(w.id)); renderTable(); setSelState(); });
+
+  // Collapse / expand every group at once — a 1444-row plan reads as ~N group
+  // summary rows (each carrying its worker + counts) when collapsed.
+  on("toggle-collapse-all", "click", () => {
+    const names = new Set((WAS || []).map((w) => w.work_area_group || "(no group)"));
+    const anyExpanded = [...names].some((n) => !collapsedGroups.has(n));
+    if (anyExpanded) { names.forEach((n) => collapsedGroups.add(n)); }
+    else { collapsedGroups.clear(); }
+    const btn = $("toggle-collapse-all");
+    if (btn) btn.textContent = anyExpanded ? "Expand all groups" : "Collapse all groups";
+    renderTable();
+  });
 
   // bulk
   on("bulk-exclude", "click", () => {
