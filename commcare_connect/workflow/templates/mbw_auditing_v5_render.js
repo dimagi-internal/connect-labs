@@ -1671,10 +1671,7 @@ function WorkflowUI({
         continue;
       var mid = (row.mother_case_id || '').toLowerCase();
       if (!mid) continue;
-      var formName =
-        (V5_FORM_NAME_ALIASES && V5_FORM_NAME_ALIASES[row.form_name]) ||
-        row.form_name ||
-        '';
+      var formName = v5_normFormName(row.form_name);
       if ((row.antenatal_visit_completion || '').toString().trim() === 'ok') {
         ancOkMothers[mid] = true;
       }
