@@ -4129,23 +4129,21 @@ function WorkflowUI({
           curDist.requires_improvement +
           curDist.suspended;
 
-        // Prepend a synthetic Feb 2026 baseline: everyone eligible before the
-        // first official March auditing run.
-        var baseline = {
-          completed_at: '2026-01-15',
-          dist: { eligible_for_renewal: 1, requires_improvement: 0, suspended: 0 },
-          total: 1,
-        };
-
         // Append current as a virtual run at today
         var today = new Date().toISOString().substring(0, 10);
-        var allRuns = [baseline].concat(runHistory).concat(
+        var allRuns = runHistory.concat(
           curTotal > 0
             ? [{ completed_at: today, dist: curDist, total: curTotal }]
             : [],
         );
 
         return months.map(function (mo) {
+          // Feb and any earlier months are the pre-audit baseline: all FLWs
+          // were eligible before the first official March run, regardless of
+          // what runHistory contains (avoids old test runs overriding the bar).
+          if (mo.snapDate < '2026-03-01') {
+            return { elig: 1, req: 0, susp: 0 };
+          }
           var best = null;
           for (var i = 0; i < allRuns.length; i++) {
             var runDate = (allRuns[i].completed_at || '').substring(0, 10);
