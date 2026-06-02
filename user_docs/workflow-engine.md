@@ -230,5 +230,7 @@ The third tab of the **MBW Auditing V5** dashboard is laid out in two sections, 
 
 The chart shows only the eligibility percentage lines. Follow-up rate lines and the focused view chart that appeared in earlier versions of this tab have been removed.
 
+The chart begins with a **February 2026 baseline bar** showing 100% of FLWs as eligible for renewal (green). This bar reflects the starting state before the first official auditing run in March 2026, when all FLWs were considered eligible. Subsequent months show the eligibility percentages as weekly audit runs produce performance categories.
+
 !!! note "If you previously saw additional lines on this chart"
-    Earlier versions of the Tab 3 chart included solid follow-up rate lines alongside the dashed eligibility lines, as well as a second focused-view chart. These have been removed. If you open the dashboard now, you will see only the two dashed eligibility lines (green and yellow) on a single chart, below the follow-up metrics table.
+    Earlier versions of the Tab 3 chart included solid follow-up rate
