@@ -231,8 +231,7 @@ scenes:
     - { kind: scroll_to, target: "Plan config", note: "frame the config card" }
     - { kind: hold, seconds: 2.0, note: "let the eye read Walkable clusters / 100 / 0.1 named defaults" }
     - { kind: click, target: "Create 10 plans", note: "fire the bulk POST for all 10 wards" }
-    - { kind: wait_for, target: "Creating 10 plan", note: "NDJSON stream begins" }
-    - { kind: wait_for, target: "Created 10 of 10 plans", seconds: 120, note: "exit early when bulk-create finishes — replaces the old blind 90s hold (canopy 0.2.148 wait_for seconds: override)" }
+    - { kind: wait_for, target: "Created 10 of 10 plans", seconds: 120, note: "wait until the terminal success card lands — the intermediate 'Creating N plans…' button-label flicker races faster than any resolver can catch, so we only wait on the final state (the canopy 0.2.148 wait_for seconds: override covers the long bulk window)" }
     - { kind: hold, seconds: 2.5, note: "frame the success card with all 10 plan IDs + LGA echo visible" }
   title: Dana confirms, picks the config, and hits Create Plans — the bulk operation
     runs with progress
