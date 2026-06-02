@@ -4073,9 +4073,21 @@ function WorkflowUI({
           _pushCat(wr2 && (wr2.result || wr2), u2);
         }
 
+        // For months before the first real run, use null (all FLWs) for the
+        // green line — everyone was eligible pre-March — and [] for yellow
+        // so no requires-improvement dot appears before auditing started.
+        var firstRunDate = null;
+        for (var ri = 0; ri < runHistory.length; ri++) {
+          var rd = (runHistory[ri].completed_at || '').substring(0, 10);
+          if (rd && (!firstRunDate || rd < firstRunDate)) firstRunDate = rd;
+        }
+
         var result = months.map(function (mo) {
-          var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligibleUsernames);
-          var reqSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, reqUsernames);
+          var isPreRun = firstRunDate && mo.snapDate < firstRunDate;
+          var eligFilter = isPreRun ? null : eligibleUsernames;
+          var reqFilter  = isPreRun ? []   : reqUsernames;
+          var eligSnap = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, eligFilter);
+          var reqSnap  = computeMonthlySnapshot(visitsRows, regRows, mo.snapDate, reqFilter);
           return Object.assign({}, mo, {
             pct_still_eligible:     eligSnap.pct_still_eligible,
             pct_still_eligible_req: reqSnap.pct_still_eligible,
