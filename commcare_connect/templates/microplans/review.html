@@ -519,8 +519,8 @@
         <thead class="bg-gray-50 sticky top-0">
           <tr class="text-left text-gray-500">
             <th class="p-2"><input type="checkbox" id="sel-all"></th>
+            <th class="p-2 wa-th" data-sort="work_area_group">Work Area Group <span class="sort-ind"></span></th>
             <th class="p-2 wa-th" data-sort="id">Work area <span class="sort-ind"></span></th>
-            <th class="p-2 wa-th" data-sort="work_area_group">Group <span class="sort-ind"></span></th>
             <th class="p-2 wa-th" data-sort="opportunity_access">Worker <span class="sort-ind"></span></th>
             <th class="p-2 wa-th" data-sort="building_count">Buildings <span class="sort-ind"></span></th>
             <th class="p-2 wa-th" data-sort="expected_visit_count">Expected visits <span class="sort-ind"></span></th>
@@ -1104,8 +1104,8 @@
       + (isHl ? "hl-worker " : "");
     tr.innerHTML = `
       <td class="p-2"><input type="checkbox" class="rowsel" data-id="${id}" ${selected.has(w.id) ? "checked" : ""}></td>
-      <td class="p-2 font-mono text-xs">${id}</td>
       <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="regroup" data-field="work_area_group" data-id="${id}" value="${esc(w.work_area_group || "")}"></td>
+      <td class="p-2 font-mono text-xs">${id}</td>
       <td class="p-2"><input class="cell-input rounded border-gray-200 text-xs" data-act="reassign" data-field="opportunity_access" data-id="${id}" value="${esc(w.opportunity_access || "")}"></td>
       <td class="p-2">${(w.building_count ?? 0).toLocaleString()}</td>
       <td class="p-2"><input type="number" class="cell-input rounded border-gray-200 text-xs" data-act="resize" data-field="expected_visit_count" data-id="${id}" value="${w.expected_visit_count ?? 0}"></td>
