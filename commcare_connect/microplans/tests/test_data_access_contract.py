@@ -515,6 +515,49 @@ class TestProgramPlanDataAccessContract:
         assert fetched.name == "Test Group"
         assert fetched.plan_ids == [10, 20]
 
+    def test_create_study_group_persists_arms_and_config(self):
+        """create_group with study fields → kind/arms/sampling_config survive the round-trip."""
+        da = _make_program_da()
+        grp = da.create_group(
+            name="Madobi CHC study",
+            plan_ids=[501, 502],
+            kind="study",
+            arms={"501": "intervention", "502": "control"},
+            sampling_config={"target_clusters": 8},
+        )
+        refetched = da.get_group(grp.id)
+        assert refetched.kind == "study"
+        assert refetched.arm_for(501) == "intervention"
+        assert refetched.arm_for(502) == "control"
+        assert refetched.sampling_config == {"target_clusters": 8}
+        assert refetched.status == "defining"
+
+    def test_add_plan_to_group_appends_and_dedupes(self):
+        """add_plan_to_group appends a plan id, idempotently."""
+        da = _make_program_da()
+        grp = da.create_group(name="G", plan_ids=[501])
+
+        da.add_plan_to_group(grp.id, 502)
+        assert da.get_group(grp.id).plan_ids == [501, 502]
+
+        # idempotent — adding the same plan again doesn't duplicate it
+        da.add_plan_to_group(grp.id, 502)
+        assert da.get_group(grp.id).plan_ids == [501, 502]
+
+    def test_remove_plan_from_group_drops_it_and_its_arm(self):
+        """remove_plan_from_group drops the plan id and any arm assignment for it."""
+        da = _make_program_da()
+        grp = da.create_group(
+            name="G", plan_ids=[501, 502], kind="study",
+            arms={"501": "intervention", "502": "control"},
+        )
+        da.remove_plan_from_group(grp.id, 502)
+
+        refetched = da.get_group(grp.id)
+        assert refetched.plan_ids == [501]
+        assert refetched.arm_for(502) is None
+        assert refetched.arm_for(501) == "intervention"
+
     def test_update_group_shared_toggle_persists(self):
         """update_group(shared=True) → fetched group shows shared=True."""
         da = _make_program_da()

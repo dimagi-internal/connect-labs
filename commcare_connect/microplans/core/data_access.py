@@ -270,7 +270,17 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     # ---- plan groups (shareable subset offered to an LLO) ----
 
-    def create_group(self, name: str, plan_ids: list[int], offered_to: str = "") -> PlanGroupRecord:
+    def create_group(
+        self,
+        name: str,
+        plan_ids: list[int],
+        offered_to: str = "",
+        kind: str = "bundle",
+        arms: dict | None = None,
+        sampling_config: dict | None = None,
+    ) -> PlanGroupRecord:
+        """Create a plan group. ``kind="study"`` + ``arms`` make it a controlled
+        study (arm assignment is labs-side — never written onto plans)."""
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_PLAN_GROUP,
@@ -282,6 +292,10 @@ class ProgramPlanDataAccess(BaseDataAccess):
                 "plan_ids": [int(p) for p in plan_ids],
                 "offered_to": offered_to,
                 "shared": False,
+                "kind": kind,
+                "arms": {str(k): v for k, v in (arms or {}).items()},
+                "sampling_config": sampling_config or {},
+                "status": "defining",
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -303,11 +317,13 @@ class ProgramPlanDataAccess(BaseDataAccess):
     def update_group(self, group_id: int, **fields) -> PlanGroupRecord:
         group = self.get_group(group_id)
         data = dict(group.data)
-        for key in ("name", "offered_to", "shared"):
+        for key in ("name", "offered_to", "shared", "kind", "sampling_config", "status"):
             if key in fields and fields[key] is not None:
                 data[key] = fields[key]
         if "plan_ids" in fields and fields["plan_ids"] is not None:
             data["plan_ids"] = [int(p) for p in fields["plan_ids"]]
+        if "arms" in fields and fields["arms"] is not None:
+            data["arms"] = {str(k): v for k, v in fields["arms"].items()}
         record = self.labs_api.update_record(
             record_id=group.id,
             experiment=self._experiment,
@@ -317,6 +333,22 @@ class ProgramPlanDataAccess(BaseDataAccess):
             current_record=group,
         )
         return PlanGroupRecord(record.to_api_dict())
+
+    def add_plan_to_group(self, group_id: int, plan_id: int) -> PlanGroupRecord:
+        """Add ``plan_id`` to the group's membership (idempotent)."""
+        group = self.get_group(group_id)
+        plan_id = int(plan_id)
+        if plan_id in group.plan_ids:
+            return group
+        return self.update_group(group_id, plan_ids=[*group.plan_ids, plan_id])
+
+    def remove_plan_from_group(self, group_id: int, plan_id: int) -> PlanGroupRecord:
+        """Remove ``plan_id`` from the group, dropping any arm assignment for it."""
+        group = self.get_group(group_id)
+        plan_id = int(plan_id)
+        new_ids = [p for p in group.plan_ids if p != plan_id]
+        new_arms = {k: v for k, v in group.arms.items() if k != str(plan_id)}
+        return self.update_group(group_id, plan_ids=new_ids, arms=new_arms)
 
     def delete_group(self, group_id: int) -> None:
         """Hard-delete a plan group record. Use sparingly. Reads it scoped to this

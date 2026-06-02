@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ group.name|default:"Plan group" }} — microplans{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto p-6 space-y-6" x-data="{ busy:false }">
+  <header class="border-b border-gray-200 pb-4">
+    {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to program</a>{% endif %}
+    <div class="flex items-center gap-3 mt-1">
+      <h1 class="text-2xl font-bold text-gray-900">{{ group.name|default:"Plan group" }}</h1>
+      {% if group.is_study %}
+      <span class="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">Study</span>
+      {% else %}
+      <span class="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">Bundle</span>
+      {% endif %}
+      <span class="text-[11px] uppercase tracking-wide text-gray-400">{{ group.status }}</span>
+    </div>
+    <p class="text-sm text-gray-500 mt-1">
+      {{ group.plan_count }} plan{{ group.plan_count|pluralize }} · Program #{{ program_id }}
+    </p>
+  </header>
+
+  {% if error %}
+  <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">{{ error }}</div>
+  {% else %}
+
+  <!-- Management actions -->
+  <div class="flex flex-wrap gap-2 text-sm">
+    <a href="{{ bulk_create_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add wards by name</a>
+    <a href="{{ new_plan_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add a plan in the editor</a>
+    {% if entries %}
+    <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
+    {% endif %}
+    <span class="px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-gray-400" title="Coming next">View on map ·</span>
+    <span class="px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-gray-400" title="Coming next">Generate samples ·</span>
+  </div>
+
+  {% if not entries %}
+  <p class="text-sm text-gray-400">No plans in this group yet. Add wards by name, or define a plan's boundary in the editor and save it here.</p>
+  {% else %}
+
+  <div class="overflow-x-auto border border-gray-200 rounded-lg">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600">
+        <tr>
+          <th class="text-left font-semibold px-3 py-2">Plan</th>
+          {% if group.is_study %}<th class="text-left font-semibold px-3 py-2">Arm</th>{% endif %}
+          <th class="text-left font-semibold px-3 py-2">Mode</th>
+          <th class="text-left font-semibold px-3 py-2" title="Whether the sampling algorithm has run yet">Phase</th>
+          <th class="text-right font-semibold px-3 py-2">Work areas</th>
+          <th class="text-left font-semibold px-3 py-2">Status</th>
+          <th class="px-3 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for e in entries %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-3 py-2">
+            <a href="{{ e.review_url }}" class="text-brand-cornflower-blue font-medium">{{ e.name|default:"Untitled plan" }}</a>
+            {% if e.region %}<div class="text-[11px] text-gray-400">{{ e.region }}</div>{% endif %}
+          </td>
+          {% if group.is_study %}
+          <td class="px-3 py-2">
+            {% if e.arm == "intervention" %}<span class="text-[11px] px-1.5 py-0.5 rounded" style="background:#10b98122;color:#047857">● intervention</span>
+            {% elif e.arm == "control" %}<span class="text-[11px] px-1.5 py-0.5 rounded" style="background:#3b82f622;color:#1d4ed8">● control</span>
+            {% else %}<span class="text-[11px] text-gray-400">— unassigned</span>{% endif %}
+          </td>
+          {% endif %}
+          <td class="px-3 py-2 text-gray-600">{{ e.mode }}</td>
+          <td class="px-3 py-2">
+            {% if e.phase == "sampled" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">sampled</span>
+            {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">boundary only</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ e.work_areas }}</td>
+          <td class="px-3 py-2 text-gray-600">{{ e.status_label }}</td>
+          <td class="px-3 py-2 text-right">
+            <button type="button" class="text-[12px] text-red-600 hover:underline"
+                    :disabled="busy"
+                    @click="removePlan({{ e.plan_id }}, '{{ e.name|escapejs }}')">Remove</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<script>
+  function csrftoken() {
+    return (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+  }
+  async function removePlan(planId, name) {
+    if (!confirm("Remove " + name + " from this group?")) return;
+    try {
+      const r = await fetch("{{ remove_plan_url }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken() },
+        body: JSON.stringify({ remove_plan_id: planId }),
+      });
+      if (!r.ok) throw new Error("remove failed (" + r.status + ")");
+      window.location.reload();
+    } catch (e) {
+      alert(String(e.message || e));
+    }
+  }
+</script>
+{% endblock %}

@@ -259,6 +259,8 @@
   const PROGRAM_ID = "{{ program_id|escapejs }}";
   const RESOLVE_URL = "{{ resolve_many_url|escapejs }}";
   const BULK_CREATE_URL = "{{ bulk_create_url|escapejs }}";
+  // Opened from a group page (?group=<id>) → file the created plans into that group.
+  const GROUP_ID = new URLSearchParams(location.search).get("group");
   const CSRF = "{{ csrf_token|escapejs }}";
 
   // ---------- helpers ----------
@@ -553,7 +555,7 @@
       const resp = await fetch(BULK_CREATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
-        body: JSON.stringify({ plans: toCreate, mode: "coverage", grouping: grouping, cell_size_m: cellSize }),
+        body: JSON.stringify({ plans: toCreate, mode: "coverage", grouping: grouping, cell_size_m: cellSize, group_id: GROUP_ID || undefined }),
       });
       enq = await resp.json();
       if (resp.status !== 202 || !enq.poll_url) throw new Error(enq.detail || `HTTP ${resp.status}`);
