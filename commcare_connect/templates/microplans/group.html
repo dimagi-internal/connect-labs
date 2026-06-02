@@ -30,8 +30,9 @@
     {% if entries %}
     <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
     {% endif %}
-    {% if entries %}<a href="{{ map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">View on map</a>{% endif %}
-    <span class="px-3 py-1.5 rounded-lg border border-dashed border-gray-300 text-gray-400" title="Coming next">Generate samples ·</span>
+    {% if entries %}<a href="{{ map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">View on map</a>
+    <button type="button" class="px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
+            :disabled="busy" @click="generateSamples()" x-text="busy ? 'Generating…' : 'Generate samples'"></button>{% endif %}
   </div>
 
   {% if not entries %}
@@ -106,6 +107,32 @@
       if (!r.ok) throw new Error("remove failed (" + r.status + ")");
       window.location.reload();
     } catch (e) {
+      alert(String(e.message || e));
+    }
+  }
+  // Generate samples across every member plan, then poll until the task finishes.
+  async function generateSamples() {
+    const root = document.querySelector("[x-data]").__x.$data;
+    root.busy = true;
+    try {
+      const r = await fetch("{{ generate_url }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrftoken() },
+        body: "{}",
+      });
+      const d = await r.json();
+      if (!r.ok || !d.poll_url) throw new Error(d.detail || ("HTTP " + r.status));
+      // poll the task status until SUCCESS/FAILURE
+      for (let i = 0; i < 120; i++) {
+        await new Promise((res) => setTimeout(res, 2000));
+        const sr = await fetch(d.poll_url);
+        const sd = await sr.json();
+        if (sd.state === "completed") break;
+        if (sd.state === "error") throw new Error("Generation failed");
+      }
+      window.location.reload();
+    } catch (e) {
+      root.busy = false;
       alert(String(e.message || e));
     }
   }

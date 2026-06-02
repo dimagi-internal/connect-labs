@@ -884,6 +884,46 @@ class ProgramGroupMapView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVie
         return context
 
 
+class ProgramGroupGenerateView(LoginRequiredMixin, View):
+    """Run the rooftop sampling engine across all of a group's member plans (bulk).
+
+    Enqueues ``generate_group_samples_task`` with the group's shared sampling
+    config so every arm is sampled identically. Returns ``202 {task_id, poll_url}``;
+    the client polls the same status endpoint bulk-create uses."""
+
+    def post(self, request, program_id, group_id):
+        from django.urls import reverse
+
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+        from commcare_connect.microplans.tasks import generate_group_samples_task
+
+        access_token = (request.session.get("labs_oauth") or {}).get("access_token")
+        if not access_token:
+            return JsonResponse(
+                {"status": "error", "detail": "Not authenticated with Connect — sign in again."}, status=401
+            )
+        try:
+            payload = json.loads(request.body) if request.body else {}
+        except json.JSONDecodeError:
+            payload = {}
+        da = ProgramPlanDataAccess(program_id, request=request)
+        try:
+            group = da.get_group(int(group_id))
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans group generate: load failed (program=%s group=%s)", program_id, group_id)
+            return JsonResponse({"status": "error", "detail": "Group not found."}, status=404)
+        config = payload.get("config") or group.sampling_config or {}
+        task = generate_group_samples_task.delay(int(program_id), int(group_id), config, access_token)
+        return JsonResponse(
+            {
+                "status": "queued",
+                "task_id": task.id,
+                "poll_url": reverse("microplans:bulk_create_status", args=[task.id]),
+            },
+            status=202,
+        )
+
+
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
     """Planner-facing plan-group management landing page.
@@ -952,6 +992,7 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
             )
             context["remove_plan_url"] = reverse("microplans:program_group_update", args=[program_id, group_id])
             context["map_url"] = reverse("microplans:program_group_map", args=[program_id, group_id])
+            context["generate_url"] = reverse("microplans:program_group_generate", args=[program_id, group_id])
             context["back_url"] = reverse("microplans:program_workspace", args=[program_id])
         except Exception:  # noqa: BLE001
             logger.exception("microplans group page failed (program=%s group=%s)", program_id, group_id)
