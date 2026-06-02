@@ -600,6 +600,27 @@ def test_program_plan_csv_defaults_lga_state_and_flags_readiness(client, django_
     assert "Override LGA" in r3.content.decode()
 
 
+def test_study_member_plan_csv_export_is_arm_blind(client, django_user_model, monkeypatch):
+    """A study plan exports to its own opportunity's CSV with NO arm anywhere — the
+    arm lives only on the group, so execution stays blind (S5)."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    was = plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC)
+    plan = _FakeProgramPlan(501, "sampling", was, name="Madobi", region="Madobi", lga="Madobi", state="Kano")
+    groups = {7: _FakeGroup(7, "Study", [501], kind="study", arms={"501": "intervention"})}
+    _make_fake_program_da(monkeypatch, {501: plan}, groups)
+
+    r = client.post(
+        reverse("microplans:program_plan_csv", kwargs={"program_id": 25, "plan_id": 501}),
+        data="{}",
+        content_type="application/json",
+    )
+    assert r.status_code == 200
+    body = r.content.decode().lower()
+    assert "arm" not in body and "intervention" not in body and "control" not in body
+
+
 def test_program_regenerate_enqueues(client, django_user_model, monkeypatch):
     # Regenerate is Celery-offloaded now: the view validates + enqueues (202 + a
     # pollable task id). The destructive logic itself is exercised against the DA
@@ -964,6 +985,30 @@ def test_program_group_map_overlays_member_plans_by_arm(client, django_user_mode
     fc = layers[501]["geojson"]
     assert fc["type"] == "FeatureCollection" and len(fc["features"]) >= 1
     assert fc["features"][0]["properties"]["arm"] == "intervention"
+
+
+def test_program_group_manage_shows_comparability_for_sampled_study(client, django_user_model, monkeypatch):
+    """A sampled study with two arms exposes arm comparability (area/density/matched) in context."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Madobi"
+        ),
+        502: _FakeProgramPlan(
+            502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"
+        ),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_page", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    comp = resp.context["comparability"]
+    assert {a["arm"] for a in comp["arms"]} == {"intervention", "control"}
+    assert comp["matched"] in (True, False)
+    assert "Arm comparability" in resp.content.decode()
 
 
 def test_program_group_assign_arm(client, django_user_model, monkeypatch):

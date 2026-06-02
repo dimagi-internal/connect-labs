@@ -57,13 +57,18 @@
       });
     } catch (e) { return; } // headless / no webgl
 
+    // Recursively walk any nested coordinate array down to [lng, lat] pairs, so
+    // bounds work regardless of geometry type (Polygon / MultiPolygon / Point / …).
+    function eachCoord(coords, cb) {
+      if (!Array.isArray(coords)) return;
+      if (typeof coords[0] === "number") { cb(coords); return; }
+      coords.forEach((c) => eachCoord(c, cb));
+    }
     function bounds() {
       const b = new mapboxgl.LngLatBounds();
       let any = false;
       LAYERS.forEach((L) => ((L.geojson && L.geojson.features) || []).forEach((f) => {
-        const g = f.geometry; if (!g) return;
-        const rings = g.type === "Polygon" ? g.coordinates : (g.type === "MultiPolygon" ? [].concat(...g.coordinates) : []);
-        rings.forEach((r) => r.forEach((c) => { b.extend(c); any = true; }));
+        if (f.geometry && f.geometry.coordinates) eachCoord(f.geometry.coordinates, (c) => { b.extend(c); any = true; });
       }));
       return any ? b : null;
     }
