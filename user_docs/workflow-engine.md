@@ -224,10 +224,10 @@ The third tab of the **MBW Auditing V5** dashboard is laid out in two sections, 
 
 1. **Follow-up metrics table** — appears first, under the heading "Follow-up metrics based on latest performance categories set for each FLW." This table shows the per-FLW follow-up data broken down by their current performance category.
 
-2. **% mothers still eligible to receive 5+ visits chart** — appears below the table. This chart plots the percentage of mothers still eligible to receive five or more visits over time, with two lines:
-    - **Green line** — FLWs marked eligible for renewal
-    - **Yellow line** — FLWs marked as requiring improvement
+2. **Improvement-over-time chart** — appears below the table. This chart tracks FLW performance across auditing runs using three lines:
 
-The chart shows only the eligibility percentage lines. Follow-up rate lines and the focused view chart that appeared in earlier versions of this tab have been removed.
+    - **Solid green line** — follow-up rate for Eligible for Renewal FLWs. February uses all FLWs as the pre-audit baseline, since no performance categories had been assigned yet at that point.
+    - **Dashed green line** — percentage of mothers still eligible to receive 5+ visits, for Eligible for Renewal FLWs.
+    - **Dashed yellow line** — percentage of mothers still eligible to receive 5+ visits, for Requires Improvement FLWs. This line begins in March — no February dot appears for this group.
 
-The chart begins with a **February 2026 baseline bar** showing 100% of FLWs as eligible for renewal (green). This bar is hard-coded to always display 100% and reflects the starting state before the first official auditing run in March 2026 — at that point all FLWs were considered eligible, so the green line is based on the full FLW population rather than only those already categorised as eligible for renewal. No yellow line appears for February because no FL
+    The chart begins with a **February 2026 baseline bar** showing 100% of FLWs as eligible for renewal (green). This bar is hard-coded to always display 100% and reflects the starting state before the first official
