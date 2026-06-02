@@ -23,6 +23,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -53,8 +54,8 @@ def _scroll_to(page, text: str, *, settle_ms: int = 1200) -> bool:
     return found
 
 
-def _toggle(page, label_text: str) -> None:
-    """Move the cursor to a map layer checkbox and click it (off), pause, on."""
+def _cursor_to(page, label_text: str):
+    """Glide the cursor to a map layer checkbox; return its <input> locator."""
     loc = page.locator(f"label:has-text('{label_text}')").first
     try:
         box = loc.bounding_box()
@@ -63,11 +64,23 @@ def _toggle(page, label_text: str) -> None:
     if box:
         slow_move(page, box["x"] + 10, box["y"] + box["height"] / 2, steps=30)
         page.wait_for_timeout(300)
-    cb = loc.locator("input[type=checkbox]")
+    return loc.locator("input[type=checkbox]")
+
+
+def _toggle(page, label_text: str) -> None:
+    """Click a map layer checkbox off, pause, then back on (starts on)."""
+    cb = _cursor_to(page, label_text)
     cb.click()  # off — the layer disappears
     page.wait_for_timeout(1400)
     cb.click()  # back on
     page.wait_for_timeout(900)
+
+
+def _reveal(page, label_text: str) -> None:
+    """Click a map layer checkbox on and dwell (starts off)."""
+    cb = _cursor_to(page, label_text)
+    cb.click()  # on — the layer appears
+    page.wait_for_timeout(1600)
 
 
 def main() -> int:
@@ -92,7 +105,13 @@ def main() -> int:
         # Pre-warm: load once (primes Leaflet CDN + render) on the no-video page.
         goto_and_settle(rec.warm_page, url, wait_for_selector=HERO, settle_seconds=2.0)
         page = rec.start_recording()
+        # The video records from here; the renderer shows a "Loading renderer…"
+        # spinner until Babel transpiles + the hero appears. The webm timeline
+        # runs slower than wall-clock, so trim the measured load time PLUS a
+        # cushion (floor 5s) to be sure the clip opens on content, not spinner.
+        t0 = time.monotonic()
         goto_and_settle(page, url, wait_for_selector=HERO, settle_seconds=2.5)
+        trim_s = max(time.monotonic() - t0 + 1.0, 5.0)
 
         # Scene 1 — the hero coverage tiles.
         snap(rec, "hero")
@@ -103,14 +122,16 @@ def main() -> int:
         _scroll_to(page, "Coverage across", settle_ms=1600)
         snap(rec, "trend")
 
-        # Scene 3 — the two-ward map: exercise the layer toggles on camera.
+        # Scene 3 — the two-ward map. It lands on the clean service-delivery
+        # view (pins off by default); toggle SD off/on to show it fills only
+        # the treatment ward, then reveal the survey pins on camera.
         _scroll_to(page, "Two adjacent wards", settle_ms=1800)
         page.wait_for_selector(".leaflet-container", timeout=15_000)
-        page.wait_for_timeout(1200)
+        page.wait_for_timeout(1400)
         snap(rec, "map")
         _toggle(page, "service delivery")
-        _toggle(page, "survey pins")
-        page.wait_for_timeout(800)
+        _reveal(page, "survey pins")
+        page.wait_for_timeout(900)
 
         # Scene 4 — close on self-report vs independently verified.
         _scroll_to(page, "Self-reported vs independently verified", settle_ms=1600)
@@ -123,18 +144,26 @@ def main() -> int:
     src = webms[-1]
     out = HERE / "verified_monitoring.mp4"
     print(f"webm: {src.name} ({src.stat().st_size // 1024} KB) → {out.name}")
+    # Crop away the labs app chrome (sticky top bar + left nav rail) so the
+    # video reads as a deliverable, not a tool screenshot; trim the measured
+    # renderer-load spinner off the front. Viewport is 1440x900 (recorder default).
+    print(f"trimming {trim_s:.1f}s of renderer-load spinner")
     subprocess.run(
         [
             "ffmpeg",
             "-y",
             "-i",
             str(src),
+            "-ss",
+            f"{trim_s:.2f}",
+            "-vf",
+            # Crop x=64 (nav rail) and y=120 (top bar + breadcrumb), leaving the
+            # dashboard card only.
+            "crop=1376:780:64:120,scale=trunc(iw/2)*2:trunc(ih/2)*2",
             "-movflags",
             "+faststart",
             "-pix_fmt",
             "yuv420p",
-            "-vf",
-            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
             str(out),
         ],
         check=True,

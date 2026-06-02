@@ -3,7 +3,7 @@
 // fetches. Financial-dashboard styling with a two-ward Leaflet overlay.
 // Show-don't-tell: presents results neutrally; no causal claims, no caveat
 // banner — the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V8
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V9
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -20,7 +20,10 @@ function WorkflowUI(props) {
   // --- Leaflet two-ward map (dynamic load; data fed via props, never fetched) ---
   var [leafletReady, setLeafletReady] = React.useState(false);
   var [sdOn, setSdOn] = React.useState(true);
-  var [pinsOn, setPinsOn] = React.useState(true);
+  // Land on the clean service-delivery view; the survey-pin layer is toggled
+  // on to add the independent-survey story (avoids a "both at once" confetti
+  // default).
+  var [pinsOn, setPinsOn] = React.useState(false);
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   React.useEffect(function () {
@@ -156,6 +159,10 @@ function WorkflowUI(props) {
   var tCov = latest.intervention_pct,
     cCov = latest.comparison_pct,
     gap = latest.gap_pp;
+  function _lastN(arr) {
+    return arr && arr.length ? arr[arr.length - 1].n : null;
+  }
+  var cN = _lastN(byArm.comparison);
   var tWard = prog.treatment_ward || 'Treatment',
     cWard = prog.control_ward || 'Control';
   function _delta(arr) {
@@ -170,7 +177,7 @@ function WorkflowUI(props) {
     return x == null ? '—' : x.toFixed(1) + '%';
   }
   function pp(x) {
-    return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + ' pp';
+    return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + ' pts';
   }
 
   // --- inline sparkline for an arm's per-round series ---
@@ -214,7 +221,7 @@ function WorkflowUI(props) {
           background: up ? '#0f2a1c' : '#2a1212',
         }}
       >
-        {(up ? '▲ +' : '▼ ') + Math.abs(d).toFixed(1) + ' pp vs last round'}
+        {(up ? '▲ +' : '▼ ') + Math.abs(d).toFixed(1) + ' pts vs last round'}
       </span>
     );
   }
@@ -443,7 +450,9 @@ function WorkflowUI(props) {
         <b style={{ color: PINK }}>{cWard}</b> (control)
       </div>
 
-      {/* Hero KPI tiles */}
+      {/* Hero KPI tiles — the two ward coverages. The difference is shown
+          small + neutral below (not a hero tile) so it reads as a measured
+          number, not a causal-impact claim. */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         {tile(
           'Verified vitamin-A coverage',
@@ -460,19 +469,22 @@ function WorkflowUI(props) {
           'Verified vitamin-A coverage',
           cWard + ' (control)',
           pct(cCov),
-          'independent survey',
+          cN != null ? cN + ' children surveyed' : 'independent survey',
           PINK,
           byArm.comparison,
           cDelta,
         )}
-        {tile(
-          'Difference',
-          tWard + ' − ' + cWard,
-          pp(gap),
-          'latest round',
-          GREEN,
-          null,
-        )}
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          color: MUT,
+          fontFamily: mono,
+          fontSize: 13,
+        }}
+      >
+        Measured difference, latest round:{' '}
+        <span style={{ color: '#cbd5e1', fontWeight: 700 }}>{pp(gap)}</span>
       </div>
 
       {/* Trend */}
@@ -497,6 +509,9 @@ function WorkflowUI(props) {
           Coverage across {byArm.intervention ? byArm.intervention.length : 0}{' '}
           bi-monthly rounds —<span style={{ color: PURPLE }}> {tWard}</span> vs{' '}
           <span style={{ color: PINK }}>{cWard}</span>
+        </div>
+        <div style={{ color: MUT, fontSize: 11, marginBottom: 8 }}>
+          y-axis: % of surveyed children with confirmed vitamin-A
         </div>
         {trend()}
       </div>
@@ -662,9 +677,11 @@ function WorkflowUI(props) {
             </div>
           </div>
           <div>
-            <div style={{ color: MUT, fontSize: 12 }}>Self-report premium</div>
+            <div style={{ color: MUT, fontSize: 12 }}>
+              Self-report overstatement
+            </div>
             <div style={{ fontSize: 24, color: GREEN }}>
-              +{(sr.premium_pp || 0).toFixed(1)} pp
+              +{(sr.premium_pp || 0).toFixed(1)} pts
             </div>
           </div>
         </div>
