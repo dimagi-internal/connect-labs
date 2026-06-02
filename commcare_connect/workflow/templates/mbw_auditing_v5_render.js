@@ -15,6 +15,13 @@
 // =========================================================================
 
 var V5_GRACE_PERIOD_DAYS = 5;
+var V5_NON_ANC_VISIT_TYPES = [
+  'Postnatal Delivery Visit',
+  '1 Week Visit',
+  '1 Month Visit',
+  '3 Month Visit',
+  '6 Month Visit',
+];
 
 // Banker's rounding to match Python's round() behavior. JS's Math.round
 // rounds .5 away from zero (16.5 → 17); Python's round rounds .5 to nearest
@@ -469,28 +476,6 @@ function v5_computeMbwAuditingData({
   }
   targetSet.sort();
 
-  // Per-FLW count of eligible mothers who completed 5+ scheduled visit types.
-  // ANC is already required for eligibility (counts as 1 automatically).
-  var V5_NON_ANC_VISIT_TYPES = [
-    'Postnatal Delivery Visit',
-    '1 Week Visit',
-    '1 Month Visit',
-    '3 Month Visit',
-    '6 Month Visit',
-  ];
-  var fivePlusCountByFlw = {};
-  Object.keys(v.motherToFlw).forEach(function (mid) {
-    var flwU = v.motherToFlw[mid];
-    if (!flwU) return;
-    if (!(r.motherEligibility[mid] && v.ancOkMothers[mid])) return;
-    var count = 1; // ANC confirmed (required for eligibility)
-    var motherVisits = v.visitsByMother[mid] || {};
-    for (var vti = 0; vti < V5_NON_ANC_VISIT_TYPES.length; vti++) {
-      if (motherVisits[V5_NON_ANC_VISIT_TYPES[vti]]) count++;
-    }
-    if (count >= 5) fivePlusCountByFlw[flwU] = (fivePlusCountByFlw[flwU] || 0) + 1;
-  });
-
   var summaries = [];
   for (var n = 0; n < targetSet.length; n++) {
     var username = targetSet[n];
@@ -504,8 +489,21 @@ function v5_computeMbwAuditingData({
       : Object.keys(mothersVisited).length;
     var totalEligible = fu.total_eligible || 0;
     var eligibleMothersVisited = 0;
+    var fivePlusMothers = 0;
     Object.keys(mothersVisited).forEach(function (mid3) {
       if (r.motherEligibility[mid3]) eligibleMothersVisited += 1;
+    });
+    // Count eligible mothers (bonus flag + ANC) with 5+ scheduled visit types.
+    // Uses motherToFlw for last-visit-wins attribution, consistent with total_eligible.
+    Object.keys(v.motherToFlw).forEach(function (mid3) {
+      if (v.motherToFlw[mid3] !== u) return;
+      if (!(r.motherEligibility[mid3] && v.ancOkMothers[mid3])) return;
+      var cnt = 1; // ANC confirmed (eligibility gate)
+      var mv = v.visitsByMother[mid3] || {};
+      for (var vti = 0; vti < V5_NON_ANC_VISIT_TYPES.length; vti++) {
+        if (mv[V5_NON_ANC_VISIT_TYPES[vti]]) cnt++;
+      }
+      if (cnt >= 5) fivePlusMothers++;
     });
     var visitsCompleted = v.visitsCompletedByFlw[u] || 0;
 
@@ -566,7 +564,7 @@ function v5_computeMbwAuditingData({
       num_mothers: numMothers,
       num_mothers_eligible: totalEligible,
       num_eligible_mothers_visited: eligibleMothersVisited,
-      num_mothers_five_plus: fivePlusCountByFlw[u] || 0,
+      num_mothers_five_plus: fivePlusMothers,
       visits_completed: visitsCompleted,
       gs_score: gsScore,
       followup_rate: followupRate,
