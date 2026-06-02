@@ -3995,11 +3995,11 @@ function WorkflowUI({
         });
     }, []);
 
-    // Monthly snap dates from Jan 2026 to today
+    // Monthly snap dates from Feb 2026 to today (Feb = baseline all-eligible bar)
     var months = React.useMemo(function () {
       var result = [];
       var sY = 2026,
-        sM = 3;
+        sM = 2;
       var now = new Date();
       var eY = now.getFullYear(),
         eM = now.getMonth() + 1;
@@ -4117,9 +4117,17 @@ function WorkflowUI({
           curDist.requires_improvement +
           curDist.suspended;
 
+        // Prepend a synthetic Feb 2026 baseline: everyone eligible before the
+        // first official March auditing run.
+        var baseline = {
+          completed_at: '2026-01-15',
+          dist: { eligible_for_renewal: 1, requires_improvement: 0, suspended: 0 },
+          total: 1,
+        };
+
         // Append current as a virtual run at today
         var today = new Date().toISOString().substring(0, 10);
-        var allRuns = runHistory.concat(
+        var allRuns = [baseline].concat(runHistory).concat(
           curTotal > 0
             ? [{ completed_at: today, dist: curDist, total: curTotal }]
             : [],
