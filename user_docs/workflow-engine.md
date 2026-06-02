@@ -218,43 +218,19 @@ To use synthetic data capabilities, ask your program administrator or raise a re
 !!! note "CHC Nutrition Analysis synthetic data and flag direction"
     Synthetic datasets for the CHC Nutrition Analysis dashboard now generate realistic SAM and MAM distributions that match the flag direction used in the live dashboard. Clean FLWs receive baseline SAM/MAM rates that sit comfortably above the flag thresholds, while FLWs meant to represent cherry-picking behaviour receive near-zero SAM/MAM rates that trigger the **SAM rate < 1%** and **MAM rate < 3%** flags as expected. If you re-seed an older CHC Nutrition Analysis demo, the FLW flagging pattern will change to reflect this corrected logic — the previously clean-looking FLWs will no longer auto-flag, and the intended problem FLWs will now flag correctly.
 
+### MBW Auditing V5 — improvement-over-time chart
+
+The **MBW Auditing V5** template includes an improvement-over-time chart on its third tab. This chart plots monthly performance trends as two separate lines:
+
+- A **grey line** for all FLWs in the cohort
+- A **green line** for FLWs marked eligible-for-renewal
+
+If the two lines looked almost identical — the green eligible-FLW line tracking so closely to the grey all-FLW line that the distinction was not meaningful — this was a known display issue that has now been corrected. The green line now correctly reflects only the eligible-for-renewal cohort, so differences between the two groups are visible when they exist.
+
+If you were using this chart to assess the eligible cohort and noticed the lines were nearly indistinguishable, re-open the dashboard and the chart will now show the corrected trend data.
+
 ### Creating a New Workflow with Claude Code
 
 1. **Get the connect-labs repo and Claude Code.** Clone the repository — you don't need to run it locally, but having it gives Claude Code the context it needs to understand the system. Install the Claude Code CLI.
 
-2. **Pick a starting template.** Find the closest match in the Starter Templates table. If you're new, a good first project is a one-row-per-FLW weekly performance chart based on **KMC Project Metrics**.
-
-3. **Open Claude Code and describe what you want.** Start with something like:
-
-   > "I want to create a new workflow template for [my opportunity]. Walk me through the initial steps to create a basic one-row-per-FLW weekly performance chart."
-
-4. **Claude Code generates the template and deploys it.** Changes go directly to Connect Labs prod — no local server needed. After Claude pushes the update, reload the workflow in your browser to see the result.
-
-5. **Iterate.** Describe changes in plain English or use the `/workflow-author` skill to keep Claude on track with the correct design patterns.
-
-### Deploy-Free Template Iteration
-
-If you are editing a seed template `.py` file and don't want to wait 15 minutes for a full Labs redeploy between each tweak, use `workflow_sync_from_template_file` to push your local `.py` (plus any `_render.js` sidecar) straight to a live preview workflow with no redeploy.
-
-**Why this matters — the anti-pattern it prevents:** The slow deploy cycle was nudging authors into editing the live workflow directly via MCP and then forgetting to back-port those changes to the template `.py` file. Git quietly lost authority over the live workflow. The next time anyone pushed from a local file, those MCP-only changes were silently overwritten with no warning and no recovery from version control. The sync tool removes the speed incentive to do that — the `.py` stays the source of truth at every step.
-
-**Recommended process** (copy this into Claude to get started):
-
-1. Create the template `.py` file once, checked into git — this is your version-controlled source.
-2. Spin up a live preview workflow from it: `workflow_create_from_template`.
-3. Tell Claude: _"Iterate on the `<template_name>` template against workflow `<id>` in opp `<id>` using `workflow_sync_from_template_file`."_
-4. Edit the `.py` in git, sync, refresh Labs in your browser, repeat.
-5. Commit when it looks right. The template file is always current — no back-porting needed.
-
-**Pick the right loop:**
-
-| What you're doing | Tool to use |
-| --- | --- |
-| One-off edit to a live workflow (not going back to git) | `workflow_update_render_code` / `workflow_patch_render_code` |
-| Authoring or updating a seed template `.py` file | `workflow_sync_from_template_file` |
-
-**Caveats:** The sync parser is strict — it handles literals, dicts/lists, name references, and the `Path(__file__).parent / "X.js").read_text()` sidecar pattern. Six templates currently use Python features outside that grammar and still require a full deploy: `kmc_longitudinal`, `kmc_project_metrics`, `llo_weekly_review`, `mbw_monitoring_v3`, `program_admin_audit`, `sam_followup`. Pipeline schema updates are not transactional — if a schema fails mid-sync you'll get a `PARTIAL_SYNC` response showing what landed.
-
-### You Don't Need a Local Instance
-
-For workflow development, **do not run Connect Labs locally.** Even when running locally, data is still fetched from Connect prod — so there is no isolation benefit. The only reason to run locally is if you are modifying the core Connect Labs application code (the Django app
+2. **Pick a starting template.** Find the closest match in the Starter Templates table. If you're new, a good first project is a one-row-per-FLW weekly performance chart based on **KMC
