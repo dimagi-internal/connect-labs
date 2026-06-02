@@ -1261,6 +1261,27 @@ def test_bulk_create_enqueues(client, django_user_model, monkeypatch):
     assert body["task_id"] == "bulk-1" and "bulk-1" in body["poll_url"]
 
 
+def test_bulk_create_threads_group_id_to_task(client, django_user_model, monkeypatch):
+    """A group_id in the bulk request reaches the task so created plans join the group."""
+    _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import bulk_create_plans_task
+
+    captured = {}
+
+    def fake_delay(*args, **kwargs):
+        captured["args"], captured["kwargs"] = args, kwargs
+        return SimpleNamespace(id="bulk-g")
+
+    monkeypatch.setattr(bulk_create_plans_task, "delay", fake_delay)
+    resp = client.post(
+        reverse("microplans:program_bulk_create", kwargs={"program_id": 1}),
+        data=json.dumps({"plans": [{"boundary_id": "b", "name": "B"}], "mode": "sampling", "group_id": 7}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202
+    assert captured["kwargs"].get("group_id") == 7 or 7 in captured["args"]
+
+
 def test_bulk_create_requires_token(client, django_user_model):
     user = django_user_model.objects.create(username="notoken", email="nt@example.com")
     client.force_login(user)  # NO labs_oauth in session

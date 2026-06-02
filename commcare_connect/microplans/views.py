@@ -1617,6 +1617,8 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
         plans_input = payload.get("plans") or []
         mode = "coverage" if payload.get("mode") == "coverage" else "sampling"
         grouping = payload.get("grouping") if isinstance(payload.get("grouping"), dict) else {}
+        # Optional: file every created plan into this group (group-page "Add wards").
+        group_id = payload.get("group_id")
         try:
             cell_size_m = float(payload.get("cell_size_m")) if payload.get("cell_size_m") is not None else 100.0
         except (TypeError, ValueError):
@@ -1632,7 +1634,15 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
 
         from django.urls import reverse
 
-        task = bulk_create_plans_task.delay(int(program_id), plans_input, mode, grouping, cell_size_m, access_token)
+        task = bulk_create_plans_task.delay(
+            int(program_id),
+            plans_input,
+            mode,
+            grouping,
+            cell_size_m,
+            access_token,
+            group_id=int(group_id) if group_id is not None else None,
+        )
         return JsonResponse(
             {
                 "status": "queued",
