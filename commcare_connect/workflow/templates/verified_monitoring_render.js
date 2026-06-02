@@ -13,6 +13,90 @@ function WorkflowUI(props) {
   var verif = data.verification || {};
   var sr = data.self_report || {};
   var sd = data.service_delivery_counts || {};
+  var overlay = data.overlay || null;
+
+  // --- Leaflet two-ward map (dynamic load; data fed via props, never fetched) ---
+  var [leafletReady, setLeafletReady] = React.useState(false);
+  var [sdOn, setSdOn] = React.useState(true);
+  var [pinsOn, setPinsOn] = React.useState(true);
+  var mapDivRef = React.useRef(null);
+  var mapRef = React.useRef(null);
+  React.useEffect(function () {
+    if (window.L) {
+      setLeafletReady(true);
+      return;
+    }
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(css);
+    var s = document.createElement('script');
+    s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    s.onload = function () {
+      setLeafletReady(true);
+    };
+    document.body.appendChild(s);
+  }, []);
+  React.useEffect(
+    function () {
+      if (!leafletReady || !overlay || !mapDivRef.current) return;
+      var L = window.L;
+      if (!mapRef.current) {
+        mapRef.current = L.map(mapDivRef.current, {
+          scrollWheelZoom: false,
+          attributionControl: false,
+        });
+        L.tileLayer(
+          'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          {},
+        ).addTo(mapRef.current);
+      }
+      var map = mapRef.current;
+      map.eachLayer(function (l) {
+        if (l._ov) map.removeLayer(l);
+      });
+      var wards = L.geoJSON(overlay.ward_boundaries, {
+        style: function () {
+          return { color: '#94a3b8', weight: 1.5, fill: false };
+        },
+      });
+      wards._ov = true;
+      wards.addTo(map);
+      try {
+        map.fitBounds(wards.getBounds(), { padding: [20, 20] });
+      } catch (e) {}
+      if (sdOn && overlay.service_delivery) {
+        var sdl = L.geoJSON(overlay.service_delivery, {
+          pointToLayer: function (f, ll) {
+            return L.circleMarker(ll, {
+              radius: 2,
+              weight: 0,
+              fillColor: '#16a34a',
+              fillOpacity: 0.5,
+            });
+          },
+        });
+        sdl._ov = true;
+        sdl.addTo(map);
+      }
+      if (pinsOn && overlay.survey_pins) {
+        var pl = L.geoJSON(overlay.survey_pins, {
+          pointToLayer: function (f, ll) {
+            return L.circleMarker(ll, {
+              radius: 4,
+              weight: 0.5,
+              color: '#0b1020',
+              fillColor: (f.properties && f.properties.color) || '#a78bfa',
+              fillOpacity: 0.95,
+            });
+          },
+        });
+        pl._ov = true;
+        pl.addTo(map);
+      }
+    },
+    [leafletReady, overlay, sdOn, pinsOn],
+  );
 
   var INK = '#0b1020',
     PANEL = '#121a2e',
@@ -48,6 +132,9 @@ function WorkflowUI(props) {
 
   function pct(x) {
     return x == null ? '—' : x.toFixed(1) + '%';
+  }
+  function pp(x) {
+    return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + ' pp';
   }
 
   // --- inline sparkline for an arm's per-round series ---
@@ -257,7 +344,7 @@ function WorkflowUI(props) {
         {tile(
           'Cross-sectional gap',
           tWard + ' − ' + cWard,
-          (gap >= 0 ? '+' : '') + pct(gap),
+          pp(gap),
           ci.length === 2
             ? '95% CI [' + ci[0] + ', ' + ci[1] + ']'
             : 'snapshot',
@@ -291,6 +378,85 @@ function WorkflowUI(props) {
         </div>
         {trend()}
       </div>
+
+      {/* Two-ward map overlay */}
+      {overlay ? (
+        <div
+          style={{
+            marginTop: 18,
+            background: PANEL,
+            border: '1px solid ' + LINE,
+            borderRadius: 10,
+            padding: 14,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 8,
+            }}
+          >
+            <div
+              style={{
+                color: MUT,
+                fontSize: 11,
+                textTransform: 'uppercase',
+                letterSpacing: '.05em',
+              }}
+            >
+              Two adjacent wards — program service delivery ({tWard}{' '}
+              {sd[tWard] != null ? sd[tWard] : 0} · {cWard}{' '}
+              {sd[cWard] != null ? sd[cWard] : 0}) with independent survey pins
+              on top
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                gap: 14,
+                fontSize: 11,
+                fontFamily: mono,
+              }}
+            >
+              <label style={{ color: GREEN, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={sdOn}
+                  onChange={function (e) {
+                    setSdOn(e.target.checked);
+                  }}
+                />{' '}
+                service delivery
+              </label>
+              <label style={{ color: PURPLE, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={pinsOn}
+                  onChange={function (e) {
+                    setPinsOn(e.target.checked);
+                  }}
+                />{' '}
+                survey pins
+              </label>
+            </div>
+          </div>
+          <div
+            ref={mapDivRef}
+            style={{
+              height: 360,
+              borderRadius: 8,
+              overflow: 'hidden',
+              background: '#0b1020',
+            }}
+          />
+          {!leafletReady ? (
+            <div style={{ color: MUT, fontSize: 12, padding: 8 }}>
+              loading map…
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Verification strip */}
       <div
