@@ -8,8 +8,12 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework.authtoken.views import obtain_auth_token
 
 from . import views
+from commcare_connect.mcp.admin_views import create_token_browser
 
 urlpatterns = [
+    # MCP token creation — registered here at the path Django sees after Starlette's
+    # Mount("/mcp/admin", ...) strips the prefix, i.e. /create-token/ → this view.
+    path("create-token/", create_token_browser, name="mcp_admin_create_token"),
     path("", include("commcare_connect.prelogin.urls")),
     # The ACE Web SPA is served by a separate nginx container; the ALB only
     # routes `/ace/*` to it. A bare `/ace` would fall through here and 404 —
