@@ -187,6 +187,10 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["mode"] = mode
         data["grouping"] = dict(grouping or {})
         data["assignment"] = {}  # destructive reset — no CHWs carried over
+        # Persist the selected-PSU hulls (sampling only) so the saved plan can show the
+        # surveyed settlements on a map after creation, without re-fetching footprints.
+        if mode == "sampling" and hulls is not None:
+            data["psu_hulls"] = hulls
         if stats is not None:
             # Per-arm sampling summary (incl. PSU/building balance stats) for
             # cross-arm comparability; never shared/pushed to Connect.
