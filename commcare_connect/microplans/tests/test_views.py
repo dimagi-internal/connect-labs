@@ -1039,12 +1039,20 @@ def test_program_group_manage_comparability_uses_psu_smd_not_whole_ward(client, 
     ct_stats = [{"psu_size": [55, 21], "psu_density": [8200, 2600], "bldg_area": [123, 41], "after_filters": 4137}]
     plans = {
         501: _FakeProgramPlan(
-            501, "sampling", _pins(100), name="Madobi",
-            input_areas=[{"kind": "draw", "geometry": _ward(8.2)}], sampling_stats=iv_stats,
+            501,
+            "sampling",
+            _pins(100),
+            name="Madobi",
+            input_areas=[{"kind": "draw", "geometry": _ward(8.2)}],
+            sampling_stats=iv_stats,
         ),
         502: _FakeProgramPlan(
-            502, "sampling", _pins(110), name="Kauran Mata",
-            input_areas=[{"kind": "draw", "geometry": _ward(8.5)}], sampling_stats=ct_stats,
+            502,
+            "sampling",
+            _pins(110),
+            name="Kauran Mata",
+            input_areas=[{"kind": "draw", "geometry": _ward(8.5)}],
+            sampling_stats=ct_stats,
         ),
     }
     groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
