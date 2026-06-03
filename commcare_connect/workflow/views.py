@@ -312,6 +312,9 @@ class WorkflowRunView(LoginRequiredMixin, TemplateView):
         context["opportunity_name"] = labs_context.get("opportunity_name")
         context["has_context"] = bool(opportunity_id)
         context["user_opportunities"] = (get_org_data(self.request) or {}).get("opportunities", [])
+        # Mapbox token for workflow templates that render maps via the shared
+        # ConnectMap module (real admin boundaries + basemap).
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
 
         if not opportunity_id:
             context["error"] = "Please select an opportunity to run this workflow."

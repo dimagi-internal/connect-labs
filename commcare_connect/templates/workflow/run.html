@@ -12,11 +12,19 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <!-- Leaflet for map visualizations -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<!-- Mapbox GL + the shared Connect map module (real admin boundaries, basemap) -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.js"></script>
+<script>
+    window.MAPBOX_TOKEN = "{{ mapbox_token|escapejs }}";
+    window.BOUNDARY_VIEWPORT_URL = "/microplans/boundaries/viewport/";
+</script>
+<script src="{% static 'maps/connect_map.js' %}"></script>
 {% endif %}
 {% endblock javascript %}
 
 {% block content %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.13.0/mapbox-gl.css"/>
 <div class="max-w-full mx-auto px-4 py-6" style="overflow-x: clip">
     <!-- Breadcrumb -->
     <nav class="mb-4">

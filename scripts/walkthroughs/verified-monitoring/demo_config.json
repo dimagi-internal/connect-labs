@@ -1,14 +1,16 @@
 {
-  "_comment": "Reproduces the Verified Monitoring (N1) dashboard demo on synthetic opp 10008. The dashboard render (commcare_connect/workflow/templates/verified_monitoring_render.js) reads this curated state from the workflow run's instance.state and never fetches. 'show-don't-tell': the render presents these results neutrally with no causal claims. regenerate.py builds the full state payload (including the two-ward map overlay GeoJSON, sampled deterministically) and creates a workflow run via the connect_labs MCP.",
+  "_comment": "Reproduces the Verified Monitoring (N1) dashboard demo on synthetic opp 10008. The dashboard render (commcare_connect/workflow/templates/verified_monitoring_render.js) reads this curated state from the workflow run's instance.state and never fetches. 'show-don't-tell': the render presents these results neutrally with no causal claims. regenerate.py builds the full state payload (including the two-ward map overlay GeoJSON, sampled deterministically inside the REAL ward polygons) and creates a workflow run via the connect_labs MCP.",
   "opportunity_id": 10008,
   "workflow_def_id": 3699,
   "rng_seed": 20260602,
   "program": {
-    "name": "Vitamin-A CHC home-visit monitoring",
+    "name": "Vitamin-A community-health home-visit monitoring",
     "treatment_ward": "Kaura",
-    "control_ward": "Gedawa",
+    "control_ward": "Manchok",
     "cadence": "bi-monthly"
   },
+  "_geography_comment": "Kaura (program) and Manchok (comparison) are REAL adjacent wards in Kaura LGA, Kaduna State, Nigeria. Their polygons come from the labs admin-boundary backend (/microplans/boundaries/viewport/), captured to geo/kaura_manchok.geojson. Service-delivery + survey points are sampled INSIDE these real polygons.",
+  "wards_geojson": "geo/kaura_manchok.geojson",
   "_coverage_comment": "Six bi-monthly survey rounds per ward. Each round's verified coverage jitters within a normal survey band; the latest round (R6) equals the hero numbers. coverage_pct paired with (n surveyed, confirmed) per round.",
   "coverage_rounds": {
     "intervention": [
@@ -48,28 +50,12 @@
     "independent_pct": 68.1,
     "premium_pp": 19.9
   },
-  "service_delivery_counts": { "Kaura": 2300, "Gedawa": 0 },
-  "_overlay_comment": "Two adjacent wards in Kaduna State, Nigeria — Kaura (treatment) left, Gedawa (control) right, sharing the lon=8.30 edge. service_delivery_sample points are drawn only inside Kaura (a legible sample of the 2,300 logged visits; the count label stays 2,300). survey_pins are drawn in BOTH wards (independent survey covered both) — purple = vitamin-A confirmed, pink = absent.",
-  "ward_polygons": {
-    "Kaura": [
-      [8.205, 9.56],
-      [8.3, 9.552],
-      [8.3, 9.648],
-      [8.21, 9.655],
-      [8.195, 9.605]
-    ],
-    "Gedawa": [
-      [8.3, 9.552],
-      [8.398, 9.56],
-      [8.405, 9.61],
-      [8.392, 9.652],
-      [8.3, 9.648]
-    ]
-  },
+  "service_delivery_counts": { "Kaura": 2300, "Manchok": 0 },
+  "_overlay_comment": "service_delivery_sample points are drawn only inside Kaura (a legible sample of the 2,300 logged visits; the count label stays 2,300). survey_pins are drawn in BOTH wards (independent survey covered both) — purple = vitamin-A confirmed, slate = not confirmed.",
   "service_delivery_sample": 720,
   "survey_pins": {
     "Kaura": { "n": 206, "confirmed_rate": 0.681 },
-    "Gedawa": { "n": 195, "confirmed_rate": 0.089 }
+    "Manchok": { "n": 195, "confirmed_rate": 0.089 }
   },
-  "pin_colors": { "confirmed": "#a78bfa", "absent": "#f472b6" }
+  "pin_colors": { "confirmed": "#a78bfa", "absent": "#94a3b8" }
 }

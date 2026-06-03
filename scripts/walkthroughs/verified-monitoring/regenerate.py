@@ -59,38 +59,62 @@ def _token() -> str:
     sys.exit("No MCP token: set LABS_MCP_TOKEN or configure connect_labs in ~/.claude/mcp.json")
 
 
-# ----- deterministic geometry helpers -----
+# ----- geometry helpers (sample inside REAL admin-boundary polygons) -----
 
 
-def _bbox(poly):
-    xs = [p[0] for p in poly]
-    ys = [p[1] for p in poly]
+def _outer_rings(geom):
+    """Outer ring(s) for a GeoJSON Polygon or MultiPolygon (holes ignored)."""
+    t = geom.get("type")
+    if t == "Polygon":
+        return [geom["coordinates"][0]]
+    if t == "MultiPolygon":
+        return [poly[0] for poly in geom["coordinates"]]
+    return []
+
+
+def _bbox_geom(geom):
+    xs, ys = [], []
+    for ring in _outer_rings(geom):
+        for x, y in ring:
+            xs.append(x)
+            ys.append(y)
     return min(xs), min(ys), max(xs), max(ys)
 
 
-def _inside(poly, x, y):
-    n = len(poly)
+def _pt_in_ring(ring, x, y):
+    n = len(ring)
     inside = False
     j = n - 1
     for i in range(n):
-        xi, yi = poly[i]
-        xj, yj = poly[j]
+        xi, yi = ring[i]
+        xj, yj = ring[j]
         if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
             inside = not inside
         j = i
     return inside
 
 
-def _sample(rng, poly, n):
-    x0, y0, x1, y1 = _bbox(poly)
+def _inside_geom(geom, x, y):
+    return any(_pt_in_ring(r, x, y) for r in _outer_rings(geom))
+
+
+def _sample_geom(rng, geom, n):
+    x0, y0, x1, y1 = _bbox_geom(geom)
     pts = []
     guard = 0
-    while len(pts) < n and guard < n * 50:
+    while len(pts) < n and guard < n * 120:
         guard += 1
         x, y = rng.uniform(x0, x1), rng.uniform(y0, y1)
-        if _inside(poly, x, y):
+        if _inside_geom(geom, x, y):
             pts.append([round(x, 5), round(y, 5)])
     return pts
+
+
+def _load_wards(path):
+    """Real admin-boundary features captured from the labs boundary backend,
+    keyed by ward name. See README — sourced from /microplans/boundaries/viewport/."""
+    fc = json.loads(Path(path).read_text())
+    return {f["properties"]["name"]: f for f in fc["features"]}
 
 
 def _fc(features):
@@ -101,35 +125,38 @@ def _pt(x, y, props):
     return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [x, y]}, "properties": props}
 
 
-def _poly_feature(coords, ward):
-    return {
-        "type": "Feature",
-        "geometry": {"type": "Polygon", "coordinates": [coords + [coords[0]]]},
-        "properties": {"ward": ward},
-    }
-
-
 def build_payload(cfg: dict) -> dict:
     rng = random.Random(cfg["rng_seed"])
     prog = cfg["program"]
     tw, cw = prog["treatment_ward"], prog["control_ward"]
-    polys = cfg["ward_polygons"]
     colors = cfg["pin_colors"]
+    wards = _load_wards(HERE / cfg["wards_geojson"])
+    tgeom = wards[tw]["geometry"]
+    cgeom = wards[cw]["geometry"]
 
-    sd_pts = _sample(rng, polys[tw], cfg["service_delivery_sample"])
+    sd_pts = _sample_geom(rng, tgeom, cfg["service_delivery_sample"])
     service_delivery = _fc([_pt(x, y, {}) for x, y in sd_pts])
 
-    def pins(ward):
+    def pins(ward, geom):
         spec = cfg["survey_pins"][ward]
         feats = []
-        for x, y in _sample(rng, polys[ward], spec["n"]):
+        for x, y in _sample_geom(rng, geom, spec["n"]):
             confirmed = rng.random() < spec["confirmed_rate"]
             feats.append(
                 _pt(x, y, {"color": colors["confirmed"] if confirmed else colors["absent"], "confirmed": confirmed})
             )
         return feats
 
-    survey_pins = _fc(pins(tw) + pins(cw))
+    survey_pins = _fc(pins(tw, tgeom) + pins(cw, cgeom))
+
+    def ward_feat(name):
+        f = wards[name]
+        return {
+            "type": "Feature",
+            "geometry": f["geometry"],
+            "properties": {"ward": name, "admin_level": f["properties"].get("admin_level")},
+        }
+
     rounds = cfg["coverage_rounds"]
     t = rounds["intervention"]
     c = rounds["comparison"]
@@ -148,7 +175,7 @@ def build_payload(cfg: dict) -> dict:
         "self_report": cfg["self_report"],
         "service_delivery_counts": cfg["service_delivery_counts"],
         "overlay": {
-            "ward_boundaries": _fc([_poly_feature(polys[tw], tw), _poly_feature(polys[cw], cw)]),
+            "ward_boundaries": _fc([ward_feat(tw), ward_feat(cw)]),
             "service_delivery": service_delivery,
             "survey_pins": survey_pins,
         },
