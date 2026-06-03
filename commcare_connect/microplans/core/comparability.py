@@ -11,10 +11,100 @@ from __future__ import annotations
 # Arms within this ratio on both building count and density read as "matched".
 RATIO_TOLERANCE = 1.5
 
+# Standardized-mean-difference balance bands (matching/propensity-score convention,
+# Austin 2009 / Stuart 2010): |SMD| < 0.1 negligible, < 0.25 acceptable, else flagged.
+SMD_GOOD = 0.10
+SMD_OK = 0.25
+
+# The metrics shown in the corrected PSU balance panel. The headline verdict gates on
+# the ONE axis a matched-control design can't fix after the fact — settlement density,
+# the structure of the places the survey actually visits. PSU size (a precision /
+# variance driver) and building footprint size (an outcome covariate) are surfaced as
+# advisory flags: a DiD analysis adjusts for measured baseline differences, so they're
+# "flag and adjust", not "reject the control" — per CONSORT-style baseline balance.
+_PSU_METRICS = [
+    ("psu_density", "settlement density", True),
+    ("psu_size", "PSU size", False),
+    ("bldg_area", "building footprint size", False),
+]
+
 
 def _ratio(x: float, y: float) -> float:
     lo, hi = sorted((float(x), float(y)))
     return (hi / lo) if lo > 0 else float("inf")
+
+
+def _smd(a: tuple, b: tuple) -> float:
+    """Standardized mean difference between two (mean, sd) summaries."""
+    import math
+
+    (ma, sa), (mb, sb) = a, b
+    pooled = math.sqrt((float(sa) ** 2 + float(sb) ** 2) / 2)
+    return abs(float(ma) - float(mb)) / pooled if pooled > 0 else 0.0
+
+
+def _band(smd: float) -> str:
+    return "good" if smd < SMD_GOOD else ("ok" if smd < SMD_OK else "imbalanced")
+
+
+def arm_comparability_psu(arms: list[dict]) -> dict:
+    """Corrected arm comparability: compare the SELECTED PSUs / surveyed buildings,
+    not whole-ward geography.
+
+    Each arm carries the sampling summary ``{"arm", "psu_size": (mean, sd),
+    "psu_density": (mean, sd), "bldg_area": (mean, sd), "ward_density": float}``.
+    Returns per-metric standardized mean differences with balance bands, a headline
+    ``matched`` gated on the two core metrics (settlement density + PSU size), and
+    advisory ``flags`` for any imbalanced metric (e.g. building stock differing).
+    ``ward_density`` is echoed as context only — never gates.
+
+    The survey only ever visits the selected PSUs, so a control ward that looks
+    mismatched on whole-ward density can still be a fair counterfactual when its
+    settlements match the intervention's; this function measures that directly.
+    """
+    arms = [a for a in arms if a]
+    out_arms = [
+        {
+            "arm": a.get("arm", "intervention"),
+            "psu_size_mean": round(float(a.get("psu_size", (0, 0))[0]), 1),
+            "psu_density_mean": round(float(a.get("psu_density", (0, 0))[0]), 0),
+            "bldg_area_mean": round(float(a.get("bldg_area", (0, 0))[0]), 0),
+            "ward_density": round(float(a.get("ward_density", 0) or 0), 1),
+        }
+        for a in arms
+    ]
+    if len(arms) < 2:
+        return {"arms": out_arms, "metrics": [], "matched": None, "reasons": [], "flags": []}
+
+    by_arm = {a.get("arm", "intervention"): a for a in arms}
+    interv = by_arm.get("intervention", arms[0])
+    other = next((a for a in arms if a.get("arm") in ("control", "comparison")), arms[1])
+
+    metrics, reasons, flags = [], [], []
+    matched = True
+    for key, label, is_core in _PSU_METRICS:
+        iv_pair, ct_pair = interv.get(key, (0, 0)), other.get(key, (0, 0))
+        smd = _smd(iv_pair, ct_pair)
+        band = _band(smd)
+        dp = 0 if key in ("psu_density",) else 1
+        metrics.append(
+            {
+                "metric": key,
+                "label": label,
+                "iv": round(float(iv_pair[0]), dp),
+                "ct": round(float(ct_pair[0]), dp),
+                "smd": round(smd, 2),
+                "band": band,
+                "core": is_core,
+            }
+        )
+        if band == "imbalanced":
+            if is_core:
+                matched = False
+                reasons.append(f"{label} differs (SMD {smd:.2f})")
+            else:
+                flags.append(f"{label} differs (SMD {smd:.2f}) — adjust at analysis")
+    return {"arms": out_arms, "metrics": metrics, "matched": matched, "reasons": reasons, "flags": flags}
 
 
 def arm_comparability(arms: list[dict], ratio_tolerance: float = RATIO_TOLERANCE) -> dict:

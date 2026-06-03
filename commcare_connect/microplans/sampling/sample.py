@@ -23,10 +23,18 @@ import numpy as np
 import pandas as pd
 
 
-def select_psus(psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926) -> pd.DataFrame:
+def select_psus(psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926, size_strata: int = 0) -> pd.DataFrame:
     """Return selected PSUs as a DataFrame [cluster, n_buildings, stratum, P_psu].
 
     `P_psu` is the PSU's inclusion probability (proportional to building count).
+
+    `size_strata > 1` switches on **R2 size-stratified systematic PPS** (the DHS/MICS
+    standard): split the PSU frame into that many size bands, allocate the draw evenly
+    across bands, and run systematic PPS within each band. This draws a *matched
+    size-mix* so two arms sampled the same way are comparable on PSU size by
+    construction, instead of plain PPS concentrating each arm's draw on its own
+    largest settlements. Inclusion probabilities (and hence design weights 1/Pi) are
+    computed per band so estimates stay design-unbiased. `0`/`1` = plain PPS.
     """
     cols = ["cluster", "n_buildings", "stratum", "P_psu"]
     if psu_frame.empty or n_take <= 0:
@@ -34,22 +42,72 @@ def select_psus(psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926) -> p
 
     sizes = psu_frame["n_buildings"].to_numpy(dtype=float)
     n = len(sizes)
-    pi = np.clip(n_take * sizes / sizes.sum(), 1e-9, 1 - 1e-9) if n_take < n else np.ones(n)
 
     if n_take >= n:
-        chosen = np.arange(n)
+        out = psu_frame.copy()
+        out["P_psu"] = 1.0
+        if "stratum" not in out.columns:
+            out["stratum"] = "Low"
+        return out[cols].reset_index(drop=True)
+
+    if size_strata and size_strata > 1:
+        return _select_size_stratified(psu_frame, sizes, n_take, seed, size_strata, cols)
+
+    pi = np.clip(n_take * sizes / sizes.sum(), 1e-9, 1 - 1e-9)
+    rng = np.random.default_rng(seed)
+    u = rng.random()
+    cs = np.concatenate([[0.0], np.cumsum(pi)])
+    sel = np.floor(cs[1:] + u) > np.floor(cs[:-1] + u)
+    if int(sel.sum()) != n_take:
+        chosen = np.sort(rng.choice(n, size=n_take, replace=False, p=sizes / sizes.sum()))
     else:
-        rng = np.random.default_rng(seed)
-        u = rng.random()
-        cs = np.concatenate([[0.0], np.cumsum(pi)])
-        sel = np.floor(cs[1:] + u) > np.floor(cs[:-1] + u)
-        if int(sel.sum()) != n_take:
-            chosen = np.sort(rng.choice(n, size=n_take, replace=False, p=sizes / sizes.sum()))
-        else:
-            chosen = np.flatnonzero(sel)
+        chosen = np.flatnonzero(sel)
 
     out = psu_frame.iloc[chosen].copy()
     out["P_psu"] = pi[chosen]
+    if "stratum" not in out.columns:
+        out["stratum"] = "Low"
+    return out[cols].reset_index(drop=True)
+
+
+def _systematic_pps(sizes: np.ndarray, take: int, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
+    """Systematic-PPS draw of `take` indices ∝ sizes; returns (local_idx, inclusion_pi)."""
+    pi = np.clip(take * sizes / sizes.sum(), 1e-9, 1 - 1e-9)
+    u = rng.random()
+    cs = np.concatenate([[0.0], np.cumsum(pi)])
+    sel = np.floor(cs[1:] + u) > np.floor(cs[:-1] + u)
+    local = np.flatnonzero(sel)
+    if len(local) != take:
+        local = np.sort(rng.choice(len(sizes), size=take, replace=False, p=sizes / sizes.sum()))
+    return local, pi
+
+
+def _select_size_stratified(psu_frame, sizes, n_take, seed, k, cols):
+    """R2: stratify PSUs into `k` size bands, allocate the draw evenly across bands,
+    systematic-PPS within each. Inclusion prob is the within-band PPS probability."""
+    df = psu_frame.reset_index(drop=True)
+    order = np.argsort(sizes)
+    bands = np.array_split(order, k)
+    per = [n_take // k] * k
+    for i in range(n_take - sum(per)):  # spread the remainder onto the smaller bands
+        per[i] += 1
+    rng = np.random.default_rng(seed)
+    chosen: list[int] = []
+    pvals: list[float] = []
+    for band_idx, take in zip(bands, per):
+        band_idx = np.asarray(band_idx)
+        if take <= 0 or band_idx.size == 0:
+            continue
+        bsizes = sizes[band_idx]
+        if band_idx.size <= take:  # census this band
+            chosen.extend(int(i) for i in band_idx)
+            pvals.extend([1.0] * band_idx.size)
+            continue
+        local, pi = _systematic_pps(bsizes, take, rng)
+        chosen.extend(int(band_idx[li]) for li in local)
+        pvals.extend(float(pi[li]) for li in local)
+    out = df.iloc[chosen].copy()
+    out["P_psu"] = pvals
     if "stratum" not in out.columns:
         out["stratum"] = "Low"
     return out[cols].reset_index(drop=True)
