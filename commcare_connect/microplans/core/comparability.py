@@ -66,10 +66,10 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
     out_arms = [
         {
             "arm": a.get("arm", "intervention"),
-            "psu_size_mean": round(float(a.get("psu_size", (0, 0))[0]), 1),
-            "psu_density_mean": round(float(a.get("psu_density", (0, 0))[0]), 0),
-            "bldg_area_mean": round(float(a.get("bldg_area", (0, 0))[0]), 0),
-            "ward_density": round(float(a.get("ward_density", 0) or 0), 1),
+            "psu_size_mean": int(round(float(a.get("psu_size", (0, 0))[0]))),
+            "psu_density_mean": int(round(float(a.get("psu_density", (0, 0))[0]))),
+            "bldg_area_mean": int(round(float(a.get("bldg_area", (0, 0))[0]))),
+            "ward_density": int(round(float(a.get("ward_density", 0) or 0))),
         }
         for a in arms
     ]
@@ -86,13 +86,14 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
         iv_pair, ct_pair = interv.get(key, (0, 0)), other.get(key, (0, 0))
         smd = _smd(iv_pair, ct_pair)
         band = _band(smd)
-        dp = 0 if key in ("psu_density",) else 1
         metrics.append(
             {
                 "metric": key,
                 "label": label,
-                "iv": round(float(iv_pair[0]), dp),
-                "ct": round(float(ct_pair[0]), dp),
+                # Display as whole numbers — these are counts/densities/areas; the
+                # one-decimal "2041.0" read as false precision.
+                "iv": int(round(float(iv_pair[0]))),
+                "ct": int(round(float(ct_pair[0]))),
                 "smd": round(smd, 2),
                 "band": band,
                 "core": is_core,
@@ -103,7 +104,9 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
                 matched = False
                 reasons.append(f"{label} differs (SMD {smd:.2f})")
             else:
-                flags.append(f"{label} differs (SMD {smd:.2f}) — adjust at analysis")
+                # Advisory: a baseline covariate to adjust for at analysis — flagged,
+                # not failed. Never flips the headline verdict.
+                flags.append(f"{label} (SMD {smd:.2f}) — adjust at analysis")
     return {"arms": out_arms, "metrics": metrics, "matched": matched, "reasons": reasons, "flags": flags}
 
 
