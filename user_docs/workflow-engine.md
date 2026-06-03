@@ -180,16 +180,18 @@ The `custom_analysis/` section of Labs predates the workflow engine. Most of tho
 
 The **Verified Monitoring** template is designed for programs that commission independent surveys to verify their own coverage numbers — for example, a vitamin-A home-visit program where an outside team surveys households to confirm whether a visit actually occurred.
 
-The dashboard presents results neutrally and lets the viewer draw their own conclusions. It is designed for funder and external stakeholder audiences. Everything it shows is read from its saved run state — it never fetches live data during a viewing session, so every viewing of the same run produces exactly the same screen.
+The dashboard leads with the finding a funder can actually rely on: **independent verification**. The headline panel shows a single gap chart with a one-line plain-English summary — for example, *"The implementer reported 88.0% coverage; an independent rooftop survey verified 68.1% (95% CI ±5.4) — a 19.9-point overstatement."* The verified figure, the self-reported figure, and the gap between them are each clearly labelled so nothing requires interpretation.
+
+The treatment-vs-comparison ward section is presented below the headline and is explicitly labelled as **descriptive**. A note on that section states that the comparison ward is an observational neighbour, not a randomised control, so the dashboard never implies a causal-impact claim its design cannot support. Any technical terms (such as confidence interval) are glossed in plain English the first time they appear, and the survey's data quality indicators are labelled as exactly that — survey quality — rather than being left as unexplained numbers.
+
+The dashboard presents results neutrally and lets the viewer draw their own conclusions. Everything it shows is read from its saved run state — it never fetches live data during a viewing session, so every viewing of the same run produces exactly the same screen.
 
 A single screen contains four panels:
 
-- **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent control ward. Each row includes per-round sparklines and a small neutral "measured difference" figure between the two wards.
+- **Verification headline panel** — the gap chart and plain-English summary described above; this is the first thing a viewer sees.
+- **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent comparison ward (labelled observational, not a randomised control). Each row includes per-round sparklines and a neutral "measured difference" figure between the two wards.
 - **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time.
-- **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place.
-- **"Trust, then verify" panel** — places the implementer's self-reported coverage figure alongside the independently-verified figure, and shows the overstatement premium (the gap between the two).
-
-The dashboard is intentionally show-don't-tell: it does not label the overstatement premium as a problem or a success — it simply presents the two numbers side by side.
+- **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
 ### Generating Demo or Test Data from a Real Opportunity
 
@@ -209,7 +211,7 @@ This makes synthetic data suitable for full stakeholder and funder demonstration
 
 The synthetic-data generator supports a **binary-outcome field** type for yes/no or present/absent fields whose positive rate should vary by survey round or time period.
 
-When you request a synthetic dataset for a dashboard that includes a binary outcome — for example, a "household confirmed visit" field in a Verified Monitoring demo — you can specify a per-period positive rate for that field. The generator will produce values that match the requested rate in each period, so coverage trends and differences between groups (such as treatment vs. control ward) appear realistic across rounds rather than being drawn from a single flat rate.
+When you request a synthetic dataset for a dashboard that includes a binary outcome — for example, a "household confirmed visit" field in a Verified Monitoring demo — you can specify a per-period positive rate for that field. The generator will produce values that match the requested rate in each period, so coverage trends and differences between groups (such as treatment vs. comparison ward) appear realistic across rounds rather than being drawn from a single flat rate.
 
 This is useful for any template where a key metric is a proportion that changes over time, not just a static count.
 
@@ -229,12 +231,4 @@ While the run is in progress, the manager has access to the full set of live act
 
 All four actions are only available while the run is in an **in-progress** state. Once the run is concluded it becomes read-only, so the buttons are no longer shown — rows without an existing audit or task show greyed-out, non-interactive buttons, while rows that already produced an audit or task still show working **View Audit / View Task** links.
 
-This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in **#connect-labs** and specify that you need an in-progress run for the most recent week.
-
-To use synthetic data capabilities, ask your program administrator or raise a request in **#connect-labs**. You will need to specify which opportunity to base the profile on and where the synthetic data should be loaded.
-
-!!! note "No real data is used in the output"
-    The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
-
-!!! note "Nutrition metrics and other program-specific fields in synthetic data"
-    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named
+This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in **#connect
