@@ -110,6 +110,13 @@
     var active = opts.activeWard || null;
     var ACTIVE = opts.activeColor || '#34d399';
     var MUTED = opts.mutedColor || '#94a3b8';
+    // Fill + label colours are themeable so the same module serves a dark or a
+    // light basemap. Defaults are the original dark theme (backward-compatible);
+    // a light-basemap caller passes activeFill/mutedFill/labelColor/labelHalo.
+    var ACTIVE_FILL = opts.activeFill || '#16351f';
+    var MUTED_FILL = opts.mutedFill || '#1a2236';
+    var LABEL = opts.labelColor || '#e2e8f0';
+    var LABEL_HALO = opts.labelHalo || '#0b1020';
     _setSource(map, id, geojson);
     map.addLayer({
       id: id + '-fill',
@@ -117,8 +124,8 @@
       source: id,
       paint: {
         'fill-color': active
-          ? ['case', ['==', ['get', 'ward'], active], '#16351f', '#1a2236']
-          : '#1a2236',
+          ? ['case', ['==', ['get', 'ward'], active], ACTIVE_FILL, MUTED_FILL]
+          : MUTED_FILL,
         'fill-opacity': opts.fillOpacity == null ? 0.25 : opts.fillOpacity,
       },
     });
@@ -145,8 +152,8 @@
           'text-font': ['DIN Pro Medium', 'Arial Unicode MS Regular'],
         },
         paint: {
-          'text-color': '#e2e8f0',
-          'text-halo-color': '#0b1020',
+          'text-color': LABEL,
+          'text-halo-color': LABEL_HALO,
           'text-halo-width': 1.4,
         },
       });

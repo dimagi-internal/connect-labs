@@ -50,6 +50,10 @@
     "independent_pct": 68.1,
     "premium_pp": 19.9
   },
+  "_self_report_rounds_comment": "Per-round program self-reported coverage for Kaura, plotted as a third (dashed) line on the trend. Jitters ~±10% round-to-round and sits clearly above the independently-verified line every round — the persistent overstatement. R6 = 88.0 to match the hero premium (88.0 self vs 68.1 verified = 19.9pp).",
+  "self_report_rounds": {
+    "intervention": [80.5, 92.0, 84.5, 95.0, 82.0, 88.0]
+  },
   "service_delivery_counts": { "Kaura": 2300, "Manchok": 0 },
   "_overlay_comment": "service_delivery_sample points are drawn only inside Kaura (a legible sample of the 2,300 logged visits; the count label stays 2,300). survey_pins are drawn in BOTH wards (independent survey covered both) — purple = vitamin-A confirmed, slate = not confirmed.",
   "service_delivery_sample": 720,
