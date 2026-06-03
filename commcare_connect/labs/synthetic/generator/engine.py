@@ -119,6 +119,7 @@ def generate(
             anomalies_for_visit=anomalies,
             rng=rng,
             persona=persona,
+            period=slot.week_index,
         )
         status = decide_visit_status(persona=persona, has_anomaly=bool(anomalies), rng=rng)
         # One beneficiary index per visit, reused for the display name AND the

@@ -312,9 +312,10 @@ function v5_computeFollowupRates({
       var expiryStr = v5_dateStr(s.visit_expiry_date);
       // ANC completion is reported via antenatal_visit_completion field, not a
       // form named 'ANC Visit', so use ancOkMothers instead of visitsByMother.
-      var isCompleted = visitType === 'ANC Visit'
-        ? !!ancOkMothers[mid]
-        : !!motherVisits[visitType];
+      var isCompleted =
+        visitType === 'ANC Visit'
+          ? !!ancOkMothers[mid]
+          : !!motherVisits[visitType];
 
       var pastGrace = scheduledStr && scheduledStr <= graceCutoff;
 
@@ -380,11 +381,13 @@ function v5_computeBaselineFollowupRates({
         if (!s || typeof s !== 'object') continue;
         var visitType = s.visit_type || '';
         var scheduledStr = v5_dateStr(s.visit_date_scheduled);
-        var visitDate = visitType === 'ANC Visit' ? '' : (motherVisits[visitType] || '');
+        var visitDate =
+          visitType === 'ANC Visit' ? '' : motherVisits[visitType] || '';
         // ANC uses ancOkMothers (global, not date-scoped — best available proxy).
-        var isCompletedAtTrigger = visitType === 'ANC Visit'
-          ? !!(ancOkMothers && ancOkMothers[mid2])
-          : (!!visitDate && visitDate.slice(0, 10) <= triggerDateStr);
+        var isCompletedAtTrigger =
+          visitType === 'ANC Visit'
+            ? !!(ancOkMothers && ancOkMothers[mid2])
+            : !!visitDate && visitDate.slice(0, 10) <= triggerDateStr;
         var pastGrace = scheduledStr && scheduledStr <= triggerGraceCutoff;
 
         if (pastGrace) {
@@ -1728,9 +1731,10 @@ function WorkflowUI({
         if (!s) continue;
         var scheduledStr = v5_dateStr(s.visit_date_scheduled);
         var expiryStr = v5_dateStr(s.visit_expiry_date);
-        var isComp = s.visit_type === 'ANC Visit'
-          ? !!ancOkMothers[mid2]
-          : !!motherVisits[s.visit_type];
+        var isComp =
+          s.visit_type === 'ANC Visit'
+            ? !!ancOkMothers[mid2]
+            : !!motherVisits[s.visit_type];
         var pastGrace = scheduledStr && scheduledStr <= graceCutoff;
 
         if (!isComp && expiryStr && expiryStr < snapDateStr) missedCount++;
@@ -3997,7 +4001,9 @@ function WorkflowUI({
   // =========================================================================
   // Tab 3: Summary by Performance Band
   // =========================================================================
-  var ImprovementOverTimeChart = function () { return null; };
+  var ImprovementOverTimeChart = function () {
+    return null;
+  };
 
   var Tab3 = function () {
     var bands = perfData || computePerfBands();

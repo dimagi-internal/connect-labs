@@ -548,7 +548,9 @@ class TestProgramPlanDataAccessContract:
         """remove_plan_from_group drops the plan id and any arm assignment for it."""
         da = _make_program_da()
         grp = da.create_group(
-            name="G", plan_ids=[501, 502], kind="study",
+            name="G",
+            plan_ids=[501, 502],
+            kind="study",
             arms={"501": "intervention", "502": "control"},
         )
         da.remove_plan_from_group(grp.id, 502)

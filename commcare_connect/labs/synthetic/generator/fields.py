@@ -10,7 +10,14 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from .manifest import Anomaly, BeneficiaryCohort, FlwPersona, NormalDistribution, UniformDistribution
+from .manifest import (
+    Anomaly,
+    BeneficiaryCohort,
+    BinaryDistribution,
+    FlwPersona,
+    NormalDistribution,
+    UniformDistribution,
+)
 from .schema_loader import FormSchema, QuestionSpec
 
 
@@ -28,11 +35,13 @@ def _apply_transform(raw: float, transform: str | None, rng: random.Random) -> A
     return raw
 
 
-def _draw(distribution, rng: random.Random) -> float:
+def _draw(distribution, rng: random.Random, period: int | None = None) -> float:
     if isinstance(distribution, NormalDistribution):
         return rng.gauss(distribution.mean, distribution.stddev)
     if isinstance(distribution, UniformDistribution):
         return rng.uniform(distribution.low, distribution.high)
+    if isinstance(distribution, BinaryDistribution):
+        return 1.0 if rng.random() < distribution.rate_for_period(period) else 0.0
     raise TypeError(f"unknown distribution: {distribution!r}")
 
 
@@ -84,6 +93,7 @@ def fill_form_json(
     anomalies_for_visit: list[Anomaly],
     rng: random.Random,
     persona: FlwPersona | None = None,
+    period: int | None = None,
 ) -> dict[str, Any]:
     anomaly_paths = {a.field_path for a in anomalies_for_visit if a.field_path}
     # Persona overrides take precedence over cohort distributions. Building a
@@ -99,7 +109,7 @@ def fill_form_json(
         if dist is None:
             value = _default_for_kind(spec, rng)
         else:
-            raw = _outlier(dist, rng) if spec.json_path in anomaly_paths else _draw(dist, rng)
+            raw = _outlier(dist, rng) if spec.json_path in anomaly_paths else _draw(dist, rng, period)
             transform = getattr(dist, "transform", None)
             if transform:
                 value = _apply_transform(raw, transform, rng)
@@ -115,7 +125,7 @@ def fill_form_json(
     for path, dist in effective.items():
         if path in covered_paths:
             continue
-        raw = _outlier(dist, rng) if path in anomaly_paths else _draw(dist, rng)
+        raw = _outlier(dist, rng) if path in anomaly_paths else _draw(dist, rng, period)
         transform = getattr(dist, "transform", None)
         value = _apply_transform(raw, transform, rng)
         if isinstance(value, float):

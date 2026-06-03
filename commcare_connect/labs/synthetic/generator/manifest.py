@@ -42,8 +42,31 @@ class UniformDistribution(BaseModel):
         return self
 
 
+class BinaryDistribution(BaseModel):
+    """Draws 1 at ``rate`` (0 otherwise). ``period_rates`` overrides the rate for
+    a specific period (week_index) so an outcome can vary round to round — e.g.
+    vitamin-A confirmed at 0.52 in round 1 climbing to 0.68 by round 6."""
+
+    distribution: Literal["binary"]
+    rate: float = Field(ge=0, le=1)
+    period_rates: dict[int, float] = Field(default_factory=dict)
+    transform: str | None = None
+
+    @model_validator(mode="after")
+    def _check_period_rates(self):
+        for period, rate in self.period_rates.items():
+            if not 0 <= rate <= 1:
+                raise ValueError(f"period_rates[{period}] must be in [0, 1], got {rate}")
+        return self
+
+    def rate_for_period(self, period: int | None) -> float:
+        if period is None:
+            return self.rate
+        return self.period_rates.get(period, self.rate)
+
+
 FieldDistribution = Annotated[
-    NormalDistribution | UniformDistribution,
+    NormalDistribution | UniformDistribution | BinaryDistribution,
     Field(discriminator="distribution"),
 ]
 

@@ -66,6 +66,15 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 - **POST/DELETE permissions:** Each record in the payload is checked — any `program_id`, `opportunity_id`, or `organization_id` must belong to an entity the user has membership in. A 404 is returned if the user lacks access.
 - **Common 404 cause:** Sending `program_id` in query params (GET) or payload (POST) when the authenticated user is not a member of the organization that owns that program.
 
+### Synthetic / labs-only opportunities — DO NOT use the prod API or permissions
+
+**This API is on production Connect (`connect.dimagi.com`), and it is NOT how you read or write a synthetic opp.** Two traps that produce a misleading `404`:
+
+1. **Wrong host.** The labs*record API lives on `connect.dimagi.com`. Labs is a \_client* of it. Hitting `labs.connect.dimagi.com/export/labs_record/` 404s — that path isn't served on the labs host.
+2. **Synthetic opps never touch this API at all.** An opportunity with `id ≥ 10_000` registered as a `SyntheticOpportunity` (`labs_only=True`) is dispatched **in-process** to `labs/synthetic/local_records_backend.py`, which does plain `LabsLocalRecord` Django ORM CRUD in the labs DB. **There are NO permission checks and NO HTTP** — `LabsRecordAPIClient` short-circuits to the local backend via `is_labs_only_opportunity_id()`. So a user-token + `curl` against the prod API is the wrong mechanism _and_ gives a permission-looking 404.
+
+**To create/seed/iterate a synthetic opp's records (workflow definitions, runs, audits, tasks):** run **server-side, inside the labs app** — use the `connect_labs` MCP tools (they execute in-app → hit the local backend), the synthetic recipe/seeder (`scripts/walkthroughs/<demo>/`, `labs/synthetic/walkthrough_kit.py`), or a management command. **Never raw-HTTP a synthetic opp with a user token.** Permissions simply do not apply to labs-only opps — that's the whole point of the `LABS_ONLY_OPP_ID_FLOOR` (10,000) namespace. (Separately, GDrive-backed fixtures serve the `/export/...` _visit_ endpoints for synthetic opps — see `docs/SYNTHETIC_OPPS.md`; that path is for prod-export-shaped data, not LabsRecords.)
+
 ### Record Type Conventions
 
 | App            | experiment       | type                    | Notes                 |
