@@ -20,6 +20,21 @@ from commcare_connect.mcp.models import MCPAccessToken, MCPAuditLog
 from commcare_connect.users.models import User
 
 
+@pytest.fixture
+def asgi_app():
+    """A fresh combined ASGI app per test.
+
+    ``config.asgi.application`` is a process-wide singleton whose FastMCP
+    ``StreamableHTTPSessionManager`` can only run its lifespan once. Tests that
+    enter the lifespan in-process must each get their own instance, or the
+    second one crashes with "session manager .run() can only be called once".
+    The factory hands out an independent app (and session manager) per test.
+    """
+    from config.asgi import build_application
+
+    return build_application()
+
+
 def _client_factory_to_asgi(app):
     """Return an McpHttpClientFactory that routes httpx through the ASGI app."""
 
@@ -38,12 +53,12 @@ def _client_factory_to_asgi(app):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_streamable_http_list_and_call_end_to_end():
+def test_streamable_http_list_and_call_end_to_end(asgi_app):
     import anyio
     from fastmcp import Client
     from fastmcp.client.transports import StreamableHttpTransport
 
-    from config.asgi import application
+    application = asgi_app
 
     user = User.objects.create(username="e2e-mcp")
     _, raw = MCPAccessToken.create_token(user, name="e2e")
@@ -79,12 +94,12 @@ def test_streamable_http_list_and_call_end_to_end():
 
 
 @pytest.mark.django_db(transaction=True)
-def test_streamable_http_rejects_missing_token():
+def test_streamable_http_rejects_missing_token(asgi_app):
     import anyio
     from fastmcp import Client
     from fastmcp.client.transports import StreamableHttpTransport
 
-    from config.asgi import application
+    application = asgi_app
 
     async def _run():
         transport = StreamableHttpTransport(
@@ -101,7 +116,7 @@ def test_streamable_http_rejects_missing_token():
 
 
 @pytest.mark.django_db(transaction=True)
-def test_unauthenticated_challenge_is_plain_bearer_not_oauth():
+def test_unauthenticated_challenge_is_plain_bearer_not_oauth(asgi_app):
     """A bearer-less request must get a plain ``Bearer realm`` challenge.
 
     FastMCP 3.x's TokenVerifier emits ``WWW-Authenticate: Bearer
@@ -115,7 +130,7 @@ def test_unauthenticated_challenge_is_plain_bearer_not_oauth():
     """
     import anyio
 
-    from config.asgi import application
+    application = asgi_app
 
     async def _run():
         async with application.router.lifespan_context(application):
@@ -160,7 +175,7 @@ def test_unauthenticated_challenge_is_plain_bearer_not_oauth():
         "/.well-known/oauth-authorization-server/mcp",
     ],
 )
-def test_oauth_discovery_paths_return_json_not_html(path):
+def test_oauth_discovery_paths_return_json_not_html(asgi_app, path):
     """OAuth discovery probes must return parseable JSON, never Django's HTML.
 
     The combined ASGI app mounts the MCP app under ``/mcp`` and Django as the
@@ -172,7 +187,7 @@ def test_oauth_discovery_paths_return_json_not_html(path):
     """
     import anyio
 
-    from config.asgi import application
+    application = asgi_app
 
     async def _run():
         async with httpx.AsyncClient(
