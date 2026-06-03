@@ -394,6 +394,10 @@ scripts/walkthroughs/*/.run_ids.json
 scripts/walkthroughs/**/__pycache__/
 scripts/walkthroughs/**/video/
 scripts/walkthroughs/**/video_manager/
+# Generated walkthrough artifacts (rendered videos + scene-text manifests)
+scripts/walkthroughs/**/*.mp4
+scripts/walkthroughs/**/*.webm
+scripts/walkthroughs/**/scenes.json
 .gstack/
 .claude/settings.local.json
 .superpowers/
