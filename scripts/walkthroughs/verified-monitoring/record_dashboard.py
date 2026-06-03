@@ -102,7 +102,7 @@ def main() -> int:
     print(f"recording {url}")
 
     with RecorderSession(out_dir=video_dir, manifest_path=manifest, prewarm=True, defer_record=True) as rec:
-        # Pre-warm: load once (primes Leaflet CDN + render) on the no-video page.
+        # Pre-warm: load once (primes Mapbox + render) on the no-video page.
         goto_and_settle(rec.warm_page, url, wait_for_selector=HERO, settle_seconds=2.0)
         page = rec.start_recording()
         # The video records from here; the renderer shows a "Loading renderer…"
@@ -132,16 +132,16 @@ def main() -> int:
         # view (pins off by default); toggle SD off/on to show it fills only
         # the program ward, then reveal the survey pins on camera. End here.
         _scroll_to(page, "Where the program delivered", settle_ms=1800)
-        page.wait_for_selector(".leaflet-container", timeout=15_000)
-        # Wait for the basemap tiles (admin boundaries) to actually paint.
+        page.wait_for_selector(".mapboxgl-canvas", timeout=20_000)
+        # Wait for the Mapbox basemap (WebGL tiles + admin boundaries) to paint.
         try:
             page.wait_for_function(
-                "document.querySelectorAll('.leaflet-tile-loaded').length > 4",
+                "window.ConnectMap && document.querySelector('.mapboxgl-canvas')",
                 timeout=10_000,
             )
         except Exception:
             pass
-        page.wait_for_timeout(1600)
+        page.wait_for_timeout(3000)
         snap(rec, "map")
         _toggle(page, "service delivery")
         _reveal(page, "survey pins")
