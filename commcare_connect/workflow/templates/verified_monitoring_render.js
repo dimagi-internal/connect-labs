@@ -1,10 +1,11 @@
 // Verified Monitoring (N1) — funder-facing verified-coverage dashboard.
 // Self-contained: reads everything from instance.state (seeded payload); never
-// fetches. Financial-dashboard styling with a two-ward Leaflet overlay.
+// fetches. Financial-dashboard styling; the two-ward map uses the shared
+// ConnectMap module (Mapbox GL + real admin boundaries) loaded by the runner.
 // Verification-first: the hero is the defensible claim (an independent survey
 // checked the implementer's self-report). The treatment/comparison ward
 // coverage is supporting context, framed descriptively — not a causal estimate.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V18
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V19
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -18,8 +19,12 @@ function WorkflowUI(props) {
   var sd = data.service_delivery_counts || {};
   var overlay = data.overlay || null;
 
-  // --- Leaflet two-ward map (dynamic load; data fed via props, never fetched) ---
-  var [leafletReady, setLeafletReady] = React.useState(false);
+  // --- Two-ward map via the shared ConnectMap module (Mapbox GL + real admin
+  // boundaries). mapboxgl + ConnectMap are loaded by the workflow runner page;
+  // boundary GeoJSON is fed via props (instance.state). ---
+  var [mapLibReady, setMapLibReady] = React.useState(
+    typeof window !== 'undefined' && !!window.ConnectMap && !!window.mapboxgl,
+  );
   var [sdOn, setSdOn] = React.useState(true);
   // Land on the clean service-delivery view; the survey-pin layer is toggled
   // on to add the independent-survey story (avoids a "both at once" confetti
@@ -27,121 +32,65 @@ function WorkflowUI(props) {
   var [pinsOn, setPinsOn] = React.useState(false);
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
-  React.useEffect(function () {
-    if (!document.getElementById('vm-map-style')) {
-      var st = document.createElement('style');
-      st.id = 'vm-map-style';
-      st.textContent =
-        '.leaflet-tooltip.vm-ward-label{background:rgba(11,16,32,.82);border:1px solid #334155;color:#e2e8f0;font:600 11px ui-monospace,Menlo,monospace;box-shadow:none;padding:2px 7px}' +
-        '.leaflet-tooltip.vm-ward-label:before{display:none}' +
-        '.leaflet-container{background:#0b1020}';
-      document.head.appendChild(st);
-    }
-    if (window.L) {
-      setLeafletReady(true);
-      return;
-    }
-    var css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(css);
-    var s = document.createElement('script');
-    s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    s.onload = function () {
-      setLeafletReady(true);
-    };
-    document.body.appendChild(s);
-  }, []);
+  var mapLoadedRef = React.useRef(false);
+
+  // Wait for the shared map module to be present on the page.
   React.useEffect(
     function () {
-      if (!leafletReady || !overlay || !mapDivRef.current) return;
-      var L = window.L;
+      if (mapLibReady) return undefined;
+      var t = setInterval(function () {
+        if (window.ConnectMap && window.mapboxgl) {
+          setMapLibReady(true);
+          clearInterval(t);
+        }
+      }, 150);
+      return function () {
+        clearInterval(t);
+      };
+    },
+    [mapLibReady],
+  );
+
+  React.useEffect(
+    function () {
+      if (!mapLibReady || !overlay || !mapDivRef.current) return undefined;
+      var CM = window.ConnectMap;
       if (!mapRef.current) {
-        mapRef.current = L.map(mapDivRef.current, {
-          scrollWheelZoom: false,
-          attributionControl: true,
-          zoomControl: true,
+        var ctr = CM.bounds(overlay.ward_boundaries).getCenter();
+        mapRef.current = CM.createMap(mapDivRef.current, {
+          center: [ctr.lng, ctr.lat],
+          zoom: 10,
         });
-        // Real basemap: the two wards sit on actual admin boundaries + place
-        // names (Kaduna State, Nigeria), so it reads as a real geographic map.
-        L.tileLayer(
-          'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-          {
-            subdomains: 'abcd',
-            maxZoom: 19,
-            attribution: '© OpenStreetMap © CARTO',
-          },
-        ).addTo(mapRef.current);
       }
       var map = mapRef.current;
-      map.eachLayer(function (l) {
-        if (l._ov) map.removeLayer(l);
-      });
-      var tw = prog.treatment_ward;
-      var wards = L.geoJSON(overlay.ward_boundaries, {
-        style: function (f) {
-          var t = f.properties && f.properties.ward === tw;
-          return {
-            color: t ? '#34d399' : '#94a3b8',
-            weight: 2.5,
-            fill: true,
-            fillColor: t ? '#16351f' : '#1a2236',
-            fillOpacity: 0.28,
-          };
-        },
-        onEachFeature: function (f, layer) {
-          var w = f.properties && f.properties.ward;
-          var t = w === tw;
-          var cnt = sd[w] != null ? sd[w] : 0;
-          layer.bindTooltip(w + ' · ' + cnt.toLocaleString() + ' visits', {
-            permanent: true,
-            direction: t ? 'left' : 'right',
-            className: 'vm-ward-label',
+      function draw() {
+        CM.remove(map, ['vm-sd', 'vm-pins', 'vm-wards']);
+        CM.boundary(map, 'vm-wards', overlay.ward_boundaries, {
+          activeWard: prog.treatment_ward,
+        });
+        if (sdOn && overlay.service_delivery) {
+          CM.points(map, 'vm-sd', overlay.service_delivery, {
+            color: '#16a34a',
+            radius: 2.2,
+            opacity: 0.5,
           });
-        },
-      });
-      wards._ov = true;
-      wards.addTo(map);
-      try {
-        // Extra padding so the surrounding admin boundaries / place names are
-        // visible around the two wards, not just the wards themselves.
-        map.fitBounds(wards.getBounds(), { padding: [55, 55] });
-      } catch (e) {}
-      if (sdOn && overlay.service_delivery) {
-        var sdl = L.geoJSON(overlay.service_delivery, {
-          pointToLayer: function (f, ll) {
-            // Small, semi-transparent: reads as ward-fill saturation/texture,
-            // not individual confetti. The survey pins are the foreground signal.
-            return L.circleMarker(ll, {
-              radius: 2,
-              weight: 0,
-              fillColor: '#16a34a',
-              fillOpacity: 0.45,
-            });
-          },
-        });
-        sdl._ov = true;
-        sdl.addTo(map);
+        }
+        if (pinsOn && overlay.survey_pins) {
+          CM.pins(map, 'vm-pins', overlay.survey_pins);
+        }
+        CM.fit(map, overlay.ward_boundaries, 55);
       }
-      if (pinsOn && overlay.survey_pins) {
-        var pl = L.geoJSON(overlay.survey_pins, {
-          pointToLayer: function (f, ll) {
-            // Distinct hues: confirmed = purple, absent = slate (not a near-pink).
-            var ok = f.properties && f.properties.confirmed;
-            return L.circleMarker(ll, {
-              radius: 3.5,
-              weight: 0.6,
-              color: '#0b1020',
-              fillColor: ok ? '#a78bfa' : '#94a3b8',
-              fillOpacity: 0.95,
-            });
-          },
+      if (mapLoadedRef.current && map.isStyleLoaded()) {
+        draw();
+      } else {
+        map.once('load', function () {
+          mapLoadedRef.current = true;
+          draw();
         });
-        pl._ov = true;
-        pl.addTo(map);
       }
+      return undefined;
     },
-    [leafletReady, overlay, sdOn, pinsOn],
+    [mapLibReady, overlay, sdOn, pinsOn],
   );
 
   var INK = '#0b1020',
@@ -887,7 +836,7 @@ function WorkflowUI(props) {
               background: '#0b1020',
             }}
           />
-          {!leafletReady ? (
+          {!mapLibReady ? (
             <div style={{ color: MUT, fontSize: 12, padding: 8 }}>
               loading map…
             </div>
