@@ -45,18 +45,21 @@ def _token() -> str:
     tok = os.environ.get("LABS_MCP_TOKEN")
     if tok:
         return tok
-    # Fall back to the connect_labs server entry in ~/.claude/mcp.json.
-    cfg = Path.home() / ".claude" / "mcp.json"
-    if cfg.exists():
+    # Fall back to the connect_labs server entry. Claude Code stores MCP servers
+    # in ~/.claude.json (mcpServers.*); the older standalone ~/.claude/mcp.json
+    # is checked too for compatibility.
+    for cfg in (Path.home() / ".claude.json", Path.home() / ".claude" / "mcp.json"):
+        if not cfg.exists():
+            continue
         data = json.loads(cfg.read_text())
         servers = data.get("mcpServers", data.get("servers", {}))
         for name, spec in servers.items():
             if "connect_labs" in name or "labs" in name:
-                hdrs = spec.get("headers", {})
-                auth = hdrs.get("Authorization", "")
+                hdrs = spec.get("headers", {}) or {}
+                auth = hdrs.get("Authorization", hdrs.get("authorization", ""))
                 if auth.startswith("Bearer "):
                     return auth[len("Bearer ") :]
-    sys.exit("No MCP token: set LABS_MCP_TOKEN or configure connect_labs in ~/.claude/mcp.json")
+    sys.exit("No MCP token: set LABS_MCP_TOKEN or configure connect_labs in ~/.claude.json")
 
 
 # ----- geometry helpers (sample inside REAL admin-boundary polygons) -----
@@ -160,11 +163,20 @@ def build_payload(cfg: dict) -> dict:
     rounds = cfg["coverage_rounds"]
     t = rounds["intervention"]
     c = rounds["comparison"]
+    # Program self-reported coverage as a third per-round series (same row shape
+    # as the verified arms) so the trend render can plot it with one code path.
+    sr_pcts = cfg.get("self_report_rounds", {}).get("intervention", [])
+    self_report_series = [
+        {"round": t[i]["round"], "coverage_pct": sr_pcts[i]} for i in range(min(len(t), len(sr_pcts)))
+    ]
+    by_arm = dict(rounds)
+    if self_report_series:
+        by_arm["self_report"] = self_report_series
     return {
         "program": prog,
         "coverage": {
             "rounds": [r["round"] for r in t],
-            "by_arm": rounds,
+            "by_arm": by_arm,
             "gap_series": [
                 {"round": t[i]["round"], "gap_pp": round(t[i]["coverage_pct"] - c[i]["coverage_pct"], 1)}
                 for i in range(len(t))
