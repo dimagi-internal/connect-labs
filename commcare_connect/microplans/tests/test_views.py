@@ -341,6 +341,7 @@ class _FakeProgramPlan:
         state="",
         input_areas=None,
         sampling_stats=None,
+        psu_hulls=None,
     ):
         self.id, self.mode, self.work_areas = pid, mode, work_areas
         self.name = name or f"Plan {pid}"
@@ -362,6 +363,7 @@ class _FakeProgramPlan:
             "name": self.name,
             "input_areas": list(input_areas or []),
             "sampling_stats": list(sampling_stats or []),
+            "psu_hulls": psu_hulls or {},
         }
 
     @property
@@ -1011,6 +1013,33 @@ def test_program_group_map_overlays_member_plans_by_arm(client, django_user_mode
     fc = layers[501]["geojson"]
     assert fc["type"] == "FeatureCollection" and len(fc["features"]) >= 1
     assert fc["features"][0]["properties"]["arm"] == "intervention"
+
+
+def test_program_group_map_includes_saved_psu_settlement_hulls(client, django_user_model, monkeypatch):
+    """When a plan saved its PSU hulls, the map overlays the SELECTED settlements
+    (polygons) alongside the sampled pins — so the surveyed settlements are visible."""
+    from commcare_connect.microplans.core import plan as plan_lib
+
+    _login(client, django_user_model)
+    hull = {"type": "Polygon", "coordinates": [[[8.2, 11.0], [8.21, 11.0], [8.21, 11.01], [8.2, 11.0]]]}
+    psu_hulls = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": hull, "properties": {"cluster": 1}}]}
+    plans = {
+        501: _FakeProgramPlan(
+            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
+            name="Madobi", psu_hulls=psu_hulls,
+        ),
+        502: _FakeProgramPlan(502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"),
+    }
+    groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
+    _make_fake_program_da(monkeypatch, plans, groups)
+
+    resp = client.get(reverse("microplans:program_group_map", kwargs={"program_id": 25, "group_id": 7}))
+    assert resp.status_code == 200
+    layers = {layer["plan_id"]: layer for layer in resp.context["plan_layers"]}
+    feats = layers[501]["geojson"]["features"]
+    settlements = [f for f in feats if f["geometry"]["type"] == "Polygon" and f["properties"].get("feature") == "settlement"]
+    assert len(settlements) == 1  # the saved PSU hull is rendered as a settlement polygon
+    assert settlements[0]["properties"]["arm"] == "intervention"
 
 
 def _pins(n, lon=8.3, lat=11.8):

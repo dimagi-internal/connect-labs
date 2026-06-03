@@ -860,11 +860,24 @@ class ProgramGroupMapView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVie
                     continue
                 arm = group.arm_for(pid)
                 color = _ARM_COLORS.get(arm) or _PLAN_PALETTE[i % len(_PLAN_PALETTE)]
-                feats = [
+                # The SELECTED settlements (PSU hulls) saved at sampling time, drawn as
+                # translucent arm-coloured polygons UNDER the pins so the surveyed
+                # settlements the comparability check compares are visible on the map.
+                settlement_feats = [
+                    {
+                        "type": "Feature",
+                        "geometry": f["geometry"],
+                        "properties": {"plan_id": pid, "arm": arm, "feature": "settlement"},
+                    }
+                    for f in (p.data.get("psu_hulls") or {}).get("features", [])
+                    if f.get("geometry")
+                ]
+                pin_feats = [
                     {"type": "Feature", "geometry": wa["geometry"], "properties": {"plan_id": pid, "arm": arm}}
                     for wa in p.work_areas
                     if wa.get("geometry")
                 ]
+                feats = settlement_feats + pin_feats  # hulls first → pins render on top
                 layers.append(
                     {
                         "plan_id": pid,
@@ -872,7 +885,7 @@ class ProgramGroupMapView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVie
                         "arm": arm,
                         "color": color,
                         "phase": p.phase,
-                        "work_areas": len(feats),
+                        "work_areas": len(pin_feats),
                         "geojson": {"type": "FeatureCollection", "features": feats},
                     }
                 )
