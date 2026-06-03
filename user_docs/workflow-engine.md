@@ -147,6 +147,7 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **MBW Auditing V4**        | MBW audit reviews with flag and task workflow        |
 | **MBW Auditing V5**        | MBW audit reviews — faster loads and preserved runs  |
 | **Program Admin Report**   | Cross-opportunity compliance view for program admins |
+| **Verified Monitoring**    | Funder-facing view of independently-surveyed program coverage, contrasting implementer-reported and verified results |
 
 ---
 
@@ -175,6 +176,21 @@ All aggregation belongs in SQL. If Claude Code ever suggests doing aggregation i
 
 The `custom_analysis/` section of Labs predates the workflow engine. Most of those dashboards could now be rebuilt as workflows. Write custom Django or Python only for a genuinely complex multi-step UI — and even then, the better answer is usually to split the work into multiple simpler workflows.
 
+### Verified Monitoring dashboard
+
+The **Verified Monitoring** template is designed for programs that commission independent surveys to verify their own coverage numbers — for example, a vitamin-A home-visit program where an outside team surveys households to confirm whether a visit actually occurred.
+
+The dashboard presents results neutrally and lets the viewer draw their own conclusions. It is designed for funder and external stakeholder audiences. Everything it shows is read from its saved run state — it never fetches live data during a viewing session, so every viewing of the same run produces exactly the same screen.
+
+A single screen contains four panels:
+
+- **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent control ward. Each row includes per-round sparklines and a small neutral "measured difference" figure between the two wards.
+- **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time.
+- **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place.
+- **"Trust, then verify" panel** — places the implementer's self-reported coverage figure alongside the independently-verified figure, and shows the overstatement premium (the gap between the two).
+
+The dashboard is intentionally show-don't-tell: it does not label the overstatement premium as a problem or a success — it simply presents the two numbers side by side.
+
 ### Generating Demo or Test Data from a Real Opportunity
 
 If you need realistic data for testing, training, or demonstrations, Labs can generate a **synthetic dataset** based on the statistical profile of an existing opportunity — without any real patient data leaving the server.
@@ -188,6 +204,14 @@ Synthetic opportunities now support the complete program management loop, not ju
 - **OCS coaching transcripts** — demonstrating the outreach coaching conversation flow within the synthetic opportunity.
 
 This makes synthetic data suitable for full stakeholder and funder demonstrations without any real patient data being used.
+
+#### Binary-outcome fields in synthetic data
+
+The synthetic-data generator supports a **binary-outcome field** type for yes/no or present/absent fields whose positive rate should vary by survey round or time period.
+
+When you request a synthetic dataset for a dashboard that includes a binary outcome — for example, a "household confirmed visit" field in a Verified Monitoring demo — you can specify a per-period positive rate for that field. The generator will produce values that match the requested rate in each period, so coverage trends and differences between groups (such as treatment vs. control ward) appear realistic across rounds rather than being drawn from a single flat rate.
+
+This is useful for any template where a key metric is a proportion that changes over time, not just a static count.
 
 #### Live manager-flow demos
 
@@ -213,18 +237,4 @@ To use synthetic data capabilities, ask your program administrator or raise a re
     The synthetic profile captures statistical patterns only — it does not copy, export, or store any individual patient or field worker records. The generated data is entirely artificial.
 
 !!! note "Nutrition metrics and other program-specific fields in synthetic data"
-    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named those questions in its app schema, those fields were silently left blank in the generated data — producing empty columns in the dashboard. This has been corrected, and synthetic data will now populate all fields specified in the workflow configuration.
-
-!!! note "CHC Nutrition Analysis synthetic data and flag direction"
-    Synthetic datasets for the CHC Nutrition Analysis dashboard now generate realistic SAM and MAM distributions that match the flag direction used in the live dashboard. Clean FLWs receive baseline SAM/MAM rates that sit comfortably above the flag thresholds, while FLWs meant to represent cherry-picking behaviour receive near-zero SAM/MAM rates that trigger the **SAM rate < 1%** and **MAM rate < 3%** flags as expected. If you re-seed an older CHC Nutrition Analysis demo, the FLW flagging pattern will change to reflect this corrected logic — the previously clean-looking FLWs will no longer auto-flag, and the intended problem FLWs will now flag correctly.
-
-### MBW Auditing V5 — Tab 3 layout
-
-The third tab of the **MBW Auditing V5** dashboard is laid out in two sections, in this order:
-
-1. **Follow-up metrics table** — appears first, under the heading "Follow-up metrics based on latest performance categories set for each FLW." This table shows the per-FLW follow-up data broken down by their current performance category. It includes a **% Received 5+ Visits** column, which shows what percentage of eligible mothers — those who had the full intervention bonus flag set at registration and who completed their ANC visit — received at least 5 of the 6 scheduled visit types. This percentage is shown for each FLW, broken down by performance category. The **Eligible at Reg** column shows the count of mothers eligible at registration for each performance band and is correctly populated across all performance categories, not only Eligible for Renewal rows.
-
-2. **Improvement-over-time chart** — appears below the table. This chart tracks FLW performance across auditing runs using three lines:
-
-    - **Solid green line** — follow-up rate for Eligible for Renewal FLWs. February uses all FLWs as the pre-audit baseline, since no performance categories had been assigned yet at that point.
-    - **Dashed green line** — percentage of mothers still eligible to receive 5+ visits
+    Fields such as MUAC measurements, gender, and health status will now appear correctly in synthetic datasets used with the CHC Nutrition Analysis dashboard and similar templates. Previously, if a workflow's configuration used field paths that differed slightly from how CommCare named
