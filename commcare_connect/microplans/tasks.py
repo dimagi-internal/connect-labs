@@ -283,7 +283,8 @@ def generate_group_samples_task(self, program_id, group_id, config, access_token
             try:
                 res = generate_frame(areas, fcfg)
                 da.regenerate_plan(
-                    p.id, mode="sampling", pins=res.pins_geojson, hulls=res.hulls_geojson, input_areas=input_areas
+                    p.id, mode="sampling", pins=res.pins_geojson, hulls=res.hulls_geojson,
+                    input_areas=input_areas, stats=res.stats,
                 )
                 ok += 1
                 results.append({"plan_id": p.id, "name": p.name, "status": "ok"})

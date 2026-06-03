@@ -914,7 +914,11 @@ class ProgramGroupGenerateView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans group generate: load failed (program=%s group=%s)", program_id, group_id)
             return JsonResponse({"status": "error", "detail": "Group not found."}, status=404)
-        config = payload.get("config") or group.sampling_config or {}
+        config = dict(payload.get("config") or group.sampling_config or {})
+        if group.kind == "study":
+            # Two-arm studies sample with R2 size-stratified PPS by default so the arms
+            # are comparable on PSU size by construction (see sample.select_psus).
+            config.setdefault("size_strata", 3)
         task = generate_group_samples_task.delay(int(program_id), int(group_id), config, access_token)
         return JsonResponse(
             {
@@ -983,11 +987,13 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                 "plan_count": len(entries),
             }
             context["entries"] = entries
-            # Study comparability — is the control a fair counterfactual? Density is
-            # buildings per WARD km², so the area comes from each arm's ward geometry
-            # (input_areas), NOT the sampled pins (which are zero-area Points). The
-            # building count is the sampled pin count (no extra Overture fetch).
+            # Study comparability — is the control a fair counterfactual? Compared on
+            # the SELECTED PSUs / surveyed buildings (settlement density, PSU size,
+            # building footprint) via standardized mean differences — NOT whole-ward
+            # geography, which the PPS survey never visits. Whole-ward density is kept
+            # only as a context line so the old (wrong) signal is visible, not used.
             if group.kind == "study":
+                from commcare_connect.microplans.core.comparability import arm_comparability_psu
                 from commcare_connect.microplans.core.plan import plan_sample_areas
 
                 def _resolve_boundary(bid):
@@ -996,23 +1002,44 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                     b = AdminBoundary.objects.filter(boundary_id=bid).first()
                     return json.loads(b.geometry.geojson) if (b and b.geometry) else None
 
+                def _ward_density(pl, arm):
+                    # Context only: buildings per WARD km² (the metric we no longer gate on).
+                    try:
+                        from pyproj import Transformer
+                        from shapely.geometry import shape
+                        from shapely.ops import transform, unary_union
+
+                        from commcare_connect.microplans.core.geo import utm_epsg_for
+
+                        wards = plan_sample_areas(pl.data.get("input_areas") or [], arm, _resolve_boundary)
+                        geom = unary_union([shape(w["geometry"]) for w in wards])
+                        c = geom.centroid
+                        tf = Transformer.from_crs(4326, utm_epsg_for(c.x, c.y), always_xy=True).transform
+                        km2 = transform(tf, geom).area / 1e6
+                        st = (pl.data.get("sampling_stats") or [{}])[0]
+                        bc = int(st.get("after_filters") or st.get("fetched") or 0)
+                        return round(bc / km2, 1) if km2 > 0 else 0.0
+                    except Exception:  # noqa: BLE001
+                        return 0.0
+
                 arms_data = []
                 for pid in group.plan_ids:
                     pl = plans_by_id.get(pid)
                     arm = group.arm_for(pid)
                     if pl is None or not arm or not pl.work_areas:
                         continue
-                    bc = sum(int(w.get("building_count") or 0) for w in pl.work_areas) or len(pl.work_areas)
-                    ward_areas = plan_sample_areas(pl.data.get("input_areas") or [], arm, _resolve_boundary)
-                    for j, a in enumerate(ward_areas):
-                        # building count on the first ward area only — comparability sums per arm
-                        arms_data.append(
-                            {"arm": arm, "building_count": bc if j == 0 else 0, "geometry": a["geometry"]}
-                        )
+                    st = (pl.data.get("sampling_stats") or [{}])[0]
+                    arms_data.append(
+                        {
+                            "arm": arm,
+                            "psu_size": st.get("psu_size") or (0, 0),
+                            "psu_density": st.get("psu_density") or (0, 0),
+                            "bldg_area": st.get("bldg_area") or (0, 0),
+                            "ward_density": _ward_density(pl, arm),
+                        }
+                    )
                 if len({a["arm"] for a in arms_data}) >= 2:
-                    from commcare_connect.microplans.core.comparability import arm_comparability
-
-                    context["comparability"] = arm_comparability(arms_data)
+                    context["comparability"] = arm_comparability_psu(arms_data)
             # Action URLs (reuse existing surfaces; map/generate land in later steps)
             ids_csv = ",".join(str(e["plan_id"]) for e in entries)
             context["compare_url"] = reverse("microplans:program_compare_page", args=[program_id]) + (
