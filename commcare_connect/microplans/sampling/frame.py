@@ -45,6 +45,10 @@ class FrameConfig:
     # Optional (lon, lat) of the verification reference point. When set, clusters
     # are stratified High/Medium/Low on distance_to_visit; otherwise single pool.
     reference_point: tuple[float, float] | None = None
+    # R2: number of PSU size bands for size-stratified systematic PPS (0/1 = plain
+    # PPS). Stratifying draws a matched size-mix across arms so they're comparable on
+    # PSU size by construction. See sample.select_psus.
+    size_strata: int = 0
 
     @classmethod
     def from_payload(cls, d: dict) -> FrameConfig:
@@ -52,6 +56,7 @@ class FrameConfig:
         conf = d.get("min_confidence")
         src = d.get("sources")
         return cls(
+            size_strata=_clamp(int(d.get("size_strata", 0) or 0), 0, 20),
             # clamp to sane bounds so a malformed payload can't crash or stall sampling
             target_clusters=_clamp(int(d.get("target_clusters", 25)), 1, 500),
             primary_per_psu=_clamp(int(d.get("primary_per_psu", 8)), 1, 100),
@@ -71,6 +76,57 @@ class FrameResult:
     pins_geojson: dict
     hulls_geojson: dict
     stats: list[dict] = field(default_factory=list)
+
+
+def _mean_sd(values) -> tuple[float, float]:
+    import numpy as np
+
+    a = np.asarray(list(values), dtype=float)
+    if len(a) == 0:
+        return (0.0, 0.0)
+    return (float(a.mean()), float(a.std(ddof=1)) if len(a) >= 2 else 0.0)
+
+
+def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
+    """Per-arm balance summary over the SELECTED PSUs, as (mean, sd) tuples.
+
+    Returns ``{"psu_size": (mean, sd), "psu_density": (mean, sd), "bldg_area":
+    (mean, sd)}`` where psu_size is buildings per selected PSU, psu_density is
+    buildings per km² within each PSU's convex hull (the *correct* density analog —
+    restricted to where the survey actually samples, not the whole ward), and
+    bldg_area is the footprint area of the buildings in the selected PSUs.
+
+    These feed ``comparability.arm_comparability_psu`` so two arms are compared on
+    the settlements the survey visits rather than on whole-ward geography.
+    """
+    empty = {"psu_size": (0.0, 0.0), "psu_density": (0.0, 0.0), "bldg_area": (0.0, 0.0)}
+    if selected is None or selected.empty or buildings is None or buildings.empty:
+        return empty
+
+    from pyproj import Transformer
+    from shapely.geometry import MultiPoint
+    from shapely.ops import transform
+
+    from commcare_connect.microplans.core.geo import utm_epsg_for
+
+    epsg = utm_epsg_for(float(buildings["lon"].mean()), float(buildings["lat"].mean()))
+    tf = Transformer.from_crs(4326, epsg, always_xy=True).transform
+    sizes: list[int] = []
+    densities: list[float] = []
+    areas: list[float] = []
+    for cluster in selected["cluster"].tolist():
+        sub = buildings[buildings["cluster"] == cluster]
+        n = len(sub)
+        if n == 0:
+            continue
+        sizes.append(n)
+        if "area_m2" in sub.columns:
+            areas.extend(float(a) for a in sub["area_m2"].tolist() if a and a > 0)
+        if n >= 3:
+            hull_km2 = transform(tf, MultiPoint(list(zip(sub["lon"], sub["lat"]))).convex_hull).area / 1e6
+            if hull_km2 > 0:
+                densities.append(n / hull_km2)
+    return {"psu_size": _mean_sd(sizes), "psu_density": _mean_sd(densities), "bldg_area": _mean_sd(areas)}
 
 
 def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
@@ -106,7 +162,7 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
             ClusterConfig(target_psus=config.target_clusters),
             reference_point=config.reference_point,
         )
-        selected = select_psus(clustered.psu_frame, n_take=config.target_clusters)
+        selected = select_psus(clustered.psu_frame, n_take=config.target_clusters, size_strata=config.size_strata)
         pins = sample_pins(
             clustered.buildings,
             selected,
@@ -154,6 +210,9 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
                 "pins": len(pins),
                 "primaries": int((pins["role"] == "primary").sum()) if len(pins) else 0,
                 "alternates": int((pins["role"] == "alternate").sum()) if len(pins) else 0,
+                # Per-arm PSU/building balance summary (mean, sd) for corrected
+                # cross-arm comparability — the selected PSUs the survey visits.
+                **psu_summary(clustered.buildings, selected),
             }
         )
         logger.info("rooftop frame arm=%s: %s", arm, stats[-1])

@@ -207,3 +207,54 @@ class TestStratification:
         assert "distance_to_visit" in res.buildings.columns
         assert {"pct_50", "pct_75", "pct_le_400"}.issubset(res.psu_frame.columns)
         assert res.psu_frame["stratum"].isin({"High", "Medium", "Low"}).all()
+
+
+def test_psu_summary_reports_size_density_and_area_over_selected_psus():
+    """The per-arm PSU balance summary (mean, sd) used by corrected comparability."""
+    import pandas as pd
+
+    from commcare_connect.microplans.sampling.frame import psu_summary
+
+    # Two compact PSUs of known size + building footprint, projected coords included.
+    c0 = _scatter(20, spread_m=60, seed=1).assign(cluster=0)
+    c1 = _scatter(30, spread_m=60, seed=2).assign(cluster=1)
+    buildings = pd.concat([c0, c1], ignore_index=True)
+    buildings["area_m2"] = 100.0
+    selected = pd.DataFrame({"cluster": [0, 1], "n_buildings": [20, 30], "stratum": ["Low", "Low"], "P_psu": [0.5, 0.7]})
+
+    s = psu_summary(buildings, selected)
+    assert round(s["psu_size"][0]) == 25  # mean of 20 and 30
+    assert s["psu_size"][1] > 0  # sd present
+    assert s["psu_density"][0] > 0  # buildings per km² within the PSU hulls
+    assert round(s["bldg_area"][0]) == 100  # mean footprint area
+
+
+def test_psu_summary_empty_is_safe():
+    import pandas as pd
+
+    from commcare_connect.microplans.sampling.frame import psu_summary
+
+    s = psu_summary(pd.DataFrame(columns=["lon", "lat", "cluster", "area_m2"]), pd.DataFrame(columns=["cluster"]))
+    assert s["psu_size"] == (0.0, 0.0) and s["psu_density"] == (0.0, 0.0)
+
+
+def test_select_psus_size_stratified_spreads_across_size_range():
+    """R2: size-stratified systematic PPS draws a matched size-mix across strata,
+    instead of plain PPS concentrating the draw on the largest PSUs."""
+    import numpy as np
+    import pandas as pd
+
+    from commcare_connect.microplans.sampling.sample import select_psus
+
+    # 30 PSUs with sizes 16..45; plain PPS over-weights the big end.
+    frame = pd.DataFrame({"cluster": range(30), "n_buildings": np.arange(16, 46), "stratum": "Low"})
+    plain = select_psus(frame, n_take=12, size_strata=0)
+    strat = select_psus(frame, n_take=12, size_strata=3)
+
+    assert len(plain) == 12 and len(strat) == 12
+    # Stratified reaches further into the small-PSU end than plain PPS.
+    assert strat["n_buildings"].min() <= plain["n_buildings"].min()
+    # Every stratum is represented (the draw is not all from one size band).
+    assert strat["n_buildings"].min() < 26 and strat["n_buildings"].max() > 35
+    # Inclusion probabilities are still present and in (0, 1].
+    assert (strat["P_psu"] > 0).all() and (strat["P_psu"] <= 1).all()
