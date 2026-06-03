@@ -113,6 +113,12 @@ Each item in the list can include `program_id`, `opportunity_id`, or `organizati
 
 **Cross-app connections:** Workflow can create audits and tasks. AI agents modify workflows and solicitations. `custom_analysis/audit_of_audits` reads audit and organization data. Coverage is standalone.
 
+## Prelogin marketing site
+
+The public marketing site at `/` is the `prelogin` app. **This repo (labs) is its source of truth and staging environment** — edit `commcare_connect/templates/prelogin/home.html`, `static/prelogin/`, and `prelogin/urls.py` directly (Django-native; no code-generation or import step), preview on `labs.connect.dimagi.com`, then promote to production (`dimagi/commcare-connect`). The old `dimagi-internal/connect-prelogin` upstream + `export-to-django.py` pipeline is **deprecated**.
+
+To promote, the trigger is **"create a PR to push the prelogin changes to connect prod"** — copy the three `prelogin` dirs (`prelogin/`, `templates/prelogin/`, `static/prelogin/`) labs→prod and open a PR; leave each repo's `config/urls.py`/robots policy alone (labs stays `Disallow: /`, prod stays indexable). Full details: **[docs/prelogin-marketing-site.md](docs/prelogin-marketing-site.md)**.
+
 ## Workflow Engine
 
 Templates are single Python files in `workflow/templates/` exporting DEFINITION (statuses, config), RENDER_CODE (React JSX string transpiled by Babel), and optionally PIPELINE_SCHEMAS (CommCare form field extraction). The registry auto-discovers them. Pipeline schemas map CommCare form JSON paths to extracted fields with aggregations and transforms. Render code receives `{definition, instance, workers, pipelines, links, actions, onUpdateState, view}` as props.
