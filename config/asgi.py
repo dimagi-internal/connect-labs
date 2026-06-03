@@ -48,10 +48,6 @@ from starlette.routing import Mount, Route  # noqa: E402
 
 from commcare_connect.mcp.server import build_http_app  # noqa: E402
 
-# Streamable-HTTP ASGI app. path="/" -> the MCP endpoint is the mount root,
-# i.e. /mcp/ (the preserved public URL).
-_mcp_app = build_http_app()
-
 
 class _PlainBearerChallenge:
     """Rewrite FastMCP's OAuth-style 401 challenge to a plain realm challenge.
@@ -150,26 +146,45 @@ class _ReprefixApp:
         await self.app(scope, receive, send)
 
 
-application = Starlette(
-    routes=[
-        # OAuth discovery probes answered with clean JSON (not Django's HTML
-        # 404) so a client that does RFC 9728 discovery after a 401 fails
-        # gracefully instead of crashing on an unparseable body. Mounted ahead
-        # of the Django catch-all. connect-labs serves no OAuth metadata — it is
-        # a PAT-only resource server.
-        *[Route(path, _oauth_metadata_absent, methods=["GET", "POST"]) for path in _OAUTH_DISCOVERY_PATHS],
-        # Keep the Django token-management browser routes on Django. The
-        # _ReprefixApp wrapper re-adds /mcp/admin so Django's URL router sees
-        # the full path and can match mcp/admin/create-token/.
-        Mount("/mcp/admin", app=_ReprefixApp("/mcp/admin", _django_asgi_app)),
-        # FastMCP Streamable-HTTP protocol endpoint at /mcp/. Wrapped so the
-        # auth 401 carries a plain `Bearer realm` challenge (not FastMCP's
-        # OAuth-style `error="invalid_token"`), keeping PAT clients off the
-        # OAuth-discovery path that breaks reconnect.
-        Mount("/mcp", app=_PlainBearerChallenge(_mcp_app)),
-        # Django handles everything else (catch-all, mounted last).
-        Mount("/", app=_django_asgi_app),
-    ],
-    # Run the MCP session-manager lifespan for the whole process.
-    lifespan=_mcp_app.lifespan,
-)
+def build_application() -> Starlette:
+    """Assemble the combined MCP + Django ASGI app.
+
+    A factory, not a bare module-level expression, because the FastMCP
+    Streamable-HTTP app owns a ``StreamableHTTPSessionManager`` whose ``.run()``
+    lifespan can only be entered ONCE per instance. Production enters it exactly
+    once (process startup), so the module-level ``application`` below is correct.
+    But tests that drive the app in-process need to enter the lifespan per test;
+    sharing one instance makes the second test crash with "session manager
+    .run() can only be called once". The factory hands each caller a fresh app
+    (fresh session manager), so tests stay isolated while production is
+    unchanged. See ``test_asgi_integration.py``.
+    """
+    # Streamable-HTTP ASGI app. path="/" -> the MCP endpoint is the mount root,
+    # i.e. /mcp/ (the preserved public URL).
+    mcp_app = build_http_app()
+    return Starlette(
+        routes=[
+            # OAuth discovery probes answered with clean JSON (not Django's HTML
+            # 404) so a client that does RFC 9728 discovery after a 401 fails
+            # gracefully instead of crashing on an unparseable body. Mounted
+            # ahead of the Django catch-all. connect-labs serves no OAuth
+            # metadata — it is a PAT-only resource server.
+            *[Route(path, _oauth_metadata_absent, methods=["GET", "POST"]) for path in _OAUTH_DISCOVERY_PATHS],
+            # Keep the Django token-management browser routes on Django. The
+            # _ReprefixApp wrapper re-adds /mcp/admin so Django's URL router sees
+            # the full path and can match mcp/admin/create-token/.
+            Mount("/mcp/admin", app=_ReprefixApp("/mcp/admin", _django_asgi_app)),
+            # FastMCP Streamable-HTTP protocol endpoint at /mcp/. Wrapped so the
+            # auth 401 carries a plain `Bearer realm` challenge (not FastMCP's
+            # OAuth-style `error="invalid_token"`), keeping PAT clients off the
+            # OAuth-discovery path that breaks reconnect.
+            Mount("/mcp", app=_PlainBearerChallenge(mcp_app)),
+            # Django handles everything else (catch-all, mounted last).
+            Mount("/", app=_django_asgi_app),
+        ],
+        # Run the MCP session-manager lifespan for the whole process.
+        lifespan=mcp_app.lifespan,
+    )
+
+
+application = build_application()
