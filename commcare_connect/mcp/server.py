@@ -299,5 +299,16 @@ def build_http_app():
     ``path="/"`` because ``config/asgi.py`` mounts this app under the ``/mcp``
     prefix; the MCP endpoint then lives at exactly ``/mcp/`` — the same public
     URL the hand-rolled view served (see ``snippets.DEFAULT_SERVER_URL``).
+
+    ``stateless_http=True`` is REQUIRED for this deployment. ``docker/start``
+    runs gunicorn with ``-w ${WEB_CONCURRENCY:-3}`` UvicornWorkers (and ECS may
+    run >1 task), so there is no single process to hold FastMCP's default
+    in-memory session store. In the default stateful mode, ``initialize`` mints
+    a session on whichever worker answers it, but the follow-up ``tools/list`` /
+    ``tools/call`` round-robins to a *different* worker that has never seen that
+    session id and replies ``-32600 "Session not found"``. The client's
+    connection check (``initialize`` only) still passes, so the server looks
+    "connected" while tools intermittently fail to load. Stateless mode makes
+    every request self-contained, so it is correct under horizontal scaling.
     """
-    return mcp.http_app(path="/", transport="streamable-http")
+    return mcp.http_app(path="/", transport="streamable-http", stateless_http=True)
