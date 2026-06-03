@@ -4,7 +4,7 @@
 // Verification-first: the hero is the defensible claim (an independent survey
 // checked the implementer's self-report). The treatment/comparison ward
 // coverage is supporting context, framed descriptively — not a causal estimate.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V17
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V18
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -57,12 +57,21 @@ function WorkflowUI(props) {
       if (!leafletReady || !overlay || !mapDivRef.current) return;
       var L = window.L;
       if (!mapRef.current) {
-        // Self-contained: no external tile layer (clean dark canvas, no CSP/attribution dependency).
         mapRef.current = L.map(mapDivRef.current, {
           scrollWheelZoom: false,
-          attributionControl: false,
+          attributionControl: true,
           zoomControl: true,
         });
+        // Real basemap: the two wards sit on actual admin boundaries + place
+        // names (Kaduna State, Nigeria), so it reads as a real geographic map.
+        L.tileLayer(
+          'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+          {
+            subdomains: 'abcd',
+            maxZoom: 19,
+            attribution: '© OpenStreetMap © CARTO',
+          },
+        ).addTo(mapRef.current);
       }
       var map = mapRef.current;
       map.eachLayer(function (l) {
@@ -73,11 +82,11 @@ function WorkflowUI(props) {
         style: function (f) {
           var t = f.properties && f.properties.ward === tw;
           return {
-            color: t ? '#34d399' : '#64748b',
-            weight: 1.5,
+            color: t ? '#34d399' : '#94a3b8',
+            weight: 2.5,
             fill: true,
             fillColor: t ? '#16351f' : '#1a2236',
-            fillOpacity: 0.55,
+            fillOpacity: 0.28,
           };
         },
         onEachFeature: function (f, layer) {
@@ -94,7 +103,9 @@ function WorkflowUI(props) {
       wards._ov = true;
       wards.addTo(map);
       try {
-        map.fitBounds(wards.getBounds(), { padding: [20, 20] });
+        // Extra padding so the surrounding admin boundaries / place names are
+        // visible around the two wards, not just the wards themselves.
+        map.fitBounds(wards.getBounds(), { padding: [55, 55] });
       } catch (e) {}
       if (sdOn && overlay.service_delivery) {
         var sdl = L.geoJSON(overlay.service_delivery, {

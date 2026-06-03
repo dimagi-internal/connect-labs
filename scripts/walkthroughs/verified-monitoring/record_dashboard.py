@@ -133,7 +133,15 @@ def main() -> int:
         # the program ward, then reveal the survey pins on camera. End here.
         _scroll_to(page, "Where the program delivered", settle_ms=1800)
         page.wait_for_selector(".leaflet-container", timeout=15_000)
-        page.wait_for_timeout(1400)
+        # Wait for the basemap tiles (admin boundaries) to actually paint.
+        try:
+            page.wait_for_function(
+                "document.querySelectorAll('.leaflet-tile-loaded').length > 4",
+                timeout=10_000,
+            )
+        except Exception:
+            pass
+        page.wait_for_timeout(1600)
         snap(rec, "map")
         _toggle(page, "service delivery")
         _reveal(page, "survey pins")
@@ -145,9 +153,9 @@ def main() -> int:
     src = webms[-1]
     out = HERE / "verified_monitoring.mp4"
     print(f"webm: {src.name} ({src.stat().st_size // 1024} KB) → {out.name}")
-    # Crop away the labs app chrome (sticky top bar + left nav rail) so the
-    # video reads as a deliverable, not a tool screenshot; trim the measured
-    # renderer-load spinner off the front. Viewport is 1440x900 (recorder default).
+    # Keep the full Connect UI in frame (the surrounding shell shows this is
+    # running inside CommCare Connect); only trim the measured renderer-load
+    # spinner off the front.
     print(f"trimming {trim_s:.1f}s of renderer-load spinner")
     subprocess.run(
         [
@@ -158,9 +166,7 @@ def main() -> int:
             "-ss",
             f"{trim_s:.2f}",
             "-vf",
-            # Crop x=64 (nav rail) and y=120 (top bar + breadcrumb), leaving the
-            # dashboard card only.
-            "crop=1376:780:64:120,scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
             "-movflags",
             "+faststart",
             "-pix_fmt",
