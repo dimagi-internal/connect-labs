@@ -115,10 +115,15 @@
     </div>
     <p class="text-[11px] text-gray-400 mb-2">
       Is the control a fair counterfactual? The survey only visits the sampled settlements (PSUs), so the
-      arms are compared on the <b>selected PSUs</b> — settlement density, PSU size, and building footprint —
-      as a standardized mean difference (SMD). |SMD| &lt; 0.1 is a close match, &lt; 0.25 acceptable.
+      arms are compared on the <b>selected PSUs</b>, as a standardized mean difference (SMD).
+      The verdict gates on <b>settlement density</b> — the settlement structure a control can't change after
+      the survey. PSU size and building footprint are baseline covariates a difference-in-differences analysis
+      adjusts for, so they are flagged to <i>adjust at analysis</i>, not used to reject the control.
+      |SMD| &lt; 0.1 is a close match, &lt; 0.25 acceptable.
     </p>
-    <!-- Balance table (CONSORT-style): one row per characteristic, SMD + band. -->
+    <!-- Balance table (CONSORT-style): one row per characteristic, SMD + band. The
+         gating row (settlement density) uses red on imbalance; advisory rows use a
+         calm 'adjust at analysis' so the table never contradicts the verdict. -->
     <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
       <table class="text-sm">
         <thead class="bg-gray-50 text-gray-600">
@@ -131,23 +136,21 @@
         <tbody class="divide-y divide-gray-100">
           {% for m in comparability.metrics %}
           <tr>
-            <td class="px-3 py-2">{{ m.label }}{% if not m.core %} <span class="text-[10px] text-gray-400">(advisory)</span>{% endif %}</td>
+            <td class="px-3 py-2">{{ m.label }}{% if m.core %} <span class="text-[10px] text-gray-500">· gates verdict</span>{% else %} <span class="text-[10px] text-gray-400">· adjust at analysis</span>{% endif %}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.iv }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.ct }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.smd }}</td>
             <td class="px-3 py-2">
               {% if m.band == "good" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● close</span>
-              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">● acceptable</span>
-              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs</span>{% endif %}
+              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● acceptable</span>
+              {% elif m.core %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs</span>
+              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">adjust at analysis</span>{% endif %}
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    {% if comparability.flags %}
-    <p class="text-[11px] text-amber-700 mt-2">⚑ {{ comparability.flags|join:"; " }}.</p>
-    {% endif %}
     <p class="text-[11px] text-gray-400 mt-2">
       Context (not used for matching): whole-ward building density —
       {% for a in comparability.arms %}{% if a.arm == "intervention" %}intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}
