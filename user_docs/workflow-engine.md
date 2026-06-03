@@ -191,7 +191,7 @@ A single screen contains four panels:
 - **Verification headline panel** — the gap chart and plain-English summary described above; this is the first thing a viewer sees.
 - **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent comparison ward (labelled observational, not a randomised control). Each row includes per-round sparklines and a neutral "measured difference" figure between the two wards.
 - **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time.
-- **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
+- **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
 ### Generating Demo or Test Data from a Real Opportunity
 
@@ -221,6 +221,7 @@ If you want to record a walkthrough that shows a network manager actually conduc
 
 - The most recent week's run is left in an **in-progress** state with no decisions, audits, or tasks already filled in.
 - The manager performing the walkthrough makes real decisions during the recording, so the demo looks and feels like a genuine live review rather than a replay.
+- The recording keeps the full CommCare Connect UI in frame — the top bar, navigation, and breadcrumb are visible — so the demo reads unmistakably as running inside Connect rather than as a standalone screen.
 
 While the run is in progress, the manager has access to the full set of live actions in the dashboard:
 
@@ -229,6 +230,4 @@ While the run is in progress, the manager has access to the full set of live act
 - **Create Audit** — opens an audit record with 5 unreviewed photos for that worker. The manager reviews each photo, passes or flags it, and then clicks **Complete Image Review** to record the verdict. The audit opens in an unreviewed state so the walkthrough shows the full review process rather than landing on an already-finished record.
 - **Create Task with Coaching** — opens the **Initiate AI Assistant** modal on the task page, the same modal a real OCS user sees. The task page shows a short, readable description of what the coaching task is about. The prompt is framed as an instruction to the assistant — for example, "Coach [worker] about this week's nutrition screening. The report flagged: … A suspiciously low SAM/MAM rate usually means …" — and is rendered as a distinct **Instructions to assistant** banner above the conversation, separate from the assistant's own opening line. The full prompt is also pre-filled in the modal's prompt field, where the manager can read or edit it before clicking **Initiate AI** to start the coaching conversation.
 
-All four actions are only available while the run is in an **in-progress** state. Once the run is concluded it becomes read-only, so the buttons are no longer shown — rows without an existing audit or task show greyed-out, non-interactive buttons, while rows that already produced an audit or task still show working **View Audit / View Task** links.
-
-This is useful for training videos, funder demonstrations, or onboarding walkthroughs where you want the reviewer's actions to be part of the story. Ask your program administrator or raise a request in **#connect
+All four actions are only available while the run is in an **in-progress**
