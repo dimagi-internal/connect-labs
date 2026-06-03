@@ -1,9 +1,10 @@
 // Verified Monitoring (N1) — funder-facing verified-coverage dashboard.
 // Self-contained: reads everything from instance.state (seeded payload); never
 // fetches. Financial-dashboard styling with a two-ward Leaflet overlay.
-// Show-don't-tell: presents results neutrally; no causal claims, no caveat
-// banner — the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V9
+// Verification-first: the hero is the defensible claim (an independent survey
+// checked the implementer's self-report). The treatment/comparison ward
+// coverage is supporting context, framed descriptively — not a causal estimate.
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V17
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -83,14 +84,11 @@ function WorkflowUI(props) {
           var w = f.properties && f.properties.ward;
           var t = w === tw;
           var cnt = sd[w] != null ? sd[w] : 0;
-          layer.bindTooltip(
-            w +
-              (t ? ' · treatment' : ' · control') +
-              ' — ' +
-              cnt.toLocaleString() +
-              ' program visits',
-            { permanent: true, direction: 'top', className: 'vm-ward-label' },
-          );
+          layer.bindTooltip(w + ' · ' + cnt.toLocaleString() + ' visits', {
+            permanent: true,
+            direction: t ? 'left' : 'right',
+            className: 'vm-ward-label',
+          });
         },
       });
       wards._ov = true;
@@ -101,11 +99,13 @@ function WorkflowUI(props) {
       if (sdOn && overlay.service_delivery) {
         var sdl = L.geoJSON(overlay.service_delivery, {
           pointToLayer: function (f, ll) {
+            // Small, semi-transparent: reads as ward-fill saturation/texture,
+            // not individual confetti. The survey pins are the foreground signal.
             return L.circleMarker(ll, {
-              radius: 3,
+              radius: 2,
               weight: 0,
               fillColor: '#16a34a',
-              fillOpacity: 0.7,
+              fillOpacity: 0.45,
             });
           },
         });
@@ -115,12 +115,14 @@ function WorkflowUI(props) {
       if (pinsOn && overlay.survey_pins) {
         var pl = L.geoJSON(overlay.survey_pins, {
           pointToLayer: function (f, ll) {
+            // Distinct hues: confirmed = purple, absent = slate (not a near-pink).
+            var ok = f.properties && f.properties.confirmed;
             return L.circleMarker(ll, {
               radius: 3.5,
               weight: 0.6,
               color: '#0b1020',
-              fillColor: (f.properties && f.properties.color) || '#a78bfa',
-              fillOpacity: 0.92,
+              fillColor: ok ? '#a78bfa' : '#94a3b8',
+              fillOpacity: 0.95,
             });
           },
         });
@@ -137,7 +139,9 @@ function WorkflowUI(props) {
     MUT = '#8a96b3',
     PURPLE = '#a78bfa',
     PINK = '#f472b6',
-    GREEN = '#34d399';
+    GREEN = '#34d399',
+    AMBER = '#fbbf24',
+    REDISH = '#fca5a5';
   var mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
 
   if (!latest) {
@@ -163,6 +167,11 @@ function WorkflowUI(props) {
     return arr && arr.length ? arr[arr.length - 1].n : null;
   }
   var cN = _lastN(byArm.comparison);
+  // 95% CI on the independently-verified coverage (binomial, n surveyed).
+  var _indP = (sr.independent_pct || 0) / 100;
+  var _indN = latest.intervention_n || 0;
+  var indCI =
+    _indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / _indN) * 100 : null;
   var tWard = prog.treatment_ward || 'Treatment',
     cWard = prog.control_ward || 'Control';
   function _delta(arr) {
@@ -383,6 +392,202 @@ function WorkflowUI(props) {
             strokeWidth="1.5"
           />
         ) : null}
+        {ti[last] ? (
+          <text
+            x={X(last) - 8}
+            y={Y(ti[last].coverage_pct) - 8}
+            fill={PURPLE}
+            fontSize="11"
+            fontWeight="700"
+            textAnchor="end"
+          >
+            {tWard + ' ' + pct(ti[last].coverage_pct)}
+          </text>
+        ) : null}
+        {tc[last] ? (
+          <text
+            x={X(last) - 8}
+            y={Y(tc[last].coverage_pct) - 8}
+            fill={PINK}
+            fontSize="11"
+            fontWeight="700"
+            textAnchor="end"
+          >
+            {cWard + ' ' + pct(tc[last].coverage_pct)}
+          </text>
+        ) : null}
+      </svg>
+    );
+  }
+
+  // --- hero dumbbell: self-reported vs independently-verified, with the gap
+  // shaded and a 95% CI whisker on the verified estimate. Makes the gap the
+  // visual instead of a prose sentence. ---
+  function dumbbell() {
+    var W = 560,
+      H = 106,
+      padL = 14,
+      padR = 14;
+    var self = sr.intervention_pct,
+      ver = sr.independent_pct;
+    if (self == null || ver == null) return null;
+    // Zoom the axis to a window around the two values so they spread across
+    // the full width (not bunched in the right third of a 0-100 axis).
+    var dLo = Math.max(0, Math.floor((Math.min(self, ver) - 10) / 10) * 10);
+    var dHi = 100;
+    function X(v) {
+      return padL + ((v - dLo) / (dHi - dLo)) * (W - padL - padR);
+    }
+    var yT = 50;
+    var xSelf = X(self),
+      xVer = X(ver);
+    var AMBER = '#fbbf24';
+    var ci = indCI || 0;
+    var ciLo = X(Math.max(dLo, ver - ci)),
+      ciHi = X(Math.min(dHi, ver + ci));
+    var ticks = [];
+    for (var tk = dLo; tk <= dHi + 0.001; tk += 10) ticks.push(tk);
+    // Clamp a label x so its box never overflows the chart edges.
+    function clampX(x, halfW) {
+      return Math.max(padL + halfW, Math.min(W - padR - halfW, x));
+    }
+    return (
+      <svg
+        width="100%"
+        viewBox={'0 0 ' + W + ' ' + H}
+        style={{ display: 'block', maxWidth: 600 }}
+      >
+        {/* legend (top) — so the dot values below never collide or clip */}
+        <circle cx={padL + 4} cy={11} r="4" fill="#fca5a5" />
+        <text x={padL + 12} y={14} fill={MUT} fontSize="10">
+          self-reported (program records)
+        </text>
+        <circle cx={padL + 215} cy={11} r="4" fill={PURPLE} />
+        <text x={padL + 223} y={14} fill={MUT} fontSize="10">
+          independently verified (survey, 95% CI)
+        </text>
+        {ticks.map(function (t) {
+          var x = X(t);
+          return (
+            <g key={t}>
+              <line x1={x} y1={yT - 3} x2={x} y2={yT + 3} stroke={LINE} />
+              <text
+                x={x}
+                y={H - 5}
+                fill={MUT}
+                fontSize="9"
+                fontFamily={mono}
+                textAnchor="middle"
+              >
+                {t + '%'}
+              </text>
+            </g>
+          );
+        })}
+        <line x1={padL} y1={yT} x2={W - padR} y2={yT} stroke={LINE} />
+        {/* the gap = the finding. Amber, not green (green elsewhere = passing). */}
+        <line
+          x1={xVer}
+          y1={yT}
+          x2={xSelf}
+          y2={yT}
+          stroke={AMBER}
+          strokeWidth="4"
+        />
+        {/* 95% CI as a shaded band so the verified dot clearly sits on top */}
+        <rect
+          x={ciLo}
+          y={yT - 7}
+          width={ciHi - ciLo}
+          height="14"
+          rx="4"
+          fill={PURPLE}
+          opacity="0.22"
+        />
+        <line
+          x1={ciLo}
+          y1={yT - 7}
+          x2={ciLo}
+          y2={yT + 7}
+          stroke={PURPLE}
+          strokeWidth="1.5"
+          opacity="0.85"
+        />
+        <line
+          x1={ciHi}
+          y1={yT - 7}
+          x2={ciHi}
+          y2={yT + 7}
+          stroke={PURPLE}
+          strokeWidth="1.5"
+          opacity="0.85"
+        />
+        <circle
+          cx={xSelf}
+          cy={yT}
+          r="7"
+          fill="#fca5a5"
+          stroke={INK}
+          strokeWidth="2"
+        />
+        <circle
+          cx={xVer}
+          cy={yT}
+          r="7"
+          fill={PURPLE}
+          stroke={INK}
+          strokeWidth="2"
+        />
+        {/* gap label (above); role+value labels at each dot (below) so the
+            direction — self-report higher than verified — is unmistakable. */}
+        <text
+          x={clampX((xVer + xSelf) / 2, 70)}
+          y={yT - 12}
+          fill={AMBER}
+          fontSize="12"
+          fontWeight="700"
+          textAnchor="middle"
+        >
+          self-report {pp(sr.premium_pp)} too high
+        </text>
+        <text
+          x={clampX(xVer, 40)}
+          y={yT + 22}
+          fill={PURPLE}
+          fontSize="14"
+          fontWeight="800"
+          textAnchor="middle"
+        >
+          {pct(ver)}
+        </text>
+        <text
+          x={clampX(xVer, 40)}
+          y={yT + 36}
+          fill={MUT}
+          fontSize="10"
+          textAnchor="middle"
+        >
+          verified (survey)
+        </text>
+        <text
+          x={clampX(xSelf, 40)}
+          y={yT + 22}
+          fill="#fca5a5"
+          fontSize="14"
+          fontWeight="800"
+          textAnchor="middle"
+        >
+          {pct(self)}
+        </text>
+        <text
+          x={clampX(xSelf, 40)}
+          y={yT + 36}
+          fill={MUT}
+          fontSize="10"
+          textAnchor="middle"
+        >
+          self-reported
+        </text>
       </svg>
     );
   }
@@ -446,45 +651,135 @@ function WorkflowUI(props) {
       >
         Independent rooftop survey · {prog.cadence || 'bi-monthly'} · latest
         round R{latest.round || (byArm.intervention || []).length} ·{' '}
-        <b style={{ color: PURPLE }}>{tWard}</b> (treatment) vs{' '}
-        <b style={{ color: PINK }}>{cWard}</b> (control)
+        <b style={{ color: PURPLE }}>{tWard}</b> (program ward) vs{' '}
+        <b style={{ color: PINK }}>{cWard}</b> (comparison ward)
       </div>
 
-      {/* Hero KPI tiles — the two ward coverages. The difference is shown
-          small + neutral below (not a hero tile) so it reads as a measured
-          number, not a causal-impact claim. */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {tile(
-          'Verified vitamin-A coverage',
-          tWard + ' (treatment)',
-          pct(tCov),
-          latest.intervention_n != null
-            ? latest.intervention_n + ' children surveyed'
-            : 'independent survey',
-          PURPLE,
-          byArm.intervention,
-          tDelta,
-        )}
-        {tile(
-          'Verified vitamin-A coverage',
-          cWard + ' (control)',
-          pct(cCov),
-          cN != null ? cN + ' children surveyed' : 'independent survey',
-          PINK,
-          byArm.comparison,
-          cDelta,
-        )}
-      </div>
+      {/* HERO — the defensible claim: an independent survey checked the
+          implementer's self-report. Needs no control group or baseline. */}
       <div
         style={{
-          marginTop: 10,
-          color: MUT,
-          fontFamily: mono,
-          fontSize: 13,
+          background: PANEL,
+          border: '1px solid ' + LINE,
+          borderRadius: 12,
+          padding: '18px 20px',
         }}
       >
-        Measured difference, latest round:{' '}
-        <span style={{ color: '#cbd5e1', fontWeight: 700 }}>{pp(gap)}</span>
+        <div
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+          }}
+        >
+          Independent verification — {tWard} (program ward)
+        </div>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            color: '#e2e8f0',
+            marginTop: 8,
+            lineHeight: 1.35,
+          }}
+        >
+          Program records overstate coverage by{' '}
+          <span style={{ color: AMBER }}>{pp(sr.premium_pp)}</span> —
+          self-reported{' '}
+          <span style={{ color: REDISH }}>{pct(sr.intervention_pct)}</span>,
+          independently verified{' '}
+          <span style={{ color: PURPLE }}>{pct(sr.independent_pct)}</span>.
+        </div>
+        <div style={{ marginTop: 12 }}>{dumbbell()}</div>
+        <div
+          style={{
+            color: MUT,
+            fontSize: 12,
+            marginTop: 8,
+            lineHeight: 1.5,
+            maxWidth: 600,
+          }}
+        >
+          Both estimate the same rate — the share of under-5 children reached
+          with confirmed vitamin-A — by different methods. Self-report is the
+          program's own records (
+          {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} logged visits);
+          the verified figure is an independent rooftop survey of {_indN}{' '}
+          children (95% CI ±{indCI != null ? indCI.toFixed(1) : '—'} pts).
+        </div>
+      </div>
+
+      {/* QA strip — how the survey held its line (backs the 'verified' claim) */}
+      <div
+        style={{
+          marginTop: 16,
+          color: MUT,
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: '.05em',
+          marginBottom: 6,
+        }}
+      >
+        Independent survey — data quality
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {chip('GPS within 15m', pct(verif.gps_within_15m_pct), true)}
+        {chip('Evidence complete', pct(verif.evidence_complete_pct), true)}
+        {chip('Back-check pass', pct(verif.backcheck_pass_pct), true)}
+        {chip(
+          'Anomaly flags',
+          (verif.flags_raised || 0) +
+            ' raised · ' +
+            ((verif.flags_raised || 0) - (verif.flags_resolved || 0)) +
+            ' open',
+          true,
+        )}
+      </div>
+
+      {/* Supporting context — coverage by ward (descriptive, not an impact
+          estimate). Demoted below the verification hero. */}
+      <div style={{ marginTop: 18 }}>
+        <div
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginBottom: 8,
+          }}
+        >
+          Coverage by ward, latest round (descriptive)
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {tile(
+            'Program ward',
+            tWard,
+            pct(tCov),
+            latest.intervention_n != null
+              ? latest.intervention_n + ' children surveyed'
+              : 'independent survey',
+            PURPLE,
+            null,
+            null,
+          )}
+          {tile(
+            'Comparison ward',
+            cWard,
+            pct(cCov),
+            cN != null ? cN + ' children surveyed' : 'independent survey',
+            PINK,
+            null,
+            null,
+          )}
+        </div>
+        <div
+          style={{ marginTop: 10, color: MUT, fontSize: 12, lineHeight: 1.4 }}
+        >
+          {cWard} received no program activity (0 logged visits) — an
+          observational neighbouring reference, not a randomised control, so the
+          two wards aren't directly comparable.
+        </div>
       </div>
 
       {/* Trend */}
@@ -535,18 +830,12 @@ function WorkflowUI(props) {
               marginBottom: 8,
             }}
           >
-            <div
-              style={{
-                color: MUT,
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '.05em',
-              }}
-            >
-              Two adjacent wards — program service delivery ({tWard}{' '}
-              {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} · {cWard}{' '}
-              {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}) with
-              independent survey pins on top
+            <div style={{ color: '#cbd5e1', fontSize: 13, maxWidth: 560 }}>
+              Where the program delivered, and where the survey checked —{' '}
+              {tWard} logged{' '}
+              {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} visits,{' '}
+              {cWard} {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}; the
+              independent survey covered both wards.
             </div>
             <div
               style={{
@@ -603,96 +892,19 @@ function WorkflowUI(props) {
             }}
           >
             <span>
-              <span style={{ color: GREEN }}>●</span> service-delivery visit
+              <span style={{ color: '#16a34a' }}>●</span> program
+              service-delivery visit
             </span>
             <span>
               <span style={{ color: PURPLE }}>●</span> survey: vitamin-A
               confirmed
             </span>
             <span>
-              <span style={{ color: PINK }}>●</span> survey: absent
+              <span style={{ color: '#94a3b8' }}>●</span> survey: not confirmed
             </span>
           </div>
         </div>
       ) : null}
-
-      {/* Verification strip */}
-      <div
-        style={{ marginTop: 18, display: 'flex', gap: 10, flexWrap: 'wrap' }}
-      >
-        {chip('GPS within 15m', pct(verif.gps_within_15m_pct), true)}
-        {chip('Evidence complete', pct(verif.evidence_complete_pct), true)}
-        {chip('Back-check pass', pct(verif.backcheck_pass_pct), true)}
-        {chip(
-          'Anomaly flags',
-          (verif.flags_raised || 0) +
-            ' / ' +
-            (verif.flags_resolved || 0) +
-            ' resolved',
-          true,
-        )}
-      </div>
-
-      {/* Self-reported vs independently verified */}
-      <div
-        style={{
-          marginTop: 18,
-          background: PANEL,
-          border: '1px solid ' + LINE,
-          borderRadius: 10,
-          padding: 14,
-        }}
-      >
-        <div
-          style={{
-            color: MUT,
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
-          }}
-        >
-          Self-reported vs independently verified ({tWard})
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 24,
-            marginTop: 8,
-            fontFamily: mono,
-            alignItems: 'baseline',
-          }}
-        >
-          <div>
-            <div style={{ color: MUT, fontSize: 12 }}>
-              Implementer self-report
-            </div>
-            <div style={{ fontSize: 24, color: '#fca5a5' }}>
-              {pct(sr.intervention_pct)}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: MUT, fontSize: 12 }}>Independent survey</div>
-            <div style={{ fontSize: 24, color: PURPLE }}>
-              {pct(sr.independent_pct)}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: MUT, fontSize: 12 }}>
-              Self-report overstatement
-            </div>
-            <div style={{ fontSize: 24, color: GREEN }}>
-              +{(sr.premium_pp || 0).toFixed(1)} pts
-            </div>
-          </div>
-        </div>
-        <div
-          style={{ color: MUT, fontSize: 12, marginTop: 10, fontFamily: mono }}
-        >
-          Program-logged visits — {tWard}:{' '}
-          {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} · {cWard}:{' '}
-          {sd[cWard] != null ? sd[cWard].toLocaleString() : '—'}
-        </div>
-      </div>
     </div>
   );
 }

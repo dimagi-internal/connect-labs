@@ -33,7 +33,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from walkthroughs._lib import config as wcfg  # noqa: E402
 from walkthroughs._lib.recorder import RecorderSession, goto_and_settle, slow_move, snap  # noqa: E402
 
-HERO = "text=Verified vitamin-A coverage"
+HERO = "text=Independent verification"
 
 
 def _scroll_to(page, text: str, *, settle_ms: int = 1200) -> bool:
@@ -113,30 +113,31 @@ def main() -> int:
         goto_and_settle(page, url, wait_for_selector=HERO, settle_seconds=2.5)
         trim_s = max(time.monotonic() - t0 + 1.0, 5.0)
 
-        # Scene 1 — the hero coverage tiles.
+        # Scene 1 — the hero: the self-reported-vs-verified dumbbell.
+        # Park the cursor well off the hero so the opening frame reads finished,
+        # not mid-interaction.
+        slow_move(page, 1180, 640, steps=20)
         snap(rec, "hero")
-        slow_move(page, 360, 320, steps=30)
-        page.wait_for_timeout(1800)
+        page.wait_for_timeout(2200)
 
-        # Scene 2 — the six-round trend.
-        _scroll_to(page, "Coverage across", settle_ms=1600)
+        # Scene 2 — coverage by ward (descriptive supporting context).
+        _scroll_to(page, "Coverage by ward", settle_ms=1500)
+        snap(rec, "wards")
+
+        # Scene 3 — the six-round trend.
+        _scroll_to(page, "Coverage across", settle_ms=1500)
         snap(rec, "trend")
 
-        # Scene 3 — the two-ward map. It lands on the clean service-delivery
+        # Scene 4 — the two-ward map. It lands on the clean service-delivery
         # view (pins off by default); toggle SD off/on to show it fills only
-        # the treatment ward, then reveal the survey pins on camera.
-        _scroll_to(page, "Two adjacent wards", settle_ms=1800)
+        # the program ward, then reveal the survey pins on camera. End here.
+        _scroll_to(page, "Where the program delivered", settle_ms=1800)
         page.wait_for_selector(".leaflet-container", timeout=15_000)
         page.wait_for_timeout(1400)
         snap(rec, "map")
         _toggle(page, "service delivery")
         _reveal(page, "survey pins")
-        page.wait_for_timeout(900)
-
-        # Scene 4 — close on self-report vs independently verified.
-        _scroll_to(page, "Self-reported vs independently verified", settle_ms=1600)
-        snap(rec, "verify")
-        page.wait_for_timeout(1600)
+        page.wait_for_timeout(1400)
 
     webms = sorted(video_dir.glob("*.webm"), key=lambda p: p.stat().st_mtime)
     if not webms:
