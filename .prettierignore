@@ -5,3 +5,9 @@
 # unrelated PRs. user_docs/ is rendered by mkdocs (see mkdocs.yml), not
 # by anything that needs prettier's normalization.
 user_docs/
+
+# Generated, vendored verbatim from dimagi-internal/connect-prelogin via
+# tools/export-to-django.py (see IMPORT.md upstream). These files must stay
+# byte-identical to the export's output, or the importer's `--check` reports
+# drift. Prettier must not reformat them. Edit upstream + re-run the export.
+commcare_connect/static/prelogin/
