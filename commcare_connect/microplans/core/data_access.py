@@ -165,6 +165,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         input_areas: list,
         grouping: dict | None = None,
         base_revision: int | None = None,
+        stats: list | None = None,
     ) -> PlanRecord:
         """Destructive re-creation of the work areas for an existing plan.
 
@@ -186,6 +187,10 @@ class ProgramPlanDataAccess(BaseDataAccess):
         data["mode"] = mode
         data["grouping"] = dict(grouping or {})
         data["assignment"] = {}  # destructive reset — no CHWs carried over
+        if stats is not None:
+            # Per-arm sampling summary (incl. PSU/building balance stats) for
+            # cross-arm comparability; never shared/pushed to Connect.
+            data["sampling_stats"] = stats
         return self._save_plan(plan, data, base_revision)
 
     def list_plans(self) -> list[PlanRecord]:

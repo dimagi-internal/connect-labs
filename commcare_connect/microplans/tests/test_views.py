@@ -340,6 +340,7 @@ class _FakeProgramPlan:
         lga="",
         state="",
         input_areas=None,
+        sampling_stats=None,
     ):
         self.id, self.mode, self.work_areas = pid, mode, work_areas
         self.name = name or f"Plan {pid}"
@@ -360,6 +361,7 @@ class _FakeProgramPlan:
             "mode": self.mode,
             "name": self.name,
             "input_areas": list(input_areas or []),
+            "sampling_stats": list(sampling_stats or []),
         }
 
     @property
@@ -1026,16 +1028,23 @@ def _ward(x0):
     }
 
 
-def test_program_group_manage_comparability_uses_ward_area_not_pins(client, django_user_model, monkeypatch):
-    """Sampling work areas are pins (points) → comparability area must come from the
-    arm's ward (input_areas), not the zero-area pins. Density must be non-zero."""
+def test_program_group_manage_comparability_uses_psu_smd_not_whole_ward(client, django_user_model, monkeypatch):
+    """Corrected comparability compares the SELECTED PSUs (settlement density, PSU
+    size, building footprint) via SMD — not whole-ward geography — so a larger,
+    sparser control ward that matches on settlement structure reads as matched."""
     _login(client, django_user_model)
+    # Madobi (intervention) vs a Kauran-Mata-like control: very different WARDS
+    # (the control ward is sparser) but the SELECTED PSUs match closely.
+    iv_stats = [{"psu_size": [53, 20], "psu_density": [8000, 2500], "bldg_area": [120, 40], "after_filters": 4569}]
+    ct_stats = [{"psu_size": [55, 21], "psu_density": [8200, 2600], "bldg_area": [123, 41], "after_filters": 4137}]
     plans = {
         501: _FakeProgramPlan(
-            501, "sampling", _pins(100), name="Madobi", input_areas=[{"kind": "draw", "geometry": _ward(8.2)}]
+            501, "sampling", _pins(100), name="Madobi",
+            input_areas=[{"kind": "draw", "geometry": _ward(8.2)}], sampling_stats=iv_stats,
         ),
         502: _FakeProgramPlan(
-            502, "sampling", _pins(110), name="Gora", input_areas=[{"kind": "draw", "geometry": _ward(8.5)}]
+            502, "sampling", _pins(110), name="Kauran Mata",
+            input_areas=[{"kind": "draw", "geometry": _ward(8.5)}], sampling_stats=ct_stats,
         ),
     }
     groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
@@ -1044,12 +1053,12 @@ def test_program_group_manage_comparability_uses_ward_area_not_pins(client, djan
     resp = client.get(reverse("microplans:program_group_page", kwargs={"program_id": 25, "group_id": 7}))
     assert resp.status_code == 200
     comp = resp.context["comparability"]
-    arms = {a["arm"]: a for a in comp["arms"]}
-    assert set(arms) == {"intervention", "control"}
-    assert arms["intervention"]["building_count"] == 100  # number of pins
-    assert arms["intervention"]["area_km2"] > 0  # from the ward, not the pins
-    assert arms["intervention"]["density_per_km2"] > 0
-    assert comp["matched"] in (True, False)
+    metrics = {m["metric"]: m for m in comp["metrics"]}
+    assert set(metrics) == {"psu_density", "psu_size", "bldg_area"}
+    assert metrics["psu_density"]["band"] == "good"  # settlements match closely
+    assert comp["matched"] is True  # matched on the core (settlement) metrics
+    # whole-ward density is echoed as context only (each arm carries it)
+    assert all("ward_density" in a for a in comp["arms"])
     assert "Arm comparability" in resp.content.decode()
 
 
