@@ -8,7 +8,7 @@
 // ward tiles, the independent back-check drill-down (J-PAL Type-1/2/3 — the
 // side-by-side that proves the survey), a six-round trend, and the two-ward
 // Mapbox map (shared ConnectMap module + real admin boundaries).
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V21
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V22
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -350,7 +350,7 @@ function WorkflowUI(props) {
           fontWeight="700"
           textAnchor="middle"
         >
-          self-report {pp(prem)} too high
+          Δ {pp(prem)}
         </text>
         <text
           x={clampX(xVer, 40)}
@@ -722,8 +722,6 @@ function WorkflowUI(props) {
     );
   }
 
-  var bcReproduces = bc.prtest_passed;
-
   return (
     <div
       style={{
@@ -758,38 +756,74 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Independent verification — {tWard} (program ward) · round R{rd.round}
+          Self-reported vs independently verified · {tWard} · R{rd.round}
         </div>
         <div
           style={{
-            fontSize: 18,
-            fontWeight: 700,
-            color: INK,
-            marginTop: 8,
-            lineHeight: 1.35,
+            display: 'flex',
+            gap: 28,
+            flexWrap: 'wrap',
+            alignItems: 'baseline',
+            marginTop: 10,
           }}
         >
-          Program records overstate coverage by{' '}
-          <span style={{ color: ROSE }}>{pp(prem)}</span> — self-reported{' '}
-          <span style={{ color: AMBER }}>{pct(self_)}</span>, independently
-          verified <span style={{ color: INDIGO }}>{pct(ver)}</span>.
+          <div>
+            <div
+              style={{
+                color: AMBER,
+                fontFamily: mono,
+                fontSize: 28,
+                fontWeight: 800,
+              }}
+            >
+              {pct(self_)}
+            </div>
+            <div style={{ color: MUT, fontSize: 11 }}>self-reported</div>
+          </div>
+          <div>
+            <div
+              style={{
+                color: INDIGO,
+                fontFamily: mono,
+                fontSize: 28,
+                fontWeight: 800,
+              }}
+            >
+              {pct(ver)}
+            </div>
+            <div style={{ color: MUT, fontSize: 11 }}>
+              independently verified
+            </div>
+          </div>
+          <div>
+            <div
+              style={{
+                color: ROSE,
+                fontFamily: mono,
+                fontSize: 28,
+                fontWeight: 800,
+              }}
+            >
+              {pp(prem)}
+            </div>
+            <div style={{ color: MUT, fontSize: 11 }}>difference</div>
+          </div>
         </div>
         <div style={{ marginTop: 12 }}>{dumbbell()}</div>
         <div
           style={{
             color: MUT,
-            fontSize: 12,
-            marginTop: 8,
-            lineHeight: 1.5,
-            maxWidth: 620,
+            fontSize: 11,
+            marginTop: 10,
+            lineHeight: 1.6,
+            fontFamily: mono,
           }}
         >
-          Both estimate the same rate — the share of under-5 children reached
-          with confirmed vitamin-A — by different methods. Self-report is the
-          program's own records (
-          {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} logged visits);
-          the verified figure is an independent rooftop survey of {indN}{' '}
-          children (95% CI ±{indCI != null ? indCI.toFixed(1) : '—'} pts).
+          indicator: under-5 children with confirmed vitamin-A · self-reported =
+          program records (
+          {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} logged visits)
+          · independently verified = rooftop survey, n={indN}, 95% CI ±
+          {indCI != null ? indCI.toFixed(1) : '—'} pts
         </div>
       </div>
 
@@ -889,9 +923,8 @@ function WorkflowUI(props) {
         <div
           style={{ marginTop: 10, color: MUT, fontSize: 12, lineHeight: 1.4 }}
         >
-          {cWard} received no program activity (0 logged visits) — an
-          observational neighbouring reference, not a randomised control, so the
-          two wards aren't directly comparable.
+          {cWard}: 0 logged program visits · neighbouring ward, no program
+          activity
         </div>
       </div>
 
@@ -905,41 +938,51 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Independent back-check — how we know the survey is real (round R
-          {rd.round})
+          Independent back-check · {tWard} · R{rd.round} — re-survey by a
+          different enumerator
         </div>
         <div
           style={{
-            fontSize: 13,
-            color: SUBINK,
-            marginTop: 8,
-            lineHeight: 1.5,
-            maxWidth: 720,
+            display: 'flex',
+            gap: 22,
+            flexWrap: 'wrap',
+            marginTop: 12,
+            fontFamily: mono,
           }}
         >
-          A stratified <b>{bc.coverage_pct}%</b> sample ({bc.n_backchecked}{' '}
-          households) was independently re-surveyed by a <b>different</b>{' '}
-          enumerator and compared field-by-field.{' '}
-          <span style={{ color: GREEN, fontWeight: 700 }}>
-            {bc.outcome_agreement_pct}%
-          </span>{' '}
-          of vitamin-A outcomes agreed; Type-1 (verification) discordance was{' '}
-          <span
-            style={{
-              color: (bc.type1_error_pct || 0) > 10 ? ROSE : SUBINK,
-              fontWeight: 700,
-            }}
-          >
-            {bc.type1_error_pct}%
-          </span>
-          .{' '}
-          <span style={{ color: bcReproduces ? GREEN : ROSE, fontWeight: 700 }}>
-            {bcReproduces
-              ? 'The coverage figure reproduces'
-              : 'Coverage differs under re-survey'}
-          </span>{' '}
-          (original {bc.orig_pct}% vs back-check {bc.bc_pct}%, proportion test
-          p={bc.prtest_p}).
+          {[
+            ['sample', bc.coverage_pct + '% · n=' + bc.n_backchecked, SUBINK],
+            ['outcome agreement', bc.outcome_agreement_pct + '%', SUBINK],
+            [
+              'type-1 discordance',
+              bc.type1_error_pct + '%',
+              (bc.type1_error_pct || 0) > 10 ? ROSE : SUBINK,
+            ],
+            [
+              'original / back-check',
+              bc.orig_pct + '% / ' + bc.bc_pct + '%',
+              SUBINK,
+            ],
+            ['proportion test', 'p=' + bc.prtest_p, SUBINK],
+          ].map(function (s) {
+            return (
+              <div key={s[0]}>
+                <div
+                  style={{
+                    color: MUT,
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: '.04em',
+                  }}
+                >
+                  {s[0]}
+                </div>
+                <div style={{ color: s[2], fontSize: 16, fontWeight: 700 }}>
+                  {s[1]}
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div style={{ marginTop: 12 }}>{bcTable()}</div>
         <div
@@ -999,8 +1042,8 @@ function WorkflowUI(props) {
           </span>
         </div>
         <div style={{ color: MUT, fontSize: 11, marginBottom: 8 }}>
-          y-axis: % of surveyed children with confirmed vitamin-A · shaded band
-          = self-report overstatement · the highlighted column is the selected
+          y-axis: % of surveyed children with confirmed vitamin-A · shaded =
+          self-reported − independently verified · highlighted column = selected
           round
         </div>
         {trendChart()}
@@ -1018,11 +1061,10 @@ function WorkflowUI(props) {
             }}
           >
             <div style={{ color: SUBINK, fontSize: 13, maxWidth: 560 }}>
-              Where the program delivered, and where the survey checked —{' '}
-              {tWard} logged{' '}
-              {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} visits,{' '}
-              {cWard} {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}; the
-              independent survey covered both wards.
+              Program service delivery (logged visits) and independent survey
+              locations · {tWard}:{' '}
+              {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} visits ·{' '}
+              {cWard}: {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}
             </div>
             <div
               style={{
