@@ -49,15 +49,18 @@ def test_arm_comparability_matched_none_with_one_arm():
 #     surveyed buildings via standardized mean difference, not whole-ward density) ---
 
 
-def _arm(name, *, size, density, bldg_area, ward_density=0.0):
+def _arm(name, *, size, density, bldg_area, ward_density=0.0, n_psus=None):
     """An arm's stored sampling summary: (mean, sd) per metric + whole-ward context."""
-    return {
+    arm = {
         "arm": name,
         "psu_size": size,
         "psu_density": density,
         "bldg_area": bldg_area,
         "ward_density": ward_density,
     }
+    if n_psus is not None:
+        arm["n_psus"] = n_psus
+    return arm
 
 
 def test_psu_comparability_matched_on_settlement_structure_ignores_whole_ward():
@@ -108,6 +111,36 @@ def test_psu_comparability_building_area_is_an_advisory_flag_not_a_gate():
     m = {x["metric"]: x for x in out["metrics"]}
     assert m["bldg_area"]["band"] == "imbalanced"
     assert out["flags"]  # building-stock difference surfaced as an advisory flag
+
+
+def test_psu_comparability_surfaces_sample_size_and_advisory_flag():
+    # The panel states its own n (PSUs each SMD is computed over) and exposes
+    # has_advisory so the template can render the demoted covariate block.
+    from commcare_connect.microplans.core.comparability import arm_comparability_psu
+
+    out = arm_comparability_psu(
+        [
+            _arm("intervention", size=(53, 20), density=(8000, 2500), bldg_area=(120, 40), n_psus=8),
+            _arm("control", size=(55, 21), density=(8200, 2600), bldg_area=(123, 41), n_psus=8),
+        ]
+    )
+    assert out["n_intervention"] == 8 and out["n_control"] == 8
+    assert out["has_advisory"] is True  # PSU size + building footprint are always advisory rows
+    assert all("n_psus" in a for a in out["arms"])
+
+
+def test_psu_comparability_n_defaults_zero_for_legacy_stats():
+    # Stats persisted before n_psus was threaded through must not crash; n reads 0
+    # so the template hides the sample-size line rather than asserting "n = 0".
+    from commcare_connect.microplans.core.comparability import arm_comparability_psu
+
+    out = arm_comparability_psu(
+        [
+            _arm("intervention", size=(53, 20), density=(8000, 2500), bldg_area=(120, 40)),
+            _arm("control", size=(55, 21), density=(8200, 2600), bldg_area=(123, 41)),
+        ]
+    )
+    assert out["n_intervention"] == 0 and out["n_control"] == 0
 
 
 def test_psu_comparability_none_with_one_arm():

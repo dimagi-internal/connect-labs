@@ -126,7 +126,15 @@ def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
             hull_km2 = transform(tf, MultiPoint(list(zip(sub["lon"], sub["lat"]))).convex_hull).area / 1e6
             if hull_km2 > 0:
                 densities.append(n / hull_km2)
-    return {"psu_size": _mean_sd(sizes), "psu_density": _mean_sd(densities), "bldg_area": _mean_sd(areas)}
+    return {
+        "psu_size": _mean_sd(sizes),
+        "psu_density": _mean_sd(densities),
+        "bldg_area": _mean_sd(areas),
+        # n selected PSUs the means/SDs (and hence every SMD) are computed over —
+        # surfaced so the balance panel can state its own sample size, not assert
+        # a standardized difference whose denominator is invisible.
+        "n_psus": len(sizes),
+    }
 
 
 def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
