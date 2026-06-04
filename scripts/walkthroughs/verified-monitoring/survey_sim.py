@@ -219,7 +219,7 @@ def _coverage(records, arm):
     return round(100.0 * got / len(elig), 1), len(elig)
 
 
-def _round_summary(cfg, records, round_idx, label, as_of):
+def _round_summary(cfg, records, round_idx, label, as_of, tw_name, cw_name):
     # The dashboard hero + QA strip + back-check defend the PROGRAM ward's
     # coverage claim, so compute those metrics over the treatment arm only (the
     # comparison ward is a descriptive reference, summarised via _coverage).
@@ -239,6 +239,8 @@ def _round_summary(cfg, records, round_idx, label, as_of):
         "round": round_idx + 1,
         "label": label,
         "as_of": as_of,
+        "treatment_ward": tw_name,
+        "comparison_ward": cw_name,
         "intervention_pct": t_pct,
         "comparison_pct": c_pct,
         "gap_pp": round((t_pct or 0) - (c_pct or 0), 1),
@@ -287,31 +289,66 @@ def _pt(lat, lon, props):
     return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": props}
 
 
+def _pins_sample(rng, records, cap_per_ward):
+    """A legible per-ward sample of survey-pin features from the primary records."""
+    by_ward = {}
+    for r in records:
+        if r["form_type"] != "primary" or r.get("lat") is None:
+            continue
+        by_ward.setdefault(r["ward"], []).append(r)
+    feats = []
+    for _ward, rs in by_ward.items():
+        pick = rs if len(rs) <= cap_per_ward else rng.sample(rs, cap_per_ward)
+        for r in pick:
+            feats.append(_pt(r["lat"], r["lon"], {"confirmed": bool(r["vitamin_a_received"]), "ward": r["ward"]}))
+    return _fc(feats)
+
+
 def build_state(cfg: dict, here: Path) -> tuple:
     """Generate all rounds and assemble the workflow instance.state payload.
 
+    Rotating wards: each round surveys a DIFFERENT (program, comparison) ward
+    pair (``cfg["rounds_wards"]``), so the map moves cycle to cycle. Every round
+    carries its own ward names + map overlay; the render reads them per round.
+
     Returns (state, all_records)."""
     rng = random.Random(cfg["rng_seed"])
-    wards = _load_wards(here / cfg["wards_geojson"])
-    tw, cw = cfg["wards"]["treatment"], cfg["wards"]["comparison"]
-    geoms = {"treatment": wards[tw]["geometry"], "comparison": wards[cw]["geometry"]}
-    arm_cfg = {
-        "treatment": {**cfg["arms"]["treatment"], "ward": tw},
-        "comparison": {**cfg["arms"]["comparison"], "ward": cw},
-    }
+    wards = _load_wards(here / cfg["wards_geojson"])  # ALL wards, keyed by name
+    pairs = cfg["rounds_wards"]
     n_rounds = cfg["rounds"]
+    sd_cfg = cfg.get("service_delivery", {})
+    map_pin_cap = cfg.get("map_pin_cap", 160)
 
-    all_records, rounds, latest_records = [], [], []
+    all_records, rounds = [], []
     for ri in range(n_rounds):
+        pair = pairs[ri % len(pairs)]
+        tw, cw = pair["treatment"], pair["comparison"]
+        tgeom, cgeom = wards[tw]["geometry"], wards[cw]["geometry"]
         label, as_of = _round_label(cfg["round0"], ri)
         base_id = f"r{ri + 1}"
-        recs = []
-        for arm in ("treatment", "comparison"):
-            recs += _gen_arm_round(rng, cfg, arm, arm_cfg[arm], geoms[arm], ri, n_rounds, f"{base_id}{arm[0]}")
+        arm_cfg = {
+            "treatment": {**cfg["arms"]["treatment"], "ward": tw},
+            "comparison": {**cfg["arms"]["comparison"], "ward": cw},
+        }
+        recs = _gen_arm_round(rng, cfg, "treatment", arm_cfg["treatment"], tgeom, ri, n_rounds, f"{base_id}t")
+        recs += _gen_arm_round(rng, cfg, "comparison", arm_cfg["comparison"], cgeom, ri, n_rounds, f"{base_id}c")
         recs += _gen_backchecks(rng, cfg, [r for r in recs if r["form_type"] == "primary"], ri, base_id)
-        rounds.append(_round_summary(cfg, recs, ri, label, as_of))
+
+        summary = _round_summary(cfg, recs, ri, label, as_of, tw, cw)
+        sd_pts = _sample_in_geom(rng, tgeom, sd_cfg.get("sample_points", 0))
+        summary["overlay"] = {
+            "ward_boundaries": _fc(
+                [
+                    {"type": "Feature", "geometry": tgeom, "properties": {"ward": tw, "role": "program"}},
+                    {"type": "Feature", "geometry": cgeom, "properties": {"ward": cw, "role": "comparison"}},
+                ]
+            ),
+            "service_delivery": _fc([_pt(lat, lon, {}) for lat, lon in sd_pts]),
+            "survey_pins": _pins_sample(rng, recs, map_pin_cap),
+        }
+        summary["service_delivery_counts"] = {tw: sd_cfg.get("treatment", 0), cw: sd_cfg.get("comparison", 0)}
+        rounds.append(summary)
         all_records += recs
-        latest_records = recs
 
     trend = {
         "rounds": [r["round"] for r in rounds],
@@ -320,38 +357,21 @@ def build_state(cfg: dict, here: Path) -> tuple:
         "self_report": [r["self_report_pct"] for r in rounds],
     }
 
-    # Map overlay from the latest round's primary records (pins) + a program
-    # service-delivery sample inside the treatment ward.
-    def _pins(records):
-        feats = []
-        for r in records:
-            if r["form_type"] != "primary" or r.get("lat") is None:
-                continue
-            feats.append(_pt(r["lat"], r["lon"], {"confirmed": bool(r["vitamin_a_received"]), "ward": r["ward"]}))
-        return _fc(feats)
-
-    sd = cfg.get("service_delivery", {})
-    sd_pts = _sample_in_geom(rng, geoms["treatment"], sd.get("sample_points", 0))
-    overlay = {
-        "ward_boundaries": _fc(
-            [
-                {"type": "Feature", "geometry": wards[tw]["geometry"], "properties": {"ward": tw}},
-                {"type": "Feature", "geometry": wards[cw]["geometry"], "properties": {"ward": cw}},
-            ]
-        ),
-        "service_delivery": _fc([_pt(lat, lon, {}) for lat, lon in sd_pts]),
-        "survey_pins": _pins(latest_records),
-    }
-
     state = {
-        "program": {**cfg["program"], "treatment_ward": tw, "control_ward": cw},
-        "wards": cfg["wards"],
+        "program": {
+            "name": cfg["program"]["name"],
+            "cadence": cfg["program"].get("cadence", "bi-monthly"),
+            "rotating": True,
+        },
         "current_round": n_rounds,
         "rounds": rounds,
         "trend": trend,
-        "service_delivery_counts": {tw: sd.get("treatment", 0), cw: sd.get("comparison", 0)},
-        "overlay": overlay,
-        "generated": {"seed": cfg["rng_seed"], "n_records": len(all_records), "n_rounds": n_rounds},
+        "generated": {
+            "seed": cfg["rng_seed"],
+            "n_records": len(all_records),
+            "n_rounds": n_rounds,
+            "rotating_wards": True,
+        },
     }
     return state, all_records
 
@@ -361,7 +381,7 @@ def summarize(state: dict) -> str:
     q = last["quality"]
     b = last["backcheck"]
     lines = [
-        f"R{last['round']} ({last['label']}): "
+        f"R{last['round']} ({last['label']}) · {last['treatment_ward']} vs {last['comparison_ward']}: "
         f"verified {last['intervention_pct']}% vs {last['comparison_pct']}% "
         f"(gap {last['gap_pp']}pp) · self-report {last['self_report_pct']}% (+{last['premium_pp']})",
         f"  QA: evidence {q['evidence_capture']['value']}% · GPS<=15m {q['gps_within_15m']['value']}% · "

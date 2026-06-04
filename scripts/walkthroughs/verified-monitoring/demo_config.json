@@ -7,9 +7,17 @@
     "name": "Vitamin-A community-health home-visit monitoring",
     "cadence": "bi-monthly"
   },
-  "_geography_comment": "Kaura (program) and Manchok (comparison) are REAL adjacent wards in Kaura LGA, Kaduna State, Nigeria, sourced from the labs admin-boundary backend. Survey + service-delivery points are sampled INSIDE these real polygons.",
-  "wards": { "treatment": "Kaura", "comparison": "Manchok" },
-  "wards_geojson": "geo/kaura_manchok.geojson",
+  "_geography_comment": "ROTATING wards: the program works a DIFFERENT ward each bi-monthly cycle, verified against an adjacent comparison ward. All 12 wards are REAL, adjacent pairs in the Kaura LGA area (Kaduna State, Nigeria), sourced from the labs admin-boundary backend (geo/kaura_lga_wards.geojson). Survey + service-delivery points are sampled INSIDE these real polygons; the map moves to each round's pair.",
+  "wards_geojson": "geo/kaura_lga_wards.geojson",
+  "rounds_wards": [
+    { "treatment": "Tse", "comparison": "Danto" },
+    { "treatment": "Agban", "comparison": "Kukum" },
+    { "treatment": "Kadarko", "comparison": "Kpak" },
+    { "treatment": "Bondong", "comparison": "Manchok" },
+    { "treatment": "Zankan", "comparison": "Kaura" },
+    { "treatment": "Attakar", "comparison": "Gura" }
+  ],
+  "map_pin_cap": 150,
   "round0": "2025-02",
   "rounds": 6,
   "arms": {
@@ -62,7 +70,7 @@
   "service_delivery": {
     "treatment": 2300,
     "comparison": 0,
-    "sample_points": 600
+    "sample_points": 240
   },
   "eligibility": {
     "age_min_months": 6,

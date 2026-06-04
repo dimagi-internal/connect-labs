@@ -1,24 +1,20 @@
 // Verified Monitoring (N1) — funder-facing verified-coverage dashboard.
-// Self-contained: reads everything from instance.state (seeded by the survey_sim
-// generator; every KPI computed from row-level records via the survey_quality
-// library) and never fetches. Light, Connect-aligned styling.
+// Self-contained: reads everything from instance.state (seeded by survey_sim;
+// every KPI computed from row-level records via the survey_quality library) and
+// never fetches. Light, Connect-aligned styling.
 //
-// Layout: a round selector drives a verification-first hero (self-reported vs
-// independently-verified dumbbell), a Layer-1 survey-quality strip, descriptive
-// ward tiles, the independent back-check drill-down (J-PAL Type-1/2/3 — the
-// side-by-side that proves the survey), a six-round trend, and the two-ward
-// Mapbox map (shared ConnectMap module + real admin boundaries).
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V24
+// ROTATING WARDS: the program works a DIFFERENT (program, comparison) ward pair
+// each bi-monthly cycle. The round selector drives the WHOLE dashboard — hero,
+// KPIs, back-check, trend highlight, and the map, which moves to that round's
+// two wards (real admin boundaries via the shared ConnectMap module). Objective
+// copy throughout; the viewer draws the conclusion.
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V25
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
   var prog = data.program || {};
   var rounds = data.rounds || [];
   var trend = data.trend || {};
-  var overlay = data.overlay || null;
-  var sd = data.service_delivery_counts || {};
-  var tWard = prog.treatment_ward || 'Treatment';
-  var cWard = prog.control_ward || 'Control';
 
   // --- Connect-aligned light palette (from static/js/funder-charts.js) ---
   var INK = '#111827',
@@ -26,12 +22,12 @@ function WorkflowUI(props) {
     PANEL = '#ffffff',
     LINE = '#e6e7f0',
     MUT = '#6b7280',
-    INDIGO = '#4f46e5',
-    AMBER = '#f59e0b',
-    ROSE = '#e11d48',
-    TEAL = '#0d9488',
-    GREEN = '#059669',
-    SLATE = '#64748b';
+    INDIGO = '#4f46e5', // program ward / independently verified
+    AMBER = '#f59e0b', // self-reported (program records)
+    ROSE = '#e11d48', // back-check change (data diff, not advocacy)
+    COMP = '#64748b', // comparison ward — neutral slate (a low number must not read as "good")
+    GREEN = '#059669', // QA pass
+    SLATE = '#94a3b8'; // not-confirmed pin
   var sans = "'Work Sans', Inter, system-ui, sans-serif";
   var mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
   var SHADOW = '0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.04)';
@@ -42,7 +38,7 @@ function WorkflowUI(props) {
   if (sel > rounds.length - 1) sel = Math.max(0, rounds.length - 1);
   var rd = rounds[sel] || null;
 
-  // ---- two-ward map (shared ConnectMap; latest-round pins) ----
+  // ---- two-ward map (shared ConnectMap; per-round overlay — moves each round) ----
   var [mapLibReady, setMapLibReady] = React.useState(
     typeof window !== 'undefined' && !!window.ConnectMap && !!window.mapboxgl,
   );
@@ -70,8 +66,10 @@ function WorkflowUI(props) {
 
   React.useEffect(
     function () {
+      var overlay = rd && rd.overlay;
       if (!mapLibReady || !overlay || !mapDivRef.current) return undefined;
       var CM = window.ConnectMap;
+      var progWard = rd.treatment_ward;
       if (!mapRef.current) {
         var ctr = CM.bounds(overlay.ward_boundaries).getCenter();
         mapRef.current = CM.createMap(mapDivRef.current, {
@@ -84,28 +82,25 @@ function WorkflowUI(props) {
       function draw() {
         CM.remove(map, ['vm-sd', 'vm-pins', 'vm-wards']);
         CM.boundary(map, 'vm-wards', overlay.ward_boundaries, {
-          activeWard: tWard,
+          activeWard: progWard,
           activeColor: INDIGO,
-          mutedColor: '#94a3b8',
-          activeFill: INDIGO,
-          mutedFill: '#cbd5e1',
-          fillOpacity: 0.14,
+          mutedColor: COMP,
           labelColor: SUBINK,
           labelHalo: '#ffffff',
         });
         try {
           map.setPaintProperty('vm-wards-fill', 'fill-color', [
             'case',
-            ['==', ['get', 'ward'], tWard],
+            ['==', ['get', 'ward'], progWard],
             INDIGO,
-            '#cbd5e1',
+            COMP,
           ]);
           map.setPaintProperty('vm-wards-fill', 'fill-opacity', 0.14);
           map.setPaintProperty('vm-wards-line', 'line-color', [
             'case',
-            ['==', ['get', 'ward'], tWard],
+            ['==', ['get', 'ward'], progWard],
             INDIGO,
-            '#94a3b8',
+            COMP,
           ]);
           map.setPaintProperty('vm-wards-label', 'text-color', SUBINK);
           map.setPaintProperty('vm-wards-label', 'text-halo-color', '#ffffff');
@@ -123,7 +118,7 @@ function WorkflowUI(props) {
             absentColor: SLATE,
           });
         }
-        CM.fit(map, overlay.ward_boundaries, 55);
+        CM.fit(map, overlay.ward_boundaries, 50);
       }
       if (mapLoadedRef.current && map.isStyleLoaded()) {
         draw();
@@ -135,7 +130,7 @@ function WorkflowUI(props) {
       }
       return undefined;
     },
-    [mapLibReady, overlay, sdOn, pinsOn],
+    [mapLibReady, sel, sdOn, pinsOn],
   );
 
   if (!rd) {
@@ -147,17 +142,10 @@ function WorkflowUI(props) {
     );
   }
 
-  // ---- derived ----
-  function pct(x) {
-    return x == null ? '—' : x.toFixed(1) + '%';
-  }
-  function pp(x) {
-    return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + ' pts';
-  }
-  function yn(v) {
-    return v === true ? 'yes' : v === false ? 'no' : v == null ? '—' : '' + v;
-  }
-
+  // ---- per-round data ----
+  var tWard = rd.treatment_ward || 'Program ward';
+  var cWard = rd.comparison_ward || 'Comparison ward';
+  var sd = rd.service_delivery_counts || {};
   var ver = rd.intervention_pct,
     self_ = rd.self_report_pct,
     prem = rd.premium_pp;
@@ -168,6 +156,16 @@ function WorkflowUI(props) {
   var q = rd.quality || {};
   var bc = rd.backcheck || {};
 
+  function pct(x) {
+    return x == null ? '—' : x.toFixed(1) + '%';
+  }
+  function pp(x) {
+    return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + ' pts';
+  }
+  function yn(v) {
+    return v === true ? 'yes' : v === false ? 'no' : v == null ? '—' : '' + v;
+  }
+
   var cardStyle = {
     background: PANEL,
     border: '1px solid ' + LINE,
@@ -175,7 +173,6 @@ function WorkflowUI(props) {
     boxShadow: SHADOW,
   };
 
-  // ---- small inline legend swatch ----
   function sw(color, dashed) {
     return (
       <span
@@ -193,7 +190,7 @@ function WorkflowUI(props) {
     );
   }
 
-  // ---- QA chip (Layer-1 metric) ----
+  // ---- QA chip ----
   function metricVal(m) {
     if (!m || m.value == null) return '—';
     if (m.unit === 'count') return '' + m.value;
@@ -241,17 +238,21 @@ function WorkflowUI(props) {
     );
   }
 
-  // ---- hero dumbbell: self-reported vs independently-verified ----
+  // ---- hero dumbbell (x-axis locked across rounds so dots move only with data) ----
   function dumbbell() {
     var W = 560,
       H = 106,
       padL = 14,
       padR = 14;
     if (self_ == null || ver == null) return null;
-    var dLo = Math.max(0, Math.floor((Math.min(self_, ver) - 10) / 10) * 10);
-    var dHi = 100;
+    var dLo = 40,
+      dHi = 100; // fixed domain across all rounds
     function X(v) {
-      return padL + ((v - dLo) / (dHi - dLo)) * (W - padL - padR);
+      return (
+        padL +
+        ((Math.max(dLo, Math.min(dHi, v)) - dLo) / (dHi - dLo)) *
+          (W - padL - padR)
+      );
     }
     var yT = 50;
     var xSelf = X(self_),
@@ -302,7 +303,7 @@ function WorkflowUI(props) {
           y1={yT}
           x2={xSelf}
           y2={yT}
-          stroke={SLATE}
+          stroke={COMP}
           strokeWidth="4"
         />
         <rect
@@ -390,7 +391,7 @@ function WorkflowUI(props) {
     );
   }
 
-  // ---- six-round trend (3 series + overstatement band + selected marker) ----
+  // ---- six-round trend (generic labels — wards rotate; gap band labelled in-chart) ----
   function trendChart() {
     var iv = trend.intervention || [],
       cp = trend.comparison || [],
@@ -464,26 +465,9 @@ function WorkflowUI(props) {
         />
       );
     }
-    function endLabel(arr, color, label, dy) {
-      if (!arr.length) return null;
-      var i = arr.length - 1;
-      return (
-        <text
-          x={X(i) - 8}
-          y={Y(arr[i]) + (dy || -8)}
-          fill={color}
-          fontSize="11"
-          fontWeight="700"
-          textAnchor="end"
-        >
-          {label + ' ' + pct(arr[i])}
-        </text>
-      );
-    }
     return (
       <svg width={w} height={h} style={{ maxWidth: '100%' }}>
         {grid}
-        {/* selected-round marker */}
         <rect
           x={X(sel) - 9}
           y={pad - 8}
@@ -510,7 +494,18 @@ function WorkflowUI(props) {
             stroke="none"
           />
         ) : null}
-        <polyline points={poly(cp)} fill="none" stroke={TEAL} strokeWidth="2" />
+        {band && n > 2 ? (
+          <text
+            x={X(Math.floor(n / 2))}
+            y={Y((srr[Math.floor(n / 2)] + iv[Math.floor(n / 2)]) / 2)}
+            fill="#b45309"
+            fontSize="9"
+            textAnchor="middle"
+          >
+            self-report − verified
+          </text>
+        ) : null}
+        <polyline points={poly(cp)} fill="none" stroke={COMP} strokeWidth="2" />
         <polyline
           points={poly(srr)}
           fill="none"
@@ -540,12 +535,9 @@ function WorkflowUI(props) {
             </text>
           );
         })}
-        {endDot(cp, TEAL)}
+        {endDot(cp, COMP)}
         {endDot(srr, AMBER)}
         {endDot(iv, INDIGO)}
-        {endLabel(srr, AMBER, 'self-reported', -8)}
-        {endLabel(iv, INDIGO, tWard, 14)}
-        {endLabel(cp, TEAL, cWard, -8)}
       </svg>
     );
   }
@@ -588,7 +580,7 @@ function WorkflowUI(props) {
         >
           <thead>
             <tr>
-              <th style={th}>Household · original enum. → back-check enum.</th>
+              <th style={th}>Household · original → back-check surveyor</th>
               {cols.map(function (c) {
                 return (
                   <th key={c[0]} style={th}>
@@ -657,14 +649,13 @@ function WorkflowUI(props) {
         {(bc.rows || []).length > rows.length ? (
           <div style={{ color: MUT, fontSize: 11, marginTop: 6 }}>
             showing {rows.length} of {(bc.rows || []).length} back-checked
-            households (mismatches first)
+            households (changes first)
           </div>
         ) : null}
       </div>
     );
   }
 
-  // ---- round selector ----
   function roundTabs() {
     return (
       <div
@@ -695,6 +686,7 @@ function WorkflowUI(props) {
               onClick={function () {
                 setSel(i);
               }}
+              title={r.treatment_ward + ' vs ' + r.comparison_ward}
               style={{
                 cursor: 'pointer',
                 fontFamily: mono,
@@ -712,7 +704,7 @@ function WorkflowUI(props) {
           );
         })}
         <span style={{ color: MUT, fontSize: 12, marginLeft: 6 }}>
-          {rd.label}
+          {rd.label} · {tWard} vs {cWard}
         </span>
       </div>
     );
@@ -731,9 +723,10 @@ function WorkflowUI(props) {
         {prog.name || 'Verified Monitoring'}
       </div>
       <div style={{ color: MUT, fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
-        Independent rooftop survey · {prog.cadence || 'bi-monthly'} ·{' '}
+        Independent rooftop survey · {prog.cadence || 'bi-monthly'} · the
+        program rotates wards each cycle — this cycle:{' '}
         <b style={{ color: INDIGO }}>{tWard}</b> (program ward) vs{' '}
-        <b style={{ color: TEAL }}>{cWard}</b> (comparison ward)
+        <b style={{ color: COMP }}>{cWard}</b> (comparison ward)
       </div>
       {roundTabs()}
 
@@ -746,13 +739,25 @@ function WorkflowUI(props) {
       >
         <div
           style={{
-            color: MUT,
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            flexWrap: 'wrap',
           }}
         >
-          Self-reported vs independently verified · {tWard} · R{rd.round}
+          <div
+            style={{
+              color: MUT,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '.05em',
+            }}
+          >
+            Self-reported vs independently verified · {tWard} · R{rd.round}
+          </div>
+          <div style={{ color: MUT, fontSize: 11, fontFamily: mono }}>
+            as of {rd.label}
+          </div>
         </div>
         <div
           style={{
@@ -802,7 +807,9 @@ function WorkflowUI(props) {
             >
               {pp(prem)}
             </div>
-            <div style={{ color: MUT, fontSize: 11 }}>difference</div>
+            <div style={{ color: MUT, fontSize: 11 }}>
+              difference{indCI != null ? ' · 95% CI ±' + indCI.toFixed(1) : ''}
+            </div>
           </div>
         </div>
         <div style={{ marginTop: 12 }}>{dumbbell()}</div>
@@ -823,7 +830,7 @@ function WorkflowUI(props) {
         </div>
       </div>
 
-      {/* QA STRIP — Layer 1 survey-quality metrics, computed from records */}
+      {/* QA STRIP */}
       <div
         style={{
           marginTop: 16,
@@ -834,7 +841,8 @@ function WorkflowUI(props) {
           marginBottom: 6,
         }}
       >
-        Independent survey — data quality (round R{rd.round})
+        Independent survey — data quality (survey quality, not program
+        performance) · R{rd.round}
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {chip('Evidence capture', q.evidence_capture)}
@@ -866,7 +874,7 @@ function WorkflowUI(props) {
               cWard,
               rd.comparison_pct,
               rd.comparison_n,
-              TEAL,
+              COMP,
             ],
           ].map(function (t) {
             return (
@@ -919,12 +927,12 @@ function WorkflowUI(props) {
         <div
           style={{ marginTop: 10, color: MUT, fontSize: 12, lineHeight: 1.4 }}
         >
-          {cWard}: independent-survey estimate in a neighbouring ward with 0
-          logged program visits (background reference)
+          {cWard}: independent-survey estimate in the adjacent ward, which had 0
+          program visits this cycle (background reference)
         </div>
       </div>
 
-      {/* BACK-CHECK DRILL-DOWN */}
+      {/* BACK-CHECK */}
       <div style={Object.assign({ marginTop: 18, padding: 16 }, cardStyle)}>
         <div
           style={{
@@ -935,7 +943,7 @@ function WorkflowUI(props) {
           }}
         >
           Independent back-check · {tWard} · R{rd.round} — re-survey by a
-          different enumerator
+          different surveyor
         </div>
         <div
           style={{
@@ -990,6 +998,7 @@ function WorkflowUI(props) {
             fontSize: 11,
             color: MUT,
             fontFamily: mono,
+            flexWrap: 'wrap',
           }}
         >
           <span>
@@ -1000,6 +1009,9 @@ function WorkflowUI(props) {
             <span style={{ color: ROSE, fontWeight: 700 }}>red →</span> =
             changed on re-survey
           </span>
+          <span>
+            surveyor codes: original (T) → back-check (BC), a different person
+          </span>
         </div>
         <div
           style={{
@@ -1007,15 +1019,15 @@ function WorkflowUI(props) {
             fontSize: 11,
             color: MUT,
             lineHeight: 1.6,
-            maxWidth: 720,
+            maxWidth: 760,
           }}
         >
           outcome agreement = share of the {bc.n_backchecked} re-surveyed
           households whose vitamin-A result matched the original · identity
           match = sex / age / presence unchanged · re-survey vs original =
-          two-proportion test on the re-surveyed subsample (p &gt; 0.05 = no
-          significant difference; the subsample rate is not the ward estimate
-          above)
+          two-proportion test on the re-surveyed subsample (p &gt; 0.05 =
+          original and re-survey agree; the subsample rate is not the ward
+          estimate above)
         </div>
       </div>
 
@@ -1031,7 +1043,8 @@ function WorkflowUI(props) {
           }}
         >
           Self-reported vs independently-verified coverage across{' '}
-          {(trend.rounds || []).length} bi-monthly rounds
+          {(trend.rounds || []).length} bi-monthly cycles (a different program
+          ward each cycle)
         </div>
         <div
           style={{
@@ -1043,15 +1056,9 @@ function WorkflowUI(props) {
             marginBottom: 8,
           }}
         >
-          <span>
-            {sw(AMBER, true)}self-reported ({tWard})
-          </span>
-          <span>
-            {sw(INDIGO)}independently verified ({tWard})
-          </span>
-          <span>
-            {sw(TEAL)}independently verified ({cWard})
-          </span>
+          <span>{sw(AMBER, true)}self-reported (program ward)</span>
+          <span>{sw(INDIGO)}independently verified (program ward)</span>
+          <span>{sw(COMP)}independently verified (comparison ward)</span>
         </div>
         <div style={{ color: MUT, fontSize: 11, marginBottom: 8 }}>
           y-axis: % of surveyed children with confirmed vitamin-A · shaded =
@@ -1061,8 +1068,8 @@ function WorkflowUI(props) {
         {trendChart()}
       </div>
 
-      {/* MAP */}
-      {overlay ? (
+      {/* MAP — moves to each round's two wards */}
+      {rd.overlay ? (
         <div style={Object.assign({ marginTop: 18, padding: 14 }, cardStyle)}>
           <div
             style={{
@@ -1070,13 +1077,16 @@ function WorkflowUI(props) {
               justifyContent: 'space-between',
               alignItems: 'center',
               marginBottom: 8,
+              flexWrap: 'wrap',
+              gap: 8,
             }}
           >
             <div style={{ color: SUBINK, fontSize: 13, maxWidth: 560 }}>
-              Program service delivery (logged visits) and independent survey
-              locations · {tWard}:{' '}
-              {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} visits ·{' '}
-              {cWard}: {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}
+              R{rd.round} · {tWard} (program) vs {cWard} (comparison) — program
+              service delivery (logged visits) and independent survey locations.{' '}
+              {tWard}: {sd[tWard] != null ? sd[tWard].toLocaleString() : 0}{' '}
+              visits · {cWard}:{' '}
+              {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}
             </div>
             <div
               style={{
@@ -1126,20 +1136,25 @@ function WorkflowUI(props) {
           <div
             style={{
               display: 'flex',
-              gap: 18,
+              gap: 16,
               marginTop: 8,
               fontSize: 11,
               color: MUT,
               fontFamily: mono,
+              flexWrap: 'wrap',
             }}
           >
             <span>
-              <span style={{ color: '#16a34a' }}>●</span> program
-              service-delivery visit
+              <span style={{ color: INDIGO }}>▣</span> {tWard} (program ward)
             </span>
             <span>
-              <span style={{ color: INDIGO }}>●</span> survey: vitamin-A
-              confirmed
+              <span style={{ color: COMP }}>▣</span> {cWard} (comparison ward)
+            </span>
+            <span>
+              <span style={{ color: '#16a34a' }}>●</span> service-delivery visit
+            </span>
+            <span>
+              <span style={{ color: INDIGO }}>●</span> survey: confirmed
             </span>
             <span>
               <span style={{ color: SLATE }}>●</span> survey: not confirmed
