@@ -1059,6 +1059,9 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                             "psu_density": st.get("psu_density") or (0, 0),
                             "bldg_area": st.get("bldg_area") or (0, 0),
                             "ward_density": _ward_density(pl, arm),
+                            # carry n selected PSUs so the panel can state its own sample
+                            # size (the SMD denominator); 0 for legacy stats → line hidden.
+                            "n_psus": st.get("n_psus") or 0,
                         }
                     )
                 if len({a["arm"] for a in arms_data}) >= 2:
