@@ -1,43 +1,37 @@
-"""Regenerate the Verified Monitoring (N1) demo from demo_config.json.
+"""Regenerate the Verified Monitoring (N1) demo and seed it onto synthetic opp 10008.
 
-Builds the full dashboard state payload — coverage series, verification,
-self-report premium, service-delivery counts, and the two-ward map overlay
-GeoJSON (sampled deterministically from ``rng_seed``) — and creates a workflow
-run on the synthetic opp via the ``connect_labs`` MCP. The dashboard render
-(``commcare_connect/workflow/templates/verified_monitoring_render.js``) reads
-this state from ``instance.state`` and never fetches.
+Thin wire: read ``demo_config.json`` -> generate per-round, row-level survey
+records and compute all KPIs via ``survey_sim.build_state`` (which uses the
+shared ``commcare_connect.labs.survey_quality`` library) -> create a workflow run
+on the synthetic opp via the ``connect_labs`` MCP. The dashboard render
+(``commcare_connect/workflow/templates/verified_monitoring_render.js``) reads the
+resulting ``instance.state`` and never fetches.
 
-This is the durable home for the demo recipe — do NOT seed from ad-hoc /tmp
-scripts. Opp 10008 is a labs-only synthetic opp, so ``workflow_create_run``
-routes in-process to the local records backend (no prod data, no HTTP
-permission checks).
+Opp 10008 is a labs-only synthetic opp, so ``workflow_create_run`` routes
+in-process to the local records backend (no prod data, no HTTP permission checks).
 
 Usage::
 
-    # From a connect-labs checkout, with the labs venv active.
-    # Needs an MCP token (see docs/MCP_SETUP.md / `/labs-token-setup`):
-    export LABS_MCP_TOKEN=...        # or it is read from ~/.claude/mcp.json
+    export LABS_MCP_TOKEN=...        # or it is read from ~/.claude.json
     python scripts/walkthroughs/verified-monitoring/regenerate.py
 
-Writes ``scripts/walkthroughs/verified-monitoring/.run_ids.json`` with:
-
-    run_id            — the verified_monitoring run to point the dashboard at
-    opp_id            — synthetic opportunity id (10008)
-    workflow_def_id   — verified_monitoring workflow definition id (3699)
-    runner_url        — full URL to open the dashboard
+Writes ``.run_ids.json`` (run_id, opp_id, workflow_def_id, runner_url).
 """
 
 from __future__ import annotations
 
 import json
 import os
-import random
 import sys
 from pathlib import Path
 
 import httpx
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+from survey_sim import build_state, summarize  # noqa: E402
+
 MCP_URL = os.environ.get("LABS_MCP_URL", "https://labs.connect.dimagi.com/mcp/")
 
 
@@ -62,139 +56,7 @@ def _token() -> str:
     sys.exit("No MCP token: set LABS_MCP_TOKEN or configure connect_labs in ~/.claude.json")
 
 
-# ----- geometry helpers (sample inside REAL admin-boundary polygons) -----
-
-
-def _outer_rings(geom):
-    """Outer ring(s) for a GeoJSON Polygon or MultiPolygon (holes ignored)."""
-    t = geom.get("type")
-    if t == "Polygon":
-        return [geom["coordinates"][0]]
-    if t == "MultiPolygon":
-        return [poly[0] for poly in geom["coordinates"]]
-    return []
-
-
-def _bbox_geom(geom):
-    xs, ys = [], []
-    for ring in _outer_rings(geom):
-        for x, y in ring:
-            xs.append(x)
-            ys.append(y)
-    return min(xs), min(ys), max(xs), max(ys)
-
-
-def _pt_in_ring(ring, x, y):
-    n = len(ring)
-    inside = False
-    j = n - 1
-    for i in range(n):
-        xi, yi = ring[i]
-        xj, yj = ring[j]
-        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
-            inside = not inside
-        j = i
-    return inside
-
-
-def _inside_geom(geom, x, y):
-    return any(_pt_in_ring(r, x, y) for r in _outer_rings(geom))
-
-
-def _sample_geom(rng, geom, n):
-    x0, y0, x1, y1 = _bbox_geom(geom)
-    pts = []
-    guard = 0
-    while len(pts) < n and guard < n * 120:
-        guard += 1
-        x, y = rng.uniform(x0, x1), rng.uniform(y0, y1)
-        if _inside_geom(geom, x, y):
-            pts.append([round(x, 5), round(y, 5)])
-    return pts
-
-
-def _load_wards(path):
-    """Real admin-boundary features captured from the labs boundary backend,
-    keyed by ward name. See README — sourced from /microplans/boundaries/viewport/."""
-    fc = json.loads(Path(path).read_text())
-    return {f["properties"]["name"]: f for f in fc["features"]}
-
-
-def _fc(features):
-    return {"type": "FeatureCollection", "features": features}
-
-
-def _pt(x, y, props):
-    return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [x, y]}, "properties": props}
-
-
-def build_payload(cfg: dict) -> dict:
-    rng = random.Random(cfg["rng_seed"])
-    prog = cfg["program"]
-    tw, cw = prog["treatment_ward"], prog["control_ward"]
-    colors = cfg["pin_colors"]
-    wards = _load_wards(HERE / cfg["wards_geojson"])
-    tgeom = wards[tw]["geometry"]
-    cgeom = wards[cw]["geometry"]
-
-    sd_pts = _sample_geom(rng, tgeom, cfg["service_delivery_sample"])
-    service_delivery = _fc([_pt(x, y, {}) for x, y in sd_pts])
-
-    def pins(ward, geom):
-        spec = cfg["survey_pins"][ward]
-        feats = []
-        for x, y in _sample_geom(rng, geom, spec["n"]):
-            confirmed = rng.random() < spec["confirmed_rate"]
-            feats.append(
-                _pt(x, y, {"color": colors["confirmed"] if confirmed else colors["absent"], "confirmed": confirmed})
-            )
-        return feats
-
-    survey_pins = _fc(pins(tw, tgeom) + pins(cw, cgeom))
-
-    def ward_feat(name):
-        f = wards[name]
-        return {
-            "type": "Feature",
-            "geometry": f["geometry"],
-            "properties": {"ward": name, "admin_level": f["properties"].get("admin_level")},
-        }
-
-    rounds = cfg["coverage_rounds"]
-    t = rounds["intervention"]
-    c = rounds["comparison"]
-    # Program self-reported coverage as a third per-round series (same row shape
-    # as the verified arms) so the trend render can plot it with one code path.
-    sr_pcts = cfg.get("self_report_rounds", {}).get("intervention", [])
-    self_report_series = [
-        {"round": t[i]["round"], "coverage_pct": sr_pcts[i]} for i in range(min(len(t), len(sr_pcts)))
-    ]
-    by_arm = dict(rounds)
-    if self_report_series:
-        by_arm["self_report"] = self_report_series
-    return {
-        "program": prog,
-        "coverage": {
-            "rounds": [r["round"] for r in t],
-            "by_arm": by_arm,
-            "gap_series": [
-                {"round": t[i]["round"], "gap_pp": round(t[i]["coverage_pct"] - c[i]["coverage_pct"], 1)}
-                for i in range(len(t))
-            ],
-            "latest": cfg["latest"],
-        },
-        "verification": cfg["verification"],
-        "self_report": cfg["self_report"],
-        "service_delivery_counts": cfg["service_delivery_counts"],
-        "overlay": {
-            "ward_boundaries": _fc([ward_feat(tw), ward_feat(cw)]),
-            "service_delivery": service_delivery,
-            "survey_pins": survey_pins,
-        },
-    }
-
-
-# ----- minimal MCP client -----
+# ----- minimal MCP client (also imported by push_render.py) -----
 
 
 def _parse(r):
@@ -229,17 +91,35 @@ def _call(c, h, name, args):
     return res, res.get("isError")
 
 
+def _session(c, headers):
+    r = c.post(
+        MCP_URL,
+        headers=headers,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "regen", "version": "1"},
+            },
+        },
+    )
+    sid = r.headers.get("mcp-session-id") or r.headers.get("Mcp-Session-Id")
+    h = dict(headers)
+    if sid:
+        h["Mcp-Session-Id"] = sid
+    c.post(MCP_URL, headers=h, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+    return h
+
+
 def main() -> int:
     cfg = json.loads((HERE / "demo_config.json").read_text())
-    cfg.pop("_comment", None)
-    payload = build_payload(cfg)
-    ov = payload["overlay"]
-    purple = sum(1 for f in ov["survey_pins"]["features"] if f["properties"]["confirmed"])
-    print(
-        f"payload: SD={len(ov['service_delivery']['features'])} pts · "
-        f"pins={len(ov['survey_pins']['features'])} ({purple} confirmed) · "
-        f"{len(payload['coverage']['rounds'])} rounds"
-    )
+    cfg = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    state, records = build_state(cfg, HERE)
+    print(f"generated {len(records)} records across {len(state['rounds'])} rounds")
+    print(summarize(state))
 
     opp, wf = cfg["opportunity_id"], cfg["workflow_def_id"]
     token = _token()
@@ -249,27 +129,9 @@ def main() -> int:
         "Accept": "application/json, text/event-stream",
     }
     with httpx.Client(timeout=180) as c:
-        r = c.post(
-            MCP_URL,
-            headers=headers,
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "regen", "version": "1"},
-                },
-            },
-        )
-        sid = r.headers.get("mcp-session-id") or r.headers.get("Mcp-Session-Id")
-        h = dict(headers)
-        if sid:
-            h["Mcp-Session-Id"] = sid
-        c.post(MCP_URL, headers=h, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+        h = _session(c, headers)
         run, err = _call(
-            c, h, "workflow_create_run", {"definition_id": wf, "opportunity_id": opp, "initial_state": payload}
+            c, h, "workflow_create_run", {"definition_id": wf, "opportunity_id": opp, "initial_state": state}
         )
         if err:
             print("workflow_create_run ERROR:", json.dumps(run, default=str)[:400])
@@ -280,7 +142,7 @@ def main() -> int:
             json.dumps({"run_id": run_id, "opp_id": opp, "workflow_def_id": wf, "runner_url": runner_url}, indent=2)
             + "\n"
         )
-        print(f"run_id={run_id}\n{runner_url}\nwrote {HERE / '.run_ids.json'}")
+        print(f"\nrun_id={run_id}\n{runner_url}")
     return 0
 
 

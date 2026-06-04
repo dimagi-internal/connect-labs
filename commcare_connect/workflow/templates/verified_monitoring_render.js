@@ -1,62 +1,57 @@
 // Verified Monitoring (N1) — funder-facing verified-coverage dashboard.
-// Self-contained: reads everything from instance.state (seeded payload); never
-// fetches. Light, Connect-aligned styling (white cards on the stone page, Work
-// Sans, indigo/amber/teal accents drawn from the in-app funder charts) so the
-// dashboard reads as part of Connect, not a dark island. The two-ward map uses
-// the shared ConnectMap module (Mapbox GL light basemap + real admin
-// boundaries) loaded by the runner.
-// Verification-first: the hero is the defensible claim (an independent survey
-// checked the implementer's self-report). The treatment/comparison ward
-// coverage is supporting context, framed descriptively — not a causal estimate.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V20
+// Self-contained: reads everything from instance.state (seeded by the survey_sim
+// generator; every KPI computed from row-level records via the survey_quality
+// library) and never fetches. Light, Connect-aligned styling.
+//
+// Layout: a round selector drives a verification-first hero (self-reported vs
+// independently-verified dumbbell), a Layer-1 survey-quality strip, descriptive
+// ward tiles, the independent back-check drill-down (J-PAL Type-1/2/3 — the
+// side-by-side that proves the survey), a six-round trend, and the two-ward
+// Mapbox map (shared ConnectMap module + real admin boundaries).
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V21
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
-  var cov = data.coverage || {};
-  var latest = cov.latest || null;
-  var byArm = cov.by_arm || {};
-  var gapSeries = cov.gap_series || [];
   var prog = data.program || {};
-  var verif = data.verification || {};
-  var sr = data.self_report || {};
-  var sd = data.service_delivery_counts || {};
+  var rounds = data.rounds || [];
+  var trend = data.trend || {};
   var overlay = data.overlay || null;
+  var sd = data.service_delivery_counts || {};
+  var tWard = prog.treatment_ward || 'Treatment';
+  var cWard = prog.control_ward || 'Control';
 
-  // --- Connect-aligned light palette (sourced from static/js/funder-charts.js
-  // + the brand tokens): white cards on the stone page, indigo = verified /
-  // program ward, amber = self-reported (the claim being checked), rose = the
-  // overstatement gap (the finding), teal = comparison ward. ---
-  var INK = '#111827', // primary text — matches the runner's text-gray-900
-    SUBINK = '#1e293b', // strong secondary
-    PANEL = '#ffffff', // card surface
-    LINE = '#e6e7f0', // brand hairline
-    MUT = '#6b7280', // muted label (gray-500)
-    INDIGO = '#4f46e5', // independently verified / program ward (Connect primary)
-    AMBER = '#f59e0b', // self-reported (program's own records)
-    ROSE = '#e11d48', // the gap / overstatement (alert)
-    TEAL = '#0d9488', // comparison ward
-    GREEN = '#059669', // QA pass
-    SLATE = '#64748b'; // not-confirmed / neutral
+  // --- Connect-aligned light palette (from static/js/funder-charts.js) ---
+  var INK = '#111827',
+    SUBINK = '#1e293b',
+    PANEL = '#ffffff',
+    LINE = '#e6e7f0',
+    MUT = '#6b7280',
+    INDIGO = '#4f46e5',
+    AMBER = '#f59e0b',
+    ROSE = '#e11d48',
+    TEAL = '#0d9488',
+    GREEN = '#059669',
+    SLATE = '#64748b';
   var sans = "'Work Sans', Inter, system-ui, sans-serif";
   var mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
   var SHADOW = '0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.04)';
 
-  // --- Two-ward map via the shared ConnectMap module (Mapbox GL light basemap
-  // + real admin boundaries). mapboxgl + ConnectMap are loaded by the workflow
-  // runner page; boundary GeoJSON is fed via props (instance.state). ---
+  var [sel, setSel] = React.useState(
+    Math.max(0, (data.current_round || rounds.length) - 1),
+  );
+  if (sel > rounds.length - 1) sel = Math.max(0, rounds.length - 1);
+  var rd = rounds[sel] || null;
+
+  // ---- two-ward map (shared ConnectMap; latest-round pins) ----
   var [mapLibReady, setMapLibReady] = React.useState(
     typeof window !== 'undefined' && !!window.ConnectMap && !!window.mapboxgl,
   );
   var [sdOn, setSdOn] = React.useState(true);
-  // Land on the clean service-delivery view; the survey-pin layer is toggled
-  // on to add the independent-survey story (avoids a "both at once" confetti
-  // default).
   var [pinsOn, setPinsOn] = React.useState(false);
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   var mapLoadedRef = React.useRef(false);
 
-  // Wait for the shared map module to be present on the page.
   React.useEffect(
     function () {
       if (mapLibReady) return undefined;
@@ -89,7 +84,7 @@ function WorkflowUI(props) {
       function draw() {
         CM.remove(map, ['vm-sd', 'vm-pins', 'vm-wards']);
         CM.boundary(map, 'vm-wards', overlay.ward_boundaries, {
-          activeWard: prog.treatment_ward,
+          activeWard: tWard,
           activeColor: INDIGO,
           mutedColor: '#94a3b8',
           activeFill: INDIGO,
@@ -98,19 +93,17 @@ function WorkflowUI(props) {
           labelColor: SUBINK,
           labelHalo: '#ffffff',
         });
-        // Light-theme paint overrides — take effect even on the currently
-        // deployed ConnectMap (which may predate the themeable boundary opts).
         try {
           map.setPaintProperty('vm-wards-fill', 'fill-color', [
             'case',
-            ['==', ['get', 'ward'], prog.treatment_ward],
+            ['==', ['get', 'ward'], tWard],
             INDIGO,
             '#cbd5e1',
           ]);
           map.setPaintProperty('vm-wards-fill', 'fill-opacity', 0.14);
           map.setPaintProperty('vm-wards-line', 'line-color', [
             'case',
-            ['==', ['get', 'ward'], prog.treatment_ward],
+            ['==', ['get', 'ward'], tWard],
             INDIGO,
             '#94a3b8',
           ]);
@@ -145,44 +138,44 @@ function WorkflowUI(props) {
     [mapLibReady, overlay, sdOn, pinsOn],
   );
 
-  if (!latest) {
+  if (!rd) {
     return (
-      <div
-        style={{
-          padding: '2rem',
-          color: MUT,
-          fontFamily: sans,
-        }}
-      >
+      <div style={{ padding: '2rem', color: MUT, fontFamily: sans }}>
         Verified Monitoring — no data yet. Seed this run via the
-        verified-monitoring recipe.
+        verified-monitoring recipe (regenerate.py).
       </div>
     );
   }
 
-  var tCov = latest.intervention_pct,
-    cCov = latest.comparison_pct,
-    gap = latest.gap_pp;
-  function _lastN(arr) {
-    return arr && arr.length ? arr[arr.length - 1].n : null;
-  }
-  var cN = _lastN(byArm.comparison);
-  // 95% CI on the independently-verified coverage (binomial, n surveyed).
-  var _indP = (sr.independent_pct || 0) / 100;
-  var _indN = latest.intervention_n || 0;
-  var indCI =
-    _indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / _indN) * 100 : null;
-  var tWard = prog.treatment_ward || 'Treatment',
-    cWard = prog.control_ward || 'Control';
-
+  // ---- derived ----
   function pct(x) {
     return x == null ? '—' : x.toFixed(1) + '%';
   }
   function pp(x) {
     return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + ' pts';
   }
+  function yn(v) {
+    return v === true ? 'yes' : v === false ? 'no' : v == null ? '—' : '' + v;
+  }
 
-  // --- small inline swatch for legends ---
+  var ver = rd.intervention_pct,
+    self_ = rd.self_report_pct,
+    prem = rd.premium_pp;
+  var indN = rd.intervention_n || 0;
+  var _indP = (ver || 0) / 100;
+  var indCI =
+    indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / indN) * 100 : null;
+  var q = rd.quality || {};
+  var bc = rd.backcheck || {};
+
+  var cardStyle = {
+    background: PANEL,
+    border: '1px solid ' + LINE,
+    borderRadius: 12,
+    boxShadow: SHADOW,
+  };
+
+  // ---- small inline legend swatch ----
   function sw(color, dashed) {
     return (
       <span
@@ -200,179 +193,68 @@ function WorkflowUI(props) {
     );
   }
 
-  // --- triple-line trend: verified treatment (solid indigo), self-reported
-  // (dashed amber), comparison (solid teal), with the overstatement region —
-  // between self-report and verified treatment — shaded amber. Ties the trend
-  // back to the hero: the program over-reports every round, not just once. ---
-  function trend() {
-    var ti = byArm.intervention || [], // independently verified — program ward
-      tc = byArm.comparison || [], // independently verified — comparison ward
-      ts = byArm.self_report || []; // program self-reported — program ward
-    var n = Math.max(ti.length, tc.length, ts.length);
-    if (n < 2) return null;
-    var w = 560,
-      h = 214,
-      pad = 30,
-      padB = 26;
-    function X(i) {
-      return pad + (i / (n - 1)) * (w - 2 * pad);
-    }
-    function Y(v) {
-      return h - padB - ((v || 0) / 100) * (h - pad - padB);
-    }
-    function poly(series) {
-      return series
-        .map(function (r, i) {
-          return X(i) + ',' + Y(r.coverage_pct);
-        })
-        .join(' ');
-    }
-    // overstatement band: self-report (top edge) → verified treatment (bottom).
-    var band = '';
-    if (ts.length && ti.length) {
-      band =
-        ts
-          .map(function (r, i) {
-            return X(i) + ',' + Y(r.coverage_pct);
-          })
-          .join(' ') +
-        ' ' +
-        ti
-          .slice()
-          .reverse()
-          .map(function (r, i) {
-            return X(ti.length - 1 - i) + ',' + Y(r.coverage_pct);
-          })
-          .join(' ');
-    }
-    var grid = [0, 25, 50, 75, 100].map(function (g) {
-      var y = Y(g);
-      return (
-        <g key={g}>
-          <line
-            x1={pad}
-            y1={y}
-            x2={w - pad}
-            y2={y}
-            stroke={LINE}
-            strokeWidth="1"
-          />
-          <text x={4} y={y + 3} fill={MUT} fontSize="9" fontFamily={mono}>
-            {g + '%'}
-          </text>
-        </g>
-      );
-    });
-    var rowsForX = ti.length ? ti : ts.length ? ts : tc;
-    var xlabels = rowsForX.map(function (r, i) {
-      return (
-        <text
-          key={i}
-          x={X(i)}
-          y={h - 8}
-          fill={MUT}
-          fontSize="9"
-          fontFamily={mono}
-          textAnchor="middle"
-        >
-          {'R' + (r.round || i + 1)}
-        </text>
-      );
-    });
-    var last = n - 1;
-    function endDot(series, color) {
-      var r = series[series.length - 1];
-      if (!r) return null;
-      return (
-        <circle
-          cx={X(series.length - 1)}
-          cy={Y(r.coverage_pct)}
-          r="4.5"
-          fill={color}
-          stroke="#ffffff"
-          strokeWidth="1.5"
-        />
-      );
-    }
-    function endLabel(series, color, label, dy) {
-      var r = series[series.length - 1];
-      if (!r) return null;
-      return (
-        <text
-          x={X(series.length - 1) - 8}
-          y={Y(r.coverage_pct) + (dy || -8)}
-          fill={color}
-          fontSize="11"
-          fontWeight="700"
-          textAnchor="end"
-        >
-          {label + ' ' + pct(r.coverage_pct)}
-        </text>
-      );
-    }
+  // ---- QA chip (Layer-1 metric) ----
+  function metricVal(m) {
+    if (!m || m.value == null) return '—';
+    if (m.unit === 'count') return '' + m.value;
+    if (m.unit === 'pvalue') return 'p=' + m.value;
+    return (typeof m.value === 'number' ? m.value.toFixed(1) : m.value) + '%';
+  }
+  function chip(label, m) {
+    var ok = m && m.passed;
+    var bad = m && m.passed === false;
+    var col = ok ? GREEN : bad ? ROSE : SUBINK;
     return (
-      <svg width={w} height={h} style={{ maxWidth: '100%' }}>
-        {grid}
-        {band ? (
-          <polygon
-            points={band}
-            fill={AMBER}
-            fillOpacity="0.12"
-            stroke="none"
-          />
-        ) : null}
-        <polyline points={poly(tc)} fill="none" stroke={TEAL} strokeWidth="2" />
-        <polyline
-          points={poly(ts)}
-          fill="none"
-          stroke={AMBER}
-          strokeWidth="2.25"
-          strokeDasharray="5 4"
-        />
-        <polyline
-          points={poly(ti)}
-          fill="none"
-          stroke={INDIGO}
-          strokeWidth="2.5"
-        />
-        {xlabels}
-        {endDot(tc, TEAL)}
-        {endDot(ts, AMBER)}
-        {endDot(ti, INDIGO)}
-        {endLabel(ts, AMBER, 'self-reported', -8)}
-        {endLabel(ti, INDIGO, tWard, 14)}
-        {endLabel(tc, TEAL, cWard, -8)}
-      </svg>
+      <div
+        key={label}
+        style={Object.assign(
+          {
+            padding: '8px 12px',
+            fontFamily: mono,
+            minWidth: 120,
+            borderColor: ok ? '#a7f3d0' : bad ? '#fecdd3' : LINE,
+          },
+          cardStyle,
+          { borderRadius: 8 },
+        )}
+      >
+        <div
+          style={{
+            color: MUT,
+            fontSize: 10,
+            textTransform: 'uppercase',
+            letterSpacing: '.04em',
+          }}
+        >
+          {label}
+        </div>
+        <div style={{ color: col, fontSize: 18, fontWeight: 700 }}>
+          {metricVal(m)}
+        </div>
+      </div>
     );
   }
 
-  // --- hero dumbbell: self-reported vs independently-verified, with the gap
-  // shaded and a 95% CI whisker on the verified estimate. Makes the gap the
-  // visual instead of a prose sentence. ---
+  // ---- hero dumbbell: self-reported vs independently-verified ----
   function dumbbell() {
     var W = 560,
       H = 106,
       padL = 14,
       padR = 14;
-    var self = sr.intervention_pct,
-      ver = sr.independent_pct;
-    if (self == null || ver == null) return null;
-    // Zoom the axis to a window around the two values so they spread across
-    // the full width (not bunched in the right third of a 0-100 axis).
-    var dLo = Math.max(0, Math.floor((Math.min(self, ver) - 10) / 10) * 10);
+    if (self_ == null || ver == null) return null;
+    var dLo = Math.max(0, Math.floor((Math.min(self_, ver) - 10) / 10) * 10);
     var dHi = 100;
     function X(v) {
       return padL + ((v - dLo) / (dHi - dLo)) * (W - padL - padR);
     }
     var yT = 50;
-    var xSelf = X(self),
+    var xSelf = X(self_),
       xVer = X(ver);
     var ci = indCI || 0;
     var ciLo = X(Math.max(dLo, ver - ci)),
       ciHi = X(Math.min(dHi, ver + ci));
     var ticks = [];
     for (var tk = dLo; tk <= dHi + 0.001; tk += 10) ticks.push(tk);
-    // Clamp a label x so its box never overflows the chart edges.
     function clampX(x, halfW) {
       return Math.max(padL + halfW, Math.min(W - padR - halfW, x));
     }
@@ -382,7 +264,6 @@ function WorkflowUI(props) {
         viewBox={'0 0 ' + W + ' ' + H}
         style={{ display: 'block', maxWidth: 600 }}
       >
-        {/* legend (top) — so the dot values below never collide or clip */}
         <circle cx={padL + 4} cy={11} r="4" fill={AMBER} />
         <text x={padL + 12} y={14} fill={MUT} fontSize="10">
           self-reported (program records)
@@ -410,7 +291,6 @@ function WorkflowUI(props) {
           );
         })}
         <line x1={padL} y1={yT} x2={W - padR} y2={yT} stroke={LINE} />
-        {/* the gap = the finding. Rose, not green (green elsewhere = passing). */}
         <line
           x1={xVer}
           y1={yT}
@@ -419,7 +299,6 @@ function WorkflowUI(props) {
           stroke={ROSE}
           strokeWidth="4"
         />
-        {/* 95% CI as a shaded band so the verified dot clearly sits on top */}
         <rect
           x={ciLo}
           y={yT - 7}
@@ -463,8 +342,6 @@ function WorkflowUI(props) {
           stroke="#ffffff"
           strokeWidth="2"
         />
-        {/* gap label (above); role+value labels at each dot (below) so the
-            direction — self-report higher than verified — is unmistakable. */}
         <text
           x={clampX((xVer + xSelf) / 2, 70)}
           y={yT - 12}
@@ -473,7 +350,7 @@ function WorkflowUI(props) {
           fontWeight="700"
           textAnchor="middle"
         >
-          self-report {pp(sr.premium_pp)} too high
+          self-report {pp(prem)} too high
         </text>
         <text
           x={clampX(xVer, 40)}
@@ -502,7 +379,7 @@ function WorkflowUI(props) {
           fontWeight="800"
           textAnchor="middle"
         >
-          {pct(self)}
+          {pct(self_)}
         </text>
         <text
           x={clampX(xSelf, 40)}
@@ -517,92 +394,335 @@ function WorkflowUI(props) {
     );
   }
 
-  var chip = function (label, val, ok) {
+  // ---- six-round trend (3 series + overstatement band + selected marker) ----
+  function trendChart() {
+    var iv = trend.intervention || [],
+      cp = trend.comparison || [],
+      srr = trend.self_report || [],
+      rr = trend.rounds || [];
+    var n = Math.max(iv.length, cp.length, srr.length);
+    if (n < 2) return null;
+    var w = 560,
+      h = 214,
+      pad = 30,
+      padB = 26;
+    function X(i) {
+      return pad + (i / (n - 1)) * (w - 2 * pad);
+    }
+    function Y(v) {
+      return h - padB - ((v || 0) / 100) * (h - pad - padB);
+    }
+    function poly(arr) {
+      return arr
+        .map(function (v, i) {
+          return X(i) + ',' + Y(v);
+        })
+        .join(' ');
+    }
+    var band = '';
+    if (srr.length && iv.length) {
+      band =
+        srr
+          .map(function (v, i) {
+            return X(i) + ',' + Y(v);
+          })
+          .join(' ') +
+        ' ' +
+        iv
+          .slice()
+          .reverse()
+          .map(function (v, i) {
+            return X(iv.length - 1 - i) + ',' + Y(v);
+          })
+          .join(' ');
+    }
+    var grid = [0, 25, 50, 75, 100].map(function (g) {
+      var y = Y(g);
+      return (
+        <g key={g}>
+          <line
+            x1={pad}
+            y1={y}
+            x2={w - pad}
+            y2={y}
+            stroke={LINE}
+            strokeWidth="1"
+          />
+          <text x={4} y={y + 3} fill={MUT} fontSize="9" fontFamily={mono}>
+            {g + '%'}
+          </text>
+        </g>
+      );
+    });
+    function endDot(arr, color) {
+      if (!arr.length) return null;
+      var i = arr.length - 1;
+      return (
+        <circle
+          cx={X(i)}
+          cy={Y(arr[i])}
+          r="4.5"
+          fill={color}
+          stroke="#ffffff"
+          strokeWidth="1.5"
+        />
+      );
+    }
+    function endLabel(arr, color, label, dy) {
+      if (!arr.length) return null;
+      var i = arr.length - 1;
+      return (
+        <text
+          x={X(i) - 8}
+          y={Y(arr[i]) + (dy || -8)}
+          fill={color}
+          fontSize="11"
+          fontWeight="700"
+          textAnchor="end"
+        >
+          {label + ' ' + pct(arr[i])}
+        </text>
+      );
+    }
     return (
-      <div
-        key={label}
-        style={{
-          background: PANEL,
-          border: '1px solid ' + (ok ? '#a7f3d0' : LINE),
-          borderRadius: 8,
-          padding: '8px 12px',
-          fontFamily: mono,
-          boxShadow: SHADOW,
-        }}
-      >
-        <div
-          style={{
-            color: MUT,
-            fontSize: 10,
-            textTransform: 'uppercase',
-            letterSpacing: '.04em',
-          }}
-        >
-          {label}
-        </div>
-        <div
-          style={{
-            color: ok ? GREEN : SUBINK,
-            fontSize: 18,
-            fontWeight: 700,
-          }}
-        >
-          {val}
-        </div>
-      </div>
+      <svg width={w} height={h} style={{ maxWidth: '100%' }}>
+        {grid}
+        {/* selected-round marker */}
+        <rect
+          x={X(sel) - 9}
+          y={pad - 8}
+          width="18"
+          height={h - padB - pad + 8}
+          fill={INDIGO}
+          opacity="0.06"
+        />
+        <line
+          x1={X(sel)}
+          y1={pad - 8}
+          x2={X(sel)}
+          y2={h - padB}
+          stroke={INDIGO}
+          strokeWidth="1"
+          opacity="0.5"
+          strokeDasharray="3 3"
+        />
+        {band ? (
+          <polygon
+            points={band}
+            fill={AMBER}
+            fillOpacity="0.12"
+            stroke="none"
+          />
+        ) : null}
+        <polyline points={poly(cp)} fill="none" stroke={TEAL} strokeWidth="2" />
+        <polyline
+          points={poly(srr)}
+          fill="none"
+          stroke={AMBER}
+          strokeWidth="2.25"
+          strokeDasharray="5 4"
+        />
+        <polyline
+          points={poly(iv)}
+          fill="none"
+          stroke={INDIGO}
+          strokeWidth="2.5"
+        />
+        {rr.map(function (r, i) {
+          return (
+            <text
+              key={i}
+              x={X(i)}
+              y={h - 8}
+              fill={i === sel ? INDIGO : MUT}
+              fontWeight={i === sel ? '700' : '400'}
+              fontSize="9"
+              fontFamily={mono}
+              textAnchor="middle"
+            >
+              {'R' + r}
+            </text>
+          );
+        })}
+        {endDot(cp, TEAL)}
+        {endDot(srr, AMBER)}
+        {endDot(iv, INDIGO)}
+        {endLabel(srr, AMBER, 'self-reported', -8)}
+        {endLabel(iv, INDIGO, tWard, 14)}
+        {endLabel(cp, TEAL, cWard, -8)}
+      </svg>
     );
-  };
+  }
 
-  function tile(label, ward, value, sub, color) {
+  // ---- back-check side-by-side table ----
+  function bcTable() {
+    var rows = (bc.rows || []).slice(0, 9);
+    if (!rows.length) return null;
+    var cols = [
+      ['vitamin_a_received', 'Vitamin-A'],
+      ['child_present', 'Present'],
+      ['child_sex', 'Sex'],
+      ['child_age_months', 'Age (mo)'],
+    ];
+    function fieldOf(row, key) {
+      var fs = row.fields || [];
+      for (var i = 0; i < fs.length; i++) if (fs[i].key === key) return fs[i];
+      return null;
+    }
+    var th = {
+      textAlign: 'left',
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.04em',
+      padding: '6px 8px',
+      borderBottom: '1px solid ' + LINE,
+    };
+    var td = {
+      padding: '6px 8px',
+      fontSize: 12,
+      borderBottom: '1px solid ' + LINE,
+      fontFamily: mono,
+      verticalAlign: 'top',
+    };
     return (
-      <div
-        style={{
-          background: PANEL,
-          border: '1px solid ' + LINE,
-          borderRadius: 10,
-          padding: '14px 16px',
-          minWidth: 180,
-          flex: '1 1 180px',
-          boxShadow: SHADOW,
-        }}
-      >
-        <div
-          style={{
-            color: MUT,
-            fontSize: 11,
-            letterSpacing: '.05em',
-            textTransform: 'uppercase',
-          }}
+      <div style={{ overflowX: 'auto' }}>
+        <table
+          style={{ borderCollapse: 'collapse', width: '100%', minWidth: 620 }}
         >
-          {label}
-        </div>
-        <div style={{ color: SUBINK, fontSize: 13, marginTop: 2 }}>{ward}</div>
-        <div
-          style={{
-            color: color,
-            fontFamily: mono,
-            fontSize: 30,
-            fontWeight: 700,
-            marginTop: 6,
-          }}
-        >
-          {value}
-        </div>
-        <div
-          style={{ color: MUT, fontFamily: mono, fontSize: 12, marginTop: 2 }}
-        >
-          {sub}
-        </div>
+          <thead>
+            <tr>
+              <th style={th}>Household · enumerator → back-check</th>
+              {cols.map(function (c) {
+                return (
+                  <th key={c[0]} style={th}>
+                    {c[1]}
+                  </th>
+                );
+              })}
+              <th style={th}>GPS Δ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(function (row, ri) {
+              return (
+                <tr
+                  key={ri}
+                  style={{
+                    background: row.flagged ? '#fff1f2' : 'transparent',
+                  }}
+                >
+                  <td style={td}>
+                    <div style={{ color: SUBINK, fontWeight: 600 }}>
+                      {row.household_id}
+                    </div>
+                    <div style={{ color: MUT, fontSize: 11 }}>
+                      {row.enumerator} → {row.backcheck_enumerator}
+                    </div>
+                  </td>
+                  {cols.map(function (c) {
+                    var f = fieldOf(row, c[0]);
+                    if (!f)
+                      return (
+                        <td key={c[0]} style={td}>
+                          —
+                        </td>
+                      );
+                    if (f.match) {
+                      return (
+                        <td
+                          key={c[0]}
+                          style={Object.assign({ color: SUBINK }, td)}
+                        >
+                          {yn(f.original)}
+                        </td>
+                      );
+                    }
+                    return (
+                      <td
+                        key={c[0]}
+                        style={Object.assign(
+                          { color: ROSE, fontWeight: 700 },
+                          td,
+                        )}
+                      >
+                        {yn(f.original)} → {yn(f.backcheck)}
+                      </td>
+                    );
+                  })}
+                  <td style={Object.assign({ color: MUT }, td)}>
+                    {row.gps_delta_m == null ? '—' : row.gps_delta_m + ' m'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {(bc.rows || []).length > rows.length ? (
+          <div style={{ color: MUT, fontSize: 11, marginTop: 6 }}>
+            showing {rows.length} of {(bc.rows || []).length} back-checked
+            households (mismatches first)
+          </div>
+        ) : null}
       </div>
     );
   }
 
-  var cardStyle = {
-    background: PANEL,
-    border: '1px solid ' + LINE,
-    borderRadius: 12,
-    boxShadow: SHADOW,
-  };
+  // ---- round selector ----
+  function roundTabs() {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: 'wrap',
+          marginTop: 10,
+          alignItems: 'center',
+        }}
+      >
+        <span
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginRight: 4,
+          }}
+        >
+          Survey round
+        </span>
+        {rounds.map(function (r, i) {
+          var on = i === sel;
+          return (
+            <button
+              key={i}
+              onClick={function () {
+                setSel(i);
+              }}
+              style={{
+                cursor: 'pointer',
+                fontFamily: mono,
+                fontSize: 12,
+                padding: '4px 10px',
+                borderRadius: 7,
+                border: '1px solid ' + (on ? INDIGO : LINE),
+                background: on ? INDIGO : '#ffffff',
+                color: on ? '#ffffff' : SUBINK,
+                fontWeight: on ? 700 : 500,
+              }}
+            >
+              {'R' + r.round}
+            </button>
+          );
+        })}
+        <span style={{ color: MUT, fontSize: 12, marginLeft: 6 }}>
+          {rd.label}
+        </span>
+      </div>
+    );
+  }
+
+  var bcReproduces = bc.prtest_passed;
 
   return (
     <div
@@ -616,24 +736,20 @@ function WorkflowUI(props) {
       <div style={{ fontSize: 18, fontWeight: 700, color: INK }}>
         {prog.name || 'Verified Monitoring'}
       </div>
-      <div
-        style={{
-          color: MUT,
-          fontSize: 13,
-          marginTop: 4,
-          marginBottom: 16,
-          lineHeight: 1.5,
-        }}
-      >
-        Independent rooftop survey · {prog.cadence || 'bi-monthly'} · latest
-        round R{latest.round || (byArm.intervention || []).length} ·{' '}
+      <div style={{ color: MUT, fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
+        Independent rooftop survey · {prog.cadence || 'bi-monthly'} ·{' '}
         <b style={{ color: INDIGO }}>{tWard}</b> (program ward) vs{' '}
         <b style={{ color: TEAL }}>{cWard}</b> (comparison ward)
       </div>
+      {roundTabs()}
 
-      {/* HERO — the defensible claim: an independent survey checked the
-          implementer's self-report. Needs no control group or baseline. */}
-      <div style={Object.assign({ padding: '18px 20px' }, cardStyle)}>
+      {/* HERO */}
+      <div
+        style={Object.assign(
+          { padding: '18px 20px', marginTop: 14 },
+          cardStyle,
+        )}
+      >
         <div
           style={{
             color: MUT,
@@ -642,7 +758,7 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Independent verification — {tWard} (program ward)
+          Independent verification — {tWard} (program ward) · round R{rd.round}
         </div>
         <div
           style={{
@@ -654,11 +770,9 @@ function WorkflowUI(props) {
           }}
         >
           Program records overstate coverage by{' '}
-          <span style={{ color: ROSE }}>{pp(sr.premium_pp)}</span> —
-          self-reported{' '}
-          <span style={{ color: AMBER }}>{pct(sr.intervention_pct)}</span>,
-          independently verified{' '}
-          <span style={{ color: INDIGO }}>{pct(sr.independent_pct)}</span>.
+          <span style={{ color: ROSE }}>{pp(prem)}</span> — self-reported{' '}
+          <span style={{ color: AMBER }}>{pct(self_)}</span>, independently
+          verified <span style={{ color: INDIGO }}>{pct(ver)}</span>.
         </div>
         <div style={{ marginTop: 12 }}>{dumbbell()}</div>
         <div
@@ -667,19 +781,19 @@ function WorkflowUI(props) {
             fontSize: 12,
             marginTop: 8,
             lineHeight: 1.5,
-            maxWidth: 600,
+            maxWidth: 620,
           }}
         >
           Both estimate the same rate — the share of under-5 children reached
           with confirmed vitamin-A — by different methods. Self-report is the
           program's own records (
           {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} logged visits);
-          the verified figure is an independent rooftop survey of {_indN}{' '}
+          the verified figure is an independent rooftop survey of {indN}{' '}
           children (95% CI ±{indCI != null ? indCI.toFixed(1) : '—'} pts).
         </div>
       </div>
 
-      {/* QA strip — how the survey held its line (backs the 'verified' claim) */}
+      {/* QA STRIP — Layer 1 survey-quality metrics, computed from records */}
       <div
         style={{
           marginTop: 16,
@@ -690,24 +804,18 @@ function WorkflowUI(props) {
           marginBottom: 6,
         }}
       >
-        Independent survey — data quality
+        Independent survey — data quality (round R{rd.round})
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {chip('GPS within 15m', pct(verif.gps_within_15m_pct), true)}
-        {chip('Evidence complete', pct(verif.evidence_complete_pct), true)}
-        {chip('Back-check pass', pct(verif.backcheck_pass_pct), true)}
-        {chip(
-          'Anomaly flags',
-          (verif.flags_raised || 0) +
-            ' raised · ' +
-            ((verif.flags_raised || 0) - (verif.flags_resolved || 0)) +
-            ' open',
-          true,
-        )}
+        {chip('Evidence capture', q.evidence_capture)}
+        {chip('GPS within 15 m', q.gps_within_15m)}
+        {chip('Field completeness', q.field_completeness)}
+        {chip('Duration plausible', q.duration_plausibility)}
+        {chip('Consistency', q.consistency_pass)}
+        {chip('Duplicates', q.duplicate_integrity)}
       </div>
 
-      {/* Supporting context — coverage by ward (descriptive, not an impact
-          estimate). Demoted below the verification hero. */}
+      {/* WARD TILES */}
       <div style={{ marginTop: 18 }}>
         <div
           style={{
@@ -718,25 +826,65 @@ function WorkflowUI(props) {
             marginBottom: 8,
           }}
         >
-          Coverage by ward, latest round (descriptive)
+          Coverage by ward, round R{rd.round} (descriptive)
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {tile(
-            'Program ward',
-            tWard,
-            pct(tCov),
-            latest.intervention_n != null
-              ? latest.intervention_n + ' children surveyed'
-              : 'independent survey',
-            INDIGO,
-          )}
-          {tile(
-            'Comparison ward',
-            cWard,
-            pct(cCov),
-            cN != null ? cN + ' children surveyed' : 'independent survey',
-            TEAL,
-          )}
+          {[
+            ['Program ward', tWard, ver, rd.intervention_n, INDIGO],
+            [
+              'Comparison ward',
+              cWard,
+              rd.comparison_pct,
+              rd.comparison_n,
+              TEAL,
+            ],
+          ].map(function (t) {
+            return (
+              <div
+                key={t[1]}
+                style={Object.assign(
+                  { padding: '14px 16px', minWidth: 180, flex: '1 1 180px' },
+                  cardStyle,
+                  { borderRadius: 10 },
+                )}
+              >
+                <div
+                  style={{
+                    color: MUT,
+                    fontSize: 11,
+                    letterSpacing: '.05em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {t[0]}
+                </div>
+                <div style={{ color: SUBINK, fontSize: 13, marginTop: 2 }}>
+                  {t[1]}
+                </div>
+                <div
+                  style={{
+                    color: t[4],
+                    fontFamily: mono,
+                    fontSize: 30,
+                    fontWeight: 700,
+                    marginTop: 6,
+                  }}
+                >
+                  {pct(t[2])}
+                </div>
+                <div
+                  style={{
+                    color: MUT,
+                    fontFamily: mono,
+                    fontSize: 12,
+                    marginTop: 2,
+                  }}
+                >
+                  {t[3]} children surveyed
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div
           style={{ marginTop: 10, color: MUT, fontSize: 12, lineHeight: 1.4 }}
@@ -747,7 +895,76 @@ function WorkflowUI(props) {
         </div>
       </div>
 
-      {/* Trend */}
+      {/* BACK-CHECK DRILL-DOWN */}
+      <div style={Object.assign({ marginTop: 18, padding: 16 }, cardStyle)}>
+        <div
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+          }}
+        >
+          Independent back-check — how we know the survey is real (round R
+          {rd.round})
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            color: SUBINK,
+            marginTop: 8,
+            lineHeight: 1.5,
+            maxWidth: 720,
+          }}
+        >
+          A stratified <b>{bc.coverage_pct}%</b> sample ({bc.n_backchecked}{' '}
+          households) was independently re-surveyed by a <b>different</b>{' '}
+          enumerator and compared field-by-field.{' '}
+          <span style={{ color: GREEN, fontWeight: 700 }}>
+            {bc.outcome_agreement_pct}%
+          </span>{' '}
+          of vitamin-A outcomes agreed; Type-1 (verification) discordance was{' '}
+          <span
+            style={{
+              color: (bc.type1_error_pct || 0) > 10 ? ROSE : SUBINK,
+              fontWeight: 700,
+            }}
+          >
+            {bc.type1_error_pct}%
+          </span>
+          .{' '}
+          <span style={{ color: bcReproduces ? GREEN : ROSE, fontWeight: 700 }}>
+            {bcReproduces
+              ? 'The coverage figure reproduces'
+              : 'Coverage differs under re-survey'}
+          </span>{' '}
+          (original {bc.orig_pct}% vs back-check {bc.bc_pct}%, proportion test
+          p={bc.prtest_p}).
+        </div>
+        <div style={{ marginTop: 12 }}>{bcTable()}</div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 16,
+            marginTop: 8,
+            fontSize: 11,
+            color: MUT,
+            fontFamily: mono,
+          }}
+        >
+          <span>
+            <span style={{ color: SUBINK }}>black</span> = original = back-check
+          </span>
+          <span>
+            <span style={{ color: ROSE, fontWeight: 700 }}>
+              red original → back-check
+            </span>{' '}
+            = discordance (flagged)
+          </span>
+        </div>
+      </div>
+
+      {/* TREND */}
       <div style={Object.assign({ marginTop: 18, padding: 14 }, cardStyle)}>
         <div
           style={{
@@ -759,7 +976,7 @@ function WorkflowUI(props) {
           }}
         >
           Self-reported vs independently-verified coverage across{' '}
-          {byArm.intervention ? byArm.intervention.length : 0} bi-monthly rounds
+          {(trend.rounds || []).length} bi-monthly rounds
         </div>
         <div
           style={{
@@ -782,13 +999,14 @@ function WorkflowUI(props) {
           </span>
         </div>
         <div style={{ color: MUT, fontSize: 11, marginBottom: 8 }}>
-          y-axis: % of surveyed children with confirmed vitamin-A · the shaded
-          band is the self-report overstatement
+          y-axis: % of surveyed children with confirmed vitamin-A · shaded band
+          = self-report overstatement · the highlighted column is the selected
+          round
         </div>
-        {trend()}
+        {trendChart()}
       </div>
 
-      {/* Two-ward map overlay */}
+      {/* MAP */}
       {overlay ? (
         <div style={Object.assign({ marginTop: 18, padding: 14 }, cardStyle)}>
           <div
