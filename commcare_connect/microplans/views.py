@@ -1000,6 +1000,16 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                 "plan_count": len(entries),
             }
             context["entries"] = entries
+            # Whether every member ward is already sampled — drives the state-aware
+            # "Generate / Re-generate samples" label so the action never reads as
+            # pending against rows that already show "sampled".
+            context["all_sampled"] = bool(entries) and all(e["phase"] == "sampled" for e in entries)
+            # The exact columns each ward's Connect CSV carries — surfaced so the
+            # "blind export" claim is observable on screen (the reader can see there is
+            # no Arm column), not merely asserted in a caption.
+            from commcare_connect.microplans.core.workarea import CSV_HEADERS
+
+            context["csv_columns"] = list(CSV_HEADERS.values())
             # Study comparability — is the control a fair counterfactual? Compared on
             # the SELECTED PSUs / surveyed buildings (settlement density, PSU size,
             # building footprint) via standardized mean differences — NOT whole-ward
