@@ -113,7 +113,11 @@
         }
       });
       const b = bounds();
-      if (b) map.fitBounds(b, { padding: 40, maxZoom: 15, duration: 0 });
+      // Asymmetric padding keeps both arms' clusters clear of the Layers/Inspect panel
+      // (top-right) and the study-summary card (top-left), so the control arm is never
+      // rendered underneath a panel. maxZoom 16 lets two adjacent wards fill the frame
+      // rather than leaving the data marooned in one corner of empty terrain.
+      if (b) map.fitBounds(b, { padding: { top: 96, right: 300, bottom: 56, left: 300 }, maxZoom: 16, duration: 0 });
     });
   })();
 </script>
