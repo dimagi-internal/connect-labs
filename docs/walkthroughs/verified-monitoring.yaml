@@ -1,35 +1,35 @@
-name: verified-monitoring
-narrative: 'David, the funder of a child-health program, opens the monitoring dashboard. The hero puts two
-  numbers side by side for the program ward (Kaura), latest round: the implementer''s self-report at 84.0%
-  and the independent rooftop survey at 67.5% — a 16.5-point difference, shown as a dumbbell with a 95%
-  confidence band, no prose telling him what to conclude. He scans the data-quality strip — evidence
-  capture, GPS-within-15m, field completeness, all computed from the survey''s own records — then drills
-  into the back-check: a 13% sample re-surveyed by a different enumerator, with the field-by-field
-  comparison table laid out so he can read each household''s original over its re-survey answer, the one
-  changed value highlighted in red, and the headline stats (97.2% outcome agreement, 100% identity match,
-  proportion-test p=0.81; the subsample rate is not shown as a coverage figure). He clicks across the round selector to watch
-  every KPI re-drive round to round, pulls up the six-round trend where the self-reported line sits above
-  the independently-verified line every round, and closes on the two-ward map: program service delivery
-  concentrated in Kaura, the independent survey pins covering both wards. Nothing on screen interprets the
-  data for him; the numbers do the work.'
-base_url: https://labs.connect.dimagi.com
 auth:
   type: session
-why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
+base_url: https://labs.connect.dimagi.com
+name: verified-monitoring
+narrative: 'David, the funder of a child-health program, opens the monitoring dashboard.
+  The hero puts two numbers side by side for the program ward (Kaura), latest round:
+  the implementer''s self-report at 84.0% and the independent rooftop survey at 67.5%
+  — a 16.5-point difference, shown as a dumbbell with a 95% confidence band, no prose
+  telling him what to conclude. He scans the data-quality strip — evidence capture,
+  GPS-within-15m, field completeness, all computed from the survey''s own records
+  — then drills into the back-check: a 13% sample re-surveyed by a different enumerator,
+  with the field-by-field comparison table laid out so he can read each household''s
+  original over its re-survey answer, the one changed value highlighted in red, and
+  the headline stats (97.2% outcome agreement, 100% identity match, proportion-test
+  p=0.81; the subsample rate is not shown as a coverage figure). He clicks across
+  the round selector to watch every KPI re-drive round to round, pulls up the six-round
+  trend where the self-reported line sits above the independently-verified line every
+  round, and closes on the two-ward map: program service delivery concentrated in
+  Kaura, the independent survey pins covering both wards. Nothing on screen interprets
+  the data for him; the numbers do the work.'
+narrative_locked: true
+narrative_locked_at: '2026-06-04T21:59:52.632297+00:00'
 personas:
   david:
+    color: '#4F46E5'
+    intro: David funds the child-health program and wants independent, drillable proof
+      the vitamin-A home visits reached households — not the implementer's self-report
+      — with the survey's own quality and a back-check he can inspect row by row.
     name: David Mensah
     role: Program Officer, Funder
-    color: '#4F46E5'
-    intro: David funds the child-health program and wants independent, drillable proof the vitamin-A home
-      visits reached households — not the implementer's self-report — with the survey's own quality and a
-      back-check he can inspect row by row.
 scenes:
-- persona: david
-  title: Self-reported vs independently verified, side by side
-  show: 'On the live dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3711), the hero: the
-    program''s self-report and the independent survey for the latest round, with their difference.'
-  actions:
+- actions:
   - kind: goto
     target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3711
   - kind: wait_for
@@ -38,41 +38,47 @@ scenes:
     target: Self-reported vs independently verified
   - kind: hold
     seconds: 2
-  concept_claim: The latest independent survey puts verified coverage well below the program's self-report,
-    shown as two objective numbers and their difference — the viewer draws the conclusion.
-  provenance: S1
-  design_intent: Bet that three big monospace numbers (self-reported / independently verified / difference)
-    over a dumbbell with a 95% CI band reads as objective measurement, not advocacy. No interpretive verbs.
+  concept_claim: The latest independent survey puts verified coverage well below the
+    program's self-report, shown as two objective numbers and their difference — the
+    viewer draws the conclusion.
+  design_intent: Bet that three big monospace numbers (self-reported / independently
+    verified / difference) over a dumbbell with a 95% CI band reads as objective measurement,
+    not advocacy. No interpretive verbs.
   features:
-  - id: hero-dumbbell
-    description: Two dots on a zoomed axis — self-reported (amber) and independently verified (indigo) — with
-      a shaded 95% CI band on the verified estimate and a neutral delta label.
-    verify: Assert the hero shows self-reported 84.0%, verified 67.5%, difference +16.5 pts for Kaura R6, and
-      contains no interpretive words (overstate / too high / reproduces).
-- persona: david
-  title: The survey's own data quality
-  show: 'The data-quality strip: evidence capture, GPS-within-15m, field completeness, duration, consistency,
-    duplicates — each computed from the survey records.'
-  actions:
+  - description: Two dots on a zoomed axis — self-reported (amber) and independently
+      verified (indigo) — with a shaded 95% CI band on the verified estimate and a
+      neutral delta label.
+    id: hero-dumbbell
+    verify: Assert the hero shows self-reported 84.0%, verified 67.5%, difference
+      +16.5 pts for Kaura R6, and contains no interpretive words (overstate / too
+      high / reproduces).
+  persona: david
+  provenance: S1
+  show: 'On the live dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3711),
+    the hero: the program''s self-report and the independent survey for the latest
+    round, with their difference.'
+  title: Self-reported vs independently verified, side by side
+- actions:
   - kind: scroll_to
     target: data quality
   - kind: hold
     seconds: 2
-  concept_claim: The independent survey's data quality is high and is computed from the row-level records,
-    not asserted.
-  provenance: S2
-  design_intent: A row of compact metric chips, green when they clear the published threshold, so quality
-    reads at a glance.
+  concept_claim: The independent survey's data quality is high and is computed from
+    the row-level records, not asserted.
+  design_intent: A row of compact metric chips, green when they clear the published
+    threshold, so quality reads at a glance.
   features:
-  - id: qa-strip
-    description: Layer-1 survey-quality chips from the survey_quality library (evidence, GPS, completeness,
-      duration, consistency, duplicates).
-    verify: Assert the chips render computed values with pass/fail coloring against thresholds.
-- persona: david
-  title: Drill into the back-check
-  show: 'The back-check drill-down: the headline stats then the field-by-field comparison table — original
-    vs re-survey per household, discordances in red.'
-  actions:
+  - description: Layer-1 survey-quality chips from the survey_quality library (evidence,
+      GPS, completeness, duration, consistency, duplicates).
+    id: qa-strip
+    verify: Assert the chips render computed values with pass/fail coloring against
+      thresholds.
+  persona: david
+  provenance: S2
+  show: 'The data-quality strip: evidence capture, GPS-within-15m, field completeness,
+    duration, consistency, duplicates — each computed from the survey records.'
+  title: The survey's own data quality
+- actions:
   - kind: scroll_to
     target: Independent back-check
   - kind: hold
@@ -81,22 +87,26 @@ scenes:
     target: showing
   - kind: hold
     seconds: 2
-  concept_claim: A sample is independently re-surveyed by a different enumerator and compared field-by-field,
-    so the funder can audit every flagged difference, original against re-survey.
-  provenance: S3
-  design_intent: A J-PAL-style back-check rendered as an auditable side-by-side table (changes first, in
-    red), each cell stacking original over re-survey, plus an objective stat row — inspectable, not summarized.
+  concept_claim: A sample is independently re-surveyed by a different enumerator and
+    compared field-by-field, so the funder can audit every flagged difference, original
+    against re-survey.
+  design_intent: A J-PAL-style back-check rendered as an auditable side-by-side table
+    (changes first, in red), each cell stacking original over re-survey, plus an objective
+    stat row — inspectable, not summarized.
   features:
-  - id: backcheck-table
-    description: Per-household, each cell stacks the original over the re-survey value (changes in red) on the
-      re-asked variables (outcome + identity), with sample / outcome-agreement / identity-match / proportion-test stats.
-    verify: Assert the table renders rows with a highlighted change and the stat row shows outcome agreement,
-      identity match, and the proportion-test p-value — and no subsample coverage % that could be mistaken
-      for the ward estimate.
-- persona: david
-  title: Drill across rounds
-  show: The round selector re-drives every KPI round to round.
-  actions:
+  - description: Per-household, each cell stacks the original over the re-survey value
+      (changes in red) on the re-asked variables (outcome + identity), with sample
+      / outcome-agreement / identity-match / proportion-test stats.
+    id: backcheck-table
+    verify: Assert the table renders rows with a highlighted change and the stat row
+      shows outcome agreement, identity match, and the proportion-test p-value — and
+      no subsample coverage % that could be mistaken for the ward estimate.
+  persona: david
+  provenance: S3
+  show: 'The back-check drill-down: the headline stats then the field-by-field comparison
+    table — original vs re-survey per household, discordances in red.'
+  title: Drill into the back-check
+- actions:
   - kind: scroll_to
     target: Survey round
   - kind: click
@@ -111,50 +121,59 @@ scenes:
     target: R6
   - kind: hold
     seconds: 1
-  concept_claim: Every KPI is per-round and inspectable — selecting a round re-drives the hero, quality strip,
-    tiles, and back-check.
-  provenance: S2
-  design_intent: A compact R1-R6 selector so the whole dashboard is a time series you can step through.
+  concept_claim: Every KPI is per-round and inspectable — selecting a round re-drives
+    the hero, quality strip, tiles, and back-check.
+  design_intent: A compact R1-R6 selector so the whole dashboard is a time series
+    you can step through.
   features:
-  - id: round-selector
-    description: Round chips that set the active round; hero/QA/tiles/back-check/trend-highlight re-read it.
+  - description: Round chips that set the active round; hero/QA/tiles/back-check/trend-highlight
+      re-read it.
+    id: round-selector
     verify: Assert clicking R1 then R6 changes the hero verified value (53.8% vs 67.5%).
-- persona: david
-  title: Self-reported above verified, every round
-  show: The six-round trend — self-reported (dashed) above independently-verified, with the comparison ward
-    far below.
-  actions:
+  persona: david
+  provenance: S2
+  show: The round selector re-drives every KPI round to round.
+  title: Drill across rounds
+- actions:
   - kind: scroll_to
     target: bi-monthly rounds
   - kind: hold
     seconds: 2
-  concept_claim: Across all six rounds the self-reported line sits above the independently-verified line; the
-    program ward stays far above the comparison ward.
-  provenance: S1
-  design_intent: Three lines plus a shaded self-reported-minus-verified band and a highlighted selected-round
-    column, so the persistent gap is visible without a sentence.
+  concept_claim: Across all six rounds the self-reported line sits above the independently-verified
+    line; the program ward stays far above the comparison ward.
+  design_intent: Three lines plus a shaded self-reported-minus-verified band and a
+    highlighted selected-round column, so the persistent gap is visible without a
+    sentence.
   features:
-  - id: trend-three-line
-    description: Self-reported (dashed amber), independently verified (indigo), comparison ward (teal), with
-      the self-reported-minus-verified band and selected-round marker.
-    verify: Assert three series render across six rounds with the selected-round column highlighted.
-- persona: david
-  title: Where delivery happened, where the survey checked
-  show: The two-ward Mapbox map — program service-delivery points in Kaura, independent survey pins in both
-    wards, with layer toggles.
-  actions:
+  - description: Self-reported (dashed amber), independently verified (indigo), comparison
+      ward (teal), with the self-reported-minus-verified band and selected-round marker.
+    id: trend-three-line
+    verify: Assert three series render across six rounds with the selected-round column
+      highlighted.
+  persona: david
+  provenance: S1
+  show: The six-round trend — self-reported (dashed) above independently-verified,
+    with the comparison ward far below.
+  title: Self-reported above verified, every round
+- actions:
   - kind: scroll_to
     target: Program service delivery
   - kind: hold
     seconds: 2
-  concept_claim: Program delivery is concentrated in the program ward while the independent survey covered
-    both wards — shown on real admin boundaries.
-  provenance: S4
-  design_intent: Real Kaura/Manchok admin boundaries on a light Mapbox basemap via the shared ConnectMap
-    module, with service-delivery and survey-pin layers the viewer can toggle.
+  concept_claim: Program delivery is concentrated in the program ward while the independent
+    survey covered both wards — shown on real admin boundaries.
+  design_intent: Real Kaura/Manchok admin boundaries on a light Mapbox basemap via
+    the shared ConnectMap module, with service-delivery and survey-pin layers the
+    viewer can toggle.
   features:
-  - id: two-ward-map
-    description: Real admin boundaries + a service-delivery point layer (Kaura only) + survey pins (both
-      wards, confirmed/not-confirmed), with toggles.
-    verify: Assert the Mapbox canvas renders both ward boundaries and the layer toggles switch the point
-      layers.
+  - description: Real admin boundaries + a service-delivery point layer (Kaura only)
+      + survey pins (both wards, confirmed/not-confirmed), with toggles.
+    id: two-ward-map
+    verify: Assert the Mapbox canvas renders both ward boundaries and the layer toggles
+      switch the point layers.
+  persona: david
+  provenance: S4
+  show: The two-ward Mapbox map — program service-delivery points in Kaura, independent
+    survey pins in both wards, with layer toggles.
+  title: Where delivery happened, where the survey checked
+why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
