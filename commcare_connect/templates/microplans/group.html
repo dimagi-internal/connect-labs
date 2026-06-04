@@ -109,7 +109,8 @@
     <div class="flex flex-wrap items-center gap-1 mt-1">
       <span class="text-[10px] text-gray-400 mr-0.5">Exported columns:</span>
       {% for c in csv_columns %}<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ c }}</span>{% endfor %}
-      <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-400 line-through" title="The arm is stored on the study group, never on the ward plan — so there is no column to strip">Arm</span>
+      <span class="text-[10px] text-gray-300">·</span>
+      <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-500 border border-red-100" title="The arm is stored on the study group, never on the ward plan — so there is no arm column in the export to strip">no Arm column</span>
     </div>
     {% endif %}
   </div>
