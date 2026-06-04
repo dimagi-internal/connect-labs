@@ -42,7 +42,8 @@
     {% endif %}
     {% if entries %}<a href="{{ map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">View on map</a>
     <button type="button" class="px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
-            :disabled="busy" @click="generateSamples()" x-text="busy ? 'Generating…' : 'Generate samples'"></button>{% endif %}
+            :disabled="busy" @click="generateSamples()" x-text="busy ? 'Generating…' : '{% if all_sampled %}Re-generate samples{% else %}Generate samples{% endif %}'"
+            title="{% if all_sampled %}Re-run the rooftop sampling for every ward in this study{% else %}Run the rooftop sampling for every ward in this study at once{% endif %}"></button>{% endif %}
   </div>
 
   {% if not entries %}
@@ -67,7 +68,7 @@
         <tr class="hover:bg-gray-50">
           <td class="px-3 py-2">
             <a href="{{ e.review_url }}" class="text-brand-cornflower-blue font-medium">{{ e.name|default:"Untitled plan" }}</a>
-            {% if e.region %}<div class="text-[11px] text-gray-400">{{ e.region }}</div>{% endif %}
+            {% if e.region and e.region != e.name %}<div class="text-[11px] text-gray-400">{{ e.region }}</div>{% endif %}
           </td>
           {% if group.is_study %}
           <td class="px-3 py-2">
@@ -100,9 +101,18 @@
     </table>
   </div>
   {% if group.is_study %}
-  <p class="text-[11px] text-gray-400 mt-1">
-    <span class="text-gray-500">Connect CSV is blind:</span> each ward exports as an ordinary work-area file with no arm column, so the field organisation only ever receives a ward to cover.
-  </p>
+  <div class="mt-1">
+    <p class="text-[11px] text-gray-400">
+      <span class="text-gray-500">Connect CSV is blind:</span> each ward exports the standard work-area columns and nothing else, so the field organisation only ever receives a ward to cover — never which arm it is.
+    </p>
+    {% if csv_columns %}
+    <div class="flex flex-wrap items-center gap-1 mt-1">
+      <span class="text-[10px] text-gray-400 mr-0.5">Exported columns:</span>
+      {% for c in csv_columns %}<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ c }}</span>{% endfor %}
+      <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-400 line-through" title="The arm is stored on the study group, never on the ward plan — so there is no column to strip">Arm</span>
+    </div>
+    {% endif %}
+  </div>
   {% endif %}
 
   {% if comparability and comparability.metrics %}
@@ -126,9 +136,11 @@
       adjusts for, so they are flagged to <i>adjust at analysis</i>, not used to reject the control.
       |SMD| &lt; 0.1 is a close match, &lt; 0.25 acceptable.
     </p>
-    <!-- Balance table (CONSORT-style): one row per characteristic, SMD + band. The
-         gating row (settlement density) uses red on imbalance; advisory rows use a
-         calm 'adjust at analysis' so the table never contradicts the verdict. -->
+    <!-- Split presentation (the funder-statistician fix): the ONE gating metric stands
+         alone as the verdict basis; advisory covariates live in a visually-subordinated
+         block so the verdict badge never sits equal-weight beside a large advisory SMD
+         (the self-contradiction a reviewer flagged when 0.76 read like a failed match). -->
+    <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Gates the verdict</div>
     <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
       <table class="text-sm">
         <thead class="bg-gray-50 text-gray-600">
@@ -139,23 +151,48 @@
             <th class="text-left font-semibold px-3 py-2">Balance</th></tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
-          {% for m in comparability.metrics %}
+          {% for m in comparability.metrics %}{% if m.core %}
           <tr>
-            <td class="px-3 py-2">{{ m.label }}{% if m.metric == "psu_density" %} <span class="text-[10px] text-gray-400">/km²</span>{% elif m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}{% if m.core %} <span class="text-[10px] text-gray-500">· gates verdict</span>{% else %} <span class="text-[10px] text-gray-400">· adjust at analysis</span>{% endif %}</td>
+            <td class="px-3 py-2 font-medium">{{ m.label }}{% if m.metric == "psu_density" %} <span class="text-[10px] text-gray-400">/km²</span>{% elif m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.iv }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.ct }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.smd }}</td>
             <td class="px-3 py-2">
-              {% if m.band == "good" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● close</span>
-              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● acceptable</span>
-              {% elif m.core %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs</span>
-              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">● adjust at analysis</span>{% endif %}
+              {% if m.band == "good" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● close (|SMD| &lt; 0.1)</span>
+              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● acceptable (|SMD| &lt; 0.25)</span>
+              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs (|SMD| ≥ 0.25)</span>{% endif %}
             </td>
           </tr>
-          {% endfor %}
+          {% endif %}{% endfor %}
         </tbody>
       </table>
     </div>
+    {% if comparability.n_intervention and comparability.n_control %}
+    <p class="text-[11px] text-gray-400 mt-1">Computed over the selected settlements the survey will visit — n = {{ comparability.n_intervention }} intervention, {{ comparability.n_control }} control.</p>
+    {% endif %}
+
+    {% if comparability.has_advisory %}
+    <!-- Advisory covariates: visually demoted (muted, smaller, its own labelled block)
+         so a large SMD here can never be misread as undercutting the verdict above. -->
+    <div class="mt-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Baseline covariates — adjusted for at analysis, do not gate</div>
+    <div class="overflow-x-auto border border-gray-100 bg-gray-50 rounded-lg inline-block">
+      <table class="text-[13px] text-gray-500">
+        <tbody class="divide-y divide-gray-100">
+          {% for m in comparability.metrics %}{% if not m.core %}
+          <tr>
+            <td class="px-3 py-1.5">{{ m.label }}{% if m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ m.iv }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ m.ct }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">SMD {{ m.smd }}</td>
+            <td class="px-3 py-1.5"><span class="text-[11px] text-slate-500">adjust at analysis</span></td>
+          </tr>
+          {% endif %}{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-[11px] text-gray-400 mt-1">A difference-in-differences analysis adjusts for these measured baseline differences; a large gap is flagged for a common-support check, not used to reject the control.</p>
+    {% endif %}
+
     <p class="text-[11px] text-gray-400 mt-2">
       Context (not used for matching): whole-ward building density —
       {% for a in comparability.arms %}{% if a.arm == "intervention" %}intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}

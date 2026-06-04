@@ -90,11 +90,12 @@
         // Sampling work areas are PINS (Point geometry): coloured dots.
         map.addLayer({ id: src + "-pt", type: "circle", source: src,
           paint: {
-            "circle-color": L.color, "circle-opacity": 0.95,
-            // Zoom-scaled so pins stay legible when the study is framed at ward
-            // scale (the two arms must read as two distinct colour clusters).
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 5, 12, 7, 15, 10],
-            "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.4 },
+            "circle-color": L.color, "circle-opacity": 1.0,
+            // Zoom-scaled and sized up so the two arms read as two distinct colour
+            // clusters against a busy satellite basemap (green-on-green farmland is
+            // the worst case — the larger radius + thick white halo keep pins legible).
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 7, 12, 10, 15, 14],
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.2 },
           filter: ["==", ["geometry-type"], "Point"] });
         const sublayers = [src + "-fill", src + "-line", src + "-pt"];
         // Click → inspect (which plan/arm this area belongs to)
