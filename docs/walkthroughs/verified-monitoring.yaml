@@ -5,9 +5,9 @@ narrative: 'David, the funder of a child-health program, opens the monitoring da
   confidence band, no prose telling him what to conclude. He scans the data-quality strip — evidence
   capture, GPS-within-15m, field completeness, all computed from the survey''s own records — then drills
   into the back-check: a 13% sample re-surveyed by a different enumerator, with the field-by-field
-  comparison table laid out so he can read each household''s original vs re-survey answer, the one
-  discordance highlighted in red, and the headline stats (97.2% outcome agreement, 0% Type-1 discordance,
-  original 55.6% vs back-check 52.8%, proportion-test p=0.81). He clicks across the round selector to watch
+  comparison table laid out so he can read each household''s original over its re-survey answer, the one
+  changed value highlighted in red, and the headline stats (97.2% outcome agreement, 100% identity match,
+  proportion-test p=0.81; the subsample rate is not shown as a coverage figure). He clicks across the round selector to watch
   every KPI re-drive round to round, pulls up the six-round trend where the self-reported line sits above
   the independently-verified line every round, and closes on the two-ward map: program service delivery
   concentrated in Kaura, the independent survey pins covering both wards. Nothing on screen interprets the
@@ -15,7 +15,7 @@ narrative: 'David, the funder of a child-health program, opens the monitoring da
 base_url: https://labs.connect.dimagi.com
 auth:
   type: session
-why_brief: ../../.canopy/ddd/runs/did-monitoring-2026-06-01-001/why_brief_verified_monitoring.yaml
+why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
 personas:
   david:
     name: David Mensah
@@ -27,11 +27,11 @@ personas:
 scenes:
 - persona: david
   title: Self-reported vs independently verified, side by side
-  show: 'On the live dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3709), the hero: the
+  show: 'On the live dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3711), the hero: the
     program''s self-report and the independent survey for the latest round, with their difference.'
   actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3709
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3711
   - kind: wait_for
     target: Survey round
   - kind: scroll_to
@@ -82,16 +82,17 @@ scenes:
   - kind: hold
     seconds: 2
   concept_claim: A sample is independently re-surveyed by a different enumerator and compared field-by-field,
-    so the funder can audit every flagged difference and see the coverage figure reproduces.
+    so the funder can audit every flagged difference, original against re-survey.
   provenance: S3
-  design_intent: A J-PAL-style back-check rendered as an auditable side-by-side table (mismatches first, in
-    red) plus an objective stat row — the proof is inspectable, not summarized.
+  design_intent: A J-PAL-style back-check rendered as an auditable side-by-side table (changes first, in
+    red), each cell stacking original over re-survey, plus an objective stat row — inspectable, not summarized.
   features:
   - id: backcheck-table
-    description: Per-household original vs back-check on the re-asked variables (outcome + Type-1), mismatched
-      cells highlighted, with sample / agreement / Type-1 / original-vs-backcheck / proportion-test stats.
-    verify: Assert the table renders rows with a highlighted discordance and the stat row shows outcome
-      agreement, Type-1 discordance, and the proportion-test p-value.
+    description: Per-household, each cell stacks the original over the re-survey value (changes in red) on the
+      re-asked variables (outcome + identity), with sample / outcome-agreement / identity-match / proportion-test stats.
+    verify: Assert the table renders rows with a highlighted change and the stat row shows outcome agreement,
+      identity match, and the proportion-test p-value — and no subsample coverage % that could be mistaken
+      for the ward estimate.
 - persona: david
   title: Drill across rounds
   show: The round selector re-drives every KPI round to round.
@@ -135,7 +136,7 @@ scenes:
   features:
   - id: trend-three-line
     description: Self-reported (dashed amber), independently verified (indigo), comparison ward (teal), with
-      the overstatement band and selected-round marker.
+      the self-reported-minus-verified band and selected-round marker.
     verify: Assert three series render across six rounds with the selected-round column highlighted.
 - persona: david
   title: Where delivery happened, where the survey checked
