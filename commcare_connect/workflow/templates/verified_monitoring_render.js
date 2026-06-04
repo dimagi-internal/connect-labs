@@ -8,7 +8,7 @@
 // KPIs, back-check, trend highlight, and the map, which moves to that round's
 // two wards (real admin boundaries via the shared ConnectMap module). Objective
 // copy throughout; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V25
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V26
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -116,6 +116,7 @@ function WorkflowUI(props) {
           CM.pins(map, 'vm-pins', overlay.survey_pins, {
             confirmedColor: INDIGO,
             absentColor: SLATE,
+            radius: 3.0,
           });
         }
         CM.fit(map, overlay.ward_boundaries, 50);
@@ -277,7 +278,7 @@ function WorkflowUI(props) {
         </text>
         <circle cx={padL + 215} cy={11} r="4" fill={INDIGO} />
         <text x={padL + 223} y={14} fill={MUT} fontSize="10">
-          independently verified (survey, 95% CI)
+          independently verified (program ward, 95% CI)
         </text>
         {ticks.map(function (t) {
           var x = X(t);
@@ -822,11 +823,13 @@ function WorkflowUI(props) {
             fontFamily: mono,
           }}
         >
-          indicator: under-5 children with confirmed vitamin-A · self-reported =
-          program records (
-          {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} logged visits)
-          · independently verified = rooftop survey, n={indN}, 95% CI ±
-          {indCI != null ? indCI.toFixed(1) : '—'} pts
+          both measure the same indicator — % of under-5 children with confirmed
+          vitamin-A · self-reported = the program's own coverage estimate from
+          its records ({sd[tWard] != null ? sd[tWard].toLocaleString() : '—'}{' '}
+          children visited) · independently verified = an independent rooftop
+          survey of n=
+          {indN} under-5 children (95% CI ±
+          {indCI != null ? indCI.toFixed(1) : '—'} pts)
         </div>
       </div>
 
@@ -989,7 +992,21 @@ function WorkflowUI(props) {
             );
           })}
         </div>
-        <div style={{ marginTop: 12 }}>{bcTable()}</div>
+        <div
+          style={{
+            color: SUBINK,
+            fontSize: 13,
+            marginTop: 12,
+            fontWeight: 600,
+          }}
+        >
+          The re-survey matched the original vitamin-A result on{' '}
+          {bc.outcome_agreement_pct != null && bc.n_backchecked != null
+            ? Math.round((bc.outcome_agreement_pct / 100) * bc.n_backchecked)
+            : '—'}{' '}
+          of {bc.n_backchecked} re-surveyed households.
+        </div>
+        <div style={{ marginTop: 10 }}>{bcTable()}</div>
         <div
           style={{
             display: 'flex',

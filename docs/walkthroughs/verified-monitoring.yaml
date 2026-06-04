@@ -3,23 +3,26 @@ auth:
 base_url: https://labs.connect.dimagi.com
 name: verified-monitoring
 narrative: 'David, the funder of a child-health program, opens the monitoring dashboard.
-  The hero puts two numbers side by side for the program ward (Kaura), latest round:
-  the implementer''s self-report at 84.0% and the independent rooftop survey at 67.5%
-  — a 16.5-point difference, shown as a dumbbell with a 95% confidence band, no prose
-  telling him what to conclude. He scans the data-quality strip — evidence capture,
-  GPS-within-15m, field completeness, all computed from the survey''s own records
-  — then drills into the back-check: a 13% sample re-surveyed by a different enumerator,
-  with the field-by-field comparison table laid out so he can read each household''s
-  original over its re-survey answer, the one changed value highlighted in red, and
-  the headline stats (97.2% outcome agreement, 100% identity match, proportion-test
-  p=0.81; the subsample rate is not shown as a coverage figure). He clicks across
-  the round selector to watch every KPI re-drive round to round, pulls up the six-round
+  The program works a different ward each bi-monthly cycle, each verified against
+  an adjacent comparison ward, so the dashboard is a time series of independent checks.
+  The hero puts two numbers side by side for the latest cycle''s program ward: the
+  implementer''s self-report and the independent rooftop survey, with their difference
+  and a 95% confidence band on a dumbbell — no prose telling him what to conclude.
+  He scans the data-quality strip — evidence capture, GPS-within-15m, field completeness,
+  all computed from the survey''s own records — then drills into the back-check: a
+  sample re-surveyed by a different surveyor, with the field-by-field comparison table
+  laid out so he can read each household''s original over its re-survey answer, the
+  one changed value highlighted in red, and the headline stats (outcome agreement,
+  identity match, proportion-test p; the subsample rate is not shown as a coverage
+  figure). He clicks across the round selector and the whole dashboard re-drives —
+  and the map flies to that cycle''s two real wards: program service delivery filling
+  the program ward, the independent survey pins covering both. He pulls up the six-cycle
   trend where the self-reported line sits above the independently-verified line every
-  round, and closes on the two-ward map: program service delivery concentrated in
-  Kaura, the independent survey pins covering both wards. Nothing on screen interprets
-  the data for him; the numbers do the work.'
+  cycle, across six different program wards, while the comparison wards stay low.
+  Nothing on screen interprets the data for him; the numbers, and the moving map,
+  do the work.'
 narrative_locked: true
-narrative_locked_at: '2026-06-04T21:59:52.632297+00:00'
+narrative_locked_at: '2026-06-04T22:36:45.051234+00:00'
 personas:
   david:
     color: '#4F46E5'
@@ -31,7 +34,7 @@ personas:
 scenes:
 - actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3711
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3712
   - kind: wait_for
     target: Survey round
   - kind: scroll_to
@@ -49,12 +52,13 @@ scenes:
       verified (indigo) — with a shaded 95% CI band on the verified estimate and a
       neutral delta label.
     id: hero-dumbbell
-    verify: Assert the hero shows self-reported 84.0%, verified 67.5%, difference
-      +16.5 pts for Kaura R6, and contains no interpretive words (overstate / too
-      high / reproduces).
+    verify: Assert the hero shows three numbers (self-reported, independently verified,
+      and their difference with a 95% CI) plus an "as of <month>" stamp for the selected
+      cycle's program ward, and contains no interpretive words (overstate / too high
+      / reproduces).
   persona: david
   provenance: S1
-  show: 'On the live dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3711),
+  show: 'On the live dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3712),
     the hero: the program''s self-report and the independent survey for the latest
     round, with their difference.'
   title: Self-reported vs independently verified, side by side
@@ -121,59 +125,69 @@ scenes:
     target: R6
   - kind: hold
     seconds: 1
-  concept_claim: Every KPI is per-round and inspectable — selecting a round re-drives
-    the hero, quality strip, tiles, and back-check.
+  concept_claim: Every KPI is per-cycle and inspectable — selecting a round re-drives
+    the hero, quality strip, tiles, back-check, and the map, which flies to that cycle's
+    two real wards.
   design_intent: A compact R1-R6 selector so the whole dashboard is a time series
-    you can step through.
+    you can step through — and the map animates between each cycle's program/comparison
+    wards.
   features:
   - description: Round chips that set the active round; hero/QA/tiles/back-check/trend-highlight
-      re-read it.
+      AND the map (re-fits to that round's two wards) re-read it.
     id: round-selector
-    verify: Assert clicking R1 then R6 changes the hero verified value (53.8% vs 67.5%).
+    verify: Assert clicking R1 then R6 changes the hero verified value AND moves the
+      map to a different program/comparison ward pair (different ward labels on the
+      map).
   persona: david
   provenance: S2
-  show: The round selector re-drives every KPI round to round.
-  title: Drill across rounds
+  show: The round selector re-drives every KPI — and the map moves to that cycle's
+    program and comparison wards.
+  title: Drill across cycles (the map moves)
 - actions:
   - kind: scroll_to
     target: bi-monthly rounds
   - kind: hold
     seconds: 2
-  concept_claim: Across all six rounds the self-reported line sits above the independently-verified
-    line; the program ward stays far above the comparison ward.
+  concept_claim: Across all six cycles — six different program wards — the self-reported
+    line sits above the independently-verified line, while the comparison wards stay
+    low.
   design_intent: Three lines plus a shaded self-reported-minus-verified band and a
-    highlighted selected-round column, so the persistent gap is visible without a
+    highlighted selected-cycle column, so the persistent gap is visible without a
     sentence.
   features:
   - description: Self-reported (dashed amber), independently verified (indigo), comparison
-      ward (teal), with the self-reported-minus-verified band and selected-round marker.
+      ward (neutral slate), with the self-reported-minus-verified band and selected-cycle
+      marker.
     id: trend-three-line
-    verify: Assert three series render across six rounds with the selected-round column
+    verify: Assert three series render across six cycles with the selected-cycle column
       highlighted.
   persona: david
   provenance: S1
-  show: The six-round trend — self-reported (dashed) above independently-verified,
-    with the comparison ward far below.
-  title: Self-reported above verified, every round
+  show: The six-cycle trend — self-reported (dashed) above independently-verified
+    every cycle, the comparison wards far below.
+  title: Self-reported above verified, every cycle
 - actions:
   - kind: scroll_to
     target: Program service delivery
   - kind: hold
     seconds: 2
-  concept_claim: Program delivery is concentrated in the program ward while the independent
-    survey covered both wards — shown on real admin boundaries.
-  design_intent: Real Kaura/Manchok admin boundaries on a light Mapbox basemap via
-    the shared ConnectMap module, with service-delivery and survey-pin layers the
-    viewer can toggle.
+  concept_claim: For the selected cycle, program delivery fills the program ward while
+    the independent survey covered both that ward and its adjacent comparison ward
+    — shown on real admin boundaries that move cycle to cycle.
+  design_intent: Real, labelled admin boundaries (program ward indigo, comparison
+    ward neutral slate) on a light Mapbox basemap via the shared ConnectMap module,
+    with a legend, service-delivery + survey-pin layers, and a fit that re-centres
+    on each cycle's two wards.
   features:
-  - description: Real admin boundaries + a service-delivery point layer (Kaura only)
-      + survey pins (both wards, confirmed/not-confirmed), with toggles.
+  - description: Real labelled admin boundaries for the cycle's two wards + a legend
+      + a service-delivery point layer (program ward) + survey pins (both wards, confirmed/not-confirmed),
+      with toggles; the map re-fits when the round changes.
     id: two-ward-map
-    verify: Assert the Mapbox canvas renders both ward boundaries and the layer toggles
-      switch the point layers.
+    verify: Assert the Mapbox canvas renders both labelled ward boundaries with a
+      legend, and that changing the round re-centres the map on a different ward pair.
   persona: david
   provenance: S4
-  show: The two-ward Mapbox map — program service-delivery points in Kaura, independent
-    survey pins in both wards, with layer toggles.
+  show: The two-ward Mapbox map — program service-delivery points in the program ward,
+    independent survey pins in both wards, with layer toggles.
   title: Where delivery happened, where the survey checked
 why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
