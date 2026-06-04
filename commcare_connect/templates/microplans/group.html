@@ -119,28 +119,36 @@
   <section class="mt-5">
     <div class="flex items-center gap-2 mb-1">
       <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Arm comparability</h2>
-      {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">settlements matched</span>
-      {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">not a fair control</span>{% endif %}
+      {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">settlements within tolerance</span>
+      {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">settlements out of tolerance</span>{% endif %}
     </div>
-    <!-- Plain-language verdict in one sentence, before the methodology detail. -->
+    <!-- Objective read of the data — what the comparison shows, not a recommendation.
+         The analyst draws the conclusion and acts (keeps or removes the ward); the panel
+         only reports the numbers and which metric is structural vs adjustable. -->
     {% if comparability.matched is True %}
-    <p class="text-sm text-gray-700 mb-1">The control's sampled settlements match the intervention's — a fair counterfactual.{% if comparability.flags %} Ward-level size and building footprint differ and are adjusted for at analysis.{% endif %}</p>
+    <p class="text-sm text-gray-700 mb-1">
+      The control's sampled settlements match the intervention's: settlement&nbsp;density SMD&nbsp;{{ comparability.gating_smd }},
+      within the 0.25 acceptance band{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(acceptable, but marginal — not a close &lt;0.1 match)</span>{% endif %}.{% if comparability.flags %}
+      PSU&nbsp;size and building&nbsp;footprint differ; those are measured baseline differences a difference-in-differences analysis adjusts for.{% endif %}
+    </p>
     {% elif comparability.matched is False %}
-    <p class="text-sm text-gray-700 mb-1">Not a fair control — its sampled settlements are too different from the intervention's ({{ comparability.reasons|join:"; " }}).</p>
+    <p class="text-sm text-gray-700 mb-1">
+      The control's sampled settlements are sparser than the intervention's: settlement&nbsp;density SMD&nbsp;{{ comparability.gating_smd }},
+      past the 0.25 band. Settlement structure is fixed once the survey samples there, so it can't be adjusted at analysis the way PSU&nbsp;size or building&nbsp;footprint can.
+    </p>
     {% endif %}
     <p class="text-[11px] text-gray-400 mb-2">
-      Is the control a fair counterfactual? The survey only visits the sampled settlements (PSUs), so the
-      arms are compared on the <b>selected PSUs</b>, as a standardized mean difference (SMD).
-      The verdict gates on <b>settlement density</b> — the settlement structure a control can't change after
-      the survey. PSU size and building footprint are baseline covariates a difference-in-differences analysis
-      adjusts for, so they are flagged to <i>adjust at analysis</i>, not used to reject the control.
-      |SMD| &lt; 0.1 is a close match, &lt; 0.25 acceptable.
+      <b class="text-gray-500">How to read this:</b> a rooftop survey only ever visits the sampled settlements (PSUs), so the
+      arms are compared on the <b>selected PSUs</b> as a standardized mean difference (SMD). Settlement density is a structural
+      property of where the survey samples — a control can't change it after the fact and an analysis can't correct it. PSU size
+      and building footprint are measured baseline covariates a difference-in-differences analysis adjusts for.
+      <span class="whitespace-nowrap">Bands: |SMD| &lt; 0.1 close · &lt; 0.25 acceptable · ≥ 0.25 differs.</span>
     </p>
-    <!-- Split presentation (the funder-statistician fix): the ONE gating metric stands
-         alone as the verdict basis; advisory covariates live in a visually-subordinated
-         block so the verdict badge never sits equal-weight beside a large advisory SMD
-         (the self-contradiction a reviewer flagged when 0.76 read like a failed match). -->
-    <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Gates the verdict</div>
+    <!-- Split presentation: the structural metric (settlement density, can't be adjusted
+         away) stands alone; the adjustable covariates live in a visually-subordinated block
+         so a large covariate SMD never sits equal-weight beside the structural one. Neither
+         block renders a recommendation — they report the data; the analyst decides + acts. -->
+    <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Structural — fixed once the survey samples, can't be adjusted</div>
     <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
       <table class="text-sm">
         <thead class="bg-gray-50 text-gray-600">
@@ -159,7 +167,7 @@
             <td class="px-3 py-2 text-right tabular-nums">{{ m.smd }}</td>
             <td class="px-3 py-2">
               {% if m.band == "good" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● close (|SMD| &lt; 0.1)</span>
-              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● acceptable (|SMD| &lt; 0.25)</span>
+              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">● acceptable, marginal (0.1 ≤ |SMD| &lt; 0.25)</span>
               {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs (|SMD| ≥ 0.25)</span>{% endif %}
             </td>
           </tr>
@@ -172,9 +180,9 @@
     {% endif %}
 
     {% if comparability.has_advisory %}
-    <!-- Advisory covariates: visually demoted (muted, smaller, its own labelled block)
-         so a large SMD here can never be misread as undercutting the verdict above. -->
-    <div class="mt-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Baseline covariates — adjusted for at analysis, do not gate</div>
+    <!-- Adjustable covariates: visually demoted (muted, smaller, its own labelled block)
+         so a large SMD here can never be misread as undercutting the structural metric. -->
+    <div class="mt-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Adjustable baseline covariates — a DiD analysis corrects for these</div>
     <div class="overflow-x-auto border border-gray-100 bg-gray-50 rounded-lg inline-block">
       <table class="text-[13px] text-gray-500">
         <tbody class="divide-y divide-gray-100">

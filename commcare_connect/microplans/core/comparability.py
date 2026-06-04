@@ -113,6 +113,7 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
                 flags.append(f"{label} (SMD {smd:.2f}) — adjust at analysis")
     n_iv = next((a["n_psus"] for a in out_arms if a["arm"] == "intervention"), 0)
     n_ct = next((a["n_psus"] for a in out_arms if a["arm"] in ("control", "comparison")), 0)
+    gating = next((m for m in metrics if m["core"]), None)
     return {
         "arms": out_arms,
         "metrics": metrics,
@@ -125,6 +126,12 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
         "n_intervention": n_iv,
         "n_control": n_ct,
         "has_advisory": any(not m["core"] for m in metrics),
+        # The gating metric's SMD + band, surfaced so the panel can state the explicit
+        # decision ("keep / reject this control") in plain language with the number,
+        # and so a 0.1<=SMD<0.25 pass is labelled "acceptable, marginal" rather than
+        # dressed as a close match.
+        "gating_smd": gating["smd"] if gating else None,
+        "gating_band": gating["band"] if gating else None,
     }
 
 
