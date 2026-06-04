@@ -70,6 +70,10 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
             "psu_density_mean": int(round(float(a.get("psu_density", (0, 0))[0]))),
             "bldg_area_mean": int(round(float(a.get("bldg_area", (0, 0))[0]))),
             "ward_density": int(round(float(a.get("ward_density", 0) or 0))),
+            # n selected PSUs each arm's means/SMDs are computed over (0 for legacy
+            # stats persisted before n_psus was threaded through — the panel omits
+            # the sample-size line when it's absent rather than asserting "n = 0").
+            "n_psus": int(a.get("n_psus") or 0),
         }
         for a in arms
     ]
@@ -107,7 +111,21 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
                 # Advisory: a baseline covariate to adjust for at analysis — flagged,
                 # not failed. Never flips the headline verdict.
                 flags.append(f"{label} (SMD {smd:.2f}) — adjust at analysis")
-    return {"arms": out_arms, "metrics": metrics, "matched": matched, "reasons": reasons, "flags": flags}
+    n_iv = next((a["n_psus"] for a in out_arms if a["arm"] == "intervention"), 0)
+    n_ct = next((a["n_psus"] for a in out_arms if a["arm"] in ("control", "comparison")), 0)
+    return {
+        "arms": out_arms,
+        "metrics": metrics,
+        "matched": matched,
+        "reasons": reasons,
+        "flags": flags,
+        # Sample size the SMDs are computed over (0 = legacy stats; template hides the
+        # line). Lets the panel state its own n instead of asserting an SMD whose
+        # denominator is invisible — the M&E-reviewer ask.
+        "n_intervention": n_iv,
+        "n_control": n_ct,
+        "has_advisory": any(not m["core"] for m in metrics),
+    }
 
 
 def arm_comparability(arms: list[dict], ratio_tolerance: float = RATIO_TOLERANCE) -> dict:
