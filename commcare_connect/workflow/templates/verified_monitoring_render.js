@@ -8,7 +8,7 @@
 // ward tiles, the independent back-check drill-down (J-PAL Type-1/2/3 — the
 // side-by-side that proves the survey), a six-round trend, and the two-ward
 // Mapbox map (shared ConnectMap module + real admin boundaries).
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V22
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V24
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -47,7 +47,7 @@ function WorkflowUI(props) {
     typeof window !== 'undefined' && !!window.ConnectMap && !!window.mapboxgl,
   );
   var [sdOn, setSdOn] = React.useState(true);
-  var [pinsOn, setPinsOn] = React.useState(false);
+  var [pinsOn, setPinsOn] = React.useState(true);
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   var mapLoadedRef = React.useRef(false);
@@ -231,6 +231,12 @@ function WorkflowUI(props) {
         <div style={{ color: col, fontSize: 18, fontWeight: 700 }}>
           {metricVal(m)}
         </div>
+        {m && m.threshold != null ? (
+          <div style={{ color: MUT, fontSize: 9, marginTop: 1 }}>
+            target {m.direction === 'lower_better' ? '≤' : '≥'} {m.threshold}
+            {m.unit === 'pct' ? '%' : ''}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -296,7 +302,7 @@ function WorkflowUI(props) {
           y1={yT}
           x2={xSelf}
           y2={yT}
-          stroke={ROSE}
+          stroke={SLATE}
           strokeWidth="4"
         />
         <rect
@@ -342,16 +348,6 @@ function WorkflowUI(props) {
           stroke="#ffffff"
           strokeWidth="2"
         />
-        <text
-          x={clampX((xVer + xSelf) / 2, 70)}
-          y={yT - 12}
-          fill={ROSE}
-          fontSize="12"
-          fontWeight="700"
-          textAnchor="middle"
-        >
-          Δ {pp(prem)}
-        </text>
         <text
           x={clampX(xVer, 40)}
           y={yT + 22}
@@ -592,7 +588,7 @@ function WorkflowUI(props) {
         >
           <thead>
             <tr>
-              <th style={th}>Household · enumerator → back-check</th>
+              <th style={th}>Household · original enum. → back-check enum.</th>
               {cols.map(function (c) {
                 return (
                   <th key={c[0]} style={th}>
@@ -600,7 +596,16 @@ function WorkflowUI(props) {
                   </th>
                 );
               })}
-              <th style={th}>GPS Δ</th>
+            </tr>
+            <tr>
+              <th
+                style={Object.assign({}, th, { color: '#94a3b8', fontSize: 9 })}
+              >
+                each cell: original / re-survey
+              </th>
+              {cols.map(function (c) {
+                return <th key={c[0]} style={th} />;
+              })}
             </tr>
           </thead>
           <tbody>
@@ -628,31 +633,22 @@ function WorkflowUI(props) {
                           —
                         </td>
                       );
-                    if (f.match) {
-                      return (
-                        <td
-                          key={c[0]}
-                          style={Object.assign({ color: SUBINK }, td)}
-                        >
-                          {yn(f.original)}
-                        </td>
-                      );
-                    }
+                    var changed = !f.match;
                     return (
-                      <td
-                        key={c[0]}
-                        style={Object.assign(
-                          { color: ROSE, fontWeight: 700 },
-                          td,
-                        )}
-                      >
-                        {yn(f.original)} → {yn(f.backcheck)}
+                      <td key={c[0]} style={td}>
+                        <div style={{ color: SUBINK }}>{yn(f.original)}</div>
+                        <div
+                          style={{
+                            color: changed ? ROSE : MUT,
+                            fontWeight: changed ? 700 : 400,
+                            fontSize: 11,
+                          }}
+                        >
+                          {yn(f.backcheck)}
+                        </div>
                       </td>
                     );
                   })}
-                  <td style={Object.assign({ color: MUT }, td)}>
-                    {row.gps_delta_m == null ? '—' : row.gps_delta_m + ' m'}
-                  </td>
                 </tr>
               );
             })}
@@ -798,7 +794,7 @@ function WorkflowUI(props) {
           <div>
             <div
               style={{
-                color: ROSE,
+                color: SUBINK,
                 fontFamily: mono,
                 fontSize: 28,
                 fontWeight: 800,
@@ -860,7 +856,7 @@ function WorkflowUI(props) {
             marginBottom: 8,
           }}
         >
-          Coverage by ward, round R{rd.round} (descriptive)
+          Independent survey estimate by ward · R{rd.round}
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {[
@@ -923,8 +919,8 @@ function WorkflowUI(props) {
         <div
           style={{ marginTop: 10, color: MUT, fontSize: 12, lineHeight: 1.4 }}
         >
-          {cWard}: 0 logged program visits · neighbouring ward, no program
-          activity
+          {cWard}: independent-survey estimate in a neighbouring ward with 0
+          logged program visits (background reference)
         </div>
       </div>
 
@@ -951,19 +947,20 @@ function WorkflowUI(props) {
           }}
         >
           {[
-            ['sample', bc.coverage_pct + '% · n=' + bc.n_backchecked, SUBINK],
-            ['outcome agreement', bc.outcome_agreement_pct + '%', SUBINK],
             [
-              'type-1 discordance',
-              bc.type1_error_pct + '%',
-              (bc.type1_error_pct || 0) > 10 ? ROSE : SUBINK,
-            ],
-            [
-              'original / back-check',
-              bc.orig_pct + '% / ' + bc.bc_pct + '%',
+              'sample re-surveyed',
+              bc.coverage_pct + '% · n=' + bc.n_backchecked,
               SUBINK,
             ],
-            ['proportion test', 'p=' + bc.prtest_p, SUBINK],
+            ['outcome agreement', bc.outcome_agreement_pct + '%', SUBINK],
+            [
+              'identity match',
+              bc.type1_error_pct == null
+                ? '—'
+                : (100 - bc.type1_error_pct).toFixed(1) + '%',
+              SUBINK,
+            ],
+            ['re-survey vs original', 'p=' + bc.prtest_p, SUBINK],
           ].map(function (s) {
             return (
               <div key={s[0]}>
@@ -996,14 +993,29 @@ function WorkflowUI(props) {
           }}
         >
           <span>
-            <span style={{ color: SUBINK }}>black</span> = original = back-check
+            <span style={{ color: SUBINK }}>value</span> = original / re-survey
+            agree
           </span>
           <span>
-            <span style={{ color: ROSE, fontWeight: 700 }}>
-              red original → back-check
-            </span>{' '}
-            = discordance (flagged)
+            <span style={{ color: ROSE, fontWeight: 700 }}>red →</span> =
+            changed on re-survey
           </span>
+        </div>
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 11,
+            color: MUT,
+            lineHeight: 1.6,
+            maxWidth: 720,
+          }}
+        >
+          outcome agreement = share of the {bc.n_backchecked} re-surveyed
+          households whose vitamin-A result matched the original · identity
+          match = sex / age / presence unchanged · re-survey vs original =
+          two-proportion test on the re-surveyed subsample (p &gt; 0.05 = no
+          significant difference; the subsample rate is not the ward estimate
+          above)
         </div>
       </div>
 
