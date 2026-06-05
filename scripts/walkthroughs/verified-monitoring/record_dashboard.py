@@ -147,24 +147,24 @@ def main() -> int:
         _scroll_to(page, "showing", settle_ms=1500)  # the comparison table itself
         snap(rec, "backcheck-table")
 
-        # Scene 4 — drill across rounds: click the selector and watch the KPIs
-        # re-drive round to round.
+        # Scene 4 — drill across cycles: click the selector and watch the KPIs
+        # re-drive cycle to cycle (different program ward each time).
         _scroll_to(page, "Survey round", settle_ms=1000)
-        for r in ("R1", "R4", "R6"):
+        for r in ("R1", "R6"):
             _click_round(page, r)
-            page.wait_for_timeout(1100)
+            page.wait_for_timeout(1300)
         snap(rec, "rounds")
 
-        # Scene 5 — the six-round trend.
-        _scroll_to(page, "bi-monthly rounds", settle_ms=1400)
+        # Scene 5 — the six-cycle trend.
+        _scroll_to(page, "bi-monthly", settle_ms=1400)
         snap(rec, "trend")
 
-        # Scene 6 — the two-ward map. It lands on the clean service-delivery
-        # view (pins off by default); toggle SD off/on to show it fills only
-        # the program ward, then reveal the survey pins on camera. End here.
+        # Scene 6 — THE moving map: land on it, then step the round selector so
+        # the map FLIES to each cycle's two real wards (the rotating-wards
+        # highlight). Click the chips via JS (no auto-scroll) so the map stays in
+        # frame while it re-fits to a new program/comparison pair each click.
         _scroll_to(page, "Program service delivery", settle_ms=1700)
         page.wait_for_selector(".mapboxgl-canvas", timeout=20_000)
-        # Wait for the Mapbox basemap (WebGL tiles + admin boundaries) to paint.
         try:
             page.wait_for_function(
                 "window.ConnectMap && document.querySelector('.mapboxgl-canvas')",
@@ -172,11 +172,21 @@ def main() -> int:
             )
         except Exception:
             pass
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(2600)
         snap(rec, "map")
-        _toggle(page, "service delivery")
-        _reveal(page, "survey pins")
-        page.wait_for_timeout(1400)
+
+        def _click_round_no_scroll(label):
+            page.evaluate(
+                "(lbl)=>{var b=[].slice.call(document.querySelectorAll('button'))"
+                ".find(x=>x.textContent.trim()===lbl); if(b) b.click();}",
+                label,
+            )
+
+        for r in ("R1", "R2", "R3", "R4", "R5", "R6"):
+            _click_round_no_scroll(r)
+            page.wait_for_timeout(1900)  # let the map fly + settle on the new wards
+        snap(rec, "map-rotating")
+        page.wait_for_timeout(1200)
 
     webms = sorted(video_dir.glob("*.webm"), key=lambda p: p.stat().st_mtime)
     if not webms:
