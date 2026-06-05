@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ group_name|default:"Study" }} — add wards from map{% endblock %}
+
+{% block content %}
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  #afm-wrap { position: relative; height: calc(100vh - 4rem); }
+  #afm-map { position: absolute; inset: 0; }
+  .afm-head { position: absolute; top: .6rem; left: .6rem; z-index: 6; background: rgba(255,255,255,.97);
+    border: 1px solid #e5e7eb; border-radius: .6rem; padding: .55rem .7rem; box-shadow: 0 10px 30px -12px rgba(16,18,34,.45);
+    font-size: .8rem; max-width: 340px; }
+  .afm-head .hint { color: #6b7280; font-size: .72rem; margin-top: .3rem; }
+  /* Bottom action bar rendered by boundary_bulk_picker.js into #afm-actions */
+  #afm-actions { position: absolute; bottom: .6rem; left: 50%; transform: translateX(-50%); z-index: 7; }
+  .bbp-bar { display: flex; align-items: center; gap: .75rem; background: rgba(255,255,255,.98);
+    border: 1px solid #e5e7eb; border-radius: .7rem; padding: .55rem .8rem;
+    box-shadow: 0 12px 34px -12px rgba(16,18,34,.5); }
+  .bbp-count { font-size: .8rem; font-weight: 600; color: #111827; }
+  .bbp-status { font-size: .72rem; color: #6b7280; min-width: 6rem; }
+  .afm-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #6b7280; font-size: .85rem; text-align: center; z-index: 5; pointer-events: none; }
+</style>
+
+<div id="afm-wrap">
+  <div class="afm-head">
+    <a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue">← Back to study</a>
+    <div class="font-semibold text-gray-900 mt-0.5">{{ group_name|default:"Study" }}{% if is_study %} <span class="text-[10px] uppercase tracking-wide text-indigo-600">study</span>{% endif %}</div>
+    <div class="hint">Turn on <b>Service delivery</b> (top-right Layers) to see where the program worked, then click admin boundaries to add each ward. Select the covered ward and a comparable neighbour, then create the plans.</div>
+  </div>
+  {% if error %}<div class="afm-empty">{{ error }}</div>{% endif %}
+  <div id="afm-map"></div>
+  <div id="afm-actions"></div>
+</div>
+
+<!-- Service-delivery opportunity picker (multi-select). Server-rendered + Alpine-
+     initialised here (hidden); service_delivery_layer.js relocates it into the
+     panel's "Service delivery" layer body. Same shared picker the editor uses. -->
+{{ user_opportunities|json_script:"sd-opportunity-data" }}
+<div id="sd-picker" class="hidden" data-sd
+     x-data="labsContextPicker({mode:'multi', scope:['opp'], sourceIds:{opp:'sd-opportunity-data'}})">
+  <input type="text" x-model="search" placeholder="Search opportunities…"
+         class="w-full text-[11px] border border-gray-300 rounded px-2 py-1 mb-1">
+  <div class="max-h-28 overflow-auto border border-gray-200 rounded mb-1">
+    <template x-for="opp in filteredOpps" :key="opp.id">
+      <button type="button" x-show="matchesSearch(opp.name) || matchesSearch(String(opp.id))"
+              @click="selectOpp(opp)"
+              :data-testid="'sd-opp-' + opp.id"
+              class="block w-full text-left text-[11px] px-2 py-1 hover:bg-blue-50"
+              :class="isSelected('opp', opp.id) ? 'bg-blue-50 font-medium' : ''">
+        <span x-text="opp.name"></span>
+        <span class="text-gray-400" x-text="'· ' + (opp.visit_count||0) + ' visits'"></span>
+      </button>
+    </template>
+  </div>
+  <div class="flex flex-wrap gap-1 mb-1">
+    <template x-for="(opp, i) in selectedOpps" :key="opp.id">
+      <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 border">
+        <span class="w-2 h-2 rounded-full" :style="`background:${oppColor(i)}`"></span>
+        <span class="truncate" style="max-width:7rem" x-text="opp.name"></span>
+        <button type="button" @click="removeOpp(opp.id)" class="text-gray-400 hover:text-red-600 leading-none">&times;</button>
+      </span>
+    </template>
+    <span x-show="!selectedOpps.length" class="text-[10px] text-gray-400">No opportunities selected.</span>
+  </div>
+  <select class="sd-pipeline w-full text-[11px] border border-gray-300 rounded px-1 py-1 mb-1">
+    <option value="default">Default — device GPS (any app)</option>
+  </select>
+  <button type="button" data-testid="sd-show" class="sd-show w-full text-[11px] font-semibold text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
+<script src="{% static 'microplans/shared.js' %}"></script>
+<script src="{% static 'labs/context_picker.js' %}"></script>
+<script src="{% static 'microplans/map_panel.js' %}"></script>
+<script src="{% static 'microplans/service_delivery_layer.js' %}"></script>
+<script src="{% static 'microplans/admin_boundaries_layer.js' %}"></script>
+<script src="{% static 'microplans/boundary_bulk_picker.js' %}"></script>
+<script>
+  (function () {
+    const TOKEN = "{{ mapbox_token|escapejs }}";
+    const CSRF = "{{ csrf_token }}";
+    const MANAGE_URL = "{{ manage_url|escapejs }}";
+    const URLS = {
+      bulk_create: "{{ bulk_create_url|escapejs }}",
+      boundary_viewport: "{{ boundary_viewport_url|escapejs }}",
+      geometry: "{{ admin_area_geometry_url|escapejs }}",
+      areas: "{{ admin_areas_url|escapejs }}",
+      sd_preview: "{{ preview_service_delivery_url|default:''|escapejs }}",
+      sd_pipelines: "{{ service_delivery_pipelines_url|default:''|escapejs }}",
+      sd_derive: "{{ derive_boundary_url|default:''|escapejs }}",
+    };
+    if (!TOKEN) return;
+    mapboxgl.accessToken = TOKEN;
+    let map;
+    try {
+      map = new mapboxgl.Map({
+        container: "afm-map",
+        style: "mapbox://styles/mapbox/satellite-streets-v12",
+        center: [8.6753, 9.082], zoom: 5,
+      });
+    } catch (e) { return; } // headless / no webgl
+
+    map.on("load", () => {
+      const panel = window.MicroplansMapPanel
+        ? MicroplansMapPanel.create({ map, mount: document.getElementById("afm-wrap") })
+        : null;
+      if (!window.BoundaryBulkPicker) return;
+      BoundaryBulkPicker.create({
+        map, panel, csrf: CSRF,
+        mount: document.getElementById("afm-actions"),
+        sdPickerEl: document.getElementById("sd-picker"),
+        urls: URLS,
+        onCreated: (planIds) => { window.location = MANAGE_URL; },
+      });
+    });
+  })();
+</script>
+{% endblock %}
