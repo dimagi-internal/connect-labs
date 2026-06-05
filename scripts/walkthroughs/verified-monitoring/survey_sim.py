@@ -171,16 +171,21 @@ def _gen_backchecks(rng, cfg, primaries, round_idx, base_id):
         # Re-survey values: agree most of the time, perturb otherwise. A flagged
         # surveyor's originals agree LESS with the independent re-survey — the
         # signal that catches them (the J-PAL back-check error rate per surveyor).
-        agree_p = bc["outcome_agreement"]
-        if flagged.get("id") == o.get("enumerator_id") and flagged.get("arm") == o.get("arm"):
-            agree_p = flagged.get("backcheck_agreement", agree_p)
+        is_flagged = flagged.get("id") == o.get("enumerator_id") and flagged.get("arm") == o.get("arm")
+        # Type-3 (outcome): a flagged surveyor's originals agree LESS with the
+        # independent re-survey — the headline back-check signal that catches them.
+        agree_p = (
+            flagged.get("backcheck_agreement", bc["outcome_agreement"]) if is_flagged else bc["outcome_agreement"]
+        )
         outcome = o["vitamin_a_received"]
         if rng.random() > agree_p:
             outcome = not outcome
         sex = o["child_sex"]
         present = o["child_present"]
         age = o["child_age_months"]
-        if rng.random() > bc["type1_agreement"]:
+        # Type-1 (identity): a flagged surveyor also shows more identity discordance.
+        t1_p = flagged.get("backcheck_type1_agreement", bc["type1_agreement"]) if is_flagged else bc["type1_agreement"]
+        if rng.random() > t1_p:
             # introduce a Type-1 discordance
             roll = rng.random()
             if roll < 0.34:
@@ -189,7 +194,10 @@ def _gen_backchecks(rng, cfg, primaries, round_idx, base_id):
                 present = not present
             elif age is not None:
                 age = age + rng.choice([-4, 4, 6])
-        blat, blon = _offset(rng, o["assigned_lat"], o["assigned_lon"], rng.uniform(2, 12))
+        # Type-2 (location/protocol): the re-survey lands further from a flagged
+        # surveyor's claimed household — their original location was sloppy.
+        off_m = rng.uniform(22, 45) if is_flagged else rng.uniform(2, 12)
+        blat, blon = _offset(rng, o["assigned_lat"], o["assigned_lon"], off_m)
         out.append(
             {
                 "record_id": f"{base_id}-b{idx}",
@@ -203,7 +211,7 @@ def _gen_backchecks(rng, cfg, primaries, round_idx, base_id):
                 "lon": round(blon, 6),
                 "assigned_lat": o["assigned_lat"],
                 "assigned_lon": o["assigned_lon"],
-                "gps_offset_m": round(rng.uniform(2, 12), 1),
+                "gps_offset_m": round(off_m, 1),
                 "in_ward": True,
                 "start_ts": o["start_ts"] + 86_400,
                 "end_ts": o["start_ts"] + 86_400 + 600,
@@ -268,6 +276,46 @@ def _surveyor_scorecard(cfg, records):
             }
         )
     return rows
+
+
+def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=8):
+    """Per-surveyor back-check profile across ALL cycles, by J-PAL type.
+
+    A single cycle's per-surveyor back-check sample is too small for the binary
+    signals (identity, outcome) to settle — the back-check is designed to
+    accumulate. So when a surveyor is selected, the dashboard shows their
+    cumulative profile (n ~ sample_pct x rounds), where the three types separate:
+      Type 1 (identity, zero-tolerance) = 100 - Type-1 discordance rate
+      Type 2 (location / protocol)      = % re-surveys co-located (<= t2 m of original)
+      Type 3 (outcome)                  = vitamin-A agreement (paired match)
+    Each is computed from the surveyor's own records via the shared library."""
+    tw = [r for r in all_records if r.get("arm") == "treatment"]
+    surveyors = sorted({r["enumerator_id"] for r in tw if r["form_type"] == "primary"})
+    out = {}
+    for s in surveyors:
+        sub = [
+            r
+            for r in tw
+            if (r["form_type"] == "primary" and r["enumerator_id"] == s)
+            or (r["form_type"] == "back_check" and r.get("original_enumerator_id") == s)
+        ]
+        m = results_to_map(run_metrics(sub, layers=["backcheck"], config=cfg))
+        rows = (m.get("backcheck_comparison", {}).get("detail", {}) or {}).get("rows", [])
+        n = len(rows)
+        if not n:
+            continue
+        t1_err = (m.get("backcheck_type1_error") or {}).get("value")
+        t2_ok = sum(1 for r in rows if r.get("gps_delta_m") is not None and r["gps_delta_m"] <= t2_thresh_m)
+        out[s] = {
+            "n": n,
+            "type1_pct": round(100.0 - t1_err, 1) if t1_err is not None else None,
+            "type2_pct": round(100.0 * t2_ok / n, 1),
+            "type3_pct": (m.get("backcheck_outcome_agreement") or {}).get("value"),
+            "prtest_p": (m.get("backcheck_outcome_prtest") or {}).get("value"),
+            "t2_thresh_m": t2_thresh_m,
+            "rows": rows[:max_rows],
+        }
+    return out
 
 
 def _round_summary(cfg, records, round_idx, label, as_of, tw_name, cw_name):
@@ -418,6 +466,7 @@ def build_state(cfg: dict, here: Path) -> tuple:
         "current_round": n_rounds,
         "rounds": rounds,
         "trend": trend,
+        "surveyor_backcheck": _surveyor_backcheck(cfg, all_records),
         "generated": {
             "seed": cfg["rng_seed"],
             "n_records": len(all_records),

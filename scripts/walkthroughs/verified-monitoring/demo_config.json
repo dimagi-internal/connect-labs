@@ -24,7 +24,8 @@
     "id": "T6",
     "evidence": 0.79,
     "gps_within_15m": 0.83,
-    "backcheck_agreement": 0.78
+    "backcheck_agreement": 0.78,
+    "backcheck_type1_agreement": 0.86
   },
   "round0": "2025-02",
   "rounds": 6,
@@ -68,8 +69,8 @@
   },
   "_backcheck_comment": "A stratified sample (every enumerator covered) is re-surveyed by a different (BC) enumerator. outcome_agreement drives the vitamin-A match rate (the 'back-check pass' headline); type1_agreement drives discordance on stable identifiers (sex/age/present). Front-loaded to 20% in the first rounds per J-PAL/DIME guidance.",
   "backcheck": {
-    "sample_pct": 0.12,
-    "front_load_pct": 0.22,
+    "sample_pct": 0.18,
+    "front_load_pct": 0.28,
     "front_load_rounds": 2,
     "outcome_agreement": 0.955,
     "type1_agreement": 0.97,
