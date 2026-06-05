@@ -634,6 +634,85 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
         return JsonResponse({"status": "ok", "plan_id": plan.id})
 
 
+class ProgramGroupBulkCreateFromBoundariesView(LoginRequiredMixin, View):
+    """Create one boundary-only ward-plan per selected admin boundary, filed into a
+    study (group), from the map "Add wards from map" surface.
+
+    Each item is a selected admin boundary: ``{name, lga, state, boundary_id,
+    geometry}``. We create a boundary-only sampling plan (``input_areas`` set, no
+    work areas → ``phase: "boundary"``) via the same ``create_plan`` core the
+    single-plan editor uses, then file it into the group. Arms are assigned later
+    on the study page and sampling is the study's bulk action — so this endpoint
+    never touches arms or work areas, keeping the study-groups model (one plan per
+    ward, arm on the group, blind by construction) intact."""
+
+    def post(self, request, program_id, group_id):
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        empty_fc = {"type": "FeatureCollection", "features": []}
+        try:
+            payload = json.loads(request.body)
+            boundaries = payload.get("boundaries")
+        except (json.JSONDecodeError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+        if not isinstance(boundaries, list) or not boundaries:
+            return JsonResponse({"status": "error", "detail": "Select at least one boundary to add."}, status=400)
+
+        da = ProgramPlanDataAccess(program_id, request=request)
+        plan_ids: list[int] = []
+        warnings: list[str] = []
+        for item in boundaries:
+            if not isinstance(item, dict):
+                continue
+            geometry = item.get("geometry")
+            if not geometry:
+                continue
+            region = str(item.get("name", "") or "").strip()[:255]
+            name = region or "Untitled ward"
+            lga = str(item.get("lga", "") or region).strip()[:255]
+            state = str(item.get("state", "")).strip()[:255]
+            # State is the one Connect-importer field the boundary picker can't always
+            # supply; derive from the ADM1 boundary containing the area when blank.
+            if not state:
+                state = _adm1_state_for([geometry], empty_fc)
+            try:
+                plan = da.create_plan(
+                    region=region,
+                    name=name,
+                    mode="sampling",
+                    pins=empty_fc,
+                    hulls=empty_fc,
+                    input_areas=[geometry],
+                    lga=lga,
+                    state=state,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("microplans bulk_create_from_boundaries: create_plan failed (program=%s)", program_id)
+                warnings.append(f"failed to create plan for {name!r}")
+                continue
+            try:
+                da.add_plan_to_group(int(group_id), plan.id)
+            except Exception:  # noqa: BLE001
+                # The plan exists; failing to file it into the group shouldn't lose it.
+                logger.exception(
+                    "microplans bulk_create_from_boundaries: add to group failed (program=%s group=%s plan=%s)",
+                    program_id,
+                    group_id,
+                    plan.id,
+                )
+                warnings.append(f"created {name!r} but did not file it into the study")
+            plan_ids.append(plan.id)
+
+        if not plan_ids:
+            return JsonResponse(
+                {"status": "error", "detail": "Could not create any plans from the selection."}, status=502
+            )
+        resp = {"status": "ok", "plan_ids": plan_ids}
+        if warnings:
+            resp["warnings"] = warnings
+        return JsonResponse(resp)
+
+
 class ProgramPlanTransitionView(LoginRequiredMixin, View):
     """Advance a plan's lifecycle status (Deploy binds the live opportunity_id)."""
 
@@ -903,6 +982,57 @@ class ProgramGroupMapView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVie
         return context
 
 
+@method_decorator(ensure_csrf_cookie, name="dispatch")
+class ProgramGroupAddFromMapView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
+    """Map-based "Add wards from map" surface for a study.
+
+    A full-page map that reuses the standalone service-delivery overlay
+    (`MicroplansServiceDelivery`, multi-opp, visual context) + the admin-boundaries
+    layer (`MicroplansAdminBoundaries`, multi-select) and adds a "Create N plans"
+    action that files one boundary-only ward-plan per selected boundary into this
+    study via ``bulk_create_from_boundaries``. No draw/sampling/arms here — the
+    study page owns those — so the study-groups model stays intact."""
+
+    template_name = "microplans/add_from_map.html"
+
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+        from django.urls import reverse
+
+        from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+
+        context = super().get_context_data(**kwargs)
+        program_id = kwargs.get("program_id")
+        group_id = int(kwargs.get("group_id"))
+        context["program_id"] = program_id
+        context["group_id"] = group_id
+        context["mapbox_token"] = settings.MAPBOX_TOKEN or ""
+        if not settings.MAPBOX_TOKEN:
+            context["error"] = "MAPBOX_TOKEN is not configured; the map cannot load."
+        # Service-delivery layer endpoints (opp_id is a routing placeholder — the POST
+        # body's opp_ids drive the fetch, validated against the user's opportunities).
+        context.update(_sd_urls())
+        # Admin-boundaries layer endpoints.
+        context["boundary_viewport_url"] = reverse("microplans:boundary_viewport")
+        context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
+        context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
+        # The bulk create-into-study endpoint + where to return on success.
+        context["bulk_create_url"] = reverse(
+            "microplans:program_group_bulk_create_from_boundaries", args=[program_id, group_id]
+        )
+        context["manage_url"] = reverse("microplans:program_group_page", args=[program_id, group_id])
+        context["back_url"] = context["manage_url"]
+        try:
+            group = ProgramPlanDataAccess(program_id, request=self.request).get_group(group_id)
+            context["group_name"] = group.name
+            context["is_study"] = group.kind == "study"
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans add-from-map: load group failed (program=%s group=%s)", program_id, group_id)
+            context["group_name"] = "Study"
+            context["is_study"] = True
+        return context
+
+
 class ProgramGroupGenerateView(LoginRequiredMixin, View):
     """Run the rooftop sampling engine across all of a group's member plans (bulk).
 
@@ -1082,6 +1212,7 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
             context["new_plan_url"] = (
                 reverse("microplans:program_create_plan_page", args=[program_id]) + f"?group={group_id}"
             )
+            context["add_from_map_url"] = reverse("microplans:program_group_add_from_map", args=[program_id, group_id])
             context["remove_plan_url"] = reverse("microplans:program_group_update", args=[program_id, group_id])
             context["map_url"] = reverse("microplans:program_group_map", args=[program_id, group_id])
             context["generate_url"] = reverse("microplans:program_group_generate", args=[program_id, group_id])

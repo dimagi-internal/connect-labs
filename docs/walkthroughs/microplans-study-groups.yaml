@@ -1,0 +1,371 @@
+auth:
+  type: session
+base_url: https://labs.connect.dimagi.com
+name: microplans-study-groups
+narrative: 'Maya is setting up a controlled rooftop-survey impact study, and she doesn''t
+  yet know which wards she''ll use — she knows where the program worked, not the ward
+  names a paste-list would want. So she starts an empty study and works off the map:
+  she opens the plan editor, turns on the service-delivery layer to see where the
+  program actually reached the ground, then picks two neighbouring wards straight
+  off the boundaries — tagging the one the program covered as intervention and a comparable
+  neighbour as control. She creates the plans and lands back on the study, where one
+  bulk action samples both wards together on a single shared configuration and the
+  empty study fills with sampling sites and work areas. She opens each ward on its
+  own map to understand it, then pulls both arms onto one map to see them side by
+  side. Finally she reads the comparability panel, satisfies herself the two arms
+  are close enough on the attributes that matter, and completes the study — a blind,
+  balanced two-arm design built entirely from the map, each ward ready to export arm-free
+  to its own Connect opportunity.'
+narrative_locked: true
+narrative_locked_at: '2026-06-05T21:49:29.113165+00:00'
+narrative_synced_at: '2026-06-05T21:33:41.837292+00:00'
+narrative_synced_hash: aa7636970183459842fe1ab229dfa60f0d30a7b9502329f493b21c909c0c7333
+narrative_synced_version: 3
+personas:
+  maya:
+    color: '#7C3AED'
+    intro: Maya plans a controlled rooftop-survey impact study for the program and
+      needs two comparable arms that field surveyors execute completely blind.
+    name: Maya
+    role: Program study planner
+scenes:
+- actions:
+  - kind: wait_for
+    target: Plan groups & studies
+  - kind: scroll_to
+    target: + New study
+  - kind: click
+    must_succeed: true
+    note: open the inline new-study form
+    target: + New study
+  - kind: fill
+    note: name the study
+    target: css:input[placeholder='Untitled study']
+    value: Kano CHC rooftop impact study
+  - kind: press
+    note: creating the study navigates to its empty manage page (/group/<new_id>/manage/)
+    value: Enter
+  - kind: wait_for
+    must_succeed: true
+    note: 'terminal state: the empty study page'
+    seconds: 20
+    target: No plans in this group yet
+  - kind: hold
+    seconds: 1.5
+  concept_claim: Maya creates an empty named study from scratch and lands on its page
+    ready to add wards, before committing any ward names.
+  design_intent: 'Bet: a study should start as an empty container the planner fills
+    incrementally on the map, not a list of names committed up front.'
+  features:
+  - description: '''+ New study'' names and creates an empty study (DEFINING, 0 plans)
+      and routes to its manage page'
+    id: new-study-create
+    verify: 'Playwright: click ''+ New study'', fill name, submit; assert the URL
+      is /program/133/group/<id>/manage/ and the page shows ''No plans in this group
+      yet'''
+  persona: maya
+  provenance: S12
+  show: From the program portfolio Maya starts a brand-new two-arm study, names it,
+    and lands on an empty study with no wards in it yet.
+  title: Maya starts a study from scratch
+  url: /microplans/program/133/
+- actions:
+  - kind: wait_for
+    target: No plans in this group yet
+  - kind: click
+    must_succeed: true
+    note: navigates to the editor scoped to this study (/new/?group=<id>)
+    target: + Add a plan in the editor
+  - kind: wait_for
+    must_succeed: true
+    seconds: 20
+    target: Define area & work area size
+  - kind: click
+    note: a rooftop study draws a sampled subset across two arms
+    target: Sampling
+  - kind: click
+    target: LAYERS
+  - kind: click
+    must_succeed: false
+    note: show where the program already reached the ground
+    target: Service delivery
+  - kind: hold
+    note: frame the delivery footprint on the map
+    seconds: 2.5
+  concept_claim: Maya opens the plan editor from the study and turns on the service-delivery
+    layer to see the program's delivery footprint on the map she'll select wards from.
+  design_intent: 'Bet: the planner knows where the program delivered, not the ward
+    names — so the map with the delivery footprint is the right place to choose the
+    study''s wards.'
+  features:
+  - description: '''+ Add a plan in the editor'' on a study opens the plan editor
+      scoped to that study (?group=<id>)'
+    id: editor-from-study
+    verify: 'Playwright: from /group/<id>/manage/ click ''+ Add a plan in the editor'';
+      assert URL is /program/133/new/?group=<id>'
+  - description: The editor map exposes a 'Service delivery' layer showing the program's
+      delivery footprint
+    id: service-delivery-layer
+    verify: 'Playwright: in the editor open LAYERS, toggle ''Service delivery''; assert
+      the delivery layer renders on the map'
+  persona: maya
+  provenance: S13
+  show: On the empty study Maya chooses to add a plan in the editor rather than by
+    name — she doesn't know the names — and turns on the service-delivery layer to
+    see where the program actually delivered.
+  title: Maya opens the map instead of a name list
+- actions:
+  - kind: click
+    note: switch area input to admin-boundary selection
+    target: Boundaries
+  - kind: wait_for
+    must_succeed: false
+    note: boundaries layer ready (helper text mentions Shift/⌘-click)
+    target: Shift
+  - kind: hold
+    note: Maya picks the intervention ward (Madobi) on the map
+    seconds: 1.5
+  - kind: hold
+    note: Maya switches the active arm to control and picks the neighbour (Kauran
+      Mata)
+    seconds: 1.5
+  concept_claim: Maya selects two admin boundaries on the map and tags one intervention
+    and one control, assigning the arms by hand as she picks each ward.
+  design_intent: 'Bet: choosing wards by clicking boundaries on the delivery map —
+    and tagging the arm as you pick — matches how a planner actually reasons about
+    intervention vs control.'
+  features:
+  - description: Boundaries mode lets the planner Shift/⌘-click admin boundaries on
+      the map to add them to the plan area (softly highlighted)
+    id: boundary-pick-on-map
+    verify: 'Playwright: in Boundaries mode, select a boundary on the map; assert
+      it is added to the plan area and the ''Areas drawn'' count increments'
+  - description: In Sampling mode each selected area tags to the active arm (intervention
+      / control)
+    id: arm-tag-on-selection
+    verify: 'pytest: a sampling plan created with two arm-tagged areas records intervention
+      and control on the study group, not on the plan'
+  persona: maya
+  provenance: S11
+  show: In Boundaries mode Maya clicks the ward the program covered and tags it intervention,
+    then switches arms and clicks a comparable neighbour as control — each boundary
+    softly highlighting as she adds it.
+  title: Maya picks the two wards off the map
+- actions:
+  - kind: scroll_to
+    target: Create plan
+  - kind: click
+    must_succeed: true
+    note: creates the ward plans into the study and routes back to /group/<id>/manage/
+    target: Create plan
+  - kind: wait_for
+    must_succeed: true
+    note: back on the study page with both wards listed
+    seconds: 30
+    target: Madobi ward
+  - kind: scroll_to
+    target: Kauran Mata ward
+  - kind: hold
+    seconds: 1.5
+  concept_claim: Creating the plans returns Maya to the study, which now lists both
+    wards as members, one plan and one Connect opportunity per ward.
+  design_intent: 'Bet: the executable unit is one ward = one plan = one opportunity,
+    so the study is a set of single-ward plans, assembled here.'
+  features:
+  - description: Create plan in a study-scoped editor adds the plan(s) to the study
+      and returns to the study manage page
+    id: create-returns-to-study
+    verify: 'Playwright: click Create plan in /new/?group=<id>; assert redirect to
+      /group/<id>/manage/ with the new ward row(s) present'
+  - description: Each member plan is one ward and exports to its own Connect opportunity
+    id: one-opp-per-plan
+    verify: 'Playwright: assert each ward row exposes a ''Connect CSV'' link to /program/133/plan/<id>/work_areas.csv'
+  persona: maya
+  provenance: S3
+  show: Maya clicks Create plan and is taken back to the study, which now lists both
+    wards as members — one plan, one Connect opportunity per ward — still awaiting
+    samples.
+  title: Maya creates the plans and lands back on the study
+- actions:
+  - kind: wait_for
+    must_succeed: false
+    note: label is 'Generate samples' for boundary-only members
+    seconds: 20
+    target: Generate samples
+  - kind: click
+    must_succeed: false
+    note: fire the bulk sample across every member ward
+    target: Generate samples
+  - kind: wait_for
+    must_succeed: false
+    note: wait for the terminal sampled state (Celery sampling can take 1-2 min)
+    seconds: 180
+    target: sampled
+  - kind: hold
+    note: both wards now read sampled with their work-area counts
+    seconds: 2
+  concept_claim: Maya samples both wards with one action on one shared configuration,
+    and each ward flips to sampled with its work-area count.
+  design_intent: 'Bet: comparability starts at sampling — one shared configuration
+    means differences between the arms reflect the wards, not the method.'
+  features:
+  - description: A single 'Generate samples' action samples every boundary-phase member
+      plan using the study's one shared sampling_config
+    id: group-generate-samples
+    verify: 'pytest: POST /group/<id>/generate flips every boundary-phase member plan
+      to phase ''sampled'' using group.sampling_config'
+  - description: All member plans sample from one shared sampling_config stored on
+      the study
+    id: shared-sampling-config
+    verify: 'pytest: assert every member plan''s sample was drawn from the same sources/confidence/target
+      in group.sampling_config'
+  persona: maya
+  provenance: S7
+  show: With both wards in the study, Maya runs one Generate samples action and the
+    empty study fills — each ward flips to sampled with its sampling sites and work
+    areas, drawn on a single shared configuration.
+  title: Maya samples both wards at once
+- actions:
+  - kind: wait_for
+    must_succeed: true
+    seconds: 20
+    target: Microplan review
+  - kind: hold
+    note: let the ward's map render its work areas
+    seconds: 2.5
+  concept_claim: Maya opens a single ward on its own review map to see its sampled
+    sites and work areas in detail.
+  design_intent: 'Bet: a planner needs to understand each arm on its own before comparing
+    them, so each ward has its own full review map.'
+  features:
+  - description: Each ward has its own review page with a map of its sampled work
+      areas plus grouping and worker-assignment controls
+    id: per-plan-review-map
+    verify: 'Playwright: open /plan/3636/review/; assert a mapboxgl canvas renders
+      and the page reads ''Microplan review'''
+  persona: maya
+  provenance: S6
+  show: Maya opens the intervention ward on its own review map to understand its sampled
+    sites and work areas before judging it against the other arm.
+  title: Maya studies each ward on its own map
+  url: /microplans/program/133/plan/3636/review/
+- actions:
+  - kind: wait_for
+    must_succeed: true
+    seconds: 20
+    target: View-only
+  - kind: wait_for
+    note: arm legend rendered
+    target: intervention
+  - kind: hold
+    note: let the Mapbox layers paint both arms
+    seconds: 2.5
+  - kind: click
+    must_succeed: false
+    note: open the inspector that names each area's plan and arm
+    target: INSPECT
+  - kind: hold
+    seconds: 1.5
+  concept_claim: Maya sees both study arms overlaid on one read-only map coloured
+    by arm, and opens an inspector that names each ward's plan and arm.
+  design_intent: 'Bet: seeing intervention and control side by side in real geography
+    lets a planner sanity-check comparability before completing.'
+  features:
+  - description: View-only group map overlays every member plan's boundary and work
+      areas on one Mapbox map, coloured by arm
+    id: multi-plan-overlay-map
+    verify: 'Playwright: open /group/<id>/map/; assert a mapboxgl canvas renders and
+      the legend shows each ward with its arm'
+  - description: An Inspect panel on the group map names each work area's plan and
+      arm
+    id: map-inspect-panel
+    verify: 'Playwright: open the group map, click ''INSPECT''; assert the panel lists
+      each ward with its arm'
+  persona: maya
+  provenance: S6
+  show: Maya pulls both wards onto one read-only map, each coloured by its arm, and
+    opens the Inspect panel to confirm which plan and arm each area belongs to.
+  title: Maya sees both arms together
+  url: /microplans/program/133/group/3635/map/
+- actions:
+  - kind: wait_for
+    must_succeed: true
+    seconds: 20
+    target: ARM COMPARABILITY
+  - kind: scroll_to
+    target: ARM COMPARABILITY
+  - kind: wait_for
+    target: within tolerance
+  - kind: scroll_to
+    target: DECIDES THE VERDICT
+  - kind: hold
+    note: settlement density is the gating axis
+    seconds: 2
+  - kind: scroll_to
+    target: ADJUSTED AT ANALYSIS
+  - kind: hold
+    note: PSU size and building footprint are advisory, adjust-at-analysis
+    seconds: 2
+  concept_claim: Maya's comparability check reports the intervention and control within
+    tolerance on settlement density, the axis the verdict gates on, and flags building
+    stock to adjust for at analysis.
+  design_intent: 'Bet: gating the verdict only on what a matched design can''t fix
+    after the fact, and reporting the rest as objective data to adjust for, keeps
+    the planner making the call.'
+  features:
+  - description: Comparability panel computes standardized mean differences on the
+      selected survey sites for settlement density, PSU size, and building footprint,
+      each with a balance band
+    id: arm-comparability-psu
+    verify: 'pytest: arm_comparability_psu returns per-metric SMD + bands and a ''matched''
+      verdict gated on settlement density + PSU size'
+  - description: Panel splits the headline-gating metric (settlement density) from
+      advisory adjust-at-analysis flags (PSU size, building footprint)
+    id: comparability-gating-split
+    verify: 'Playwright: assert the panel shows ''DECIDES THE VERDICT'' for settlement
+      density and ''ADJUSTED AT ANALYSIS'' for PSU size and building footprint'
+  persona: maya
+  provenance: S8
+  show: Back on the study, Maya reads the comparability panel — her control comes
+    back within tolerance on settlement density, the one thing a matched study can't
+    fix afterward, while building stock is flagged to adjust for during analysis.
+  title: Maya checks the control is a fair counterfactual
+  url: /microplans/program/133/group/3635/manage/
+  viewport:
+    height: 900
+    width: 1440
+- actions:
+  - kind: scroll_to
+    target: Connect CSV is blind
+  - kind: wait_for
+    target: arm-free work-area file
+  - kind: hover
+    must_succeed: false
+    note: 'tooltip: ''one opportunity per plan; arm never included'''
+    target: Connect CSV
+  - kind: hold
+    note: the planning page shows the arm, but the export is arm-free — blind by construction
+    seconds: 2
+  concept_claim: Maya completes the comparable study, leaving a blind two-arm design
+    where each ward exports to its own Connect CSV with no arm column.
+  design_intent: 'Bet: completing the study is the planner''s sign-off, and the export
+    is blind by construction — the arm is shown for planning but never written to
+    the field file.'
+  features:
+  - description: The planner advances the study's plans past draft (draft -> in_review
+      -> approved) once comparability is confirmed
+    id: complete-study-lifecycle
+    verify: 'pytest: program_plan_transition moves a plan draft -> in_review -> approved;
+      the study reflects the advanced state'
+  - description: The study page states the export is blind and labels each Connect
+      CSV as arm-free
+    id: blind-claim-observable
+    verify: 'Playwright: assert the page shows ''Connect CSV is blind'' and each ''Connect
+      CSV'' link title contains ''arm never included'''
+  persona: maya
+  provenance: S14
+  show: Satisfied the two arms are close enough, Maya completes the study — a blind,
+    balanced two-arm design, each ward ready to export arm-free to its own Connect
+    opportunity, with no arm column for the field to bias on.
+  title: Maya completes the study
+why_brief: ../../.canopy/ddd/runs/microplans-study-groups-2026-06-05-001/why_brief.yaml

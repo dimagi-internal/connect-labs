@@ -137,4 +137,16 @@ urlpatterns = [
         views.ProgramGroupGenerateView.as_view(),
         name="program_group_generate",
     ),
+    # Map-based "Add wards from map": full-page boundary-picker surface + its
+    # bulk create-into-study endpoint (one boundary-only plan per selected boundary).
+    path(
+        "program/<int:program_id>/group/<int:group_id>/add-from-map/",
+        views.ProgramGroupAddFromMapView.as_view(),
+        name="program_group_add_from_map",
+    ),
+    path(
+        "program/<int:program_id>/group/<int:group_id>/bulk_create_from_boundaries/",
+        views.ProgramGroupBulkCreateFromBoundariesView.as_view(),
+        name="program_group_bulk_create_from_boundaries",
+    ),
 ]

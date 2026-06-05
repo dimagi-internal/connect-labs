@@ -1022,13 +1022,21 @@ def test_program_group_map_includes_saved_psu_settlement_hulls(client, django_us
 
     _login(client, django_user_model)
     hull = {"type": "Polygon", "coordinates": [[[8.2, 11.0], [8.21, 11.0], [8.21, 11.01], [8.2, 11.0]]]}
-    psu_hulls = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": hull, "properties": {"cluster": 1}}]}
+    psu_hulls = {
+        "type": "FeatureCollection",
+        "features": [{"type": "Feature", "geometry": hull, "properties": {"cluster": 1}}],
+    }
     plans = {
         501: _FakeProgramPlan(
-            501, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
-            name="Madobi", psu_hulls=psu_hulls,
+            501,
+            "sampling",
+            plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC),
+            name="Madobi",
+            psu_hulls=psu_hulls,
         ),
-        502: _FakeProgramPlan(502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"),
+        502: _FakeProgramPlan(
+            502, "sampling", plan_lib.materialize_work_areas("coverage", _EMPTY_FC, _HULL_FC), name="Gora"
+        ),
     }
     groups = {7: _FakeGroup(7, "Study", [501, 502], kind="study", arms={"501": "intervention", "502": "control"})}
     _make_fake_program_da(monkeypatch, plans, groups)
@@ -1037,7 +1045,9 @@ def test_program_group_map_includes_saved_psu_settlement_hulls(client, django_us
     assert resp.status_code == 200
     layers = {layer["plan_id"]: layer for layer in resp.context["plan_layers"]}
     feats = layers[501]["geojson"]["features"]
-    settlements = [f for f in feats if f["geometry"]["type"] == "Polygon" and f["properties"].get("feature") == "settlement"]
+    settlements = [
+        f for f in feats if f["geometry"]["type"] == "Polygon" and f["properties"].get("feature") == "settlement"
+    ]
     assert len(settlements) == 1  # the saved PSU hull is rendered as a settlement polygon
     assert settlements[0]["properties"]["arm"] == "intervention"
 
@@ -1690,3 +1700,82 @@ def test_adm1_state_for_no_geometry_returns_empty():
 
     assert views._adm1_state_for([], None) == ""
     assert views._adm1_state_for(None, {"type": "FeatureCollection", "features": []}) == ""
+
+
+def test_program_group_bulk_create_from_boundaries(client, django_user_model, monkeypatch):
+    """Selecting N admin boundaries on the map creates N boundary-only ward-plans
+    filed into the study — no work areas, no arm on the plans (study-groups model)."""
+    _login(client, django_user_model)
+    groups = {9: _FakeGroup(9, "Kano CHC rooftop impact study", [], kind="study")}
+    plans, groups = _make_fake_program_da(monkeypatch, {}, groups)
+    geom = _HULL_FC["features"][0]["geometry"]
+    resp = client.post(
+        reverse(
+            "microplans:program_group_bulk_create_from_boundaries",
+            kwargs={"program_id": 25, "group_id": 9},
+        ),
+        data=json.dumps(
+            {
+                "boundaries": [
+                    {"name": "Madobi ward", "lga": "Madobi", "state": "Kano", "boundary_id": "b1", "geometry": geom},
+                    {
+                        "name": "Kauran Mata ward",
+                        "lga": "Madobi",
+                        "state": "Kano",
+                        "boundary_id": "b2",
+                        "geometry": geom,
+                    },
+                ]
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    plan_ids = resp.json()["plan_ids"]
+    assert len(plan_ids) == 2
+    # both filed into the study
+    assert set(plan_ids) <= set(groups[9].plan_ids)
+    assert len(groups[9].plan_ids) == 2
+    # boundary-only: no work areas → phase boundary; no arm on the plan; labels captured
+    for pid in plan_ids:
+        p = plans[pid]
+        assert p.work_areas == []
+        assert p.phase == "boundary"
+        assert p.state == "Kano"
+        assert "arm" not in p.data
+    names = {plans[pid].name for pid in plan_ids}
+    assert names == {"Madobi ward", "Kauran Mata ward"}
+
+
+def test_program_group_bulk_create_from_boundaries_rejects_empty(client, django_user_model, monkeypatch):
+    """An empty boundary list is a 400 — nothing to create."""
+    _login(client, django_user_model)
+    groups = {9: _FakeGroup(9, "Study", [], kind="study")}
+    _make_fake_program_da(monkeypatch, {}, groups)
+    resp = client.post(
+        reverse(
+            "microplans:program_group_bulk_create_from_boundaries",
+            kwargs={"program_id": 25, "group_id": 9},
+        ),
+        data=json.dumps({"boundaries": []}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_program_group_add_from_map_page_renders(client, django_user_model, monkeypatch):
+    """The 'Add wards from map' page renders for a study and wires the bulk endpoint."""
+    _login(client, django_user_model)
+    groups = {9: _FakeGroup(9, "Kano CHC rooftop impact study", [], kind="study")}
+    _make_fake_program_da(monkeypatch, {}, groups)
+    resp = client.get(reverse("microplans:program_group_add_from_map", kwargs={"program_id": 25, "group_id": 9}))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    # the bulk-create endpoint URL is wired into the page
+    assert (
+        reverse("microplans:program_group_bulk_create_from_boundaries", kwargs={"program_id": 25, "group_id": 9})
+        in body
+    )
+    # the study name + the boundary-bulk-picker surface are wired in
+    assert "Kano CHC rooftop impact study" in body
+    assert "boundary_bulk_picker.js" in body and "Back to study" in body
