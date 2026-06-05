@@ -226,6 +226,27 @@ class TestKpis:
         # coverage = active buildings / (active+excluded) = 190/250
         assert k["coverage_pct"] == round(100 * 190 / 250, 1)
 
+    def test_pop_per_building_uses_area_footprint_total_for_sampling(self):
+        # Sampling plan: work areas are sampled pins (building_count 1 each), so summing
+        # them gives the SAMPLE size, not the area's buildings. Dividing whole-area
+        # population by the sample size gave nonsense (the 57-people-per-"building" bug).
+        # The caller passes area_buildings (the footprint universe) so pop/building stays
+        # a real per-structure estimate; the sample size is kept as sampled_buildings.
+        was = [
+            {"centroid": [8.6, 9.0], "building_count": 1, "population": 0, "work_area_group": "g", "status": "active"}
+            for _ in range(8)
+        ]
+        ia = [{"population": 22844}]
+
+        without = plan.plan_kpis(was, input_areas=ia)
+        assert without["plan"]["total_buildings"] == 8  # sample size — the bug
+        assert without["plan"]["pop_per_building"] == round(22844 / 8, 2)
+
+        fixed = plan.plan_kpis(was, input_areas=ia, area_buildings=3200)
+        assert fixed["plan"]["total_buildings"] == 3200  # the area's footprint universe
+        assert fixed["plan"]["sampled_buildings"] == 8  # the sample is kept separately
+        assert fixed["plan"]["pop_per_building"] == round(22844 / 3200, 2)  # ~7.1, sane
+
 
 class TestHaversine:
     def test_identical_is_zero_and_known_distance(self):
