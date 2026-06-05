@@ -278,7 +278,7 @@ def _surveyor_scorecard(cfg, records):
     return rows
 
 
-def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=8):
+def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=12):
     """Per-surveyor back-check profile across ALL cycles, by J-PAL type.
 
     A single cycle's per-surveyor back-check sample is too small for the binary
