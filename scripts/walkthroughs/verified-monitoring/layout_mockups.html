@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1280, initial-scale=1" />
+    <title>Verified Monitoring — layout mockups</title>
+    <style>
+      :root {
+        --ink: #111827;
+        --sub: #1e293b;
+        --panel: #fff;
+        --line: #e6e7f0;
+        --mut: #6b7280;
+        --indigo: #4f46e5;
+        --amber: #f59e0b;
+        --rose: #e11d48;
+        --comp: #64748b;
+        --green: #059669;
+        --slate: #94a3b8;
+        --bg: #f5f5f4;
+        --shadow: 0 1px 2px rgba(16, 24, 40, 0.06),
+          0 1px 3px rgba(16, 24, 40, 0.04);
+        --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: 'Work Sans', Inter, system-ui, sans-serif;
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 18px 22px 60px;
+      }
+      .chrome {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 48px;
+        background: #fff;
+        border-bottom: 1px solid var(--line);
+        padding: 0 18px;
+      }
+      .chrome .logo {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, #2832a0, #5c6fe8);
+      }
+      .chrome b {
+        color: #1e1b4b;
+        font-size: 15px;
+      }
+      .switch {
+        display: flex;
+        gap: 8px;
+        margin: 14px 0 4px;
+        flex-wrap: wrap;
+      }
+      .switch button {
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 9px;
+        padding: 8px 14px;
+        font: 600 13px/'Work Sans';
+        color: var(--sub);
+      }
+      .switch button.on {
+        background: var(--indigo);
+        color: #fff;
+        border-color: var(--indigo);
+      }
+      h1.t {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 4px 0 2px;
+      }
+      .subtitle {
+        color: var(--mut);
+        font-size: 13px;
+        margin-bottom: 2px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+      }
+      .lbl {
+        color: var(--mut);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+      /* overview band */
+      .overview {
+        padding: 14px 16px;
+        margin-top: 12px;
+      }
+      .overview .row {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .takeaway {
+        color: var(--sub);
+        font-size: 13px;
+      }
+      .takeaway b {
+        color: var(--indigo);
+      }
+      /* round selector */
+      .selector {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 16px 0 12px;
+        flex-wrap: wrap;
+      }
+      .selector .chip {
+        cursor: pointer;
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 6px 13px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--sub);
+        font-weight: 600;
+      }
+      .selector .chip.on {
+        background: var(--indigo);
+        color: #fff;
+        border-color: var(--indigo);
+      }
+      .selector .meta {
+        color: var(--mut);
+        font-size: 13px;
+        margin-left: 6px;
+      }
+      .selector .meta b.p {
+        color: var(--indigo);
+      }
+      .selector .meta b.c {
+        color: var(--comp);
+      }
+      /* hero */
+      .hero {
+        padding: 18px 20px;
+      }
+      .hero .nums {
+        display: flex;
+        gap: 30px;
+        align-items: baseline;
+        flex-wrap: wrap;
+        margin-top: 4px;
+      }
+      .hero .big {
+        font-family: var(--mono);
+        font-size: 30px;
+        font-weight: 800;
+      }
+      .hero .cap {
+        color: var(--mut);
+        font-size: 11px;
+      }
+      .def {
+        color: var(--mut);
+        font-size: 11px;
+        font-family: var(--mono);
+        line-height: 1.6;
+        margin-top: 10px;
+      }
+      /* chips */
+      .chips {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .qchip {
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: #fff;
+        border: 1px solid #a7f3d0;
+        min-width: 104px;
+        font-family: var(--mono);
+        box-shadow: var(--shadow);
+      }
+      .qchip .v {
+        color: var(--green);
+        font-size: 17px;
+        font-weight: 700;
+      }
+      .qchip .tg {
+        color: var(--mut);
+        font-size: 9px;
+      }
+      /* drillable KPI cards */
+      .kpis {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .kpicard {
+        cursor: pointer;
+        padding: 10px 12px;
+        border-radius: 9px;
+        background: #fff;
+        border: 1px solid var(--line);
+        min-width: 124px;
+        box-shadow: var(--shadow);
+        transition:
+          border-color 0.12s,
+          background 0.12s;
+      }
+      .kpicard:hover {
+        border-color: #c7d2fe;
+      }
+      .kpicard.on {
+        border-color: var(--indigo);
+        background: #f3f3ff;
+        box-shadow: 0 0 0 1px var(--indigo) inset;
+      }
+      .kpicard .kl {
+        color: var(--mut);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      .kpicard .kv {
+        font-family: var(--mono);
+        font-size: 18px;
+        font-weight: 700;
+        margin-top: 3px;
+      }
+      .kpicard .arr {
+        color: #94a3b8;
+      }
+      .kpicard.on .arr {
+        color: var(--indigo);
+      }
+      .minibar {
+        height: 9px;
+        border-radius: 5px;
+        background: #eef2f7;
+        overflow: hidden;
+      }
+      .minibar > i {
+        display: block;
+        height: 100%;
+        background: var(--indigo);
+      }
+      .kv-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 8px;
+      }
+      /* tiles */
+      .tiles {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .tile {
+        padding: 14px 16px;
+        min-width: 170px;
+        flex: 1 1 170px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+      }
+      .tile .v {
+        font-family: var(--mono);
+        font-size: 28px;
+        font-weight: 700;
+        margin-top: 6px;
+      }
+      /* tabs */
+      .tabs {
+        display: flex;
+        gap: 6px;
+        border-bottom: 1px solid var(--line);
+        margin: 0 0 12px;
+      }
+      .tabs button {
+        cursor: pointer;
+        border: none;
+        background: none;
+        padding: 9px 12px;
+        font: 600 13px 'Work Sans';
+        color: var(--mut);
+        border-bottom: 2px solid transparent;
+      }
+      .tabs button.on {
+        color: var(--indigo);
+        border-bottom-color: var(--indigo);
+      }
+      /* back-check */
+      .bcstat {
+        display: flex;
+        gap: 22px;
+        flex-wrap: wrap;
+        font-family: var(--mono);
+      }
+      .bcstat .v {
+        color: var(--sub);
+        font-size: 16px;
+        font-weight: 700;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-family: var(--mono);
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      th {
+        text-align: left;
+        color: var(--mut);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+      }
+      td {
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      td .o {
+        color: var(--sub);
+      }
+      td .r {
+        color: var(--mut);
+        font-size: 11px;
+      }
+      tr.flag {
+        background: #fff1f2;
+      }
+      tr.flag td .r {
+        color: var(--rose);
+        font-weight: 700;
+      }
+      /* accordion */
+      .acc {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        margin-top: 10px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .acc > summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 12px 16px;
+        font-weight: 600;
+        color: var(--sub);
+        display: flex;
+        justify-content: space-between;
+      }
+      .acc > summary::-webkit-details-marker {
+        display: none;
+      }
+      .acc > summary .hint {
+        color: var(--mut);
+        font-weight: 400;
+        font-size: 12px;
+      }
+      .acc .body {
+        padding: 0 16px 14px;
+      }
+      .sticky {
+        position: sticky;
+        top: 12px;
+      }
+      .legend {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--mut);
+        margin-top: 8px;
+      }
+      .dot {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        vertical-align: middle;
+        margin-right: 3px;
+      }
+      .sw {
+        display: inline-block;
+        width: 13px;
+        height: 13px;
+        border-radius: 3px;
+        vertical-align: middle;
+        margin-right: 3px;
+      }
+      .hide {
+        display: none !important;
+      }
+      .note {
+        color: var(--mut);
+        font-size: 12px;
+        margin: 8px 0 0;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 0.9fr;
+        gap: 16px;
+        align-items: start;
+      }
+      @media (max-width: 900px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chrome">
+      <div class="logo"></div>
+      <b>Connect Labs</b
+      ><span style="color: #64748b; font-size: 13px; margin-left: 8px"
+        >Verified Monitoring — layout study</span
+      >
+    </div>
+    <div class="wrap">
+      <div class="switch">
+        <button class="on" onclick="setLayout('a',this)">
+          A · Headline + map, tabs for detail
+        </button>
+        <button onclick="setLayout('b',this)">B · Two-pane, sticky map</button>
+        <button onclick="setLayout('c',this)">C · Headline + accordion</button>
+      </div>
+
+      <!-- ============ OVERVIEW (pinned, shared by all) ============ -->
+      <h1 class="t">Vitamin-A community-health home-visit monitoring</h1>
+      <div class="subtitle">
+        Independent rooftop survey · bi-monthly · the program rotates wards each
+        cycle, each verified against an adjacent comparison ward
+      </div>
+      <div class="overview panel">
+        <div class="lbl">
+          Overview — self-reported vs independently verified, all 6 cycles
+        </div>
+        <div id="trend" style="margin-top: 8px"></div>
+        <div class="legend" style="margin-top: 6px">
+          <span
+            ><span
+              class="sw"
+              style="
+                border-top: 2px dashed var(--amber);
+                height: 0;
+                width: 14px;
+              "
+            ></span
+            >self-reported (program ward)</span
+          >
+          <span
+            ><span class="sw" style="background: var(--indigo)"></span
+            >independently verified (program ward)</span
+          >
+          <span
+            ><span class="sw" style="background: var(--comp)"></span>verified
+            (comparison ward)</span
+          >
+          <span style="color: #94a3b8"
+            >· click a cycle on the chart to jump to it</span
+          >
+        </div>
+        <div
+          class="takeaway"
+          style="font-size: 15px; font-weight: 600; margin-top: 8px"
+        >
+          Across all 6 cycles,
+          <b>self-report sits above the independent survey</b> — 6 different
+          program wards, comparison wards stay low.
+        </div>
+      </div>
+
+      <!-- round selector (shared) -->
+      <div class="selector">
+        <span class="lbl" style="margin-right: 2px">Cycle</span>
+        <span class="chip">R1</span><span class="chip">R2</span
+        ><span class="chip">R3</span> <span class="chip">R4</span
+        ><span class="chip">R5</span><span class="chip on">R6</span>
+        <span class="meta"
+          >Dec 2025 · <b class="p">Attakar</b> (program) vs
+          <b class="c">Gura</b> (comparison)</span
+        >
+      </div>
+
+      <!-- ============ LAYOUT A ============ -->
+      <section id="layout-a">
+        <div class="grid2">
+          <div class="panel hero">
+            <div class="lbl">
+              Self-reported vs independently verified · Attakar · R6
+            </div>
+            <div class="nums">
+              <div>
+                <div class="big" style="color: var(--amber)">88.1%</div>
+                <div class="cap">self-reported</div>
+              </div>
+              <div>
+                <div class="big" style="color: var(--indigo)">70.8%</div>
+                <div class="cap">independently verified</div>
+              </div>
+              <div>
+                <div class="big" style="color: var(--sub)">+17.3 pts</div>
+                <div class="cap">difference · 95% CI ±5.3</div>
+              </div>
+            </div>
+            <div id="dumbA" style="margin-top: 10px"></div>
+            <div class="def">
+              both measure the same indicator — % of under-5 children with
+              confirmed vitamin-A · self-reported = the program's coverage
+              estimate (2,300 children visited) · verified = survey of n=284
+              under-5 children
+            </div>
+          </div>
+          <div class="panel" style="padding: 12px">
+            <div class="lbl" style="margin-bottom: 6px">
+              Map — Attakar (program) vs Gura (comparison)
+            </div>
+            <div id="mapA"></div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top: 16px; padding: 14px">
+          <div class="lbl" style="margin-bottom: 8px">
+            Verification metrics · Attakar · R6 — click any to drill into how it
+            was computed
+          </div>
+          <div class="kpis" id="kpisA"></div>
+          <div
+            id="kpidetailA"
+            style="
+              margin-top: 14px;
+              border-top: 1px solid var(--line);
+              padding-top: 14px;
+            "
+          ></div>
+        </div>
+        <div class="note">
+          A+ · overview chart edge-to-edge up top; the two anchors (numbers +
+          moving map) stay visible; and every metric — quality checks AND the
+          back-check — is one drillable block: click a metric, its evidence
+          opens below.
+        </div>
+      </section>
+
+      <!-- ============ LAYOUT B ============ -->
+      <section id="layout-b" class="hide">
+        <div class="grid2">
+          <div>
+            <div class="panel hero">
+              <div class="lbl">
+                Self-reported vs independently verified · Attakar · R6
+              </div>
+              <div class="nums">
+                <div>
+                  <div class="big" style="color: var(--amber)">88.1%</div>
+                  <div class="cap">self-reported</div>
+                </div>
+                <div>
+                  <div class="big" style="color: var(--indigo)">70.8%</div>
+                  <div class="cap">verified</div>
+                </div>
+                <div>
+                  <div class="big" style="color: var(--sub)">+17.3</div>
+                  <div class="cap">diff · CI ±5.3</div>
+                </div>
+              </div>
+              <div id="dumbB" style="margin-top: 10px"></div>
+            </div>
+            <div class="lbl" style="margin: 16px 0 8px">
+              Survey data quality
+            </div>
+            <div class="chips" id="chipsB"></div>
+            <div class="panel" style="margin-top: 16px; padding: 14px">
+              <div class="lbl">Independent back-check · Attakar · R6</div>
+              <div
+                style="
+                  color: var(--sub);
+                  font-weight: 600;
+                  font-size: 13px;
+                  margin: 8px 0;
+                "
+              >
+                Re-survey matched the original on 35 of 36 households.
+              </div>
+              <div class="bcstat" id="bcstatB"></div>
+              <div id="bctableB" style="margin-top: 10px"></div>
+            </div>
+          </div>
+          <div class="sticky">
+            <div class="panel" style="padding: 12px">
+              <div class="lbl" style="margin-bottom: 6px">
+                Map (stays in view) — Attakar vs Gura
+              </div>
+              <div id="mapB"></div>
+            </div>
+          </div>
+        </div>
+        <div class="note">
+          B · the map is pinned on the right and stays put while you read the
+          numbers / change cycle — most map-forward.
+        </div>
+      </section>
+
+      <!-- ============ LAYOUT C ============ -->
+      <section id="layout-c" class="hide">
+        <div class="panel hero">
+          <div class="lbl">Attakar vs Gura · R6 · headline</div>
+          <div class="grid2" style="align-items: center; margin-top: 4px">
+            <div>
+              <div class="nums">
+                <div>
+                  <div class="big" style="color: var(--amber)">88.1%</div>
+                  <div class="cap">self-reported</div>
+                </div>
+                <div>
+                  <div class="big" style="color: var(--indigo)">70.8%</div>
+                  <div class="cap">verified</div>
+                </div>
+                <div>
+                  <div class="big" style="color: var(--sub)">+17.3</div>
+                  <div class="cap">diff · CI ±5.3</div>
+                </div>
+              </div>
+              <div id="dumbC" style="margin-top: 10px"></div>
+            </div>
+            <div
+              style="
+                border: 1px solid var(--line);
+                border-radius: 8px;
+                overflow: hidden;
+              "
+            >
+              <div id="mapC"></div>
+            </div>
+          </div>
+        </div>
+        <details class="acc">
+          <summary>
+            Survey data quality <span class="hint">6 checks · all pass ▾</span>
+          </summary>
+          <div class="body"><div class="chips" id="chipsC"></div></div>
+        </details>
+        <details class="acc">
+          <summary>
+            Independent back-check <span class="hint">35 / 36 agreed ▾</span>
+          </summary>
+          <div class="body">
+            <div class="bcstat" id="bcstatC" style="margin: 8px 0"></div>
+            <div id="bctableC"></div>
+          </div>
+        </details>
+        <details class="acc">
+          <summary>
+            Map detail — Attakar &amp; Gura
+            <span class="hint">tap to expand ▾</span>
+          </summary>
+          <div class="body">
+            <div style="color: var(--mut); font-size: 12px; padding: 8px 0">
+              (full map + layer toggles)
+            </div>
+          </div>
+        </details>
+        <div class="note">
+          C · minimal default footprint — a headline card, then expand only the
+          section you care about.
+        </div>
+      </section>
+    </div>
+
+    <script>
+      // ---- shared SVG builders (real-ish data) ----
+      var WARDS = ['Tse', 'Agban', 'Kadarko', 'Bondong', 'Zankan', 'Attakar'];
+      function trendSVG() {
+        var iv = [55.8, 58.6, 61.6, 61.6, 61.8, 67.5],
+          cp = [8.6, 6.8, 7.4, 10.4, 7.2, 8.4],
+          sr = [84, 90.5, 84.5, 93.2, 87, 88.1];
+        var w = 1040,
+          h = 190,
+          padL = 34,
+          padR = 150,
+          padT = 14,
+          padB = 30,
+          n = 6,
+          sel = 5;
+        function X(i) {
+          return padL + (i / (n - 1)) * (w - padL - padR);
+        }
+        function Y(v) {
+          return h - padB - (v / 100) * (h - padT - padB);
+        }
+        function poly(a) {
+          return a.map((v, i) => X(i) + ',' + Y(v)).join(' ');
+        }
+        var band =
+          sr.map((v, i) => X(i) + ',' + Y(v)).join(' ') +
+          ' ' +
+          iv
+            .slice()
+            .reverse()
+            .map((v, i) => X(n - 1 - i) + ',' + Y(v))
+            .join(' ');
+        var g = [0, 25, 50, 75, 100]
+          .map(
+            (v) =>
+              `<line x1="${padL}" y1="${Y(v)}" x2="${w - padR}" y2="${Y(
+                v,
+              )}" stroke="#e6e7f0"/><text x="6" y="${
+                Y(v) + 3
+              }" fill="#6b7280" font-size="10" font-family="monospace">${v}%</text>`,
+          )
+          .join('');
+        var xl = [1, 2, 3, 4, 5, 6]
+          .map(
+            (r, i) =>
+              `<text x="${X(i)}" y="${h - 12}" fill="${
+                i == sel ? '#4f46e5' : '#6b7280'
+              }" font-weight="${
+                i == sel ? 700 : 400
+              }" font-size="10" text-anchor="middle" font-family="monospace">R${r}</text><text x="${X(
+                i,
+              )}" y="${
+                h - 2
+              }" fill="#94a3b8" font-size="8" text-anchor="middle">${
+                WARDS[i]
+              }</text>`,
+          )
+          .join('');
+        // clickable hit-targets per cycle
+        var hits = [0, 1, 2, 3, 4, 5]
+          .map(
+            (i) =>
+              `<rect x="${X(i) - 26}" y="${padT}" width="52" height="${
+                h - padB - padT
+              }" fill="transparent" style="cursor:pointer" onclick="pickCycle(${i})"/>`,
+          )
+          .join('');
+        var dots = (i) =>
+          `<circle cx="${X(5)}" cy="${Y(i)}" r="4.5" fill="${arguments}" />`;
+        function endLabel(v, col, txt) {
+          return `<circle cx="${X(5)}" cy="${Y(
+            v,
+          )}" r="4.5" fill="${col}" stroke="#fff" stroke-width="1.5"/><text x="${
+            X(5) + 10
+          }" y="${
+            Y(v) + 4
+          }" fill="${col}" font-size="11" font-weight="700">${txt} ${v}%</text>`;
+        }
+        return (
+          `<svg width="100%" viewBox="0 0 ${w} ${h}" style="display:block">${g}` +
+          `<rect x="${X(sel) - 26}" y="${padT}" width="52" height="${
+            h - padB - padT
+          }" fill="#4f46e5" opacity=".06"/>` +
+          `<polygon points="${band}" fill="#f59e0b" fill-opacity=".12"/>` +
+          `<polyline points="${poly(
+            cp,
+          )}" fill="none" stroke="#64748b" stroke-width="2.2"/>` +
+          `<polyline points="${poly(
+            sr,
+          )}" fill="none" stroke="#f59e0b" stroke-width="2.6" stroke-dasharray="6 4"/>` +
+          `<polyline points="${poly(
+            iv,
+          )}" fill="none" stroke="#4f46e5" stroke-width="3"/>${xl}` +
+          endLabel(88.1, '#f59e0b', 'self-report') +
+          endLabel(67.5, '#4f46e5', 'verified') +
+          endLabel(8.4, '#64748b', 'comparison') +
+          hits +
+          `</svg>`
+        );
+      }
+      function pickCycle(i) {
+        var chips = document.querySelectorAll('.selector .chip');
+        chips.forEach((c, j) => c.classList.toggle('on', j == i));
+      }
+      function dumbSVG(self, ver, ci) {
+        var W = 520,
+          H = 90,
+          padL = 12,
+          padR = 12,
+          dLo = 40,
+          dHi = 100,
+          yT = 46;
+        function X(v) {
+          return padL + ((v - dLo) / (dHi - dLo)) * (W - padL - padR);
+        }
+        var xs = X(self),
+          xv = X(ver),
+          cl = X(ver - ci),
+          ch = X(ver + ci);
+        var tk = '';
+        for (var t = dLo; t <= dHi; t += 10) {
+          var x = X(t);
+          tk += `<line x1="${x}" y1="${yT - 3}" x2="${x}" y2="${
+            yT + 3
+          }" stroke="#e6e7f0"/><text x="${x}" y="${
+            H - 4
+          }" fill="#6b7280" font-size="8" text-anchor="middle" font-family="monospace">${t}%</text>`;
+        }
+        return (
+          `<svg width="100%" viewBox="0 0 ${W} ${H}" style="max-width:560px">` +
+          `<circle cx="${padL + 4}" cy="10" r="4" fill="#f59e0b"/><text x="${
+            padL + 12
+          }" y="13" fill="#6b7280" font-size="10">self-reported (program records)</text>` +
+          `<circle cx="${padL + 210}" cy="10" r="4" fill="#4f46e5"/><text x="${
+            padL + 218
+          }" y="13" fill="#6b7280" font-size="10">independently verified (program ward, 95% CI)</text>` +
+          tk +
+          `<line x1="${padL}" y1="${yT}" x2="${
+            W - padR
+          }" y2="${yT}" stroke="#e6e7f0"/>` +
+          `<line x1="${xv}" y1="${yT}" x2="${xs}" y2="${yT}" stroke="#64748b" stroke-width="4"/>` +
+          `<rect x="${cl}" y="${yT - 7}" width="${
+            ch - cl
+          }" height="14" rx="4" fill="#4f46e5" opacity=".18"/>` +
+          `<circle cx="${xs}" cy="${yT}" r="7" fill="#f59e0b" stroke="#fff" stroke-width="2"/>` +
+          `<circle cx="${xv}" cy="${yT}" r="7" fill="#4f46e5" stroke="#fff" stroke-width="2"/>` +
+          `<text x="${xv}" y="${
+            yT + 22
+          }" fill="#4f46e5" font-size="13" font-weight="800" text-anchor="middle">${ver}%</text>` +
+          `<text x="${xs}" y="${
+            yT + 22
+          }" fill="#f59e0b" font-size="13" font-weight="800" text-anchor="middle">${self}%</text></svg>`
+        );
+      }
+      function mapSVG(h) {
+        h = h || 260;
+        // two organic ward polygons + scattered dots; program=indigo, comparison=slate
+        function pts(cx, cy, r, seed) {
+          var s = seed,
+            o = '';
+          for (var a = 0; a < 2 * Math.PI; a += Math.PI / 7) {
+            s = (s * 9301 + 49297) % 233280;
+            var rr = r * (0.78 + 0.4 * (s / 233280));
+            o +=
+              (cx + rr * Math.cos(a)).toFixed(0) +
+              ',' +
+              (cy + rr * Math.sin(a)).toFixed(0) +
+              ' ';
+          }
+          return o;
+        }
+        function dots(cx, cy, r, n, seed, conf) {
+          var s = seed,
+            o = '';
+          for (var i = 0; i < n; i++) {
+            s = (s * 9301 + 49297) % 233280;
+            var a = 2 * Math.PI * (s / 233280);
+            s = (s * 9301 + 49297) % 233280;
+            var rr = r * Math.sqrt(s / 233280);
+            var col = conf
+              ? s % 5
+                ? '#4f46e5'
+                : '#94a3b8'
+              : s % 4
+              ? '#94a3b8'
+              : '#4f46e5';
+            o += `<circle cx="${(cx + rr * Math.cos(a)).toFixed(0)}" cy="${(
+              cy +
+              rr * Math.sin(a)
+            ).toFixed(0)}" r="2.4" fill="${col}" opacity=".9"/>`;
+          }
+          return o;
+        }
+        function sd(cx, cy, r, n, seed) {
+          var s = seed,
+            o = '';
+          for (var i = 0; i < n; i++) {
+            s = (s * 9301 + 49297) % 233280;
+            var a = 2 * Math.PI * (s / 233280);
+            s = (s * 9301 + 49297) % 233280;
+            var rr = r * Math.sqrt(s / 233280);
+            o += `<circle cx="${(cx + rr * Math.cos(a)).toFixed(0)}" cy="${(
+              cy +
+              rr * Math.sin(a)
+            ).toFixed(0)}" r="2" fill="#16a34a" opacity=".45"/>`;
+          }
+          return o;
+        }
+        return (
+          `<svg width="100%" viewBox="0 0 460 ${h}" style="background:#eef2f7;border-radius:8px;display:block">` +
+          `<line x1="0" y1="${h * 0.7}" x2="460" y2="${
+            h * 0.45
+          }" stroke="#dfe4ea" stroke-width="2"/><line x1="120" y1="0" x2="200" y2="${h}" stroke="#dfe4ea" stroke-width="2"/>` +
+          `<polygon points="${pts(
+            160,
+            120,
+            78,
+            11,
+          )}" fill="#4f46e5" fill-opacity=".14" stroke="#4f46e5" stroke-width="2"/>` +
+          `<polygon points="${pts(
+            330,
+            150,
+            66,
+            29,
+          )}" fill="#64748b" fill-opacity=".14" stroke="#64748b" stroke-width="2"/>` +
+          sd(160, 120, 62, 55, 5) +
+          dots(160, 120, 66, 80, 7, true) +
+          dots(330, 150, 54, 55, 13, false) +
+          `<text x="160" y="120" fill="#1e293b" font-size="12" font-weight="700" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3">Attakar</text>` +
+          `<text x="330" y="150" fill="#1e293b" font-size="12" font-weight="700" text-anchor="middle" paint-order="stroke" stroke="#fff" stroke-width="3">Gura</text></svg>` +
+          `<div class="legend"><span><span class="sw" style="background:#4f46e5;opacity:.4"></span>Attakar (program)</span><span><span class="sw" style="background:#64748b;opacity:.4"></span>Gura (comparison)</span><span><span class="dot" style="background:#16a34a"></span>service-delivery visit</span><span><span class="dot" style="background:#4f46e5"></span>survey: confirmed</span><span><span class="dot" style="background:#94a3b8"></span>not confirmed</span></div>`
+        );
+      }
+      function chipsHTML() {
+        var d = [
+          ['Evidence capture', '97.0'],
+          ['GPS within 15 m', '96.6'],
+          ['Field completeness', '100.0'],
+          ['Duration plausible', '98.1'],
+          ['Consistency', '99.5'],
+          ['Duplicates', '0'],
+        ];
+        return d
+          .map(
+            (c) =>
+              `<div class="qchip"><div class="lbl">${
+                c[0]
+              }</div><div class="v">${c[1]}${
+                c[1].indexOf('.') > 0 ? '%' : ''
+              }</div><div class="tg">target ${
+                c[0] == 'Duplicates' ? '≤0' : '≥95%'
+              }</div></div>`,
+          )
+          .join('');
+      }
+      function bcstatHTML() {
+        var d = [
+          ['sample re-surveyed', '13% · n=36'],
+          ['outcome agreement', '97.2%'],
+          ['identity match', '100.0%'],
+          ['re-survey vs original', 'p=0.80'],
+        ];
+        return d
+          .map(
+            (s) =>
+              `<div><div class="lbl">${s[0]}</div><div class="v">${s[1]}</div></div>`,
+          )
+          .join('');
+      }
+      function bctableHTML() {
+        var rows = [
+          [
+            'r6t-H0188',
+            'T1 → BC2',
+            ['yes', 'no'],
+            ['yes', 'yes'],
+            ['F', 'F'],
+            ['41', '41'],
+            true,
+          ],
+          [
+            'r6t-H0042',
+            'T3 → BC1',
+            ['no', 'no'],
+            ['yes', 'yes'],
+            ['M', 'M'],
+            ['28', '28'],
+            false,
+          ],
+          [
+            'r6t-H0119',
+            'T5 → BC3',
+            ['yes', 'yes'],
+            ['yes', 'yes'],
+            ['F', 'F'],
+            ['52', '52'],
+            false,
+          ],
+          [
+            'r6t-H0203',
+            'T2 → BC2',
+            ['no', 'no'],
+            ['yes', 'yes'],
+            ['M', 'M'],
+            ['9', '9'],
+            false,
+          ],
+        ];
+        var th =
+          '<tr><th>Household · orig → back-check</th><th>Vitamin-A</th><th>Present</th><th>Sex</th><th>Age (mo)</th></tr>';
+        var body = rows
+          .map((r) => {
+            var cells = [2, 3, 4, 5]
+              .map((i) => {
+                var f = r[i];
+                var ch = f[0] != f[1];
+                return `<td><div class="o">${f[0]}</div><div class="r" style="${
+                  ch ? 'color:var(--rose);font-weight:700' : ''
+                }">${f[1]}</div></td>`;
+              })
+              .join('');
+            return `<tr class="${
+              r[6] ? 'flag' : ''
+            }"><td><div class="o" style="font-weight:600">${
+              r[0]
+            }</div><div class="r">${r[1]}</div></td>${cells}</tr>`;
+          })
+          .join('');
+        return `<div style="overflow-x:auto"><table>${th}${body}</table></div><div style="color:#6b7280;font-size:11px;margin-top:6px">showing 4 of 36 (changes first) · each cell: original / re-survey</div>`;
+      }
+      // ---- drillable KPI block (Layout A+): every metric opens its own evidence ----
+      var KPIS = [
+        { k: 'evidence', label: 'Evidence capture', val: '97.0%', ok: true },
+        { k: 'gps', label: 'GPS within 15 m', val: '96.6%', ok: true },
+        { k: 'complete', label: 'Field completeness', val: '100%', ok: true },
+        { k: 'duration', label: 'Duration plausible', val: '98.1%', ok: true },
+        { k: 'consistency', label: 'Consistency', val: '99.5%', ok: true },
+        { k: 'dupes', label: 'Duplicates', val: '0', ok: true },
+        {
+          k: 'backcheck',
+          label: 'Back-check agreement',
+          val: '97.2%',
+          ok: true,
+        },
+      ];
+      function kpiDetail(k) {
+        if (k == 'evidence')
+          return (
+            `<div class="lbl">Evidence capture — a proof photo on every 'received' record</div>` +
+            `<div style="color:var(--sub);font-size:13px;margin:8px 0">276 of 284 'received' records carry a proof photo (97.0%). <b>8 missing</b>, flagged for review.</div>` +
+            `<div class="kv-grid">` +
+            [
+              ['T1', '100%'],
+              ['T2', '96%'],
+              ['T3', '98%'],
+              ['T4', '95%'],
+              ['T5', '97%'],
+              ['T6', '99%'],
+            ]
+              .map(
+                (s) =>
+                  `<div><div class="lbl">surveyor ${s[0]} · ${s[1]}</div><div class="minibar"><i style="width:${s[1]}"></i></div></div>`,
+              )
+              .join('') +
+            `</div>`
+          );
+        if (k == 'gps')
+          return (
+            `<div class="lbl">GPS within 15 m of the assigned household</div>` +
+            `<div style="color:var(--sub);font-size:13px;margin:8px 0">274 of 284 captures within 15 m (96.6%). Median offset <b>6.1 m</b>. 10 beyond 15 m (max 41 m) — flagged.</div>` +
+            `<div class="minibar" style="height:18px;max-width:480px"><i style="width:96.6%;background:linear-gradient(90deg,#4f46e5,#818cf8)"></i></div>`
+          );
+        if (k == 'complete')
+          return (
+            `<div class="lbl">Required-field completeness — per field</div>` +
+            `<table style="margin-top:8px;max-width:380px"><tr><th>field</th><th>present</th></tr>` +
+            [
+              ['GPS', '100%'],
+              ['timestamp', '100%'],
+              ['surveyor id', '100%'],
+              ['outcome', '100%'],
+              ['child age', '99.6%'],
+            ]
+              .map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`)
+              .join('') +
+            `</table>`
+          );
+        if (k == 'duration')
+          return (
+            `<div class="lbl">Interview-duration plausibility</div>` +
+            `<div style="color:var(--sub);font-size:13px;margin:8px 0">278 of 284 within the plausible band (98.1%). Median <b>17.6 min</b>. 6 interviews under 4 min — flagged as too fast.</div>`
+          );
+        if (k == 'consistency')
+          return (
+            `<div class="lbl">Internal-consistency edit checks</div>` +
+            `<div style="color:var(--sub);font-size:13px;margin:8px 0">283 of 284 pass all edit rules (99.5%). <b>1 record</b>: outcome 'received' with no eligible child present — flagged.</div>`
+          );
+        if (k == 'dupes')
+          return (
+            `<div class="lbl">Duplicate records</div>` +
+            `<div style="color:var(--sub);font-size:13px;margin:8px 0"><b>0</b> duplicate household IDs · <b>0</b> duplicate (GPS, timestamp) signatures. Clean.</div>`
+          );
+        return (
+          `<div style="color:var(--sub);font-weight:600;font-size:13px;margin-bottom:8px">Independent back-check — re-survey by a different surveyor. Matched the original vitamin-A result on <b>35 of 36</b> re-surveyed households.</div>` +
+          `<div class="bcstat">${bcstatHTML()}</div><div style="margin-top:10px">${bctableHTML()}</div>`
+        );
+      }
+      function renderKpis(g) {
+        document.getElementById('kpis' + g).innerHTML = KPIS.map(
+          (m, i) =>
+            `<div class="kpicard${
+              i == 0 ? ' on' : ''
+            }" onclick="selKpi('${g}','${m.k}',this)"><div class="kl"><span>${
+              m.label
+            }</span><span class="arr">▸</span></div><div class="kv" style="color:${
+              m.ok ? 'var(--green)' : 'var(--rose)'
+            }">${m.val}</div></div>`,
+        ).join('');
+        document.getElementById('kpidetail' + g).innerHTML = kpiDetail(
+          KPIS[0].k,
+        );
+      }
+      function selKpi(g, k, card) {
+        document
+          .querySelectorAll('#kpis' + g + ' .kpicard')
+          .forEach((c) => c.classList.remove('on'));
+        card.classList.add('on');
+        document.getElementById('kpidetail' + g).innerHTML = kpiDetail(k);
+      }
+
+      // inject
+      document.getElementById('trend').innerHTML = trendSVG();
+      ['A', 'B', 'C'].forEach((s) => {
+        var d = document.getElementById('dumb' + s);
+        if (d) d.innerHTML = dumbSVG(88.1, 70.8, 5.3);
+        var c = document.getElementById('chips' + s);
+        if (c) c.innerHTML = chipsHTML();
+        var bs = document.getElementById('bcstat' + s);
+        if (bs) bs.innerHTML = bcstatHTML();
+        var bt = document.getElementById('bctable' + s);
+        if (bt) bt.innerHTML = bctableHTML();
+      });
+      renderKpis('A');
+      document.getElementById('mapA').innerHTML = mapSVG(250);
+      document.getElementById('mapB').innerHTML = mapSVG(360);
+      document.getElementById('mapC').innerHTML = mapSVG(180);
+      // switchers
+      function setLayout(k, btn) {
+        ['a', 'b', 'c'].forEach((x) =>
+          document
+            .getElementById('layout-' + x)
+            .classList.toggle('hide', x != k),
+        );
+        document
+          .querySelectorAll('.switch button')
+          .forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+        window.scrollTo(0, 0);
+      }
+      function tab(g, i, btn) {
+        document
+          .querySelectorAll('[data-tabs="' + g + '"] button')
+          .forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+        document
+          .querySelector('[data-panel="' + g + '0"]')
+          .classList.toggle('hide', i != 0);
+        document
+          .querySelector('[data-panel="' + g + '1"]')
+          .classList.toggle('hide', i != 1);
+      }
+    </script>
+  </body>
+</html>
