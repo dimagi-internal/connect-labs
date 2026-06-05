@@ -3,12 +3,14 @@
 // every KPI computed from row-level records via the survey_quality library) and
 // never fetches. Light, Connect-aligned styling.
 //
-// Layout (A+): the six-cycle TREND is the page hero (edge-to-edge, top); a round
-// selector pivots the page; per cycle a compact self-vs-verified readout + a map
-// that moves to that cycle's two real wards; and ONE drillable-metric block where
-// every metric — the survey-quality checks AND the independent back-check — opens
-// its own evidence below when clicked. Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V32
+// Layout: the six-cycle TREND is the page hero (edge-to-edge, top; hover a point
+// for its value); a cycle selector pivots the page; per cycle a full-width map
+// that moves to that cycle's two real wards; a per-surveyor survey-quality
+// scorecard; and an independent back-check that opens on one surveyor (click a
+// scorecard row to switch) — one row per re-surveyed household, columns grouped
+// under Identity / Location / Outcome sections with info buttons (method +
+// source). Objective copy; the viewer draws the conclusion.
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V33
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -38,9 +40,9 @@ function WorkflowUI(props) {
   var rd = rounds[sel] || null;
   // selected surveyor (drives the back-check section); null = round-level view
   var [selSurv, setSelSurv] = React.useState(null);
-  // hovered trend point (for the tooltip) and selected back-check type drill
+  // hovered trend point (for the tooltip) and which back-check section's info is open
   var [hoverPt, setHoverPt] = React.useState(null);
-  var [bcType, setBcType] = React.useState('type1');
+  var [bcInfo, setBcInfo] = React.useState(null);
 
   // ---- per-round map (shared ConnectMap; moves each round) ----
   var [mapLibReady, setMapLibReady] = React.useState(
@@ -687,313 +689,158 @@ function WorkflowUI(props) {
     );
   }
 
-  // The three J-PAL back-check types \u2014 what each checks + how to read it.
-  function bcTypeDefs(sb) {
+  // Back-check sections — descriptive names up front (the J-PAL/IPA
+  // "Type 1/2/3" labels are specialist jargon, so the provenance lives behind
+  // an info button instead of in the column header).
+  function bcSections(sb) {
     return [
       {
-        key: 'type1',
-        label: 'Type 1 \u00b7 Identity',
-        v: sb.type1_pct,
-        mean: "Stable facts that can't change between two visits \u2014 the child's sex, age, and whether the household exists.",
-        read: 'A mismatch is the fabrication signal: the visit may not have happened as recorded.',
+        key: 'identity',
+        label: 'Identity match',
+        pct: sb.type1_pct,
+        thr: 90,
+        fields: [
+          ['child_present', 'Present'],
+          ['child_sex', 'Sex'],
+          ['child_age_months', 'Age'],
+        ],
+        info: "Stable facts that can't change between two visits — the child's sex, age, and whether the household exists. Disagreement here is the strongest fabrication signal. In J-PAL/IPA back-check terms these are “Type 1” variables: a difference can trigger action against the surveyor.",
       },
       {
-        key: 'type2',
-        label: 'Type 2 \u00b7 Location',
-        v: sb.type2_pct,
-        mean: 'How far the independent re-survey landed from the household the surveyor logged.',
-        read:
-          'A gap beyond ' +
-          (sb.t2_thresh_m || 25) +
-          ' m (rose) means the recorded GPS location was wrong.',
+        key: 'location',
+        label: 'Location check',
+        pct: sb.type2_pct,
+        thr: 90,
+        mode: 'distance',
+        info: 'Distance between the GPS the surveyor logged and where the independent re-survey found the household. A large gap means the recorded location was wrong — a fraud-detection back-check.',
       },
       {
-        key: 'type3',
-        label: 'Type 3 \u00b7 Outcome',
-        v: sb.type3_pct,
-        mean: 'Did the headline result reproduce \u2014 did the re-survey find the same vitamin-A status.',
-        read: 'A mismatch (rose) means the coverage this surveyor reported did not hold up.',
+        key: 'outcome',
+        label: 'Outcome agreement',
+        pct: sb.type3_pct,
+        thr: 90,
+        fields: [['vitamin_a_received', 'Vitamin-A']],
+        info: 'Whether the headline result — did the child receive vitamin A — reproduced on the independent re-survey. In J-PAL/IPA back-check terms this is a “Type 3” variable: the key outcome whose stability is of interest.',
       },
     ];
   }
 
-  // clickable type cards: value + plain-language meaning; selected one drills in
-  function bcTypeCards(sb) {
-    return (
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))',
-          gap: 10,
-          margin: '6px 0 14px',
-        }}
-      >
-        {bcTypeDefs(sb).map(function (d) {
-          var on = bcType === d.key;
-          var ok = d.v == null || d.v >= 90;
-          return (
-            <div
-              key={d.key}
-              onClick={function () {
-                setBcType(d.key);
-              }}
-              style={{
-                cursor: 'pointer',
-                padding: '11px 13px',
-                borderRadius: 10,
-                border: '1px solid ' + (on ? INDIGO : LINE),
-                background: on ? '#f5f6ff' : '#fff',
-                boxShadow: on ? '0 0 0 1px ' + INDIGO + ' inset' : SHADOW,
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'baseline',
-                }}
-              >
-                <span
-                  style={{ color: SUBINK, fontWeight: 700, fontSize: 12.5 }}
-                >
-                  {d.label}
-                </span>
-                <span
-                  style={{
-                    color: d.v == null ? MUT : ok ? GREEN : ROSE,
-                    fontFamily: mono,
-                    fontWeight: 800,
-                    fontSize: 17,
-                  }}
-                >
-                  {d.v == null ? '\u2014' : d.v.toFixed(1) + '%'}
-                </span>
-              </div>
-              <div
-                style={{
-                  color: MUT,
-                  fontSize: 11,
-                  marginTop: 4,
-                  lineHeight: 1.4,
-                }}
-              >
-                {d.mean}
-              </div>
-              <div
-                style={{
-                  color: on ? INDIGO : '#94a3b8',
-                  fontSize: 10.5,
-                  marginTop: 6,
-                  fontWeight: 600,
-                }}
-              >
-                {on ? 'households below \u25be' : 'click to drill in'}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  // per-type household evidence: Original vs Backcheck, side by side
-  function bcEvidence(rows, typeKey, t2thr) {
-    rows = (rows || []).slice(0, 8);
-    if (!rows.length) return null;
-    var th = {
-      textAlign: 'left',
-      color: MUT,
-      fontSize: 10,
-      textTransform: 'uppercase',
-      letterSpacing: '.04em',
-      padding: '6px 9px',
-      borderBottom: '1px solid ' + LINE,
-    };
-    var td = {
-      padding: '6px 9px',
-      fontSize: 12.5,
-      fontFamily: mono,
-      verticalAlign: 'middle',
-    };
-    var hhTd = Object.assign({}, td, {
-      fontFamily: 'inherit',
-      fontWeight: 600,
-      color: SUBINK,
-      borderTop: '1px solid ' + LINE,
-    });
-    var sideTd = Object.assign({}, td, { color: MUT, whiteSpace: 'nowrap' });
-
-    // Type 2: one row per household \u2014 the re-survey distance
-    if (typeKey === 'type2') {
-      var thr = t2thr || 25;
-      return (
-        <div style={{ overflowX: 'auto' }}>
-          <table
-            style={{ borderCollapse: 'collapse', width: '100%', minWidth: 520 }}
-          >
-            <thead>
-              <tr>
-                <th style={th}>Household</th>
-                <th style={th}>Original \u2192 Backcheck</th>
-                <th style={Object.assign({}, th, { textAlign: 'right' })}>
-                  Re-survey distance
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(function (row, ri) {
-                var dm = row.gps_delta_m;
-                var bad = dm != null && dm > thr;
-                var frac = Math.min(1, (dm || 0) / 60);
-                return (
-                  <tr key={ri} style={{ borderTop: '1px solid ' + LINE }}>
-                    <td style={hhTd}>{row.household_id}</td>
-                    <td style={sideTd}>
-                      Original ({row.enumerator}) \u2192 Backcheck (
-                      {row.backcheck_enumerator})
-                    </td>
-                    <td style={Object.assign({}, td, { textAlign: 'right' })}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          justifyContent: 'flex-end',
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 90,
-                            height: 7,
-                            borderRadius: 4,
-                            background: '#eef2f7',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          <div
-                            style={{
-                              height: '100%',
-                              width: frac * 100 + '%',
-                              background: bad ? ROSE : INDIGO,
-                            }}
-                          />
-                        </div>
-                        <span
-                          style={{
-                            color: bad ? ROSE : SUBINK,
-                            fontWeight: bad ? 700 : 500,
-                            minWidth: 42,
-                          }}
-                        >
-                          {dm == null ? '\u2014' : dm.toFixed(0) + ' m'}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-
-    // Type 1 / Type 3: field comparison, two sub-rows per household
-    var FIELDS = {
-      type1: [
-        ['child_present', 'Present'],
-        ['child_sex', 'Sex'],
-        ['child_age_months', 'Age (mo)'],
-      ],
-      type3: [['vitamin_a_received', 'Vitamin-A received']],
-    };
-    var cols = FIELDS[typeKey] || [];
+  // surveyor view: ONE row per re-surveyed household; columns grouped under the
+  // three back-check sections, each with an info button (method + source).
+  function surveyorBackcheck(sid, sb) {
+    var sections = bcSections(sb);
+    var rows = (sb.rows || []).slice(0, 12);
+    var thr = sb.t2_thresh_m || 25;
     function fieldOf(row, key) {
       var fs = row.fields || [];
       for (var i = 0; i < fs.length; i++) if (fs[i].key === key) return fs[i];
       return null;
     }
-    return (
-      <div style={{ overflowX: 'auto' }}>
-        <table
-          style={{ borderCollapse: 'collapse', width: '100%', minWidth: 520 }}
+    var th = {
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.03em',
+      padding: '5px 9px',
+      textAlign: 'left',
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var td = {
+      padding: '6px 9px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var groupTh = {
+      padding: '6px 9px 4px',
+      borderBottom: '2px solid ' + LINE,
+      borderLeft: '1px solid ' + LINE,
+      textAlign: 'left',
+      verticalAlign: 'bottom',
+    };
+    function ncols(s) {
+      return s.mode === 'distance' ? 1 : s.fields.length;
+    }
+    function cmpCell(row, key, sectKey, first) {
+      var f = fieldOf(row, key);
+      var st = Object.assign(
+        {},
+        td,
+        first ? { borderLeft: '1px solid ' + LINE } : {},
+      );
+      if (!f)
+        return (
+          <td key={sectKey + key} style={st}>
+            —
+          </td>
+        );
+      if (f.match)
+        return (
+          <td
+            key={sectKey + key}
+            style={Object.assign({}, st, { color: SUBINK })}
+          >
+            {yn(f.original)}
+          </td>
+        );
+      return (
+        <td
+          key={sectKey + key}
+          style={Object.assign({}, st, { color: ROSE, fontWeight: 700 })}
         >
-          <thead>
-            <tr>
-              <th style={th}>Household</th>
-              <th style={th} />
-              {cols.map(function (c) {
-                return (
-                  <th key={c[0]} style={th}>
-                    {c[1]}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(function (row, ri) {
-              return [
-                <tr key={ri + 'o'}>
-                  <td rowSpan={2} style={hhTd}>
-                    {row.household_id}
-                  </td>
-                  <td
-                    style={Object.assign({}, sideTd, {
-                      borderTop: '1px solid ' + LINE,
-                    })}
-                  >
-                    Original ({row.enumerator})
-                  </td>
-                  {cols.map(function (c) {
-                    var f = fieldOf(row, c[0]);
-                    return (
-                      <td
-                        key={c[0]}
-                        style={Object.assign({}, td, {
-                          color: SUBINK,
-                          borderTop: '1px solid ' + LINE,
-                        })}
-                      >
-                        {f ? yn(f.original) : '\u2014'}
-                      </td>
-                    );
-                  })}
-                </tr>,
-                <tr key={ri + 'b'}>
-                  <td style={sideTd}>Backcheck ({row.backcheck_enumerator})</td>
-                  {cols.map(function (c) {
-                    var f = fieldOf(row, c[0]);
-                    var ch = f && !f.match;
-                    return (
-                      <td
-                        key={c[0]}
-                        style={Object.assign({}, td, {
-                          color: ch ? ROSE : MUT,
-                          fontWeight: ch ? 700 : 400,
-                        })}
-                      >
-                        {f ? yn(f.backcheck) : '\u2014'}
-                      </td>
-                    );
-                  })}
-                </tr>,
-              ];
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  // surveyor view: one surveyor's cumulative back-check across all cycles,
-  // broken out by the three J-PAL types (the single-cycle sample is too small).
-  // Pick a type to drill into its households (Original vs Backcheck).
-  function surveyorBackcheck(sid, sb) {
-    var cur =
-      bcTypeDefs(sb).filter(function (d) {
-        return d.key === bcType;
-      })[0] || bcTypeDefs(sb)[0];
+          {yn(f.original)} {'→'} {yn(f.backcheck)}
+        </td>
+      );
+    }
+    function distCell(row) {
+      var dm = row.gps_delta_m;
+      var bad = dm != null && dm > thr;
+      return (
+        <td
+          key="loc"
+          style={Object.assign({}, td, {
+            borderLeft: '1px solid ' + LINE,
+            color: bad ? ROSE : SUBINK,
+            fontWeight: bad ? 700 : 400,
+          })}
+        >
+          {dm == null ? '—' : dm.toFixed(0) + ' m'}
+        </td>
+      );
+    }
+    function infoBtn(s) {
+      var on = bcInfo === s.key;
+      return (
+        <button
+          onClick={function () {
+            setBcInfo(on ? null : s.key);
+          }}
+          title="What this checks + where it comes from"
+          style={{
+            cursor: 'pointer',
+            marginLeft: 4,
+            border: '1px solid ' + (on ? INDIGO : LINE),
+            background: on ? INDIGO : '#fff',
+            color: on ? '#fff' : MUT,
+            borderRadius: 999,
+            width: 16,
+            height: 16,
+            fontSize: 10,
+            fontWeight: 800,
+            lineHeight: '14px',
+            padding: 0,
+            fontFamily: sans,
+          }}
+        >
+          i
+        </button>
+      );
+    }
+    var openSec = sections.filter(function (s) {
+      return s.key === bcInfo;
+    })[0];
     return (
       <div>
         <div
@@ -1004,36 +851,164 @@ function WorkflowUI(props) {
             marginBottom: 2,
           }}
         >
-          Surveyor {sid} {'\u00b7'} {sb.n} households independently re-surveyed
+          Surveyor {sid} {'·'} {sb.n} households independently re-surveyed
           across all cycles
         </div>
-        <div style={{ color: MUT, fontSize: 11.5, marginBottom: 4 }}>
-          Each % is the share of {sid}&rsquo;s re-surveyed households that
-          agreed with the independent check. Pick a type to see the households.
+        <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
+          One row per re-surveyed household (mismatches first, showing{' '}
+          {Math.min(rows.length, sb.n)} of {sb.n}). Each section header shows
+          the share that agreed with the independent check {'·'} tap{' '}
+          <b style={{ fontFamily: mono }}>i</b> for what it means.
         </div>
-        {bcTypeCards(sb)}
-        <div
-          style={{
-            color: SUBINK,
-            fontSize: 12.5,
-            margin: '0 0 8px',
-            paddingLeft: 9,
-            borderLeft: '3px solid ' + INDIGO,
-          }}
-        >
-          <b>{cur.label}.</b> {cur.read}
+        {openSec ? (
+          <div
+            style={{
+              background: '#f5f6ff',
+              border: '1px solid ' + LINE,
+              borderRadius: 9,
+              padding: '9px 12px',
+              fontSize: 12,
+              color: SUBINK,
+              lineHeight: 1.5,
+              marginBottom: 10,
+            }}
+          >
+            <b>{openSec.label}.</b> {openSec.info}{' '}
+            <span style={{ color: MUT }}>
+              Method: independent back-checks per J-PAL/IPA (bcstats) and World
+              Bank DIME {'—'}{' '}
+              <a
+                href="https://dimewiki.worldbank.org/Back_Checks"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: INDIGO }}
+              >
+                dimewiki.worldbank.org/Back_Checks
+              </a>
+              .
+            </span>
+          </div>
+        ) : null}
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{
+              borderCollapse: 'collapse',
+              width: '100%',
+              minWidth: 640,
+            }}
+          >
+            <thead>
+              <tr>
+                <th
+                  style={Object.assign({}, groupTh, { borderLeft: 'none' })}
+                  colSpan={2}
+                />
+                {sections.map(function (s) {
+                  var ok = s.pct == null || s.pct >= s.thr;
+                  return (
+                    <th key={s.key} style={groupTh} colSpan={ncols(s)}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: SUBINK,
+                            fontWeight: 700,
+                            fontSize: 12,
+                          }}
+                        >
+                          {s.label}
+                        </span>
+                        <span
+                          style={{
+                            color: s.pct == null ? MUT : ok ? GREEN : ROSE,
+                            fontFamily: mono,
+                            fontWeight: 800,
+                            fontSize: 12.5,
+                          }}
+                        >
+                          {s.pct == null ? '—' : s.pct.toFixed(0) + '%'}
+                        </span>
+                        {infoBtn(s)}
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+              <tr>
+                <th style={th}>Household</th>
+                <th style={th}>Original {'→'} Re-survey</th>
+                {sections.map(function (s) {
+                  if (s.mode === 'distance')
+                    return (
+                      <th
+                        key={s.key}
+                        style={Object.assign({}, th, {
+                          borderLeft: '1px solid ' + LINE,
+                        })}
+                      >
+                        Distance
+                      </th>
+                    );
+                  return s.fields.map(function (c, ci) {
+                    return (
+                      <th
+                        key={s.key + c[0]}
+                        style={Object.assign(
+                          {},
+                          th,
+                          ci === 0 ? { borderLeft: '1px solid ' + LINE } : {},
+                        )}
+                      >
+                        {c[1]}
+                      </th>
+                    );
+                  });
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(function (row, ri) {
+                return (
+                  <tr key={ri}>
+                    <td
+                      style={Object.assign({}, td, {
+                        fontFamily: 'inherit',
+                        fontWeight: 600,
+                        color: SUBINK,
+                      })}
+                    >
+                      {row.household_id}
+                    </td>
+                    <td style={Object.assign({}, td, { color: MUT })}>
+                      {row.enumerator} {'→'} {row.backcheck_enumerator}
+                    </td>
+                    {sections.map(function (s) {
+                      if (s.mode === 'distance') return distCell(row);
+                      return s.fields.map(function (c, ci) {
+                        return cmpCell(row, c[0], s.key, ci === 0);
+                      });
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        {bcEvidence(sb.rows, bcType, sb.t2_thresh_m)}
         <div
-          style={{
-            marginTop: 8,
-            fontSize: 11,
-            color: MUT,
-            fontFamily: mono,
-          }}
+          style={{ marginTop: 8, fontSize: 11, color: MUT, fontFamily: mono }}
         >
-          <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = the
-          re-survey disagreed with what {sid} recorded
+          <span style={{ color: SUBINK }}>value</span> = original & re-survey
+          agree {'·'}{' '}
+          <span style={{ color: ROSE, fontWeight: 700 }}>
+            orig {'→'} re-survey
+          </span>{' '}
+          = changed on re-survey
         </div>
       </div>
     );
