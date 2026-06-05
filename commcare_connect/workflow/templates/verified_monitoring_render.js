@@ -8,7 +8,7 @@
 // that moves to that cycle's two real wards; and ONE drillable-metric block where
 // every metric — the survey-quality checks AND the independent back-check — opens
 // its own evidence below when clicked. Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V31
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V32
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -157,6 +157,22 @@ function WorkflowUI(props) {
     indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / indN) * 100 : null;
   var q = rd.quality || {};
   var bc = rd.backcheck || {};
+  // The back-check always opens on a surveyor — default to the one whose work
+  // most needs review (lowest outcome agreement); clicking a scorecard row
+  // selects a different one. No confusing round-level mode.
+  var sbMap = data.surveyor_backcheck || {};
+  var bcIds = Object.keys(sbMap);
+  function _t3(k) {
+    return sbMap[k] && sbMap[k].type3_pct != null ? sbMap[k].type3_pct : 100;
+  }
+  var effSurv =
+    selSurv && sbMap[selSurv]
+      ? selSurv
+      : bcIds.length
+      ? bcIds.reduce(function (a, b) {
+          return _t3(b) < _t3(a) ? b : a;
+        }, bcIds[0])
+      : null;
 
   function pct(x) {
     return x == null ? '—' : x.toFixed(1) + '%';
@@ -276,9 +292,9 @@ function WorkflowUI(props) {
       );
     }
     var SERIES = [
-      { arr: cp, color: COMP, label: 'comparison' },
-      { arr: srr, color: AMBER, label: 'self-reported' },
-      { arr: iv, color: INDIGO, label: 'verified' },
+      { arr: cp, color: COMP, label: 'control arm survey' },
+      { arr: srr, color: AMBER, label: 'service-delivery data' },
+      { arr: iv, color: INDIGO, label: 'intervention arm survey' },
     ];
     function markers() {
       return SERIES.map(function (s) {
@@ -439,82 +455,10 @@ function WorkflowUI(props) {
           );
         })}
         {markers()}
-        {endLabel(srr, AMBER, 'self-reported')}
-        {endLabel(iv, INDIGO, 'verified')}
-        {endLabel(cp, COMP, 'comparison')}
+        {endLabel(srr, AMBER, 'service-delivery')}
+        {endLabel(iv, INDIGO, 'intervention')}
+        {endLabel(cp, COMP, 'control')}
         {tip()}
-      </svg>
-    );
-  }
-
-  // ---- minimized dumbbell: a slim self↔verified bar (no labels — numbers above) ----
-  function slimDumbbell() {
-    var W = 520,
-      H = 34,
-      padL = 10,
-      padR = 10,
-      dLo = 40,
-      dHi = 100,
-      yT = 16;
-    if (self_ == null || ver == null) return null;
-    function X(v) {
-      return (
-        padL +
-        ((Math.max(dLo, Math.min(dHi, v)) - dLo) / (dHi - dLo)) *
-          (W - padL - padR)
-      );
-    }
-    var xs = X(self_),
-      xv = X(ver),
-      ci = indCI || 0,
-      cl = X(Math.max(dLo, ver - ci)),
-      ch = X(Math.min(dHi, ver + ci));
-    return (
-      <svg
-        width="100%"
-        viewBox={'0 0 ' + W + ' ' + H}
-        style={{ display: 'block', maxWidth: 560 }}
-      >
-        <line x1={padL} y1={yT} x2={W - padR} y2={yT} stroke={LINE} />
-        <line x1={xv} y1={yT} x2={xs} y2={yT} stroke={COMP} strokeWidth="3" />
-        <rect
-          x={cl}
-          y={yT - 5}
-          width={ch - cl}
-          height="10"
-          rx="3"
-          fill={INDIGO}
-          opacity="0.18"
-        />
-        <circle
-          cx={xv}
-          cy={yT}
-          r="6"
-          fill={INDIGO}
-          stroke="#fff"
-          strokeWidth="2"
-        />
-        <circle
-          cx={xs}
-          cy={yT}
-          r="6"
-          fill={AMBER}
-          stroke="#fff"
-          strokeWidth="2"
-        />
-        <text x={padL} y={H - 2} fill={MUT} fontSize="8" fontFamily={mono}>
-          40%
-        </text>
-        <text
-          x={W - padR}
-          y={H - 2}
-          fill={MUT}
-          fontSize="8"
-          fontFamily={mono}
-          textAnchor="end"
-        >
-          100%
-        </text>
       </svg>
     );
   }
@@ -636,7 +580,7 @@ function WorkflowUI(props) {
     };
     function dataRow(row, isAgg) {
       var fl = !isAgg && rowFlagged(row);
-      var on = !isAgg && selSurv === row.surveyor;
+      var on = !isAgg && effSurv === row.surveyor;
       return (
         <tr
           key={row.surveyor}
@@ -644,7 +588,7 @@ function WorkflowUI(props) {
             isAgg
               ? null
               : function () {
-                  setSelSurv(selSurv === row.surveyor ? null : row.surveyor);
+                  setSelSurv(row.surveyor);
                 }
           }
           title={isAgg ? null : 'View ' + row.surveyor + "'s back-check"}
@@ -739,132 +683,6 @@ function WorkflowUI(props) {
             {dataRow(agg, true)}
           </tbody>
         </table>
-      </div>
-    );
-  }
-
-  function bcTable(rowsIn) {
-    var rows = (rowsIn || bc.rows || []).slice(0, 8);
-    if (!rows.length) return null;
-    var cols = [
-      ['vitamin_a_received', 'Vitamin-A'],
-      ['child_present', 'Present'],
-      ['child_sex', 'Sex'],
-      ['child_age_months', 'Age (mo)'],
-    ];
-    function fieldOf(row, key) {
-      var fs = row.fields || [];
-      for (var i = 0; i < fs.length; i++) if (fs[i].key === key) return fs[i];
-      return null;
-    }
-    var th = {
-      textAlign: 'left',
-      color: MUT,
-      fontSize: 10,
-      textTransform: 'uppercase',
-      letterSpacing: '.04em',
-      padding: '6px 8px',
-      borderBottom: '1px solid ' + LINE,
-    };
-    var td = {
-      padding: '6px 8px',
-      fontSize: 12,
-      borderBottom: '1px solid ' + LINE,
-      fontFamily: mono,
-      verticalAlign: 'top',
-    };
-    return (
-      <div style={{ overflowX: 'auto' }}>
-        <table
-          style={{ borderCollapse: 'collapse', width: '100%', minWidth: 560 }}
-        >
-          <thead>
-            <tr>
-              <th style={th}>Household · original → back-check surveyor</th>
-              {cols.map(function (c) {
-                return (
-                  <th key={c[0]} style={th}>
-                    {c[1]}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(function (row, ri) {
-              return (
-                <tr
-                  key={ri}
-                  style={{
-                    background: row.flagged ? '#fff1f2' : 'transparent',
-                  }}
-                >
-                  <td style={td}>
-                    <div style={{ color: SUBINK, fontWeight: 600 }}>
-                      {row.household_id}
-                    </div>
-                    <div style={{ color: MUT, fontSize: 11 }}>
-                      {row.enumerator} → {row.backcheck_enumerator}
-                    </div>
-                  </td>
-                  {cols.map(function (c) {
-                    var f = fieldOf(row, c[0]);
-                    if (!f)
-                      return (
-                        <td key={c[0]} style={td}>
-                          —
-                        </td>
-                      );
-                    var ch = !f.match;
-                    return (
-                      <td key={c[0]} style={td}>
-                        <div style={{ color: SUBINK }}>{yn(f.original)}</div>
-                        <div
-                          style={{
-                            color: ch ? ROSE : MUT,
-                            fontWeight: ch ? 700 : 400,
-                            fontSize: 11,
-                          }}
-                        >
-                          {yn(f.backcheck)}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  function bcLegend() {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          gap: 16,
-          marginTop: 8,
-          fontSize: 11,
-          color: MUT,
-          fontFamily: mono,
-          flexWrap: 'wrap',
-        }}
-      >
-        <span>
-          <span style={{ color: SUBINK }}>value</span> = original / re-survey
-          agree
-        </span>
-        <span>
-          <span style={{ color: ROSE, fontWeight: 700 }}>red {'\u2192'}</span> =
-          changed on re-survey
-        </span>
-        <span>
-          each cell: original / re-survey {'\u00b7'} surveyor original (T){' '}
-          {'\u2192'} back-check (BC)
-        </span>
       </div>
     );
   }
@@ -1168,70 +986,6 @@ function WorkflowUI(props) {
     );
   }
 
-  // round-level view (default): the cycle's aggregate back-check
-  function roundBackcheck() {
-    return (
-      <div>
-        <div
-          style={{
-            color: SUBINK,
-            fontWeight: 600,
-            fontSize: 13,
-            marginBottom: 8,
-          }}
-        >
-          A stratified sample of this cycle&rsquo;s households re-surveyed by a
-          different surveyor. The re-survey matched the original vitamin-A
-          result on{' '}
-          <b>
-            {bc.outcome_agreement_pct != null && bc.n_backchecked != null
-              ? Math.round((bc.outcome_agreement_pct / 100) * bc.n_backchecked)
-              : '\u2014'}
-          </b>{' '}
-          of {bc.n_backchecked} re-surveyed households.{' '}
-          <span style={{ color: MUT, fontWeight: 400 }}>
-            Click a surveyor in the scorecard for their Type 1/2/3 back-check.
-          </span>
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 22,
-            flexWrap: 'wrap',
-            fontFamily: mono,
-            marginBottom: 10,
-          }}
-        >
-          {[
-            [
-              'sample re-surveyed',
-              bc.coverage_pct + '% \u00b7 n=' + bc.n_backchecked,
-            ],
-            ['outcome agreement', bc.outcome_agreement_pct + '%'],
-            [
-              'identity match',
-              bc.type1_error_pct == null
-                ? '\u2014'
-                : (100 - bc.type1_error_pct).toFixed(1) + '%',
-            ],
-            ['re-survey vs original', 'p=' + bc.prtest_p],
-          ].map(function (s) {
-            return (
-              <div key={s[0]}>
-                {dlbl(s[0])}
-                <div style={{ color: SUBINK, fontSize: 16, fontWeight: 700 }}>
-                  {s[1]}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {bcTable()}
-        {bcLegend()}
-      </div>
-    );
-  }
-
   // surveyor view: one surveyor's cumulative back-check across all cycles,
   // broken out by the three J-PAL types (the single-cycle sample is too small).
   // Pick a type to drill into its households (Original vs Backcheck).
@@ -1286,9 +1040,8 @@ function WorkflowUI(props) {
   }
 
   function backcheckSection() {
-    var sbMap = data.surveyor_backcheck || {};
-    var sb = selSurv ? sbMap[selSurv] : null;
-    return sb ? surveyorBackcheck(selSurv, sb) : roundBackcheck();
+    if (!effSurv || !sbMap[effSurv]) return null;
+    return surveyorBackcheck(effSurv, sbMap[effSurv]);
   }
 
   function roundTabs() {
@@ -1360,8 +1113,8 @@ function WorkflowUI(props) {
       </div>
       <div style={{ color: MUT, fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
         Independent rooftop survey · {prog.cadence || 'bi-monthly'} · the
-        program rotates wards each cycle, each verified against an adjacent
-        comparison ward
+        program rotates wards each cycle, each intervention ward verified
+        against an adjacent control ward
       </div>
 
       {/* PAGE HERO — the six-cycle trend, edge-to-edge */}
@@ -1379,7 +1132,7 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Self-reported vs independently verified — all{' '}
+          Service-delivery data vs independent survey — all{' '}
           {(trend.rounds || []).length} cycles
         </div>
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
@@ -1393,127 +1146,28 @@ function WorkflowUI(props) {
             marginTop: 2,
           }}
         >
-          <span>{sw(AMBER, true)}self-reported (program ward)</span>
-          <span>{sw(INDIGO)}independently verified (program ward)</span>
-          <span>{sw(COMP)}verified (comparison ward)</span>
+          <span>{sw(AMBER, true)}service-delivery data</span>
+          <span>{sw(INDIGO)}intervention arm survey</span>
+          <span>{sw(COMP)}control arm survey</span>
           <span style={{ color: '#94a3b8' }}>
-            · shaded = self-reported − verified · click a cycle to open it
+            · shaded = service-delivery − intervention survey · click a cycle to
+            open it
           </span>
         </div>
         <div
           style={{ fontSize: 15, fontWeight: 600, color: SUBINK, marginTop: 8 }}
         >
-          Across all {(trend.rounds || []).length} cycles, self-report sits
-          above the independent survey — {(trend.rounds || []).length} different
-          program wards, comparison wards stay low.
+          Across all {(trend.rounds || []).length} cycles, the program&rsquo;s
+          service-delivery figure sits above the independent intervention-arm
+          survey — {(trend.rounds || []).length} different intervention wards,
+          control wards stay low.
         </div>
       </div>
 
       {roundTabs()}
 
-      {/* per-cycle: compact readout + the moving map */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 0.9fr',
-          gap: 16,
-          marginTop: 14,
-          alignItems: 'start',
-        }}
-      >
-        <div style={Object.assign({ padding: '16px 18px' }, cardStyle)}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              flexWrap: 'wrap',
-            }}
-          >
-            <div
-              style={{
-                color: MUT,
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '.05em',
-              }}
-            >
-              Self-reported vs independently verified · {tWard} · R{rd.round}
-            </div>
-            <div style={{ color: MUT, fontSize: 11, fontFamily: mono }}>
-              as of {rd.label}
-            </div>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              gap: 26,
-              flexWrap: 'wrap',
-              alignItems: 'baseline',
-              marginTop: 8,
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  color: AMBER,
-                  fontFamily: mono,
-                  fontSize: 26,
-                  fontWeight: 800,
-                }}
-              >
-                {pct(self_)}
-              </div>
-              <div style={{ color: MUT, fontSize: 11 }}>self-reported</div>
-            </div>
-            <div>
-              <div
-                style={{
-                  color: INDIGO,
-                  fontFamily: mono,
-                  fontSize: 26,
-                  fontWeight: 800,
-                }}
-              >
-                {pct(ver)}
-              </div>
-              <div style={{ color: MUT, fontSize: 11 }}>
-                independently verified
-              </div>
-            </div>
-            <div>
-              <div
-                style={{
-                  color: SUBINK,
-                  fontFamily: mono,
-                  fontSize: 26,
-                  fontWeight: 800,
-                }}
-              >
-                {pp(prem)}
-              </div>
-              <div style={{ color: MUT, fontSize: 11 }}>
-                difference
-                {indCI != null ? ' · 95% CI ±' + indCI.toFixed(1) : ''}
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop: 10 }}>{slimDumbbell()}</div>
-          <div
-            style={{
-              color: MUT,
-              fontSize: 11,
-              marginTop: 8,
-              lineHeight: 1.6,
-              fontFamily: mono,
-            }}
-          >
-            both measure the same indicator — % of under-5 children with
-            confirmed vitamin-A · self-reported = the program's coverage
-            estimate ({sd[tWard] != null ? sd[tWard].toLocaleString() : '—'}{' '}
-            children visited) · verified = survey of n={indN} children
-          </div>
-        </div>
+      {/* per-cycle: the moving map (full width) */}
+      <div style={{ marginTop: 14 }}>
         <div style={Object.assign({ padding: 12 }, cardStyle)}>
           <div
             style={{
@@ -1533,7 +1187,7 @@ function WorkflowUI(props) {
                 letterSpacing: '.05em',
               }}
             >
-              Map · {tWard} vs {cWard}
+              Map · {tWard} (intervention) vs {cWard} (control)
             </div>
             <div
               style={{
@@ -1568,7 +1222,7 @@ function WorkflowUI(props) {
           <div
             ref={mapDivRef}
             style={{
-              height: 300,
+              height: 420,
               borderRadius: 8,
               overflow: 'hidden',
               background: '#eef2f7',
@@ -1593,14 +1247,14 @@ function WorkflowUI(props) {
           >
             <span>
               {sw(INDIGO)}
-              {tWard}
+              {tWard} (intervention)
             </span>
             <span>
               {sw(COMP)}
-              {cWard}
+              {cWard} (control)
             </span>
             <span>
-              <span style={{ color: '#16a34a' }}>●</span> delivery
+              <span style={{ color: '#16a34a' }}>●</span> service delivery
             </span>
             <span>
               <span style={{ color: INDIGO }}>●</span> confirmed
@@ -1667,8 +1321,7 @@ function WorkflowUI(props) {
             marginBottom: 10,
           }}
         >
-          Independent back-check ·{' '}
-          {selSurv ? 'Surveyor ' + selSurv : tWard + ' · R' + rd.round}
+          Independent back-check{effSurv ? ' · Surveyor ' + effSurv : ''}
         </div>
         {backcheckSection()}
       </div>
