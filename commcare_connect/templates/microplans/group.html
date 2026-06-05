@@ -22,9 +22,9 @@
       {{ group.plan_count }} plan{{ group.plan_count|pluralize }} · Program #{{ program_id }}
     </p>
     {% if group.is_study %}
-    <p class="text-xs text-gray-500 mt-1">
-      Two-arm controlled study — one plan and one Connect opportunity per ward.
-      <span class="text-gray-400">The intervention/control arm is set here on the study and is never exported to a ward's field plan, so the study stays blind by construction.</span>
+    <p class="text-xs text-gray-500 mt-1 flex items-center flex-wrap">
+      Two-arm controlled study — one plan &amp; one Connect opportunity per ward.
+      {% include "microplans/_info.html" with text="The intervention/control arm is set here on the study and is never exported to a ward's field plan — so the study stays blind by construction." only %}
     </p>
     {% endif %}
   </header>
@@ -101,55 +101,32 @@
     </table>
   </div>
   {% if group.is_study %}
-  <div class="mt-1">
-    <p class="text-[11px] text-gray-400">
-      <span class="text-gray-500">Connect CSV is blind:</span> each ward exports the standard work-area columns and nothing else, so the field organisation only ever receives a ward to cover — never which arm it is.
-    </p>
-    {% if csv_columns %}
-    <div class="flex flex-wrap items-center gap-1 mt-1">
-      <span class="text-[10px] text-gray-400 mr-0.5">Exported columns:</span>
-      {% for c in csv_columns %}<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ c }}</span>{% endfor %}
-      <span class="text-[10px] text-gray-300">·</span>
-      <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-500 border border-red-100" title="The arm is stored on the study group, never on the ward plan — so there is no arm column in the export to strip">no Arm column</span>
-    </div>
-    {% endif %}
-  </div>
+  <p class="text-[11px] text-gray-400 mt-1 flex items-center flex-wrap">
+    <span class="text-gray-500">Connect&nbsp;CSV is blind</span>&nbsp;— each ward exports an arm-free work-area file.
+    {% include "microplans/_info.html" with text="Exported columns: Area Slug, Ward, Centroid, Boundary, Building Count, Expected Visit Count, Target Population, LGA, State. There is no Arm column — the field organisation only ever receives a ward to cover, never which arm it is." only %}
+  </p>
   {% endif %}
 
   {% if comparability and comparability.metrics %}
   <section class="mt-5">
-    <div class="flex items-center gap-2 mb-1">
+    <div class="flex items-center gap-2 mb-1.5">
       <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Arm comparability</h2>
-      {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">settlements within tolerance</span>
-      {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">settlements out of tolerance</span>{% endif %}
+      {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">within tolerance</span>
+      {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">out of tolerance</span>{% endif %}
+      {% include "microplans/_info.html" with text="A rooftop survey only visits the sampled settlements (PSUs), so the two arms are compared on those — not the whole ward — as a standardized mean difference (SMD). The verdict is decided by settlement density alone; differences in PSU size and building footprint are corrected at analysis, not used to reject a control. Bands: |SMD| < 0.1 close · < 0.25 acceptable · ≥ 0.25 differs." only %}
     </div>
-    <!-- Objective read of the data — what the comparison shows, not a recommendation.
-         The analyst draws the conclusion and acts (keeps or removes the ward); the panel
-         only reports the numbers and which metric is structural vs adjustable. -->
+    {# One-line objective read — what the data shows; the analyst decides + acts. #}
     {% if comparability.matched is True %}
-    <p class="text-sm text-gray-700 mb-1">
-      The control's sampled settlements match the intervention's: settlement&nbsp;density SMD&nbsp;{{ comparability.gating_smd }},
-      within the 0.25 acceptance band{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(acceptable, but marginal — not a close &lt;0.1 match)</span>{% endif %}.{% if comparability.flags %}
-      PSU&nbsp;size and building&nbsp;footprint differ; those are measured baseline differences a difference-in-differences analysis adjusts for.{% endif %}
-    </p>
+    <p class="text-sm text-gray-700 mb-3">Sampled settlements match — density SMD&nbsp;{{ comparability.gating_smd }}{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(marginal)</span>{% endif %}.</p>
     {% elif comparability.matched is False %}
-    <p class="text-sm text-gray-700 mb-1">
-      The control's sampled settlements are sparser than the intervention's: settlement&nbsp;density SMD&nbsp;{{ comparability.gating_smd }},
-      past the 0.25 band. Settlement structure is fixed once the survey samples there, so it can't be adjusted at analysis the way PSU&nbsp;size or building&nbsp;footprint can.
-    </p>
+    <p class="text-sm text-gray-700 mb-3">Sampled settlements differ — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
     {% endif %}
-    <p class="text-[11px] text-gray-400 mb-2">
-      <b class="text-gray-500">How to read this:</b> a rooftop survey only ever visits the sampled settlements (PSUs), so the
-      arms are compared on the <b>selected PSUs</b> as a standardized mean difference (SMD). Settlement density is a structural
-      property of where the survey samples — a control can't change it after the fact and an analysis can't correct it. PSU size
-      and building footprint are measured baseline covariates a difference-in-differences analysis adjusts for.
-      <span class="whitespace-nowrap">Bands: |SMD| &lt; 0.1 close · &lt; 0.25 acceptable · ≥ 0.25 differs.</span>
-    </p>
-    <!-- Split presentation: the structural metric (settlement density, can't be adjusted
-         away) stands alone; the adjustable covariates live in a visually-subordinated block
-         so a large covariate SMD never sits equal-weight beside the structural one. Neither
-         block renders a recommendation — they report the data; the analyst decides + acts. -->
-    <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Structural — fixed once the survey samples, can't be adjusted</div>
+
+    {# Structural metric — decides the verdict. #}
+    <div class="flex items-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+      Decides the verdict
+      {% include "microplans/_info.html" with text="Settlement density is structural — a property of where the survey actually samples, which a control can't change after the fact and an analysis can't correct. So it alone decides whether the two arms are comparable." only %}
+    </div>
     <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
       <table class="text-sm">
         <thead class="bg-gray-50 text-gray-600">
@@ -167,9 +144,9 @@
             <td class="px-3 py-2 text-right tabular-nums">{{ m.ct }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.smd }}</td>
             <td class="px-3 py-2">
-              {% if m.band == "good" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● close (|SMD| &lt; 0.1)</span>
-              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">● acceptable, marginal (0.1 ≤ |SMD| &lt; 0.25)</span>
-              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs (|SMD| ≥ 0.25)</span>{% endif %}
+              {% if m.band == "good" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● close</span>
+              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">● acceptable</span>
+              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs</span>{% endif %}
             </td>
           </tr>
           {% endif %}{% endfor %}
@@ -177,36 +154,41 @@
       </table>
     </div>
     {% if comparability.n_intervention and comparability.n_control %}
-    <p class="text-[11px] text-gray-400 mt-1">Computed over the selected settlements the survey will visit — n = {{ comparability.n_intervention }} intervention, {{ comparability.n_control }} control.</p>
+    <p class="text-[11px] text-gray-400 mt-1">n = {{ comparability.n_intervention }} / {{ comparability.n_control }} selected settlements per arm.</p>
     {% endif %}
 
     {% if comparability.has_advisory %}
-    <!-- Adjustable covariates: visually demoted (muted, smaller, its own labelled block)
-         so a large SMD here can never be misread as undercutting the structural metric. -->
-    <div class="mt-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Adjustable baseline covariates — a DiD analysis corrects for these</div>
+    {# Adjustable covariates — recorded, corrected at analysis, not used to reject. #}
+    <div class="flex items-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 mt-3">
+      Adjusted at analysis
+      {% include "microplans/_info.html" with text="PSU size and building footprint are measured baseline covariates a difference-in-differences analysis corrects for, so a difference here is recorded and adjusted — never used to reject the control. A large gap is flagged for a common-support check." only %}
+    </div>
     <div class="overflow-x-auto border border-gray-100 bg-gray-50 rounded-lg inline-block">
       <table class="text-[13px] text-gray-500">
+        <thead class="text-gray-400"><tr>
+          <th class="text-left font-medium px-3 py-1.5">Characteristic</th>
+          <th class="text-right font-medium px-3 py-1.5">Int.</th>
+          <th class="text-right font-medium px-3 py-1.5">Ctrl.</th>
+          <th class="text-right font-medium px-3 py-1.5">SMD</th></tr></thead>
         <tbody class="divide-y divide-gray-100">
           {% for m in comparability.metrics %}{% if not m.core %}
           <tr>
             <td class="px-3 py-1.5">{{ m.label }}{% if m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}</td>
             <td class="px-3 py-1.5 text-right tabular-nums">{{ m.iv }}</td>
             <td class="px-3 py-1.5 text-right tabular-nums">{{ m.ct }}</td>
-            <td class="px-3 py-1.5 text-right tabular-nums">SMD {{ m.smd }}</td>
-            <td class="px-3 py-1.5"><span class="text-[11px] text-slate-500">adjust at analysis</span></td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ m.smd }}</td>
           </tr>
           {% endif %}{% endfor %}
         </tbody>
       </table>
     </div>
-    <p class="text-[11px] text-gray-400 mt-1">A difference-in-differences analysis adjusts for these measured baseline differences; a large gap is flagged for a common-support check, not used to reject the control.</p>
     {% endif %}
 
-    <p class="text-[11px] text-gray-400 mt-2">
-      Context (not used for matching): whole-ward building density —
-      {% for a in comparability.arms %}{% if a.arm == "intervention" %}intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}
-      vs {% for a in comparability.arms %}{% if a.arm == "control" %}control {{ a.ward_density }}/km²{% endif %}{% endfor %}.
-      A larger, sparser ward can still be a fair control when its settlements match.
+    <p class="text-[11px] text-gray-400 mt-2 flex items-center flex-wrap">
+      Whole-ward density:
+      {% for a in comparability.arms %}{% if a.arm == "intervention" %}&nbsp;intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}
+      vs{% for a in comparability.arms %}{% if a.arm == "control" %} control {{ a.ward_density }}/km²{% endif %}{% endfor %}.
+      {% include "microplans/_info.html" with text="The naive measure, shown for context only — not used for matching. A larger, sparser ward can still be a fair control when its sampled settlements match, which is exactly what the comparison above tests." only %}
     </p>
   </section>
   {% endif %}
