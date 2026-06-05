@@ -36,6 +36,7 @@
   <!-- Management actions -->
   <div class="flex flex-wrap gap-2 text-sm">
     <a href="{{ bulk_create_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add wards by name</a>
+    <a href="{{ add_from_map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add wards from map</a>
     <a href="{{ new_plan_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add a plan in the editor</a>
     {% if entries %}
     <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
@@ -47,7 +48,7 @@
   </div>
 
   {% if not entries %}
-  <p class="text-sm text-gray-400">No plans in this group yet. Add wards by name, or define a plan's boundary in the editor and save it here.</p>
+  <p class="text-sm text-gray-400">No plans in this group yet. Add wards by name, pick them from a map, or define a plan's boundary in the editor and save it here.</p>
   {% else %}
 
   <div class="overflow-x-auto border border-gray-200 rounded-lg">
