@@ -86,6 +86,10 @@ def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_i
     coverage = max(0.0, coverage + rng.gauss(0, arm_cfg.get("coverage_noise", 0.0)))
     n_enum = arm_cfg.get("enumerators", 5)
     enum_ids = [f"{arm_key[0].upper()}{k + 1}" for k in range(n_enum)]
+    # Optional flagged surveyor — one enumerator whose data quality is degraded,
+    # so the per-surveyor scorecard (and the back-check) catch them.
+    flagged = cfg.get("flagged_surveyor") or {}
+    flag_id = flagged.get("id") if flagged.get("arm") == arm_key else None
     near = q.get("gps_offset_near_m", [1, 13])
     far = q.get("gps_offset_far_m", [16, 55])
     dur = q["duration_min"]
@@ -93,8 +97,12 @@ def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_i
     recs = []
     pts = _sample_in_geom(rng, geom, n)
     for j in range(n):
+        surveyor = enum_ids[j % n_enum]
+        bad = surveyor == flag_id
+        gps_p = flagged.get("gps_within_15m", q["gps_within_15m"]) if bad else q["gps_within_15m"]
+        ev_p = flagged.get("evidence", q["evidence_complete"]) if bad else q["evidence_complete"]
         alat, alon = pts[j % len(pts)]
-        within = rng.random() < q["gps_within_15m"]
+        within = rng.random() < gps_p
         offset_m = rng.uniform(*near) if within else rng.uniform(*far)
         clat, clon = _offset(rng, alat, alon, offset_m)
         present = rng.random() < elig.get("present_rate", 0.99)
@@ -113,7 +121,7 @@ def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_i
             "household_id": f"{base_id}-H{j:04d}",
             "ward": arm_cfg["ward"],
             "arm": arm_key,
-            "enumerator_id": enum_ids[j % n_enum],
+            "enumerator_id": surveyor,
             "lat": round(clat, 6),
             "lon": round(clon, 6),
             "assigned_lat": round(alat, 6),
@@ -123,7 +131,7 @@ def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_i
             "start_ts": 1_700_000_000 + round_idx * 5_000_000 + j * 900,
             "end_ts": 1_700_000_000 + round_idx * 5_000_000 + j * 900 + int(duration * 60),
             "duration_min": duration,
-            "evidence_photo": rng.random() < q["evidence_complete"],
+            "evidence_photo": rng.random() < ev_p,
             "child_present": present,
             "child_sex": rng.choice(["M", "F"]),
             "child_age_months": age,
@@ -157,11 +165,17 @@ def _gen_backchecks(rng, cfg, primaries, round_idx, base_id):
         k = max(1, int(round(len(rs) * pct)))
         selected.extend(rng.sample(rs, min(k, len(rs))))
 
+    flagged = cfg.get("flagged_surveyor") or {}
     out = []
     for idx, o in enumerate(selected):
-        # Re-survey values: agree most of the time, perturb otherwise.
+        # Re-survey values: agree most of the time, perturb otherwise. A flagged
+        # surveyor's originals agree LESS with the independent re-survey — the
+        # signal that catches them (the J-PAL back-check error rate per surveyor).
+        agree_p = bc["outcome_agreement"]
+        if flagged.get("id") == o.get("enumerator_id") and flagged.get("arm") == o.get("arm"):
+            agree_p = flagged.get("backcheck_agreement", agree_p)
         outcome = o["vitamin_a_received"]
-        if rng.random() > bc["outcome_agreement"]:
+        if rng.random() > agree_p:
             outcome = not outcome
         sex = o["child_sex"]
         present = o["child_present"]
@@ -219,6 +233,43 @@ def _coverage(records, arm):
     return round(100.0 * got / len(elig), 1), len(elig)
 
 
+def _surveyor_scorecard(cfg, records):
+    """Per-surveyor quality KPIs for the program ward — one row per surveyor for
+    the scorecard. Each surveyor's metrics are computed from their OWN records via
+    the shared library (the same algorithms as the round-level KPIs)."""
+    tw = [r for r in records if r.get("arm") == "treatment"]
+    surveyors = sorted({r["enumerator_id"] for r in tw if r["form_type"] == "primary"})
+    rows = []
+    for s in surveyors:
+        sub = [
+            r
+            for r in tw
+            if (r["form_type"] == "primary" and r["enumerator_id"] == s)
+            or (r["form_type"] == "back_check" and r.get("original_enumerator_id") == s)
+        ]
+        qm = results_to_map(run_metrics(sub, layers=["survey_quality"], config=cfg))
+        bm = results_to_map(run_metrics(sub, layers=["backcheck"], config=cfg))
+
+        def _v(m, key):
+            return (m.get(key) or {}).get("value")
+
+        rows.append(
+            {
+                "surveyor": s,
+                "n": (qm.get("field_completeness") or {}).get("n"),
+                "evidence": _v(qm, "evidence_capture"),
+                "gps": _v(qm, "gps_within_15m"),
+                "completeness": _v(qm, "field_completeness"),
+                "duration": _v(qm, "duration_plausibility"),
+                "consistency": _v(qm, "consistency_pass"),
+                "duplicates": _v(qm, "duplicate_integrity"),
+                "backcheck": _v(bm, "backcheck_outcome_agreement"),
+                "backcheck_n": (bm.get("backcheck_coverage") or {}).get("n"),
+            }
+        )
+    return rows
+
+
 def _round_summary(cfg, records, round_idx, label, as_of, tw_name, cw_name):
     # The dashboard hero + QA strip + back-check defend the PROGRAM ward's
     # coverage claim, so compute those metrics over the treatment arm only (the
@@ -249,6 +300,7 @@ def _round_summary(cfg, records, round_idx, label, as_of, tw_name, cw_name):
         "self_report_pct": self_report,
         "premium_pp": premium,
         "quality": qmap,
+        "surveyor_scorecard": _surveyor_scorecard(cfg, records),
         "backcheck": {
             "coverage_pct": bmap.get("backcheck_coverage", {}).get("value"),
             "n_backchecked": bmap.get("backcheck_coverage", {}).get("n"),

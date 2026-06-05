@@ -8,7 +8,7 @@
 // that moves to that cycle's two real wards; and ONE drillable-metric block where
 // every metric — the survey-quality checks AND the independent back-check — opens
 // its own evidence below when clicked. Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V27
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V28
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -36,7 +36,6 @@ function WorkflowUI(props) {
   );
   if (sel > rounds.length - 1) sel = Math.max(0, rounds.length - 1);
   var rd = rounds[sel] || null;
-  var [kpi, setKpi] = React.useState('backcheck');
 
   // ---- per-round map (shared ConnectMap; moves each round) ----
   var [mapLibReady, setMapLibReady] = React.useState(
@@ -426,44 +425,7 @@ function WorkflowUI(props) {
     );
   }
 
-  // ---- drillable metrics: cards + per-metric evidence ----
-  var KCARDS = [
-    ['evidence_capture', 'Evidence capture'],
-    ['gps_within_15m', 'GPS within 15 m'],
-    ['field_completeness', 'Field completeness'],
-    ['duration_plausibility', 'Duration plausible'],
-    ['consistency_pass', 'Consistency'],
-    ['duplicate_integrity', 'Duplicates'],
-    ['backcheck', 'Back-check agreement'],
-  ];
-  function cardValue(k) {
-    if (k === 'backcheck')
-      return bc.outcome_agreement_pct != null
-        ? bc.outcome_agreement_pct.toFixed(1) + '%'
-        : '—';
-    return metricVal(q[k]);
-  }
-  function cardOk(k) {
-    if (k === 'backcheck') return (bc.outcome_agreement_pct || 0) >= 95;
-    return q[k] && q[k].passed;
-  }
-  function bar(p) {
-    return (
-      <div
-        style={{
-          height: 9,
-          borderRadius: 5,
-          background: '#eef2f7',
-          overflow: 'hidden',
-          maxWidth: 320,
-        }}
-      >
-        <div
-          style={{ height: '100%', width: (p || 0) + '%', background: INDIGO }}
-        />
-      </div>
-    );
-  }
+  // ---- shared small label ----
   function dlbl(t) {
     return (
       <div
@@ -478,17 +440,160 @@ function WorkflowUI(props) {
       </div>
     );
   }
-  function dline(node) {
+
+  // ---- per-surveyor quality scorecard ----
+  // One row per program-ward surveyor; KPI columns computed by
+  // commcare_connect.labs.survey_quality over THAT surveyor's records
+  // (their primaries + the back-checks of their work). Cells turn rose when
+  // they fall below the column threshold; a surveyor whose integrity signals
+  // fail together is tagged REVIEW.
+  function scorecardTable() {
+    var rows = rd.surveyor_scorecard || [];
+    if (!rows.length) return null;
+    // [key, label, threshold, lowerIsBetter, isCount]
+    var COLS = [
+      ['evidence', 'Evidence', 90, false, false],
+      ['gps', 'GPS ≤15m', 90, false, false],
+      ['completeness', 'Complete', 98, false, false],
+      ['duration', 'Duration', 90, false, false],
+      ['consistency', 'Consistency', 98, false, false],
+      ['duplicates', 'Dupes', 0, true, true],
+      ['backcheck', 'Back-check', 90, false, false],
+    ];
+    function fail(v, thr, lower) {
+      if (v == null) return false;
+      return lower ? v > thr : v < thr;
+    }
+    function cellTxt(row, c) {
+      var v = row[c[0]];
+      if (v == null) return '—';
+      if (c[4]) return String(v);
+      var s = v.toFixed(1) + '%';
+      if (c[0] === 'backcheck' && row.backcheck_n != null)
+        s += ' ·' + row.backcheck_n;
+      return s;
+    }
+    // flag a surveyor for review when >=2 integrity signals fail together
+    function rowFlagged(row) {
+      var n = 0;
+      if (fail(row.evidence, 90, false)) n++;
+      if (fail(row.gps, 90, false)) n++;
+      if (fail(row.backcheck, 90, false)) n++;
+      return n >= 2;
+    }
+    var th = {
+      textAlign: 'right',
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.04em',
+      padding: '7px 10px',
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var th0 = Object.assign({}, th, { textAlign: 'left' });
+    var td = {
+      textAlign: 'right',
+      padding: '7px 10px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      borderBottom: '1px solid ' + LINE,
+    };
+    var td0 = Object.assign({}, td, {
+      textAlign: 'left',
+      fontFamily: 'inherit',
+    });
+    var agg = {
+      surveyor: '__agg__',
+      n: indN,
+      evidence: q.evidence_capture && q.evidence_capture.value,
+      gps: q.gps_within_15m && q.gps_within_15m.value,
+      completeness: q.field_completeness && q.field_completeness.value,
+      duration: q.duration_plausibility && q.duration_plausibility.value,
+      consistency: q.consistency_pass && q.consistency_pass.value,
+      duplicates:
+        q.duplicate_integrity && q.duplicate_integrity.detail
+          ? (q.duplicate_integrity.detail.dup_household_id || 0) +
+            (q.duplicate_integrity.detail.dup_gps_time || 0)
+          : 0,
+      backcheck: bc.outcome_agreement_pct,
+      backcheck_n: bc.n_backchecked,
+    };
+    function dataRow(row, isAgg) {
+      var fl = !isAgg && rowFlagged(row);
+      return (
+        <tr
+          key={row.surveyor}
+          style={{
+            background: isAgg ? '#f8fafc' : fl ? '#fff1f2' : 'transparent',
+          }}
+        >
+          <td
+            style={Object.assign({}, td0, {
+              fontWeight: isAgg ? 700 : 600,
+              color: SUBINK,
+            })}
+          >
+            {isAgg ? 'Round · all surveyors' : 'Surveyor ' + row.surveyor}
+            {fl ? (
+              <span
+                style={{
+                  marginLeft: 7,
+                  fontSize: 10,
+                  color: ROSE,
+                  fontFamily: mono,
+                  fontWeight: 700,
+                  letterSpacing: '.04em',
+                }}
+              >
+                REVIEW
+              </span>
+            ) : null}
+          </td>
+          <td style={Object.assign({}, td, { color: MUT })}>{row.n}</td>
+          {COLS.map(function (c) {
+            var v = row[c[0]];
+            var bad = fail(v, c[2], c[3]);
+            return (
+              <td
+                key={c[0]}
+                style={Object.assign({}, td, {
+                  color: v == null ? MUT : bad ? ROSE : GREEN,
+                  fontWeight: bad ? 700 : 500,
+                })}
+              >
+                {cellTxt(row, c)}
+              </td>
+            );
+          })}
+        </tr>
+      );
+    }
     return (
-      <div
-        style={{
-          color: SUBINK,
-          fontSize: 13,
-          margin: '8px 0',
-          lineHeight: 1.5,
-        }}
-      >
-        {node}
+      <div style={{ overflowX: 'auto' }}>
+        <table
+          style={{ borderCollapse: 'collapse', width: '100%', minWidth: 660 }}
+        >
+          <thead>
+            <tr>
+              <th style={th0}>Surveyor</th>
+              <th style={th}>n</th>
+              {COLS.map(function (c) {
+                return (
+                  <th key={c[0]} style={th}>
+                    {c[1]}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(function (row) {
+              return dataRow(row, false);
+            })}
+            {dataRow(agg, true)}
+          </tbody>
+        </table>
       </div>
     );
   }
@@ -590,141 +695,7 @@ function WorkflowUI(props) {
     );
   }
 
-  function kpiDetail() {
-    var m = q[kpi],
-      d = (m && m.detail) || {};
-    if (kpi === 'evidence_capture') {
-      var bys = d.by_surveyor || {};
-      return (
-        <div>
-          {dlbl('Evidence capture — a proof photo on every "received" record')}
-          {dline(
-            <span>
-              <b>{d.with_photo}</b> of {m.n} "received" records carry a proof
-              photo ({pct(m.value)}). <b>{d.n_missing}</b> missing, flagged for
-              review.
-            </span>,
-          )}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))',
-              gap: 10,
-              marginTop: 6,
-            }}
-          >
-            {Object.keys(bys).map(function (e) {
-              return (
-                <div key={e}>
-                  {dlbl('surveyor ' + e + ' · ' + bys[e] + '%')}
-                  {bar(bys[e])}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-    if (kpi === 'gps_within_15m') {
-      return (
-        <div>
-          {dlbl('GPS within 15 m of the assigned household')}
-          {dline(
-            <span>
-              {pct(m.value)} of captures within 15 m. Median offset{' '}
-              <b>{d.median_offset_m} m</b> · <b>{d.n_beyond}</b> beyond 15 m
-              (max {d.max_offset_m} m), flagged.
-            </span>,
-          )}
-          {bar(m.value)}
-        </div>
-      );
-    }
-    if (kpi === 'field_completeness') {
-      var miss = d.missing_by_field || {};
-      var ftd = {
-        padding: '5px 10px',
-        fontSize: 12,
-        borderBottom: '1px solid ' + LINE,
-        fontFamily: mono,
-      };
-      return (
-        <div>
-          {dlbl('Required-field completeness — per field')}
-          <table
-            style={{ borderCollapse: 'collapse', marginTop: 8, minWidth: 280 }}
-          >
-            <tbody>
-              {Object.keys(miss).map(function (f) {
-                return (
-                  <tr key={f}>
-                    <td style={ftd}>{f}</td>
-                    <td
-                      style={Object.assign(
-                        {
-                          textAlign: 'right',
-                          color: (miss[f] || 0) > 1 ? ROSE : GREEN,
-                        },
-                        ftd,
-                      )}
-                    >
-                      {(100 - (miss[f] || 0)).toFixed(1)}% present
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-    if (kpi === 'duration_plausibility') {
-      return (
-        <div>
-          {dlbl('Interview-duration plausibility')}
-          {dline(
-            <span>
-              {pct(m.value)} within the plausible band. Median{' '}
-              <b>{d.median_min} min</b> · <b>{d.n_too_short}</b> under {d.floor}{' '}
-              min, flagged as too fast.
-            </span>,
-          )}
-          {bar(m.value)}
-        </div>
-      );
-    }
-    if (kpi === 'consistency_pass') {
-      return (
-        <div>
-          {dlbl('Internal-consistency edit checks')}
-          {dline(
-            <span>
-              {pct(m.value)} pass all edit rules. <b>{d.n_violations}</b> of{' '}
-              {m.n} records flagged (e.g. "received" with no eligible child
-              present).
-            </span>,
-          )}
-          {bar(m.value)}
-        </div>
-      );
-    }
-    if (kpi === 'duplicate_integrity') {
-      return (
-        <div>
-          {dlbl('Duplicate records')}
-          {dline(
-            <span>
-              <b>{d.dup_household_id}</b> duplicate household IDs ·{' '}
-              <b>{d.dup_gps_time}</b> duplicate (GPS, timestamp) signatures.{' '}
-              {(d.dup_household_id || 0) + (d.dup_gps_time || 0) === 0
-                ? 'Clean.'
-                : 'Flagged.'}
-            </span>,
-          )}
-        </div>
-      );
-    }
-    // back-check
+  function backcheckSection() {
     return (
       <div>
         <div
@@ -735,12 +706,13 @@ function WorkflowUI(props) {
             marginBottom: 8,
           }}
         >
-          Independent back-check — re-survey by a different surveyor. Matched
-          the original vitamin-A result on{' '}
+          Independent back-check &mdash; a stratified sample of this
+          cycle&rsquo;s households re-surveyed by a different surveyor. The
+          re-survey matched the original vitamin-A result on{' '}
           <b>
             {bc.outcome_agreement_pct != null && bc.n_backchecked != null
               ? Math.round((bc.outcome_agreement_pct / 100) * bc.n_backchecked)
-              : '—'}
+              : '\u2014'}
           </b>{' '}
           of {bc.n_backchecked} re-surveyed households.
         </div>
@@ -756,13 +728,13 @@ function WorkflowUI(props) {
           {[
             [
               'sample re-surveyed',
-              bc.coverage_pct + '% · n=' + bc.n_backchecked,
+              bc.coverage_pct + '% \u00b7 n=' + bc.n_backchecked,
             ],
             ['outcome agreement', bc.outcome_agreement_pct + '%'],
             [
               'identity match',
               bc.type1_error_pct == null
-                ? '—'
+                ? '\u2014'
                 : (100 - bc.type1_error_pct).toFixed(1) + '%',
             ],
             ['re-survey vs original', 'p=' + bc.prtest_p],
@@ -794,12 +766,12 @@ function WorkflowUI(props) {
             agree
           </span>
           <span>
-            <span style={{ color: ROSE, fontWeight: 700 }}>red →</span> =
-            changed on re-survey
+            <span style={{ color: ROSE, fontWeight: 700 }}>red {'\u2192'}</span>{' '}
+            = changed on re-survey
           </span>
           <span>
-            each cell: original / re-survey · surveyor original (T) → back-check
-            (BC)
+            each cell: original / re-survey {'\u00b7'} surveyor original (T){' '}
+            {'\u2192'} back-check (BC)
           </span>
         </div>
       </div>
@@ -1127,7 +1099,7 @@ function WorkflowUI(props) {
         </div>
       </div>
 
-      {/* DRILLABLE METRICS — one block; every metric opens its evidence below */}
+      {/* PER-SURVEYOR SCORECARD — one row per program-ward surveyor, KPI columns */}
       <div style={Object.assign({ marginTop: 16, padding: 14 }, cardStyle)}>
         <div
           style={{
@@ -1135,70 +1107,52 @@ function WorkflowUI(props) {
             fontSize: 11,
             textTransform: 'uppercase',
             letterSpacing: '.05em',
-            marginBottom: 8,
+            marginBottom: 10,
           }}
         >
-          Verification metrics · {tWard} · R{rd.round} — click any to drill into
-          how it was computed
+          Survey-quality scorecard · {tWard} · R{rd.round} — one row per
+          surveyor
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {KCARDS.map(function (c) {
-            var k = c[0],
-              on = kpi === k,
-              ok = cardOk(k);
-            return (
-              <div
-                key={k}
-                onClick={function () {
-                  setKpi(k);
-                }}
-                style={{
-                  cursor: 'pointer',
-                  padding: '10px 12px',
-                  borderRadius: 9,
-                  minWidth: 124,
-                  background: on ? '#f3f3ff' : '#fff',
-                  border: '1px solid ' + (on ? INDIGO : LINE),
-                  boxShadow: on ? '0 0 0 1px ' + INDIGO + ' inset' : SHADOW,
-                }}
-              >
-                <div
-                  style={{
-                    color: MUT,
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.04em',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <span>{c[1]}</span>
-                  <span style={{ color: on ? INDIGO : '#94a3b8' }}>▸</span>
-                </div>
-                <div
-                  style={{
-                    color: ok ? GREEN : ROSE,
-                    fontFamily: mono,
-                    fontSize: 18,
-                    fontWeight: 700,
-                    marginTop: 3,
-                  }}
-                >
-                  {cardValue(k)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {scorecardTable()}
         <div
           style={{
-            marginTop: 14,
-            borderTop: '1px solid ' + LINE,
-            paddingTop: 14,
+            display: 'flex',
+            gap: 16,
+            marginTop: 10,
+            fontSize: 11,
+            color: MUT,
+            fontFamily: mono,
+            flexWrap: 'wrap',
           }}
         >
-          {kpiDetail()}
+          <span>
+            <span style={{ color: GREEN, fontWeight: 700 }}>green</span> =
+            within threshold
+          </span>
+          <span>
+            <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = below
+            threshold
+          </span>
+          <span>
+            back-check cell shows agreement % ·n re-surveyed for that surveyor
+          </span>
         </div>
+      </div>
+
+      {/* INDEPENDENT BACK-CHECK — household side-by-side, original vs re-survey */}
+      <div style={Object.assign({ marginTop: 16, padding: 14 }, cardStyle)}>
+        <div
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginBottom: 10,
+          }}
+        >
+          Independent back-check · {tWard} · R{rd.round}
+        </div>
+        {backcheckSection()}
       </div>
     </div>
   );
