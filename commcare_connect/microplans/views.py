@@ -798,7 +798,11 @@ class ProgramGroupShareView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateV
                 p = plans_by_id.get(pid)
                 if p is None:
                     continue
-                kpis = plan_lib.plan_kpis(p.work_areas, input_areas=p.data.get("input_areas") or [])
+                _ss = (p.data.get("sampling_stats") or [{}])[0]
+                _area_bld = _ss.get("after_filters") or _ss.get("fetched") or None
+                kpis = plan_lib.plan_kpis(
+                    p.work_areas, input_areas=p.data.get("input_areas") or [], area_buildings=_area_bld
+                )
                 entries.append(
                     {
                         "plan_id": pid,
@@ -1497,6 +1501,7 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
             p = by_id.get(pid)
             if p is None:
                 continue
+            _ss = (p.data.get("sampling_stats") or [{}])[0]
             entries.append(
                 {
                     "plan_id": p.id,
@@ -1504,7 +1509,11 @@ class ProgramComparePlansView(LoginRequiredMixin, View):
                     "region": p.region,
                     "mode": p.mode,
                     "created_at": p.created_at,
-                    "kpis": plan_lib.plan_kpis(p.work_areas, input_areas=p.data.get("input_areas") or []),
+                    "kpis": plan_lib.plan_kpis(
+                        p.work_areas,
+                        input_areas=p.data.get("input_areas") or [],
+                        area_buildings=_ss.get("after_filters") or _ss.get("fetched") or None,
+                    ),
                 }
             )
         if not entries:
