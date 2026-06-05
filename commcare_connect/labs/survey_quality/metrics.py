@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import Counter
 
 from .registry import register_metric
-from .stats import haversine_m, iqr_bounds, two_proportion_z
+from .stats import haversine_m, iqr_bounds, median, two_proportion_z
 
 # ---------------------------------------------------------------- helpers
 
@@ -58,7 +58,19 @@ def evidence_capture(recs, cfg):
     The central trust claim for an evidence-backed coverage figure."""
     pos = [r for r in _primary(recs) if r.get("vitamin_a_received")]
     ok = sum(1 for r in pos if r.get("evidence_photo"))
-    return {"value": _pct(ok, len(pos)), "n": len(pos), "detail": {"with_photo": ok}}
+    by = {}  # surveyor -> [with_photo, total]
+    for r in pos:
+        e = r.get("enumerator_id")
+        by.setdefault(e, [0, 0])
+        by[e][1] += 1
+        if r.get("evidence_photo"):
+            by[e][0] += 1
+    by_surveyor = {e: _pct(v[0], v[1]) for e, v in sorted(by.items())}
+    return {
+        "value": _pct(ok, len(pos)),
+        "n": len(pos),
+        "detail": {"with_photo": ok, "n_missing": len(pos) - ok, "by_surveyor": by_surveyor},
+    }
 
 
 @register_metric("gps_within_15m", "GPS within 15 m of household", "survey_quality", threshold=95.0)
@@ -66,8 +78,19 @@ def gps_within_15m(recs, cfg):
     """Captured location within 15 m of the household's assigned location —
     proves the enumerator was physically present."""
     p = _primary(recs)
-    ok = sum(1 for r in p if r.get("gps_offset_m") is not None and r["gps_offset_m"] <= 15)
-    return {"value": _pct(ok, len(p)), "n": len(p)}
+    offs = [r.get("gps_offset_m") for r in p if r.get("gps_offset_m") is not None]
+    ok = sum(1 for o in offs if o <= 15)
+    beyond = sum(1 for o in offs if o > 15)
+    med = median(offs)
+    return {
+        "value": _pct(ok, len(p)),
+        "n": len(p),
+        "detail": {
+            "median_offset_m": (round(med, 1) if med is not None else None),
+            "n_beyond": beyond,
+            "max_offset_m": (round(max(offs), 1) if offs else None),
+        },
+    }
 
 
 @register_metric("gps_in_ward", "GPS inside assigned ward", "survey_quality", threshold=95.0)
@@ -104,7 +127,19 @@ def duration_plausibility(recs, cfg):
         return True
 
     good = sum(1 for r in p if ok(r.get("duration_min")))
-    return {"value": _pct(good, len(p)), "n": len(p), "detail": {"iqr_lo": lo, "iqr_hi": hi, "floor": floor}}
+    short = sum(1 for d in durs if d < floor)
+    med = median(durs)
+    return {
+        "value": _pct(good, len(p)),
+        "n": len(p),
+        "detail": {
+            "iqr_lo": lo,
+            "iqr_hi": hi,
+            "floor": floor,
+            "n_too_short": short,
+            "median_min": (round(med, 1) if med is not None else None),
+        },
+    }
 
 
 @register_metric("consistency_pass", "Internal-consistency edit checks", "survey_quality", threshold=99.0)
@@ -123,7 +158,7 @@ def consistency_pass(recs, cfg):
         return True
 
     good = sum(1 for r in p if ok(r))
-    return {"value": _pct(good, len(p)), "n": len(p)}
+    return {"value": _pct(good, len(p)), "n": len(p), "detail": {"n_violations": len(p) - good}}
 
 
 @register_metric(
