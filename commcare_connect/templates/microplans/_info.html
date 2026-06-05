@@ -1,0 +1,12 @@
+{% comment %}
+Info icon with a hover tooltip — replaces inline walls of explanatory text.
+Usage: include this partial "with text=..." (and "only"). Pure CSS (Tailwind
+group-hover); the icon sits inline, the tip floats above-left so it stays
+on-screen for left-aligned labels and escapes table overflow.
+{% endcomment %}
+<span class="relative inline-flex items-center group align-middle ml-1 leading-none">
+  <svg class="w-3.5 h-3.5 text-gray-400 group-hover:text-brand-cornflower-blue cursor-help shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 112 0v4a1 1 0 11-2 0V9zm1-5a1 1 0 100 2 1 1 0 000-2z" clip-rule="evenodd"/>
+  </svg>
+  <span role="tooltip" class="pointer-events-none invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute z-50 left-0 bottom-full mb-1.5 w-64 rounded-lg bg-gray-900 text-gray-100 text-[11px] leading-snug px-3 py-2 shadow-xl text-left normal-case font-normal tracking-normal">{{ text }}</span>
+</span>
