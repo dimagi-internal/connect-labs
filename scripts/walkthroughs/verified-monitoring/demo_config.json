@@ -18,6 +18,14 @@
     { "treatment": "Attakar", "comparison": "Gura" }
   ],
   "map_pin_cap": 150,
+  "_flagged_surveyor_comment": "One deliberately-degraded program-ward surveyor (T6): lower evidence-photo + GPS-within-15m, and — the catch — their originals agree LESS with the independent re-survey (back-check). Makes the per-surveyor scorecard surface a real outlier.",
+  "flagged_surveyor": {
+    "arm": "treatment",
+    "id": "T6",
+    "evidence": 0.79,
+    "gps_within_15m": 0.83,
+    "backcheck_agreement": 0.78
+  },
   "round0": "2025-02",
   "rounds": 6,
   "arms": {
