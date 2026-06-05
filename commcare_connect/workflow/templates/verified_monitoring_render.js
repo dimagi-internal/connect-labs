@@ -8,7 +8,7 @@
 // that moves to that cycle's two real wards; and ONE drillable-metric block where
 // every metric — the survey-quality checks AND the independent back-check — opens
 // its own evidence below when clicked. Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V28
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V29
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -36,6 +36,8 @@ function WorkflowUI(props) {
   );
   if (sel > rounds.length - 1) sel = Math.max(0, rounds.length - 1);
   var rd = rounds[sel] || null;
+  // selected surveyor (drives the back-check section); null = round-level view
+  var [selSurv, setSelSurv] = React.useState(null);
 
   // ---- per-round map (shared ConnectMap; moves each round) ----
   var [mapLibReady, setMapLibReady] = React.useState(
@@ -521,11 +523,28 @@ function WorkflowUI(props) {
     };
     function dataRow(row, isAgg) {
       var fl = !isAgg && rowFlagged(row);
+      var on = !isAgg && selSurv === row.surveyor;
       return (
         <tr
           key={row.surveyor}
+          onClick={
+            isAgg
+              ? null
+              : function () {
+                  setSelSurv(selSurv === row.surveyor ? null : row.surveyor);
+                }
+          }
+          title={isAgg ? null : 'View ' + row.surveyor + "'s back-check"}
           style={{
-            background: isAgg ? '#f8fafc' : fl ? '#fff1f2' : 'transparent',
+            cursor: isAgg ? 'default' : 'pointer',
+            background: on
+              ? '#eef2ff'
+              : isAgg
+              ? '#f8fafc'
+              : fl
+              ? '#fff1f2'
+              : 'transparent',
+            boxShadow: on ? 'inset 3px 0 0 ' + INDIGO : 'none',
           }}
         >
           <td
@@ -598,8 +617,8 @@ function WorkflowUI(props) {
     );
   }
 
-  function bcTable() {
-    var rows = (bc.rows || []).slice(0, 8);
+  function bcTable(rowsIn) {
+    var rows = (rowsIn || bc.rows || []).slice(0, 8);
     if (!rows.length) return null;
     var cols = [
       ['vitamin_a_received', 'Vitamin-A'],
@@ -695,7 +714,73 @@ function WorkflowUI(props) {
     );
   }
 
-  function backcheckSection() {
+  function bcLegend() {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: 16,
+          marginTop: 8,
+          fontSize: 11,
+          color: MUT,
+          fontFamily: mono,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span>
+          <span style={{ color: SUBINK }}>value</span> = original / re-survey
+          agree
+        </span>
+        <span>
+          <span style={{ color: ROSE, fontWeight: 700 }}>red {'\u2192'}</span> =
+          changed on re-survey
+        </span>
+        <span>
+          each cell: original / re-survey {'\u00b7'} surveyor original (T){' '}
+          {'\u2192'} back-check (BC)
+        </span>
+      </div>
+    );
+  }
+
+  // three J-PAL back-check types as big colored numbers
+  function bcTypeChips(items) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: 26,
+          flexWrap: 'wrap',
+          fontFamily: mono,
+          margin: '4px 0 12px',
+        }}
+      >
+        {items.map(function (it) {
+          var ok = it.v == null || it.v >= it.thr;
+          return (
+            <div key={it.k} style={{ minWidth: 132 }}>
+              {dlbl(it.k)}
+              <div
+                style={{
+                  color: it.v == null ? MUT : ok ? GREEN : ROSE,
+                  fontSize: 20,
+                  fontWeight: 800,
+                }}
+              >
+                {it.v == null ? '\u2014' : it.v.toFixed(1) + '%'}
+              </div>
+              <div style={{ color: MUT, fontSize: 11, fontFamily: sans }}>
+                {it.hint}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // round-level view (default): the cycle's aggregate back-check
+  function roundBackcheck() {
     return (
       <div>
         <div
@@ -706,15 +791,18 @@ function WorkflowUI(props) {
             marginBottom: 8,
           }}
         >
-          Independent back-check &mdash; a stratified sample of this
-          cycle&rsquo;s households re-surveyed by a different surveyor. The
-          re-survey matched the original vitamin-A result on{' '}
+          A stratified sample of this cycle&rsquo;s households re-surveyed by a
+          different surveyor. The re-survey matched the original vitamin-A
+          result on{' '}
           <b>
             {bc.outcome_agreement_pct != null && bc.n_backchecked != null
               ? Math.round((bc.outcome_agreement_pct / 100) * bc.n_backchecked)
               : '\u2014'}
           </b>{' '}
-          of {bc.n_backchecked} re-surveyed households.
+          of {bc.n_backchecked} re-surveyed households.{' '}
+          <span style={{ color: MUT, fontWeight: 400 }}>
+            Click a surveyor in the scorecard for their Type 1/2/3 back-check.
+          </span>
         </div>
         <div
           style={{
@@ -750,32 +838,76 @@ function WorkflowUI(props) {
           })}
         </div>
         {bcTable()}
+        {bcLegend()}
+      </div>
+    );
+  }
+
+  // surveyor view: one surveyor's cumulative back-check across all cycles,
+  // broken out by the three J-PAL types (the single-cycle sample is too small).
+  function surveyorBackcheck(sid, sb) {
+    return (
+      <div>
         <div
           style={{
             display: 'flex',
-            gap: 16,
-            marginTop: 8,
-            fontSize: 11,
-            color: MUT,
-            fontFamily: mono,
+            alignItems: 'baseline',
+            gap: 10,
             flexWrap: 'wrap',
+            marginBottom: 8,
           }}
         >
-          <span>
-            <span style={{ color: SUBINK }}>value</span> = original / re-survey
-            agree
+          <span style={{ color: SUBINK, fontWeight: 700, fontSize: 13 }}>
+            Surveyor {sid} {'\u00b7'} all cycles {'\u00b7'} n={sb.n} re-surveyed
           </span>
-          <span>
-            <span style={{ color: ROSE, fontWeight: 700 }}>red {'\u2192'}</span>{' '}
-            = changed on re-survey
-          </span>
-          <span>
-            each cell: original / re-survey {'\u00b7'} surveyor original (T){' '}
-            {'\u2192'} back-check (BC)
-          </span>
+          <button
+            onClick={function () {
+              setSelSurv(null);
+            }}
+            style={{
+              cursor: 'pointer',
+              border: '1px solid ' + LINE,
+              background: '#fff',
+              color: INDIGO,
+              borderRadius: 7,
+              fontSize: 11,
+              padding: '3px 9px',
+              fontFamily: sans,
+            }}
+          >
+            View all surveyors
+          </button>
         </div>
+        {bcTypeChips([
+          {
+            k: 'Type 1 \u00b7 identity',
+            v: sb.type1_pct,
+            thr: 90,
+            hint: 'stable fields (sex/age/present) \u2014 zero tolerance',
+          },
+          {
+            k: 'Type 2 \u00b7 location',
+            v: sb.type2_pct,
+            thr: 90,
+            hint: 're-survey co-located \u2264' + (sb.t2_thresh_m || 25) + ' m',
+          },
+          {
+            k: 'Type 3 \u00b7 outcome',
+            v: sb.type3_pct,
+            thr: 90,
+            hint: 'vitamin-A result reproduces',
+          },
+        ])}
+        {bcTable(sb.rows)}
+        {bcLegend()}
       </div>
     );
+  }
+
+  function backcheckSection() {
+    var sbMap = data.surveyor_backcheck || {};
+    var sb = selSurv ? sbMap[selSurv] : null;
+    return sb ? surveyorBackcheck(selSurv, sb) : roundBackcheck();
   }
 
   function roundTabs() {
@@ -1133,8 +1265,8 @@ function WorkflowUI(props) {
             <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = below
             threshold
           </span>
-          <span>
-            back-check cell shows agreement % ·n re-surveyed for that surveyor
+          <span style={{ color: INDIGO }}>
+            click a surveyor → back-check below
           </span>
         </div>
       </div>
@@ -1150,7 +1282,8 @@ function WorkflowUI(props) {
             marginBottom: 10,
           }}
         >
-          Independent back-check · {tWard} · R{rd.round}
+          Independent back-check ·{' '}
+          {selSurv ? 'Surveyor ' + selSurv : tWard + ' · R' + rd.round}
         </div>
         {backcheckSection()}
       </div>
