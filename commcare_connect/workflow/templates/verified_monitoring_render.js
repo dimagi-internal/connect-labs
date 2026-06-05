@@ -8,7 +8,7 @@
 // that moves to that cycle's two real wards; and ONE drillable-metric block where
 // every metric — the survey-quality checks AND the independent back-check — opens
 // its own evidence below when clicked. Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V30
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V31
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -329,11 +329,15 @@ function WorkflowUI(props) {
     }
     function tip() {
       if (!hoverPt) return null;
-      var tw = 150,
-        th = 22;
+      var label = hoverPt.label + ' · R' + hoverPt.r + ' · ' + pct(hoverPt.v);
+      var fs = 8.5,
+        th = 16,
+        textX = 16; // left pad: dot + gap
+      // size the box to the text so white text never spills past the dark fill
+      var tw = textX + label.length * fs * 0.6 + 8;
       var tx = Math.max(2, Math.min(w - tw - 2, hoverPt.x - tw / 2));
-      var ty = hoverPt.y - th - 9;
-      if (ty < 2) ty = hoverPt.y + 11;
+      var ty = hoverPt.y - th - 8;
+      if (ty < 2) ty = hoverPt.y + 10;
       return (
         <g pointerEvents="none">
           <rect
@@ -341,19 +345,19 @@ function WorkflowUI(props) {
             y={ty}
             width={tw}
             height={th}
-            rx="4"
+            rx="3"
             fill="#0f172a"
             opacity="0.93"
           />
-          <circle cx={tx + 12} cy={ty + th / 2} r="3.5" fill={hoverPt.color} />
+          <circle cx={tx + 8} cy={ty + th / 2} r="2.8" fill={hoverPt.color} />
           <text
-            x={tx + 21}
-            y={ty + 15}
+            x={tx + textX}
+            y={ty + th / 2 + 3}
             fill="#fff"
-            fontSize="11"
+            fontSize={fs}
             fontFamily={mono}
           >
-            {hoverPt.label + ' · R' + hoverPt.r + ' · ' + pct(hoverPt.v)}
+            {label}
           </text>
         </g>
       );
