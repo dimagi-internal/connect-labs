@@ -1051,6 +1051,21 @@ class ProgramGroupAddFromMapView(_LabsContextSyncMixin, LoginRequiredMixin, Temp
 
         all_opps = get_org_data(self.request).get("opportunities", []) or []
         context["sd_opportunities"] = _filter_demo_junk_opps(all_opps)
+        # Open the map over the program's existing footprint so the Boundaries layer
+        # actually loads (and the country auto-detects) instead of a cold whole-country
+        # view where the by-name ward search falls back to a place geocoder. Same seed
+        # the new-plan map uses; carries the iso so the boundary search works on entry.
+        try:
+            seed = _program_map_seed(ProgramPlanDataAccess(program_id, request=self.request).list_plans())
+        except Exception:  # noqa: BLE001
+            logger.exception("microplans add-from-map seed failed (program=%s)", program_id)
+            seed = None
+        if seed:
+            context["map_country_iso"] = seed.get("iso") or ""
+            if seed.get("lng") is not None:
+                context["map_center_lng"] = seed["lng"]
+                context["map_center_lat"] = seed["lat"]
+                context["map_zoom"] = seed["zoom"]
         try:
             group = ProgramPlanDataAccess(program_id, request=self.request).get_group(group_id)
             context["group_name"] = group.name
