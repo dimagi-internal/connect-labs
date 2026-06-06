@@ -335,11 +335,19 @@ def create_workflow_from_template(
         )
         pipeline_data_access.close()
 
-        # Determine alias based on template type
+        # Determine the source alias for this pipeline. A template may declare
+        # its own ``pipeline_alias`` — this is the contract its render code
+        # (``view.pipelines.<alias>``) and ``snapshot_inputs.pipelines`` both
+        # reference, so it lives with the template, not in this far-away map.
+        # Fall back to the legacy per-key map, then to ``"data"``.
+        #
+        # Mismatch is silent and nasty (see #464): if the source alias doesn't
+        # match what the render reads, live KPI cells render as dashes AND the
+        # completion snapshot filters to an empty pipelines dict.
         alias_map = {
             "performance_review": "performance_data",
         }
-        pipeline_alias = alias_map.get(template_key, "data")
+        pipeline_alias = template.get("pipeline_alias") or alias_map.get(template_key, "data")
 
         # Add pipeline as a source with a default alias
         pipeline_sources = [
