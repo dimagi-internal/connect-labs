@@ -241,20 +241,69 @@ def _coverage(records, arm):
     return round(100.0 * got / len(elig), 1), len(elig)
 
 
+_REQUIRED_FIELDS = ["lat", "lon", "start_ts", "enumerator_id", "vitamin_a_received"]
+
+
+def _quality_record_sample(cfg, surveyor_prims, all_prims, max_rows=14):
+    """One row per survey for the metric drill-through — each of a surveyor's
+    primary records with the per-record values + flags the scorecard rolls up
+    (so clicking a quality cell can show the underlying surveys). Flagged rows
+    sort first so the interesting cases surface."""
+    from collections import Counter
+
+    floor = ((cfg.get("quality") or {}).get("duration_min") or {}).get("floor", 4)
+    hh_counts = Counter(r["household_id"] for r in all_prims)
+    sig_counts = Counter((r.get("lat"), r.get("lon"), r.get("start_ts")) for r in all_prims)
+    out = []
+    for r in surveyor_prims:
+        recv = bool(r.get("vitamin_a_received"))
+        photo = r.get("evidence_photo")
+        dur = r.get("duration_min")
+        miss = [k for k in _REQUIRED_FIELDS if r.get(k) is None]
+        cons = not (
+            (recv and not r.get("child_present"))
+            or (recv and not r.get("eligible"))
+            or (r.get("child_present") and r.get("child_age_months") is None)
+        )
+        dup = hh_counts[r["household_id"]] > 1 or sig_counts[(r.get("lat"), r.get("lon"), r.get("start_ts"))] > 1
+        gps = r.get("gps_offset_m")
+        rec = {
+            "hh": r["household_id"],
+            "recv": recv,
+            "photo": (bool(photo) if photo is not None else None),
+            "gps": (round(gps, 1) if gps is not None else None),
+            "dur": dur,
+            "short": (dur is not None and dur < floor),
+            "miss": miss,
+            "cons": cons,
+            "dup": dup,
+        }
+        rec["_flagged"] = (
+            (recv and rec["photo"] is not True)
+            or (gps is not None and gps > 15)
+            or rec["short"]
+            or bool(miss)
+            or (not cons)
+            or dup
+        )
+        out.append(rec)
+    out.sort(key=lambda x: (not x["_flagged"], str(x["hh"])))
+    for x in out:
+        x.pop("_flagged", None)
+    return out[:max_rows]
+
+
 def _surveyor_scorecard(cfg, records):
     """Per-surveyor quality KPIs for the program ward — one row per surveyor for
     the scorecard. Each surveyor's metrics are computed from their OWN records via
     the shared library (the same algorithms as the round-level KPIs)."""
     tw = [r for r in records if r.get("arm") == "treatment"]
-    surveyors = sorted({r["enumerator_id"] for r in tw if r["form_type"] == "primary"})
+    all_prims = [r for r in tw if r["form_type"] == "primary"]
+    surveyors = sorted({r["enumerator_id"] for r in all_prims})
     rows = []
     for s in surveyors:
-        sub = [
-            r
-            for r in tw
-            if (r["form_type"] == "primary" and r["enumerator_id"] == s)
-            or (r["form_type"] == "back_check" and r.get("original_enumerator_id") == s)
-        ]
+        prims = [r for r in all_prims if r["enumerator_id"] == s]
+        sub = prims + [r for r in tw if r["form_type"] == "back_check" and r.get("original_enumerator_id") == s]
         qm = results_to_map(run_metrics(sub, layers=["survey_quality"], config=cfg))
         bm = results_to_map(run_metrics(sub, layers=["backcheck"], config=cfg))
 
@@ -273,6 +322,7 @@ def _surveyor_scorecard(cfg, records):
                 "duplicates": _v(qm, "duplicate_integrity"),
                 "backcheck": _v(bm, "backcheck_outcome_agreement"),
                 "backcheck_n": (bm.get("backcheck_coverage") or {}).get("n"),
+                "records": _quality_record_sample(cfg, prims, all_prims),
             }
         )
     return rows

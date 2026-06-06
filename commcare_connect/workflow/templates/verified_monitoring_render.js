@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V35
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V36
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -219,100 +219,295 @@ function WorkflowUI(props) {
     },
   };
 
-  // info panel for a clicked scorecard quality cell — meaning + this cycle's
-  // computed detail for that metric (from the survey_quality library).
-  function qmetricPanel() {
-    if (!qSel || !QMETA[qSel.key]) return null;
-    var m = QMETA[qSel.key];
-    var lm = (rd.quality || {})[m.lib] || {};
-    var d = lm.detail || {};
-    var who = qSel.surveyor
-      ? 'Surveyor ' + qSel.surveyor
-      : 'Round · all surveyors';
+  // metric drill-through: one row per survey for the clicked quality cell, with
+  // that metric's per-record value + flag. Fills the bottom widget (replaces the
+  // back-check view while a quality cell is selected).
+  function qmetricDrill(surveyor, key) {
+    var m = QMETA[key];
+    if (!m) return null;
+    var scRows = rd.surveyor_scorecard || [];
+    var row = surveyor
+      ? scRows.filter(function (r) {
+          return r.surveyor === surveyor;
+        })[0]
+      : null;
+    var recs = row
+      ? (row.records || []).slice()
+      : scRows.reduce(function (a, r) {
+          return a.concat(r.records || []);
+        }, []);
+    var val = row ? row[key] : null;
     var valTxt =
-      qSel.value == null
+      val == null
         ? '—'
-        : qSel.key === 'duplicates'
-        ? qSel.value + ' dup'
-        : Number(qSel.value).toFixed(1) + '%';
-    function detailNode() {
-      if (qSel.key === 'evidence')
-        return (
-          <span>
-            <b>{d.with_photo}</b> of {lm.n} "received" records carry a proof
-            photo this cycle · <b>{d.n_missing}</b> missing, flagged.
-          </span>
-        );
-      if (qSel.key === 'gps')
-        return (
-          <span>
-            Median offset <b>{d.median_offset_m} m</b> · <b>{d.n_beyond}</b>{' '}
-            capture(s) beyond 15 m (max {d.max_offset_m} m), flagged.
-          </span>
-        );
-      if (qSel.key === 'completeness') {
-        var miss = d.missing_by_field || {};
-        var ks = Object.keys(miss);
-        return ks.length ? (
-          <span>
-            Missing-rate by field:{' '}
-            {ks
-              .map(function (f) {
-                return f + ' ' + (miss[f] || 0) + '%';
-              })
-              .join(' · ')}
-            .
-          </span>
-        ) : (
-          <span>All required fields present this cycle.</span>
-        );
-      }
-      if (qSel.key === 'duration')
-        return (
-          <span>
-            Median <b>{d.median_min} min</b> · plausible band {d.iqr_lo}–
-            {d.iqr_hi} min · <b>{d.n_too_short}</b> under {d.floor} min (too
-            fast), flagged.
-          </span>
-        );
-      if (qSel.key === 'consistency')
-        return (
-          <span>
-            <b>{d.n_violations}</b> record(s) flagged this cycle (a "received"
-            record with no eligible child present).
-          </span>
-        );
-      if (qSel.key === 'duplicates')
-        return (
-          <span>
-            <b>{d.dup_household_id || 0}</b> duplicate household ID(s) ·{' '}
-            <b>{d.dup_gps_time || 0}</b> duplicate (GPS, timestamp)
-            signature(s).
-          </span>
-        );
-      return null;
+        : key === 'duplicates'
+        ? val + ' dup'
+        : Number(val).toFixed(1) + '%';
+
+    function flagged(r) {
+      if (key === 'evidence') return r.recv && r.photo !== true;
+      if (key === 'gps') return r.gps != null && r.gps > 15;
+      if (key === 'completeness') return (r.miss || []).length > 0;
+      if (key === 'duration') return !!r.short;
+      if (key === 'consistency') return !r.cons;
+      if (key === 'duplicates') return !!r.dup;
+      return false;
     }
+    function sortVal(r) {
+      if (key === 'gps') return -(r.gps || 0);
+      if (key === 'duration') return r.dur == null ? 1e9 : r.dur;
+      return flagged(r) ? 0 : 1;
+    }
+    recs.sort(function (a, b) {
+      return sortVal(a) - sortVal(b);
+    });
+    var nFlag = recs.filter(flagged).length;
+    recs = recs.slice(0, 12);
+
+    var th = {
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.03em',
+      padding: '5px 9px',
+      textAlign: 'left',
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var thR = Object.assign({}, th, { textAlign: 'right' });
+    var td = {
+      padding: '6px 9px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var tdR = Object.assign({}, td, { textAlign: 'right' });
+    var hhTd = Object.assign({}, td, {
+      color: SUBINK,
+      fontWeight: 600,
+      fontFamily: 'inherit',
+    });
+    function bar(frac, color) {
+      return (
+        <span
+          style={{
+            display: 'inline-block',
+            width: 84,
+            height: 7,
+            borderRadius: 4,
+            background: '#eef2f7',
+            overflow: 'hidden',
+            verticalAlign: 'middle',
+            marginRight: 8,
+          }}
+        >
+          <span
+            style={{
+              display: 'block',
+              height: '100%',
+              width: Math.max(0, Math.min(1, frac)) * 100 + '%',
+              background: color,
+            }}
+          />
+        </span>
+      );
+    }
+
+    var head, rowCells;
+    if (key === 'gps') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={thR}>GPS offset from assigned</th>
+          <th style={thR}>≤ 15 m</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="gps"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : SUBINK,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {bar((r.gps || 0) / 60, bad ? ROSE : INDIGO)}
+            {r.gps == null ? '—' : r.gps.toFixed(0) + ' m'}
+          </td>,
+          <td
+            key="ok"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'no' : 'yes'}
+          </td>,
+        ];
+      };
+    } else if (key === 'evidence') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Received vit-A</th>
+          <th style={th}>Proof photo</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td key="recv" style={Object.assign({}, td, { color: SUBINK })}>
+            {r.recv ? 'yes' : 'no'}
+          </td>,
+          <td
+            key="photo"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : r.recv ? GREEN : MUT,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {r.recv ? (r.photo ? 'yes' : 'MISSING') : 'n/a'}
+          </td>,
+        ];
+      };
+    } else if (key === 'duration') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={thR}>Interview duration</th>
+          <th style={thR}>Too fast</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="dur"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : SUBINK,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {bar((r.dur || 0) / 30, bad ? ROSE : INDIGO)}
+            {r.dur == null ? '—' : r.dur.toFixed(1) + ' min'}
+          </td>,
+          <td
+            key="ok"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'yes' : 'no'}
+          </td>,
+        ];
+      };
+    } else if (key === 'completeness') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Missing required fields</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="miss"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {bad ? (r.miss || []).join(', ') : 'complete'}
+          </td>,
+        ];
+      };
+    } else if (key === 'consistency') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Received</th>
+          <th style={th}>Edit checks</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td key="recv" style={Object.assign({}, td, { color: MUT })}>
+            {r.recv ? 'yes' : 'no'}
+          </td>,
+          <td
+            key="ok"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'violation' : 'pass'}
+          </td>,
+        ];
+      };
+    } else {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Duplicate record</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="dup"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'duplicate' : 'unique'}
+          </td>,
+        ];
+      };
+    }
+    var who = surveyor ? 'Surveyor ' + surveyor : 'all surveyors';
     return (
-      <div
-        style={{
-          marginTop: 12,
-          padding: '11px 13px',
-          borderRadius: 9,
-          border: '1px solid ' + LINE,
-          background: '#f5f6ff',
-        }}
-      >
+      <div>
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'baseline',
             gap: 10,
+            flexWrap: 'wrap',
+            marginBottom: 2,
           }}
         >
           <div style={{ color: SUBINK, fontWeight: 700, fontSize: 13 }}>
             {m.label}{' '}
-            <span style={{ color: MUT, fontWeight: 400 }}>· {who}</span>{' '}
+            <span style={{ color: MUT, fontWeight: 400 }}>
+              · {who} · this cycle
+            </span>{' '}
             <span style={{ fontFamily: mono, color: INDIGO }}>{valTxt}</span>
           </div>
           <button
@@ -321,37 +516,32 @@ function WorkflowUI(props) {
             }}
             style={{
               cursor: 'pointer',
-              border: 'none',
-              background: 'transparent',
-              color: MUT,
-              fontSize: 16,
-              lineHeight: 1,
-              padding: 0,
+              border: '1px solid ' + LINE,
+              background: '#fff',
+              color: INDIGO,
+              borderRadius: 7,
+              fontSize: 11,
+              padding: '3px 9px',
+              fontFamily: sans,
             }}
           >
-            ×
+            ← back-check
           </button>
         </div>
-        <div
-          style={{
-            color: SUBINK,
-            fontSize: 12.5,
-            marginTop: 5,
-            lineHeight: 1.5,
-          }}
-        >
-          {m.blurb}
+        <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
+          {m.blurb} One row per survey ({nFlag} flagged in this sample).
         </div>
-        <div
-          style={{
-            color: SUBINK,
-            fontSize: 12.5,
-            marginTop: 6,
-            lineHeight: 1.5,
-            fontFamily: mono,
-          }}
-        >
-          {detailNode()}
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{ borderCollapse: 'collapse', width: '100%', minWidth: 440 }}
+          >
+            <thead>{head}</thead>
+            <tbody>
+              {recs.map(function (r, i) {
+                return <tr key={i}>{rowCells(r)}</tr>;
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     );
@@ -867,6 +1057,7 @@ function WorkflowUI(props) {
               isAgg
                 ? null
                 : function () {
+                    setQSel(null);
                     setSelSurv(row.surveyor);
                   }
             }
@@ -908,8 +1099,12 @@ function WorkflowUI(props) {
               qSel.surveyor === (isAgg ? null : row.surveyor);
             function onCell() {
               if (isBc) {
-                if (!isAgg) setSelSurv(row.surveyor);
+                if (!isAgg) {
+                  setQSel(null);
+                  setSelSurv(row.surveyor);
+                }
               } else if (QMETA[c[0]]) {
+                if (!isAgg) setSelSurv(row.surveyor);
                 setQSel({
                   key: c[0],
                   surveyor: isAgg ? null : row.surveyor,
@@ -1313,6 +1508,8 @@ function WorkflowUI(props) {
   }
 
   function backcheckSection() {
+    // a clicked quality cell takes over the widget with a metric drill-through
+    if (qSel && QMETA[qSel.key]) return qmetricDrill(qSel.surveyor, qSel.key);
     if (!effSurv || !sbMap[effSurv]) return null;
     return surveyorBackcheck(effSurv, sbMap[effSurv]);
   }
@@ -1546,7 +1743,6 @@ function WorkflowUI(props) {
           surveyor
         </div>
         {scorecardTable()}
-        {qmetricPanel()}
         <div
           style={{
             display: 'flex',
@@ -1587,7 +1783,10 @@ function WorkflowUI(props) {
             marginBottom: 10,
           }}
         >
-          Independent back-check{effSurv ? ' · Surveyor ' + effSurv : ''}
+          {qSel && QMETA[qSel.key]
+            ? 'Survey-quality detail'
+            : 'Independent back-check' +
+              (effSurv ? ' · Surveyor ' + effSurv : '')}
         </div>
         {backcheckSection()}
       </div>
