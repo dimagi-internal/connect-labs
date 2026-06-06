@@ -244,11 +244,11 @@ def _coverage(records, arm):
 _REQUIRED_FIELDS = ["lat", "lon", "start_ts", "enumerator_id", "vitamin_a_received"]
 
 
-def _quality_record_sample(cfg, surveyor_prims, all_prims, max_rows=14):
-    """One row per survey for the metric drill-through — each of a surveyor's
-    primary records with the per-record values + flags the scorecard rolls up
-    (so clicking a quality cell can show the underlying surveys). Flagged rows
-    sort first so the interesting cases surface."""
+def _quality_record_sample(cfg, surveyor_prims, all_prims, max_rows=None):
+    """One row per survey for the metric drill-through — EVERY one of a
+    surveyor's primary records with the per-record values + flags the scorecard
+    rolls up (so clicking a quality cell shows the full census of surveys, not a
+    sample). Flagged rows sort first so the interesting cases surface."""
     from collections import Counter
 
     floor = ((cfg.get("quality") or {}).get("duration_min") or {}).get("floor", 4)
@@ -290,7 +290,7 @@ def _quality_record_sample(cfg, surveyor_prims, all_prims, max_rows=14):
     out.sort(key=lambda x: (not x["_flagged"], str(x["hh"])))
     for x in out:
         x.pop("_flagged", None)
-    return out[:max_rows]
+    return out if max_rows is None else out[:max_rows]
 
 
 def _surveyor_scorecard(cfg, records):
@@ -328,7 +328,7 @@ def _surveyor_scorecard(cfg, records):
     return rows
 
 
-def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=12):
+def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=None):
     """Per-surveyor back-check profile across ALL cycles, by J-PAL type.
 
     A single cycle's per-surveyor back-check sample is too small for the binary
@@ -363,7 +363,7 @@ def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=12):
             "type3_pct": (m.get("backcheck_outcome_agreement") or {}).get("value"),
             "prtest_p": (m.get("backcheck_outcome_prtest") or {}).get("value"),
             "t2_thresh_m": t2_thresh_m,
-            "rows": rows[:max_rows],
+            "rows": rows if max_rows is None else rows[:max_rows],
         }
     return out
 
