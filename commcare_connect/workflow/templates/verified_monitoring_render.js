@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V34
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V35
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -40,9 +40,11 @@ function WorkflowUI(props) {
   var rd = rounds[sel] || null;
   // selected surveyor (drives the back-check section); null = round-level view
   var [selSurv, setSelSurv] = React.useState(null);
-  // hovered trend point (for the tooltip) and which back-check section's info is open
+  // hovered trend point (for the tooltip), back-check info popup {key,x,y},
+  // and the selected scorecard quality metric {key,surveyor,value}
   var [hoverPt, setHoverPt] = React.useState(null);
   var [bcInfo, setBcInfo] = React.useState(null);
+  var [qSel, setQSel] = React.useState(null);
 
   // ---- per-round map (shared ConnectMap; moves each round) ----
   var [mapLibReady, setMapLibReady] = React.useState(
@@ -176,6 +178,185 @@ function WorkflowUI(props) {
         }, bcIds[0])
       : null;
 
+  // scorecard quality metrics: what each checks + the library detail key, so a
+  // clicked cell can open a relevant info panel below the table.
+  var QMETA = {
+    evidence: {
+      lib: 'evidence_capture',
+      label: 'Evidence capture',
+      blurb:
+        'A proof photo on every "received" record — the auditable evidence behind a coverage claim.',
+    },
+    gps: {
+      lib: 'gps_within_15m',
+      label: 'GPS within 15 m',
+      blurb:
+        "The capture's GPS within 15 m of the assigned household — confirms the surveyor was actually there.",
+    },
+    completeness: {
+      lib: 'field_completeness',
+      label: 'Field completeness',
+      blurb:
+        'Every required field present on the record (no blanks left behind).',
+    },
+    duration: {
+      lib: 'duration_plausibility',
+      label: 'Interview duration',
+      blurb:
+        'Interview length within a plausible band — flags records too fast to be real.',
+    },
+    consistency: {
+      lib: 'consistency_pass',
+      label: 'Consistency checks',
+      blurb:
+        'Internal edit rules pass (e.g. a "received" record must have an eligible child present).',
+    },
+    duplicates: {
+      lib: 'duplicate_integrity',
+      label: 'Duplicate integrity',
+      blurb:
+        'No duplicate household IDs and no repeated (GPS, timestamp) — catches copy-pasted records.',
+    },
+  };
+
+  // info panel for a clicked scorecard quality cell — meaning + this cycle's
+  // computed detail for that metric (from the survey_quality library).
+  function qmetricPanel() {
+    if (!qSel || !QMETA[qSel.key]) return null;
+    var m = QMETA[qSel.key];
+    var lm = (rd.quality || {})[m.lib] || {};
+    var d = lm.detail || {};
+    var who = qSel.surveyor
+      ? 'Surveyor ' + qSel.surveyor
+      : 'Round · all surveyors';
+    var valTxt =
+      qSel.value == null
+        ? '—'
+        : qSel.key === 'duplicates'
+        ? qSel.value + ' dup'
+        : Number(qSel.value).toFixed(1) + '%';
+    function detailNode() {
+      if (qSel.key === 'evidence')
+        return (
+          <span>
+            <b>{d.with_photo}</b> of {lm.n} "received" records carry a proof
+            photo this cycle · <b>{d.n_missing}</b> missing, flagged.
+          </span>
+        );
+      if (qSel.key === 'gps')
+        return (
+          <span>
+            Median offset <b>{d.median_offset_m} m</b> · <b>{d.n_beyond}</b>{' '}
+            capture(s) beyond 15 m (max {d.max_offset_m} m), flagged.
+          </span>
+        );
+      if (qSel.key === 'completeness') {
+        var miss = d.missing_by_field || {};
+        var ks = Object.keys(miss);
+        return ks.length ? (
+          <span>
+            Missing-rate by field:{' '}
+            {ks
+              .map(function (f) {
+                return f + ' ' + (miss[f] || 0) + '%';
+              })
+              .join(' · ')}
+            .
+          </span>
+        ) : (
+          <span>All required fields present this cycle.</span>
+        );
+      }
+      if (qSel.key === 'duration')
+        return (
+          <span>
+            Median <b>{d.median_min} min</b> · plausible band {d.iqr_lo}–
+            {d.iqr_hi} min · <b>{d.n_too_short}</b> under {d.floor} min (too
+            fast), flagged.
+          </span>
+        );
+      if (qSel.key === 'consistency')
+        return (
+          <span>
+            <b>{d.n_violations}</b> record(s) flagged this cycle (a "received"
+            record with no eligible child present).
+          </span>
+        );
+      if (qSel.key === 'duplicates')
+        return (
+          <span>
+            <b>{d.dup_household_id || 0}</b> duplicate household ID(s) ·{' '}
+            <b>{d.dup_gps_time || 0}</b> duplicate (GPS, timestamp)
+            signature(s).
+          </span>
+        );
+      return null;
+    }
+    return (
+      <div
+        style={{
+          marginTop: 12,
+          padding: '11px 13px',
+          borderRadius: 9,
+          border: '1px solid ' + LINE,
+          background: '#f5f6ff',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: 10,
+          }}
+        >
+          <div style={{ color: SUBINK, fontWeight: 700, fontSize: 13 }}>
+            {m.label}{' '}
+            <span style={{ color: MUT, fontWeight: 400 }}>· {who}</span>{' '}
+            <span style={{ fontFamily: mono, color: INDIGO }}>{valTxt}</span>
+          </div>
+          <button
+            onClick={function () {
+              setQSel(null);
+            }}
+            style={{
+              cursor: 'pointer',
+              border: 'none',
+              background: 'transparent',
+              color: MUT,
+              fontSize: 16,
+              lineHeight: 1,
+              padding: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div
+          style={{
+            color: SUBINK,
+            fontSize: 12.5,
+            marginTop: 5,
+            lineHeight: 1.5,
+          }}
+        >
+          {m.blurb}
+        </div>
+        <div
+          style={{
+            color: SUBINK,
+            fontSize: 12.5,
+            marginTop: 6,
+            lineHeight: 1.5,
+            fontFamily: mono,
+          }}
+        >
+          {detailNode()}
+        </div>
+      </div>
+    );
+  }
+
   function pct(x) {
     return x == null ? '—' : x.toFixed(1) + '%';
   }
@@ -196,6 +377,90 @@ function WorkflowUI(props) {
     borderRadius: 12,
     boxShadow: SHADOW,
   };
+
+  // floating popup for a back-check section's info (method + source). Fixed
+  // position at the click point so it overlays without reflowing the table.
+  function bcInfoPopup() {
+    if (!bcInfo) return null;
+    var W = 330;
+    var vw = typeof window !== 'undefined' ? window.innerWidth || 1200 : 1200;
+    var left = Math.min(Math.max(8, (bcInfo.x || vw / 2) - W / 2), vw - W - 8);
+    var top = (bcInfo.y || 80) + 14;
+    return (
+      <div>
+        <div
+          onClick={function () {
+            setBcInfo(null);
+          }}
+          style={{ position: 'fixed', inset: 0, zIndex: 50 }}
+        />
+        <div
+          style={{
+            position: 'fixed',
+            left: left,
+            top: top,
+            width: W,
+            zIndex: 51,
+            background: '#fff',
+            border: '1px solid ' + LINE,
+            borderRadius: 10,
+            boxShadow: '0 10px 30px rgba(16,24,40,0.20)',
+            padding: '12px 14px',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              marginBottom: 5,
+            }}
+          >
+            <b style={{ color: SUBINK, fontSize: 13 }}>{bcInfo.label}</b>
+            <button
+              onClick={function () {
+                setBcInfo(null);
+              }}
+              style={{
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                color: MUT,
+                fontSize: 16,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <div style={{ color: SUBINK, fontSize: 12.5, lineHeight: 1.5 }}>
+            {bcInfo.info}
+          </div>
+          <div
+            style={{
+              color: MUT,
+              fontSize: 11.5,
+              lineHeight: 1.5,
+              marginTop: 7,
+            }}
+          >
+            Method: independent back-checks per J-PAL/IPA (bcstats) and World
+            Bank DIME {'—'}{' '}
+            <a
+              href="https://dimewiki.worldbank.org/Back_Checks"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: INDIGO }}
+            >
+              dimewiki.worldbank.org/Back_Checks
+            </a>
+            .
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   function sw(color, dashed) {
     return (
@@ -586,16 +851,7 @@ function WorkflowUI(props) {
       return (
         <tr
           key={row.surveyor}
-          onClick={
-            isAgg
-              ? null
-              : function () {
-                  setSelSurv(row.surveyor);
-                }
-          }
-          title={isAgg ? null : 'View ' + row.surveyor + "'s back-check"}
           style={{
-            cursor: isAgg ? 'default' : 'pointer',
             background: on
               ? '#eef2ff'
               : isAgg
@@ -607,9 +863,18 @@ function WorkflowUI(props) {
           }}
         >
           <td
+            onClick={
+              isAgg
+                ? null
+                : function () {
+                    setSelSurv(row.surveyor);
+                  }
+            }
+            title={isAgg ? null : "Show this surveyor's back-check below"}
             style={Object.assign({}, td0, {
               fontWeight: isAgg ? 700 : 600,
               color: SUBINK,
+              cursor: isAgg ? 'default' : 'pointer',
             })}
           >
             {isAgg ? 'Round · all surveyors' : 'Surveyor ' + row.surveyor}
@@ -632,12 +897,42 @@ function WorkflowUI(props) {
           {COLS.map(function (c) {
             var v = row[c[0]];
             var bad = fail(v, c[2], c[3]);
+            var isBc = c[0] === 'backcheck';
+            // back-check cell selects the surveyor (drives the section below);
+            // a quality cell opens the metric info panel for that surveyor.
+            var clickable = isBc ? !isAgg : !!QMETA[c[0]];
+            var selCell =
+              !isBc &&
+              qSel &&
+              qSel.key === c[0] &&
+              qSel.surveyor === (isAgg ? null : row.surveyor);
+            function onCell() {
+              if (isBc) {
+                if (!isAgg) setSelSurv(row.surveyor);
+              } else if (QMETA[c[0]]) {
+                setQSel({
+                  key: c[0],
+                  surveyor: isAgg ? null : row.surveyor,
+                  value: v,
+                });
+              }
+            }
             return (
               <td
                 key={c[0]}
+                onClick={clickable ? onCell : null}
+                title={
+                  clickable
+                    ? isBc
+                      ? "Show this surveyor's back-check below"
+                      : 'What this metric checks'
+                    : null
+                }
                 style={Object.assign({}, td, {
                   color: v == null ? MUT : bad ? ROSE : GREEN,
                   fontWeight: bad ? 700 : 500,
+                  cursor: clickable ? 'pointer' : 'default',
+                  boxShadow: selCell ? 'inset 0 0 0 1.5px ' + INDIGO : 'none',
                 })}
               >
                 {cellTxt(row, c)}
@@ -725,11 +1020,12 @@ function WorkflowUI(props) {
     ];
   }
 
-  // surveyor view: ONE row per re-surveyed household; columns grouped under the
-  // three back-check sections, each with an info button (method + source).
+  // surveyor view: TWO rows per re-surveyed household (Original / Backcheck),
+  // columns grouped under the three back-check sections. Section info opens as a
+  // floating popup (does not reflow the table).
   function surveyorBackcheck(sid, sb) {
     var sections = bcSections(sb);
-    var rows = (sb.rows || []).slice(0, 12);
+    var rows = (sb.rows || []).slice(0, 8);
     var thr = sb.t2_thresh_m || 25;
     function fieldOf(row, key) {
       var fs = row.fields || [];
@@ -746,13 +1042,6 @@ function WorkflowUI(props) {
       borderBottom: '1px solid ' + LINE,
       whiteSpace: 'nowrap',
     };
-    var td = {
-      padding: '6px 9px',
-      fontSize: 12.5,
-      fontFamily: mono,
-      borderBottom: '1px solid ' + LINE,
-      whiteSpace: 'nowrap',
-    };
     var groupTh = {
       padding: '6px 9px 4px',
       borderBottom: '2px solid ' + LINE,
@@ -760,62 +1049,73 @@ function WorkflowUI(props) {
       textAlign: 'left',
       verticalAlign: 'bottom',
     };
+    var cellBase = {
+      padding: '6px 9px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      whiteSpace: 'nowrap',
+    };
+    // original row: no bottom border (groups the pair); backcheck row: solid
+    function cell(extra, bottom) {
+      return Object.assign(
+        {},
+        cellBase,
+        { borderBottom: bottom ? '1px solid ' + LINE : 'none' },
+        extra || {},
+      );
+    }
     function ncols(s) {
       return s.mode === 'distance' ? 1 : s.fields.length;
     }
-    function cmpCell(row, key, sectKey, first) {
+    // identity / outcome value cell for one side of one household
+    function vcell(row, key, which, first, bottom) {
       var f = fieldOf(row, key);
-      var st = Object.assign(
-        {},
-        td,
-        first ? { borderLeft: '1px solid ' + LINE } : {},
-      );
+      var st = cell(first ? { borderLeft: '1px solid ' + LINE } : {}, bottom);
       if (!f)
         return (
-          <td key={sectKey + key} style={st}>
+          <td key={which + key} style={st}>
             —
           </td>
         );
-      if (f.match)
+      if (which === 'original')
         return (
           <td
-            key={sectKey + key}
+            key={which + key}
             style={Object.assign({}, st, { color: SUBINK })}
           >
             {yn(f.original)}
           </td>
         );
+      var ch = !f.match;
       return (
         <td
-          key={sectKey + key}
-          style={Object.assign({}, st, { color: ROSE, fontWeight: 700 })}
-        >
-          {yn(f.original)} {'→'} {yn(f.backcheck)}
-        </td>
-      );
-    }
-    function distCell(row) {
-      var dm = row.gps_delta_m;
-      var bad = dm != null && dm > thr;
-      return (
-        <td
-          key="loc"
-          style={Object.assign({}, td, {
-            borderLeft: '1px solid ' + LINE,
-            color: bad ? ROSE : SUBINK,
-            fontWeight: bad ? 700 : 400,
+          key={which + key}
+          style={Object.assign({}, st, {
+            color: ch ? ROSE : MUT,
+            fontWeight: ch ? 700 : 400,
           })}
         >
-          {dm == null ? '—' : dm.toFixed(0) + ' m'}
+          {yn(f.backcheck)}
         </td>
       );
     }
     function infoBtn(s) {
-      var on = bcInfo === s.key;
+      var on = bcInfo && bcInfo.key === s.key;
       return (
         <button
-          onClick={function () {
-            setBcInfo(on ? null : s.key);
+          onClick={function (e) {
+            e.stopPropagation();
+            setBcInfo(
+              on
+                ? null
+                : {
+                    key: s.key,
+                    label: s.label,
+                    info: s.info,
+                    x: e.clientX,
+                    y: e.clientY,
+                  },
+            );
           }}
           title="What this checks + where it comes from"
           style={{
@@ -838,9 +1138,6 @@ function WorkflowUI(props) {
         </button>
       );
     }
-    var openSec = sections.filter(function (s) {
-      return s.key === bcInfo;
-    })[0];
     return (
       <div>
         <div
@@ -855,46 +1152,17 @@ function WorkflowUI(props) {
           across all cycles
         </div>
         <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
-          One row per re-surveyed household (mismatches first, showing{' '}
-          {Math.min(rows.length, sb.n)} of {sb.n}). Each section header shows
-          the share that agreed with the independent check {'·'} tap{' '}
+          Two rows per household — what the surveyor recorded vs the independent
+          re-survey (mismatches first, showing {Math.min(rows.length, sb.n)} of{' '}
+          {sb.n}). Each section header shows the share that agreed {'·'} tap{' '}
           <b style={{ fontFamily: mono }}>i</b> for what it means.
         </div>
-        {openSec ? (
-          <div
-            style={{
-              background: '#f5f6ff',
-              border: '1px solid ' + LINE,
-              borderRadius: 9,
-              padding: '9px 12px',
-              fontSize: 12,
-              color: SUBINK,
-              lineHeight: 1.5,
-              marginBottom: 10,
-            }}
-          >
-            <b>{openSec.label}.</b> {openSec.info}{' '}
-            <span style={{ color: MUT }}>
-              Method: independent back-checks per J-PAL/IPA (bcstats) and World
-              Bank DIME {'—'}{' '}
-              <a
-                href="https://dimewiki.worldbank.org/Back_Checks"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: INDIGO }}
-              >
-                dimewiki.worldbank.org/Back_Checks
-              </a>
-              .
-            </span>
-          </div>
-        ) : null}
         <div style={{ overflowX: 'auto' }}>
           <table
             style={{
               borderCollapse: 'collapse',
               width: '100%',
-              minWidth: 640,
+              minWidth: 600,
             }}
           >
             <thead>
@@ -942,7 +1210,7 @@ function WorkflowUI(props) {
               </tr>
               <tr>
                 <th style={th}>Household</th>
-                <th style={th}>Original {'→'} Re-survey</th>
+                <th style={th}>Record</th>
                 {sections.map(function (s) {
                   if (s.mode === 'distance')
                     return (
@@ -974,28 +1242,62 @@ function WorkflowUI(props) {
             </thead>
             <tbody>
               {rows.map(function (row, ri) {
-                return (
-                  <tr key={ri}>
+                var dm = row.gps_delta_m;
+                var distBad = dm != null && dm > thr;
+                return [
+                  <tr key={ri + 'o'}>
                     <td
-                      style={Object.assign({}, td, {
-                        fontFamily: 'inherit',
-                        fontWeight: 600,
-                        color: SUBINK,
-                      })}
+                      rowSpan={2}
+                      style={cell(
+                        {
+                          fontFamily: 'inherit',
+                          fontWeight: 600,
+                          color: SUBINK,
+                        },
+                        true,
+                      )}
                     >
                       {row.household_id}
                     </td>
-                    <td style={Object.assign({}, td, { color: MUT })}>
-                      {row.enumerator} {'→'} {row.backcheck_enumerator}
+                    <td style={cell({ color: MUT }, false)}>
+                      Original ({row.enumerator})
                     </td>
                     {sections.map(function (s) {
-                      if (s.mode === 'distance') return distCell(row);
+                      if (s.mode === 'distance')
+                        return (
+                          <td
+                            key="loc"
+                            rowSpan={2}
+                            style={cell(
+                              {
+                                borderLeft: '1px solid ' + LINE,
+                                color: distBad ? ROSE : SUBINK,
+                                fontWeight: distBad ? 700 : 400,
+                                verticalAlign: 'middle',
+                              },
+                              true,
+                            )}
+                          >
+                            {dm == null ? '—' : dm.toFixed(0) + ' m'}
+                          </td>
+                        );
                       return s.fields.map(function (c, ci) {
-                        return cmpCell(row, c[0], s.key, ci === 0);
+                        return vcell(row, c[0], 'original', ci === 0, false);
                       });
                     })}
-                  </tr>
-                );
+                  </tr>,
+                  <tr key={ri + 'b'}>
+                    <td style={cell({ color: MUT }, true)}>
+                      Backcheck ({row.backcheck_enumerator})
+                    </td>
+                    {sections.map(function (s) {
+                      if (s.mode === 'distance') return null;
+                      return s.fields.map(function (c, ci) {
+                        return vcell(row, c[0], 'backcheck', ci === 0, true);
+                      });
+                    })}
+                  </tr>,
+                ];
               })}
             </tbody>
           </table>
@@ -1003,12 +1305,8 @@ function WorkflowUI(props) {
         <div
           style={{ marginTop: 8, fontSize: 11, color: MUT, fontFamily: mono }}
         >
-          <span style={{ color: SUBINK }}>value</span> = original & re-survey
-          agree {'·'}{' '}
-          <span style={{ color: ROSE, fontWeight: 700 }}>
-            orig {'→'} re-survey
-          </span>{' '}
-          = changed on re-survey
+          <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = the
+          re-survey disagreed with what {sid} recorded
         </div>
       </div>
     );
@@ -1248,6 +1546,7 @@ function WorkflowUI(props) {
           surveyor
         </div>
         {scorecardTable()}
+        {qmetricPanel()}
         <div
           style={{
             display: 'flex',
@@ -1272,7 +1571,7 @@ function WorkflowUI(props) {
             per-cycle sample)
           </span>
           <span style={{ color: INDIGO }}>
-            click a surveyor → back-check below
+            click a quality cell → detail · click a surveyor → back-check below
           </span>
         </div>
       </div>
@@ -1292,6 +1591,7 @@ function WorkflowUI(props) {
         </div>
         {backcheckSection()}
       </div>
+      {bcInfoPopup()}
     </div>
   );
 }
