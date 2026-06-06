@@ -459,13 +459,26 @@ class BoundaryResolver:
 
     def _default_bbox_source(self, iso_code: str | None) -> str:
         """Source for a viewport query when the user hasn't picked one: the country's
-        preferred source that has *any* data, else Overture."""
+        preferred source that has *any* data, else Overture.
+
+        Cold-start (no iso yet): prefer **labs**. The boundary layer infers the
+        country from the first boundaries it loads, but Overture needs an iso up
+        front (parquet partition pruning) so it returns nothing without one — which
+        strands that auto-detect in a chicken-and-egg (no iso → no boundaries → no
+        iso). The labs source intersects by geometry alone, so it returns the
+        curated boundaries under the viewport with no iso, the country detects, and
+        the by-name search starts working. Fall back to Overture only when labs
+        isn't configured (over a country with no labs data, both return nothing, so
+        there's no regression)."""
         if iso_code:
             a3 = _iso.to_alpha3(iso_code) or iso_code
             for name in self._order_for(a3):
                 src = self._sources.get(name)
                 if src and any(src.covers(a3, lvl) for lvl in (LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY)):
                     return name
+            return "overture" if "overture" in self._sources else next(iter(self._sources))
+        if "labs" in self._sources:
+            return "labs"
         return "overture" if "overture" in self._sources else next(iter(self._sources))
 
     def bbox_source_name(self, source: str | None, iso: str | None) -> str:

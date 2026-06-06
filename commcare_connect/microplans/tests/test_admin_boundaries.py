@@ -68,6 +68,17 @@ class TestResolverSelection:
         assert r.source_for("NGA", 2).name == "labs"
         assert r.source_for("NGA", 3).name == "overture"
 
+    def test_cold_start_bbox_defaults_to_labs_not_overture(self):
+        # No iso yet (cold viewport): default to labs (intersects by geometry, no iso
+        # needed) so boundaries load + the country auto-detects. Overture needs an iso
+        # up front and would return nothing, stranding the detect (chicken-and-egg).
+        labs = _FakeSource("labs", [1, 2, 3])
+        ovr = _FakeSource("overture", [1, 2, 3])
+        r = BoundaryResolver(sources=[labs, ovr])
+        assert r.bbox_source_name(None, None) == "labs"
+        # When labs isn't configured, fall back to overture (no regression).
+        assert BoundaryResolver(sources=[ovr]).bbox_source_name(None, None) == "overture"
+
     def test_country_override_order(self):
         labs = _FakeSource("labs", [1, 2, 3])
         ovr = _FakeSource("overture", [1, 2, 3])
