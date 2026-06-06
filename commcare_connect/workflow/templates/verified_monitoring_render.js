@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V38
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V39
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -1118,6 +1118,7 @@ function WorkflowUI(props) {
             return (
               <td
                 key={c[0]}
+                data-cell={(isAgg ? 'all' : row.surveyor) + ':' + c[0]}
                 onClick={clickable ? onCell : null}
                 title={
                   clickable
@@ -1302,6 +1303,7 @@ function WorkflowUI(props) {
       var on = bcInfo && bcInfo.key === s.key;
       return (
         <button
+          data-bcinfo={s.key}
           onClick={function (e) {
             e.stopPropagation();
             setBcInfo(
