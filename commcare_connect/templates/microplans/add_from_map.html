@@ -87,6 +87,7 @@
     const TOKEN = "{{ mapbox_token|escapejs }}";
     const CSRF = "{{ csrf_token }}";
     const MANAGE_URL = "{{ manage_url|escapejs }}";
+    const COUNTRY_ISO = "{{ map_country_iso|escapejs }}";  // program footprint country (helps the ward search start working)
     const URLS = {
       bulk_create: "{{ bulk_create_url|escapejs }}",
       boundary_viewport: "{{ boundary_viewport_url|escapejs }}",
@@ -103,7 +104,10 @@
       map = new mapboxgl.Map({
         container: "afm-map",
         style: "mapbox://styles/mapbox/satellite-streets-v12",
-        center: [8.6753, 9.082], zoom: 5,
+        // Seeded over the program's footprint so the Boundaries layer loads + the
+        // country auto-detects (defaults to a whole-Nigeria view if no footprint yet).
+        center: [{{ map_center_lng|default:"8.6753" }}, {{ map_center_lat|default:"9.082" }}],
+        zoom: {{ map_zoom|default:"5" }},
       });
     } catch (e) { return; } // headless / no webgl
 
@@ -117,6 +121,7 @@
         mount: document.getElementById("afm-actions"),
         sdPickerEl: document.getElementById("sd-picker"),
         urls: URLS,
+        getCountryIso: () => COUNTRY_ISO || null,
         onCreated: (planIds) => { window.location = MANAGE_URL; },
       });
     });
