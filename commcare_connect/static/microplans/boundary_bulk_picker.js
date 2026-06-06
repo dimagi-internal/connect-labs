@@ -115,6 +115,13 @@
           refresh();
         },
       });
+      // Auto-open the Boundaries layer on entry. This surface exists to pick admin
+      // boundaries, so loading them immediately (rather than making the user hunt
+      // for the toggle) is the right default — and it loads the viewport's
+      // boundaries so the layer detects the country, which makes the name search
+      // return selectable wards right away instead of falling back to a geocoder.
+      if (adminLayer && typeof adminLayer.enable === 'function')
+        adminLayer.enable();
     }
 
     if (
