@@ -138,6 +138,10 @@ TEMPLATE = {
     "color": "blue",
     "multi_opp": False,
     "supports_saved_runs": True,
+    # The render code reads ``view.pipelines.flw_kpis`` and the snapshot below
+    # captures the ``flw_kpis`` alias, so the created pipeline source must use
+    # that same alias (not the default ``"data"``) — see #464.
+    "pipeline_alias": "flw_kpis",
     "snapshot_inputs": {
         "pipelines": ["flw_kpis"],
         "state_keys": ["worker_states", "spawned_tasks"],
