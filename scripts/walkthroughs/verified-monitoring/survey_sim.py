@@ -32,6 +32,10 @@ from commcare_connect.labs.survey_quality.stats import bbox, point_in_geom  # no
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _M_PER_DEG = 111_320.0  # metres per degree latitude (good enough at this scale)
+# Stable household attribute used as a Type-1 back-check identifier (a roof can't
+# change between two visits a week apart — a mismatch is a fabrication signal).
+_ROOF_TYPES = ["thatch", "metal sheet", "mud", "tile"]
+_ROOF_WEIGHTS = [0.42, 0.34, 0.16, 0.08]
 
 
 # --------------------------------------------------------------- geometry utils
@@ -135,6 +139,7 @@ def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_i
             "child_present": present,
             "child_sex": rng.choice(["M", "F"]),
             "child_age_months": age,
+            "roof_type": rng.choices(_ROOF_TYPES, weights=_ROOF_WEIGHTS, k=1)[0],
             "eligible": eligible,
             "vitamin_a_received": received,
             "dose_source": rng.choice(["campaign", "routine", "facility"]) if received else None,
@@ -183,15 +188,19 @@ def _gen_backchecks(rng, cfg, primaries, round_idx, base_id):
         sex = o["child_sex"]
         present = o["child_present"]
         age = o["child_age_months"]
+        roof = o.get("roof_type")
         # Type-1 (identity): a flagged surveyor also shows more identity discordance.
+        # Covers the respondent (sex/age/present) AND the household (roof type).
         t1_p = flagged.get("backcheck_type1_agreement", bc["type1_agreement"]) if is_flagged else bc["type1_agreement"]
         if rng.random() > t1_p:
-            # introduce a Type-1 discordance
+            # introduce a Type-1 discordance on one identifier
             roll = rng.random()
-            if roll < 0.34:
+            if roll < 0.25:
                 sex = "M" if sex == "F" else "F"
-            elif roll < 0.67:
+            elif roll < 0.5:
                 present = not present
+            elif roll < 0.75:
+                roof = rng.choice([r for r in _ROOF_TYPES if r != roof] or _ROOF_TYPES)
             elif age is not None:
                 age = age + rng.choice([-4, 4, 6])
         # Type-2 (location/protocol): the re-survey lands further from a flagged
@@ -220,6 +229,7 @@ def _gen_backchecks(rng, cfg, primaries, round_idx, base_id):
                 "child_present": present,
                 "child_sex": sex,
                 "child_age_months": age,
+                "roof_type": roof,
                 "eligible": o["eligible"],
                 "vitamin_a_received": outcome,
                 "dose_source": o["dose_source"],
@@ -328,7 +338,7 @@ def _surveyor_scorecard(cfg, records):
     return rows
 
 
-def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=None):
+def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=15):
     """Per-surveyor back-check profile across ALL cycles, by J-PAL type.
 
     A single cycle's per-surveyor back-check sample is too small for the binary
