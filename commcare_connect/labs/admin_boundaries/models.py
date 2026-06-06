@@ -5,10 +5,14 @@ Each row records its provenance in ``AdminBoundary.source``. Data can be sourced
 from:
 - GeoPoDe ("Geographic, Population & Demographic Data", https://geopode.world/) -
   a humanitarian geospatial repository operated by Novel-T (WHO-affiliated). It is
-  an AGGREGATOR: per country its boundaries originate upstream from WHO, HDX/OCHA,
-  or GRID3 (recorded per-country in ``fixtures/geopode_sources.json``). This is the
-  ward-level (ADM3) source for our loaded African countries - e.g. Nigeria's ~9,300
-  wards (upstream: WHO). LICENSE: no standard open license; GeoPoDe's terms state
+  an AGGREGATOR, NOT a single provider: each country's (and potentially each
+  layer's) boundaries originate upstream from a DIFFERENT provider, recorded
+  per-country in ``fixtures/geopode_sources.json`` - do not treat the set as
+  uniformly WHO. Across our currently-loaded countries the upstream split is:
+  WHO for 9 (CAF, CIV, COD, ETH, KEN, MOZ, MWI, NGA, SLE - incl. Nigeria's
+  ~9,300 ADM3 wards), HDX/OCHA for Liberia (LBR), GRID3 for Zambia (ZMB). This is
+  our ward-level (ADM3) source for these countries. LICENSE: no standard open
+  license; GeoPoDe's terms state
   its datasets are "available to non-profit or humanitarian applications" and are
   "operational" in nature and "do not constitute authoritative, government-sanctioned
   reference data." Our use is non-profit/humanitarian; attribute GeoPoDe (Novel-T)
