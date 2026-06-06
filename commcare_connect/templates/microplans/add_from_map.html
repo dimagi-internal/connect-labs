@@ -36,7 +36,7 @@
 <!-- Service-delivery opportunity picker (multi-select). Server-rendered + Alpine-
      initialised here (hidden); service_delivery_layer.js relocates it into the
      panel's "Service delivery" layer body. Same shared picker the editor uses. -->
-{{ user_opportunities|json_script:"sd-opportunity-data" }}
+{{ sd_opportunities|json_script:"sd-opportunity-data" }}
 <div id="sd-picker" class="hidden" data-sd
      x-data="labsContextPicker({mode:'multi', scope:['opp'], sourceIds:{opp:'sd-opportunity-data'}})">
   <div class="text-[10px] uppercase tracking-wide text-gray-500 mb-1 flex items-center justify-between">

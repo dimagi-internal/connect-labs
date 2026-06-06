@@ -1779,3 +1779,20 @@ def test_program_group_add_from_map_page_renders(client, django_user_model, monk
     # the study name + the boundary-bulk-picker surface are wired in
     assert "Kano CHC rooftop impact study" in body
     assert "boundary_bulk_picker.js" in body and "Back to study" in body
+
+
+def test_filter_demo_junk_opps_excludes_test_entries():
+    """The delivery-points picker drops obvious test/QA/throwaway opportunities."""
+    from commcare_connect.microplans.views import _filter_demo_junk_opps
+
+    opps = [
+        {"id": 1, "name": "Kano CHC Nutrition"},
+        {"id": 2, "name": "[TO DELETE] Test program"},
+        {"id": 3, "name": "DELETE-ME 4"},
+        {"id": 4, "name": "Sokoto MNCH [TEST]"},
+        {"id": 5, "name": "[DEMO] QA run"},
+        {"id": 6, "name": "Lagos Immunization"},
+        {"id": 7, "name": ""},  # unnamed → kept (we don't guess)
+    ]
+    kept = {o["id"] for o in _filter_demo_junk_opps(opps)}
+    assert kept == {1, 6, 7}
