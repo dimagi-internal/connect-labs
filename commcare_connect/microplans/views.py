@@ -82,6 +82,27 @@ def _sd_urls(opp_id=123):
     }
 
 
+# Name fragments that mark a test / QA / throwaway opportunity. Matched
+# case-insensitively as substrings, so "[TO DELETE] Foo", "DELETE-ME 3",
+# "Bar [TEST]", "QA demo" are all excluded from the delivery-points picker.
+_JUNK_OPP_MARKERS = ("to delete", "delete-me", "deleteme", "[test", "[demo", "[qa", "test opp", "dummy")
+
+
+def _filter_demo_junk_opps(opps: list) -> list:
+    """Drop obvious test/QA/throwaway opportunities from a picker list.
+
+    The service-delivery picker should show real delivery footprints, not the
+    test junk that accumulates in a shared account. Conservative substring match
+    on the opportunity name; anything unnamed is kept (we don't guess)."""
+    out = []
+    for o in opps:
+        name = (o.get("name") or "").lower()
+        if name and any(m in name for m in _JUNK_OPP_MARKERS):
+            continue
+        out.append(o)
+    return out
+
+
 def _program_map_seed(plans) -> dict | None:
     """Where to open the new-plan map so the Boundaries layer actually loads.
 
@@ -1022,6 +1043,14 @@ class ProgramGroupAddFromMapView(_LabsContextSyncMixin, LoginRequiredMixin, Temp
         )
         context["manage_url"] = reverse("microplans:program_group_page", args=[program_id, group_id])
         context["back_url"] = context["manage_url"]
+        # Service-delivery opportunity picker: the user's full opportunity list is
+        # noisy with test/QA/throwaway entries that clutter this picker (the planner
+        # only wants real delivery footprints). Filter obvious junk by name; the
+        # template dumps THIS list (sd_opportunities), not the raw user_opportunities.
+        from commcare_connect.labs.context import get_org_data
+
+        all_opps = get_org_data(self.request).get("opportunities", []) or []
+        context["sd_opportunities"] = _filter_demo_junk_opps(all_opps)
         try:
             group = ProgramPlanDataAccess(program_id, request=self.request).get_group(group_id)
             context["group_name"] = group.name
