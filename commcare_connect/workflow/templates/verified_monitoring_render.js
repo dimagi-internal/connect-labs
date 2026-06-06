@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V36
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V37
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -262,7 +262,7 @@ function WorkflowUI(props) {
       return sortVal(a) - sortVal(b);
     });
     var nFlag = recs.filter(flagged).length;
-    recs = recs.slice(0, 12);
+    var nTotal = recs.length;
 
     var th = {
       color: MUT,
@@ -529,13 +529,16 @@ function WorkflowUI(props) {
           </button>
         </div>
         <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
-          {m.blurb} One row per survey ({nFlag} flagged in this sample).
+          {m.blurb} One row per survey — all {nTotal} this cycle ({nFlag}{' '}
+          flagged).
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflow: 'auto', maxHeight: 380 }}>
           <table
             style={{ borderCollapse: 'collapse', width: '100%', minWidth: 440 }}
           >
-            <thead>{head}</thead>
+            <thead style={{ position: 'sticky', top: 0, background: '#fff' }}>
+              {head}
+            </thead>
             <tbody>
               {recs.map(function (r, i) {
                 return <tr key={i}>{rowCells(r)}</tr>;
@@ -1220,7 +1223,7 @@ function WorkflowUI(props) {
   // floating popup (does not reflow the table).
   function surveyorBackcheck(sid, sb) {
     var sections = bcSections(sb);
-    var rows = (sb.rows || []).slice(0, 8);
+    var rows = sb.rows || [];
     var thr = sb.t2_thresh_m || 25;
     function fieldOf(row, key) {
       var fs = row.fields || [];
@@ -1348,11 +1351,11 @@ function WorkflowUI(props) {
         </div>
         <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
           Two rows per household — what the surveyor recorded vs the independent
-          re-survey (mismatches first, showing {Math.min(rows.length, sb.n)} of{' '}
-          {sb.n}). Each section header shows the share that agreed {'·'} tap{' '}
+          re-survey (all {sb.n} re-surveyed, mismatches first). Each section
+          header shows the share that agreed {'·'} tap{' '}
           <b style={{ fontFamily: mono }}>i</b> for what it means.
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflow: 'auto', maxHeight: 460 }}>
           <table
             style={{
               borderCollapse: 'collapse',
