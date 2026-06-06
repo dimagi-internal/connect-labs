@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V37
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V38
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -1196,8 +1196,9 @@ function WorkflowUI(props) {
           ['child_present', 'Present'],
           ['child_sex', 'Sex'],
           ['child_age_months', 'Age'],
+          ['roof_type', 'Roof'],
         ],
-        info: "Stable facts that can't change between two visits — the child's sex, age, and whether the household exists. Disagreement here is the strongest fabrication signal. In J-PAL/IPA back-check terms these are “Type 1” variables: a difference can trigger action against the surveyor.",
+        info: "Stable facts that can't change between two visits — the child's sex and age, whether the household exists, and the household's roof type. Disagreement here is the strongest fabrication signal. In J-PAL/IPA back-check terms these are “Type 1” variables: a difference can trigger action against the surveyor.",
       },
       {
         key: 'location',
@@ -1351,8 +1352,10 @@ function WorkflowUI(props) {
         </div>
         <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
           Two rows per household — what the surveyor recorded vs the independent
-          re-survey (all {sb.n} re-surveyed, mismatches first). Each section
-          header shows the share that agreed {'·'} tap{' '}
+          re-survey. Back-checks are a stratified sample of surveys (n={sb.n} of{' '}
+          this surveyor's work across cycles); showing{' '}
+          {Math.min(rows.length, sb.n)}, mismatches first. Each section header
+          shows the share that agreed {'·'} tap{' '}
           <b style={{ fontFamily: mono }}>i</b> for what it means.
         </div>
         <div style={{ overflow: 'auto', maxHeight: 460 }}>
@@ -1360,7 +1363,7 @@ function WorkflowUI(props) {
             style={{
               borderCollapse: 'collapse',
               width: '100%',
-              minWidth: 600,
+              minWidth: 680,
             }}
           >
             <thead>

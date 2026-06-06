@@ -193,7 +193,7 @@ def duplicate_integrity(recs, cfg):
 #   Type 3 — the key outcome; may legitimately drift; tested statistically.
 
 # (field, tolerance) — tolerance 0 means exact match required.
-TYPE1_FIELDS = [("child_sex", 0), ("child_present", 0), ("child_age_months", 2)]
+TYPE1_FIELDS = [("child_sex", 0), ("child_present", 0), ("child_age_months", 2), ("roof_type", 0)]
 
 
 @register_metric("backcheck_coverage", "Back-check coverage", "backcheck", threshold=10.0)
@@ -299,6 +299,7 @@ COMPARE_FIELDS = [
     ("child_present", "Child present", "type1"),
     ("child_sex", "Child sex", "type1"),
     ("child_age_months", "Child age (mo)", "type1"),
+    ("roof_type", "Roof type", "type1"),
 ]
 
 
