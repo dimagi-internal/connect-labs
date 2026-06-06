@@ -143,8 +143,9 @@ scenes:
       values.
   persona: david
   provenance: S2
-  show: 'The per-surveyor quality scorecard: every metric computed from each surveyor''s
-    own records — one surveyor flagged REVIEW.'
+  show: The per-surveyor quality scorecard — evidence, GPS-within-15m, completeness,
+    duration, consistency, duplicates, and back-check, each computed from that surveyor's
+    own records — with one surveyor flagged REVIEW.
   title: The per-surveyor quality scorecard catches a surveyor
 - actions:
   - kind: scroll_to
@@ -217,6 +218,6 @@ scenes:
     / Location / Outcome, original over re-survey, the method behind an info button.
   title: The independent back-check confirms it
 why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
-narrative_synced_version: 6
+narrative_synced_version: 7
 narrative_synced_hash: 03e04b655f1dbcc193da85ad02b6f14e4016321734649811b4fe9e9f5791fb5f
-narrative_synced_at: '2026-06-06T21:06:15.433021+00:00'
+narrative_synced_at: '2026-06-06T23:58:55.579066+00:00'
