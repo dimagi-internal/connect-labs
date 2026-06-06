@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V33
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V34
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -1128,14 +1128,6 @@ function WorkflowUI(props) {
             · shaded = service-delivery − intervention survey · click a cycle to
             open it
           </span>
-        </div>
-        <div
-          style={{ fontSize: 15, fontWeight: 600, color: SUBINK, marginTop: 8 }}
-        >
-          Across all {(trend.rounds || []).length} cycles, the program&rsquo;s
-          service-delivery figure sits above the independent intervention-arm
-          survey — {(trend.rounds || []).length} different intervention wards,
-          control wards stay low.
         </div>
       </div>
 
