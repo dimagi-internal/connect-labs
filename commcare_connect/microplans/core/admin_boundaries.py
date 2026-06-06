@@ -3,9 +3,12 @@
 Two sources, in default preference order:
 
   * **labs** — ``labs.admin_boundaries.AdminBoundary`` (PostGIS), the curated
-    per-country library. Where a country has bespoke boundaries loaded
-    (e.g. Nigeria GRID3 wards) it is *better than Overture's default*, so it
-    wins wherever it has data for the requested level.
+    per-country library aggregated from third-party providers (GeoPoDe, which
+    itself sources WHO/HDX/GRID3; geoBoundaries; OSM — each row records its own
+    ``source``). Where a country has these boundaries loaded (e.g. Nigeria's
+    ~9,300 wards from GeoPoDe/WHO) it is *better than Overture's default*, so it
+    wins wherever it has data for the requested level. Shown in the UI as
+    "Other 3rd Party Sources" (see ``SOURCE_LABELS``).
   * **overture** — Overture Maps' global ``divisions`` theme (via ``boundaries``),
     the universal default/fallback for every country.
 
@@ -49,9 +52,17 @@ _OVERTURE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_OVERTURE.items()}
 DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "overture")
 
 # Friendly labels for the UI source picker. New sources just add an entry.
+#
+# The ``labs`` key is NOT a single data source — it's the curated AdminBoundary
+# table, a UNION of per-row sources (GeoPoDe, geoBoundaries, OSM, GRID3, …), so we
+# label it generically as third-party rather than over-claiming one provenance.
+# Each row's true origin is recorded in ``AdminBoundary.source``; see that model's
+# docstring for the per-source provenance + licensing. (To surface per-row
+# provenance in the picker later, swap this static label for one derived from the
+# boundary's ``source`` + upstream provider.)
 SOURCE_LABELS: dict[str, str] = {
-    "labs": "Local data (bespoke)",
-    "overture": "Overture (global)",
+    "labs": "Other 3rd Party Sources",
+    "overture": "Overture",
 }
 
 
