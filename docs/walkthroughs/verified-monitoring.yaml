@@ -2,192 +2,221 @@ auth:
   type: session
 base_url: https://labs.connect.dimagi.com
 name: verified-monitoring
-narrative: 'David, the funder of a child-health program, opens the monitoring dashboard.
-  The program works a different ward each bi-monthly cycle, each verified against
-  an adjacent comparison ward, so the dashboard is a time series of independent checks.
-  The hero puts two numbers side by side for the latest cycle''s program ward: the
-  implementer''s self-report and the independent rooftop survey, with their difference
-  and a 95% confidence band on a dumbbell — no prose telling him what to conclude.
-  He scans the data-quality strip — evidence capture, GPS-within-15m, field completeness,
-  all computed from the survey''s own records — then drills into the back-check: a
-  sample re-surveyed by a different surveyor, with the field-by-field comparison table
-  laid out so he can read each household''s original over its re-survey answer, the
-  one changed value highlighted in red, and the headline stats (outcome agreement,
-  identity match, proportion-test p; the subsample rate is not shown as a coverage
-  figure). He clicks across the round selector and the whole dashboard re-drives —
-  and the map flies to that cycle''s two real wards: program service delivery filling
-  the program ward, the independent survey pins covering both. He pulls up the six-cycle
-  trend where the self-reported line sits above the independently-verified line every
-  cycle, across six different program wards, while the comparison wards stay low.
-  Nothing on screen interprets the data for him; the numbers, and the moving map,
-  do the work.'
-narrative_locked: true
-narrative_locked_at: '2026-06-04T22:36:45.051234+00:00'
+narrative: 'David manages a Connect program delivering vitamin-A home visits across
+  rural Kaduna. David''s frontline workers log every visit through Connect, and David
+  gets a clean coverage figure back each cycle — but David has never been able to
+  tell whether those visits are actually changing anything in the communities his
+  program serves. So David stood up an independent rooftop survey that re-measures
+  the same households, cycle after cycle, in a ward his program works and in an adjacent
+  ward it doesn''t. This morning David opens its dashboard.
+
+  David starts with the six-cycle trend. For each bi-monthly cycle David lines up
+  two numbers — what his program''s delivery data reported, and what the independent
+  survey found — and David reads the distance between them, hovering a point to pull
+  the exact value; David notes the control ward, where his program never went, sitting
+  flat along the bottom. To see where his program actually reached, David drops to
+  the map: his program''s logged visits fill the intervention ward and stop at its
+  boundary, while the survey''s pins fall in both wards. David steps through the cycles
+  and watches the map fly to each one''s real pair of wards.
+
+  David has been handed clean-looking survey data before that turned out to be invented,
+  so before David trusts any of this David checks the people who collected it. The
+  scorecard gives David one row per surveyor, every figure computed from that surveyor''s
+  own records — and one row is flagged for review. David clicks that surveyor''s GPS
+  number and reads, survey by survey, how far each recorded location sat from the
+  household it claimed, the worst beyond fifteen metres first. Then David opens that
+  surveyor''s back-check, where a different enumerator re-visited a sample of the
+  same households: David reads each row as the original over the re-survey — the child''s
+  sex and age, the household''s roof, the location, the vitamin-A result — with whatever
+  changed marked in red, and David taps the info button to confirm it follows the
+  standard J-PAL/IPA method. By the time David closes the page, nothing has told David
+  what to conclude; David has read his program''s own claim, the independent measure,
+  the map, and the one surveyor whose work David will question — and decided for himself
+  whether his program is actually having an impact.'
+narrative_locked: false
 personas:
   david:
     color: '#4F46E5'
-    intro: David funds the child-health program and wants independent, drillable proof
-      the vitamin-A home visits reached households — not the implementer's self-report
-      — with the survey's own quality and a back-check he can inspect row by row.
+    intro: 'David manages a Connect program delivering vitamin-A home visits. His
+      frontline workers log every visit through Connect and the coverage figure looks
+      good — but David wants independent, drillable proof his program is actually
+      reaching households and changing outcomes, not merely that visits were logged.
+      He wants to see the verification machinery itself: the survey''s own per-surveyor
+      quality and a back-check David can read row by row, including whether any one
+      surveyor''s data can be trusted.'
     name: David Mensah
-    role: Program Officer, Funder
+    role: Program Manager, Connect Program
 scenes:
 - actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3712
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3720
   - kind: wait_for
-    target: Survey round
+    target: Service-delivery data vs independent survey
   - kind: scroll_to
-    target: Self-reported vs independently verified
+    target: Service-delivery data vs independent survey
   - kind: hold
     seconds: 2
-  concept_claim: The latest independent survey puts verified coverage well below the
-    program's self-report, shown as two objective numbers and their difference — the
-    viewer draws the conclusion.
-  design_intent: Bet that three big monospace numbers (self-reported / independently
-    verified / difference) over a dumbbell with a 95% CI band reads as objective measurement,
-    not advocacy. No interpretive verbs.
+  narrative: David manages a Connect program delivering vitamin-A home visits, and
+    wants to know whether those visits are actually changing anything — so David opens
+    the independent survey's dashboard and starts with the six-cycle trend. For each
+    cycle David lines up two numbers — what his program's own delivery data reported,
+    and what the independent survey found — and reads the distance between them, hovering
+    a point to pull the exact value, while the control ward his program never touched
+    sits flat along the bottom.
+  concept_claim: Across six cycles and six different program wards, the program's
+    self-reported service-delivery figure sits above what an independent survey confirms,
+    while the adjacent control-arm survey stays low — the viewer draws the conclusion.
+  design_intent: Three labelled lines (service-delivery dashed amber, intervention
+    survey indigo, control survey slate) with a shaded service-delivery-minus-survey
+    gap band and per-point hover tooltips, so the persistent gap reads from the chart
+    without a sentence.
   features:
-  - description: Two dots on a zoomed axis — self-reported (amber) and independently
-      verified (indigo) — with a shaded 95% CI band on the verified estimate and a
-      neutral delta label.
-    id: hero-dumbbell
-    verify: Assert the hero shows three numbers (self-reported, independently verified,
-      and their difference with a 95% CI) plus an "as of <month>" stamp for the selected
-      cycle's program ward, and contains no interpretive words (overstate / too high
-      / reproduces).
+  - description: A six-cycle line chart of the program self-report vs the independent
+      intervention-arm survey vs the control-arm survey, with a shaded gap band and
+      a hover tooltip on every point (series, cycle, value).
+    id: trend-hero
+    verify: Assert three series render across six cycles; the legend reads service-delivery
+      data / intervention arm survey / control arm survey; hovering a point shows
+      a tooltip with the series, cycle, and value; no interpretive verbs on screen.
   persona: david
-  provenance: S1
-  show: 'On the live dashboard (/labs/workflow/3699/run/?opportunity_id=10008&run_id=3712),
-    the hero: the program''s self-report and the independent survey for the latest
-    round, with their difference.'
-  title: Self-reported vs independently verified, side by side
+  provenance: S5
+  show: 'The six-cycle trend hero: the program''s service-delivery line above the
+    independent intervention-arm survey every cycle, the control-arm survey far below.'
+  title: Self-reported above the independent survey, every cycle
 - actions:
   - kind: scroll_to
-    target: data quality
-  - kind: hold
-    seconds: 2
-  concept_claim: The independent survey's data quality is high and is computed from
-    the row-level records, not asserted.
-  design_intent: A row of compact metric chips, green when they clear the published
-    threshold, so quality reads at a glance.
-  features:
-  - description: Layer-1 survey-quality chips from the survey_quality library (evidence,
-      GPS, completeness, duration, consistency, duplicates).
-    id: qa-strip
-    verify: Assert the chips render computed values with pass/fail coloring against
-      thresholds.
-  persona: david
-  provenance: S2
-  show: 'The data-quality strip: evidence capture, GPS-within-15m, field completeness,
-    duration, consistency, duplicates — each computed from the survey records.'
-  title: The survey's own data quality
-- actions:
-  - kind: scroll_to
-    target: Independent back-check
+    target: Map ·
   - kind: hold
     seconds: 1
-  - kind: scroll_to
-    target: showing
-  - kind: hold
-    seconds: 2
-  concept_claim: A sample is independently re-surveyed by a different enumerator and
-    compared field-by-field, so the funder can audit every flagged difference, original
-    against re-survey.
-  design_intent: A J-PAL-style back-check rendered as an auditable side-by-side table
-    (changes first, in red), each cell stacking original over re-survey, plus an objective
-    stat row — inspectable, not summarized.
-  features:
-  - description: Per-household, each cell stacks the original over the re-survey value
-      (changes in red) on the re-asked variables (outcome + identity), with sample
-      / outcome-agreement / identity-match / proportion-test stats.
-    id: backcheck-table
-    verify: Assert the table renders rows with a highlighted change and the stat row
-      shows outcome agreement, identity match, and the proportion-test p-value — and
-      no subsample coverage % that could be mistaken for the ward estimate.
-  persona: david
-  provenance: S3
-  show: 'The back-check drill-down: the headline stats then the field-by-field comparison
-    table — original vs re-survey per household, discordances in red.'
-  title: Drill into the back-check
-- actions:
-  - kind: scroll_to
-    target: Survey round
   - kind: click
     target: R1
   - kind: hold
     seconds: 1
   - kind: click
-    target: R4
+    target: R6
+  - kind: hold
+    seconds: 2
+  narrative: 'To see where his program actually reached, David drops to the map: his
+    program''s logged visits fill the intervention ward and stop at its boundary,
+    while the independent survey''s pins fall in both wards. David steps the cycle
+    selector and the map flies to each cycle''s real pair of wards.'
+  concept_claim: Program delivery is concentrated inside the intervention ward and
+    absent in the adjacent control ward, while the independent survey covered both
+    — so the coverage gap tracks where the program went, not where the survey looked;
+    stepping the cycle selector flies the map to the next real ward pair.
+  design_intent: Real labelled admin boundaries (intervention indigo / control slate)
+    on a light Mapbox basemap via the shared ConnectMap module, with a service-delivery
+    point layer, a survey-pin layer, layer toggles, and a re-fit on each cycle.
+  features:
+  - description: A full-width two-ward Mapbox map — service-delivery points in the
+      intervention ward, survey pins in both wards, labelled boundaries + legend +
+      toggles — that re-centres on a new real ward pair when the cycle changes.
+    id: two-ward-map
+    verify: Assert both labelled ward boundaries and the legend render; clicking R1
+      then R6 re-centres the map on a different program/comparison ward pair.
+  persona: david
+  provenance: S3
+  show: The full-width map — program service-delivery filling the intervention ward,
+    independent survey pins in both wards — flying to each cycle's two real wards.
+  title: Where delivery happened vs where the survey checked (the map moves)
+- actions:
+  - kind: scroll_to
+    target: Survey-quality scorecard
+  - kind: hold
+    seconds: 2
+  narrative: Before David trusts any of the survey, David checks the people who collected
+    it. The scorecard gives David one row per surveyor, every figure computed from
+    that surveyor's own records — and one row is flagged for review.
+  concept_claim: The survey's quality is not asserted in aggregate — it is computed
+    per surveyor from each surveyor's own records, so a single under-performing surveyor
+    is visible and accountable rather than averaged away.
+  design_intent: A dense scorecard, one row per surveyor, green within threshold /
+    rose below, with a REVIEW tag where a surveyor's integrity signals fail together;
+    the back-check column is cumulative across cycles.
+  features:
+  - description: A per-surveyor survey-quality scorecard (evidence, GPS, completeness,
+      duration, consistency, duplicates, back-check) computed per surveyor, with rose
+      cells below threshold and a REVIEW tag on the flagged surveyor.
+    id: surveyor-scorecard
+    verify: Assert the table renders one row per surveyor with computed values; exactly
+      the flagged surveyor (T6) shows a REVIEW tag; its rose cells coincide with sub-threshold
+      values.
+  persona: david
+  provenance: S2
+  show: 'The per-surveyor quality scorecard: every metric computed from each surveyor''s
+    own records — one surveyor flagged REVIEW.'
+  title: The per-surveyor quality scorecard catches a surveyor
+- actions:
+  - kind: scroll_to
+    target: Survey-quality scorecard
+  - kind: click
+    target: '[data-cell="T6:gps"]'
+  - kind: hold
+    seconds: 2
+  narrative: David clicks the flagged surveyor's GPS figure and the panel fills with
+    every survey that surveyor ran this cycle — how far each recorded location sat
+    from the household it claimed, the ones past fifteen metres first.
+  concept_claim: The flag is backed by the underlying surveys — clicking a quality
+    cell shows the full census of that surveyor's primary records, not a summary,
+    with the failing surveys listed first.
+  design_intent: The bottom widget pivots to a "Survey-quality detail" table — one
+    row per survey, the metric's per-record value with a bar, worst-first, with a
+    return to the back-check.
+  features:
+  - description: Clicking a scorecard quality cell fills the widget with every one
+      of that surveyor's surveys this cycle for that metric (e.g. GPS offset per survey),
+      flagged rows rose and sorted first, with a count and a back-check return.
+    id: quality-drill
+    verify: Assert the widget header becomes "Survey-quality detail"; the table lists
+      all of the surveyor's surveys this cycle with a flagged count; flagged rows
+      are rose and beyond the metric threshold.
+  persona: david
+  provenance: S2
+  show: Clicking the flagged surveyor's GPS cell — every one of their surveys this
+    cycle, the captures beyond 15 m listed first.
+  title: Drill the flagged surveyor's actual surveys
+- actions:
+  - kind: goto
+    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3720
+  - kind: wait_for
+    target: Independent back-check
+  - kind: scroll_to
+    target: Independent back-check
   - kind: hold
     seconds: 1
   - kind: click
-    target: R6
+    target: '[data-bcinfo="identity"]'
   - kind: hold
-    seconds: 1
-  concept_claim: Every KPI is per-cycle and inspectable — selecting a round re-drives
-    the hero, quality strip, tiles, back-check, and the map, which flies to that cycle's
-    two real wards.
-  design_intent: A compact R1-R6 selector so the whole dashboard is a time series
-    you can step through — and the map animates between each cycle's program/comparison
-    wards.
+    seconds: 2
+  narrative: David opens that surveyor's independent back-check, where a different
+    enumerator re-visited a sample of the same households. David reads each household
+    as the original over the re-survey — sex, age, the household's roof, the location,
+    the vitamin-A result — with whatever changed marked in red, and taps the info
+    button to confirm it follows the standard J-PAL/IPA method. By the time David
+    closes the page, nothing has told David what to conclude — David has decided for
+    himself whether his program is having an impact.
+  concept_claim: An independent re-survey by a different enumerator disagrees with
+    this surveyor's originals on identity, location, and outcome — the strongest evidence
+    their data needs review — and the method is traceable to its source.
+  design_intent: Descriptive section headers (Identity / Location / Outcome, with
+    the J-PAL "Type 1/2/3" jargon behind an info popup), two rows per household (Original
+    / Backcheck) with discordances in rose; a stratified sample (back-checking is
+    a sampling method) while the agreement %s are computed over all of the surveyor's
+    back-checks.
   features:
-  - description: Round chips that set the active round; hero/QA/tiles/back-check/trend-highlight
-      AND the map (re-fits to that round's two wards) re-read it.
-    id: round-selector
-    verify: Assert clicking R1 then R6 changes the hero verified value AND moves the
-      map to a different program/comparison ward pair (different ward labels on the
-      map).
+  - description: The flagged surveyor's back-check — Identity (sex / age / present
+      / roof), Location (re-survey distance), Outcome (vitamin-A) agreement %s; two-row
+      original-vs-re-survey rows; an info popup citing J-PAL/IPA + World Bank DIME.
+    id: backcheck-sections
+    verify: Assert the back-check renders for the flagged surveyor with Identity /
+      Location / Outcome agreement %s; Identity includes a Roof column; the info popup
+      cites dimewiki.worldbank.org/Back_Checks.
   persona: david
   provenance: S2
-  show: The round selector re-drives every KPI — and the map moves to that cycle's
-    program and comparison wards.
-  title: Drill across cycles (the map moves)
-- actions:
-  - kind: scroll_to
-    target: bi-monthly rounds
-  - kind: hold
-    seconds: 2
-  concept_claim: Across all six cycles — six different program wards — the self-reported
-    line sits above the independently-verified line, while the comparison wards stay
-    low.
-  design_intent: Three lines plus a shaded self-reported-minus-verified band and a
-    highlighted selected-cycle column, so the persistent gap is visible without a
-    sentence.
-  features:
-  - description: Self-reported (dashed amber), independently verified (indigo), comparison
-      ward (neutral slate), with the self-reported-minus-verified band and selected-cycle
-      marker.
-    id: trend-three-line
-    verify: Assert three series render across six cycles with the selected-cycle column
-      highlighted.
-  persona: david
-  provenance: S1
-  show: The six-cycle trend — self-reported (dashed) above independently-verified
-    every cycle, the comparison wards far below.
-  title: Self-reported above verified, every cycle
-- actions:
-  - kind: scroll_to
-    target: Program service delivery
-  - kind: hold
-    seconds: 2
-  concept_claim: For the selected cycle, program delivery fills the program ward while
-    the independent survey covered both that ward and its adjacent comparison ward
-    — shown on real admin boundaries that move cycle to cycle.
-  design_intent: Real, labelled admin boundaries (program ward indigo, comparison
-    ward neutral slate) on a light Mapbox basemap via the shared ConnectMap module,
-    with a legend, service-delivery + survey-pin layers, and a fit that re-centres
-    on each cycle's two wards.
-  features:
-  - description: Real labelled admin boundaries for the cycle's two wards + a legend
-      + a service-delivery point layer (program ward) + survey pins (both wards, confirmed/not-confirmed),
-      with toggles; the map re-fits when the round changes.
-    id: two-ward-map
-    verify: Assert the Mapbox canvas renders both labelled ward boundaries with a
-      legend, and that changing the round re-centres the map on a different ward pair.
-  persona: david
-  provenance: S4
-  show: The two-ward Mapbox map — program service-delivery points in the program ward,
-    independent survey pins in both wards, with layer toggles.
-  title: Where delivery happened, where the survey checked
+  show: The independent back-check for the flagged surveyor — Identity (incl. roof)
+    / Location / Outcome, original over re-survey, the method behind an info button.
+  title: The independent back-check confirms it
 why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
+narrative_synced_version: 6
+narrative_synced_hash: 03e04b655f1dbcc193da85ad02b6f14e4016321734649811b4fe9e9f5791fb5f
+narrative_synced_at: '2026-06-06T21:06:15.433021+00:00'
