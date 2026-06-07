@@ -3,9 +3,12 @@
 Two sources, in default preference order:
 
   * **labs** — ``labs.admin_boundaries.AdminBoundary`` (PostGIS), the curated
-    per-country library. Where a country has bespoke boundaries loaded
-    (e.g. Nigeria GRID3 wards) it is *better than Overture's default*, so it
-    wins wherever it has data for the requested level.
+    per-country library aggregated from third-party providers (GeoPoDe, which
+    itself sources WHO/HDX/GRID3; geoBoundaries; OSM — each row records its own
+    ``source``). Where a country has these boundaries loaded (e.g. Nigeria's
+    ~9,300 wards from GeoPoDe/WHO) it is *better than Overture's default*, so it
+    wins wherever it has data for the requested level. Shown in the UI as
+    "Other 3rd Party Sources" (see ``SOURCE_LABELS``).
   * **overture** — Overture Maps' global ``divisions`` theme (via ``boundaries``),
     the universal default/fallback for every country.
 
@@ -49,9 +52,17 @@ _OVERTURE_TO_LEVEL = {v: k for k, v in _LEVEL_TO_OVERTURE.items()}
 DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "overture")
 
 # Friendly labels for the UI source picker. New sources just add an entry.
+#
+# The ``labs`` key is NOT a single data source — it's the curated AdminBoundary
+# table, a UNION of per-row sources (GeoPoDe, geoBoundaries, OSM, GRID3, …), so we
+# label it generically as third-party rather than over-claiming one provenance.
+# Each row's true origin is recorded in ``AdminBoundary.source``; see that model's
+# docstring for the per-source provenance + licensing. (To surface per-row
+# provenance in the picker later, swap this static label for one derived from the
+# boundary's ``source`` + upstream provider.)
 SOURCE_LABELS: dict[str, str] = {
-    "labs": "Local data (bespoke)",
-    "overture": "Overture (global)",
+    "labs": "Other 3rd Party Sources",
+    "overture": "Overture",
 }
 
 
@@ -448,13 +459,26 @@ class BoundaryResolver:
 
     def _default_bbox_source(self, iso_code: str | None) -> str:
         """Source for a viewport query when the user hasn't picked one: the country's
-        preferred source that has *any* data, else Overture."""
+        preferred source that has *any* data, else Overture.
+
+        Cold-start (no iso yet): prefer **labs**. The boundary layer infers the
+        country from the first boundaries it loads, but Overture needs an iso up
+        front (parquet partition pruning) so it returns nothing without one — which
+        strands that auto-detect in a chicken-and-egg (no iso → no boundaries → no
+        iso). The labs source intersects by geometry alone, so it returns the
+        curated boundaries under the viewport with no iso, the country detects, and
+        the by-name search starts working. Fall back to Overture only when labs
+        isn't configured (over a country with no labs data, both return nothing, so
+        there's no regression)."""
         if iso_code:
             a3 = _iso.to_alpha3(iso_code) or iso_code
             for name in self._order_for(a3):
                 src = self._sources.get(name)
                 if src and any(src.covers(a3, lvl) for lvl in (LEVEL_REGION, LEVEL_COUNTY, LEVEL_LOCALITY)):
                     return name
+            return "overture" if "overture" in self._sources else next(iter(self._sources))
+        if "labs" in self._sources:
+            return "labs"
         return "overture" if "overture" in self._sources else next(iter(self._sources))
 
     def bbox_source_name(self, source: str | None, iso: str | None) -> str:

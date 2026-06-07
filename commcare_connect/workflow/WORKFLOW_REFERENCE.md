@@ -1149,6 +1149,8 @@ Action-shaped templates omit `supports_saved_runs` (or set it `False`). They nev
 
 If a declared pipeline alias isn't present at completion (because the workflow definition's pipeline_sources changed), the framework logs a warning and skips it. Almost every saved-runs template should land here — it requires no Python and produces a snapshot whose shape mirrors what `view.X` exposes while in_progress, so render code is identical in both modes.
 
+> **Alias must match the created source.** The aliases you list in `snapshot_inputs.pipelines` (and read as `view.pipelines.<alias>` in render code) must equal the alias of the pipeline source `create_workflow_from_template` actually creates. For a single-pipeline template that source alias defaults to `"data"` — declare `"pipeline_alias": "<alias>"` on the `TEMPLATE` dict to override it. A mismatch is silent: live KPI cells render as dashes AND the completion snapshot filters down to an empty pipelines dict (see #464).
+
 **Render contract: `snapshot_schema` (recommended companion).** Documents the keys render code expects to read off `instance.snapshot`. The framework can use this to drive completion-confirm copy ("save 12 workers, 8 review decisions"), and bumping `version` is how a template evolves its captured shape.
 
 ```python

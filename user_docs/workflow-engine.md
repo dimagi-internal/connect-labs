@@ -148,6 +148,7 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **MBW Auditing V5**        | MBW audit reviews — faster loads and preserved runs  |
 | **Program Admin Report**   | Cross-opportunity compliance view for program admins |
 | **Verified Monitoring**    | Funder-facing view of independently-surveyed program coverage, contrasting implementer-reported and verified results |
+| **LLO Weekly FLW Review**  | Weekly per-FLW KPI scorecard for LLO programs        |
 
 ---
 
@@ -193,6 +194,13 @@ A single screen contains four panels:
 - **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time.
 - **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
+### LLO Weekly FLW Review dashboard
+
+The **LLO Weekly FLW Review** template provides a weekly per-FLW KPI scorecard for LLO programs. Each row shows a field worker's key performance indicators for the current week.
+
+!!! note "KPI cells show real numbers, not dashes"
+    If you previously saw every KPI cell display as a dash ("—") for all field workers, this has been fixed. The scorecard now shows the actual figures for each worker both while a review is in progress and after it is marked complete. Completed runs also preserve those numbers in their saved snapshot, so historical reviews remain readable.
+
 ### Generating Demo or Test Data from a Real Opportunity
 
 If you need realistic data for testing, training, or demonstrations, Labs can generate a **synthetic dataset** based on the statistical profile of an existing opportunity — without any real patient data leaving the server.
@@ -228,6 +236,4 @@ While the run is in progress, the manager has access to the full set of live act
 - **Mark all No Issue** — a toolbar button displayed above the table (next to the table title) that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.
 - **Mark No Issue** — a per-row button to approve an individual field worker without raising a flag. After clicking either the bulk or per-row button, the Decision column fills in with a green **No Issues** pill and the Actions cell for that row is cleared.
 - **Create Audit** — opens an audit record with 5 unreviewed photos for that worker. The manager reviews each photo, passes or flags it, and then clicks **Complete Image Review** to record the verdict. The audit opens in an unreviewed state so the walkthrough shows the full review process rather than landing on an already-finished record.
-- **Create Task with Coaching** — opens the **Initiate AI Assistant** modal on the task page, the same modal a real OCS user sees. The task page shows a short, readable description of what the coaching task is about. The prompt is framed as an instruction to the assistant — for example, "Coach [worker] about this week's nutrition screening. The report flagged: … A suspiciously low SAM/MAM rate usually means …" — and is rendered as a distinct **Instructions to assistant** banner above the conversation, separate from the assistant's own opening line. The full prompt is also pre-filled in the modal's prompt field, where the manager can read or edit it before clicking **Initiate AI** to start the coaching conversation.
-
-All four actions are only available while the run is in an **in-progress**
+- **Create Task with

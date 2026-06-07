@@ -1,11 +1,29 @@
 """
 Admin Boundary models for geospatial data.
 
-Data can be sourced from:
+Each row records its provenance in ``AdminBoundary.source``. Data can be sourced
+from:
+- GeoPoDe ("Geographic, Population & Demographic Data", https://geopode.world/) -
+  a humanitarian geospatial repository operated by Novel-T (WHO-affiliated). It is
+  an AGGREGATOR, NOT a single provider: each country's (and potentially each
+  layer's) boundaries originate upstream from a DIFFERENT provider, recorded
+  per-country in ``fixtures/geopode_sources.json`` - do not treat the set as
+  uniformly WHO. Across our currently-loaded countries the upstream split is:
+  WHO for 9 (CAF, CIV, COD, ETH, KEN, MOZ, MWI, NGA, SLE - incl. Nigeria's
+  ~9,300 ADM3 wards), HDX/OCHA for Liberia (LBR), GRID3 for Zambia (ZMB). This is
+  our ward-level (ADM3) source for these countries. LICENSE: no standard open
+  license; GeoPoDe's terms state
+  its datasets are "available to non-profit or humanitarian applications" and are
+  "operational" in nature and "do not constitute authoritative, government-sanctioned
+  reference data." Our use is non-profit/humanitarian; attribute GeoPoDe (Novel-T)
+  + the upstream provider. License/redistribution specifics: info@geopode.world.
 - geoBoundaries (https://www.geoboundaries.org/) - CC BY 4.0
 - OpenStreetMap (https://www.openstreetmap.org/) - ODbL
 - GRID3 (https://grid3.org/) - varies by country
 - HDX/OCHA COD (https://data.humdata.org/) - varies by dataset
+
+In the microplans UI these are shown collectively as "Other 3rd Party Sources"
+(vs Overture); see ``microplans.core.admin_boundaries.SOURCE_LABELS``.
 """
 
 from __future__ import annotations
