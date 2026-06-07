@@ -194,6 +194,12 @@ A single screen contains four panels:
 - **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time.
 - **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
+**Reading the per-surveyor GPS drill-down:** When you expand a surveyor's row to inspect their GPS data, the distance column displays as a bar chart anchored to each household and scaled to metres — not as a plain table. This makes it easy to compare distances at a glance without interpreting raw numbers.
+
+**Scrolling and sticky headers:** The scorecard and back-check sections each keep their header row visible as you scroll. The headers are positioned so they remain fully visible and are not obscured by the sticky top navigation bar.
+
+**Back-check method tooltip:** Clicking the info icon next to the back-check method label opens a tooltip beside the icon. The tooltip does not cover the re-survey rows it is explaining, so you can read the method description and the data at the same time.
+
 ### LLO Weekly FLW Review dashboard
 
 The **LLO Weekly FLW Review** template provides a weekly per-FLW KPI scorecard for LLO programs. Each row shows a field worker's key performance indicators for the current week.
@@ -233,7 +239,4 @@ If you want to record a walkthrough that shows a network manager actually conduc
 
 While the run is in progress, the manager has access to the full set of live actions in the dashboard:
 
-- **Mark all No Issue** — a toolbar button displayed above the table (next to the table title) that bulk-clears all rows in one click, for cases where the manager wants to sign off on the whole cohort at once.
-- **Mark No Issue** — a per-row button to approve an individual field worker without raising a flag. After clicking either the bulk or per-row button, the Decision column fills in with a green **No Issues** pill and the Actions cell for that row is cleared.
-- **Create Audit** — opens an audit record with 5 unreviewed photos for that worker. The manager reviews each photo, passes or flags it, and then clicks **Complete Image Review** to record the verdict. The audit opens in an unreviewed state so the walkthrough shows the full review process rather than landing on an already-finished record.
-- **Create Task with
+- **Mark all No Issue** — a toolbar button displayed above the table (next to
