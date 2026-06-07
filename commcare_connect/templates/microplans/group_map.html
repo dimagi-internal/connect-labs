@@ -90,11 +90,12 @@
         // Sampling work areas are PINS (Point geometry): coloured dots.
         map.addLayer({ id: src + "-pt", type: "circle", source: src,
           paint: {
-            "circle-color": L.color, "circle-opacity": 0.95,
-            // Zoom-scaled so pins stay legible when the study is framed at ward
-            // scale (the two arms must read as two distinct colour clusters).
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 5, 12, 7, 15, 10],
-            "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.4 },
+            "circle-color": L.color, "circle-opacity": 1.0,
+            // Zoom-scaled and sized up so the two arms read as two distinct colour
+            // clusters against a busy satellite basemap (green-on-green farmland is
+            // the worst case — the larger radius + thick white halo keep pins legible).
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 7, 12, 10, 15, 14],
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.2 },
           filter: ["==", ["geometry-type"], "Point"] });
         const sublayers = [src + "-fill", src + "-line", src + "-pt"];
         // Click → inspect (which plan/arm this area belongs to)
@@ -112,7 +113,11 @@
         }
       });
       const b = bounds();
-      if (b) map.fitBounds(b, { padding: 40, maxZoom: 15, duration: 0 });
+      // Asymmetric padding keeps both arms' clusters clear of the Layers/Inspect panel
+      // (top-right) and the study-summary card (top-left), so the control arm is never
+      // rendered underneath a panel. maxZoom 16 lets two adjacent wards fill the frame
+      // rather than leaving the data marooned in one corner of empty terrain.
+      if (b) map.fitBounds(b, { padding: { top: 96, right: 300, bottom: 56, left: 300 }, maxZoom: 16, duration: 0 });
     });
   })();
 </script>

@@ -329,6 +329,78 @@ class TestCreateWorkflowFromTemplatePipelineCreation:
         finally:
             del TEMPLATES["__test_no_auth__"]
 
+    def test_template_can_declare_pipeline_alias(self, workflow_data_access):
+        """A template may declare its own ``pipeline_alias`` so the created
+        pipeline source key matches the alias its render code and
+        ``snapshot_inputs`` reference. Without this, the source defaulted to
+        ``"data"`` and a render reading ``view.pipelines.<other>`` got nothing
+        (and the snapshot captured an empty pipelines dict)."""
+        wda, _ = workflow_data_access
+        from commcare_connect.workflow.templates import TEMPLATES, create_workflow_from_template
+
+        TEMPLATES["__test_aliased__"] = {
+            "key": "__test_aliased__",
+            "name": "T",
+            "description": "d",
+            "definition": {"name": "T", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "pipeline_alias": "flw_kpis",
+            "pipeline_schema": {
+                "name": "P",
+                "description": "p",
+                "version": 1,
+                "grouping_key": "u",
+                "terminal_stage": "agg",
+                "fields": [],
+            },
+        }
+        try:
+            wda.create_definition = MagicMock(return_value=_make_definition_record(definition_id=10))
+            wda.save_render_code = MagicMock()
+
+            with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+                mock_instance = MagicMock()
+                mock_pipeline = MagicMock()
+                mock_pipeline.id = 777
+                mock_instance.create_definition.return_value = mock_pipeline
+                MockPipelineAccess.return_value = mock_instance
+
+                create_workflow_from_template(wda, "__test_aliased__", request=None)
+
+                create_def_kwargs = wda.create_definition.call_args.kwargs
+                assert create_def_kwargs["pipeline_sources"] == [{"pipeline_id": 777, "alias": "flw_kpis"}]
+        finally:
+            del TEMPLATES["__test_aliased__"]
+
+    def test_llo_weekly_review_alias_matches_snapshot_inputs(self, workflow_data_access):
+        """Regression for #464: the real llo_weekly_review template's pipeline
+        source alias must equal the alias its snapshot_inputs and render code
+        read (``flw_kpis``) — otherwise completed-run KPI cells render as
+        dashes because the snapshot captured an empty pipelines dict."""
+        wda, _ = workflow_data_access
+        from commcare_connect.workflow.templates import create_workflow_from_template
+        from commcare_connect.workflow.templates.llo_weekly_review import RENDER_CODE, TEMPLATE
+
+        snapshot_aliases = TEMPLATE["snapshot_inputs"]["pipelines"]
+
+        wda.create_definition = MagicMock(return_value=_make_definition_record(definition_id=10))
+        wda.save_render_code = MagicMock()
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            mock_pipeline = MagicMock()
+            mock_pipeline.id = 888
+            mock_instance.create_definition.return_value = mock_pipeline
+            MockPipelineAccess.return_value = mock_instance
+
+            create_workflow_from_template(wda, "llo_weekly_review", request=None)
+
+        sources = wda.create_definition.call_args.kwargs["pipeline_sources"]
+        assert [s["alias"] for s in sources] == snapshot_aliases
+        # The render code reads the same alias off view.pipelines.
+        for alias in snapshot_aliases:
+            assert f"view.pipelines.{alias}" in RENDER_CODE
+
 
 class TestGetPipelineDataMultiOpp:
     def _make_definition(self, opportunity_ids=None, pipeline_sources=None):

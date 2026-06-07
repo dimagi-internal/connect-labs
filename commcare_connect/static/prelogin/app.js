@@ -32,13 +32,13 @@ function resolveLegacy(path) {
   return path;
 }
 
-let ROUTES = [];        // every data-page value present in the document
-let APP_BASE = '';      // path prefix before the route, '' when served at site root
+let ROUTES = []; // every data-page value present in the document
+let APP_BASE = ''; // path prefix before the route, '' when served at site root
 let currentRoute = '/'; // the route actually shown right now. The URL is NOT a
-                        // reliable source of truth: on file:// history.pushState
-                        // throws (opaque origin), so location.pathname never
-                        // changes as you navigate. Track the shown route here so
-                        // the click handler's "already on this page?" check works.
+// reliable source of truth: on file:// history.pushState
+// throws (opaque origin), so location.pathname never
+// changes as you navigate. Track the shown route here so
+// the click handler's "already on this page?" check works.
 
 // file:// extras: the History API is blocked there (pushState/replaceState throw
 // on the opaque origin), so the URL can't carry the route across a refresh. To
@@ -49,8 +49,10 @@ const FILE_PROTOCOL = location.protocol === 'file:';
 const ROUTE_STORAGE_KEY = 'connect-prelogin:lastRoute';
 
 function collectRoutes() {
-  return Array.from(document.querySelectorAll('.page'), (el) => el.dataset.page)
-    .filter(Boolean);
+  return Array.from(
+    document.querySelectorAll('.page'),
+    (el) => el.dataset.page,
+  ).filter(Boolean);
 }
 
 // Strip the longest known route that is a suffix of the current path; whatever
@@ -58,7 +60,9 @@ function collectRoutes() {
 // whole path (minus a trailing slash) is the base.
 function computeBase() {
   const p = location.pathname.replace(/\/index\.html$/, '/');
-  const candidates = ROUTES.filter((r) => r !== '/').sort((a, b) => b.length - a.length);
+  const candidates = ROUTES.filter((r) => r !== '/').sort(
+    (a, b) => b.length - a.length,
+  );
   for (const r of candidates) {
     if (p.length >= r.length && p.slice(p.length - r.length) === r) {
       return p.slice(0, p.length - r.length);
@@ -199,18 +203,25 @@ function render(path, search) {
     else if (pages[0]) pages[0].classList.add('active');
   }
   currentRoute = matched ? path : '/'; // remember what's actually on screen
-  applyRouteMeta(currentRoute);         // keep <title>/SEO/social meta in sync
-  if (FILE_PROTOCOL) {                  // file://: no URL to refresh into — stash it
-    try { sessionStorage.setItem(ROUTE_STORAGE_KEY, currentRoute); } catch (_) {}
+  applyRouteMeta(currentRoute); // keep <title>/SEO/social meta in sync
+  if (FILE_PROTOCOL) {
+    // file://: no URL to refresh into — stash it
+    try {
+      sessionStorage.setItem(ROUTE_STORAGE_KEY, currentRoute);
+    } catch (_) {}
   }
-  document.querySelectorAll('#primary-nav a[data-route], .mobile-nav a[data-route]').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === path);
-  });
+  document
+    .querySelectorAll('#primary-nav a[data-route], .mobile-nav a[data-route]')
+    .forEach((a) => {
+      a.classList.toggle('active', a.dataset.route === path);
+    });
   // Insights deep-linking: ?program=… &activity=… preselect the filters. The
   // search is threaded in (not read off location) so it works on file:// too,
   // where the URL can't carry a query. Falls back to the live URL on direct hits.
   if (currentRoute === '/insights') {
-    applyInsightFiltersFromQuery(typeof search === 'string' ? search : location.search);
+    applyInsightFiltersFromQuery(
+      typeof search === 'string' ? search : location.search,
+    );
   }
   window.scrollTo({
     top: 0,
@@ -220,7 +231,11 @@ function render(path, search) {
 
 function navigate(route, search) {
   const q = search || '';
-  try { history.pushState({ route }, '', absUrl(route) + q); } catch (_) { /* file://: section still switches, URL stays */ }
+  try {
+    history.pushState({ route }, '', absUrl(route) + q);
+  } catch (_) {
+    /* file://: section still switches, URL stays */
+  }
   render(route, q);
 }
 
@@ -231,7 +246,7 @@ function hydrateLinks() {
   document.querySelectorAll('a[href]').forEach((a) => {
     const raw = a.getAttribute('href');
     if (!raw || raw.charAt(0) !== '/') return; // in-page (#), relative, or external
-    const q = raw.indexOf('?');                // keep any query (e.g. insights filters)
+    const q = raw.indexOf('?'); // keep any query (e.g. insights filters)
     const path = q === -1 ? raw : raw.slice(0, q);
     const search = q === -1 ? '' : raw.slice(q);
     const route = routeFromPath(path);
@@ -251,7 +266,8 @@ function hydrateImages() {
   document.querySelectorAll('img[src]').forEach((img) => {
     const raw = img.getAttribute('src');
     // Skip root-relative (/…), protocol (http:, data:) and empty srcs.
-    if (!raw || raw.charAt(0) === '/' || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return;
+    if (!raw || raw.charAt(0) === '/' || /^[a-z][a-z0-9+.-]*:/i.test(raw))
+      return;
     img.setAttribute('src', base + '/' + raw);
   });
 }
@@ -261,23 +277,43 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
   if (!a) return;
   const raw = a.getAttribute('href');
-  if (!raw || raw.charAt(0) === '#') return;             // in-page anchor / <use href>
-  if (a.target && a.target !== '_self') return;          // opens a new context
+  if (!raw || raw.charAt(0) === '#') return; // in-page anchor / <use href>
+  if (a.target && a.target !== '_self') return; // opens a new context
   if (a.hasAttribute('download')) return;
-  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (
+    e.defaultPrevented ||
+    e.button !== 0 ||
+    e.metaKey ||
+    e.ctrlKey ||
+    e.shiftKey ||
+    e.altKey
+  )
+    return;
   let url;
-  try { url = new URL(a.href, location.href); } catch (_) { return; }
-  if (url.origin !== location.origin) return;            // external
+  try {
+    url = new URL(a.href, location.href);
+  } catch (_) {
+    return;
+  }
+  if (url.origin !== location.origin) return; // external
   const route = routeFromPath(url.pathname);
-  if (route === null) return;                            // standalone page / asset → let it navigate
+  if (route === null) return; // standalone page / asset → let it navigate
   e.preventDefault();
   const search = route === '/insights' ? url.search : ''; // only insights carries filter params
-  if (route === currentRoute) {                          // already here
-    if (search) {                                        // …but a new filter → re-apply in place
-      try { history.replaceState({ route }, '', absUrl(route) + search); } catch (_) {}
+  if (route === currentRoute) {
+    // already here
+    if (search) {
+      // …but a new filter → re-apply in place
+      try {
+        history.replaceState({ route }, '', absUrl(route) + search);
+      } catch (_) {}
       render(route, search);
-    } else {                                             // otherwise just scroll up
-      window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    } else {
+      // otherwise just scroll up
+      window.scrollTo({
+        top: 0,
+        behavior: 'instant' in window ? 'instant' : 'auto',
+      });
     }
     return;
   }
@@ -306,14 +342,23 @@ function initRouter() {
     const kept = new URLSearchParams(location.search);
     kept.delete('p');
     const keptQuery = kept.toString();
-    try { history.replaceState(null, '', absUrl(entry) + (keptQuery ? '?' + keptQuery : '') + location.hash); } catch (_) {}
-  } else if (/^#\//.test(location.hash)) {               // legacy #/route bookmarks
+    try {
+      history.replaceState(
+        null,
+        '',
+        absUrl(entry) + (keptQuery ? '?' + keptQuery : '') + location.hash,
+      );
+    } catch (_) {}
+  } else if (/^#\//.test(location.hash)) {
+    // legacy #/route bookmarks
     let r0 = location.hash.slice(1).split('?')[0];
-    if (r0.length > 1) r0 = r0.replace(/\/$/, '');        // normalize trailing slash
+    if (r0.length > 1) r0 = r0.replace(/\/$/, ''); // normalize trailing slash
     const r = resolveLegacy(r0);
     if (ROUTES.indexOf(r) !== -1) {
       entry = r;
-      try { history.replaceState(null, '', absUrl(r)); } catch (_) {}
+      try {
+        history.replaceState(null, '', absUrl(r));
+      } catch (_) {}
     }
   }
 
@@ -383,7 +428,9 @@ function setupNavToggle() {
     else open();
   });
   // Tap a link in the panel -> close before navigation
-  panel.querySelectorAll('a').forEach((a) => a.addEventListener('click', close));
+  panel
+    .querySelectorAll('a')
+    .forEach((a) => a.addEventListener('click', close));
   // Tap outside the header (or on the backdrop) -> close without stealing focus
   document.addEventListener('click', (e) => {
     if (!document.body.classList.contains('nav-open')) return;
@@ -391,7 +438,8 @@ function setupNavToggle() {
   });
   // Escape -> close, return focus to toggle button
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && document.body.classList.contains('nav-open')) close();
+    if (e.key === 'Escape' && document.body.classList.contains('nav-open'))
+      close();
   });
   // Focus trap: keep Tab/Shift+Tab within the panel links while menu is open
   panel.addEventListener('keydown', (e) => {
@@ -439,7 +487,9 @@ function applyInsightFiltersFromQuery(search) {
       group.querySelector('.pill[data-filter-value="all"]');
     if (!pill) return;
     const resolved = pill.getAttribute('data-filter-value');
-    group.querySelectorAll('.pill').forEach((p) => p.classList.remove('active'));
+    group
+      .querySelectorAll('.pill')
+      .forEach((p) => p.classList.remove('active'));
     pill.classList.add('active');
     if (axis === 'program') activeProgram = resolved;
     else activeLDVP = resolved;
@@ -521,7 +571,10 @@ function cyclePickers() {
     });
 }
 // Don't auto-advance the pickers for users who prefer reduced motion.
-if (!window.matchMedia || !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+if (
+  !window.matchMedia ||
+  !matchMedia('(prefers-reduced-motion: reduce)').matches
+) {
   setInterval(cyclePickers, 5000);
 }
 
@@ -543,8 +596,13 @@ document.addEventListener('click', (e) => {
   const hero = trigger.closest('.hero-dark');
   const target = hero && hero.nextElementSibling;
   if (!target) return;
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  const reduce =
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  target.scrollIntoView({
+    behavior: reduce ? 'auto' : 'smooth',
+    block: 'start',
+  });
 });
 
 // Service tabs (CHC "Inside a Campaign")
@@ -553,11 +611,11 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const tabs = btn.closest('.service-tabs');
   const idx = btn.dataset.stab;
-  tabs.querySelectorAll('.service-tab-btn').forEach(b => {
+  tabs.querySelectorAll('.service-tab-btn').forEach((b) => {
     b.classList.toggle('is-active', b === btn);
     b.setAttribute('aria-selected', String(b === btn));
   });
-  tabs.querySelectorAll('.service-tab-panel').forEach(p => {
+  tabs.querySelectorAll('.service-tab-panel').forEach((p) => {
     p.classList.toggle('is-active', p.dataset.stab === idx);
   });
 });
@@ -583,37 +641,49 @@ document.addEventListener('click', (e) => {
 // Compare table: row hover highlight + scroll-reveal stagger (works for all .compare-table instances)
 (function initCompareTables() {
   const COLS = 3;
-  const animated = window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
+  const animated = window.matchMedia(
+    '(prefers-reduced-motion: no-preference)',
+  ).matches;
 
-  document.querySelectorAll('.compare-table[id]').forEach(table => {
+  document.querySelectorAll('.compare-table[id]').forEach((table) => {
     const cells = table.querySelectorAll('.compare-cell');
 
     // Row hover: highlight all 3 cells in the same logical row together
     cells.forEach((cell, i) => {
       const rowStart = Math.floor(i / COLS) * COLS;
-      const rowCells = Array.from({ length: COLS }, (_, c) => cells[rowStart + c]).filter(Boolean);
-      cell.addEventListener('mouseenter', () => rowCells.forEach(c => c.classList.add('row-hover')));
-      cell.addEventListener('mouseleave', () => rowCells.forEach(c => c.classList.remove('row-hover')));
+      const rowCells = Array.from(
+        { length: COLS },
+        (_, c) => cells[rowStart + c],
+      ).filter(Boolean);
+      cell.addEventListener('mouseenter', () =>
+        rowCells.forEach((c) => c.classList.add('row-hover')),
+      );
+      cell.addEventListener('mouseleave', () =>
+        rowCells.forEach((c) => c.classList.remove('row-hover')),
+      );
     });
 
     // Scroll-reveal: stagger rows in one by one when the table enters the viewport
     if (!animated) return;
     table.classList.add('compare-animate');
     const rowCount = Math.ceil(cells.length / COLS);
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (!entry.isIntersecting) return;
-        for (let row = 0; row < rowCount; row++) {
-          setTimeout(() => {
-            for (let col = 0; col < COLS; col++) {
-              const c = cells[row * COLS + col];
-              if (c) c.classList.add('is-visible');
-            }
-          }, row * 70);
-        }
-        observer.unobserve(entry.target);
-      });
-    }, { threshold: 0.05 });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          for (let row = 0; row < rowCount; row++) {
+            setTimeout(() => {
+              for (let col = 0; col < COLS; col++) {
+                const c = cells[row * COLS + col];
+                if (c) c.classList.add('is-visible');
+              }
+            }, row * 70);
+          }
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.05 },
+    );
     observer.observe(table);
   });
 })();
@@ -623,18 +693,64 @@ document.addEventListener('click', (e) => {
 (function initWhereMap() {
   /* <<< map-country-data: generated from data/programs.json by tools/sync-map-data.py — do not edit by hand >>> */
   const COUNTRY_DATA = {
-    CAF: { name: 'Central African Republic', programs: ['Child Health Campaign'] },
-    COD: { name: 'DR Congo', programs: ['Child Health Campaign'], mou: '14 Provincial Governments' },
-    ETH: { name: 'Ethiopia', programs: ['Kangaroo Mother Care', 'Group Therapy for Depression'] },
+    CAF: {
+      name: 'Central African Republic',
+      programs: ['Child Health Campaign'],
+    },
+    COD: {
+      name: 'DR Congo',
+      programs: ['Child Health Campaign'],
+      mou: '14 Provincial Governments',
+    },
+    ETH: {
+      name: 'Ethiopia',
+      programs: ['Kangaroo Mother Care', 'Group Therapy for Depression'],
+    },
     IND: { name: 'India', programs: ['Kangaroo Mother Care'] },
-    KEN: { name: 'Kenya', programs: ['Child Health Campaign', 'Kangaroo Mother Care', 'Reading Glasses'], mou: 'Turkana County' },
-    LBR: { name: 'Liberia', programs: ['Child Health Campaign'], mou: 'Ministry of Health' },
+    KEN: {
+      name: 'Kenya',
+      programs: [
+        'Child Health Campaign',
+        'Kangaroo Mother Care',
+        'Reading Glasses',
+      ],
+      mou: 'Turkana County',
+    },
+    LBR: {
+      name: 'Liberia',
+      programs: ['Child Health Campaign'],
+      mou: 'Ministry of Health',
+    },
     MOZ: { name: 'Mozambique', programs: ['Early Childhood Development'] },
     MWI: { name: 'Malawi', programs: ['Early Childhood Development'] },
-    NGA: { name: 'Nigeria', programs: ['Child Health Campaign', 'Kangaroo Mother Care', 'Early Childhood Development', 'Mother Baby Wellness', 'Chlorine Dispenser', 'Connect Interview', 'Therapeutic Food', 'Rooftop Sampling'] },
-    SLE: { name: 'Sierra Leone', programs: ['Child Health Campaign'], mou: 'Ministry of Health' },
+    NGA: {
+      name: 'Nigeria',
+      programs: [
+        'Child Health Campaign',
+        'Kangaroo Mother Care',
+        'Early Childhood Development',
+        'Mother Baby Wellness',
+        'Chlorine Dispenser',
+        'Connect Interview',
+        'Therapeutic Food',
+        'Rooftop Sampling',
+      ],
+    },
+    SLE: {
+      name: 'Sierra Leone',
+      programs: ['Child Health Campaign'],
+      mou: 'Ministry of Health',
+    },
     TZA: { name: 'Tanzania', programs: ['Child Health Campaign'] },
-    UGA: { name: 'Uganda', programs: ['Child Health Campaign', 'Kangaroo Mother Care', 'Group Therapy for Depression'], mou: 'Uganda Ministry of Health' },
+    UGA: {
+      name: 'Uganda',
+      programs: [
+        'Child Health Campaign',
+        'Kangaroo Mother Care',
+        'Group Therapy for Depression',
+      ],
+      mou: 'Uganda Ministry of Health',
+    },
     ZMB: { name: 'Zambia', programs: ['Child Health Campaign'] },
   };
   /* <<< end map-country-data >>> */
@@ -658,7 +774,9 @@ document.addEventListener('click', (e) => {
     loading.textContent = 'Loading map…';
     host.appendChild(loading);
     fetch(src)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error('http ' + r.status))))
+      .then((r) =>
+        r.ok ? r.text() : Promise.reject(new Error('http ' + r.status)),
+      )
       .then((txt) => {
         loading.remove();
         host.insertAdjacentHTML('afterbegin', txt);
@@ -731,7 +849,10 @@ document.addEventListener('click', (e) => {
       const data = COUNTRY_DATA[code] || { name: code, programs: [] };
 
       if (!p.querySelector('title')) {
-        const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        const t = document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'title',
+        );
         t.textContent = data.name;
         p.appendChild(t);
       }
@@ -744,7 +865,9 @@ document.addEventListener('click', (e) => {
         host.classList.add('is-hovering');
 
         nameEl.textContent = data.name;
-        programsEl.innerHTML = data.programs.map((pr) => '<li>' + pr + '</li>').join('');
+        programsEl.innerHTML = data.programs
+          .map((pr) => '<li>' + pr + '</li>')
+          .join('');
 
         if (data.note) {
           noteEl.textContent = data.note;
@@ -824,11 +947,11 @@ document.addEventListener('click', (e) => {
   function init() {
     const section = document.querySelector('[data-page="/release-notes"]');
     if (!section) return;
-    const tabs   = section.querySelectorAll('.cl-tab');
+    const tabs = section.querySelectorAll('.cl-tab');
     const panels = section.querySelectorAll('.cl-panel');
     tabs.forEach((tab) => {
       tab.addEventListener('click', () => {
-        tabs.forEach((t)   => t.classList.remove('active'));
+        tabs.forEach((t) => t.classList.remove('active'));
         panels.forEach((p) => p.classList.remove('active'));
         tab.classList.add('active');
         const target = section.querySelector('#' + tab.dataset.panel);
@@ -851,7 +974,6 @@ document.addEventListener('click', (e) => {
   else document.addEventListener('DOMContentLoaded', sync);
 })();
 
-
 // Testimonial marquee — the row scrolls continuously, pausing on hover / focus.
 (function testimonialMarquee() {
   function setup(marquee) {
@@ -859,7 +981,9 @@ document.addEventListener('click', (e) => {
     if (!track || !track.children.length) return;
 
     // Respect reduced-motion: leave a static, manually scrollable row.
-    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduce =
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduce) {
       track.classList.add('testimonial-cards--static');
       return;
@@ -870,7 +994,9 @@ document.addEventListener('click', (e) => {
     Array.prototype.slice.call(track.children).forEach(function (card) {
       const clone = card.cloneNode(true);
       clone.setAttribute('aria-hidden', 'true');
-      clone.querySelectorAll('a, button, [tabindex]').forEach(function (el) { el.tabIndex = -1; });
+      clone.querySelectorAll('a, button, [tabindex]').forEach(function (el) {
+        el.tabIndex = -1;
+      });
       track.appendChild(clone);
     });
 
@@ -879,7 +1005,7 @@ document.addEventListener('click', (e) => {
     const measure = function () {
       const first = track.children[0];
       const firstClone = track.children[originalCount];
-      cycle = firstClone ? (firstClone.offsetLeft - first.offsetLeft) : 0;
+      cycle = firstClone ? firstClone.offsetLeft - first.offsetLeft : 0;
     };
     measure();
     window.addEventListener('resize', measure);
@@ -889,7 +1015,7 @@ document.addEventListener('click', (e) => {
     const EASE_RATE = 7; // how quickly speed glides toward its target (~0.4s settle)
     let offset = 0;
     let last = null;
-    let speed = 1;  // current, eased speed multiplier
+    let speed = 1; // current, eased speed multiplier
     let target = 1; // where speed is headed: 1 = scrolling, 0 = paused
 
     const frame = function (now) {
@@ -904,20 +1030,29 @@ document.addEventListener('click', (e) => {
       if (cycle <= 0) measure();
       if (cycle > 0 && speed > 0.0005) {
         offset = (offset + SPEED * speed * dt) % cycle;
-        track.style.transform = 'translateX(' + (-offset) + 'px)';
+        track.style.transform = 'translateX(' + -offset + 'px)';
       }
       window.requestAnimationFrame(frame);
     };
 
-    const pause = function () { target = 0; };
-    const resume = function () { target = 1; };
+    const pause = function () {
+      target = 0;
+    };
+    const resume = function () {
+      target = 1;
+    };
     marquee.addEventListener('mouseenter', pause);
     marquee.addEventListener('mouseleave', resume);
     marquee.addEventListener('focusin', pause);
     marquee.addEventListener('focusout', resume);
     document.addEventListener('visibilitychange', function () {
-      if (document.hidden) { target = 0; speed = 0; }
-      else { target = 1; last = null; }
+      if (document.hidden) {
+        target = 0;
+        speed = 0;
+      } else {
+        target = 1;
+        last = null;
+      }
     });
 
     window.requestAnimationFrame(frame);

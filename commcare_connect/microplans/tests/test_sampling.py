@@ -220,7 +220,9 @@ def test_psu_summary_reports_size_density_and_area_over_selected_psus():
     c1 = _scatter(30, spread_m=60, seed=2).assign(cluster=1)
     buildings = pd.concat([c0, c1], ignore_index=True)
     buildings["area_m2"] = 100.0
-    selected = pd.DataFrame({"cluster": [0, 1], "n_buildings": [20, 30], "stratum": ["Low", "Low"], "P_psu": [0.5, 0.7]})
+    selected = pd.DataFrame(
+        {"cluster": [0, 1], "n_buildings": [20, 30], "stratum": ["Low", "Low"], "P_psu": [0.5, 0.7]}
+    )
 
     s = psu_summary(buildings, selected)
     assert round(s["psu_size"][0]) == 25  # mean of 20 and 30

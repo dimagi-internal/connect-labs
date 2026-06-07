@@ -320,7 +320,9 @@ def _std(values: list[float]) -> float | None:
     return round(statistics.pstdev(values), 1) if len(values) >= 1 else None
 
 
-def plan_kpis(work_areas: list[dict], input_areas: list[dict] | None = None) -> dict:
+def plan_kpis(
+    work_areas: list[dict], input_areas: list[dict] | None = None, area_buildings: int | None = None
+) -> dict:
     """Plan-quality KPIs (Neal Lesh's microplan spec): per-FLW territory spread +
     population/building balance + exclusions.
 
@@ -401,7 +403,18 @@ def plan_kpis(work_areas: list[dict], input_areas: list[dict] | None = None) -> 
             if input_areas and any(isinstance(ia, dict) and ia.get("population") for ia in input_areas)
             else pop_total
         ),
-        "total_buildings": bld_total,
+        # "Buildings" + "Pop / building" describe the AREA's footprint universe (the
+        # per-structure population sanity check). For a COVERAGE plan that's bld_total
+        # — the work areas tile the whole area, so summing their building_count gives
+        # the area total. For a SAMPLING plan the work areas are sampled pins
+        # (building_count 1 each), so bld_total is the SAMPLE SIZE, not the area's
+        # buildings; dividing whole-area population by it gave nonsense (e.g. 57
+        # people/"building"). The caller passes `area_buildings` — the footprint count
+        # the sample was drawn from — so this stays a real per-structure estimate.
+        # (Per-worker building balance below still uses bld_total: a worker's workload
+        # is the sampled buildings assigned to them, not the area's whole footprint set.)
+        "sampled_buildings": bld_total,
+        "total_buildings": area_buildings if area_buildings else bld_total,
         "pop_per_building": None,  # set after total_population is known, below
     }
     if plan["total_buildings"]:

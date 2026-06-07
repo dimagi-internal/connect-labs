@@ -22,9 +22,9 @@
       {{ group.plan_count }} plan{{ group.plan_count|pluralize }} · Program #{{ program_id }}
     </p>
     {% if group.is_study %}
-    <p class="text-xs text-gray-500 mt-1">
-      Two-arm controlled study — one plan and one Connect opportunity per ward.
-      <span class="text-gray-400">The intervention/control arm is set here on the study and is never exported to a ward's field plan, so the study stays blind by construction.</span>
+    <p class="text-xs text-gray-500 mt-1 flex items-center flex-wrap">
+      Two-arm controlled study — one plan &amp; one Connect opportunity per ward.
+      {% include "microplans/_info.html" with text="The intervention/control arm is set here on the study and is never exported to a ward's field plan — so the study stays blind by construction." only %}
     </p>
     {% endif %}
   </header>
@@ -36,17 +36,19 @@
   <!-- Management actions -->
   <div class="flex flex-wrap gap-2 text-sm">
     <a href="{{ bulk_create_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add wards by name</a>
+    <a href="{{ add_from_map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add wards from map</a>
     <a href="{{ new_plan_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">+ Add a plan in the editor</a>
     {% if entries %}
     <a href="{{ compare_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">Compare</a>
     {% endif %}
     {% if entries %}<a href="{{ map_url }}" class="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50">View on map</a>
     <button type="button" class="px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
-            :disabled="busy" @click="generateSamples()" x-text="busy ? 'Generating…' : 'Generate samples'"></button>{% endif %}
+            :disabled="busy" @click="generateSamples()" x-text="busy ? 'Generating…' : '{% if all_sampled %}Re-generate samples{% else %}Generate samples{% endif %}'"
+            title="{% if all_sampled %}Re-run the rooftop sampling for every ward in this study{% else %}Run the rooftop sampling for every ward in this study at once{% endif %}"></button>{% endif %}
   </div>
 
   {% if not entries %}
-  <p class="text-sm text-gray-400">No plans in this group yet. Add wards by name, or define a plan's boundary in the editor and save it here.</p>
+  <p class="text-sm text-gray-400">No plans in this group yet. Add wards by name, pick them from a map, or define a plan's boundary in the editor and save it here.</p>
   {% else %}
 
   <div class="overflow-x-auto border border-gray-200 rounded-lg">
@@ -67,7 +69,7 @@
         <tr class="hover:bg-gray-50">
           <td class="px-3 py-2">
             <a href="{{ e.review_url }}" class="text-brand-cornflower-blue font-medium">{{ e.name|default:"Untitled plan" }}</a>
-            {% if e.region %}<div class="text-[11px] text-gray-400">{{ e.region }}</div>{% endif %}
+            {% if e.region and e.region != e.name %}<div class="text-[11px] text-gray-400">{{ e.region }}</div>{% endif %}
           </td>
           {% if group.is_study %}
           <td class="px-3 py-2">
@@ -100,35 +102,32 @@
     </table>
   </div>
   {% if group.is_study %}
-  <p class="text-[11px] text-gray-400 mt-1">
-    <span class="text-gray-500">Connect CSV is blind:</span> each ward exports as an ordinary work-area file with no arm column, so the field organisation only ever receives a ward to cover.
+  <p class="text-[11px] text-gray-400 mt-1 flex items-center flex-wrap">
+    <span class="text-gray-500">Connect&nbsp;CSV is blind</span>&nbsp;— each ward exports an arm-free work-area file.
+    {% include "microplans/_info.html" with text="Exported columns: Area Slug, Ward, Centroid, Boundary, Building Count, Expected Visit Count, Target Population, LGA, State. There is no Arm column — the field organisation only ever receives a ward to cover, never which arm it is." only %}
   </p>
   {% endif %}
 
   {% if comparability and comparability.metrics %}
   <section class="mt-5">
-    <div class="flex items-center gap-2 mb-1">
+    <div class="flex items-center gap-2 mb-1.5">
       <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Arm comparability</h2>
-      {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">settlements matched</span>
-      {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">not a fair control</span>{% endif %}
+      {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">within tolerance</span>
+      {% elif comparability.matched is False %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">out of tolerance</span>{% endif %}
+      {% include "microplans/_info.html" with text="A rooftop survey only visits the sampled settlements (PSUs), so the two arms are compared on those — not the whole ward — as a standardized mean difference (SMD). The verdict is decided by settlement density alone; differences in PSU size and building footprint are corrected at analysis, not used to reject a control. Bands: |SMD| < 0.1 close · < 0.25 acceptable · ≥ 0.25 differs." only %}
     </div>
-    <!-- Plain-language verdict in one sentence, before the methodology detail. -->
+    {# One-line objective read — what the data shows; the analyst decides + acts. #}
     {% if comparability.matched is True %}
-    <p class="text-sm text-gray-700 mb-1">The control's sampled settlements match the intervention's — a fair counterfactual.{% if comparability.flags %} Ward-level size and building footprint differ and are adjusted for at analysis.{% endif %}</p>
+    <p class="text-sm text-gray-700 mb-3">Sampled settlements match — density SMD&nbsp;{{ comparability.gating_smd }}{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(marginal)</span>{% endif %}.</p>
     {% elif comparability.matched is False %}
-    <p class="text-sm text-gray-700 mb-1">Not a fair control — its sampled settlements are too different from the intervention's ({{ comparability.reasons|join:"; " }}).</p>
+    <p class="text-sm text-gray-700 mb-3">Sampled settlements differ — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
     {% endif %}
-    <p class="text-[11px] text-gray-400 mb-2">
-      Is the control a fair counterfactual? The survey only visits the sampled settlements (PSUs), so the
-      arms are compared on the <b>selected PSUs</b>, as a standardized mean difference (SMD).
-      The verdict gates on <b>settlement density</b> — the settlement structure a control can't change after
-      the survey. PSU size and building footprint are baseline covariates a difference-in-differences analysis
-      adjusts for, so they are flagged to <i>adjust at analysis</i>, not used to reject the control.
-      |SMD| &lt; 0.1 is a close match, &lt; 0.25 acceptable.
-    </p>
-    <!-- Balance table (CONSORT-style): one row per characteristic, SMD + band. The
-         gating row (settlement density) uses red on imbalance; advisory rows use a
-         calm 'adjust at analysis' so the table never contradicts the verdict. -->
+
+    {# Structural metric — decides the verdict. #}
+    <div class="flex items-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+      Decides the verdict
+      {% include "microplans/_info.html" with text="Settlement density = buildings per km² inside each sampled settlement (the convex hull of its buildings), averaged over the selected settlements. It's structural — a property of where the survey samples that a control can't change and an analysis can't correct — so it alone decides whether the two arms are comparable." only %}
+    </div>
     <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
       <table class="text-sm">
         <thead class="bg-gray-50 text-gray-600">
@@ -139,28 +138,58 @@
             <th class="text-left font-semibold px-3 py-2">Balance</th></tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
-          {% for m in comparability.metrics %}
+          {% for m in comparability.metrics %}{% if m.core %}
           <tr>
-            <td class="px-3 py-2">{{ m.label }}{% if m.metric == "psu_density" %} <span class="text-[10px] text-gray-400">/km²</span>{% elif m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}{% if m.core %} <span class="text-[10px] text-gray-500">· gates verdict</span>{% else %} <span class="text-[10px] text-gray-400">· adjust at analysis</span>{% endif %}</td>
+            <td class="px-3 py-2 font-medium">{{ m.label }}{% if m.metric == "psu_density" %} <span class="text-[10px] text-gray-400">/km²</span>{% elif m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.iv }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.ct }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ m.smd }}</td>
             <td class="px-3 py-2">
               {% if m.band == "good" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● close</span>
-              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">● acceptable</span>
-              {% elif m.core %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs</span>
-              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">● adjust at analysis</span>{% endif %}
+              {% elif m.band == "ok" %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">● acceptable</span>
+              {% else %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">● differs</span>{% endif %}
             </td>
           </tr>
-          {% endfor %}
+          {% endif %}{% endfor %}
         </tbody>
       </table>
     </div>
-    <p class="text-[11px] text-gray-400 mt-2">
-      Context (not used for matching): whole-ward building density —
-      {% for a in comparability.arms %}{% if a.arm == "intervention" %}intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}
-      vs {% for a in comparability.arms %}{% if a.arm == "control" %}control {{ a.ward_density }}/km²{% endif %}{% endfor %}.
-      A larger, sparser ward can still be a fair control when its settlements match.
+    {% if comparability.n_intervention and comparability.n_control %}
+    <p class="text-[11px] text-gray-400 mt-1">n = {{ comparability.n_intervention }} / {{ comparability.n_control }} selected settlements per arm.</p>
+    {% endif %}
+
+    {% if comparability.has_advisory %}
+    {# Adjustable covariates — recorded, corrected at analysis, not used to reject. #}
+    <div class="flex items-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1 mt-3">
+      Adjusted at analysis
+      {% include "microplans/_info.html" with text="PSU size and building footprint are measured baseline covariates a difference-in-differences analysis corrects for, so a difference here is recorded and adjusted — never used to reject the control. A large gap is flagged for a common-support check." only %}
+    </div>
+    <div class="overflow-x-auto border border-gray-100 bg-gray-50 rounded-lg inline-block">
+      <table class="text-[13px] text-gray-500">
+        <thead class="text-gray-400"><tr>
+          <th class="text-left font-medium px-3 py-1.5">Characteristic</th>
+          <th class="text-right font-medium px-3 py-1.5">Int.</th>
+          <th class="text-right font-medium px-3 py-1.5">Ctrl.</th>
+          <th class="text-right font-medium px-3 py-1.5">SMD</th></tr></thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for m in comparability.metrics %}{% if not m.core %}
+          <tr>
+            <td class="px-3 py-1.5">{{ m.label }}{% if m.metric == "bldg_area" %} <span class="text-[10px] text-gray-400">m²</span>{% endif %}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ m.iv }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ m.ct }}</td>
+            <td class="px-3 py-1.5 text-right tabular-nums">{{ m.smd }}</td>
+          </tr>
+          {% endif %}{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <p class="text-[11px] text-gray-400 mt-2 flex items-center flex-wrap">
+      Whole-ward density:
+      {% for a in comparability.arms %}{% if a.arm == "intervention" %}&nbsp;intervention {{ a.ward_density }}/km²{% endif %}{% endfor %}
+      vs{% for a in comparability.arms %}{% if a.arm == "control" %} control {{ a.ward_density }}/km²{% endif %}{% endfor %}.
+      {% include "microplans/_info.html" with text="The naive measure, shown for context only — not used for matching. A larger, sparser ward can still be a fair control when its sampled settlements match, which is exactly what the comparison above tests." only %}
     </p>
   </section>
   {% endif %}
