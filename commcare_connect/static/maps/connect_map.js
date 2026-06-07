@@ -195,9 +195,9 @@
           opts.confirmedColor || '#a78bfa',
           opts.absentColor || '#94a3b8',
         ],
-        'circle-stroke-color': '#0b1020',
-        'circle-stroke-width': 0.6,
-        'circle-opacity': 0.95,
+        'circle-stroke-color': opts.strokeColor || '#0b1020',
+        'circle-stroke-width': opts.strokeWidth == null ? 0.6 : opts.strokeWidth,
+        'circle-opacity': opts.opacity == null ? 0.95 : opts.opacity,
       },
     });
   }
