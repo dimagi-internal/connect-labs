@@ -33,7 +33,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from walkthroughs._lib import config as wcfg  # noqa: E402
 from walkthroughs._lib.recorder import RecorderSession, goto_and_settle, slow_move, snap  # noqa: E402
 
-HERO = "text=Independent verification"
+HERO = "text=Survey round"
 
 
 def _scroll_to(page, text: str, *, settle_ms: int = 1200) -> bool:
@@ -83,6 +83,22 @@ def _reveal(page, label_text: str) -> None:
     page.wait_for_timeout(1600)
 
 
+def _click_round(page, label: str) -> None:
+    """Glide to and click a round-selector chip (R1..R6) so the KPIs re-drive."""
+    btn = page.locator(f"button:has-text('{label}')").first
+    try:
+        box = btn.bounding_box()
+    except Exception:
+        box = None
+    if box:
+        slow_move(page, box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=22)
+        page.wait_for_timeout(220)
+    try:
+        btn.click()
+    except Exception:
+        pass
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id", type=int, default=None)
@@ -113,27 +129,42 @@ def main() -> int:
         goto_and_settle(page, url, wait_for_selector=HERO, settle_seconds=2.5)
         trim_s = max(time.monotonic() - t0 + 1.0, 5.0)
 
-        # Scene 1 — the hero: the self-reported-vs-verified dumbbell.
-        # Park the cursor well off the hero so the opening frame reads finished,
-        # not mid-interaction.
-        slow_move(page, 1180, 640, steps=20)
+        # Scene 1 — the hero: self-reported vs independently-verified (the two
+        # numbers + the dumbbell). Park the cursor off the hero so the opening
+        # frame reads finished, not mid-interaction.
+        slow_move(page, 1180, 600, steps=20)
         snap(rec, "hero")
-        page.wait_for_timeout(2200)
+        page.wait_for_timeout(2000)
 
-        # Scene 2 — coverage by ward (descriptive supporting context).
-        _scroll_to(page, "Coverage by ward", settle_ms=1500)
-        snap(rec, "wards")
+        # Scene 2 — the survey-quality KPIs (the data-quality strip).
+        _scroll_to(page, "data quality", settle_ms=1400)
+        snap(rec, "kpis")
 
-        # Scene 3 — the six-round trend.
-        _scroll_to(page, "Coverage across", settle_ms=1500)
+        # Scene 3 — drill into the back-check: the side-by-side table where an
+        # independent re-survey is compared field-by-field, discordances in red.
+        _scroll_to(page, "Independent back-check", settle_ms=1600)
+        snap(rec, "backcheck")
+        _scroll_to(page, "showing", settle_ms=1500)  # the comparison table itself
+        snap(rec, "backcheck-table")
+
+        # Scene 4 — drill across cycles: click the selector and watch the KPIs
+        # re-drive cycle to cycle (different program ward each time).
+        _scroll_to(page, "Survey round", settle_ms=1000)
+        for r in ("R1", "R6"):
+            _click_round(page, r)
+            page.wait_for_timeout(1300)
+        snap(rec, "rounds")
+
+        # Scene 5 — the six-cycle trend.
+        _scroll_to(page, "bi-monthly", settle_ms=1400)
         snap(rec, "trend")
 
-        # Scene 4 — the two-ward map. It lands on the clean service-delivery
-        # view (pins off by default); toggle SD off/on to show it fills only
-        # the program ward, then reveal the survey pins on camera. End here.
-        _scroll_to(page, "Where the program delivered", settle_ms=1800)
+        # Scene 6 — THE moving map: land on it, then step the round selector so
+        # the map FLIES to each cycle's two real wards (the rotating-wards
+        # highlight). Click the chips via JS (no auto-scroll) so the map stays in
+        # frame while it re-fits to a new program/comparison pair each click.
+        _scroll_to(page, "Program service delivery", settle_ms=1700)
         page.wait_for_selector(".mapboxgl-canvas", timeout=20_000)
-        # Wait for the Mapbox basemap (WebGL tiles + admin boundaries) to paint.
         try:
             page.wait_for_function(
                 "window.ConnectMap && document.querySelector('.mapboxgl-canvas')",
@@ -141,11 +172,21 @@ def main() -> int:
             )
         except Exception:
             pass
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(2600)
         snap(rec, "map")
-        _toggle(page, "service delivery")
-        _reveal(page, "survey pins")
-        page.wait_for_timeout(1400)
+
+        def _click_round_no_scroll(label):
+            page.evaluate(
+                "(lbl)=>{var b=[].slice.call(document.querySelectorAll('button'))"
+                ".find(x=>x.textContent.trim()===lbl); if(b) b.click();}",
+                label,
+            )
+
+        for r in ("R1", "R2", "R3", "R4", "R5", "R6"):
+            _click_round_no_scroll(r)
+            page.wait_for_timeout(1900)  # let the map fly + settle on the new wards
+        snap(rec, "map-rotating")
+        page.wait_for_timeout(1200)
 
     webms = sorted(video_dir.glob("*.webm"), key=lambda p: p.stat().st_mtime)
     if not webms:

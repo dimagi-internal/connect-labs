@@ -1,40 +1,61 @@
 // Verified Monitoring (N1) — funder-facing verified-coverage dashboard.
-// Self-contained: reads everything from instance.state (seeded payload); never
-// fetches. Financial-dashboard styling; the two-ward map uses the shared
-// ConnectMap module (Mapbox GL + real admin boundaries) loaded by the runner.
-// Verification-first: the hero is the defensible claim (an independent survey
-// checked the implementer's self-report). The treatment/comparison ward
-// coverage is supporting context, framed descriptively — not a causal estimate.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V19
+// Self-contained: reads everything from instance.state (seeded by survey_sim;
+// every KPI computed from row-level records via the survey_quality library) and
+// never fetches. Light, Connect-aligned styling.
+//
+// Layout: the six-cycle TREND is the page hero (edge-to-edge, top; hover a point
+// for its value); a cycle selector pivots the page; per cycle a full-width map
+// that moves to that cycle's two real wards; a per-surveyor survey-quality
+// scorecard; and an independent back-check that opens on one surveyor (click a
+// scorecard row to switch) — one row per re-surveyed household, columns grouped
+// under Identity / Location / Outcome sections with info buttons (method +
+// source). Objective copy; the viewer draws the conclusion.
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V39
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
-  var cov = data.coverage || {};
-  var latest = cov.latest || null;
-  var byArm = cov.by_arm || {};
-  var gapSeries = cov.gap_series || [];
   var prog = data.program || {};
-  var verif = data.verification || {};
-  var sr = data.self_report || {};
-  var sd = data.service_delivery_counts || {};
-  var overlay = data.overlay || null;
+  var rounds = data.rounds || [];
+  var trend = data.trend || {};
 
-  // --- Two-ward map via the shared ConnectMap module (Mapbox GL + real admin
-  // boundaries). mapboxgl + ConnectMap are loaded by the workflow runner page;
-  // boundary GeoJSON is fed via props (instance.state). ---
+  var INK = '#111827',
+    SUBINK = '#1e293b',
+    PANEL = '#ffffff',
+    LINE = '#e6e7f0',
+    MUT = '#6b7280',
+    INDIGO = '#4f46e5',
+    AMBER = '#f59e0b',
+    ROSE = '#e11d48',
+    COMP = '#64748b',
+    GREEN = '#059669',
+    SLATE = '#94a3b8';
+  var sans = "'Work Sans', Inter, system-ui, sans-serif";
+  var mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+  var SHADOW = '0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.04)';
+
+  var [sel, setSel] = React.useState(
+    Math.max(0, (data.current_round || rounds.length) - 1),
+  );
+  if (sel > rounds.length - 1) sel = Math.max(0, rounds.length - 1);
+  var rd = rounds[sel] || null;
+  // selected surveyor (drives the back-check section); null = round-level view
+  var [selSurv, setSelSurv] = React.useState(null);
+  // hovered trend point (for the tooltip), back-check info popup {key,x,y},
+  // and the selected scorecard quality metric {key,surveyor,value}
+  var [hoverPt, setHoverPt] = React.useState(null);
+  var [bcInfo, setBcInfo] = React.useState(null);
+  var [qSel, setQSel] = React.useState(null);
+
+  // ---- per-round map (shared ConnectMap; moves each round) ----
   var [mapLibReady, setMapLibReady] = React.useState(
     typeof window !== 'undefined' && !!window.ConnectMap && !!window.mapboxgl,
   );
   var [sdOn, setSdOn] = React.useState(true);
-  // Land on the clean service-delivery view; the survey-pin layer is toggled
-  // on to add the independent-survey story (avoids a "both at once" confetti
-  // default).
-  var [pinsOn, setPinsOn] = React.useState(false);
+  var [pinsOn, setPinsOn] = React.useState(true);
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   var mapLoadedRef = React.useRef(false);
 
-  // Wait for the shared map module to be present on the page.
   React.useEffect(
     function () {
       if (mapLibReady) return undefined;
@@ -53,21 +74,45 @@ function WorkflowUI(props) {
 
   React.useEffect(
     function () {
+      var overlay = rd && rd.overlay;
       if (!mapLibReady || !overlay || !mapDivRef.current) return undefined;
       var CM = window.ConnectMap;
+      var progWard = rd.treatment_ward;
       if (!mapRef.current) {
         var ctr = CM.bounds(overlay.ward_boundaries).getCenter();
         mapRef.current = CM.createMap(mapDivRef.current, {
           center: [ctr.lng, ctr.lat],
           zoom: 10,
+          style: 'mapbox://styles/mapbox/light-v11',
         });
       }
       var map = mapRef.current;
       function draw() {
         CM.remove(map, ['vm-sd', 'vm-pins', 'vm-wards']);
         CM.boundary(map, 'vm-wards', overlay.ward_boundaries, {
-          activeWard: prog.treatment_ward,
+          activeWard: progWard,
+          activeColor: INDIGO,
+          mutedColor: COMP,
+          labelColor: SUBINK,
+          labelHalo: '#ffffff',
         });
+        try {
+          map.setPaintProperty('vm-wards-fill', 'fill-color', [
+            'case',
+            ['==', ['get', 'ward'], progWard],
+            INDIGO,
+            COMP,
+          ]);
+          map.setPaintProperty('vm-wards-fill', 'fill-opacity', 0.14);
+          map.setPaintProperty('vm-wards-line', 'line-color', [
+            'case',
+            ['==', ['get', 'ward'], progWard],
+            INDIGO,
+            COMP,
+          ]);
+          map.setPaintProperty('vm-wards-label', 'text-color', SUBINK);
+          map.setPaintProperty('vm-wards-label', 'text-halo-color', '#ffffff');
+        } catch (e) {}
         if (sdOn && overlay.service_delivery) {
           CM.points(map, 'vm-sd', overlay.service_delivery, {
             color: '#16a34a',
@@ -76,71 +121,434 @@ function WorkflowUI(props) {
           });
         }
         if (pinsOn && overlay.survey_pins) {
-          CM.pins(map, 'vm-pins', overlay.survey_pins);
+          CM.pins(map, 'vm-pins', overlay.survey_pins, {
+            confirmedColor: INDIGO,
+            absentColor: SLATE,
+            radius: 3.0,
+          });
         }
-        CM.fit(map, overlay.ward_boundaries, 55);
+        CM.fit(map, overlay.ward_boundaries, 48);
       }
-      if (mapLoadedRef.current && map.isStyleLoaded()) {
-        draw();
-      } else {
+      if (mapLoadedRef.current && map.isStyleLoaded()) draw();
+      else
         map.once('load', function () {
           mapLoadedRef.current = true;
           draw();
         });
-      }
       return undefined;
     },
-    [mapLibReady, overlay, sdOn, pinsOn],
+    [mapLibReady, sel, sdOn, pinsOn],
   );
 
-  var INK = '#0b1020',
-    PANEL = '#121a2e',
-    LINE = '#1e2a44',
-    MUT = '#8a96b3',
-    PURPLE = '#a78bfa',
-    PINK = '#f472b6',
-    GREEN = '#34d399',
-    AMBER = '#fbbf24',
-    REDISH = '#fca5a5';
-  var mono = 'ui-monospace, SFMono-Regular, Menlo, monospace';
-
-  if (!latest) {
+  if (!rd) {
     return (
-      <div
-        style={{
-          padding: '2rem',
-          color: MUT,
-          fontFamily: mono,
-          background: INK,
-        }}
-      >
-        Verified Monitoring — no data yet. Seed this run via the
-        verified-monitoring recipe.
+      <div style={{ padding: '2rem', color: MUT, fontFamily: sans }}>
+        Verified Monitoring — no data yet. Seed this run via regenerate.py.
       </div>
     );
   }
 
-  var tCov = latest.intervention_pct,
-    cCov = latest.comparison_pct,
-    gap = latest.gap_pp;
-  function _lastN(arr) {
-    return arr && arr.length ? arr[arr.length - 1].n : null;
-  }
-  var cN = _lastN(byArm.comparison);
-  // 95% CI on the independently-verified coverage (binomial, n surveyed).
-  var _indP = (sr.independent_pct || 0) / 100;
-  var _indN = latest.intervention_n || 0;
+  // ---- per-round data ----
+  var tWard = rd.treatment_ward || 'Program ward';
+  var cWard = rd.comparison_ward || 'Comparison ward';
+  var sd = rd.service_delivery_counts || {};
+  var ver = rd.intervention_pct,
+    self_ = rd.self_report_pct,
+    prem = rd.premium_pp;
+  var indN = rd.intervention_n || 0;
+  var _indP = (ver || 0) / 100;
   var indCI =
-    _indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / _indN) * 100 : null;
-  var tWard = prog.treatment_ward || 'Treatment',
-    cWard = prog.control_ward || 'Control';
-  function _delta(arr) {
-    return arr && arr.length >= 2
-      ? arr[arr.length - 1].coverage_pct - arr[arr.length - 2].coverage_pct
-      : null;
+    indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / indN) * 100 : null;
+  var q = rd.quality || {};
+  var bc = rd.backcheck || {};
+  // The back-check always opens on a surveyor — default to the one whose work
+  // most needs review (lowest outcome agreement); clicking a scorecard row
+  // selects a different one. No confusing round-level mode.
+  var sbMap = data.surveyor_backcheck || {};
+  var bcIds = Object.keys(sbMap);
+  function _t3(k) {
+    return sbMap[k] && sbMap[k].type3_pct != null ? sbMap[k].type3_pct : 100;
   }
-  var tDelta = _delta(byArm.intervention),
-    cDelta = _delta(byArm.comparison);
+  var effSurv =
+    selSurv && sbMap[selSurv]
+      ? selSurv
+      : bcIds.length
+      ? bcIds.reduce(function (a, b) {
+          return _t3(b) < _t3(a) ? b : a;
+        }, bcIds[0])
+      : null;
+
+  // scorecard quality metrics: what each checks + the library detail key, so a
+  // clicked cell can open a relevant info panel below the table.
+  var QMETA = {
+    evidence: {
+      lib: 'evidence_capture',
+      label: 'Evidence capture',
+      blurb:
+        'A proof photo on every "received" record — the auditable evidence behind a coverage claim.',
+    },
+    gps: {
+      lib: 'gps_within_15m',
+      label: 'GPS within 15 m',
+      blurb:
+        "The capture's GPS within 15 m of the assigned household — confirms the surveyor was actually there.",
+    },
+    completeness: {
+      lib: 'field_completeness',
+      label: 'Field completeness',
+      blurb:
+        'Every required field present on the record (no blanks left behind).',
+    },
+    duration: {
+      lib: 'duration_plausibility',
+      label: 'Interview duration',
+      blurb:
+        'Interview length within a plausible band — flags records too fast to be real.',
+    },
+    consistency: {
+      lib: 'consistency_pass',
+      label: 'Consistency checks',
+      blurb:
+        'Internal edit rules pass (e.g. a "received" record must have an eligible child present).',
+    },
+    duplicates: {
+      lib: 'duplicate_integrity',
+      label: 'Duplicate integrity',
+      blurb:
+        'No duplicate household IDs and no repeated (GPS, timestamp) — catches copy-pasted records.',
+    },
+  };
+
+  // metric drill-through: one row per survey for the clicked quality cell, with
+  // that metric's per-record value + flag. Fills the bottom widget (replaces the
+  // back-check view while a quality cell is selected).
+  function qmetricDrill(surveyor, key) {
+    var m = QMETA[key];
+    if (!m) return null;
+    var scRows = rd.surveyor_scorecard || [];
+    var row = surveyor
+      ? scRows.filter(function (r) {
+          return r.surveyor === surveyor;
+        })[0]
+      : null;
+    var recs = row
+      ? (row.records || []).slice()
+      : scRows.reduce(function (a, r) {
+          return a.concat(r.records || []);
+        }, []);
+    var val = row ? row[key] : null;
+    var valTxt =
+      val == null
+        ? '—'
+        : key === 'duplicates'
+        ? val + ' dup'
+        : Number(val).toFixed(1) + '%';
+
+    function flagged(r) {
+      if (key === 'evidence') return r.recv && r.photo !== true;
+      if (key === 'gps') return r.gps != null && r.gps > 15;
+      if (key === 'completeness') return (r.miss || []).length > 0;
+      if (key === 'duration') return !!r.short;
+      if (key === 'consistency') return !r.cons;
+      if (key === 'duplicates') return !!r.dup;
+      return false;
+    }
+    function sortVal(r) {
+      if (key === 'gps') return -(r.gps || 0);
+      if (key === 'duration') return r.dur == null ? 1e9 : r.dur;
+      return flagged(r) ? 0 : 1;
+    }
+    recs.sort(function (a, b) {
+      return sortVal(a) - sortVal(b);
+    });
+    var nFlag = recs.filter(flagged).length;
+    var nTotal = recs.length;
+
+    var th = {
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.03em',
+      padding: '5px 9px',
+      textAlign: 'left',
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var thR = Object.assign({}, th, { textAlign: 'right' });
+    var td = {
+      padding: '6px 9px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var tdR = Object.assign({}, td, { textAlign: 'right' });
+    var hhTd = Object.assign({}, td, {
+      color: SUBINK,
+      fontWeight: 600,
+      fontFamily: 'inherit',
+    });
+    function bar(frac, color) {
+      return (
+        <span
+          style={{
+            display: 'inline-block',
+            width: 84,
+            height: 7,
+            borderRadius: 4,
+            background: '#eef2f7',
+            overflow: 'hidden',
+            verticalAlign: 'middle',
+            marginRight: 8,
+          }}
+        >
+          <span
+            style={{
+              display: 'block',
+              height: '100%',
+              width: Math.max(0, Math.min(1, frac)) * 100 + '%',
+              background: color,
+            }}
+          />
+        </span>
+      );
+    }
+
+    var head, rowCells;
+    if (key === 'gps') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={thR}>GPS offset from assigned</th>
+          <th style={thR}>≤ 15 m</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="gps"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : SUBINK,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {bar((r.gps || 0) / 60, bad ? ROSE : INDIGO)}
+            {r.gps == null ? '—' : r.gps.toFixed(0) + ' m'}
+          </td>,
+          <td
+            key="ok"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'no' : 'yes'}
+          </td>,
+        ];
+      };
+    } else if (key === 'evidence') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Received vit-A</th>
+          <th style={th}>Proof photo</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td key="recv" style={Object.assign({}, td, { color: SUBINK })}>
+            {r.recv ? 'yes' : 'no'}
+          </td>,
+          <td
+            key="photo"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : r.recv ? GREEN : MUT,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {r.recv ? (r.photo ? 'yes' : 'MISSING') : 'n/a'}
+          </td>,
+        ];
+      };
+    } else if (key === 'duration') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={thR}>Interview duration</th>
+          <th style={thR}>Too fast</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="dur"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : SUBINK,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {bar((r.dur || 0) / 30, bad ? ROSE : INDIGO)}
+            {r.dur == null ? '—' : r.dur.toFixed(1) + ' min'}
+          </td>,
+          <td
+            key="ok"
+            style={Object.assign({}, tdR, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'yes' : 'no'}
+          </td>,
+        ];
+      };
+    } else if (key === 'completeness') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Missing required fields</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="miss"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: bad ? 700 : 400,
+            })}
+          >
+            {bad ? (r.miss || []).join(', ') : 'complete'}
+          </td>,
+        ];
+      };
+    } else if (key === 'consistency') {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Received</th>
+          <th style={th}>Edit checks</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td key="recv" style={Object.assign({}, td, { color: MUT })}>
+            {r.recv ? 'yes' : 'no'}
+          </td>,
+          <td
+            key="ok"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'violation' : 'pass'}
+          </td>,
+        ];
+      };
+    } else {
+      head = (
+        <tr>
+          <th style={th}>Household</th>
+          <th style={th}>Duplicate record</th>
+        </tr>
+      );
+      rowCells = function (r) {
+        var bad = flagged(r);
+        return [
+          <td key="hh" style={hhTd}>
+            {r.hh}
+          </td>,
+          <td
+            key="dup"
+            style={Object.assign({}, td, {
+              color: bad ? ROSE : GREEN,
+              fontWeight: 700,
+            })}
+          >
+            {bad ? 'duplicate' : 'unique'}
+          </td>,
+        ];
+      };
+    }
+    var who = surveyor ? 'Surveyor ' + surveyor : 'all surveyors';
+    return (
+      <div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: 10,
+            flexWrap: 'wrap',
+            marginBottom: 2,
+          }}
+        >
+          <div style={{ color: SUBINK, fontWeight: 700, fontSize: 13 }}>
+            {m.label}{' '}
+            <span style={{ color: MUT, fontWeight: 400 }}>
+              · {who} · this cycle
+            </span>{' '}
+            <span style={{ fontFamily: mono, color: INDIGO }}>{valTxt}</span>
+          </div>
+          <button
+            onClick={function () {
+              setQSel(null);
+            }}
+            style={{
+              cursor: 'pointer',
+              border: '1px solid ' + LINE,
+              background: '#fff',
+              color: INDIGO,
+              borderRadius: 7,
+              fontSize: 11,
+              padding: '3px 9px',
+              fontFamily: sans,
+            }}
+          >
+            ← back-check
+          </button>
+        </div>
+        <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
+          {m.blurb} One row per survey — all {nTotal} this cycle ({nFlag}{' '}
+          flagged).
+        </div>
+        <div style={{ overflow: 'auto', maxHeight: 380 }}>
+          <table
+            style={{ borderCollapse: 'collapse', width: '100%', minWidth: 440 }}
+          >
+            <thead style={{ position: 'sticky', top: 0, background: '#fff' }}>
+              {head}
+            </thead>
+            <tbody>
+              {recs.map(function (r, i) {
+                return <tr key={i}>{rowCells(r)}</tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   function pct(x) {
     return x == null ? '—' : x.toFixed(1) + '%';
@@ -148,664 +556,1118 @@ function WorkflowUI(props) {
   function pp(x) {
     return x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(1) + ' pts';
   }
-
-  // --- inline sparkline for an arm's per-round series ---
-  function spark(series, color) {
-    var vals = (series || []).map(function (r) {
-      return r.coverage_pct || 0;
-    });
-    if (vals.length < 2) return null;
-    var w = 120,
-      h = 28,
-      max = Math.max.apply(null, vals),
-      min = Math.min.apply(null, vals),
-      rng = max - min || 1;
-    var pts = vals
-      .map(function (v, i) {
-        var x = (i / (vals.length - 1)) * w;
-        var y = h - ((v - min) / rng) * h;
-        return x.toFixed(1) + ',' + y.toFixed(1);
-      })
-      .join(' ');
-    return (
-      <svg width={w} height={h} style={{ display: 'block' }}>
-        <polyline points={pts} fill="none" stroke={color} strokeWidth="2" />
-      </svg>
-    );
+  function yn(v) {
+    return v === true ? 'yes' : v === false ? 'no' : v == null ? '—' : '' + v;
   }
-
-  function deltaChip(d) {
-    if (d == null) return null;
-    var up = d >= 0;
-    return (
-      <span
-        style={{
-          display: 'inline-block',
-          marginTop: 6,
-          padding: '1px 7px',
-          borderRadius: 6,
-          fontFamily: mono,
-          fontSize: 11,
-          color: up ? '#34d399' : '#fca5a5',
-          background: up ? '#0f2a1c' : '#2a1212',
-        }}
-      >
-        {(up ? '▲ +' : '▼ ') + Math.abs(d).toFixed(1) + ' pts vs last round'}
-      </span>
-    );
+  function metricVal(m) {
+    if (!m || m.value == null) return '—';
+    if (m.unit === 'count') return '' + m.value;
+    return (typeof m.value === 'number' ? m.value.toFixed(1) : m.value) + '%';
   }
-
-  function tile(label, ward, value, sub, color, series, delta) {
-    return (
-      <div
-        style={{
-          background: PANEL,
-          border: '1px solid ' + LINE,
-          borderRadius: 10,
-          padding: '14px 16px',
-          minWidth: 180,
-          flex: '1 1 180px',
-        }}
-      >
-        <div
-          style={{
-            color: MUT,
-            fontSize: 11,
-            letterSpacing: '.05em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {label}
-        </div>
-        <div style={{ color: '#cbd5e1', fontSize: 13, marginTop: 2 }}>
-          {ward}
-        </div>
-        <div
-          style={{
-            color: color,
-            fontFamily: mono,
-            fontSize: 30,
-            fontWeight: 700,
-            marginTop: 6,
-          }}
-        >
-          {value}
-        </div>
-        <div
-          style={{ color: MUT, fontFamily: mono, fontSize: 12, marginTop: 2 }}
-        >
-          {sub}
-        </div>
-        {delta != null ? <div>{deltaChip(delta)}</div> : null}
-        {series ? (
-          <div style={{ marginTop: 8 }}>{spark(series, color)}</div>
-        ) : null}
-      </div>
-    );
-  }
-
-  // --- dual-line trend: gap band + round labels + emphasized latest point ---
-  function trend() {
-    var ti = byArm.intervention || [],
-      tc = byArm.comparison || [];
-    var n = Math.max(ti.length, tc.length);
-    if (n < 2) return null;
-    var w = 560,
-      h = 200,
-      pad = 30,
-      padB = 26;
-    function X(i) {
-      return pad + (i / (n - 1)) * (w - 2 * pad);
-    }
-    function Y(v) {
-      return h - padB - ((v || 0) / 100) * (h - pad - padB);
-    }
-    function poly(series) {
-      return series
-        .map(function (r, i) {
-          return X(i) + ',' + Y(r.coverage_pct);
-        })
-        .join(' ');
-    }
-    var band =
-      ti
-        .map(function (r, i) {
-          return X(i) + ',' + Y(r.coverage_pct);
-        })
-        .join(' ') +
-      ' ' +
-      tc
-        .slice()
-        .reverse()
-        .map(function (r, i) {
-          return X(n - 1 - i) + ',' + Y(r.coverage_pct);
-        })
-        .join(' ');
-    var grid = [0, 25, 50, 75, 100].map(function (g) {
-      var y = Y(g);
-      return (
-        <g key={g}>
-          <line
-            x1={pad}
-            y1={y}
-            x2={w - pad}
-            y2={y}
-            stroke={LINE}
-            strokeWidth="1"
-          />
-          <text x={4} y={y + 3} fill={MUT} fontSize="9" fontFamily={mono}>
-            {g + '%'}
-          </text>
-        </g>
-      );
-    });
-    var xlabels = ti.map(function (r, i) {
-      return (
-        <text
-          key={i}
-          x={X(i)}
-          y={h - 8}
-          fill={MUT}
-          fontSize="9"
-          fontFamily={mono}
-          textAnchor="middle"
-        >
-          {'R' + (r.round || i + 1)}
-        </text>
-      );
-    });
-    var last = n - 1;
-    return (
-      <svg width={w} height={h} style={{ maxWidth: '100%' }}>
-        {grid}
-        <polygon points={band} fill={PURPLE} fillOpacity="0.08" stroke="none" />
-        <polyline
-          points={poly(ti)}
-          fill="none"
-          stroke={PURPLE}
-          strokeWidth="2.5"
-        />
-        <polyline
-          points={poly(tc)}
-          fill="none"
-          stroke={PINK}
-          strokeWidth="2.5"
-        />
-        {xlabels}
-        {ti[last] ? (
-          <circle
-            cx={X(last)}
-            cy={Y(ti[last].coverage_pct)}
-            r="4.5"
-            fill={PURPLE}
-            stroke={INK}
-            strokeWidth="1.5"
-          />
-        ) : null}
-        {tc[last] ? (
-          <circle
-            cx={X(last)}
-            cy={Y(tc[last].coverage_pct)}
-            r="4.5"
-            fill={PINK}
-            stroke={INK}
-            strokeWidth="1.5"
-          />
-        ) : null}
-        {ti[last] ? (
-          <text
-            x={X(last) - 8}
-            y={Y(ti[last].coverage_pct) - 8}
-            fill={PURPLE}
-            fontSize="11"
-            fontWeight="700"
-            textAnchor="end"
-          >
-            {tWard + ' ' + pct(ti[last].coverage_pct)}
-          </text>
-        ) : null}
-        {tc[last] ? (
-          <text
-            x={X(last) - 8}
-            y={Y(tc[last].coverage_pct) - 8}
-            fill={PINK}
-            fontSize="11"
-            fontWeight="700"
-            textAnchor="end"
-          >
-            {cWard + ' ' + pct(tc[last].coverage_pct)}
-          </text>
-        ) : null}
-      </svg>
-    );
-  }
-
-  // --- hero dumbbell: self-reported vs independently-verified, with the gap
-  // shaded and a 95% CI whisker on the verified estimate. Makes the gap the
-  // visual instead of a prose sentence. ---
-  function dumbbell() {
-    var W = 560,
-      H = 106,
-      padL = 14,
-      padR = 14;
-    var self = sr.intervention_pct,
-      ver = sr.independent_pct;
-    if (self == null || ver == null) return null;
-    // Zoom the axis to a window around the two values so they spread across
-    // the full width (not bunched in the right third of a 0-100 axis).
-    var dLo = Math.max(0, Math.floor((Math.min(self, ver) - 10) / 10) * 10);
-    var dHi = 100;
-    function X(v) {
-      return padL + ((v - dLo) / (dHi - dLo)) * (W - padL - padR);
-    }
-    var yT = 50;
-    var xSelf = X(self),
-      xVer = X(ver);
-    var AMBER = '#fbbf24';
-    var ci = indCI || 0;
-    var ciLo = X(Math.max(dLo, ver - ci)),
-      ciHi = X(Math.min(dHi, ver + ci));
-    var ticks = [];
-    for (var tk = dLo; tk <= dHi + 0.001; tk += 10) ticks.push(tk);
-    // Clamp a label x so its box never overflows the chart edges.
-    function clampX(x, halfW) {
-      return Math.max(padL + halfW, Math.min(W - padR - halfW, x));
-    }
-    return (
-      <svg
-        width="100%"
-        viewBox={'0 0 ' + W + ' ' + H}
-        style={{ display: 'block', maxWidth: 600 }}
-      >
-        {/* legend (top) — so the dot values below never collide or clip */}
-        <circle cx={padL + 4} cy={11} r="4" fill="#fca5a5" />
-        <text x={padL + 12} y={14} fill={MUT} fontSize="10">
-          self-reported (program records)
-        </text>
-        <circle cx={padL + 215} cy={11} r="4" fill={PURPLE} />
-        <text x={padL + 223} y={14} fill={MUT} fontSize="10">
-          independently verified (survey, 95% CI)
-        </text>
-        {ticks.map(function (t) {
-          var x = X(t);
-          return (
-            <g key={t}>
-              <line x1={x} y1={yT - 3} x2={x} y2={yT + 3} stroke={LINE} />
-              <text
-                x={x}
-                y={H - 5}
-                fill={MUT}
-                fontSize="9"
-                fontFamily={mono}
-                textAnchor="middle"
-              >
-                {t + '%'}
-              </text>
-            </g>
-          );
-        })}
-        <line x1={padL} y1={yT} x2={W - padR} y2={yT} stroke={LINE} />
-        {/* the gap = the finding. Amber, not green (green elsewhere = passing). */}
-        <line
-          x1={xVer}
-          y1={yT}
-          x2={xSelf}
-          y2={yT}
-          stroke={AMBER}
-          strokeWidth="4"
-        />
-        {/* 95% CI as a shaded band so the verified dot clearly sits on top */}
-        <rect
-          x={ciLo}
-          y={yT - 7}
-          width={ciHi - ciLo}
-          height="14"
-          rx="4"
-          fill={PURPLE}
-          opacity="0.22"
-        />
-        <line
-          x1={ciLo}
-          y1={yT - 7}
-          x2={ciLo}
-          y2={yT + 7}
-          stroke={PURPLE}
-          strokeWidth="1.5"
-          opacity="0.85"
-        />
-        <line
-          x1={ciHi}
-          y1={yT - 7}
-          x2={ciHi}
-          y2={yT + 7}
-          stroke={PURPLE}
-          strokeWidth="1.5"
-          opacity="0.85"
-        />
-        <circle
-          cx={xSelf}
-          cy={yT}
-          r="7"
-          fill="#fca5a5"
-          stroke={INK}
-          strokeWidth="2"
-        />
-        <circle
-          cx={xVer}
-          cy={yT}
-          r="7"
-          fill={PURPLE}
-          stroke={INK}
-          strokeWidth="2"
-        />
-        {/* gap label (above); role+value labels at each dot (below) so the
-            direction — self-report higher than verified — is unmistakable. */}
-        <text
-          x={clampX((xVer + xSelf) / 2, 70)}
-          y={yT - 12}
-          fill={AMBER}
-          fontSize="12"
-          fontWeight="700"
-          textAnchor="middle"
-        >
-          self-report {pp(sr.premium_pp)} too high
-        </text>
-        <text
-          x={clampX(xVer, 40)}
-          y={yT + 22}
-          fill={PURPLE}
-          fontSize="14"
-          fontWeight="800"
-          textAnchor="middle"
-        >
-          {pct(ver)}
-        </text>
-        <text
-          x={clampX(xVer, 40)}
-          y={yT + 36}
-          fill={MUT}
-          fontSize="10"
-          textAnchor="middle"
-        >
-          verified (survey)
-        </text>
-        <text
-          x={clampX(xSelf, 40)}
-          y={yT + 22}
-          fill="#fca5a5"
-          fontSize="14"
-          fontWeight="800"
-          textAnchor="middle"
-        >
-          {pct(self)}
-        </text>
-        <text
-          x={clampX(xSelf, 40)}
-          y={yT + 36}
-          fill={MUT}
-          fontSize="10"
-          textAnchor="middle"
-        >
-          self-reported
-        </text>
-      </svg>
-    );
-  }
-
-  var chip = function (label, val, ok) {
-    return (
-      <div
-        key={label}
-        style={{
-          background: PANEL,
-          border: '1px solid ' + (ok ? '#1f5132' : LINE),
-          borderRadius: 8,
-          padding: '8px 12px',
-          fontFamily: mono,
-        }}
-      >
-        <div
-          style={{
-            color: MUT,
-            fontSize: 10,
-            textTransform: 'uppercase',
-            letterSpacing: '.04em',
-          }}
-        >
-          {label}
-        </div>
-        <div
-          style={{
-            color: ok ? GREEN : '#cbd5e1',
-            fontSize: 18,
-            fontWeight: 700,
-          }}
-        >
-          {val}
-        </div>
-      </div>
-    );
+  var cardStyle = {
+    background: PANEL,
+    border: '1px solid ' + LINE,
+    borderRadius: 12,
+    boxShadow: SHADOW,
   };
 
-  return (
-    <div
-      style={{
-        background: INK,
-        color: '#e2e8f0',
-        fontFamily: 'Inter, system-ui, sans-serif',
-        padding: 20,
-      }}
-    >
-      <div style={{ fontSize: 18, fontWeight: 700 }}>
-        {prog.name || 'Verified Monitoring'}
-      </div>
-      <div
-        style={{
-          color: MUT,
-          fontSize: 13,
-          marginTop: 4,
-          marginBottom: 16,
-          lineHeight: 1.5,
-          fontFamily: mono,
-        }}
-      >
-        Independent rooftop survey · {prog.cadence || 'bi-monthly'} · latest
-        round R{latest.round || (byArm.intervention || []).length} ·{' '}
-        <b style={{ color: PURPLE }}>{tWard}</b> (program ward) vs{' '}
-        <b style={{ color: PINK }}>{cWard}</b> (comparison ward)
-      </div>
-
-      {/* HERO — the defensible claim: an independent survey checked the
-          implementer's self-report. Needs no control group or baseline. */}
-      <div
-        style={{
-          background: PANEL,
-          border: '1px solid ' + LINE,
-          borderRadius: 12,
-          padding: '18px 20px',
-        }}
-      >
+  // floating popup for a back-check section's info (method + source). Fixed
+  // position at the click point so it overlays without reflowing the table.
+  function bcInfoPopup() {
+    if (!bcInfo) return null;
+    var W = 330;
+    var vw = typeof window !== 'undefined' ? window.innerWidth || 1200 : 1200;
+    var left = Math.min(Math.max(8, (bcInfo.x || vw / 2) - W / 2), vw - W - 8);
+    var top = (bcInfo.y || 80) + 14;
+    return (
+      <div>
         <div
-          style={{
-            color: MUT,
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
+          onClick={function () {
+            setBcInfo(null);
           }}
-        >
-          Independent verification — {tWard} (program ward)
-        </div>
+          style={{ position: 'fixed', inset: 0, zIndex: 50 }}
+        />
         <div
           style={{
-            fontSize: 18,
-            fontWeight: 700,
-            color: '#e2e8f0',
-            marginTop: 8,
-            lineHeight: 1.35,
-          }}
-        >
-          Program records overstate coverage by{' '}
-          <span style={{ color: AMBER }}>{pp(sr.premium_pp)}</span> —
-          self-reported{' '}
-          <span style={{ color: REDISH }}>{pct(sr.intervention_pct)}</span>,
-          independently verified{' '}
-          <span style={{ color: PURPLE }}>{pct(sr.independent_pct)}</span>.
-        </div>
-        <div style={{ marginTop: 12 }}>{dumbbell()}</div>
-        <div
-          style={{
-            color: MUT,
-            fontSize: 12,
-            marginTop: 8,
-            lineHeight: 1.5,
-            maxWidth: 600,
-          }}
-        >
-          Both estimate the same rate — the share of under-5 children reached
-          with confirmed vitamin-A — by different methods. Self-report is the
-          program's own records (
-          {sd[tWard] != null ? sd[tWard].toLocaleString() : '—'} logged visits);
-          the verified figure is an independent rooftop survey of {_indN}{' '}
-          children (95% CI ±{indCI != null ? indCI.toFixed(1) : '—'} pts).
-        </div>
-      </div>
-
-      {/* QA strip — how the survey held its line (backs the 'verified' claim) */}
-      <div
-        style={{
-          marginTop: 16,
-          color: MUT,
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: '.05em',
-          marginBottom: 6,
-        }}
-      >
-        Independent survey — data quality
-      </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {chip('GPS within 15m', pct(verif.gps_within_15m_pct), true)}
-        {chip('Evidence complete', pct(verif.evidence_complete_pct), true)}
-        {chip('Back-check pass', pct(verif.backcheck_pass_pct), true)}
-        {chip(
-          'Anomaly flags',
-          (verif.flags_raised || 0) +
-            ' raised · ' +
-            ((verif.flags_raised || 0) - (verif.flags_resolved || 0)) +
-            ' open',
-          true,
-        )}
-      </div>
-
-      {/* Supporting context — coverage by ward (descriptive, not an impact
-          estimate). Demoted below the verification hero. */}
-      <div style={{ marginTop: 18 }}>
-        <div
-          style={{
-            color: MUT,
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
-            marginBottom: 8,
-          }}
-        >
-          Coverage by ward, latest round (descriptive)
-        </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {tile(
-            'Program ward',
-            tWard,
-            pct(tCov),
-            latest.intervention_n != null
-              ? latest.intervention_n + ' children surveyed'
-              : 'independent survey',
-            PURPLE,
-            null,
-            null,
-          )}
-          {tile(
-            'Comparison ward',
-            cWard,
-            pct(cCov),
-            cN != null ? cN + ' children surveyed' : 'independent survey',
-            PINK,
-            null,
-            null,
-          )}
-        </div>
-        <div
-          style={{ marginTop: 10, color: MUT, fontSize: 12, lineHeight: 1.4 }}
-        >
-          {cWard} received no program activity (0 logged visits) — an
-          observational neighbouring reference, not a randomised control, so the
-          two wards aren't directly comparable.
-        </div>
-      </div>
-
-      {/* Trend */}
-      <div
-        style={{
-          marginTop: 18,
-          background: PANEL,
-          border: '1px solid ' + LINE,
-          borderRadius: 10,
-          padding: 14,
-        }}
-      >
-        <div
-          style={{
-            color: MUT,
-            fontSize: 11,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
-            marginBottom: 6,
-          }}
-        >
-          Coverage across {byArm.intervention ? byArm.intervention.length : 0}{' '}
-          bi-monthly rounds —<span style={{ color: PURPLE }}> {tWard}</span> vs{' '}
-          <span style={{ color: PINK }}>{cWard}</span>
-        </div>
-        <div style={{ color: MUT, fontSize: 11, marginBottom: 8 }}>
-          y-axis: % of surveyed children with confirmed vitamin-A
-        </div>
-        {trend()}
-      </div>
-
-      {/* Two-ward map overlay */}
-      {overlay ? (
-        <div
-          style={{
-            marginTop: 18,
-            background: PANEL,
+            position: 'fixed',
+            left: left,
+            top: top,
+            width: W,
+            zIndex: 51,
+            background: '#fff',
             border: '1px solid ' + LINE,
             borderRadius: 10,
-            padding: 14,
+            boxShadow: '0 10px 30px rgba(16,24,40,0.20)',
+            padding: '12px 14px',
           }}
         >
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 8,
+              alignItems: 'baseline',
+              marginBottom: 5,
             }}
           >
-            <div style={{ color: '#cbd5e1', fontSize: 13, maxWidth: 560 }}>
-              Where the program delivered, and where the survey checked —{' '}
-              {tWard} logged{' '}
-              {sd[tWard] != null ? sd[tWard].toLocaleString() : 0} visits,{' '}
-              {cWard} {sd[cWard] != null ? sd[cWard].toLocaleString() : 0}; the
-              independent survey covered both wards.
+            <b style={{ color: SUBINK, fontSize: 13 }}>{bcInfo.label}</b>
+            <button
+              onClick={function () {
+                setBcInfo(null);
+              }}
+              style={{
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                color: MUT,
+                fontSize: 16,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <div style={{ color: SUBINK, fontSize: 12.5, lineHeight: 1.5 }}>
+            {bcInfo.info}
+          </div>
+          <div
+            style={{
+              color: MUT,
+              fontSize: 11.5,
+              lineHeight: 1.5,
+              marginTop: 7,
+            }}
+          >
+            Method: independent back-checks per J-PAL/IPA (bcstats) and World
+            Bank DIME {'—'}{' '}
+            <a
+              href="https://dimewiki.worldbank.org/Back_Checks"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: INDIGO }}
+            >
+              dimewiki.worldbank.org/Back_Checks
+            </a>
+            .
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function sw(color, dashed) {
+    return (
+      <span
+        style={{
+          display: 'inline-block',
+          width: 14,
+          height: dashed ? 0 : 10,
+          borderTop: dashed ? '2px dashed ' + color : 'none',
+          background: dashed ? 'none' : color,
+          borderRadius: dashed ? 0 : 3,
+          marginRight: 5,
+          verticalAlign: 'middle',
+        }}
+      />
+    );
+  }
+
+  // ---- PAGE HERO: the six-cycle trend (edge-to-edge, clickable cycles) ----
+  function trendChart() {
+    var iv = trend.intervention || [],
+      cp = trend.comparison || [],
+      srr = trend.self_report || [],
+      rr = trend.rounds || [];
+    var n = Math.max(iv.length, cp.length, srr.length);
+    if (n < 2) return null;
+    var w = 1040,
+      h = 230,
+      padL = 34,
+      padR = 150,
+      padT = 14,
+      padB = 34;
+    function X(i) {
+      return padL + (i / (n - 1)) * (w - padL - padR);
+    }
+    function Y(v) {
+      return h - padB - ((v || 0) / 100) * (h - padT - padB);
+    }
+    function poly(a) {
+      return a
+        .map(function (v, i) {
+          return X(i) + ',' + Y(v);
+        })
+        .join(' ');
+    }
+    var band = '';
+    if (srr.length && iv.length) {
+      band =
+        srr
+          .map(function (v, i) {
+            return X(i) + ',' + Y(v);
+          })
+          .join(' ') +
+        ' ' +
+        iv
+          .slice()
+          .reverse()
+          .map(function (v, i) {
+            return X(iv.length - 1 - i) + ',' + Y(v);
+          })
+          .join(' ');
+    }
+    var grid = [0, 25, 50, 75, 100].map(function (g) {
+      return (
+        <g key={g}>
+          <line x1={padL} y1={Y(g)} x2={w - padR} y2={Y(g)} stroke={LINE} />
+          <text x={6} y={Y(g) + 3} fill={MUT} fontSize="10" fontFamily={mono}>
+            {g + '%'}
+          </text>
+        </g>
+      );
+    });
+    function endLabel(arr, color, label) {
+      if (!arr.length) return null;
+      var i = arr.length - 1;
+      return (
+        <g>
+          <circle
+            cx={X(i)}
+            cy={Y(arr[i])}
+            r="4.5"
+            fill={color}
+            stroke="#fff"
+            strokeWidth="1.5"
+          />
+          <text
+            x={X(i) + 10}
+            y={Y(arr[i]) + 4}
+            fill={color}
+            fontSize="11"
+            fontWeight="700"
+          >
+            {label + ' ' + pct(arr[i])}
+          </text>
+        </g>
+      );
+    }
+    var SERIES = [
+      { arr: cp, color: COMP, label: 'control arm survey' },
+      { arr: srr, color: AMBER, label: 'service-delivery data' },
+      { arr: iv, color: INDIGO, label: 'intervention arm survey' },
+    ];
+    function markers() {
+      return SERIES.map(function (s) {
+        return s.arr.map(function (v, i) {
+          var on = hoverPt && hoverPt.label === s.label && hoverPt.i === i;
+          return (
+            <g key={s.label + i}>
+              <circle
+                cx={X(i)}
+                cy={Y(v)}
+                r={on ? 5 : 3.2}
+                fill={s.color}
+                stroke="#fff"
+                strokeWidth="1.5"
+              />
+              <circle
+                cx={X(i)}
+                cy={Y(v)}
+                r="11"
+                fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={(function (px, py, val, col, lab, idx, rnd) {
+                  return function () {
+                    setHoverPt({
+                      x: px,
+                      y: py,
+                      v: val,
+                      color: col,
+                      label: lab,
+                      i: idx,
+                      r: rnd,
+                    });
+                  };
+                })(X(i), Y(v), v, s.color, s.label, i, rr[i])}
+                onMouseLeave={function () {
+                  setHoverPt(null);
+                }}
+                onClick={(function (idx) {
+                  return function () {
+                    setSel(idx);
+                  };
+                })(i)}
+              />
+            </g>
+          );
+        });
+      });
+    }
+    function tip() {
+      if (!hoverPt) return null;
+      var label = hoverPt.label + ' · R' + hoverPt.r + ' · ' + pct(hoverPt.v);
+      var fs = 8.5,
+        th = 16,
+        textX = 16; // left pad: dot + gap
+      // size the box to the text so white text never spills past the dark fill
+      var tw = textX + label.length * fs * 0.6 + 8;
+      var tx = Math.max(2, Math.min(w - tw - 2, hoverPt.x - tw / 2));
+      var ty = hoverPt.y - th - 8;
+      if (ty < 2) ty = hoverPt.y + 10;
+      return (
+        <g pointerEvents="none">
+          <rect
+            x={tx}
+            y={ty}
+            width={tw}
+            height={th}
+            rx="3"
+            fill="#0f172a"
+            opacity="0.93"
+          />
+          <circle cx={tx + 8} cy={ty + th / 2} r="2.8" fill={hoverPt.color} />
+          <text
+            x={tx + textX}
+            y={ty + th / 2 + 3}
+            fill="#fff"
+            fontSize={fs}
+            fontFamily={mono}
+          >
+            {label}
+          </text>
+        </g>
+      );
+    }
+    return (
+      <svg
+        width="100%"
+        viewBox={'0 0 ' + w + ' ' + h}
+        style={{ display: 'block' }}
+      >
+        {grid}
+        <rect
+          x={X(sel) - 26}
+          y={padT}
+          width="52"
+          height={h - padB - padT}
+          fill={INDIGO}
+          opacity="0.06"
+        />
+        {band ? (
+          <polygon points={band} fill={AMBER} fillOpacity="0.12" />
+        ) : null}
+        <polyline
+          points={poly(cp)}
+          fill="none"
+          stroke={COMP}
+          strokeWidth="2.2"
+        />
+        <polyline
+          points={poly(srr)}
+          fill="none"
+          stroke={AMBER}
+          strokeWidth="2.6"
+          strokeDasharray="6 4"
+        />
+        <polyline
+          points={poly(iv)}
+          fill="none"
+          stroke={INDIGO}
+          strokeWidth="3"
+        />
+        {rr.map(function (r, i) {
+          return (
+            <g key={i}>
+              <text
+                x={X(i)}
+                y={h - 14}
+                fill={i === sel ? INDIGO : MUT}
+                fontWeight={i === sel ? '700' : '400'}
+                fontSize="10"
+                fontFamily={mono}
+                textAnchor="middle"
+              >
+                {'R' + r}
+              </text>
+              <text
+                x={X(i)}
+                y={h - 3}
+                fill="#94a3b8"
+                fontSize="8.5"
+                textAnchor="middle"
+              >
+                {(rounds[i] || {}).treatment_ward || ''}
+              </text>
+              <rect
+                x={X(i) - 26}
+                y={padT}
+                width="52"
+                height={h - padB - padT}
+                fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onClick={(function (idx) {
+                  return function () {
+                    setSel(idx);
+                  };
+                })(i)}
+              />
+            </g>
+          );
+        })}
+        {markers()}
+        {endLabel(srr, AMBER, 'service-delivery')}
+        {endLabel(iv, INDIGO, 'intervention')}
+        {endLabel(cp, COMP, 'control')}
+        {tip()}
+      </svg>
+    );
+  }
+
+  // ---- shared small label ----
+  function dlbl(t) {
+    return (
+      <div
+        style={{
+          color: MUT,
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: '.04em',
+        }}
+      >
+        {t}
+      </div>
+    );
+  }
+
+  // ---- per-surveyor quality scorecard ----
+  // One row per program-ward surveyor; KPI columns computed by
+  // commcare_connect.labs.survey_quality over THAT surveyor's records
+  // (their primaries + the back-checks of their work). Cells turn rose when
+  // they fall below the column threshold; a surveyor whose integrity signals
+  // fail together is tagged REVIEW.
+  function scorecardTable() {
+    var rows = rd.surveyor_scorecard || [];
+    if (!rows.length) return null;
+    // Back-check is a cumulative signal — a single cycle's per-surveyor sample
+    // is too small. Show each surveyor's all-cycles outcome agreement (the exact
+    // number the drill-in headlines as Type 3), so column and drill-in match.
+    var sbMap = data.surveyor_backcheck || {};
+    rows = rows.map(function (r) {
+      var sb = sbMap[r.surveyor];
+      return sb
+        ? Object.assign({}, r, { backcheck: sb.type3_pct, backcheck_n: sb.n })
+        : r;
+    });
+    var sbVals = Object.keys(sbMap).map(function (k) {
+      return sbMap[k];
+    });
+    var aggBcN = sbVals.reduce(function (a, s) {
+      return a + (s.n || 0);
+    }, 0);
+    var aggBc = aggBcN
+      ? sbVals.reduce(function (a, s) {
+          return a + (s.type3_pct || 0) * (s.n || 0);
+        }, 0) / aggBcN
+      : null;
+    // [key, label, threshold, lowerIsBetter, isCount]
+    var COLS = [
+      ['evidence', 'Evidence', 90, false, false],
+      ['gps', 'GPS ≤15m', 90, false, false],
+      ['completeness', 'Complete', 98, false, false],
+      ['duration', 'Duration', 90, false, false],
+      ['consistency', 'Consistency', 98, false, false],
+      ['duplicates', 'Dupes', 0, true, true],
+      ['backcheck', 'Back-check', 90, false, false],
+    ];
+    function fail(v, thr, lower) {
+      if (v == null) return false;
+      return lower ? v > thr : v < thr;
+    }
+    function cellTxt(row, c) {
+      var v = row[c[0]];
+      if (v == null) return '—';
+      if (c[4]) return String(v);
+      var s = v.toFixed(1) + '%';
+      if (c[0] === 'backcheck' && row.backcheck_n != null)
+        s += ' ·' + row.backcheck_n;
+      return s;
+    }
+    // flag a surveyor for review when >=2 integrity signals fail together
+    function rowFlagged(row) {
+      var n = 0;
+      if (fail(row.evidence, 90, false)) n++;
+      if (fail(row.gps, 90, false)) n++;
+      if (fail(row.backcheck, 90, false)) n++;
+      return n >= 2;
+    }
+    var th = {
+      textAlign: 'right',
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.04em',
+      padding: '7px 10px',
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var th0 = Object.assign({}, th, { textAlign: 'left' });
+    var td = {
+      textAlign: 'right',
+      padding: '7px 10px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      borderBottom: '1px solid ' + LINE,
+    };
+    var td0 = Object.assign({}, td, {
+      textAlign: 'left',
+      fontFamily: 'inherit',
+    });
+    var agg = {
+      surveyor: '__agg__',
+      n: indN,
+      evidence: q.evidence_capture && q.evidence_capture.value,
+      gps: q.gps_within_15m && q.gps_within_15m.value,
+      completeness: q.field_completeness && q.field_completeness.value,
+      duration: q.duration_plausibility && q.duration_plausibility.value,
+      consistency: q.consistency_pass && q.consistency_pass.value,
+      duplicates:
+        q.duplicate_integrity && q.duplicate_integrity.detail
+          ? (q.duplicate_integrity.detail.dup_household_id || 0) +
+            (q.duplicate_integrity.detail.dup_gps_time || 0)
+          : 0,
+      backcheck: aggBc,
+      backcheck_n: aggBcN,
+    };
+    function dataRow(row, isAgg) {
+      var fl = !isAgg && rowFlagged(row);
+      var on = !isAgg && effSurv === row.surveyor;
+      return (
+        <tr
+          key={row.surveyor}
+          style={{
+            background: on
+              ? '#eef2ff'
+              : isAgg
+              ? '#f8fafc'
+              : fl
+              ? '#fff1f2'
+              : 'transparent',
+            boxShadow: on ? 'inset 3px 0 0 ' + INDIGO : 'none',
+          }}
+        >
+          <td
+            onClick={
+              isAgg
+                ? null
+                : function () {
+                    setQSel(null);
+                    setSelSurv(row.surveyor);
+                  }
+            }
+            title={isAgg ? null : "Show this surveyor's back-check below"}
+            style={Object.assign({}, td0, {
+              fontWeight: isAgg ? 700 : 600,
+              color: SUBINK,
+              cursor: isAgg ? 'default' : 'pointer',
+            })}
+          >
+            {isAgg ? 'Round · all surveyors' : 'Surveyor ' + row.surveyor}
+            {fl ? (
+              <span
+                style={{
+                  marginLeft: 7,
+                  fontSize: 10,
+                  color: ROSE,
+                  fontFamily: mono,
+                  fontWeight: 700,
+                  letterSpacing: '.04em',
+                }}
+              >
+                REVIEW
+              </span>
+            ) : null}
+          </td>
+          <td style={Object.assign({}, td, { color: MUT })}>{row.n}</td>
+          {COLS.map(function (c) {
+            var v = row[c[0]];
+            var bad = fail(v, c[2], c[3]);
+            var isBc = c[0] === 'backcheck';
+            // back-check cell selects the surveyor (drives the section below);
+            // a quality cell opens the metric info panel for that surveyor.
+            var clickable = isBc ? !isAgg : !!QMETA[c[0]];
+            var selCell =
+              !isBc &&
+              qSel &&
+              qSel.key === c[0] &&
+              qSel.surveyor === (isAgg ? null : row.surveyor);
+            function onCell() {
+              if (isBc) {
+                if (!isAgg) {
+                  setQSel(null);
+                  setSelSurv(row.surveyor);
+                }
+              } else if (QMETA[c[0]]) {
+                if (!isAgg) setSelSurv(row.surveyor);
+                setQSel({
+                  key: c[0],
+                  surveyor: isAgg ? null : row.surveyor,
+                  value: v,
+                });
+              }
+            }
+            return (
+              <td
+                key={c[0]}
+                data-cell={(isAgg ? 'all' : row.surveyor) + ':' + c[0]}
+                onClick={clickable ? onCell : null}
+                title={
+                  clickable
+                    ? isBc
+                      ? "Show this surveyor's back-check below"
+                      : 'What this metric checks'
+                    : null
+                }
+                style={Object.assign({}, td, {
+                  color: v == null ? MUT : bad ? ROSE : GREEN,
+                  fontWeight: bad ? 700 : 500,
+                  cursor: clickable ? 'pointer' : 'default',
+                  boxShadow: selCell ? 'inset 0 0 0 1.5px ' + INDIGO : 'none',
+                })}
+              >
+                {cellTxt(row, c)}
+              </td>
+            );
+          })}
+        </tr>
+      );
+    }
+    return (
+      <div style={{ overflowX: 'auto' }}>
+        <table
+          style={{ borderCollapse: 'collapse', width: '100%', minWidth: 660 }}
+        >
+          <thead>
+            <tr>
+              <th style={th0}>Surveyor</th>
+              <th style={th}>n</th>
+              {COLS.map(function (c) {
+                return (
+                  <th key={c[0]} style={th}>
+                    {c[1]}
+                    {c[0] === 'backcheck' ? (
+                      <div
+                        style={{
+                          fontSize: 8.5,
+                          color: '#94a3b8',
+                          fontWeight: 400,
+                          textTransform: 'none',
+                          letterSpacing: 0,
+                        }}
+                      >
+                        all cycles
+                      </div>
+                    ) : null}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(function (row) {
+              return dataRow(row, false);
+            })}
+            {dataRow(agg, true)}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  // Back-check sections — descriptive names up front (the J-PAL/IPA
+  // "Type 1/2/3" labels are specialist jargon, so the provenance lives behind
+  // an info button instead of in the column header).
+  function bcSections(sb) {
+    return [
+      {
+        key: 'identity',
+        label: 'Identity match',
+        pct: sb.type1_pct,
+        thr: 90,
+        fields: [
+          ['child_present', 'Present'],
+          ['child_sex', 'Sex'],
+          ['child_age_months', 'Age'],
+          ['roof_type', 'Roof'],
+        ],
+        info: "Stable facts that can't change between two visits — the child's sex and age, whether the household exists, and the household's roof type. Disagreement here is the strongest fabrication signal. In J-PAL/IPA back-check terms these are “Type 1” variables: a difference can trigger action against the surveyor.",
+      },
+      {
+        key: 'location',
+        label: 'Location check',
+        pct: sb.type2_pct,
+        thr: 90,
+        mode: 'distance',
+        info: 'Distance between the GPS the surveyor logged and where the independent re-survey found the household. A large gap means the recorded location was wrong — a fraud-detection back-check.',
+      },
+      {
+        key: 'outcome',
+        label: 'Outcome agreement',
+        pct: sb.type3_pct,
+        thr: 90,
+        fields: [['vitamin_a_received', 'Vitamin-A']],
+        info: 'Whether the headline result — did the child receive vitamin A — reproduced on the independent re-survey. In J-PAL/IPA back-check terms this is a “Type 3” variable: the key outcome whose stability is of interest.',
+      },
+    ];
+  }
+
+  // surveyor view: TWO rows per re-surveyed household (Original / Backcheck),
+  // columns grouped under the three back-check sections. Section info opens as a
+  // floating popup (does not reflow the table).
+  function surveyorBackcheck(sid, sb) {
+    var sections = bcSections(sb);
+    var rows = sb.rows || [];
+    var thr = sb.t2_thresh_m || 25;
+    function fieldOf(row, key) {
+      var fs = row.fields || [];
+      for (var i = 0; i < fs.length; i++) if (fs[i].key === key) return fs[i];
+      return null;
+    }
+    var th = {
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.03em',
+      padding: '5px 9px',
+      textAlign: 'left',
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var groupTh = {
+      padding: '6px 9px 4px',
+      borderBottom: '2px solid ' + LINE,
+      borderLeft: '1px solid ' + LINE,
+      textAlign: 'left',
+      verticalAlign: 'bottom',
+    };
+    var cellBase = {
+      padding: '6px 9px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      whiteSpace: 'nowrap',
+    };
+    // original row: no bottom border (groups the pair); backcheck row: solid
+    function cell(extra, bottom) {
+      return Object.assign(
+        {},
+        cellBase,
+        { borderBottom: bottom ? '1px solid ' + LINE : 'none' },
+        extra || {},
+      );
+    }
+    function ncols(s) {
+      return s.mode === 'distance' ? 1 : s.fields.length;
+    }
+    // identity / outcome value cell for one side of one household
+    function vcell(row, key, which, first, bottom) {
+      var f = fieldOf(row, key);
+      var st = cell(first ? { borderLeft: '1px solid ' + LINE } : {}, bottom);
+      if (!f)
+        return (
+          <td key={which + key} style={st}>
+            —
+          </td>
+        );
+      if (which === 'original')
+        return (
+          <td
+            key={which + key}
+            style={Object.assign({}, st, { color: SUBINK })}
+          >
+            {yn(f.original)}
+          </td>
+        );
+      var ch = !f.match;
+      return (
+        <td
+          key={which + key}
+          style={Object.assign({}, st, {
+            color: ch ? ROSE : MUT,
+            fontWeight: ch ? 700 : 400,
+          })}
+        >
+          {yn(f.backcheck)}
+        </td>
+      );
+    }
+    function infoBtn(s) {
+      var on = bcInfo && bcInfo.key === s.key;
+      return (
+        <button
+          data-bcinfo={s.key}
+          onClick={function (e) {
+            e.stopPropagation();
+            setBcInfo(
+              on
+                ? null
+                : {
+                    key: s.key,
+                    label: s.label,
+                    info: s.info,
+                    x: e.clientX,
+                    y: e.clientY,
+                  },
+            );
+          }}
+          title="What this checks + where it comes from"
+          style={{
+            cursor: 'pointer',
+            marginLeft: 4,
+            border: '1px solid ' + (on ? INDIGO : LINE),
+            background: on ? INDIGO : '#fff',
+            color: on ? '#fff' : MUT,
+            borderRadius: 999,
+            width: 16,
+            height: 16,
+            fontSize: 10,
+            fontWeight: 800,
+            lineHeight: '14px',
+            padding: 0,
+            fontFamily: sans,
+          }}
+        >
+          i
+        </button>
+      );
+    }
+    return (
+      <div>
+        <div
+          style={{
+            color: SUBINK,
+            fontWeight: 700,
+            fontSize: 13,
+            marginBottom: 2,
+          }}
+        >
+          Surveyor {sid} {'·'} {sb.n} households independently re-surveyed
+          across all cycles
+        </div>
+        <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
+          Two rows per household — what the surveyor recorded vs the independent
+          re-survey. Back-checks are a stratified sample of surveys (n={sb.n} of{' '}
+          this surveyor's work across cycles); showing{' '}
+          {Math.min(rows.length, sb.n)}, mismatches first. Each section header
+          shows the share that agreed {'·'} tap{' '}
+          <b style={{ fontFamily: mono }}>i</b> for what it means.
+        </div>
+        <div style={{ overflow: 'auto', maxHeight: 460 }}>
+          <table
+            style={{
+              borderCollapse: 'collapse',
+              width: '100%',
+              minWidth: 680,
+            }}
+          >
+            <thead>
+              <tr>
+                <th
+                  style={Object.assign({}, groupTh, { borderLeft: 'none' })}
+                  colSpan={2}
+                />
+                {sections.map(function (s) {
+                  var ok = s.pct == null || s.pct >= s.thr;
+                  return (
+                    <th key={s.key} style={groupTh} colSpan={ncols(s)}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: SUBINK,
+                            fontWeight: 700,
+                            fontSize: 12,
+                          }}
+                        >
+                          {s.label}
+                        </span>
+                        <span
+                          style={{
+                            color: s.pct == null ? MUT : ok ? GREEN : ROSE,
+                            fontFamily: mono,
+                            fontWeight: 800,
+                            fontSize: 12.5,
+                          }}
+                        >
+                          {s.pct == null ? '—' : s.pct.toFixed(0) + '%'}
+                        </span>
+                        {infoBtn(s)}
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+              <tr>
+                <th style={th}>Household</th>
+                <th style={th}>Record</th>
+                {sections.map(function (s) {
+                  if (s.mode === 'distance')
+                    return (
+                      <th
+                        key={s.key}
+                        style={Object.assign({}, th, {
+                          borderLeft: '1px solid ' + LINE,
+                        })}
+                      >
+                        Distance
+                      </th>
+                    );
+                  return s.fields.map(function (c, ci) {
+                    return (
+                      <th
+                        key={s.key + c[0]}
+                        style={Object.assign(
+                          {},
+                          th,
+                          ci === 0 ? { borderLeft: '1px solid ' + LINE } : {},
+                        )}
+                      >
+                        {c[1]}
+                      </th>
+                    );
+                  });
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(function (row, ri) {
+                var dm = row.gps_delta_m;
+                var distBad = dm != null && dm > thr;
+                return [
+                  <tr key={ri + 'o'}>
+                    <td
+                      rowSpan={2}
+                      style={cell(
+                        {
+                          fontFamily: 'inherit',
+                          fontWeight: 600,
+                          color: SUBINK,
+                        },
+                        true,
+                      )}
+                    >
+                      {row.household_id}
+                    </td>
+                    <td style={cell({ color: MUT }, false)}>
+                      Original ({row.enumerator})
+                    </td>
+                    {sections.map(function (s) {
+                      if (s.mode === 'distance')
+                        return (
+                          <td
+                            key="loc"
+                            rowSpan={2}
+                            style={cell(
+                              {
+                                borderLeft: '1px solid ' + LINE,
+                                color: distBad ? ROSE : SUBINK,
+                                fontWeight: distBad ? 700 : 400,
+                                verticalAlign: 'middle',
+                              },
+                              true,
+                            )}
+                          >
+                            {dm == null ? '—' : dm.toFixed(0) + ' m'}
+                          </td>
+                        );
+                      return s.fields.map(function (c, ci) {
+                        return vcell(row, c[0], 'original', ci === 0, false);
+                      });
+                    })}
+                  </tr>,
+                  <tr key={ri + 'b'}>
+                    <td style={cell({ color: MUT }, true)}>
+                      Backcheck ({row.backcheck_enumerator})
+                    </td>
+                    {sections.map(function (s) {
+                      if (s.mode === 'distance') return null;
+                      return s.fields.map(function (c, ci) {
+                        return vcell(row, c[0], 'backcheck', ci === 0, true);
+                      });
+                    })}
+                  </tr>,
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div
+          style={{ marginTop: 8, fontSize: 11, color: MUT, fontFamily: mono }}
+        >
+          <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = the
+          re-survey disagreed with what {sid} recorded
+        </div>
+      </div>
+    );
+  }
+
+  function backcheckSection() {
+    // a clicked quality cell takes over the widget with a metric drill-through
+    if (qSel && QMETA[qSel.key]) return qmetricDrill(qSel.surveyor, qSel.key);
+    if (!effSurv || !sbMap[effSurv]) return null;
+    return surveyorBackcheck(effSurv, sbMap[effSurv]);
+  }
+
+  function roundTabs() {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: 'wrap',
+          marginTop: 12,
+          alignItems: 'center',
+        }}
+      >
+        <span
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginRight: 4,
+          }}
+        >
+          Cycle
+        </span>
+        {rounds.map(function (r, i) {
+          var on = i === sel;
+          return (
+            <button
+              key={i}
+              onClick={function () {
+                setSel(i);
+              }}
+              title={r.treatment_ward + ' vs ' + r.comparison_ward}
+              style={{
+                cursor: 'pointer',
+                fontFamily: mono,
+                fontSize: 13,
+                padding: '5px 12px',
+                borderRadius: 8,
+                border: '1px solid ' + (on ? INDIGO : LINE),
+                background: on ? INDIGO : '#fff',
+                color: on ? '#fff' : SUBINK,
+                fontWeight: on ? 700 : 600,
+              }}
+            >
+              {'R' + r.round}
+            </button>
+          );
+        })}
+        <span style={{ color: MUT, fontSize: 13, marginLeft: 6 }}>
+          {rd.label} · <b style={{ color: INDIGO }}>{tWard}</b> vs{' '}
+          <b style={{ color: COMP }}>{cWard}</b>
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        background: 'transparent',
+        color: INK,
+        fontFamily: sans,
+        paddingBottom: 8,
+      }}
+    >
+      <div style={{ fontSize: 18, fontWeight: 700 }}>
+        {prog.name || 'Verified Monitoring'}
+      </div>
+      <div style={{ color: MUT, fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
+        Independent rooftop survey · {prog.cadence || 'bi-monthly'} · the
+        program rotates wards each cycle, each intervention ward verified
+        against an adjacent control ward
+      </div>
+
+      {/* PAGE HERO — the six-cycle trend, edge-to-edge */}
+      <div
+        style={Object.assign(
+          { marginTop: 12, padding: '14px 16px' },
+          cardStyle,
+        )}
+      >
+        <div
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+          }}
+        >
+          Service-delivery data vs independent survey — all{' '}
+          {(trend.rounds || []).length} cycles
+        </div>
+        <div style={{ marginTop: 8 }}>{trendChart()}</div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 16,
+            flexWrap: 'wrap',
+            fontSize: 11,
+            color: SUBINK,
+            marginTop: 2,
+          }}
+        >
+          <span>{sw(AMBER, true)}service-delivery data</span>
+          <span>{sw(INDIGO)}intervention arm survey</span>
+          <span>{sw(COMP)}control arm survey</span>
+          <span style={{ color: '#94a3b8' }}>
+            · shaded = service-delivery − intervention survey · click a cycle to
+            open it
+          </span>
+        </div>
+      </div>
+
+      {roundTabs()}
+
+      {/* per-cycle: the moving map (full width) */}
+      <div style={{ marginTop: 14 }}>
+        <div style={Object.assign({ padding: 12 }, cardStyle)}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 6,
+              flexWrap: 'wrap',
+              gap: 6,
+            }}
+          >
+            <div
+              style={{
+                color: MUT,
+                fontSize: 11,
+                textTransform: 'uppercase',
+                letterSpacing: '.05em',
+              }}
+            >
+              Map · {tWard} (intervention) vs {cWard} (control)
             </div>
             <div
               style={{
                 display: 'flex',
-                gap: 14,
+                gap: 12,
                 fontSize: 11,
                 fontFamily: mono,
               }}
             >
-              <label style={{ color: GREEN, cursor: 'pointer' }}>
+              <label style={{ color: '#16a34a', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={sdOn}
@@ -813,9 +1675,9 @@ function WorkflowUI(props) {
                     setSdOn(e.target.checked);
                   }}
                 />{' '}
-                service delivery
+                delivery
               </label>
-              <label style={{ color: PURPLE, cursor: 'pointer' }}>
+              <label style={{ color: INDIGO, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={pinsOn}
@@ -823,48 +1685,120 @@ function WorkflowUI(props) {
                     setPinsOn(e.target.checked);
                   }}
                 />{' '}
-                survey pins
+                survey
               </label>
             </div>
           </div>
           <div
             ref={mapDivRef}
             style={{
-              height: 360,
+              height: 420,
               borderRadius: 8,
               overflow: 'hidden',
-              background: '#0b1020',
+              background: '#eef2f7',
+              border: '1px solid ' + LINE,
             }}
           />
           {!mapLibReady ? (
-            <div style={{ color: MUT, fontSize: 12, padding: 8 }}>
+            <div style={{ color: MUT, fontSize: 12, padding: 6 }}>
               loading map…
             </div>
           ) : null}
           <div
             style={{
               display: 'flex',
-              gap: 18,
-              marginTop: 8,
-              fontSize: 11,
+              gap: 12,
+              marginTop: 6,
+              fontSize: 10.5,
               color: MUT,
               fontFamily: mono,
+              flexWrap: 'wrap',
             }}
           >
             <span>
-              <span style={{ color: '#16a34a' }}>●</span> program
-              service-delivery visit
+              {sw(INDIGO)}
+              {tWard} (intervention)
             </span>
             <span>
-              <span style={{ color: PURPLE }}>●</span> survey: vitamin-A
-              confirmed
+              {sw(COMP)}
+              {cWard} (control)
             </span>
             <span>
-              <span style={{ color: '#94a3b8' }}>●</span> survey: not confirmed
+              <span style={{ color: '#16a34a' }}>●</span> service delivery
+            </span>
+            <span>
+              <span style={{ color: INDIGO }}>●</span> confirmed
+            </span>
+            <span>
+              <span style={{ color: SLATE }}>●</span> not
             </span>
           </div>
         </div>
-      ) : null}
+      </div>
+
+      {/* PER-SURVEYOR SCORECARD — one row per program-ward surveyor, KPI columns */}
+      <div style={Object.assign({ marginTop: 16, padding: 14 }, cardStyle)}>
+        <div
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginBottom: 10,
+          }}
+        >
+          Survey-quality scorecard · {tWard} · R{rd.round} — one row per
+          surveyor
+        </div>
+        {scorecardTable()}
+        <div
+          style={{
+            display: 'flex',
+            gap: 16,
+            marginTop: 10,
+            fontSize: 11,
+            color: MUT,
+            fontFamily: mono,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>
+            <span style={{ color: GREEN, fontWeight: 700 }}>green</span> =
+            within threshold
+          </span>
+          <span>
+            <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = below
+            threshold
+          </span>
+          <span>
+            quality columns = this cycle · back-check = all cycles (small
+            per-cycle sample)
+          </span>
+          <span style={{ color: INDIGO }}>
+            click a quality cell → detail · click a surveyor → back-check below
+          </span>
+        </div>
+      </div>
+
+      {/* INDEPENDENT BACK-CHECK — household side-by-side, original vs re-survey */}
+      <div style={Object.assign({ marginTop: 16, padding: 14 }, cardStyle)}>
+        <div
+          style={{
+            color: MUT,
+            fontSize: 11,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginBottom: 10,
+          }}
+        >
+          {qSel && QMETA[qSel.key]
+            ? 'Survey-quality detail'
+            : 'Independent back-check' +
+              (effSurv ? ' · Surveyor ' + effSurv : '')}
+        </div>
+        {backcheckSection()}
+      </div>
+      {bcInfoPopup()}
     </div>
   );
 }

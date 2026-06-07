@@ -1,61 +1,91 @@
 {
-  "_comment": "Reproduces the Verified Monitoring (N1) dashboard demo on synthetic opp 10008. The dashboard render (commcare_connect/workflow/templates/verified_monitoring_render.js) reads this curated state from the workflow run's instance.state and never fetches. 'show-don't-tell': the render presents these results neutrally with no causal claims. regenerate.py builds the full state payload (including the two-ward map overlay GeoJSON, sampled deterministically inside the REAL ward polygons) and creates a workflow run via the connect_labs MCP.",
+  "_comment": "Parameterized config for the Verified Monitoring (N1) synthetic survey. survey_sim.py generates per-round, row-level household records (each round = its own opp; a 'primary' research form + a 'back_check' form) and computes every dashboard KPI from those rows via commcare_connect.labs.survey_quality. Numbers below are GENERATION TARGETS — the displayed KPIs are computed from the generated records, so they land near these with sampling noise. Tune this file to recreate the dashboard for a different program/geography.",
   "opportunity_id": 10008,
   "workflow_def_id": 3699,
-  "rng_seed": 20260602,
+  "rng_seed": 20260618,
   "program": {
     "name": "Vitamin-A community-health home-visit monitoring",
-    "treatment_ward": "Kaura",
-    "control_ward": "Manchok",
     "cadence": "bi-monthly"
   },
-  "_geography_comment": "Kaura (program) and Manchok (comparison) are REAL adjacent wards in Kaura LGA, Kaduna State, Nigeria. Their polygons come from the labs admin-boundary backend (/microplans/boundaries/viewport/), captured to geo/kaura_manchok.geojson. Service-delivery + survey points are sampled INSIDE these real polygons.",
-  "wards_geojson": "geo/kaura_manchok.geojson",
-  "_coverage_comment": "Six bi-monthly survey rounds per ward. Each round's verified coverage jitters within a normal survey band; the latest round (R6) equals the hero numbers. coverage_pct paired with (n surveyed, confirmed) per round.",
-  "coverage_rounds": {
-    "intervention": [
-      { "round": 1, "coverage_pct": 52.4, "n": 290, "confirmed": 152 },
-      { "round": 2, "coverage_pct": 61.0, "n": 300, "confirmed": 183 },
-      { "round": 3, "coverage_pct": 58.7, "n": 286, "confirmed": 168 },
-      { "round": 4, "coverage_pct": 70.4, "n": 270, "confirmed": 190 },
-      { "round": 5, "coverage_pct": 64.9, "n": 285, "confirmed": 185 },
-      { "round": 6, "coverage_pct": 68.1, "n": 285, "confirmed": 194 }
-    ],
-    "comparison": [
-      { "round": 1, "coverage_pct": 7.8, "n": 256, "confirmed": 20 },
-      { "round": 2, "coverage_pct": 10.6, "n": 255, "confirmed": 27 },
-      { "round": 3, "coverage_pct": 8.2, "n": 268, "confirmed": 22 },
-      { "round": 4, "coverage_pct": 9.7, "n": 268, "confirmed": 26 },
-      { "round": 5, "coverage_pct": 7.9, "n": 266, "confirmed": 21 },
-      { "round": 6, "coverage_pct": 8.9, "n": 270, "confirmed": 24 }
-    ]
+  "_geography_comment": "ROTATING wards: the program works a DIFFERENT ward each bi-monthly cycle, verified against an adjacent comparison ward. All 12 wards are REAL, adjacent pairs in the Kaura LGA area (Kaduna State, Nigeria), sourced from the labs admin-boundary backend (geo/kaura_lga_wards.geojson). Survey + service-delivery points are sampled INSIDE these real polygons; the map moves to each round's pair.",
+  "wards_geojson": "geo/kaura_lga_wards.geojson",
+  "rounds_wards": [
+    { "treatment": "Tse", "comparison": "Danto" },
+    { "treatment": "Agban", "comparison": "Kukum" },
+    { "treatment": "Kadarko", "comparison": "Kpak" },
+    { "treatment": "Bondong", "comparison": "Manchok" },
+    { "treatment": "Zankan", "comparison": "Kaura" },
+    { "treatment": "Attakar", "comparison": "Gura" }
+  ],
+  "map_pin_cap": 150,
+  "_flagged_surveyor_comment": "One deliberately-degraded program-ward surveyor (T6): lower evidence-photo + GPS-within-15m, and — the catch — their originals agree LESS with the independent re-survey (back-check). Makes the per-surveyor scorecard surface a real outlier.",
+  "flagged_surveyor": {
+    "arm": "treatment",
+    "id": "T6",
+    "evidence": 0.79,
+    "gps_within_15m": 0.83,
+    "backcheck_agreement": 0.78,
+    "backcheck_type1_agreement": 0.86
   },
-  "latest": {
-    "round": 6,
-    "intervention_pct": 68.1,
-    "comparison_pct": 8.9,
-    "gap_pp": 59.2,
-    "gap_ci": [52.8, 65.6],
-    "intervention_n": 285
+  "round0": "2025-02",
+  "rounds": 6,
+  "arms": {
+    "treatment": {
+      "coverage_start": 0.524,
+      "coverage_end": 0.681,
+      "coverage_noise": 0.014,
+      "n_per_round": 285,
+      "n_jitter": 10,
+      "enumerators": 6
+    },
+    "comparison": {
+      "coverage_start": 0.078,
+      "coverage_end": 0.089,
+      "coverage_noise": 0.01,
+      "n_per_round": 263,
+      "n_jitter": 8,
+      "enumerators": 5
+    }
   },
-  "verification": {
-    "gps_within_15m_pct": 95.8,
-    "evidence_complete_pct": 97.1,
-    "backcheck_pass_pct": 95.2,
-    "flags_raised": 3,
-    "flags_resolved": 3
-  },
+  "_self_report_comment": "Program self-report = verified coverage * inflation (the program over-reports), interpolated start->end across rounds, with +/- noise so the self-reported line jitters round-to-round and sits above the verified line. R6: ~0.681*1.29 -> ~88%.",
   "self_report": {
-    "intervention_pct": 88.0,
-    "independent_pct": 68.1,
-    "premium_pp": 19.9
+    "inflation_start": 1.55,
+    "inflation_end": 1.29,
+    "noise": 0.04
   },
-  "service_delivery_counts": { "Kaura": 2300, "Manchok": 0 },
-  "_overlay_comment": "service_delivery_sample points are drawn only inside Kaura (a legible sample of the 2,300 logged visits; the count label stays 2,300). survey_pins are drawn in BOTH wards (independent survey covered both) — purple = vitamin-A confirmed, slate = not confirmed.",
-  "service_delivery_sample": 720,
-  "survey_pins": {
-    "Kaura": { "n": 206, "confirmed_rate": 0.681 },
-    "Manchok": { "n": 195, "confirmed_rate": 0.089 }
+  "quality": {
+    "gps_within_15m": 0.967,
+    "evidence_complete": 0.971,
+    "field_complete": 0.992,
+    "gps_offset_near_m": [1, 13],
+    "gps_offset_far_m": [16, 55],
+    "duration_min": {
+      "mean": 18,
+      "sd": 5,
+      "floor": 4,
+      "short_rate": 0.02,
+      "short_range": [1, 3]
+    }
   },
-  "pin_colors": { "confirmed": "#a78bfa", "absent": "#94a3b8" }
+  "_backcheck_comment": "A stratified sample (every enumerator covered) is re-surveyed by a different (BC) enumerator. outcome_agreement drives the vitamin-A match rate (the 'back-check pass' headline); type1_agreement drives discordance on stable identifiers (sex/age/present). Front-loaded to 20% in the first rounds per J-PAL/DIME guidance.",
+  "backcheck": {
+    "sample_pct": 0.18,
+    "front_load_pct": 0.28,
+    "front_load_rounds": 2,
+    "outcome_agreement": 0.955,
+    "type1_agreement": 0.97,
+    "enumerators": 3
+  },
+  "service_delivery": {
+    "treatment": 2300,
+    "comparison": 0,
+    "sample_points": 240
+  },
+  "eligibility": {
+    "age_min_months": 6,
+    "age_max_months": 59,
+    "present_rate": 0.99,
+    "eligible_rate": 0.97
+  },
+  "outlier": { "z_threshold": 3.5, "gps_cluster_m": 8.0 }
 }
