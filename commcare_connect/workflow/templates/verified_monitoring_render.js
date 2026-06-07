@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V42
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V43
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -594,12 +594,16 @@ function WorkflowUI(props) {
     if (!bcInfo) return null;
     var W = 300;
     var vw = typeof window !== 'undefined' ? window.innerWidth || 1200 : 1200;
-    // Anchor the popover to the RIGHT of its trigger 'i' (and nudged up a touch)
-    // so it reads as attached to the icon and overlays neither the back-check
-    // rows below nor the scorecard above. Flip to the left if it would overflow.
-    var tx = bcInfo.x || vw / 2;
-    var left = tx + 16 + W > vw - 8 ? Math.max(8, tx - 16 - W) : tx + 16;
-    var top = Math.max(96, (bcInfo.y || 80) - 10);
+    var EST_H = 170;
+    // Center the popover on its trigger 'i' and prefer opening ABOVE it (over the
+    // section header, never the back-check data rows below); flip below only when
+    // there isn't room above the host sticky nav. A caret ties it to the trigger.
+    var cx = bcInfo.x || vw / 2;
+    var ty = bcInfo.y || 120;
+    var left = Math.min(Math.max(8, cx - W / 2), vw - W - 8);
+    var caretX = Math.min(Math.max(14, cx - left), W - 14);
+    var above = ty - EST_H > 96;
+    var top = above ? ty - 12 : ty + 18;
     return (
       <div>
         <div
@@ -613,6 +617,7 @@ function WorkflowUI(props) {
             position: 'fixed',
             left: left,
             top: top,
+            transform: above ? 'translateY(-100%)' : 'none',
             width: W,
             zIndex: 51,
             background: '#fff',
@@ -622,6 +627,21 @@ function WorkflowUI(props) {
             padding: '12px 14px',
           }}
         >
+          <div
+            style={{
+              position: 'absolute',
+              left: caretX - 7,
+              bottom: above ? -7 : 'auto',
+              top: above ? 'auto' : -7,
+              width: 0,
+              height: 0,
+              borderLeft: '7px solid transparent',
+              borderRight: '7px solid transparent',
+              borderTop: above ? '7px solid #fff' : 'none',
+              borderBottom: above ? 'none' : '7px solid #fff',
+              filter: 'drop-shadow(0 1px 1px rgba(16,24,40,0.12))',
+            }}
+          />
           <div
             style={{
               display: 'flex',
@@ -1766,6 +1786,10 @@ function WorkflowUI(props) {
             textTransform: 'uppercase',
             letterSpacing: '.05em',
             marginBottom: 10,
+            // scroll target: land the whole scorecard clear of the host sticky
+            // nav so all surveyor rows (the peers that make T6 read as an
+            // outlier) frame together, not sheared at the top edge.
+            scrollMarginTop: 96,
           }}
         >
           Survey-quality scorecard · {tWard} · R{rd.round} — one row per
