@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V41
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V42
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -113,19 +113,32 @@ function WorkflowUI(props) {
           map.setPaintProperty('vm-wards-label', 'text-color', SUBINK);
           map.setPaintProperty('vm-wards-label', 'text-halo-color', '#ffffff');
         } catch (e) {}
+        // Two overlapping point layers, separated by WEIGHT (not shape): the
+        // program's delivery visits read as the solid, larger, opaque green
+        // layer; the independent survey reads as faint, smaller pins underneath.
+        // So the intervention ward fills with green and the control ward —
+        // which has survey pins but no delivery — stays visibly green-free.
         if (sdOn && overlay.service_delivery) {
           CM.points(map, 'vm-sd', overlay.service_delivery, {
             color: '#16a34a',
-            radius: 2.2,
-            opacity: 0.5,
+            radius: 3.6,
+            opacity: 0.95,
           });
         }
         if (pinsOn && overlay.survey_pins) {
           CM.pins(map, 'vm-pins', overlay.survey_pins, {
             confirmedColor: INDIGO,
             absentColor: SLATE,
-            radius: 3.0,
+            radius: 2.0,
+            opacity: 0.4,
+            strokeWidth: 0,
           });
+          // Belt-and-suspenders for the faint survey layer in case the deployed
+          // shared map module predates the opacity/strokeWidth opts above.
+          try {
+            map.setPaintProperty('vm-pins', 'circle-opacity', 0.4);
+            map.setPaintProperty('vm-pins', 'circle-stroke-width', 0);
+          } catch (e) {}
         }
         CM.fit(map, overlay.ward_boundaries, 48);
       }
