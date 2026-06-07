@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V39
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V41
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -319,7 +319,7 @@ function WorkflowUI(props) {
       head = (
         <tr>
           <th style={th}>Household</th>
-          <th style={thR}>GPS offset from assigned</th>
+          <th style={th}>GPS offset from assigned</th>
           <th style={thR}>≤ 15 m</th>
         </tr>
       );
@@ -331,9 +331,10 @@ function WorkflowUI(props) {
           </td>,
           <td
             key="gps"
-            style={Object.assign({}, tdR, {
+            style={Object.assign({}, td, {
               color: bad ? ROSE : SUBINK,
               fontWeight: bad ? 700 : 400,
+              whiteSpace: 'nowrap',
             })}
           >
             {bar((r.gps || 0) / 60, bad ? ROSE : INDIGO)}
@@ -569,16 +570,23 @@ function WorkflowUI(props) {
     border: '1px solid ' + LINE,
     borderRadius: 12,
     boxShadow: SHADOW,
+    // Clear the host app's sticky top bar when a section is scrolled to, so its
+    // header row isn't clipped under the Connect Labs nav.
+    scrollMarginTop: 84,
   };
 
   // floating popup for a back-check section's info (method + source). Fixed
   // position at the click point so it overlays without reflowing the table.
   function bcInfoPopup() {
     if (!bcInfo) return null;
-    var W = 330;
+    var W = 300;
     var vw = typeof window !== 'undefined' ? window.innerWidth || 1200 : 1200;
-    var left = Math.min(Math.max(8, (bcInfo.x || vw / 2) - W / 2), vw - W - 8);
-    var top = (bcInfo.y || 80) + 14;
+    // Anchor the popover to the RIGHT of its trigger 'i' (and nudged up a touch)
+    // so it reads as attached to the icon and overlays neither the back-check
+    // rows below nor the scorecard above. Flip to the left if it would overflow.
+    var tx = bcInfo.x || vw / 2;
+    var left = tx + 16 + W > vw - 8 ? Math.max(8, tx - 16 - W) : tx + 16;
+    var top = Math.max(96, (bcInfo.y || 80) - 10);
     return (
       <div>
         <div
