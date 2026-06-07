@@ -82,6 +82,7 @@ scenes:
   provenance: S5
   show: 'The six-cycle trend hero: the program''s service-delivery line above the
     independent intervention-arm survey every cycle, the control-arm survey far below.'
+  full_page: false
   title: Self-reported above the independent survey, every cycle
 - actions:
   - kind: scroll_to
@@ -118,6 +119,7 @@ scenes:
   provenance: S3
   show: The full-width map — program service-delivery filling the intervention ward,
     independent survey pins in both wards — flying to each cycle's two real wards.
+  full_page: false
   title: Where delivery happened vs where the survey checked (the map moves)
 - actions:
   - kind: scroll_to
@@ -146,6 +148,7 @@ scenes:
   show: The per-surveyor quality scorecard — evidence, GPS-within-15m, completeness,
     duration, consistency, duplicates, and back-check, each computed from that surveyor's
     own records — with one surveyor flagged REVIEW.
+  full_page: false
   title: The per-surveyor quality scorecard catches a surveyor
 - actions:
   - kind: scroll_to
@@ -175,14 +178,15 @@ scenes:
   provenance: S2
   show: Clicking the flagged surveyor's GPS cell — every one of their surveys this
     cycle, the captures beyond 15 m listed first.
+  full_page: false
   title: Drill the flagged surveyor's actual surveys
 - actions:
-  - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3720
+  - kind: click
+    target: "← back-check"
   - kind: wait_for
-    target: Independent back-check
+    target: Identity match
   - kind: scroll_to
-    target: Independent back-check
+    target: Identity match
   - kind: hold
     seconds: 1
   - kind: click
@@ -216,6 +220,7 @@ scenes:
   provenance: S2
   show: The independent back-check for the flagged surveyor — Identity (incl. roof)
     / Location / Outcome, original over re-survey, the method behind an info button.
+  full_page: false
   title: The independent back-check confirms it
 why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
 narrative_synced_version: 7
