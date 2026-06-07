@@ -192,7 +192,7 @@ A single screen contains four panels:
 - **Verification headline panel** — the gap chart and plain-English summary described above; this is the first thing a viewer sees.
 - **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent comparison ward (labelled observational, not a randomised control). Each row includes per-round sparklines and a neutral "measured difference" figure between the two wards.
 - **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time.
-- **Two-ward map** — the program's own logged service-delivery visits are shown as a density layer that saturates the treatment ward and stops at the ward boundary. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
+- **Two-ward map** — the program's own logged service-delivery visits are shown as a layer of solid, larger green dots that saturate the intervention ward; the control ward remains visibly free of green, so a funder can see the delivery gap at a glance. Independent survey points are drawn as faint, smaller pins on a separate layer, keeping the two types of data visually distinct. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
 **Reading the per-surveyor GPS drill-down:** When you expand a surveyor's row to inspect their GPS data, the distance column displays as a bar chart anchored to each household and scaled to metres — not as a plain table. This makes it easy to compare distances at a glance without interpreting raw numbers.
 
@@ -235,8 +235,4 @@ If you want to record a walkthrough that shows a network manager actually conduc
 
 - The most recent week's run is left in an **in-progress** state with no decisions, audits, or tasks already filled in.
 - The manager performing the walkthrough makes real decisions during the recording, so the demo looks and feels like a genuine live review rather than a replay.
-- The recording keeps the full CommCare Connect UI in frame — the top bar, navigation, and breadcrumb are visible — so the demo reads unmistakably as running inside Connect rather than as a standalone screen.
-
-While the run is in progress, the manager has access to the full set of live actions in the dashboard:
-
-- **Mark all No Issue** — a toolbar button displayed above the table (next to
+- The recording keeps the full CommCare Connect UI in frame — the top bar, navigation, and breadcrumb are visible — so the demo reads unmistakably as running inside Connect
