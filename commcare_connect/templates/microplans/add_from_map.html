@@ -37,11 +37,11 @@
      panel (relocated by service_delivery_layer.js); the OPP SELECTION is the
      shared 3-column labs context picker (mode:multi), opened as a wide overlay
      so the same UI as the navbar drives both. -->
-{{ user_organizations|json_script:"org-data" }}
-{{ user_programs|json_script:"program-data" }}
+{{ user_organizations|json_script:"sd-org-data" }}
+{{ user_programs|json_script:"sd-program-data" }}
 {{ sd_opportunities|json_script:"sd-opportunity-data" }}
 <div id="sd-picker" class="hidden" data-sd
-     x-data="labsContextPicker({mode:'multi', scope:['org','program','opp'], sourceIds:{org:'org-data', program:'program-data', opp:'sd-opportunity-data'}})">
+     x-data="labsContextPicker({mode:'multi', scope:['org','program','opp'], sourceIds:{org:'sd-org-data', program:'sd-program-data', opp:'sd-opportunity-data'}})">
   {# compact layer-panel controls #}
   <button type="button" @click="open=true"
           class="w-full text-[11px] font-medium border border-gray-300 rounded px-2 py-1.5 mb-2 hover:bg-gray-50 flex items-center justify-between">
