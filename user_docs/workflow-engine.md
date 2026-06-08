@@ -191,8 +191,8 @@ A single screen contains four panels:
 
 - **Verification headline panel** — the gap chart and plain-English summary described above; this is the first thing a viewer sees.
 - **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent comparison ward (labelled observational, not a randomised control). Each row includes per-round sparklines and a neutral "measured difference" figure between the two wards.
-- **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time. End-of-line value labels are positioned so they do not collide with the selected-cycle highlight. The legend explains the shaded gap band, and a caption makes clear this is a descriptive cross-cycle comparison, not a causal estimate.
-- **Two-ward map** — the program's own logged service-delivery visits are shown as a layer of solid, larger green dots that saturate the intervention ward; the control ward remains visibly free of green, so a funder can see the delivery gap at a glance. Independent survey points are drawn as faint, smaller pins on a separate layer, keeping the two types of data visually distinct. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
+- **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds over time, with each round's date shown on the x-axis (R1 Feb 2025 → R6 Dec 2025) so the chart reads as a time progression from earliest to latest. The header reads "6 bi-monthly rounds over time" and the caption frames the view as the gap between self-report and the independent survey tracked across the monitoring period. End-of-line value labels are positioned so they do not collide with the selected-cycle highlight. The legend explains the shaded gap band, and a caption makes clear this is a descriptive cross-cycle comparison, not a causal estimate.
+- **Two-ward map** — uses three clearly separable colours: **green** for the program's own logged service-delivery visits (intervention ward only), **indigo** for independently surveyed households confirmed as reached, and **rose** for surveyed households that were not reached. This makes the program-vs-control contrast land at a glance — the control ward reads visibly as "surveyed, mostly not reached". Independent survey points are drawn as faint, smaller pins on a separate layer, keeping the two types of data visually distinct. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
 **Map legibility — both wards covered:** The map makes clear that the independent survey covered both wards, not just the treatment ward. Control-ward survey points are drawn darker and larger than before so the ward no longer appears empty. The legend leads with "Independent survey · both wards" and the colour key sits inside the map frame rather than below the fold where it could be missed when forwarding the dashboard to a funder.
 
@@ -221,12 +221,4 @@ Synthetic opportunities now support the complete program management loop, not ju
 
 - **Audit drill-downs with MUAC photos** — so stakeholders can see what an image-based quality audit looks like end to end.
 - **Task follow-ups** — showing how supervisors assign and track corrective actions after a flagged visit.
-- **OCS coaching transcripts** — demonstrating the outreach coaching conversation flow within the synthetic opportunity.
-
-This makes synthetic data suitable for full stakeholder and funder demonstrations without any real patient data being used.
-
-#### Binary-outcome fields in synthetic data
-
-The synthetic-data generator supports a **binary-outcome field** type for yes/no or present/absent fields whose positive rate should vary by survey round or time period.
-
-When you request a synthetic dataset for a dashboard that includes a binary outcome — for example, a
+- **OCS coaching transcripts
