@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V50
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V51
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -1841,7 +1841,7 @@ function WorkflowUI(props) {
             <div
               ref={mapDivRef}
               style={{
-                height: 420,
+                height: 480,
                 borderRadius: 8,
                 overflow: 'hidden',
                 background: '#eef2f7',
@@ -1853,18 +1853,18 @@ function WorkflowUI(props) {
                 position: 'absolute',
                 top: 8,
                 left: 8,
-                background: 'rgba(255,255,255,0.92)',
+                background: 'rgba(255,255,255,0.97)',
                 border: '1px solid ' + LINE,
                 borderRadius: 8,
-                padding: '6px 9px',
-                fontSize: 10.5,
+                padding: '8px 11px',
+                fontSize: 11.5,
                 fontFamily: mono,
                 color: MUT,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 2,
+                gap: 3,
                 lineHeight: 1.5,
-                boxShadow: '0 1px 4px rgba(16,24,40,0.10)',
+                boxShadow: '0 2px 8px rgba(16,24,40,0.14)',
                 pointerEvents: 'none',
               }}
             >
@@ -1873,11 +1873,16 @@ function WorkflowUI(props) {
               >
                 Independent survey · both wards
               </span>
-              <span>
-                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention)
+              <span style={{ color: SUBINK }}>
+                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention) —{' '}
+                <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
               </span>
-              <span>
-                <span style={{ color: COMP }}>▰</span> {cWard} (control)
+              <span style={{ color: SUBINK }}>
+                <span style={{ color: COMP }}>▰</span> {cWard} (control) —{' '}
+                <b style={{ color: COMP }}>
+                  {pct((trend.comparison || [])[sel])}
+                </b>{' '}
+                confirmed
               </span>
               <span>
                 <span style={{ color: '#16a34a' }}>●</span> service delivery
