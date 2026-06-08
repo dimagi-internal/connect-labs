@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /a/
 
 Sitemap: https://connect.dimagi.com/sitemap.xml
