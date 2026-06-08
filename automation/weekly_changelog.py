@@ -75,17 +75,17 @@ def fetch_pr_files(pr_number: int, repo: str) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+RANK_SYSTEM_PROMPT = """\
+You rank pull requests by user impact for a program management web app. \
+Return ONLY a JSON array of PR numbers (integers), highest impact first. \
+Rank by: breadth (how many users affected), novelty (new capability > improvement > fix), \
+visibility (noticeable to users > silent backend). No explanation, no markdown — \
+just the raw JSON array.
+"""
+
 WEEKLY_SYSTEM_PROMPT = """\
 You write weekly product updates for the Connect Labs web application.
 Audience: non-developer program staff who use the app regularly.
-
-You will receive a list of merged PRs. First, mentally rank them by user impact:
-- Breadth: changes affecting many users outrank niche ones
-- Novelty: new capabilities outrank incremental improvements, which outrank bug fixes
-- Visibility: things users will notice outrank silent backend changes
-
-Then write the summary using only the highest-impact changes. Ignore or merge \
-low-impact PRs even if they have a description.
 
 Format rules:
 - Lead with 1-2 sentences summarizing the week's overall theme
@@ -142,6 +142,34 @@ def load_user_visible_prs(prs_file: str) -> list[dict]:
                 }
             )
     return result
+
+
+RANK_TOP_N = 15  # PRs passed to the summary step
+
+
+def rank_prs_by_impact(client: anthropic.Anthropic, prs: list[dict]) -> list[dict]:
+    """Return prs re-ordered by impact (highest first), capped at RANK_TOP_N."""
+    pr_text = "\n\n".join(f"PR #{p['number']}: {p['title']}\n{p['description']}" for p in prs)
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=500,
+        system=RANK_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": pr_text}],
+    )
+    try:
+        numbers = json.loads(resp.content[0].text.strip())
+        if not isinstance(numbers, list):
+            raise ValueError(f"expected list, got {type(numbers).__name__}")
+        numbers = [n for n in numbers if isinstance(n, int)]
+    except Exception as e:
+        print(f"  [warn] Ranking parse failed ({e}) — using original order", file=sys.stderr)
+        return prs[:RANK_TOP_N]
+    pr_by_number = {p["number"]: p for p in prs}
+    ranked = [pr_by_number[n] for n in numbers if n in pr_by_number]
+    # Append any PRs Claude omitted so we don't silently drop them
+    seen = {p["number"] for p in ranked}
+    ranked += [p for p in prs if p["number"] not in seen]
+    return ranked[:RANK_TOP_N]
 
 
 def generate_weekly_summary(client: anthropic.Anthropic, prs: list[dict]) -> str:
@@ -209,6 +237,11 @@ def build_changelog_row(week_date: str, summary: str, prs: list[dict]) -> str:
     )
 
 
+def _to_slack_mrkdwn(text: str) -> str:
+    """Convert standard Markdown bold (**text**) to Slack mrkdwn bold (*text*)."""
+    return re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
+
+
 def post_to_slack(webhook_url: str, week_label: str, summary: str, prs: list[dict]) -> None:
     """Post a Slack Block Kit message to #connect-labs."""
     pr_links_text = "  |  ".join(f"<{p['url']}|#{p['number']}>" for p in prs[:10] if p.get("url"))
@@ -222,7 +255,7 @@ def post_to_slack(webhook_url: str, week_label: str, summary: str, prs: list[dic
             },
             {
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": summary},
+                "text": {"type": "mrkdwn", "text": _to_slack_mrkdwn(summary)},
             },
             {
                 "type": "context",
@@ -290,8 +323,17 @@ def main() -> None:
     ai_client = anthropic.Anthropic()
     confluence = ConfluenceClient()
 
+    if len(prs) > RANK_TOP_N:
+        print(f"\nRanking {len(prs)} PRs by impact (keeping top {RANK_TOP_N})...")
+        prs_for_summary = rank_prs_by_impact(ai_client, prs)
+        print(f"  Top {len(prs_for_summary)} selected:")
+        for pr in prs_for_summary:
+            print(f"    #{pr['number']}: {pr['title']}")
+    else:
+        prs_for_summary = prs
+
     print("\nGenerating weekly summary...")
-    summary = generate_weekly_summary(ai_client, prs)
+    summary = generate_weekly_summary(ai_client, prs_for_summary)
     print(f"\n{summary}\n")
 
     print("Updating Confluence changelog...")
@@ -299,7 +341,7 @@ def main() -> None:
     if f'datetime="{week_date}"' in existing.get("body_storage", ""):
         print(f"  [skip] Entry for {week_date} already exists — skipping duplicate run.")
         return
-    row_html = build_changelog_row(week_date, summary, prs)
+    row_html = build_changelog_row(week_date, summary, prs_for_summary)
     confluence.prepend_table_row(CHANGELOG_PAGE_ID, row_html)
     print(f"  ✓ Row prepended to page {CHANGELOG_PAGE_ID}")
 
@@ -307,7 +349,7 @@ def main() -> None:
     if slack_url:
         print("Posting to Slack...")
         try:
-            post_to_slack(slack_url, week_label, summary, prs)
+            post_to_slack(slack_url, week_label, summary, prs_for_summary)
             print("  ✓ Slack message sent to #connect-labs")
         except Exception as e:
             print(f"  [warn] Slack notification failed (non-fatal): {e}")
