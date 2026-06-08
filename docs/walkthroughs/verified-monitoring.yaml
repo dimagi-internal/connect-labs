@@ -10,11 +10,12 @@ narrative: 'David manages a Connect program delivering vitamin-A home visits acr
   the same households, cycle after cycle, in a ward his program works and in an adjacent
   ward it doesn''t. This morning David opens its dashboard.
 
-  David starts with the six-cycle trend. For each bi-monthly cycle David lines up
-  two numbers — what his program''s delivery data reported, and what the independent
-  survey found — and David reads the distance between them, hovering a point to pull
-  the exact value; David notes the control ward, where his program never went, sitting
-  flat along the bottom. To see where his program actually reached, David drops to
+  David starts with the six-round trend — the independent survey repeated every two
+  months, the earliest round at the left through the most recent at the right. Reading
+  left to right across that timeline, David lines up two numbers each round — what his
+  program''s delivery data reported, and what the independent survey found — and reads
+  the distance between them, hovering a point to pull the exact value; the control arm,
+  where his program never went, tracks flat along the bottom the whole way across. To see where his program actually reached, David drops to
   the map: his program''s logged visits fill the intervention ward and stop at its
   boundary, while the survey''s pins fall in both wards. David steps through the cycles
   and watches the map fly to each one''s real pair of wards.
@@ -60,13 +61,15 @@ scenes:
     target: Service-delivery data vs independent survey
   - kind: hold
     seconds: 2
-  concept_claim: Across six cycles and six different program wards, the program's
-    self-reported service-delivery figure sits above what an independent survey confirms,
-    while the adjacent control-arm survey stays low — the viewer draws the conclusion.
+  concept_claim: Read left to right as a six-round bi-monthly timeline, the program's
+    self-reported service-delivery stays above what the independent survey confirms
+    at each round while the control arm stays low — the gap holds across time, not in
+    a single snapshot.
   design_intent: Three labelled lines (service-delivery dashed amber, intervention
-    survey indigo, control survey slate) with a shaded service-delivery-minus-survey
-    gap band and per-point hover tooltips, so the persistent gap reads from the chart
-    without a sentence.
+    survey indigo, control survey slate) plotted across six bi-monthly rounds left-to-right
+    as a time axis (earliest at left, most recent at right, each round date-stamped),
+    with a shaded service-delivery-minus-survey gap band and per-point hover tooltips,
+    so the gap's persistence over time reads from the chart without a sentence.
   features:
   - description: A six-cycle line chart of the program self-report vs the independent
       intervention-arm survey vs the control-arm survey, with a shaded gap band and
@@ -78,16 +81,18 @@ scenes:
   full_page: false
   narrative: David manages a Connect program delivering vitamin-A home visits, and
     wants to know whether those visits are actually changing anything — so David opens
-    the independent survey's dashboard and starts with the six-cycle trend. For each
-    cycle David lines up two numbers — what his program's own delivery data reported,
-    and what the independent survey found — and reads the distance between them, hovering
-    a point to pull the exact value, while the control ward his program never touched
-    sits flat along the bottom.
+    the independent survey's dashboard and starts with its six-round trend — the same
+    survey repeated every two months, the earliest round at the left through the most
+    recent at the right. Reading across the timeline, David watches his program's own
+    delivery figure stay above what the independent survey confirms at each round,
+    hovering a point to pull the exact value, while the control arm tracks flat along
+    the bottom the whole way.
   persona: david
   provenance: S5
-  show: 'The six-cycle trend hero: the program''s service-delivery line above the
-    independent intervention-arm survey every cycle, the control-arm survey far below.'
-  title: Self-reported above the independent survey, every cycle
+  show: 'The six-round trend over time: the program''s service-delivery line above
+    the independent intervention-arm survey at every bi-monthly round, the control-arm
+    survey far below — earliest round at left, most recent at right.'
+  title: Six bi-monthly rounds over time — the gap holds
 - actions:
   - kind: scroll_to
     target: Map ·
