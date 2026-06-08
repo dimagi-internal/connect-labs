@@ -33,7 +33,11 @@ narrative: 'David manages a Connect program delivering vitamin-A home visits acr
   what to conclude; David has read his program''s own claim, the independent measure,
   the map, and the one surveyor whose work David will question — and decided for himself
   whether his program is actually having an impact.'
-narrative_locked: false
+narrative_locked: true
+narrative_locked_at: '2026-06-07T22:20:38.649374+00:00'
+narrative_synced_at: '2026-06-06T23:58:55.579066+00:00'
+narrative_synced_hash: 03e04b655f1dbcc193da85ad02b6f14e4016321734649811b4fe9e9f5791fb5f
+narrative_synced_version: 7
 personas:
   david:
     color: '#4F46E5'
@@ -56,13 +60,6 @@ scenes:
     target: Service-delivery data vs independent survey
   - kind: hold
     seconds: 2
-  narrative: David manages a Connect program delivering vitamin-A home visits, and
-    wants to know whether those visits are actually changing anything — so David opens
-    the independent survey's dashboard and starts with the six-cycle trend. For each
-    cycle David lines up two numbers — what his program's own delivery data reported,
-    and what the independent survey found — and reads the distance between them, hovering
-    a point to pull the exact value, while the control ward his program never touched
-    sits flat along the bottom.
   concept_claim: Across six cycles and six different program wards, the program's
     self-reported service-delivery figure sits above what an independent survey confirms,
     while the adjacent control-arm survey stays low — the viewer draws the conclusion.
@@ -78,11 +75,18 @@ scenes:
     verify: Assert three series render across six cycles; the legend reads service-delivery
       data / intervention arm survey / control arm survey; hovering a point shows
       a tooltip with the series, cycle, and value; no interpretive verbs on screen.
+  full_page: false
+  narrative: David manages a Connect program delivering vitamin-A home visits, and
+    wants to know whether those visits are actually changing anything — so David opens
+    the independent survey's dashboard and starts with the six-cycle trend. For each
+    cycle David lines up two numbers — what his program's own delivery data reported,
+    and what the independent survey found — and reads the distance between them, hovering
+    a point to pull the exact value, while the control ward his program never touched
+    sits flat along the bottom.
   persona: david
   provenance: S5
   show: 'The six-cycle trend hero: the program''s service-delivery line above the
     independent intervention-arm survey every cycle, the control-arm survey far below.'
-  full_page: false
   title: Self-reported above the independent survey, every cycle
 - actions:
   - kind: scroll_to
@@ -97,10 +101,6 @@ scenes:
     target: R6
   - kind: hold
     seconds: 2
-  narrative: 'To see where his program actually reached, David drops to the map: his
-    program''s logged visits fill the intervention ward and stop at its boundary,
-    while the independent survey''s pins fall in both wards. David steps the cycle
-    selector and the map flies to each cycle''s real pair of wards.'
   concept_claim: Program delivery is concentrated inside the intervention ward and
     absent in the adjacent control ward, while the independent survey covered both
     — so the coverage gap tracks where the program went, not where the survey looked;
@@ -115,20 +115,21 @@ scenes:
     id: two-ward-map
     verify: Assert both labelled ward boundaries and the legend render; clicking R1
       then R6 re-centres the map on a different program/comparison ward pair.
+  full_page: false
+  narrative: 'To see where his program actually reached, David drops to the map: his
+    program''s logged visits fill the intervention ward and stop at its boundary,
+    while the independent survey''s pins fall in both wards. David steps the cycle
+    selector and the map flies to each cycle''s real pair of wards.'
   persona: david
   provenance: S3
   show: The full-width map — program service-delivery filling the intervention ward,
     independent survey pins in both wards — flying to each cycle's two real wards.
-  full_page: false
   title: Where delivery happened vs where the survey checked (the map moves)
 - actions:
   - kind: scroll_to
     target: Survey-quality scorecard
   - kind: hold
     seconds: 2
-  narrative: Before David trusts any of the survey, David checks the people who collected
-    it. The scorecard gives David one row per surveyor, every figure computed from
-    that surveyor's own records — and one row is flagged for review.
   concept_claim: The survey's quality is not asserted in aggregate — it is computed
     per surveyor from each surveyor's own records, so a single under-performing surveyor
     is visible and accountable rather than averaged away.
@@ -143,12 +144,15 @@ scenes:
     verify: Assert the table renders one row per surveyor with computed values; exactly
       the flagged surveyor (T6) shows a REVIEW tag; its rose cells coincide with sub-threshold
       values.
+  full_page: false
+  narrative: Before David trusts any of the survey, David checks the people who collected
+    it. The scorecard gives David one row per surveyor, every figure computed from
+    that surveyor's own records — and one row is flagged for review.
   persona: david
   provenance: S2
   show: The per-surveyor quality scorecard — evidence, GPS-within-15m, completeness,
     duration, consistency, duplicates, and back-check, each computed from that surveyor's
     own records — with one surveyor flagged REVIEW.
-  full_page: false
   title: The per-surveyor quality scorecard catches a surveyor
 - actions:
   - kind: scroll_to
@@ -157,9 +161,6 @@ scenes:
     target: '[data-cell="T6:gps"]'
   - kind: hold
     seconds: 2
-  narrative: David clicks the flagged surveyor's GPS figure and the panel fills with
-    every survey that surveyor ran this cycle — how far each recorded location sat
-    from the household it claimed, the ones past fifteen metres first.
   concept_claim: The flag is backed by the underlying surveys — clicking a quality
     cell shows the full census of that surveyor's primary records, not a summary,
     with the failing surveys listed first.
@@ -174,15 +175,18 @@ scenes:
     verify: Assert the widget header becomes "Survey-quality detail"; the table lists
       all of the surveyor's surveys this cycle with a flagged count; flagged rows
       are rose and beyond the metric threshold.
+  full_page: false
+  narrative: David clicks the flagged surveyor's GPS figure and the panel fills with
+    every survey that surveyor ran this cycle — how far each recorded location sat
+    from the household it claimed, the ones past fifteen metres first.
   persona: david
   provenance: S2
   show: Clicking the flagged surveyor's GPS cell — every one of their surveys this
     cycle, the captures beyond 15 m listed first.
-  full_page: false
   title: Drill the flagged surveyor's actual surveys
 - actions:
   - kind: click
-    target: "← back-check"
+    target: ← back-check
   - kind: wait_for
     target: Identity match
   - kind: scroll_to
@@ -193,13 +197,6 @@ scenes:
     target: '[data-bcinfo="identity"]'
   - kind: hold
     seconds: 2
-  narrative: David opens that surveyor's independent back-check, where a different
-    enumerator re-visited a sample of the same households. David reads each household
-    as the original over the re-survey — sex, age, the household's roof, the location,
-    the vitamin-A result — with whatever changed marked in red, and taps the info
-    button to confirm it follows the standard J-PAL/IPA method. By the time David
-    closes the page, nothing has told David what to conclude — David has decided for
-    himself whether his program is having an impact.
   concept_claim: An independent re-survey by a different enumerator disagrees with
     this surveyor's originals on identity, location, and outcome — the strongest evidence
     their data needs review — and the method is traceable to its source.
@@ -216,13 +213,17 @@ scenes:
     verify: Assert the back-check renders for the flagged surveyor with Identity /
       Location / Outcome agreement %s; Identity includes a Roof column; the info popup
       cites dimewiki.worldbank.org/Back_Checks.
+  full_page: false
+  narrative: David opens that surveyor's independent back-check, where a different
+    enumerator re-visited a sample of the same households. David reads each household
+    as the original over the re-survey — sex, age, the household's roof, the location,
+    the vitamin-A result — with whatever changed marked in red, and taps the info
+    button to confirm it follows the standard J-PAL/IPA method. By the time David
+    closes the page, nothing has told David what to conclude — David has decided for
+    himself whether his program is having an impact.
   persona: david
   provenance: S2
   show: The independent back-check for the flagged surveyor — Identity (incl. roof)
     / Location / Outcome, original over re-survey, the method behind an info button.
-  full_page: false
   title: The independent back-check confirms it
 why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
-narrative_synced_version: 7
-narrative_synced_hash: 03e04b655f1dbcc193da85ad02b6f14e4016321734649811b4fe9e9f5791fb5f
-narrative_synced_at: '2026-06-06T23:58:55.579066+00:00'
