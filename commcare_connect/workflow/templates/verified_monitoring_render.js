@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V49
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V50
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -132,13 +132,14 @@ function WorkflowUI(props) {
           // they're too faint the gap looks like 'nobody surveyed control'.
           CM.pins(map, 'vm-pins', overlay.survey_pins, {
             confirmedColor: INDIGO,
-            // 'not confirmed' pins dominate the control ward (low coverage), so
-            // they carry the 'survey covered both wards' point — a faint slate
-            // made the control ward read as empty. Darken to slate-600 so the
-            // surveyed-but-unconfirmed pins are unmistakably present.
-            absentColor: '#475569',
-            radius: 3.6,
-            opacity: 0.95,
+            // Three clearly distinct hues so the survey reads apart from the
+            // program's green delivery: confirmed = indigo, surveyed-but-not-
+            // reached = rose. A dark slate was too close to the indigo confirmed
+            // pins (and to the basemap), so the two survey states blurred and the
+            // control ward (mostly not-reached) was illegible.
+            absentColor: ROSE,
+            radius: 3.4,
+            opacity: 0.9,
             strokeWidth: 1.2,
             strokeColor: 'rgba(255,255,255,0.95)',
           });
@@ -1884,7 +1885,7 @@ function WorkflowUI(props) {
               </span>
               <span>
                 <span style={{ color: INDIGO }}>●</span> survey confirmed &nbsp;
-                <span style={{ color: '#475569' }}>●</span> surveyed · not
+                <span style={{ color: ROSE }}>●</span> surveyed · not reached
               </span>
             </div>
           </div>
