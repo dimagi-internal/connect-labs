@@ -196,6 +196,8 @@ A single screen contains four panels:
 
 **Map legibility — both wards covered:** The map makes clear that the independent survey covered both wards, not just the treatment ward. Control-ward survey points are drawn darker and larger than before so the ward no longer appears empty. The legend leads with "Independent survey · both wards" and the colour key sits inside the map frame rather than below the fold where it could be missed when forwarding the dashboard to a funder.
 
+**Map legend with per-ward coverage figures:** The map legend states each ward's confirmed coverage outright — for example, **Attakar (intervention) 64.5% confirmed** and **Gura (control) 4.9% confirmed** — so the program-vs-control contrast reads from the numbers, not just the pin colours. The legend is rendered at a larger size and higher contrast than earlier versions. In the demo walkthrough, the map is presented as a full hero panel rather than being positioned alongside the cycle-button row above it, so the geographic picture gets the visual weight it deserves.
+
 **Reading the per-surveyor GPS drill-down:** When you expand a surveyor's row to inspect their GPS data, the distance column displays as a bar chart anchored to each household and scaled to metres — not as a plain table. A reference tick marks the 15 m threshold on each bar so you can see at a glance which offsets fall inside or outside the acceptable range without interpreting raw numbers.
 
 **Quality scorecard colour key:** The green/rose colour key for the quality scorecard is displayed above the table so you can read what the colours mean before scanning the rows.
@@ -215,10 +217,4 @@ The **LLO Weekly FLW Review** template provides a weekly per-FLW KPI scorecard f
 
 If you need realistic data for testing, training, or demonstrations, Labs can generate a **synthetic dataset** based on the statistical profile of an existing opportunity — without any real patient data leaving the server.
 
-This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges, and so on) and producing a synthetic dataset that looks realistic but contains no actual records. The result can be used to populate a test workflow instance so you can demonstrate the dashboard or validate a new template without using live data.
-
-Synthetic opportunities now support the complete program management loop, not just the dashboard view. This means a demo can include:
-
-- **Audit drill-downs with MUAC photos** — so stakeholders can see what an image-based quality audit looks like end to end.
-- **Task follow-ups** — showing how supervisors assign and track corrective actions after a flagged visit.
-- **OCS coaching transcripts
+This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges, and so on) and
