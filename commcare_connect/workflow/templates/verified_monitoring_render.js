@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V48
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V50
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -132,13 +132,14 @@ function WorkflowUI(props) {
           // they're too faint the gap looks like 'nobody surveyed control'.
           CM.pins(map, 'vm-pins', overlay.survey_pins, {
             confirmedColor: INDIGO,
-            // 'not confirmed' pins dominate the control ward (low coverage), so
-            // they carry the 'survey covered both wards' point — a faint slate
-            // made the control ward read as empty. Darken to slate-600 so the
-            // surveyed-but-unconfirmed pins are unmistakably present.
-            absentColor: '#475569',
-            radius: 3.6,
-            opacity: 0.95,
+            // Three clearly distinct hues so the survey reads apart from the
+            // program's green delivery: confirmed = indigo, surveyed-but-not-
+            // reached = rose. A dark slate was too close to the indigo confirmed
+            // pins (and to the basemap), so the two survey states blurred and the
+            // control ward (mostly not-reached) was illegible.
+            absentColor: ROSE,
+            radius: 3.4,
+            opacity: 0.9,
             strokeWidth: 1.2,
             strokeColor: 'rgba(255,255,255,0.95)',
           });
@@ -960,11 +961,11 @@ function WorkflowUI(props) {
               <text
                 x={X(i)}
                 y={h - 3}
-                fill="#94a3b8"
+                fill={i === sel ? INDIGO : '#94a3b8'}
                 fontSize="8.5"
                 textAnchor="middle"
               >
-                {(rounds[i] || {}).treatment_ward || ''}
+                {(rounds[i] || {}).label || (rounds[i] || {}).treatment_ward || ''}
               </text>
               <rect
                 x={X(i) - 26}
@@ -1743,8 +1744,8 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Service-delivery data vs independent survey — all{' '}
-          {(trend.rounds || []).length} cycles
+          Service-delivery data vs independent survey — {(trend.rounds || []).length}{' '}
+          bi-monthly rounds over time
         </div>
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
         <div
@@ -1774,10 +1775,10 @@ function WorkflowUI(props) {
             lineHeight: 1.5,
           }}
         >
-          Each cycle is a different intervention ward measured against its own
-          adjacent control ward — a descriptive cross-cycle comparison, not a
-          single-population trend or a causal estimate.{' '}
-          {(trend.rounds || []).length} bi-monthly cycles.
+          {(trend.rounds || []).length} bi-monthly survey rounds over time —
+          earliest at left, most recent at right. The independent survey's coverage
+          tracked against the program's self-report at each round; every round
+          verifies a rotating ward against its adjacent control.
         </div>
       </div>
 
@@ -1884,7 +1885,7 @@ function WorkflowUI(props) {
               </span>
               <span>
                 <span style={{ color: INDIGO }}>●</span> survey confirmed &nbsp;
-                <span style={{ color: '#475569' }}>●</span> surveyed · not
+                <span style={{ color: ROSE }}>●</span> surveyed · not reached
               </span>
             </div>
           </div>
