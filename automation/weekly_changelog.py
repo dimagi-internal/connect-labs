@@ -152,12 +152,15 @@ def rank_prs_by_impact(client: anthropic.Anthropic, prs: list[dict]) -> list[dic
     pr_text = "\n\n".join(f"PR #{p['number']}: {p['title']}\n{p['description']}" for p in prs)
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=300,
+        max_tokens=500,
         system=RANK_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": pr_text}],
     )
     try:
         numbers = json.loads(resp.content[0].text.strip())
+        if not isinstance(numbers, list):
+            raise ValueError(f"expected list, got {type(numbers).__name__}")
+        numbers = [n for n in numbers if isinstance(n, int)]
     except Exception as e:
         print(f"  [warn] Ranking parse failed ({e}) — using original order", file=sys.stderr)
         return prs[:RANK_TOP_N]
