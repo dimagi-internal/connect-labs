@@ -107,7 +107,7 @@
     }
     function renderHint() {
       hintEl.textContent = isAreaPhase()
-        ? 'Shift/⌘-click a boundary to add it to the plan area, or click a search result.'
+        ? 'Click a boundary to add it to the plan area, or click a search result.'
         : 'Click a boundary to inspect it.';
     }
 
@@ -213,9 +213,9 @@
         renderSourceOptions();
         // search is country-wide + user-driven, so it doesn't re-run on viewport refresh
         setStatus(
-          `${features.length.toLocaleString()} boundaries${
-            truncated ? ' · zoom in to see all' : ''
-          }`,
+          `${features.length.toLocaleString()} boundaries from ${
+            sourceLabels[source] || source || 'default'
+          }${truncated ? ' · zoom in to see all' : ''}`,
         );
       } catch (e) {
         if (e && e.name === 'AbortError') return;
@@ -582,10 +582,10 @@
         if (!layer.on) return;
         const f = smallestAt(e.point);
         if (!f) return;
-        if (
-          (e.originalEvent.shiftKey || e.originalEvent.metaKey) &&
-          isAreaPhase()
-        ) {
+        // On the ward bulk-picker surface a plain click selects (toggles) — the
+        // page's whole job is picking boundaries, so a modifier shouldn't be
+        // required. The inspector still pins so you see what you picked.
+        if (isAreaPhase()) {
           toggleSelect(featToDesc(f));
         }
         pinInspect(f, e.point);
