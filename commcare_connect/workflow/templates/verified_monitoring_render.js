@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V43
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V44
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -1050,6 +1050,14 @@ function WorkflowUI(props) {
       padding: '7px 10px',
       borderBottom: '1px solid ' + LINE,
       whiteSpace: 'nowrap',
+      // Pin the column labels below the host sticky nav so the per-surveyor
+      // metrics stay labelled when the surveyor rows scroll — the flagged row
+      // never reads as headerless numbers.
+      position: 'sticky',
+      top: 64,
+      background: '#fff',
+      zIndex: 3,
+      boxShadow: 'inset 0 -1px 0 ' + LINE,
     };
     var th0 = Object.assign({}, th, { textAlign: 'left' });
     var td = {
