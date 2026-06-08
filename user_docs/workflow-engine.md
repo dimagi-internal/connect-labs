@@ -191,14 +191,18 @@ A single screen contains four panels:
 
 - **Verification headline panel** — the gap chart and plain-English summary described above; this is the first thing a viewer sees.
 - **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent comparison ward (labelled observational, not a randomised control). Each row includes per-round sparklines and a neutral "measured difference" figure between the two wards.
-- **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time.
+- **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds, showing how coverage has moved over time. End-of-line value labels are positioned so they do not collide with the selected-cycle highlight. The legend explains the shaded gap band, and a caption makes clear this is a descriptive cross-cycle comparison, not a causal estimate.
 - **Two-ward map** — the program's own logged service-delivery visits are shown as a layer of solid, larger green dots that saturate the intervention ward; the control ward remains visibly free of green, so a funder can see the delivery gap at a glance. Independent survey points are drawn as faint, smaller pins on a separate layer, keeping the two types of data visually distinct. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
-**Reading the per-surveyor GPS drill-down:** When you expand a surveyor's row to inspect their GPS data, the distance column displays as a bar chart anchored to each household and scaled to metres — not as a plain table. This makes it easy to compare distances at a glance without interpreting raw numbers.
+**Map legibility — both wards covered:** The map makes clear that the independent survey covered both wards, not just the treatment ward. Control-ward survey points are drawn darker and larger than before so the ward no longer appears empty. The legend leads with "Independent survey · both wards" and the colour key sits inside the map frame rather than below the fold where it could be missed when forwarding the dashboard to a funder.
+
+**Reading the per-surveyor GPS drill-down:** When you expand a surveyor's row to inspect their GPS data, the distance column displays as a bar chart anchored to each household and scaled to metres — not as a plain table. A reference tick marks the 15 m threshold on each bar so you can see at a glance which offsets fall inside or outside the acceptable range without interpreting raw numbers.
+
+**Quality scorecard colour key:** The green/rose colour key for the quality scorecard is displayed above the table so you can read what the colours mean before scanning the rows.
 
 **Scrolling and sticky headers:** The scorecard and back-check sections each keep their header row visible as you scroll. The headers are positioned so they remain fully visible and are not obscured by the sticky top navigation bar.
 
-**Back-check method tooltip:** Clicking the info icon next to the back-check method label opens a tooltip beside the icon. The tooltip does not cover the re-survey rows it is explaining, so you can read the method description and the data at the same time.
+**Back-check method explainer:** Clicking the info icon next to the back-check method label expands an inline explainer directly below the label — it does not open a floating tooltip that covers the section title or the re-survey rows beneath it. The explainer is written in plain English; technical terms such as "Type 1 variables" and "bcstats" do not appear in the main text. The academic citation for the method is demoted to a small "method reference" link at the end so the explanation reads cleanly without interruption.
 
 ### LLO Weekly FLW Review dashboard
 
@@ -225,14 +229,4 @@ This makes synthetic data suitable for full stakeholder and funder demonstration
 
 The synthetic-data generator supports a **binary-outcome field** type for yes/no or present/absent fields whose positive rate should vary by survey round or time period.
 
-When you request a synthetic dataset for a dashboard that includes a binary outcome — for example, a "household confirmed visit" field in a Verified Monitoring demo — you can specify a per-period positive rate for that field. The generator will produce values that match the requested rate in each period, so coverage trends and differences between groups (such as treatment vs. comparison ward) appear realistic across rounds rather than being drawn from a single flat rate.
-
-This is useful for any template where a key metric is a proportion that changes over time, not just a static count.
-
-#### Live manager-flow demos
-
-If you want to record a walkthrough that shows a network manager actually conducting a weekly review — rather than clicking through a pre-decided run — you can request the **in-progress last week** seed flag when setting up a synthetic opportunity. When this flag is enabled:
-
-- The most recent week's run is left in an **in-progress** state with no decisions, audits, or tasks already filled in.
-- The manager performing the walkthrough makes real decisions during the recording, so the demo looks and feels like a genuine live review rather than a replay.
-- The recording keeps the full CommCare Connect UI in frame — the top bar, navigation, and breadcrumb are visible — so the demo reads unmistakably as running inside Connect
+When you request a synthetic dataset for a dashboard that includes a binary outcome — for example, a
