@@ -7723,9 +7723,9 @@ a.explore-card:hover .explore-link .arr {
 }
 @media (prefers-reduced-motion: no-preference) {
   .service-tab-panel.is-active {
-    animation: stabFadeIn 0.25s ease both;
+    animation: stab-fade-in 0.25s ease both;
   }
-  @keyframes stabFadeIn {
+  @keyframes stab-fade-in {
     from {
       opacity: 0;
       transform: translateY(8px);
