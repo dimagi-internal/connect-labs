@@ -58,16 +58,16 @@ multi-select opportunity picker).
        x-transition:leave-start="transform opacity-100 translate-y-0"
        x-transition:leave-end="transform opacity-0 -translate-y-2"
        @click.away="open = false"
-       class="fixed left-16 right-0 bg-white shadow-2xl border-t border-b border-gray-200 z-50"
-       style="display: none; top: 64px;">
+       class="fixed right-3 w-[min(760px,calc(100vw-1.5rem))] max-h-[80vh] overflow-y-auto bg-white shadow-2xl border border-gray-200 rounded-xl z-50"
+       style="display: none; top: 60px;">
 
-    <div class="max-w-7xl mx-auto p-6">
+    <div class="p-4">
       {# Search bar and refresh button #}
-      <div class="mb-6 flex gap-3">
+      <div class="mb-4 flex gap-2">
         <input type="text"
                x-model="search"
                placeholder="Search organizations, programs, or opportunities..."
-               class="flex-1 px-4 py-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+               class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
         <form method="post" action="{% url 'labs:refresh_org_data' %}" class="flex-shrink-0">
           {% csrf_token %}
           <button type="submit"
@@ -82,10 +82,10 @@ multi-select opportunity picker).
       </div>
 
       {# Three-column layout - always show all columns #}
-      <div class="grid gap-6 mb-6 grid-cols-3">
+      <div class="grid gap-4 mb-4 grid-cols-3">
 
         {# Organizations column #}
-        <div class="border-r border-gray-200 pr-6">
+        <div class="border-r border-gray-200 pr-4">
           <h3 class="text-sm font-semibold uppercase tracking-wider mb-3 flex items-center justify-between"
               :class="showOrgs ? 'text-gray-700' : 'text-gray-400'">
             <div class="flex flex-col">
@@ -94,7 +94,7 @@ multi-select opportunity picker).
             </div>
             <span class="text-xs text-gray-500 font-normal normal-case" x-text="'(' + orgData.length + ')'"></span>
           </h3>
-          <div class="space-y-1 max-h-96 overflow-y-auto">
+          <div class="space-y-1 max-h-64 overflow-y-auto">
             <template x-for="org in orgData" :key="org.slug">
               <button type="button"
                  x-show="matchesSearch(org.name) || matchesSearch(org.slug)"
@@ -115,7 +115,7 @@ multi-select opportunity picker).
         </div>
 
         {# Programs column #}
-        <div class="border-r border-gray-200 pr-6">
+        <div class="border-r border-gray-200 pr-4">
           <h3 class="text-sm font-semibold uppercase tracking-wider mb-3 flex items-center justify-between"
               :class="showPrograms ? 'text-gray-700' : 'text-gray-400'">
             <div class="flex flex-col">
@@ -124,7 +124,7 @@ multi-select opportunity picker).
             </div>
             <span class="text-xs text-gray-500 font-normal normal-case" x-text="'(' + filteredPrograms.length + ' of ' + programData.length + ')'"></span>
           </h3>
-          <div class="space-y-1 max-h-96 overflow-y-auto">
+          <div class="space-y-1 max-h-64 overflow-y-auto">
             <template x-for="program in filteredPrograms" :key="program.id">
               <button type="button"
                  x-show="matchesSearch(program.name) || matchesSearch(String(program.id))"
@@ -154,7 +154,7 @@ multi-select opportunity picker).
             </div>
             <span class="text-xs text-gray-500 font-normal normal-case" x-text="'(' + filteredOpps.length + ' of ' + oppData.length + ')'"></span>
           </h3>
-          <div class="space-y-1 max-h-96 overflow-y-auto">
+          <div class="space-y-1 max-h-64 overflow-y-auto">
             <template x-for="opp in filteredOpps" :key="opp.id">
               <button type="button"
                  x-show="matchesSearch(opp.name) || matchesSearch(opp.program_name || '') || matchesSearch(String(opp.id))"
@@ -191,22 +191,9 @@ multi-select opportunity picker).
           </span>
         </div>
         <div class="flex items-center space-x-3">
-          {# Cache tolerance input - for testing/development #}
-          <div class="flex items-center space-x-2 border-r border-gray-300 pr-3 mr-1">
-            <label for="cache-tolerance" class="text-xs text-gray-500 whitespace-nowrap" title="Accept cache if it has >= this % of expected visits. Useful for testing when visit counts are slightly stale.">
-              Cache tolerance:
-            </label>
-            <input type="number"
-                   id="cache-tolerance"
-                   x-model="cacheTolerance"
-                   min="0"
-                   max="100"
-                   step="1"
-                   placeholder="e.g. 98"
-                   class="w-16 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                   title="Enter percentage (0-100). Leave empty for exact match only.">
-            <span class="text-xs text-gray-400">%</span>
-          </div>
+          {# Cache tolerance (dev/testing) — hidden by default to keep the picker
+             compact; the binding stays so applySelection() still reads it. #}
+          <input type="number" id="cache-tolerance" x-model="cacheTolerance" class="hidden">
           <button type="button"
                   @click="clearSelection()"
                   x-show="hasSelection"
