@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V46
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V48
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -132,19 +132,23 @@ function WorkflowUI(props) {
           // they're too faint the gap looks like 'nobody surveyed control'.
           CM.pins(map, 'vm-pins', overlay.survey_pins, {
             confirmedColor: INDIGO,
-            absentColor: SLATE,
-            radius: 2.6,
-            opacity: 0.7,
-            strokeWidth: 0.8,
-            strokeColor: 'rgba(255,255,255,0.85)',
+            // 'not confirmed' pins dominate the control ward (low coverage), so
+            // they carry the 'survey covered both wards' point — a faint slate
+            // made the control ward read as empty. Darken to slate-600 so the
+            // surveyed-but-unconfirmed pins are unmistakably present.
+            absentColor: '#475569',
+            radius: 3.6,
+            opacity: 0.95,
+            strokeWidth: 1.2,
+            strokeColor: 'rgba(255,255,255,0.95)',
           });
           try {
-            map.setPaintProperty('vm-pins', 'circle-opacity', 0.7);
-            map.setPaintProperty('vm-pins', 'circle-stroke-width', 0.8);
-            map.setPaintProperty('vm-pins', 'circle-stroke-color', 'rgba(255,255,255,0.85)');
+            map.setPaintProperty('vm-pins', 'circle-opacity', 0.95);
+            map.setPaintProperty('vm-pins', 'circle-stroke-width', 1.2);
+            map.setPaintProperty('vm-pins', 'circle-stroke-color', 'rgba(255,255,255,0.95)');
           } catch (e) {}
         }
-        CM.fit(map, overlay.ward_boundaries, 48);
+        CM.fit(map, overlay.ward_boundaries, 64);
       }
       if (mapLoadedRef.current && map.isStyleLoaded()) draw();
       else
@@ -305,10 +309,11 @@ function WorkflowUI(props) {
       fontWeight: 600,
       fontFamily: 'inherit',
     });
-    function bar(frac, color) {
+    function bar(frac, color, thrFrac) {
       return (
         <span
           style={{
+            position: 'relative',
             display: 'inline-block',
             width: 84,
             height: 7,
@@ -327,6 +332,18 @@ function WorkflowUI(props) {
               background: color,
             }}
           />
+          {thrFrac != null ? (
+            <span
+              style={{
+                position: 'absolute',
+                top: -1,
+                bottom: -1,
+                left: Math.max(0, Math.min(1, thrFrac)) * 100 + '%',
+                width: 0,
+                borderLeft: '1.5px solid #475569',
+              }}
+            />
+          ) : null}
         </span>
       );
     }
@@ -354,7 +371,7 @@ function WorkflowUI(props) {
               whiteSpace: 'nowrap',
             })}
           >
-            {bar((r.gps || 0) / 60, bad ? ROSE : INDIGO)}
+            {bar((r.gps || 0) / 60, bad ? ROSE : INDIGO, 15 / 60)}
             {r.gps == null ? '—' : r.gps.toFixed(0) + ' m'}
           </td>,
           <td
@@ -890,14 +907,20 @@ function WorkflowUI(props) {
         style={{ display: 'block' }}
       >
         {grid}
-        <rect
-          x={X(sel) - 26}
-          y={padT}
-          width="52"
-          height={h - padB - padT}
-          fill={INDIGO}
-          opacity="0.06"
-        />
+        {(function () {
+          var hx0 = Math.max(padL, X(sel) - 26);
+          var hx1 = Math.min(w - padR, X(sel) + 26);
+          return (
+            <rect
+              x={hx0}
+              y={padT}
+              width={Math.max(0, hx1 - hx0)}
+              height={h - padB - padT}
+              fill={INDIGO}
+              opacity="0.06"
+            />
+          );
+        })()}
         {band ? (
           <polygon points={band} fill={AMBER} fillOpacity="0.12" />
         ) : null}
@@ -1244,11 +1267,11 @@ function WorkflowUI(props) {
           ['child_age_months', 'Age'],
           ['roof_type', 'Roof'],
         ],
-        info: "Stable facts that can't change between two visits — the child's sex and age, whether the household exists, and the household's roof type. Disagreement here is the strongest fabrication signal. In J-PAL/IPA back-check terms these are “Type 1” variables: a difference can trigger action against the surveyor.",
+        info: "Stable facts that can't change between two visits — the child's sex and age, whether the household exists, and the household's roof type. If the re-survey disagrees here, it's the strongest sign the original record was made up.",
       },
       {
         key: 'location',
-        label: 'Location check',
+        label: 'GPS location match',
         pct: sb.type2_pct,
         thr: 90,
         mode: 'distance',
@@ -1260,7 +1283,7 @@ function WorkflowUI(props) {
         pct: sb.type3_pct,
         thr: 90,
         fields: [['vitamin_a_received', 'Vitamin-A']],
-        info: 'Whether the headline result — did the child receive vitamin A — reproduced on the independent re-survey. In J-PAL/IPA back-check terms this is a “Type 3” variable: the key outcome whose stability is of interest.',
+        info: 'Whether the headline result — did the child receive vitamin A — held up when an independent surveyor re-visited. This is the key outcome the whole survey exists to measure.',
       },
     ];
   }
@@ -1358,8 +1381,6 @@ function WorkflowUI(props) {
                     key: s.key,
                     label: s.label,
                     info: s.info,
-                    x: e.clientX,
-                    y: e.clientY,
                   },
             );
           }}
@@ -1405,6 +1426,73 @@ function WorkflowUI(props) {
           shows the share that agreed {'·'} tap{' '}
           <b style={{ fontFamily: mono }}>i</b> for what it means.
         </div>
+        {bcInfo ? (
+          <div
+            style={{
+              position: 'relative',
+              background: '#f8fafc',
+              border: '1px solid ' + LINE,
+              borderLeft: '3px solid ' + INDIGO,
+              borderRadius: 8,
+              padding: '10px 34px 10px 12px',
+              marginBottom: 10,
+            }}
+          >
+            <button
+              onClick={function () {
+                setBcInfo(null);
+              }}
+              style={{
+                position: 'absolute',
+                top: 6,
+                right: 8,
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                color: MUT,
+                fontSize: 16,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+            <div
+              style={{
+                color: SUBINK,
+                fontWeight: 700,
+                fontSize: 12.5,
+                marginBottom: 4,
+              }}
+            >
+              {bcInfo.label}
+            </div>
+            <div style={{ color: SUBINK, fontSize: 12.5, lineHeight: 1.5 }}>
+              {bcInfo.info}
+            </div>
+            <div
+              style={{
+                color: MUT,
+                fontSize: 11,
+                lineHeight: 1.5,
+                marginTop: 6,
+              }}
+            >
+              An independent surveyor re-visits a sample of households and
+              re-records the same facts. Standard back-check method (J-PAL/IPA;
+              World Bank DIME —{' '}
+              <a
+                href="https://dimewiki.worldbank.org/Back_Checks"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: INDIGO }}
+              >
+                method reference
+              </a>
+              ).
+            </div>
+          </div>
+        ) : null}
         <div style={{ overflow: 'auto', maxHeight: 460 }}>
           <table
             style={{
@@ -1673,9 +1761,23 @@ function WorkflowUI(props) {
           <span>{sw(INDIGO)}intervention arm survey</span>
           <span>{sw(COMP)}control arm survey</span>
           <span style={{ color: '#94a3b8' }}>
-            · shaded = service-delivery − intervention survey · click a cycle to
-            open it
+            · amber band = service-delivery − survey gap · highlighted column =
+            selected cycle · click a cycle to open it
           </span>
+        </div>
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: 10.5,
+            color: '#94a3b8',
+            fontFamily: mono,
+            lineHeight: 1.5,
+          }}
+        >
+          Each cycle is a different intervention ward measured against its own
+          adjacent control ward — a descriptive cross-cycle comparison, not a
+          single-population trend or a causal estimate.{' '}
+          {(trend.rounds || []).length} bi-monthly cycles.
         </div>
       </div>
 
@@ -1734,50 +1836,63 @@ function WorkflowUI(props) {
               </label>
             </div>
           </div>
-          <div
-            ref={mapDivRef}
-            style={{
-              height: 420,
-              borderRadius: 8,
-              overflow: 'hidden',
-              background: '#eef2f7',
-              border: '1px solid ' + LINE,
-            }}
-          />
+          <div style={{ position: 'relative' }}>
+            <div
+              ref={mapDivRef}
+              style={{
+                height: 420,
+                borderRadius: 8,
+                overflow: 'hidden',
+                background: '#eef2f7',
+                border: '1px solid ' + LINE,
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: 8,
+                left: 8,
+                background: 'rgba(255,255,255,0.92)',
+                border: '1px solid ' + LINE,
+                borderRadius: 8,
+                padding: '6px 9px',
+                fontSize: 10.5,
+                fontFamily: mono,
+                color: MUT,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                lineHeight: 1.5,
+                boxShadow: '0 1px 4px rgba(16,24,40,0.10)',
+                pointerEvents: 'none',
+              }}
+            >
+              <span
+                style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}
+              >
+                Independent survey · both wards
+              </span>
+              <span>
+                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention)
+              </span>
+              <span>
+                <span style={{ color: COMP }}>▰</span> {cWard} (control)
+              </span>
+              <span>
+                <span style={{ color: '#16a34a' }}>●</span> service delivery
+                (program)
+              </span>
+              <span>
+                <span style={{ color: INDIGO }}>●</span> survey confirmed &nbsp;
+                <span style={{ color: '#475569' }}>●</span> surveyed · not
+              </span>
+            </div>
+          </div>
           {!mapLibReady ? (
             <div style={{ color: MUT, fontSize: 12, padding: 6 }}>
               loading map…
             </div>
           ) : null}
-          <div
-            style={{
-              display: 'flex',
-              gap: 12,
-              marginTop: 6,
-              fontSize: 10.5,
-              color: MUT,
-              fontFamily: mono,
-              flexWrap: 'wrap',
-            }}
-          >
-            <span>
-              {sw(INDIGO)}
-              {tWard} (intervention)
-            </span>
-            <span>
-              {sw(COMP)}
-              {cWard} (control)
-            </span>
-            <span>
-              <span style={{ color: '#16a34a' }}>●</span> service delivery
-            </span>
-            <span>
-              <span style={{ color: INDIGO }}>●</span> confirmed
-            </span>
-            <span>
-              <span style={{ color: SLATE }}>●</span> not
-            </span>
-          </div>
         </div>
       </div>
 
@@ -1799,12 +1914,12 @@ function WorkflowUI(props) {
           Survey-quality scorecard · {tWard} · R{rd.round} — one row per
           surveyor
         </div>
-        {scorecardTable()}
         <div
           style={{
             display: 'flex',
             gap: 16,
-            marginTop: 10,
+            marginTop: 0,
+            marginBottom: 10,
             fontSize: 11,
             color: MUT,
             fontFamily: mono,
@@ -1827,6 +1942,7 @@ function WorkflowUI(props) {
             click a quality cell → detail · click a surveyor → back-check below
           </span>
         </div>
+        {scorecardTable()}
       </div>
 
       {/* INDEPENDENT BACK-CHECK — household side-by-side, original vs re-survey */}
@@ -1847,7 +1963,6 @@ function WorkflowUI(props) {
         </div>
         {backcheckSection()}
       </div>
-      {bcInfoPopup()}
     </div>
   );
 }
