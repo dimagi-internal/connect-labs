@@ -33,32 +33,21 @@
   <div id="afm-actions"></div>
 </div>
 
-<!-- Service-delivery opportunity picker (multi-select). Server-rendered + Alpine-
-     initialised here (hidden); service_delivery_layer.js relocates it into the
-     panel's "Service delivery" layer body. Same shared picker the editor uses. -->
+<!-- Service-delivery opportunity picker. Compact controls live in the layer
+     panel (relocated by service_delivery_layer.js); the OPP SELECTION is the
+     shared 3-column labs context picker (mode:multi), opened as a wide overlay
+     so the same UI as the navbar drives both. -->
+{{ user_organizations|json_script:"org-data" }}
+{{ user_programs|json_script:"program-data" }}
 {{ sd_opportunities|json_script:"sd-opportunity-data" }}
 <div id="sd-picker" class="hidden" data-sd
-     x-data="labsContextPicker({mode:'multi', scope:['opp'], sourceIds:{opp:'sd-opportunity-data'}})">
-  <div class="text-[10px] uppercase tracking-wide text-gray-500 mb-1 flex items-center justify-between">
-    <span>Opportunities</span>
-    <span class="text-gray-400 normal-case" x-text="'(' + filteredOpps.length + ' of ' + oppData.length + ')'"></span>
-  </div>
-  <input type="text" x-model="search" placeholder="Search opportunities by name or ID…"
-         class="w-full text-xs border border-gray-300 rounded px-2 py-1.5 mb-1 focus:ring-2 focus:ring-purple-500 focus:border-transparent">
-  <div class="space-y-0.5 max-h-48 overflow-y-auto border border-gray-200 rounded mb-2">
-    <template x-for="opp in filteredOpps" :key="opp.id">
-      <button type="button"
-              x-show="matchesSearch(opp.name) || matchesSearch(opp.program_name || '') || matchesSearch(String(opp.id))"
-              @click="selectOpp(opp)"
-              :data-testid="'sd-opp-' + opp.id"
-              class="block w-full text-left px-2 py-1.5 hover:bg-purple-50 rounded transition"
-              :class="isSelected('opp', opp.id) ? 'bg-purple-100 font-medium border-l-4 border-purple-500' : ''">
-        <div class="text-xs text-gray-900 truncate" x-text="opp.name"></div>
-        <div class="text-[10px] text-gray-500 mt-0.5" x-text="'ID: ' + opp.id + ' · Visits: ' + (opp.visit_count || 0) + (opp.program_name ? ' · ' + opp.program_name : '')"></div>
-      </button>
-    </template>
-    <div x-show="!filteredOpps.length" class="text-[11px] text-gray-400 italic px-2 py-3">No opportunities match your search.</div>
-  </div>
+     x-data="labsContextPicker({mode:'multi', scope:['org','program','opp'], sourceIds:{org:'org-data', program:'program-data', opp:'sd-opportunity-data'}})">
+  {# compact layer-panel controls #}
+  <button type="button" @click="open=true"
+          class="w-full text-[11px] font-medium border border-gray-300 rounded px-2 py-1.5 mb-2 hover:bg-gray-50 flex items-center justify-between">
+    <span>Pick opportunities</span>
+    <span class="text-gray-500" x-text="selectedOpps.length ? '(' + selectedOpps.length + ' selected)' : 'none yet'"></span>
+  </button>
   <div class="flex flex-wrap gap-1 mb-2">
     <template x-for="(opp, i) in selectedOpps" :key="opp.id">
       <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 border">
@@ -73,6 +62,31 @@
     <option value="default">Default — device GPS (any app)</option>
   </select>
   <button type="button" data-testid="sd-show" class="sd-show w-full text-[11px] font-semibold text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
+
+  {# wide 3-column picker overlay — fixed, escapes the narrow panel #}
+  <div x-show="open" x-cloak @click.self="open=false" @keydown.escape.window="open=false"
+       class="fixed inset-0 z-[60] bg-black/30 flex items-start justify-center pt-20 px-4">
+    <div class="bg-white rounded-xl shadow-2xl w-[960px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-semibold text-gray-700">Pick opportunities to overlay their delivery points</h2>
+        <button type="button" @click="open=false" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+      </div>
+      {% include "labs/_picker_columns.html" %}
+      <div class="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between gap-3">
+        <div class="flex flex-wrap gap-1">
+          <template x-for="(opp, i) in selectedOpps" :key="opp.id">
+            <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 border">
+              <span class="w-2 h-2 rounded-full" :style="`background:${oppColor(i)}`"></span>
+              <span x-text="opp.name"></span>
+              <button type="button" @click="removeOpp(opp.id)" class="text-gray-400 hover:text-red-600 leading-none">&times;</button>
+            </span>
+          </template>
+          <span x-show="!selectedOpps.length" class="text-[11px] text-gray-400 italic">No opportunities selected yet.</span>
+        </div>
+        <button type="button" @click="open=false" class="shrink-0 px-4 py-2 text-sm rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white">Done</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
