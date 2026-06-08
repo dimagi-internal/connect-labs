@@ -134,9 +134,7 @@
     <p class="text-sm text-gray-700 mb-3">Sampled settlements differ — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
     {% endif %}
 
-    {# One row per plan (arm); attributes as columns. Settlement density decides
-       the verdict; PSU size + building footprint are adjusted at analysis — marked
-       per column rather than split into two transposed tables. #}
+    {# One row per plan (arm); attributes as columns; density decides the verdict, the rest adjusted at analysis. #}
     <div class="overflow-x-auto border border-gray-200 rounded-lg inline-block">
       <table class="text-sm">
         <thead class="bg-gray-50 text-gray-600">
