@@ -80,9 +80,9 @@ scenes:
   - kind: hold
     seconds: 1
   - kind: click
-    target: css:[data-testid=sd-opp-10009]
-    note: select the demo opportunity (ACE Microplans Demo — Kano CHC Service Delivery)
-    must_succeed: false
+    target: css:[data-testid=sd-opp-10007]
+    note: select the demo opportunity (Madobi Ward, Kano — Service Delivery Demo, opp 10007)
+    must_succeed: true
   - kind: click
     target: css:#sd-picker .sd-show
     note: show its service-delivery points; the map flies to where the program worked
