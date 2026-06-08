@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V45
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V46
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -126,18 +126,22 @@ function WorkflowUI(props) {
           });
         }
         if (pinsOn && overlay.survey_pins) {
+          // Survey pins stay SUBORDINATE to the solid green delivery layer, but
+          // need a crisp outline so 'the survey covered both wards' reads — in
+          // the control ward (no delivery) the pins are the only marks, so if
+          // they're too faint the gap looks like 'nobody surveyed control'.
           CM.pins(map, 'vm-pins', overlay.survey_pins, {
             confirmedColor: INDIGO,
             absentColor: SLATE,
-            radius: 2.0,
-            opacity: 0.4,
-            strokeWidth: 0,
+            radius: 2.6,
+            opacity: 0.7,
+            strokeWidth: 0.8,
+            strokeColor: 'rgba(255,255,255,0.85)',
           });
-          // Belt-and-suspenders for the faint survey layer in case the deployed
-          // shared map module predates the opacity/strokeWidth opts above.
           try {
-            map.setPaintProperty('vm-pins', 'circle-opacity', 0.4);
-            map.setPaintProperty('vm-pins', 'circle-stroke-width', 0);
+            map.setPaintProperty('vm-pins', 'circle-opacity', 0.7);
+            map.setPaintProperty('vm-pins', 'circle-stroke-width', 0.8);
+            map.setPaintProperty('vm-pins', 'circle-stroke-color', 'rgba(255,255,255,0.85)');
           } catch (e) {}
         }
         CM.fit(map, overlay.ward_boundaries, 48);
