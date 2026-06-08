@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V48
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V49
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -960,11 +960,11 @@ function WorkflowUI(props) {
               <text
                 x={X(i)}
                 y={h - 3}
-                fill="#94a3b8"
+                fill={i === sel ? INDIGO : '#94a3b8'}
                 fontSize="8.5"
                 textAnchor="middle"
               >
-                {(rounds[i] || {}).treatment_ward || ''}
+                {(rounds[i] || {}).label || (rounds[i] || {}).treatment_ward || ''}
               </text>
               <rect
                 x={X(i) - 26}
@@ -1743,8 +1743,8 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Service-delivery data vs independent survey — all{' '}
-          {(trend.rounds || []).length} cycles
+          Service-delivery data vs independent survey — {(trend.rounds || []).length}{' '}
+          bi-monthly rounds over time
         </div>
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
         <div
@@ -1774,10 +1774,10 @@ function WorkflowUI(props) {
             lineHeight: 1.5,
           }}
         >
-          Each cycle is a different intervention ward measured against its own
-          adjacent control ward — a descriptive cross-cycle comparison, not a
-          single-population trend or a causal estimate.{' '}
-          {(trend.rounds || []).length} bi-monthly cycles.
+          {(trend.rounds || []).length} bi-monthly survey rounds over time —
+          earliest at left, most recent at right. The independent survey's coverage
+          tracked against the program's self-report at each round; every round
+          verifies a rotating ward against its adjacent control.
         </div>
       </div>
 
