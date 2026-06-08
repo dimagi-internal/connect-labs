@@ -11,7 +11,7 @@ multi-select opportunity picker).
 <script src="{% static 'labs/context_picker.js' %}"></script>
 
 {# Button only - no wrapper #}
-<div x-data="labsContextSelector()">
+<div x-data="labsContextSelector()" class="relative">
   {% if request.labs_context.organization or request.labs_context.program or request.labs_context.opportunity %}
     {# Context is selected - show in order: org, program, opp #}
     <button @click="open = !open"
@@ -58,8 +58,8 @@ multi-select opportunity picker).
        x-transition:leave-start="transform opacity-100 translate-y-0"
        x-transition:leave-end="transform opacity-0 -translate-y-2"
        @click.away="open = false"
-       class="fixed right-3 w-[min(760px,calc(100vw-1.5rem))] max-h-[80vh] overflow-y-auto bg-white shadow-2xl border border-gray-200 rounded-xl z-50"
-       style="display: none; top: 60px;">
+       class="absolute top-full right-0 mt-2 w-[960px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto bg-white shadow-2xl border border-gray-200 rounded-xl z-50"
+       style="display: none;">
 
     <div class="p-4">
       {# Search bar and refresh button #}
@@ -191,8 +191,6 @@ multi-select opportunity picker).
           </span>
         </div>
         <div class="flex items-center space-x-3">
-          {# Cache tolerance (dev/testing) — hidden by default to keep the picker
-             compact; the binding stays so applySelection() still reads it. #}
           <input type="number" id="cache-tolerance" x-model="cacheTolerance" class="hidden">
           <button type="button"
                   @click="clearSelection()"
