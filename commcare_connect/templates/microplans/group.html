@@ -11,16 +11,6 @@
              aria-label="Study name" autocomplete="off" title="Click to rename this study"
              onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
              onblur="renameStudy(this.value)">
-      {% if group.is_study %}
-      <span class="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">Study</span>
-      {% else %}
-      <span class="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">Bundle</span>
-      {% endif %}
-      {% if group.status == "sampled" %}
-      <span class="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">{{ group.status }}</span>
-      {% elif group.status %}
-      <span class="text-[11px] uppercase tracking-wide px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">{{ group.status }}</span>
-      {% endif %}
     </div>
     <p class="text-sm text-gray-500 mt-1">
       {{ group.plan_count }} plan{{ group.plan_count|pluralize }} · Program #{{ program_id }}
