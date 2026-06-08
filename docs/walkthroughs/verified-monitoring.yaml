@@ -105,6 +105,10 @@ scenes:
   - kind: click
     target: R6
   - kind: hold
+    seconds: 1
+  - kind: scroll
+    value: '470'
+  - kind: hold
     seconds: 2
   concept_claim: Program delivery is concentrated inside the intervention ward and
     absent in the adjacent control ward, while the independent survey covered both
