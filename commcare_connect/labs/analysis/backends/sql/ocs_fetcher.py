@@ -95,35 +95,50 @@ def fetch_ocs_sessions_as_visit_dicts(
         OCSHeadlessError: If request is None.
         ValueError: If experiment_id is not configured or OCS token is missing.
     """
-    if request is None:
-        raise OCSHeadlessError(
-            "Pipeline data_source.type is 'ocs_sessions', which requires an "
-            "OCS OAuth token from the user's web session. This call is running "
-            "in a headless context (no request) so no token is available. "
-            "Run the preview from the web UI."
-        )
-
     if not data_source.experiment_id:
         raise ValueError(
             "ocs_sessions data source requires experiment_id to be set in the pipeline schema."
         )
 
     from commcare_connect.labs.integrations.ocs.api_client import OCSAPIError, OCSDataAccess
-
-    client = OCSDataAccess(request=request)
-
-    if not client.check_token_valid():
-        raise ValueError(
-            "OCS OAuth not configured or expired. "
-            "Please authorize OCS access at /labs/ocs/initiate/"
-        )
+    from django.conf import settings
 
     experiment_id = data_source.experiment_id
+
+    # Prefer api_key (X-API-KEY) when available — it gives team-scoped access
+    # regardless of which OCS account the viewer is logged into. Fall back to
+    # the user's OAuth Bearer token when no api_key is configured.
+    api_key = data_source.api_key or getattr(settings, "OCS_PIPELINE_API_KEY", "")
+
+    if api_key:
+        import httpx
+
+        base_url = getattr(settings, "OCS_URL", "https://www.openchatstudio.com").rstrip("/")
+        http_client = httpx.Client(headers={"X-API-KEY": api_key}, timeout=30.0)
+        close_client = http_client.close
+    else:
+        if request is None:
+            raise OCSHeadlessError(
+                "Pipeline data_source.type is 'ocs_sessions' with no api_key configured. "
+                "This requires an OCS OAuth token from the user's web session, but the call "
+                "is running in a headless context. Either set api_key in the pipeline schema "
+                "or run the preview from the web UI."
+            )
+        client = OCSDataAccess(request=request)
+        if not client.check_token_valid():
+            raise ValueError(
+                "OCS OAuth not configured or expired. "
+                "Please authorize OCS access at /labs/ocs/initiate/"
+            )
+        base_url = client.base_url
+        http_client = client.http_client
+        close_client = client.close
+
     logger.info(f"[OCS Fetcher] Fetching all sessions for experiment {experiment_id}...")
 
     # Paginate through all sessions — list_sessions only returns one page.
     all_sessions = []
-    url = f"{client.base_url}/api/sessions/"
+    url = f"{base_url}/api/sessions/"
     params = {
         "experiment": experiment_id,
         "ordering": "created_at",
@@ -134,7 +149,7 @@ def fetch_ocs_sessions_as_visit_dicts(
     while url:
         page += 1
         try:
-            response = client.http_client.get(url, params=params if page == 1 else None)
+            response = http_client.get(url, params=params if page == 1 else None)
             response.raise_for_status()
             data = response.json()
         except Exception as e:
@@ -150,7 +165,7 @@ def fetch_ocs_sessions_as_visit_dicts(
         all_sessions.extend(results)
         logger.debug(f"[OCS Fetcher] Page {page}: {len(results)} sessions (total: {len(all_sessions)})")
 
-    client.close()
+    close_client()
     logger.info(f"[OCS Fetcher] Fetched {len(all_sessions)} sessions for experiment {experiment_id}")
 
     return [normalize_ocs_session_to_visit_dict(s, i) for i, s in enumerate(all_sessions)]
