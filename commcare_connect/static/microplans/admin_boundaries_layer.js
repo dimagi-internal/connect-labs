@@ -30,6 +30,7 @@
   const SRC = 'mp-admin';
   const LINE = 'mp-admin-line';
   const FILL = 'mp-admin-fill';
+  const FILL_HOVER = 'mp-admin-fill-hover';
   const HOVER = 'mp-admin-hover';
   const SEL_SRC = 'mp-admin-sel';
   const SEL_FILL = 'mp-admin-sel-fill';
@@ -161,6 +162,15 @@
           source: SRC,
           paint: { 'fill-color': COLOR, 'fill-opacity': 0 },
         });
+        // Fill the hovered boundary so it's visible even when you're zoomed
+        // INSIDE it (its outline off-screen). Filtered to the hovered id.
+        map.addLayer({
+          id: FILL_HOVER,
+          type: 'fill',
+          source: SRC,
+          filter: ['==', ['get', 'boundary_id'], '__none__'],
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0.22 },
+        });
         map.addLayer({
           id: LINE,
           type: 'line',
@@ -168,18 +178,18 @@
           paint: {
             'line-color': COLOR,
             // coarser level (lower number) = thicker; finer = thinner
+            // Scale with zoom so fine (ward) outlines stay clearly visible when
+            // zoomed in, instead of staying hair-thin on the satellite imagery.
             'line-width': [
               'interpolate',
               ['linear'],
-              ['coalesce', ['get', 'admin_level'], 1],
-              1,
-              2.4,
-              2,
-              1.4,
-              4,
-              0.7,
+              ['zoom'],
+              6,
+              ['interpolate', ['linear'], ['coalesce', ['get', 'admin_level'], 1], 1, 2.4, 2, 1.4, 4, 0.7],
+              13,
+              ['interpolate', ['linear'], ['coalesce', ['get', 'admin_level'], 1], 1, 4, 2, 3, 4, 2],
             ],
-            'line-opacity': 0.85,
+            'line-opacity': 1,
           },
         });
         map.addLayer({
@@ -210,13 +220,13 @@
       return { type: 'FeatureCollection', features: [] };
     }
     function setVisible(on) {
-      [FILL, LINE, HOVER, SEL_FILL, SEL_LINE].forEach((id) => {
+      [FILL, FILL_HOVER, LINE, HOVER, SEL_FILL, SEL_LINE].forEach((id) => {
         if (map.getLayer(id))
           map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       });
     }
     function teardown() {
-      M.removeSourceAndLayers(map, SRC, [FILL, LINE, HOVER]);
+      M.removeSourceAndLayers(map, SRC, [FILL, FILL_HOVER, LINE, HOVER]);
       M.removeSourceAndLayers(map, SEL_SRC, [SEL_FILL, SEL_LINE]);
     }
 
@@ -358,17 +368,15 @@
     }
 
     function showHover(f, point) {
-      if (map.getLayer(HOVER))
-        map.setFilter(HOVER, [
-          '==',
-          ['get', 'boundary_id'],
-          f.properties.boundary_id,
-        ]);
+      const filt = ['==', ['get', 'boundary_id'], f.properties.boundary_id];
+      if (map.getLayer(HOVER)) map.setFilter(HOVER, filt);
+      if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, filt);
       panel.setInspect(inspectHTML(f, point), false);
     }
     function clearHover() {
-      if (map.getLayer(HOVER))
-        map.setFilter(HOVER, ['==', ['get', 'boundary_id'], '__none__']);
+      const none = ['==', ['get', 'boundary_id'], '__none__'];
+      if (map.getLayer(HOVER)) map.setFilter(HOVER, none);
+      if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, none);
       if (pinned) panel.setInspect(pinned, false);
       else panel.clearInspect();
     }
