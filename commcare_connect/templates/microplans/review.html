@@ -156,7 +156,7 @@
       <details class="area-def mp-card"{% if not plan_id %} open{% endif %}>
         <summary>
           <span class="ic">◧</span>
-          <span class="lbl">{% if plan_id %}Edit area &amp; work area size{% else %}Define area &amp; work area size{% endif %}</span>
+          <span class="lbl">{% if plan_id %}Edit boundaries{% else %}Define boundaries{% endif %}</span>
           <span class="chev">›</span>
         </summary>
         <div class="space-y-3 mt-2 text-xs">
@@ -204,6 +204,18 @@
             </div>
             <div id="pin-status" class="text-[10px] text-gray-500"></div>
           </div>
+        </div>
+      </details>
+    </section>
+
+    <section>
+      <details class="mp-acc mp-card"{% if not plan_id %} open{% endif %}>
+        <summary>
+          <span class="ic">▦</span>
+          <span class="lbl">Create work areas</span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="space-y-3 mt-2 text-xs">
 
           <div id="coverage-config">
             <div class="text-gray-600 mb-1">Work-area size (cell edge)</div>
