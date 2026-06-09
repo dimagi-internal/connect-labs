@@ -34,3 +34,10 @@ urlpatterns = [path(route, views.home, name=route or "home") for route in MARKET
 urlpatterns += [
     re_path(r"^portfolio/[\w-]+$", views.home, name="portfolio-detail"),
 ]
+
+# Contact page — standalone template (not the SPA). Two URLs so both the clean
+# /contact/ and the legacy /contact/index.html links resolve without a redirect.
+urlpatterns += [
+    path("contact/", views.contact, name="contact"),
+    path("contact/index.html", views.contact, name="contact-legacy"),
+]

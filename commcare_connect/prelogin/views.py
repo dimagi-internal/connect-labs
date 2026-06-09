@@ -11,4 +11,9 @@ class HomeView(TemplateView):
         return ctx
 
 
+class ContactView(HomeView):
+    template_name = "prelogin/contact.html"
+
+
 home = HomeView.as_view()
+contact = ContactView.as_view()
