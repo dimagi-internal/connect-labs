@@ -185,9 +185,29 @@
               ['linear'],
               ['zoom'],
               6,
-              ['interpolate', ['linear'], ['coalesce', ['get', 'admin_level'], 1], 1, 2.4, 2, 1.4, 4, 0.7],
+              [
+                'interpolate',
+                ['linear'],
+                ['coalesce', ['get', 'admin_level'], 1],
+                1,
+                2.4,
+                2,
+                1.4,
+                4,
+                0.7,
+              ],
               13,
-              ['interpolate', ['linear'], ['coalesce', ['get', 'admin_level'], 1], 1, 4, 2, 3, 4, 2],
+              [
+                'interpolate',
+                ['linear'],
+                ['coalesce', ['get', 'admin_level'], 1],
+                1,
+                4,
+                2,
+                3,
+                4,
+                2,
+              ],
             ],
             'line-opacity': 1,
           },
@@ -243,8 +263,14 @@
       });
       // Prefer the host-supplied country; otherwise reuse the one we inferred from a
       // prior labs response so switching to Overture (which needs an iso) works.
-      const iso = getCountryIso() || detectedIso;
-      if (iso) params.set('iso', iso);
+      const hostIso = getCountryIso();
+      const iso = hostIso || detectedIso;
+      // Send iso when it's the reliable host/program country, or for Overture
+      // (which needs it for partition pruning). Do NOT filter the labs source by
+      // a *detected* country: it's inferred from a wide first view and can be a
+      // neighbour, which then wrongly empties the map when you zoom into the
+      // program's real country (the bbox already scopes labs geographically).
+      if (iso && (hostIso || source !== 'labs')) params.set('iso', iso);
       if (source) params.set('source', source);
       if (fetchCtrl) fetchCtrl.abort();
       fetchCtrl = new AbortController();
@@ -259,8 +285,17 @@
         }
         features = data.features || [];
         truncated = !!data.truncated;
-        if (!detectedIso && features.length)
-          detectedIso = features[0].properties.iso_code || null;
+        if (!detectedIso && features.length) {
+          // Dominant country in view, not just features[0] — a wide, multi-country
+          // zoom can list a neighbour first, which then mis-scopes later fetches.
+          const counts = {};
+          for (const f of features) {
+            const c = f.properties && f.properties.iso_code;
+            if (c) counts[c] = (counts[c] || 0) + 1;
+          }
+          detectedIso =
+            Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || null;
+        }
         availableSources = data.available_sources || [];
         sourceLabels = data.source_labels || {};
         source = data.source || source;
