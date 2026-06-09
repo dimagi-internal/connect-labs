@@ -153,6 +153,23 @@
     <!-- AREA DEFINITION — collapsible on existing plans (Apply = destructive
          regenerate); open by default on a no-plan page (Apply = create). -->
     <section>
+      <details class="mp-acc mp-card" open>
+        <summary>
+          <span class="ic">◐</span>
+          <span class="lbl">Plan type</span>
+          <span class="chev">›</span>
+        </summary>
+        <div class="space-y-3 mt-2 text-xs">
+          <div class="seg-row" style="grid-template-columns: repeat(2, 1fr);">
+            <button type="button" id="btn-mode-coverage" class="seg-tab is-on">Coverage</button>
+            <button type="button" id="btn-mode-sampling" class="seg-tab">Sampling</button>
+          </div>
+          <p class="text-[10px] text-gray-500 mt-1" id="mode-help">Coverage visits every household; Sampling draws a statistical rooftop subset across one or two study arms.</p>
+        </div>
+      </details>
+    </section>
+
+    <section>
       <details class="area-def mp-card"{% if not plan_id %} open{% endif %}>
         <summary>
           <span class="ic">◧</span>
@@ -164,15 +181,6 @@
             {% if plan_id %}Regenerates every work area. CHW assignments and per-area edits are reset.
             {% else %}Pick the area, choose a work area size, then Apply. The plan is created on Apply.{% endif %}
           </p>
-
-          <div>
-            <div class="text-gray-600 mb-1">Plan type</div>
-            <div class="seg-row" style="grid-template-columns: repeat(2, 1fr);">
-              <button type="button" id="btn-mode-coverage" class="seg-tab is-on">Coverage</button>
-              <button type="button" id="btn-mode-sampling" class="seg-tab">Sampling</button>
-            </div>
-            <p class="text-[10px] text-gray-500 mt-1" id="mode-help">Coverage visits every household; Sampling draws a statistical rooftop subset across one or two study arms.</p>
-          </div>
 
           <div>
             <div class="text-gray-600 mb-1">Area input</div>
