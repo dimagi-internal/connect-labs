@@ -472,6 +472,12 @@
     function ctl(sel) {
       return pickerEl.querySelector(sel);
     }
+    // Derive-from-points controls may live outside the SD panel (e.g. the rail's
+    // Draw mode); query those from deriveHost when one is supplied.
+    const deriveHost = opts.deriveHost || null;
+    function dctl(sel) {
+      return (deriveHost || pickerEl).querySelector(sel);
+    }
     function ensureLayer() {
       if (!map.getSource(SRC))
         map.addSource(SRC, {
@@ -546,7 +552,7 @@
         map.getSource(SRC).setData(d.points);
         loadedFeatures = (d.points && d.points.features) || [];
         if (M) M.fitTo(map, d.points, { maxZoom: 15 });
-        const dv = ctl('.sd-derive-btn');
+        const dv = dctl('.sd-derive-btn');
         if (dv) dv.disabled = !loadedFeatures.length;
         layer.setMeta(
           `${(d.count || 0).toLocaleString()} points · ${
@@ -568,14 +574,14 @@
       }
       const coords = loadedFeatures.map((f) => f.geometry.coordinates);
       const method =
-        (ctl('input[name="sd-method"]:checked') || {}).value || 'concave';
+        (dctl('input[name="sd-method"]:checked') || {}).value || 'concave';
       layer.setMeta('Deriving boundary…');
       try {
         const resp = await post(urls.derive, {
           coords,
           method,
-          concavity: Number((ctl('.sd-tightness') || {}).value || 0.3),
-          buffer_m: Number((ctl('.sd-buffer') || {}).value || 25),
+          concavity: Number((dctl('.sd-tightness') || {}).value || 0.3),
+          buffer_m: Number((dctl('.sd-buffer') || {}).value || 25),
         });
         const d = await resp.json();
         if (!resp.ok || d.status !== 'ok') {
@@ -607,7 +613,7 @@
     });
     const showBtn = ctl('.sd-show');
     if (showBtn) showBtn.addEventListener('click', showPoints);
-    const deriveBtn = ctl('.sd-derive-btn');
+    const deriveBtn = dctl('.sd-derive-btn');
     if (deriveBtn) {
       deriveBtn.disabled = true;
       deriveBtn.addEventListener('click', derive);

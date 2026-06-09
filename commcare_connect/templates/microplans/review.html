@@ -191,8 +191,19 @@
             </div>
           </div>
 
-          <div id="area-draw-help" class="hidden text-[10px] text-gray-500">
-            Use the polygon tool at the top-right of the map to draw the area.
+          <div id="area-draw" class="hidden space-y-2">
+            <p class="text-[10px] text-gray-500">Use the polygon tool at the top-right of the map to draw the area.</p>
+            <div class="border-t border-gray-100 pt-1.5">
+              <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Or: trace service-delivery points</div>
+              <p class="text-[10px] text-gray-400 mb-1">Turn on the <b>Service delivery</b> layer (map, top-right) and Show points first; this traces their footprint into the plan area.</p>
+              <div class="flex items-center gap-3 text-[11px] mb-1">
+                <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="concave" checked> Concave</label>
+                <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="convex"> Convex</label>
+              </div>
+              <label class="block text-[11px]">Tightness <input type="range" class="sd-tightness w-full" min="0.05" max="1" step="0.05" value="0.3"></label>
+              <label class="block text-[11px]">Buffer (m) <input type="number" class="sd-buffer w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 mt-0.5" value="25" min="0" step="5"></label>
+              <button type="button" class="sd-derive-btn w-full text-[11px] font-semibold border border-blue-300 text-blue-700 rounded py-1.5 mt-1">Add boundary as planning area</button>
+            </div>
           </div>
 
           <div id="area-admin" class="space-y-2">
@@ -462,16 +473,6 @@
           <option value="default">Default — device GPS (any app)</option>
         </select>
         <button type="button" data-testid="sd-show" class="sd-show w-full text-[11px] font-semibold bg-brand-cornflower-blue text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
-        <div class="border-t border-gray-100 pt-1.5">
-          <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Boundary from points</div>
-          <div class="flex items-center gap-3 text-[11px] mb-1">
-            <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="concave" checked> Concave</label>
-            <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="convex"> Convex</label>
-          </div>
-          <label class="block text-[11px]">Tightness <input type="range" class="sd-tightness w-full" min="0.05" max="1" step="0.05" value="0.3"></label>
-          <label class="block text-[11px]">Buffer (m) <input type="number" class="sd-buffer w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 mt-0.5" value="25" min="0" step="5"></label>
-          <button type="button" class="sd-derive-btn w-full text-[11px] font-semibold border border-blue-300 text-blue-700 rounded py-1.5 mt-1">Add boundary as planning area</button>
-        </div>
 
         {# wide 3-column picker overlay — fixed, escapes the narrow panel #}
         <div x-show="open" x-cloak @click.self="open=false" @keydown.escape.window="open=false"
@@ -972,7 +973,7 @@
     // derived boundary lands in the MapboxDraw area layer (`draw`, lazy).
     if (window.MicroplansServiceDelivery && $("sd-picker") && SD_PREVIEW_URL) {
       MicroplansServiceDelivery.register({
-        panel: mapPanel, map, csrf: CSRF, pickerEl: $("sd-picker"),
+        panel: mapPanel, map, csrf: CSRF, pickerEl: $("sd-picker"), deriveHost: $("area-draw"),
         urls: { preview: SD_PREVIEW_URL, pipelines: SD_PIPELINES_URL, derive: DERIVE_BOUNDARY_URL },
         onBoundary: (feature) => {
           const geom = feature.geometry;
@@ -1592,7 +1593,7 @@
 
   function setAreaInput(i) {
     areaInput = i;
-    [["draw", "btn-area-draw", "area-draw-help"], ["admin", "btn-area-admin", "area-admin"], ["pin", "btn-area-pin", "area-pin"]].forEach(([k, btnId, panelId]) => {
+    [["draw", "btn-area-draw", "area-draw"], ["admin", "btn-area-admin", "area-admin"], ["pin", "btn-area-pin", "area-pin"]].forEach(([k, btnId, panelId]) => {
       $(btnId).classList.toggle("is-on", k === i);
       $(panelId).classList.toggle("hidden", k !== i);
     });
