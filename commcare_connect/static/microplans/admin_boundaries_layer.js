@@ -386,6 +386,17 @@
     // "descriptor" so selection + geometry-fetch is identical for either path.
     function featToDesc(f) {
       const p = f.properties || {};
+      // Mapbox serializes nested feature properties to JSON strings when queried,
+      // so `ref` (a dict) comes back as a string from queryRenderedFeatures.
+      // Parse it back, else the geometry lookup 404s ("Area not found").
+      let ref = p.ref || {};
+      if (typeof ref === 'string') {
+        try {
+          ref = JSON.parse(ref);
+        } catch (e) {
+          ref = {};
+        }
+      }
       return {
         key: p.boundary_id,
         name: p.name,
@@ -393,7 +404,7 @@
         parent_name: p.parent_name || '',
         source: p.source,
         country: p.iso_code,
-        ref: p.ref || {},
+        ref: ref,
         area_km2: p.area_km2,
       };
     }
