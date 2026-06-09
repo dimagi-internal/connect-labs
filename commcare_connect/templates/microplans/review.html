@@ -185,17 +185,17 @@
           <div>
             <div class="text-gray-600 mb-1">Area input</div>
             <div class="seg-row" style="grid-template-columns: repeat(3, 1fr);">
-              <button type="button" id="btn-area-draw" class="seg-tab is-on">Draw</button>
-              <button type="button" id="btn-area-admin" class="seg-tab">Boundaries</button>
+              <button type="button" id="btn-area-admin" class="seg-tab is-on">Boundaries</button>
+              <button type="button" id="btn-area-draw" class="seg-tab">Draw</button>
               <button type="button" id="btn-area-pin" class="seg-tab">Pin</button>
             </div>
           </div>
 
-          <div id="area-draw-help" class="text-[10px] text-gray-500">
+          <div id="area-draw-help" class="hidden text-[10px] text-gray-500">
             Use the polygon tool at the top-right of the map to draw the area.
           </div>
 
-          <div id="area-admin" class="hidden space-y-2">
+          <div id="area-admin" class="space-y-2">
             <p class="text-[10px] text-gray-500 leading-snug">
               Search a place to jump there, then <b>click a boundary on the map</b> to add it
               to the plan area. Your selected boundaries appear below; switch the source in the map’s Boundaries layer.
@@ -227,17 +227,16 @@
 
           <div id="coverage-config">
             <div class="text-gray-600 mb-1">Work-area size (cell edge)</div>
-            <div class="chip-row" id="cellsize-chips">
-              <button type="button" class="chip" data-cellsize="50">50 m</button>
-              <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
-              <button type="button" class="chip" data-cellsize="150">150 m</button>
-              <button type="button" class="chip" data-cellsize="200">200 m</button>
-              <button type="button" class="chip" data-cellsize="250">250 m</button>
+            <div class="flex items-center gap-2">
+              <div class="chip-row" id="cellsize-chips">
+                <button type="button" class="chip" data-cellsize="50">50 m</button>
+                <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
+              </div>
+              <label class="flex items-center gap-1 text-gray-600 ml-auto whitespace-nowrap">
+                <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input text-xs w-16" placeholder="custom">
+                <span class="text-[10px]">m</span>
+              </label>
             </div>
-            <label class="block mt-1.5">
-              <span class="text-gray-600">Custom (m)</span>
-              <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input mt-0.5 text-xs">
-            </label>
           </div>
 
           <div id="sampling-config" class="hidden space-y-2">
@@ -303,7 +302,7 @@
           </dl>
 
           <button type="button" id="btn-apply-area" class="button button-sm primary-dark w-full">
-            {% if plan_id %}Apply geographic frame{% else %}Create plan{% endif %}
+            {% if plan_id %}Apply geographic frame{% else %}Create work areas{% endif %}
           </button>
           <p class="text-[10px] text-gray-500" id="apply-area-status"></p>
         </div>
@@ -1022,6 +1021,9 @@
         onAreaAdd: (boundaryId, geometry, feature) => { adminAddGeometry(boundaryId, geometry); autofillFromBoundary(feature); },
         onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
       });
+      // Boundaries is the default area mode on a fresh plan — turn the layer on
+      // so its lines render and clicks select straight away.
+      if (adminBoundaries && !PLAN_ID) adminBoundaries.enable();
     }
   }
 
@@ -1547,7 +1549,7 @@
   //  Apply geographic frame posts to /plan/<id>/regenerate/ and re-renders.
   // ----------------------------------------------------------------------
   let draw = null;
-  let areaInput = "draw";              // "draw" | "admin" | "pin"
+  let areaInput = "admin";             // "draw" | "admin" | "pin" — Boundaries is the default
   let circleAreas = [];                // [{circle:{lon,lat,radius_m}}]
   let dropPinArmed = false;
   let cellSizeM = 100;
