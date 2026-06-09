@@ -15,7 +15,7 @@
   /* Area-definition controls — copied from setup.html so the look matches. */
   .seg-row { display: grid; gap: 0.25rem; }
   .chip-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.25rem; }
-  .chip { padding: 0.3rem 0.1rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.7rem;
+  .chip { padding: 0.3rem 0.6rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.7rem;
           color: #4b5563; cursor: pointer; background: #fff; text-align: center; transition: all .12s; }
   .chip:hover { border-color: #9ca3af; }
   .chip.is-on { border-color: #3843d0; color: #3843d0; background: #eef0ff; font-weight: 600; }
@@ -238,13 +238,14 @@
 
           <div id="coverage-config">
             <div class="text-gray-600 mb-1">Work-area size (cell edge)</div>
-            <div class="flex items-center gap-2">
-              <div class="chip-row" id="cellsize-chips">
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="flex gap-1" id="cellsize-chips">
                 <button type="button" class="chip" data-cellsize="50">50 m</button>
                 <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
               </div>
-              <label class="flex items-center gap-1 text-gray-600 ml-auto whitespace-nowrap">
-                <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input text-xs w-16" placeholder="custom">
+              <label class="flex items-center gap-1 text-gray-500">
+                <span class="text-[10px]">or</span>
+                <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input text-xs" style="width:3.5rem" placeholder="—">
                 <span class="text-[10px]">m</span>
               </label>
             </div>
