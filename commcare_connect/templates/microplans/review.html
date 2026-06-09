@@ -1022,8 +1022,20 @@
         onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
       });
       // Boundaries is the default area mode on a fresh plan — turn the layer on
-      // so its lines render and clicks select straight away.
-      if (adminBoundaries && !PLAN_ID) adminBoundaries.enable();
+      // so its lines render and clicks select straight away. Defer to style-load:
+      // enabling adds map layers, which THROWS (and would halt the rest of init,
+      // killing every rail button) if the style isn't ready yet.
+      if (adminBoundaries && !PLAN_ID) {
+        const enableBoundaries = () => {
+          try {
+            adminBoundaries.enable();
+          } catch (e) {
+            /* style not ready / layer race — non-fatal */
+          }
+        };
+        if (map.isStyleLoaded && map.isStyleLoaded()) enableBoundaries();
+        else map.once("load", enableBoundaries);
+      }
     }
   }
 
