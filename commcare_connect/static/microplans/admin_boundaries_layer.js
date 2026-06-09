@@ -45,6 +45,11 @@
     const onAreaAdd = opts.onAreaAdd || function () {};
     const onAreaRemove = opts.onAreaRemove || function () {};
     const post = (url, body) => M.post(url, body, { csrf: opts.csrf });
+    // When a controlsHost (a left-rail element) is provided, the source picker /
+    // search / selected list mount THERE and the map-panel "Boundaries" layer is
+    // left as a pure visibility toggle. Keeps every plan-building control in the
+    // rail; the map only owns the lines + the click-to-select gesture.
+    const controlsHost = opts.controlsHost || null;
 
     let source = null; // active source; null = let the server pick the country default
     let detectedIso = null; // country inferred from returned features (labs carry iso_code)
@@ -76,6 +81,10 @@
     const resultsEl = body.querySelector('.mp-ab-results');
     const summaryEl = body.querySelector('.mp-ab-summary');
     const hintEl = body.querySelector('.mp-ab-hint');
+
+    // Mount controls in the rail up front when a host is supplied (they stay
+    // hidden with their #area-admin container until "Boundaries" mode is picked).
+    if (controlsHost) controlsHost.appendChild(body);
 
     function setStatus(t) {
       statusEl.textContent = t || '';
@@ -601,7 +610,7 @@
       color: COLOR,
       onToggle: (on) => {
         if (on) {
-          layer.setBody(body);
+          if (!controlsHost) layer.setBody(body);
           renderHint();
           renderSummary();
           ensureLayers();

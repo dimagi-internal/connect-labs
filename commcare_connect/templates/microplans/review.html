@@ -188,11 +188,10 @@
 
           <div id="area-admin" class="hidden space-y-2">
             <p class="text-[10px] text-gray-500 leading-snug">
-              The <b>Boundaries</b> layer is on (top-right map panel). Hover to inspect;
-              <b>Shift/⌘-click</b> a boundary to add it to the plan area, or type a name in
-              the layer's search box. Switch the boundary source (local data / Overture)
-              there too.
+              Search a place to jump there, then <b>click a boundary on the map</b> to add it
+              to the plan area. Pick the source and review your selection below.
             </p>
+            <!-- admin_boundaries_layer.js mounts source / search / selected list here -->
           </div>
 
           <div id="area-pin" class="hidden space-y-2">
@@ -991,6 +990,7 @@
       }
       adminBoundaries = MicroplansAdminBoundaries.register({
         panel: mapPanel, map, csrf: CSRF,
+        controlsHost: document.getElementById("area-admin"),
         urls: { viewport: BOUNDARY_VIEWPORT_URL, geometry: ADMIN_AREA_GEOMETRY_URL, areas: ADMIN_AREAS_URL },
         getCountryIso: () => (typeof OPP_COUNTRY_ISO !== "undefined" && OPP_COUNTRY_ISO) || null,
         isAreaPhase: () => {
@@ -1563,8 +1563,8 @@
     if (i !== "pin") disarmPin();
   }
   $("btn-area-draw").addEventListener("click", () => setAreaInput("draw"));
-  // "Boundaries" mode = turn on the admin-boundaries map layer (the layer panel owns
-  // the source picker, search, and Shift/⌘-click area-select). No dropdown here.
+  // "Boundaries" mode = reveal the boundary controls in the rail (#area-admin) and
+  // turn on the map layer (lines + click-to-select). Controls live in the rail now.
   $("btn-area-admin").addEventListener("click", () => { setAreaInput("admin"); if (adminBoundaries) adminBoundaries.enable(); });
   $("btn-area-pin").addEventListener("click", () => setAreaInput("pin"));
 
