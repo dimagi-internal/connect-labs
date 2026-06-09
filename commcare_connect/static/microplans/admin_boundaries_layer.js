@@ -29,6 +29,7 @@
   const COLOR = '#a855f7';
   const SRC = 'mp-admin';
   const LINE = 'mp-admin-line';
+  const FILL = 'mp-admin-fill';
   const HOVER = 'mp-admin-hover';
   const SEL_SRC = 'mp-admin-sel';
   const SEL_FILL = 'mp-admin-sel-fill';
@@ -78,6 +79,7 @@
       <div class="mp-ab-status text-[10px] text-gray-500 mt-1"></div>
       <div class="mp-ab-results max-h-32 overflow-y-auto"></div>
       <div class="mp-ab-summary text-[11px] font-medium text-purple-700 mt-1"></div>
+      <div class="mp-ab-selected space-y-0.5 mt-1"></div>
       <p class="mp-ab-hint text-[10px] text-gray-400 mt-1"></p>`;
     const sourceSel = sourceBody.querySelector('.mp-ab-source');
     const searchEl = body.querySelector('.mp-ab-search');
@@ -85,6 +87,7 @@
     const resultsEl = body.querySelector('.mp-ab-results');
     const summaryEl = body.querySelector('.mp-ab-summary');
     const hintEl = body.querySelector('.mp-ab-hint');
+    const selectedListEl = body.querySelector('.mp-ab-selected');
 
     if (controlsHost) {
       controlsHost.appendChild(body); // search + selected list mount in the rail
@@ -110,15 +113,35 @@
     function renderSummary() {
       if (!selected.size) {
         summaryEl.textContent = '';
-        return;
+      } else {
+        let km2 = 0;
+        selected.forEach((v) => {
+          km2 += (v.desc && v.desc.area_km2) || 0;
+        });
+        summaryEl.textContent = `${selected.size} selected · ${Math.round(
+          km2,
+        ).toLocaleString()} km²`;
       }
-      let km2 = 0;
+      // x-deletable list of the selected boundaries (lives in the rail)
+      if (!selectedListEl) return;
+      selectedListEl.innerHTML = '';
       selected.forEach((v) => {
-        km2 += (v.desc && v.desc.area_km2) || 0;
+        const row = document.createElement('div');
+        row.className =
+          'flex items-center justify-between gap-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200';
+        const name = document.createElement('span');
+        name.className = 'truncate';
+        name.textContent = (v.desc && v.desc.name) || '(area)';
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'text-gray-400 hover:text-red-600 leading-none px-1';
+        x.textContent = '×';
+        x.title = 'Remove from plan area';
+        x.addEventListener('click', () => toggleSelect(v.desc));
+        row.appendChild(name);
+        row.appendChild(x);
+        selectedListEl.appendChild(row);
       });
-      summaryEl.textContent = `${selected.size} selected · ${Math.round(
-        km2,
-      ).toLocaleString()} km²`;
     }
     function renderHint() {
       hintEl.textContent = isAreaPhase()
@@ -130,6 +153,14 @@
     function ensureLayers() {
       if (!map.getSource(SRC)) {
         map.addSource(SRC, { type: 'geojson', data: empty() });
+        // Invisible fill over every boundary so a click/hover INSIDE a polygon
+        // (not only on its line) hits the layer and can toggle selection.
+        map.addLayer({
+          id: FILL,
+          type: 'fill',
+          source: SRC,
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0 },
+        });
         map.addLayer({
           id: LINE,
           type: 'line',
@@ -179,13 +210,13 @@
       return { type: 'FeatureCollection', features: [] };
     }
     function setVisible(on) {
-      [LINE, HOVER, SEL_FILL, SEL_LINE].forEach((id) => {
+      [FILL, LINE, HOVER, SEL_FILL, SEL_LINE].forEach((id) => {
         if (map.getLayer(id))
           map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       });
     }
     function teardown() {
-      M.removeSourceAndLayers(map, SRC, [LINE, HOVER]);
+      M.removeSourceAndLayers(map, SRC, [FILL, LINE, HOVER]);
       M.removeSourceAndLayers(map, SEL_SRC, [SEL_FILL, SEL_LINE]);
     }
 
@@ -241,7 +272,7 @@
 
     // ---- smallest-wins resolution ----
     function smallestAt(point) {
-      const hits = map.queryRenderedFeatures(point, { layers: [LINE] });
+      const hits = map.queryRenderedFeatures(point, { layers: [FILL, LINE] });
       if (!hits.length) return null;
       // highest admin_level = smallest (most granular) boundary
       return hits.reduce((a, b) =>
@@ -252,7 +283,7 @@
     }
     function parentOf(point, level) {
       // next-coarser feature at the same point, for the "select parent" affordance
-      const hits = map.queryRenderedFeatures(point, { layers: [LINE] });
+      const hits = map.queryRenderedFeatures(point, { layers: [FILL, LINE] });
       const coarser = hits.filter(
         (f) => (f.properties.admin_level || 0) < level,
       );
@@ -582,24 +613,24 @@
     function wireMap() {
       if (wired) return;
       wired = true;
-      map.on('mousemove', LINE, (e) => {
+      map.on('mousemove', FILL, (e) => {
         if (!layer.on || !e.features.length) return;
         map.getCanvas().style.cursor = 'pointer';
         const f = smallestAt(e.point) || e.features[0];
         showHover(f, e.point);
       });
-      map.on('mouseleave', LINE, () => {
+      map.on('mouseleave', FILL, () => {
         if (!layer.on) return;
         map.getCanvas().style.cursor = '';
         clearHover();
       });
-      map.on('click', LINE, (e) => {
+      map.on('click', FILL, (e) => {
         if (!layer.on) return;
         const f = smallestAt(e.point);
         if (!f) return;
-        // On the ward bulk-picker surface a plain click selects (toggles) — the
-        // page's whole job is picking boundaries, so a modifier shouldn't be
-        // required. The inspector still pins so you see what you picked.
+        // Plain click anywhere INSIDE a boundary toggles it — select (fills it)
+        // on first click, deselect (clears) on the next. The inspector still
+        // pins so you see what you picked.
         if (isAreaPhase()) {
           toggleSelect(featToDesc(f));
         }
