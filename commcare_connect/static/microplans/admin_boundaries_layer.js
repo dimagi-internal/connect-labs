@@ -62,29 +62,35 @@
     // boundaryId -> { feature, geometry } for the selected-area set
     const selected = new Map();
 
-    // ---- panel body: source picker + search + summary ----
-    const body = document.createElement('div');
-    body.innerHTML = `
+    // The boundary SOURCE is a property of the map layer, so it stays in the
+    // map-panel layer body. Search + results + selected summary are the
+    // plan-building controls; they mount in the rail (controlsHost) when given.
+    const sourceBody = document.createElement('div');
+    sourceBody.innerHTML = `
       <label class="block mb-1.5">
         <span class="text-gray-600">Source</span>
         <select class="mp-ab-source base-input mt-0.5 text-xs"></select>
-      </label>
+      </label>`;
+    const body = document.createElement('div');
+    body.innerHTML = `
       <input class="mp-ab-search base-input text-xs w-full" type="text"
              placeholder="search a place to jump there, then click a boundary…">
       <div class="mp-ab-status text-[10px] text-gray-500 mt-1"></div>
       <div class="mp-ab-results max-h-32 overflow-y-auto"></div>
       <div class="mp-ab-summary text-[11px] font-medium text-purple-700 mt-1"></div>
       <p class="mp-ab-hint text-[10px] text-gray-400 mt-1"></p>`;
-    const sourceSel = body.querySelector('.mp-ab-source');
+    const sourceSel = sourceBody.querySelector('.mp-ab-source');
     const searchEl = body.querySelector('.mp-ab-search');
     const statusEl = body.querySelector('.mp-ab-status');
     const resultsEl = body.querySelector('.mp-ab-results');
     const summaryEl = body.querySelector('.mp-ab-summary');
     const hintEl = body.querySelector('.mp-ab-hint');
 
-    // Mount controls in the rail up front when a host is supplied (they stay
-    // hidden with their #area-admin container until "Boundaries" mode is picked).
-    if (controlsHost) controlsHost.appendChild(body);
+    if (controlsHost) {
+      controlsHost.appendChild(body); // search + selected list mount in the rail
+    } else {
+      body.insertBefore(sourceBody, body.firstChild); // no host: source + controls together
+    }
 
     function setStatus(t) {
       statusEl.textContent = t || '';
@@ -610,7 +616,7 @@
       color: COLOR,
       onToggle: (on) => {
         if (on) {
-          if (!controlsHost) layer.setBody(body);
+          layer.setBody(controlsHost ? sourceBody : body);
           renderHint();
           renderSummary();
           ensureLayers();
