@@ -114,7 +114,12 @@ class DataSourceConfig:
         app_id: (cchq_forms only) Explicit CommCare app ID.
         app_id_source: (cchq_forms only) "opportunity" = derive from opportunity metadata.
         gs_app_id: (cchq_forms only) Explicit GS supervisor app ID.
-        experiment_id: (ocs_sessions only) OCS experiment numeric ID, e.g. "11040".
+        experiment_id: (ocs_sessions only) OCS experiment UUID.
+        api_key: (ocs_sessions only) OCS API key for bulk reads. When set the
+            fetcher uses X-API-KEY auth instead of the user's OAuth Bearer token,
+            so session data is accessible regardless of which OCS team the viewer
+            belongs to. Store only in pipeline schemas that are already
+            access-controlled via the LabsRecord permission model.
     """
 
     type: str = "connect_csv"
@@ -123,6 +128,7 @@ class DataSourceConfig:
     app_id_source: str = ""
     gs_app_id: str = ""
     experiment_id: str = ""
+    api_key: str = ""
 
     def __post_init__(self):
         if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions"):
