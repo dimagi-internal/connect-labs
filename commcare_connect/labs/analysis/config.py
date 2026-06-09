@@ -108,11 +108,13 @@ class DataSourceConfig:
               paginated JSON export (the literal token name predates the v2 migration
               and is retained for stable identifiers across pipeline templates).
               "cchq_forms" fetches from CommCare HQ Form API.
+              "ocs_sessions" fetches from Open Chat Studio sessions API.
         form_name: (cchq_forms only) Form name for xmlns discovery,
                    e.g., "Register Mother", "Gold Standard Visit Checklist"
         app_id: (cchq_forms only) Explicit CommCare app ID.
         app_id_source: (cchq_forms only) "opportunity" = derive from opportunity metadata.
         gs_app_id: (cchq_forms only) Explicit GS supervisor app ID.
+        experiment_id: (ocs_sessions only) OCS experiment numeric ID, e.g. "11040".
     """
 
     type: str = "connect_csv"
@@ -120,9 +122,10 @@ class DataSourceConfig:
     app_id: str = ""
     app_id_source: str = ""
     gs_app_id: str = ""
+    experiment_id: str = ""
 
     def __post_init__(self):
-        if self.type not in ("connect_csv", "cchq_forms"):
+        if self.type not in ("connect_csv", "cchq_forms", "ocs_sessions"):
             raise ValueError(f"Invalid data source type: {self.type}")
 
 

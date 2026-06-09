@@ -416,7 +416,8 @@ class AnalysisPipeline:
             # For filtered configs, skip strict tolerance — filter changes should reuse
             # existing cache, not re-download. The expires_at TTL handles staleness.
             is_cchq = config.data_source.type == "cchq_forms"
-            expected_count = 0 if (is_cchq or has_filters) else self.visit_count
+            is_ocs = config.data_source.type == "ocs_sessions"
+            expected_count = 0 if (is_cchq or is_ocs or has_filters) else self.visit_count
             if not force_refresh:
                 cached_result = _get_cached_for_stage(expected_count)
 
@@ -469,6 +470,20 @@ class AnalysisPipeline:
                                 data_source=unfiltered_config.data_source,
                                 access_token=self.access_token,
                                 opportunity_id=opp_id,
+                            )
+                            raw_data_already_stored = False
+                        elif unfiltered_config.data_source.type == "ocs_sessions":
+                            from commcare_connect.labs.analysis.backends.sql.ocs_fetcher import (
+                                fetch_ocs_sessions_as_visit_dicts,
+                            )
+
+                            yield (
+                                EVENT_STATUS,
+                                {"message": f"Fetching OCS sessions for experiment {unfiltered_config.data_source.experiment_id}..."},
+                            )
+                            visit_dicts = fetch_ocs_sessions_as_visit_dicts(
+                                request=self.request,
+                                data_source=unfiltered_config.data_source,
                             )
                             raw_data_already_stored = False
                         else:
@@ -551,6 +566,20 @@ class AnalysisPipeline:
                             data_source=unfiltered_config.data_source,
                             access_token=self.access_token,
                             opportunity_id=opp_id,
+                        )
+                        raw_data_already_stored = False
+                    elif unfiltered_config.data_source.type == "ocs_sessions":
+                        from commcare_connect.labs.analysis.backends.sql.ocs_fetcher import (
+                            fetch_ocs_sessions_as_visit_dicts,
+                        )
+
+                        yield (
+                            EVENT_STATUS,
+                            {"message": f"Fetching OCS sessions for experiment {unfiltered_config.data_source.experiment_id}..."},
+                        )
+                        visit_dicts = fetch_ocs_sessions_as_visit_dicts(
+                            request=self.request,
+                            data_source=unfiltered_config.data_source,
                         )
                         raw_data_already_stored = False
                     else:
@@ -660,6 +689,38 @@ class AnalysisPipeline:
                     opp_id,
                     visit_dicts=[None] * total_stored,
                     skip_raw_store=True,
+                )
+                yield (EVENT_STATUS, {"message": "Complete!"})
+                yield (EVENT_RESULT, result)
+                return
+
+            # OCS sessions data source — fetch all sessions and process in one pass.
+            # Sessions are O(hundreds), not O(tens of thousands), so no streaming needed.
+            if config.data_source.type == "ocs_sessions":
+                from commcare_connect.labs.analysis.backends.sql.ocs_fetcher import (
+                    fetch_ocs_sessions_as_visit_dicts,
+                )
+
+                yield (
+                    EVENT_STATUS,
+                    {"message": f"Fetching OCS sessions for experiment {config.data_source.experiment_id}..."},
+                )
+                visit_dicts = fetch_ocs_sessions_as_visit_dicts(
+                    request=self.request,
+                    data_source=config.data_source,
+                )
+                if not visit_dicts:
+                    yield (EVENT_STATUS, {"message": "No sessions found"})
+                    yield (EVENT_RESULT, VisitAnalysisResult(opportunity_id=opp_id, rows=[], metadata={}))
+                    return
+
+                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} sessions..."})
+                result = self.backend.process_and_cache(
+                    self.request,
+                    config,
+                    opp_id,
+                    visit_dicts,
+                    skip_raw_store=False,
                 )
                 yield (EVENT_STATUS, {"message": "Complete!"})
                 yield (EVENT_RESULT, result)

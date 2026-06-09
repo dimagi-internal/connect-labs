@@ -1232,8 +1232,16 @@ function WorkflowUI({
               var merged = Object.assign({}, prev);
               Object.keys(fetchedTasks).forEach(function (u) {
                 var t = fetchedTasks[u];
+                var prevStatus = (prev[u] || {}).status;
+                // Preserve a manually-closed status: the API only reflects
+                // backend task status, but the workflow-level close
+                // (handleMarkTaskResolved) takes precedence.
+                var status =
+                  prevStatus === 'closed' || prevStatus === 'completed'
+                    ? prevStatus
+                    : t.status;
                 merged[u] = {
-                  status: t.status,
+                  status: status,
                   triggered_at: t.triggered_at,
                   task_id: t.task_id,
                   title: t.title,
