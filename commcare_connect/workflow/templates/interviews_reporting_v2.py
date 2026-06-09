@@ -77,6 +77,7 @@ SESSIONS_SCHEMA = {
     "data_source": {
         "type": "ocs_sessions",
         "experiment_id": INTERVIEWS_OCS_EXPERIMENT_ID,
+        "api_key": "81G2MJVh.ec8Px6M0UZU96tFbXh2hzlMgh7YOedYI",
     },
     "grouping_key": "username",  # set to participant.identifier by ocs_fetcher
     "terminal_stage": "visit_level",
@@ -173,7 +174,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
     triggeredSet.forEach(function (connectId) {
       var statuses = sessionStatusesByConnectId[connectId];
       if (!statuses) return;
-      var hasStarted = [...statuses].some(function (s) { return STARTED_STATUSES.has(s); });
+      var hasStarted = Array.from(statuses).some(function (s) { return STARTED_STATUSES.has(s); });
       var hasCompleted = statuses.has("complete");
       if (hasStarted) startedCount++;
       if (hasCompleted) completedCount++;
