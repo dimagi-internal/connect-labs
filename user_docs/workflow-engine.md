@@ -133,22 +133,23 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 Labs includes pre-built workflow templates for common program types. Your program administrator can create a workflow from any of these templates and configure it for your opportunity.
 
-| Template                   | Best for                                             |
-| -------------------------- | ---------------------------------------------------- |
-| **KMC Longitudinal**       | Kangaroo Mother Care — tracking cases over time      |
-| **KMC FLW Flags**          | Flag workers needing supervisory follow-up           |
-| **KMC Project Metrics**    | Program-level KPIs and summary statistics            |
-| **MBW Monitoring**         | Mother and baby wellness visit tracking              |
-| **Performance Review**     | FLW performance compared across programs             |
-| **SAM Follow-up**          | Severe acute malnutrition case management            |
-| **OCS Outreach**           | Community health outreach tracking                   |
-| **Bulk Image Audit**       | Image-based QA combined with workflow status         |
-| **CHC Nutrition Analysis** | Community health centre nutrition program monitoring |
-| **MBW Auditing V4**        | MBW audit reviews with flag and task workflow        |
-| **MBW Auditing V5**        | MBW audit reviews — faster loads and preserved runs  |
-| **Program Admin Report**   | Cross-opportunity compliance view for program admins |
-| **Verified Monitoring**    | Funder-facing view of independently-surveyed program coverage, contrasting implementer-reported and verified results |
-| **LLO Weekly FLW Review**  | Weekly per-FLW KPI scorecard for LLO programs        |
+| Template                              | Best for                                                                                                                    |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **KMC Longitudinal**                  | Kangaroo Mother Care — tracking cases over time                                                                             |
+| **KMC FLW Flags**                     | Flag workers needing supervisory follow-up                                                                                  |
+| **KMC Project Metrics**               | Program-level KPIs and summary statistics                                                                                   |
+| **MBW Monitoring**                    | Mother and baby wellness visit tracking                                                                                     |
+| **Performance Review**                | FLW performance compared across programs                                                                                    |
+| **SAM Follow-up**                     | Severe acute malnutrition case management                                                                                   |
+| **OCS Outreach**                      | Community health outreach tracking                                                                                          |
+| **Bulk Image Audit**                  | Image-based QA combined with workflow status                                                                                |
+| **CHC Nutrition Analysis**            | Community health centre nutrition program monitoring                                                                        |
+| **MBW Auditing V4**                   | MBW audit reviews with flag and task workflow                                                                               |
+| **MBW Auditing V5**                   | MBW audit reviews — faster loads and preserved runs                                                                         |
+| **Program Admin Report**              | Cross-opportunity compliance view for program admins                                                                        |
+| **Verified Monitoring**               | Funder-facing view of independently-surveyed program coverage, contrasting implementer-reported and verified results        |
+| **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
+| **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
 
 ---
 
@@ -211,10 +212,4 @@ A single screen contains four panels:
 The **LLO Weekly FLW Review** template provides a weekly per-FLW KPI scorecard for LLO programs. Each row shows a field worker's key performance indicators for the current week.
 
 !!! note "KPI cells show real numbers, not dashes"
-    If you previously saw every KPI cell display as a dash ("—") for all field workers, this has been fixed. The scorecard now shows the actual figures for each worker both while a review is in progress and after it is marked complete. Completed runs also preserve those numbers in their saved snapshot, so historical reviews remain readable.
-
-### Generating Demo or Test Data from a Real Opportunity
-
-If you need realistic data for testing, training, or demonstrations, Labs can generate a **synthetic dataset** based on the statistical profile of an existing opportunity — without any real patient data leaving the server.
-
-This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges,
+    If you previously saw every KPI cell display as a dash ("—") for all field workers, this has been fixed. The scorecard now shows the actual figures for each
