@@ -99,6 +99,7 @@
   .mp-rail .railhead .title-edit:hover { background:var(--line2); }
   .mp-rail .railhead .title-edit:focus { outline:none; background:#fff; border-color:var(--brand-cornflower-blue,#6f8fff); }
   .mp-rail .railscroll { flex:1 1 auto; overflow-y:auto; padding:13px; display:flex; flex-direction:column; gap:9px; }
+  .mp-rail .railscroll > * { flex-shrink:0; }
   .mp-rail .railscroll::-webkit-scrollbar { width:8px; }
   .mp-rail .railscroll::-webkit-scrollbar-thumb { background:#e3e6eb; border-radius:8px; }
   .mp-rail .railfoot { flex:0 0 auto; border-top:1px solid var(--line2); background:#fff; padding:11px 13px; }
@@ -189,7 +190,7 @@
           <div id="area-admin" class="hidden space-y-2">
             <p class="text-[10px] text-gray-500 leading-snug">
               Search a place to jump there, then <b>click a boundary on the map</b> to add it
-              to the plan area. Pick the source and review your selection below.
+              to the plan area. Your selected boundaries appear below; switch the source in the map’s Boundaries layer.
             </p>
             <!-- admin_boundaries_layer.js mounts source / search / selected list here -->
           </div>
@@ -289,29 +290,6 @@
       </details>
     </section>
 
-    {% if not plan_id %}
-    <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
-         boundary; only surfaced for manual edit because Connect's work-area
-         importer requires both non-empty (see CONNECT_IMPORT_CONTRACT.md).
-         NIGERIA-HARDCODED vocabulary — generalize once Connect generalizes. -->
-    <section>
-      <details class="mp-acc mp-card" id="connect-import-card">
-        <summary class="flex items-center gap-2 text-xs text-gray-600">
-          <span class="chev">›</span>
-          <span class="font-medium">Connect import labels</span>
-          <span class="text-gray-400 truncate ml-auto" id="ci-summary">auto-filled from area</span>
-        </summary>
-        <div class="space-y-1.5 text-xs mt-2">
-          <p class="text-[10px] text-gray-500 leading-snug">Connect's work-area importer needs an <b>LGA</b> and <b>State</b> on every row.
-            Picking a boundary fills these automatically — edit only if you drew a freehand area.</p>
-          <label class="block"><span class="text-gray-600">LGA / region</span>
-            <input id="inp-plan-region" type="text" placeholder="e.g. Madobi" class="base-input mt-0.5 text-xs"></label>
-          <label class="block"><span class="text-gray-600">State <span class="text-gray-400">(ADM1)</span></span>
-            <input id="inp-plan-state" type="text" placeholder="e.g. Kano" class="base-input mt-0.5 text-xs"></label>
-        </div>
-      </details>
-    </section>
-    {% endif %}
 
     {% if plan_id %}
     <details class="mp-acc mp-card" open>
@@ -329,7 +307,7 @@
     {% endif %}
 
     <details class="mp-acc mp-card" open>
-      <summary><span class="ic">⬡</span><span class="lbl">Group work areas</span><span class="chev">›</span></summary>
+      <summary><span class="ic">⬡</span><span class="lbl">Create work area groups</span><span class="chev">›</span></summary>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
           <span class="text-gray-600">How to group</span>
@@ -394,6 +372,30 @@
         <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
       </div>
     </details>
+
+    {% if not plan_id %}
+    <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
+         boundary; only surfaced for manual edit because Connect's work-area
+         importer requires both non-empty (see CONNECT_IMPORT_CONTRACT.md).
+         NIGERIA-HARDCODED vocabulary — generalize once Connect generalizes. -->
+    <section>
+      <details class="mp-acc mp-card" id="connect-import-card">
+        <summary class="flex items-center gap-2 text-xs text-gray-600">
+          <span class="chev">›</span>
+          <span class="font-medium">Connect import labels</span>
+          <span class="text-gray-400 truncate ml-auto" id="ci-summary">auto-filled from area</span>
+        </summary>
+        <div class="space-y-1.5 text-xs mt-2">
+          <p class="text-[10px] text-gray-500 leading-snug">Connect's work-area importer needs an <b>LGA</b> and <b>State</b> on every row.
+            Picking a boundary fills these automatically — edit only if you drew a freehand area.</p>
+          <label class="block"><span class="text-gray-600">LGA / region</span>
+            <input id="inp-plan-region" type="text" placeholder="e.g. Madobi" class="base-input mt-0.5 text-xs"></label>
+          <label class="block"><span class="text-gray-600">State <span class="text-gray-400">(ADM1)</span></span>
+            <input id="inp-plan-state" type="text" placeholder="e.g. Kano" class="base-input mt-0.5 text-xs"></label>
+        </div>
+      </details>
+    </section>
+    {% endif %}
 
     </div><!-- /railscroll -->
     <div class="railfoot">
