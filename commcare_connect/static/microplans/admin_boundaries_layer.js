@@ -64,28 +64,29 @@
     // boundaryId -> { feature, geometry } for the selected-area set
     const selected = new Map();
 
-    // The boundary SOURCE is a property of the map layer, so it stays in the
-    // map-panel layer body. Search + results + selected summary are the
-    // plan-building controls; they mount in the rail (controlsHost) when given.
+    // Map-navigation controls (Source + place Search + results) are properties of
+    // the map layer, so they live in the map-panel layer body. The rail
+    // (controlsHost) keeps only the plan-building output: the selected-boundary
+    // summary + x-deletable list.
     const sourceBody = document.createElement('div');
     sourceBody.innerHTML = `
       <label class="block mb-1.5">
         <span class="text-gray-600">Source</span>
         <select class="mp-ab-source base-input mt-0.5 text-xs"></select>
-      </label>`;
+      </label>
+      <input class="mp-ab-search base-input text-xs w-full" type="text"
+             placeholder="search a place to jump there…">
+      <div class="mp-ab-status text-[10px] text-gray-500 mt-1"></div>
+      <div class="mp-ab-results max-h-32 overflow-y-auto"></div>`;
     const body = document.createElement('div');
     body.innerHTML = `
-      <input class="mp-ab-search base-input text-xs w-full" type="text"
-             placeholder="search a place to jump there, then click a boundary…">
-      <div class="mp-ab-status text-[10px] text-gray-500 mt-1"></div>
-      <div class="mp-ab-results max-h-32 overflow-y-auto"></div>
       <div class="mp-ab-summary text-[11px] font-medium text-purple-700 mt-1"></div>
       <div class="mp-ab-selected space-y-0.5 mt-1"></div>
       <p class="mp-ab-hint text-[10px] text-gray-400 mt-1"></p>`;
     const sourceSel = sourceBody.querySelector('.mp-ab-source');
-    const searchEl = body.querySelector('.mp-ab-search');
-    const statusEl = body.querySelector('.mp-ab-status');
-    const resultsEl = body.querySelector('.mp-ab-results');
+    const searchEl = sourceBody.querySelector('.mp-ab-search');
+    const statusEl = sourceBody.querySelector('.mp-ab-status');
+    const resultsEl = sourceBody.querySelector('.mp-ab-results');
     const summaryEl = body.querySelector('.mp-ab-summary');
     const hintEl = body.querySelector('.mp-ab-hint');
     const selectedListEl = body.querySelector('.mp-ab-selected');
@@ -146,7 +147,7 @@
     }
     function renderHint() {
       hintEl.textContent = isAreaPhase()
-        ? 'Click a boundary to add it to the plan area, or click a search result.'
+        ? 'Click a boundary on the map to add it to the plan area.'
         : 'Click a boundary to inspect it.';
     }
 
@@ -226,7 +227,7 @@
           id: SEL_FILL,
           type: 'fill',
           source: SEL_SRC,
-          paint: { 'fill-color': COLOR, 'fill-opacity': 0.18 },
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0.3 },
         });
         map.addLayer({
           id: SEL_LINE,
@@ -294,7 +295,8 @@
             if (c) counts[c] = (counts[c] || 0) + 1;
           }
           detectedIso =
-            Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || null;
+            Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] ||
+            null;
         }
         availableSources = data.available_sources || [];
         sourceLabels = data.source_labels || {};
