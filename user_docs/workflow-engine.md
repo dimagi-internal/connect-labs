@@ -204,7 +204,7 @@ A single screen contains four panels:
 
 **Scrolling and sticky headers:** The scorecard and back-check sections each keep their header row visible as you scroll. The headers are positioned so they remain fully visible and are not obscured by the sticky top navigation bar.
 
-**Back-check method explainer:** Clicking the info icon next to the back-check method label expands an inline explainer directly below the label — it does not open a floating tooltip that covers the section title or the re-survey rows beneath it. The explainer is written in plain English; technical terms such as "Type 1 variables" and "bcstats" do not appear in the main text. The academic citation for the method is demoted to a small "method reference" link at the end so the explanation reads cleanly without interruption.
+**Back-check method explainer:** Clicking the ⓘ icon next to a back-check metric label (Identity, GPS location, or Outcome) opens a small **popover** that appears directly below the icon, with a caret pointing up toward it. The popover explains that metric in plain English without covering the section title or the agreement-share header above it. The academic method link is demoted to a small "method reference" at the end of the popover so the explanation reads cleanly without interruption. Clicking anywhere outside the popover closes it.
 
 ### LLO Weekly FLW Review dashboard
 
@@ -217,4 +217,4 @@ The **LLO Weekly FLW Review** template provides a weekly per-FLW KPI scorecard f
 
 If you need realistic data for testing, training, or demonstrations, Labs can generate a **synthetic dataset** based on the statistical profile of an existing opportunity — without any real patient data leaving the server.
 
-This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges, and so on) and
+This works by analysing the shape and distribution of real data (record counts, visit patterns, field value ranges,
