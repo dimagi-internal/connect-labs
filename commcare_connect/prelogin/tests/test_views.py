@@ -40,3 +40,23 @@ class TestMarketingRoutes:
         resp = client.get("/portfolio/kangaroo-mother-care")
         assert resp.status_code == 200
         assert b"Connect by Dimagi" in resp.content
+
+
+class TestContactPage:
+    def test_contact_renders(self, client):
+        resp = client.get("/contact/")
+        assert resp.status_code == 200
+        assert b"Talk to the" in resp.content
+
+    def test_contact_legacy_url_renders(self, client):
+        resp = client.get("/contact/index.html")
+        assert resp.status_code == 200
+        assert b"Talk to the" in resp.content
+
+    def test_contact_has_hubspot_form(self, client):
+        resp = client.get("/contact/")
+        assert b"ca08edba-5d8f-4386-b5e9-d6b026c14599" in resp.content
+
+    def test_contact_login_url_in_context(self, client):
+        resp = client.get("/contact/")
+        assert resp.context["app_login_url"] == "/accounts/login/"
