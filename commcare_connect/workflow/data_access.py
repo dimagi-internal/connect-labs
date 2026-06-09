@@ -2014,6 +2014,8 @@ class PipelineDataAccess(BaseDataAccess):
             app_id=data_source_dict.get("app_id", ""),
             app_id_source=data_source_dict.get("app_id_source", ""),
             gs_app_id=data_source_dict.get("gs_app_id", ""),
+            experiment_id=data_source_dict.get("experiment_id", ""),
+            api_key=data_source_dict.get("api_key", ""),
         )
 
         # Window fields (e.g., distance_from_prev_case_visit_m via lag_haversine).
