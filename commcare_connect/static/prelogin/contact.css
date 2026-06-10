@@ -1,5 +1,7 @@
 /* ── Page shell ── */
-body { background: var(--paper); }
+body {
+  background: var(--paper);
+}
 
 /* ── Dark hero band ── */
 .contact-hero {
@@ -36,15 +38,26 @@ body { background: var(--paper); }
   filter: brightness(1) saturate(1);
 }
 @media (max-width: 600px) {
-  .contact-photo-strip { height: 180px; margin-top: 36px; }
+  .contact-photo-strip {
+    height: 180px;
+    margin-top: 36px;
+  }
 }
 .contact-hero::before {
   content: '';
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 60% 80% at 0% 50%, rgba(56,67,208,0.14), transparent 60%),
-    radial-gradient(ellipse 40% 60% at 100% 0%, rgba(56,67,208,0.08), transparent 65%);
+    radial-gradient(
+      ellipse 60% 80% at 0% 50%,
+      rgba(56, 67, 208, 0.14),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 40% 60% at 100% 0%,
+      rgba(56, 67, 208, 0.08),
+      transparent 65%
+    );
   pointer-events: none;
 }
 .contact-hero::after {
@@ -52,11 +65,19 @@ body { background: var(--paper); }
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(142,161,255,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(142,161,255,0.05) 1px, transparent 1px);
+    linear-gradient(rgba(142, 161, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(142, 161, 255, 0.05) 1px, transparent 1px);
   background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse at 50% 0%, rgba(0,0,0,0.6), transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at 50% 0%, rgba(0,0,0,0.6), transparent 70%);
+  mask-image: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(0, 0, 0, 0.6),
+    transparent 70%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(0, 0, 0, 0.6),
+    transparent 70%
+  );
   pointer-events: none;
 }
 .contact-hero .wrap {
@@ -112,7 +133,9 @@ body { background: var(--paper); }
   max-width: 52ch;
 }
 @media (max-width: 600px) {
-  .contact-hero { padding: 52px 0 60px; }
+  .contact-hero {
+    padding: 52px 0 60px;
+  }
 }
 
 /* ── Form section ── */
@@ -135,7 +158,7 @@ body { background: var(--paper); }
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: 0 20px 48px -20px rgba(20,16,58,0.14);
+  box-shadow: 0 20px 48px -20px rgba(20, 16, 58, 0.14);
 }
 .form-card-head {
   padding: 22px 36px;
@@ -148,14 +171,17 @@ body { background: var(--paper); }
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   color: var(--sky);
 }
-.form-card-head-icon svg { width: 16px; height: 16px; }
+.form-card-head-icon svg {
+  width: 16px;
+  height: 16px;
+}
 .form-card-head-text {
   font-family: var(--sans);
   font-size: 0.92rem;
@@ -172,8 +198,12 @@ body { background: var(--paper); }
   padding: 36px;
 }
 @media (max-width: 600px) {
-  .form-card-head { padding: 18px 22px; }
-  .form-card-body { padding: 24px 22px; }
+  .form-card-head {
+    padding: 18px 22px;
+  }
+  .form-card-body {
+    padding: 24px 22px;
+  }
 }
 
 /* HubSpot form font override */
@@ -198,4 +228,7 @@ body { background: var(--paper); }
   color: var(--muted);
   font-size: 0.9rem;
 }
-.form-fallback strong { color: var(--ink); font-weight: 500; }
+.form-fallback strong {
+  color: var(--ink);
+  font-weight: 500;
+}

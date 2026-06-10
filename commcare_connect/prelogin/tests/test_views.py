@@ -55,7 +55,8 @@ class TestContactPage:
 
     def test_contact_has_hubspot_form(self, client):
         resp = client.get("/contact/")
-        assert b"ca08edba-5d8f-4386-b5e9-d6b026c14599" in resp.content
+        assert b"contact-form.js" in resp.content
+        assert b'id="hubspot-form"' in resp.content
 
     def test_contact_login_url_in_context(self, client):
         resp = client.get("/contact/")
