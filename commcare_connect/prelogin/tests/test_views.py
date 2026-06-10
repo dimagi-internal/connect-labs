@@ -1,4 +1,7 @@
+import pathlib
+
 import pytest
+from django.contrib.staticfiles import finders
 from django.urls import reverse
 
 from commcare_connect.prelogin.urls import MARKETING_ROUTES
@@ -53,6 +56,13 @@ class TestContactPage:
         resp = client.get("/contact/")
         assert b"contact-form.js" in resp.content
         assert b'id="hubspot-form"' in resp.content
+
+    def test_contact_form_js_hubspot_config(self):
+        path = finders.find("prelogin/contact-form.js")
+        assert path is not None, "contact-form.js not found in static files"
+        content = pathlib.Path(path).read_text()
+        assert "503070" in content  # portalId
+        assert "ca08edba-5d8f-4386-b5e9-d6b026c14599" in content  # formId
 
     def test_contact_login_url_in_context(self, client):
         resp = client.get("/contact/")
