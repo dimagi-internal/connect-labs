@@ -43,13 +43,9 @@ class TestMarketingRoutes:
 
 
 class TestContactPage:
-    def test_contact_renders(self, client):
-        resp = client.get("/contact/")
-        assert resp.status_code == 200
-        assert b"Talk to the" in resp.content
-
-    def test_contact_legacy_url_renders(self, client):
-        resp = client.get("/contact/index.html")
+    @pytest.mark.parametrize("url", ["/contact/", "/contact/index.html"])
+    def test_contact_renders(self, client, url):
+        resp = client.get(url)
         assert resp.status_code == 200
         assert b"Talk to the" in resp.content
 
