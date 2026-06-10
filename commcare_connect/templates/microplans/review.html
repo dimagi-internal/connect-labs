@@ -582,6 +582,7 @@
   const CSV_URL = "{{ csv_url|escapejs }}";
   const COMPARE_URL = "{{ compare_url|escapejs }}";
   const FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
+  const PREVIEW_FOOTPRINTS_URL = "{{ preview_footprints_url|default:''|escapejs }}";
   const REGROUP_URL = "{{ regroup_url|default:''|escapejs }}";
   const REASSIGN_URL = "{{ reassign_url|default:''|escapejs }}";
   const REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
@@ -890,20 +891,34 @@
   // The panel (microplans/map_panel.js) owns the overlay toggles; footprints is
   // its first registered layer. Admin boundaries + service delivery register
   // here too (follow-up). `__mpPanel` is exposed for those + debugging.
-  let mapPanel = null, fpLayer = null, footprintsLoaded = false, adminBoundaries = null;
+  let mapPanel = null, fpLayer = null, footprintsLoaded = false, footprintsOn = false, adminBoundaries = null;
   const setStatus = (t) => { const s = $("status"); if (s) s.textContent = t; };
   async function loadFootprints() {
-    if (!FOOTPRINTS_URL) return false;
-    if (fpLayer) fpLayer.setMeta("Loading footprints…");
-    setStatus("Fetching footprints…");
     const t0 = performance.now();
     try {
-      // Revision cache-buster: footprints are HTTP-cached (max-age=600), but a
-      // regenerate changes the plan's area under the same URL — keying the fetch
-      // on planRevision keeps cache hits within a revision yet busts on change.
-      const fpUrl = FOOTPRINTS_URL + (FOOTPRINTS_URL.includes("?") ? "&" : "?") + "rev=" + (planRevision == null ? "" : planRevision);
-      const data = await (await fetch(fpUrl)).json();
-      if (data.status !== "ok") throw new Error(data.detail || "footprints failed");
+      let data;
+      if (FOOTPRINTS_URL) {
+        // Existing plan: HTTP-cached plan footprints (rev busts on regenerate).
+        if (fpLayer) fpLayer.setMeta("Loading footprints…");
+        setStatus("Fetching footprints…");
+        const fpUrl = FOOTPRINTS_URL + (FOOTPRINTS_URL.includes("?") ? "&" : "?") + "rev=" + (planRevision == null ? "" : planRevision);
+        data = await (await fetch(fpUrl)).json();
+      } else if (PREVIEW_FOOTPRINTS_URL) {
+        // New plan: buildings INSIDE the currently-selected boundary/area. Reloads
+        // when the boundaries change (refreshAreaStats re-calls this while on).
+        const areas = collectAreas();
+        if (!areas.length) {
+          const s0 = map.getSource("plan-fp"); if (s0) s0.setData({ type: "FeatureCollection", features: [] });
+          if (fpLayer) fpLayer.setMeta("Select a boundary to see its buildings");
+          setStatus("");
+          return true; // stay on; reloads once an area is selected
+        }
+        if (fpLayer) fpLayer.setMeta("Loading footprints…");
+        data = await Microplans.enqueueAndPoll(PREVIEW_FOOTPRINTS_URL, { areas }, { csrf: CSRF, onProgress: (m) => { if (fpLayer) fpLayer.setMeta(m); } });
+      } else {
+        return false;
+      }
+      if (!data || data.status !== "ok") throw new Error((data && data.detail) || "footprints failed");
       const src = map.getSource("plan-fp");
       if (src) { src.setData(data.footprints); }
       else {
@@ -933,6 +948,8 @@
       return false;
     }
   }
+  // Reload footprints for the new area when boundaries change (preview mode).
+  const reloadFootprintsDebounced = Microplans.debounce(loadFootprints, 600);
   function setFootprintsVisible(isOn) {
     if (!map || !mapReady) return;
     ["plan-fp-fill", "plan-fp-dots"].forEach((id) => {
@@ -943,11 +960,12 @@
     mapPanel = MicroplansMapPanel.create({ map, mount: $("map-panel-mount") });
     fpLayer = mapPanel.registerLayer({
       id: "footprints", label: "Building footprints", color: "#f59e0b",
-      meta: FOOTPRINTS_URL ? "" : "available once a plan exists",
+      meta: "",
       onToggle: async (isOn, layer) => {
-        if (isOn && !footprintsLoaded) {
+        footprintsOn = isOn;
+        if (isOn) {
           const ok = await loadFootprints();
-          if (!ok) { layer.setEnabled(false, false); return; }
+          if (!ok) { layer.setEnabled(false, false); footprintsOn = false; return; }
         }
         setFootprintsVisible(isOn);
       },
@@ -1642,6 +1660,8 @@
     circleAreas.forEach((c) => { areaM2 += Math.PI * c.circle.radius_m * c.circle.radius_m; });
     $("stat-areas-drawn").textContent = total;
     $("stat-area-km2").textContent = areaM2 ? (areaM2 / 1e6).toFixed(2) + " km²" : "—";
+    // Boundaries changed → refresh the building footprints for the new area.
+    if (footprintsOn && !FOOTPRINTS_URL) reloadFootprintsDebounced();
   }
 
   // ---- collect + apply geographic frame ----
