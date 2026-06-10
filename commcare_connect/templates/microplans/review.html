@@ -252,14 +252,6 @@
           </div>
 
           <div id="sampling-config" class="hidden space-y-2">
-            <div>
-              <div class="text-gray-600 mb-1">Study arm</div>
-              <div class="seg-row" style="grid-template-columns: repeat(2, 1fr);">
-                <button type="button" id="btn-arm-intervention" class="seg-tab is-on">Intervention</button>
-                <button type="button" id="btn-arm-comparison" class="seg-tab">Comparison</button>
-              </div>
-              <p class="text-[10px] text-gray-500 mt-1">Areas you draw or derive tag to the active arm. Set an intervention area, then a comparable control.</p>
-            </div>
             <div class="grid grid-cols-3 gap-1">
               <label class="block"><span class="text-gray-600">PSUs</span>
                 <input id="cfg-target-clusters" type="number" value="25" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
@@ -290,20 +282,13 @@
             </div>
             <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">Generate sample</button>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
-            <dl class="space-y-0.5" id="sampling-arm-stats"></dl>
-            <div id="sampling-comparability" class="hidden text-[10px] border-t border-gray-100 pt-2">
-              <div class="font-semibold text-gray-700 mb-1">Arm comparability</div>
-              <div id="comparability-body"></div>
-            </div>
             <details id="sampling-rationale" class="hidden mt-1 border-t border-gray-100 pt-2">
               <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Why this sample</summary>
               <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
             </details>
             <div id="save-study-row" class="hidden border-t border-gray-100 pt-2 space-y-1">
-              <label class="block"><span class="text-gray-600">Study name</span>
-                <input id="study-name" type="text" placeholder="e.g. Madobi RS pilot" class="base-input mt-0.5 text-xs"></label>
-              <button type="button" id="btn-save-study" class="button button-sm primary-dark w-full">Save study</button>
-              <p class="text-[10px] text-gray-500">Saves both arms as one named plan. Arm assignment stays labs-side — the shared plan is blind.</p>
+              <button type="button" id="btn-save-study" class="button button-sm primary-dark w-full">Create sampling plan</button>
+              <p class="text-[10px] text-gray-500">Saves the sampled work areas as this plan.</p>
               <p class="text-[10px] text-gray-500" id="save-study-status"></p>
             </div>
           </div>
@@ -1952,12 +1937,14 @@
     const statusEl = $("save-study-status");
     if (!lastSample || !(lastSample.pins.features || []).length) { if (statusEl) statusEl.textContent = "Generate a sample first."; return; }
     if (!CREATE_PLAN_URL) { if (statusEl) statusEl.textContent = "Save unavailable on this page."; return; }
-    const name = ($("study-name")?.value || "").trim() || "Two-arm rooftop study";
+    const name = ($("inp-plan-name")?.value || "").trim();
+    const region = ($("inp-plan-region")?.value || "").trim();
+    if (!name && !region) { if (statusEl) statusEl.textContent = "Give the plan a name (or region) first."; return; }
     const btn = $("btn-save-study"); if (btn) btn.disabled = true;
-    if (statusEl) statusEl.textContent = "Saving study…";
+    if (statusEl) statusEl.textContent = "Saving plan…";
     try {
       const resp = await post(CREATE_PLAN_URL, {
-        name, region: name, lga: name, state: ($("inp-plan-state")?.value || "").trim(), mode: "sampling",
+        name, region, lga: region, state: ($("inp-plan-state")?.value || "").trim(), mode: "sampling",
         pins: lastSample.pins, hulls: lastSample.hulls,
         input_areas: collectArmAreas(), grouping: {},
         group_id: GROUP_ID || undefined,
