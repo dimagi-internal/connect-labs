@@ -343,9 +343,12 @@ class TestCompleteRunTemplateFallback:
 
             assert response.status_code == 200, response.content
             assert _json.loads(response.content)["success"] is True
-            # Self-heal: the recovered key was written back onto the definition.
+            # Self-heal: the recovered key AND the template's manifest were
+            # written back onto the definition — the instance owns its
+            # completion contract from here on.
             stamped_data = mock_wda.update_definition.call_args.args[1]
             assert stamped_data["config"]["templateType"] == self.TEMPLATE_KEY
+            assert stamped_data["snapshot_inputs"] == {}
         finally:
             TEMPLATES.pop(self.TEMPLATE_KEY, None)
 
@@ -358,8 +361,43 @@ class TestCompleteRunTemplateFallback:
         assert response.status_code == 400
         error = _json.loads(response.content)["error"]
         assert "config.templateType" in error
+        assert "snapshot_inputs" in error
         mock_wda.update_definition.assert_not_called()
         mock_wda.complete_run.assert_not_called()
+
+    def test_instance_snapshot_inputs_completes_without_any_template(self, dimagi_user, rf: RequestFactory):
+        """A workflow with its own snapshot_inputs manifest completes with no
+        templateType, no name match, no registry entry — the definition owns
+        the contract."""
+        import json as _json
+
+        from commcare_connect.workflow.data_access import WorkflowDefinitionRecord
+
+        definition, run = self._records("Totally Bespoke Workflow")
+        definition = WorkflowDefinitionRecord(
+            {
+                "id": 10,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "opportunity_id": 700,
+                "data": {
+                    "name": "Totally Bespoke Workflow",
+                    "config": {},
+                    "statuses": [],
+                    "snapshot_inputs": {"workers": True, "state_keys": ["decisions"]},
+                },
+            }
+        )
+        response, mock_wda = self._call(rf, dimagi_user, definition, run)
+
+        assert response.status_code == 200, response.content
+        assert _json.loads(response.content)["success"] is True
+        # No registry fallback happened, so nothing needed stamping.
+        mock_wda.update_definition.assert_not_called()
+        # The snapshot honors the instance manifest.
+        snapshot = mock_wda.complete_run.call_args.args[1]
+        assert snapshot["state"] == {}
+        assert "pipelines" not in snapshot or snapshot["pipelines"] == {}
 
     def test_name_match_without_saved_runs_support_returns_400_and_no_stamp(self, dimagi_user, rf: RequestFactory):
         import json as _json

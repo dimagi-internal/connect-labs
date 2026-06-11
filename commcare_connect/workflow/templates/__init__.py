@@ -207,6 +207,125 @@ def _check_snapshot_size(template_key: str, snapshot: dict) -> None:
         )
 
 
+def detect_template_key_from_name(definition_name: str) -> str | None:
+    """Strict name→template-key match: key equals the snake_cased name, or the
+    template's display name equals the definition name (case-insensitive).
+    Workflows created outside the from-template flow (blank MCP create,
+    wholesale definition overwrites) can lack config.templateType; this is the
+    shared recovery used by template sync and run completion."""
+    if not definition_name:
+        return None
+    name_lower = definition_name.lower().replace(" ", "_")
+    for key, template in TEMPLATES.items():
+        if key == name_lower or template.get("name", "").lower() == definition_name.lower():
+            return key
+    return None
+
+
+def resolve_snapshot_contract(definition) -> dict:
+    """Resolve which snapshot contract governs run completion for a workflow.
+
+    The workflow definition is the source of truth: an instance-owned
+    `data["snapshot_inputs"]` manifest (stamped at create-from-template time,
+    editable per-instance) wins over the template registry — the snapshot
+    captures what the workflow *is doing*, not what its template originally
+    declared. The registry is consulted only as a fallback for definitions
+    that predate instance manifests, or for templates whose snapshot is
+    computed by a Python `build_snapshot` hook (code can't live on the
+    record, so hooks stay registry-resolved unless the instance overrides
+    them with its own manifest).
+
+    Returns a dict. On success:
+        {"ok": True,
+         "source": "definition" | "template_hook" | "template_inputs",
+         "template_key": str | None,
+         "snapshot_inputs": dict | None,        # None for template_hook
+         "recovered_template_key": bool}        # key came from a name match
+    On failure:
+        {"ok": False,
+         "error": "no_contract" | "unknown_template" | "template_not_saved_runs",
+         "template_key": str | None}
+    """
+    data = definition.data or {}
+    instance_inputs = data.get("snapshot_inputs")
+    if isinstance(instance_inputs, dict):
+        return {
+            "ok": True,
+            "source": "definition",
+            "template_key": definition.template_type or None,
+            "snapshot_inputs": instance_inputs,
+            "recovered_template_key": False,
+        }
+
+    template_key = definition.template_type
+    recovered = False
+    if not template_key:
+        template_key = detect_template_key_from_name(data.get("name", ""))
+        recovered = template_key is not None
+        if not template_key:
+            return {"ok": False, "error": "no_contract", "template_key": None}
+
+    template = TEMPLATES.get(template_key)
+    if not template:
+        return {"ok": False, "error": "unknown_template", "template_key": template_key}
+    if not template.get("supports_saved_runs"):
+        return {"ok": False, "error": "template_not_saved_runs", "template_key": template_key}
+
+    if callable(template.get("build_snapshot")):
+        return {
+            "ok": True,
+            "source": "template_hook",
+            "template_key": template_key,
+            "snapshot_inputs": None,
+            "recovered_template_key": recovered,
+        }
+
+    snapshot_inputs = template.get("snapshot_inputs")
+    return {
+        "ok": True,
+        "source": "template_inputs",
+        "template_key": template_key,
+        "snapshot_inputs": dict(snapshot_inputs) if isinstance(snapshot_inputs, dict) else {},
+        "recovered_template_key": recovered,
+    }
+
+
+def build_snapshot_for_contract(
+    contract: dict,
+    *,
+    pipelines: dict,
+    state: dict,
+    opportunity_id: int,
+    **context,
+) -> dict | None:
+    """Build the completion snapshot for a resolved contract.
+
+    `contract` is the success shape from `resolve_snapshot_contract`. The
+    declarative sources ("definition", "template_inputs") run through the
+    framework's default manifest builder; "template_hook" calls the
+    template's Python hook with the same context contract as
+    `build_snapshot_for_template`.
+    """
+    label = contract.get("template_key") or "instance"
+    if contract["source"] == "template_hook":
+        template = TEMPLATES.get(contract["template_key"]) if contract.get("template_key") else None
+        builder = template.get("build_snapshot") if template else None
+        if not callable(builder):
+            return None
+        snapshot = builder(pipelines=pipelines, state=state, opportunity_id=opportunity_id, **context)
+    else:
+        snapshot = _default_snapshot_from_inputs(
+            snapshot_inputs=contract.get("snapshot_inputs") or {},
+            pipelines=pipelines,
+            state=state,
+            context=context,
+            opportunity_id=opportunity_id,
+        )
+    if isinstance(snapshot, dict):
+        _check_snapshot_size(label, snapshot)
+    return snapshot
+
+
 def build_snapshot_for_template(
     template_key: str,
     *,
@@ -385,6 +504,14 @@ def create_workflow_from_template(
     config = template_def.get("config", {})
     config["templateType"] = template_key  # Store template type for filtering
     config["multi_opp"] = bool(template.get("multi_opp", False))
+    extra_definition_kwargs = {}
+    if template.get("supports_saved_runs") and not callable(template.get("build_snapshot")):
+        # Stamp the snapshot manifest onto the instance: the definition — not
+        # the registry — owns the completion contract from here on, so edits
+        # to the workflow (new pipelines, new state keys) can be captured by
+        # editing the instance manifest. Hook templates stay registry-resolved
+        # (their snapshot is computed Python, which can't live on the record).
+        extra_definition_kwargs["snapshot_inputs"] = dict(template.get("snapshot_inputs") or {})
     definition = data_access.create_definition(
         name=template_def["name"],
         description=template_def["description"],
@@ -392,6 +519,7 @@ def create_workflow_from_template(
         config=config,
         pipeline_sources=pipeline_sources,
         opportunity_ids=list(opportunity_ids or []),
+        **extra_definition_kwargs,
     )
 
     # Create the render code

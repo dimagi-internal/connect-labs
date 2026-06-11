@@ -68,6 +68,14 @@ class WorkflowDefinitionRecord(LocalLabsRecord):
         return self.data.get("config", {}).get("templateType", "")
 
     @property
+    def snapshot_inputs(self) -> dict | None:
+        """Instance-owned completion-snapshot manifest, or None when this
+        definition still relies on the template registry (legacy instances
+        and hook templates)."""
+        value = self.data.get("snapshot_inputs")
+        return value if isinstance(value, dict) else None
+
+    @property
     def multi_opp(self) -> bool:
         """Whether this workflow was created from a multi-opp template."""
         return bool(self.data.get("config", {}).get("multi_opp", False))
@@ -440,6 +448,10 @@ class WorkflowDataAccess(BaseDataAccess):
             "is_shared": False,
             "shared_scope": "global",
         }
+        # Instance-owned completion contract — only present when explicitly
+        # provided (an empty dict is meaningful: "capture everything").
+        if kwargs.get("snapshot_inputs") is not None:
+            data["snapshot_inputs"] = kwargs["snapshot_inputs"]
 
         record = self.labs_api.create_record(
             experiment=self.EXPERIMENT,

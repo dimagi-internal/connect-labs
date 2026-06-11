@@ -1149,6 +1149,8 @@ Action-shaped templates omit `supports_saved_runs` (or set it `False`). They nev
 
 If a declared pipeline alias isn't present at completion (because the workflow definition's pipeline_sources changed), the framework logs a warning and skips it. Almost every saved-runs template should land here — it requires no Python and produces a snapshot whose shape mirrors what `view.X` exposes while in_progress, so render code is identical in both modes.
 
+> **The workflow instance owns its manifest.** The template's `snapshot_inputs` is only the _starting value_: `create_workflow_from_template` stamps it onto the new definition (`data["snapshot_inputs"]`), and completion resolves the contract from the definition first (`resolve_snapshot_contract`), falling back to the template registry only for legacy instances and `build_snapshot`-hook templates. That means the snapshot captures what the workflow _is doing now_ — edit the instance manifest (via `workflow_update_definition`'s `snapshot_inputs` key) when a workflow grows new pipelines or state keys, instead of editing the repo template. Editing the repo template's manifest does **not** retroactively change already-stamped instances. A bespoke (non-template) workflow can opt into the whole saved-runs lifecycle just by setting `snapshot_inputs` on its definition. Pass `snapshot_inputs: null` to a `workflow_update_definition` patch to revert an instance to template-registry resolution.
+
 > **Alias must match the created source.** The aliases you list in `snapshot_inputs.pipelines` (and read as `view.pipelines.<alias>` in render code) must equal the alias of the pipeline source `create_workflow_from_template` actually creates. For a single-pipeline template that source alias defaults to `"data"` — declare `"pipeline_alias": "<alias>"` on the `TEMPLATE` dict to override it. A mismatch is silent: live KPI cells render as dashes AND the completion snapshot filters down to an empty pipelines dict (see #464).
 
 **Render contract: `snapshot_schema` (recommended companion).** Documents the keys render code expects to read off `instance.snapshot`. The framework can use this to drive completion-confirm copy ("save 12 workers, 8 review decisions"), and bumping `version` is how a template evolves its captured shape.
@@ -1232,8 +1234,8 @@ The contract: `view.workers`, `view.pipelines`, and `view.state` work identicall
 1. Optionally shows the `confirm` dialog (skip the call on cancel).
 2. POSTs to `apiEndpoints.completeRun`. The endpoint:
    - Refuses with **409** if the run is already completed.
-   - Refuses with **400** if the workflow's template doesn't declare `supports_saved_runs`.
-   - Calls `build_snapshot_for_template(...)` to produce the snapshot.
+   - Resolves the snapshot contract via `resolve_snapshot_contract` — the definition's own `snapshot_inputs` first, then the template registry (hook templates, legacy instances, name-match recovery). Refuses with **400** when nothing resolves.
+   - Calls `build_snapshot_for_contract(...)` to produce the snapshot, and self-heals the definition (stamps a name-recovered `templateType` and/or the template's manifest as the instance manifest) when it had to fall back to the registry.
    - Atomically flips status to `completed`, stamps `completed_at`, persists the snapshot.
 3. On 200 → reloads the page; the runner re-mounts in completed mode and reads from the snapshot.
 4. On error → surfaces a `window.alert`; run stays `in_progress`.
