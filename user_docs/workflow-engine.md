@@ -129,6 +129,17 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 ---
 
+## Concluding a Run
+
+When you are ready to save a run as complete, click **Conclude** on the workflow run. The system marks the run as finished and locks it as a historical record.
+
+!!! note "If Conclude fails with a template error"
+    In rare cases — most commonly seen on MBW Auditing workflows — Conclude may show an error such as *"Failed to complete run: Workflow has no template_type; cannot resolve completion handler."* This happens when the workflow's internal definition is missing its template link.
+
+    The system now recovers from this automatically: if the workflow's name matches a known template, Conclude will succeed and the workflow will repair itself in the process. If the name does not match any known template, the error message will tell you exactly what needs to be corrected. In that case, contact your program administrator or post in **#connect-labs** with the workflow name and run number so the link can be restored.
+
+---
+
 ## Starter Templates
 
 Labs includes pre-built workflow templates for common program types. Your program administrator can create a workflow from any of these templates and configure it for your opportunity.
@@ -205,11 +216,4 @@ A single screen contains four panels:
 
 **Scrolling and sticky headers:** The scorecard and back-check sections each keep their header row visible as you scroll. The headers are positioned so they remain fully visible and are not obscured by the sticky top navigation bar.
 
-**Back-check method explainer:** Clicking the ⓘ icon next to a back-check metric label (Identity, GPS location, or Outcome) opens a small **popover** that appears directly below the icon, with a caret pointing up toward it. The popover explains that metric in plain English without covering the section title or the agreement-share header above it. The academic method link is demoted to a small "method reference" at the end of the popover so the explanation reads cleanly without interruption. Clicking anywhere outside the popover closes it.
-
-### LLO Weekly FLW Review dashboard
-
-The **LLO Weekly FLW Review** template provides a weekly per-FLW KPI scorecard for LLO programs. Each row shows a field worker's key performance indicators for the current week.
-
-!!! note "KPI cells show real numbers, not dashes"
-    If you previously saw every KPI cell display as a dash ("—") for all field workers, this has been fixed. The scorecard now shows the actual figures for each
+**Back-check method explainer:** Clicking the ⓘ icon next to a back
