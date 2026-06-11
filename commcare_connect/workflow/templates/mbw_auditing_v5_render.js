@@ -1058,7 +1058,33 @@ function WorkflowUI({
       if (step === 'running') return;
       if (isCompleted) {
         // Completed runs render directly from the snapshot — no recompute,
-        // no network. Just populate dashData from snapshot pipeline rows.
+        // no network.
+        var savedState = (view && view.state) || {};
+
+        // Schema v2 (current): the dashboard table was frozen into state at
+        // conclude time; the snapshot carries no raw pipeline rows.
+        var savedSummaries = savedState.concluded_summaries;
+        if (savedSummaries && savedSummaries.length) {
+          setDashData({
+            flw_summaries: savedSummaries,
+            prev_categories:
+              savedState.concluded_prev_categories ||
+              savedState.previous_categories ||
+              {},
+          });
+          if (
+            savedState.concluded_tab2 &&
+            Object.keys(savedState.concluded_tab2).length > 0
+          ) {
+            setTab2Data(savedState.concluded_tab2);
+            setTab2Step('ready');
+          }
+          setStep('ready');
+          return;
+        }
+
+        // Schema v1 (legacy completed runs): snapshot carried verbatim
+        // pipeline rows; recompute the dashboard from them.
         var snapPipelines = (view && view.pipelines) || {};
         var snapSel = (view && view.state && view.state.selected_workers) || [];
         var snapResult = v5_computeMbwAuditingData({
@@ -1381,64 +1407,92 @@ function WorkflowUI({
   // entry point with per-FLW task_filters (their trigger date) so the
   // follow-up rate is computed as-of that date. Matches v4 lines 401-458
   // exactly via the helper.
+  //
+  // Pure compute shared by runTab2Analysis and handleConclude (the conclude
+  // state write freezes Tab 2 results into the snapshot, since completed
+  // runs carry no raw pipeline rows to recompute from). Returns a
+  // username→summary map; {} when no flagged FLW has a triggered task.
+  var computeTab2ByUser = function (
+    srcEnriched,
+    srcTaskStates,
+    srcPipelinesArg,
+  ) {
+    var flaggedWithTask = (srcEnriched || []).filter(function (f) {
+      return (
+        f.hasTask &&
+        srcTaskStates[f.username] &&
+        srcTaskStates[f.username].triggered_at
+      );
+    });
+
+    if (flaggedWithTask.length === 0) return {};
+
+    var flaggedUsernames = flaggedWithTask.map(function (f) {
+      return f.username;
+    });
+    var taskFilters = {};
+    flaggedWithTask.forEach(function (f) {
+      taskFilters[f.username] = srcTaskStates[f.username].triggered_at;
+    });
+
+    var visitsRows2 =
+      (srcPipelinesArg.visits && srcPipelinesArg.visits.rows) || [];
+    var regRows2 =
+      (srcPipelinesArg.registrations && srcPipelinesArg.registrations.rows) ||
+      [];
+    var gsRows2 =
+      (srcPipelinesArg.gs_forms && srcPipelinesArg.gs_forms.rows) || [];
+
+    var tab2Result = v5_computeMbwAuditingData({
+      visitsRows: visitsRows2,
+      // visits_agg deliberately omitted for Tab 2 — task_filters are set,
+      // so the JS handler falls back to per-visit scanning (matches v4's
+      // `use_agg_counts = bool(visits_agg_rows) and not task_filters`).
+      visitsAggRows: [],
+      regRows: regRows2,
+      gsRows: gsRows2,
+      activeUsernames: flaggedUsernames,
+      flwNames: flwNameMap,
+      taskFilters: taskFilters,
+    });
+
+    var byUser = {};
+    (tab2Result.flw_summaries || []).forEach(function (s) {
+      byUser[s.username] = s;
+    });
+    return byUser;
+  };
+
   var runTab2Analysis = React.useCallback(
     function () {
       if (!dashData || tab2Step === 'running') return;
       setTab2Step('running');
 
-      var flaggedWithTask = enrichedData.filter(function (f) {
-        return (
-          f.hasTask &&
-          taskStates[f.username] &&
-          taskStates[f.username].triggered_at
-        );
-      });
-
-      if (flaggedWithTask.length === 0) {
-        setTab2Step('idle');
+      // Completed runs: Tab 2 results were frozen into state at conclude
+      // time — the snapshot carries no raw pipeline rows to recompute from.
+      var savedTab2 =
+        isCompleted && view && view.state && view.state.concluded_tab2;
+      if (savedTab2) {
+        setTab2Data(savedTab2);
+        setTab2Step('ready');
         return;
       }
 
-      var flaggedUsernames = flaggedWithTask.map(function (f) {
-        return f.username;
-      });
-      var taskFilters = {};
-      flaggedWithTask.forEach(function (f) {
-        taskFilters[f.username] = taskStates[f.username].triggered_at;
-      });
-
       var srcPipelines2 = (view && view.pipelines) || pipelines || {};
-      var visitsRows2 =
-        (srcPipelines2.visits && srcPipelines2.visits.rows) || [];
-      var regRows2 =
-        (srcPipelines2.registrations && srcPipelines2.registrations.rows) || [];
-      var gsRows2 =
-        (srcPipelines2.gs_forms && srcPipelines2.gs_forms.rows) || [];
-
-      var tab2Result;
+      var byUser;
       try {
-        tab2Result = v5_computeMbwAuditingData({
-          visitsRows: visitsRows2,
-          // visits_agg deliberately omitted for Tab 2 — task_filters are set,
-          // so the JS handler falls back to per-visit scanning (matches v4's
-          // `use_agg_counts = bool(visits_agg_rows) and not task_filters`).
-          visitsAggRows: [],
-          regRows: regRows2,
-          gsRows: gsRows2,
-          activeUsernames: flaggedUsernames,
-          flwNames: flwNameMap,
-          taskFilters: taskFilters,
-        });
+        byUser = computeTab2ByUser(enrichedData, taskStates, srcPipelines2);
       } catch (e) {
         console.error('Tab 2 compute failed:', e);
         setTab2Step('error');
         return;
       }
 
-      var byUser = {};
-      (tab2Result.flw_summaries || []).forEach(function (s) {
-        byUser[s.username] = s;
-      });
+      if (Object.keys(byUser).length === 0) {
+        setTab2Step('idle');
+        return;
+      }
+
       setTab2Data(byUser);
       setTab2Step('ready');
     },
@@ -1454,6 +1508,7 @@ function WorkflowUI({
       view,
       pipelines,
       tab2Step,
+      isCompleted,
     ],
   );
 
@@ -2146,12 +2201,35 @@ function WorkflowUI({
       });
       currentMetrics[f.username] = snap;
     });
-    // Save previous_metrics and previous_categories BEFORE completing —
-    // the run becomes immutable once view.complete() flips status. The
-    // snapshot built server-side captures both keys per SNAPSHOT_INPUTS.
+    // Freeze the rendered dashboard into state BEFORE completing — the run
+    // becomes immutable once view.complete() flips status. The snapshot
+    // captures these state keys per SNAPSHOT_INPUTS; it deliberately carries
+    // NO raw pipeline rows (a real MBW opp has 100k+ visits — a verbatim
+    // capture was 112 MB and OOM-killed a web worker), so what's saved here
+    // IS what the completed view renders.
+    var concludedSummaries = (dashData && dashData.flw_summaries) || [];
+    var concludedPrevCats = (dashData && dashData.prev_categories) || {};
+    var concludedTab2 = tab2Data;
+    if (!concludedTab2 || Object.keys(concludedTab2).length === 0) {
+      // Tab 2 may never have been opened this run — compute it now from the
+      // live rows so the frozen run still has baseline rates.
+      try {
+        concludedTab2 = computeTab2ByUser(
+          enrichedData,
+          taskStates,
+          (view && view.pipelines) || pipelines || {},
+        );
+      } catch (e) {
+        console.warn('Tab 2 conclude compute failed:', e);
+        concludedTab2 = {};
+      }
+    }
     onUpdateState({
       previous_metrics: currentMetrics,
       previous_categories: workerResults,
+      concluded_summaries: concludedSummaries,
+      concluded_prev_categories: concludedPrevCats,
+      concluded_tab2: concludedTab2,
     })
       .then(function () {
         // view.complete() handles the confirm dialog (skipped — we already

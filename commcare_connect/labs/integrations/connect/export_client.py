@@ -119,6 +119,11 @@ class ExportAPIClient:
 
             # Server's `next` already includes preserved params; don't re-pass ours.
             url = payload.get("next")
+            # Prod builds `next` URLs as http:// behind its proxy; following
+            # them verbatim costs a 301 redirect on every page (doubling
+            # round-trips on a 40-page visit crawl). Upgrade the scheme here.
+            if url and url.startswith("http://"):
+                url = "https://" + url[len("http://") :]
             request_params = None
 
     def fetch_all(self, endpoint: str, params: dict | None = None) -> list[dict]:

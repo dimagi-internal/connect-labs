@@ -303,6 +303,33 @@ class AnalysisPipeline:
 
         raise RuntimeError("Analysis pipeline completed without returning a result")
 
+    def get_cached_result_only(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int | None = None,
+    ) -> FLWAnalysisResult | VisitAnalysisResult | EntityAnalysisResult | None:
+        """Read the processed cache for (opportunity, config) without executing.
+
+        Never downloads or recomputes anything — this is the read path for
+        run-completion snapshots, which must capture the data the user was
+        already looking at, not trigger a fresh multi-minute rebuild inside
+        a web request. Visit-count drift is deliberately ignored (expected
+        count 0 passes the count check unconditionally, same trick the
+        cchq/ocs/filtered paths use); the cache TTL still applies.
+
+        Returns the cached result for the config's terminal stage, or None
+        when nothing usable is cached.
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return None
+        terminal_stage = config.terminal_stage
+        if terminal_stage == CacheStage.AGGREGATED:
+            return self.backend.get_cached_flw_result(opp_id, config, 0)
+        if terminal_stage == CacheStage.ENTITY:
+            return self.backend.get_cached_entity_result(opp_id, config, 0)
+        return self.backend.get_cached_visit_result(opp_id, config, 0)
+
     def _consume_raw_visits_stream(
         self,
         opp_id: int,
@@ -477,9 +504,10 @@ class AnalysisPipeline:
                                 fetch_ocs_sessions_as_visit_dicts,
                             )
 
+                            ocs_exp = unfiltered_config.data_source.experiment_id
                             yield (
                                 EVENT_STATUS,
-                                {"message": f"Fetching OCS sessions for experiment {unfiltered_config.data_source.experiment_id}..."},
+                                {"message": f"Fetching OCS sessions for experiment {ocs_exp}..."},
                             )
                             visit_dicts = fetch_ocs_sessions_as_visit_dicts(
                                 request=self.request,
@@ -573,9 +601,10 @@ class AnalysisPipeline:
                             fetch_ocs_sessions_as_visit_dicts,
                         )
 
+                        ocs_exp = unfiltered_config.data_source.experiment_id
                         yield (
                             EVENT_STATUS,
-                            {"message": f"Fetching OCS sessions for experiment {unfiltered_config.data_source.experiment_id}..."},
+                            {"message": f"Fetching OCS sessions for experiment {ocs_exp}..."},
                         )
                         visit_dicts = fetch_ocs_sessions_as_visit_dicts(
                             request=self.request,
@@ -697,9 +726,7 @@ class AnalysisPipeline:
             # OCS sessions data source — fetch all sessions and process in one pass.
             # Sessions are O(hundreds), not O(tens of thousands), so no streaming needed.
             if config.data_source.type == "ocs_sessions":
-                from commcare_connect.labs.analysis.backends.sql.ocs_fetcher import (
-                    fetch_ocs_sessions_as_visit_dicts,
-                )
+                from commcare_connect.labs.analysis.backends.sql.ocs_fetcher import fetch_ocs_sessions_as_visit_dicts
 
                 yield (
                     EVENT_STATUS,

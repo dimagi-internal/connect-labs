@@ -1235,7 +1235,8 @@ The contract: `view.workers`, `view.pipelines`, and `view.state` work identicall
 2. POSTs to `apiEndpoints.completeRun`. The endpoint:
    - Refuses with **409** if the run is already completed.
    - Resolves the snapshot contract via `resolve_snapshot_contract` — the definition's own `snapshot_inputs` first, then the template registry (hook templates, legacy instances, name-match recovery). Refuses with **400** when nothing resolves.
-   - Calls `build_snapshot_for_contract(...)` to produce the snapshot, and self-heals the definition (stamps a name-recovered `templateType` and/or the template's manifest as the instance manifest) when it had to fall back to the registry.
+   - Reads pipeline data **from the processed cache only**, scoped to the aliases the contract captures (`WorkflowDataAccess.get_cached_pipeline_data`). Completion **never executes a pipeline**: the snapshot's job is to freeze what the user was looking at, and a conclude-time re-execution both captured the wrong data and turned the button into a multi-minute batch job (102k visits ≈ 18 minutes + an OOM-killed worker). An empty `pipelines: []` manifest skips the read entirely; a cache miss refuses with **409** ("reload the run page, then conclude").
+   - Calls `build_snapshot_for_contract(...)` to produce the snapshot, and self-heals the definition (stamps a name-recovered `templateType` and/or the template's manifest as the instance manifest) when it had to fall back to the registry. Refuses with **400** (`SnapshotTooLargeError`) if the snapshot would exceed the 5 MB hard cap.
    - Atomically flips status to `completed`, stamps `completed_at`, persists the snapshot.
 3. On 200 → reloads the page; the runner re-mounts in completed mode and reads from the snapshot.
 4. On error → surfaces a `window.alert`; run stays `in_progress`.
@@ -1252,7 +1253,7 @@ There is no "edit a completed run" path. The pattern is **re-run = new in_progre
 
 ### Size budget
 
-Snapshots live inside `LabsRecord.data` JSON. The framework warns at 1 MB per snapshot and logs an error at 5 MB — those are signals the template is capturing too much. Tighten with `snapshot_inputs` or move computed summaries into a `build_snapshot` hook.
+Snapshots live inside `LabsRecord.data` JSON. The framework warns at 1 MB per snapshot and **rejects at 5 MB** (`SnapshotTooLargeError` → 400 from the complete endpoint; the run stays in*progress). Don't capture raw pipeline rows from large opps at all — have the render compute the derived per-row table it displays and freeze that into a state key in the same `onUpdateState` write that precedes `view.complete()` (see `mbw_auditing_v5`'s `concluded*\*` keys). The verbatim-capture failure mode is real: a 102k-visit opp produced a 112 MB snapshot and OOM-killed a web worker.
 
 ### Reference implementation
 
