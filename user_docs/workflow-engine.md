@@ -131,9 +131,12 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 ## Concluding a Run
 
-When you are ready to save a run as complete, click **Conclude** on the workflow run. The system marks the run as finished and locks it as a historical record.
+When you are ready to save a run as complete, click **Conclude** on the workflow run. The system freezes exactly the dashboard you were looking at — the data already on your screen — and saves it as a locked historical record. Conclude never refetches or recomputes data behind your back, so on large opportunities it completes in seconds rather than waiting for a server-side rebuild.
 
-When a run is concluded, the saved snapshot captures what **that workflow** is currently set up to track at the time you click Conclude. This means:
+!!! note "Make sure the dashboard has finished loading before you conclude"
+    Because Conclude saves what is on screen, the dashboard must be fully loaded before you click the button. If the page is still loading data when you click Conclude, you will see a message asking you to reload the run page, let the dashboard finish loading, and then conclude again. This ensures the snapshot captures a complete picture rather than a partial one.
+
+When a run is concluded, the snapshot captures what **that workflow** is currently set up to track at the time you click Conclude. This means:
 
 - If your team has added new data pipelines or tracking fields to the workflow since it was first created, those additions will be included in the snapshot — as long as the workflow's manifest has been updated to reflect them.
 - Workflows that were built from scratch rather than from a starter template can also use the conclude-and-save flow in the same way.
@@ -145,6 +148,9 @@ When a run is concluded, the saved snapshot captures what **that workflow** is c
     In rare cases — most commonly seen on MBW Auditing workflows — Conclude may show an error such as *"Failed to complete run: Workflow has no template_type; cannot resolve completion handler."* This happens when the workflow's internal definition is missing its template link.
 
     The system now recovers from this automatically: if the workflow's name matches a known template, Conclude will succeed and the workflow will repair itself in the process. If the name does not match any known template, the error message will tell you exactly what needs to be corrected. In that case, contact your program administrator or post in **#connect-labs** with the workflow name and run number so the link can be restored.
+
+!!! note "If Conclude fails with a snapshot size error"
+    On very large opportunities, Conclude may show an error indicating the snapshot is too large to save. This is a safeguard to protect system stability. Contact your program administrator or post in **#connect-labs** with the workflow name and run number so the snapshot scope can be reviewed and adjusted.
 
 ---
 
@@ -199,13 +205,14 @@ The `custom_analysis/` section of Labs predates the workflow engine. Most of tho
 
 ### Snapshot contracts and workflow definitions
 
-When a run is concluded, the snapshot is built from what the **workflow itself** declares it tracks — not from what the original template declared when the workflow was first created. This means the workflow's own manifest is the source of truth for every concluded run.
+When a run is concluded, the snapshot is built from what the user **sees on screen at the moment they click Conclude** — the dashboard's cached data, scoped to what the workflow's manifest declares it tracks. The system never refetches or recomputes data during the conclude step itself. This means the workflow's own manifest is the source of truth for what is captured, and the screen state at conclude time is the source of truth for the values saved.
 
 Practical implications for administrators:
 
 - **Adding pipelines or fields to an existing workflow** — update the workflow's manifest to include them. Future concluded runs will capture the new data. Runs already concluded are unaffected.
 - **Workflows not built from a template** — custom-built workflows that were created from scratch can use the conclude-and-save-baseline flow in exactly the same way as template-based workflows. There is no requirement to link a workflow back to a starter template for Conclude to work.
 - **Removing pipelines or fields** — if you remove something from the manifest, it will no longer appear in future snapshots. Review the manifest carefully before removing anything that historical comparisons may depend on.
+- **Snapshot size** — the system rejects snapshots that exceed a safe size limit and returns an explanatory error rather than crashing. If you hit this limit, reduce the scope of what the workflow captures or contact **#connect-labs** for guidance.
 
 ### Program Admin Report
 
@@ -224,10 +231,3 @@ The dashboard leads with the finding a funder can actually rely on: **independen
 The treatment-vs-comparison ward section is presented below the headline and is explicitly labelled as **descriptive**. A note on that section states that the comparison ward is an observational neighbour, not a randomised control, so the dashboard never implies a causal-impact claim its design cannot support. Any technical terms (such as confidence interval) are glossed in plain English the first time they appear, and the survey's data quality indicators are labelled as exactly that — survey quality — rather than being left as unexplained numbers.
 
 The dashboard presents results neutrally and lets the viewer draw their own conclusions. Everything it shows is read from its saved run state — it never fetches live data during a viewing session, so every viewing of the same run produces exactly the same screen.
-
-A single screen contains four panels:
-
-- **Verification headline panel** — the gap chart and plain-English summary described above; this is the first thing a viewer sees.
-- **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent comparison ward (labelled observational, not a randomised control). Each row includes per-round sparklines and a neutral "measured difference" figure between the two wards.
-- **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds over time, with each round's date shown on the x-axis (R1 Feb 2025 → R6 Dec 2025) so the chart reads as a time progression from earliest to latest. The header reads "6 bi-monthly rounds over time" and the caption frames the view as the gap between self-report and the independent survey tracked across the monitoring period. End-of-line value labels are positioned so they do not collide with the selected-cycle highlight. The legend explains the shaded gap band, and a caption makes clear this is a descriptive cross-cycle comparison, not a causal estimate.
-- **Two-ward map** — uses three clearly separable colours: **green** for the program's own logged service-delivery visits (intervention ward only), **indigo** for independently surveyed households confirmed as reached, and **rose** for surveyed households that were not reached. This makes
