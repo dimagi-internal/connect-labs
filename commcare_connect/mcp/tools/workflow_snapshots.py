@@ -65,7 +65,12 @@ def workflow_save_snapshot(
     snapshot_name: str,
     captured_at: str,
 ) -> dict[str, Any]:
-    from commcare_connect.workflow.templates import build_snapshot_for_contract, resolve_snapshot_contract
+    from commcare_connect.workflow.data_access import PipelineCacheMiss
+    from commcare_connect.workflow.templates import (
+        SnapshotTooLargeError,
+        build_snapshot_for_contract,
+        resolve_snapshot_contract,
+    )
 
     wda = _wda_for_user(user, opportunity_id=opportunity_id)
     try:
@@ -114,9 +119,23 @@ def workflow_save_snapshot(
                 f"not the {opportunity_id} passed to workflow_save_snapshot",
             )
 
-        # Match the views.py:complete_run code path exactly: pull pipelines and
-        # workers from the same data access, then call build_snapshot_for_template.
-        pipelines = wda.get_pipeline_data(definition_id, opportunity_id)
+        # Match the views.py:complete_run code path exactly: cache-only,
+        # manifest-scoped pipeline read (snapshots freeze what was reviewed —
+        # they never re-execute pipelines), then workers, then the builder.
+        contract_inputs = contract.get("snapshot_inputs")
+        aliases = None if contract["source"] == "template_hook" else (contract_inputs or {}).get("pipelines")
+        if aliases == []:
+            pipelines = {}
+        else:
+            try:
+                pipelines = wda.get_cached_pipeline_data(definition_id, opportunity_id, aliases=aliases)
+            except PipelineCacheMiss as e:
+                raise MCPToolError(
+                    "UPSTREAM_ERROR",
+                    f"no cached data for pipeline {e.pipeline_name or e.alias!r} (opp {e.opportunity_id}); "
+                    "load the workflow's pipeline data first (open the run page or run the pipelines), "
+                    "then retry",
+                ) from e
         effective_opp_ids = definition.opportunity_ids or [opportunity_id]
         workers: list[dict] = []
         for oid in effective_opp_ids:
@@ -127,20 +146,23 @@ def workflow_save_snapshot(
                 # Match views.py tolerance — skip opps the user can't enumerate.
                 pass
 
-        snapshot_payload = build_snapshot_for_contract(
-            contract,
-            pipelines=pipelines,
-            state=run.data.get("state", {}),
-            opportunity_id=opportunity_id,
-            workers=workers,
-            opportunity_ids=effective_opp_ids,
-            # Optional context fields some templates' build_snapshot hooks accept
-            # (definition_id, access_token). Templates that don't use these
-            # absorb them via **_. access_token is necessary for hooks that
-            # construct their own DAOs (no `request` is available in MCP path).
-            definition_id=definition_id,
-            access_token=wda.access_token,
-        )
+        try:
+            snapshot_payload = build_snapshot_for_contract(
+                contract,
+                pipelines=pipelines,
+                state=run.data.get("state", {}),
+                opportunity_id=opportunity_id,
+                workers=workers,
+                opportunity_ids=effective_opp_ids,
+                # Optional context fields some templates' build_snapshot hooks accept
+                # (definition_id, access_token). Templates that don't use these
+                # absorb them via **_. access_token is necessary for hooks that
+                # construct their own DAOs (no `request` is available in MCP path).
+                definition_id=definition_id,
+                access_token=wda.access_token,
+            )
+        except SnapshotTooLargeError as e:
+            raise MCPToolError("INVALID_SCHEMA", str(e)) from e
         if not isinstance(snapshot_payload, dict):
             raise MCPToolError(
                 "UPSTREAM_ERROR",

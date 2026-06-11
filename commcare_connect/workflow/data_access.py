@@ -25,6 +25,19 @@ from commcare_connect.labs.models import LocalLabsRecord
 logger = logging.getLogger(__name__)
 
 
+class PipelineCacheMiss(Exception):
+    """Raised by the cached-only pipeline read when a required pipeline has no
+    usable processed cache for an opportunity. Callers (run completion) should
+    surface this as "reload the dashboard, then retry" rather than silently
+    re-executing the pipeline."""
+
+    def __init__(self, alias: str, opportunity_id: int, pipeline_name: str = ""):
+        self.alias = alias
+        self.opportunity_id = opportunity_id
+        self.pipeline_name = pipeline_name
+        super().__init__(f"No cached data for pipeline {pipeline_name or alias!r} (opportunity {opportunity_id})")
+
+
 # =============================================================================
 # Proxy Models for LabsRecords
 # =============================================================================
@@ -968,6 +981,88 @@ class WorkflowDataAccess(BaseDataAccess):
 
         return results
 
+    def get_cached_pipeline_data(
+        self, definition_id: int, opportunity_id: int, aliases: list[str] | None = None
+    ) -> dict[str, dict]:
+        """Cache-only counterpart of `get_pipeline_data`, scoped to a manifest.
+
+        Used by run completion: the snapshot must freeze the data the user was
+        already looking at, so this never executes a pipeline — it only reads
+        the processed cache the runner page populated. `aliases` limits the
+        read to the pipelines a snapshot contract actually captures (None
+        means all of the workflow's sources; the caller should skip calling
+        this entirely for an empty manifest).
+
+        Raises PipelineCacheMiss if any required pipeline has no usable cache
+        for any of the workflow's opportunities — completion should fail fast
+        with "reload the dashboard" rather than snapshot partial data.
+        """
+        definition = self.get_definition(definition_id)
+        if not definition:
+            return {}
+
+        sources = definition.pipeline_sources
+        wanted = None if aliases is None else set(aliases)
+        if not sources or (wanted is not None and not any(s.get("alias") in wanted for s in sources)):
+            return {}
+
+        opp_ids = definition.opportunity_ids or [opportunity_id]
+
+        pipeline_access = PipelineDataAccess(
+            request=self.request,
+            access_token=self.access_token,
+            opportunity_id=opportunity_id,
+            organization_id=self.organization_id,
+            program_id=self.program_id,
+        )
+
+        # Same JOIN-hash resolution as the execute path: cache keys are
+        # config-hash-addressed, so the cached read must build configs the
+        # exact same way or it will look up the wrong (missing) hash. Resolve
+        # over ALL sources (a captured pipeline may JOIN an uncaptured one);
+        # the `wanted` filter applies only to what gets read and returned.
+        from commcare_connect.labs.analysis.utils import resolve_join_hashes
+        from commcare_connect.workflow.views import _resolve_pipeline_sources_for_run
+
+        ordered_sources, configs_by_alias = _resolve_pipeline_sources_for_run(pipeline_access, sources)
+        if configs_by_alias:
+            resolve_join_hashes(configs_by_alias)
+
+        results: dict[str, dict] = {}
+        try:
+            for source in ordered_sources:
+                pipeline_id = source.get("pipeline_id")
+                alias = source.get("alias")
+                if not pipeline_id or not alias:
+                    continue
+                if wanted is not None and alias not in wanted:
+                    continue
+
+                merged_rows: list[dict] = []
+                per_opp_meta: dict[str, dict] = {}
+                for opp_id in opp_ids:
+                    cached = pipeline_access.get_cached_pipeline_result(
+                        pipeline_id, opp_id, config=configs_by_alias.get(alias)
+                    )
+                    if cached is None:
+                        raise PipelineCacheMiss(alias, opp_id, source.get("name", ""))
+                    merged_rows.extend({**row, "opportunity_id": opp_id} for row in cached.get("rows", []))
+                    per_opp_meta[str(opp_id)] = cached.get("metadata", {})
+
+                results[alias] = {
+                    "rows": merged_rows,
+                    "metadata": {
+                        "pipeline_id": pipeline_id,
+                        "opportunity_ids": list(opp_ids),
+                        "per_opp": per_opp_meta,
+                        "row_count": len(merged_rows),
+                    },
+                }
+        finally:
+            pipeline_access.close()
+
+        return results
+
     # -------------------------------------------------------------------------
     # Sharing Methods
     # -------------------------------------------------------------------------
@@ -1785,6 +1880,51 @@ class PipelineDataAccess(BaseDataAccess):
                 error_meta["auth_error_domain"] = e.domain
                 error_meta["auth_authorize_url"] = "/labs/commcare/initiate/"
             return {"rows": [], "metadata": error_meta}
+
+    def get_cached_pipeline_result(self, definition_id: int, opportunity_id: int, config=None) -> dict | None:
+        """Read a pipeline's processed cache without executing anything.
+
+        The cache-only counterpart of `execute_pipeline`, used by run
+        completion: snapshots must capture the data the user was already
+        looking at, never trigger a fresh download/recompute inside a web
+        request (a 100k-visit opp takes many minutes and has OOM-killed
+        workers). Returns the same `{"rows", "metadata"}` shape as
+        `execute_pipeline` on a hit, or None when nothing usable is cached
+        (caller decides how to surface the miss).
+        """
+        from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
+
+        definition = self.get_definition(definition_id)
+        if not definition:
+            return None
+        schema = definition.schema
+        if not schema:
+            return None
+
+        try:
+            if config is None:
+                config = self._schema_to_config(schema, definition_id)
+            if self.request is not None:
+                pipeline = AnalysisPipeline(self.request)
+            else:
+                pipeline = AnalysisPipeline(access_token=self.access_token)
+            result = pipeline.get_cached_result_only(config, opportunity_id)
+            if result is None:
+                return None
+            rows = self._serialize_pipeline_rows(result)
+            return {
+                "rows": rows,
+                "metadata": {
+                    "row_count": len(rows),
+                    "from_cache": True,
+                    "pipeline_id": definition_id,
+                    "pipeline_name": definition.name,
+                    "terminal_stage": schema.get("terminal_stage", "visit_level"),
+                },
+            }
+        except Exception:
+            logger.exception("Cached pipeline read failed for pipeline %s opp %s", definition_id, opportunity_id)
+            return None
 
     def execute_pipeline_from_schema(self, schema: dict, opportunity_id: int, alias: str = "pipeline") -> dict:
         """Execute a pipeline directly from a schema dict (no DB lookup).
