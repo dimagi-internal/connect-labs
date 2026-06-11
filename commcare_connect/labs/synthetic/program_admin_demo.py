@@ -490,22 +490,21 @@ def program_admin_demo_seed(
         # if completed_at is the historical Monday.
         window_end = (dt.date.today() + dt.timedelta(days=1)).isoformat()
 
-        from commcare_connect.workflow.templates.program_admin_report import build_snapshot
+        from commcare_connect.workflow.templates.program_admin_report import compute_program_admin_rollup
 
-        snapshot = build_snapshot(
-            pipelines={},
+        rollup = compute_program_admin_rollup(
             state={
                 "window_start": window_start,
                 "window_end": window_end,
                 "watched_sources": watched_sources,
                 "weeks": weeks,
             },
-            opportunity_id=primary_opp_id,
-            workers=[],
-            opportunity_ids=[s["opportunity_id"] for s in watched_sources],
-            definition_id=par_def.id,
             access_token=token,
         )
+        # Wrap in the snapshot shape (schema_version + state) the runner's
+        # view helper reads — the same shape the declarative manifest now
+        # produces at a real conclude.
+        snapshot = {"schema_version": 2, "state": rollup}
         if "state" in snapshot:
             snapshot["state"]["expected_weeks"] = weeks
             snapshot["state"]["display_window_start"] = weeks[0]

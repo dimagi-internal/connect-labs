@@ -134,7 +134,7 @@ def _patch_path(name):
     return f"commcare_connect.workflow.templates.program_admin_report.{name}"
 
 
-def test_build_snapshot_joins_flags_audits_tasks_by_flw(fake_run, monkeypatch):
+def test_rollup_joins_flags_audits_tasks_by_flw(fake_run, monkeypatch):
     from unittest.mock import MagicMock
 
     from commcare_connect.audit.models import AuditSessionRecord
@@ -223,19 +223,11 @@ def test_build_snapshot_joins_flags_audits_tasks_by_flw(fake_run, monkeypatch):
         ],
     }
 
-    snapshot = par.build_snapshot(
-        pipelines={},
-        state=state,
-        opportunity_id=10001,
-        workers=[],
-        opportunity_ids=[10001],
-        definition_id=999,
-    )
+    rollup = par.compute_program_admin_rollup(state=state)
 
-    assert snapshot["schema_version"] == 1
-    summary = snapshot["state"]["watched_summary"]
-    assert snapshot["state"]["window_start"] == "2025-11-04T00:00:00Z"
-    assert snapshot["state"]["window_end"] == "2025-11-25T23:59:59Z"
+    summary = rollup["watched_summary"]
+    assert rollup["window_start"] == "2025-11-04T00:00:00Z"
+    assert rollup["window_end"] == "2025-11-25T23:59:59Z"
     assert len(summary) == 1
     source = summary[0]
     assert source["opportunity_id"] == 10001
@@ -261,17 +253,98 @@ def test_build_snapshot_joins_flags_audits_tasks_by_flw(fake_run, monkeypatch):
     assert audit["pass_count"] == 5
 
 
-def test_build_snapshot_missing_window_returns_error(monkeypatch):
+def test_rollup_missing_window_returns_error(monkeypatch):
     from commcare_connect.workflow.templates import program_admin_report as par
 
-    snapshot = par.build_snapshot(
-        pipelines={},
-        state={"watched_sources": []},
-        opportunity_id=10001,
-        workers=[],
-        opportunity_ids=[10001],
-        definition_id=999,
+    rollup = par.compute_program_admin_rollup(state={"watched_sources": []})
+    assert rollup["error"] == "missing_window"
+    assert rollup["watched_summary"] == []
+
+
+def test_program_admin_report_has_no_build_snapshot_hook():
+    """The template is fully declarative now: no registry hook, so its
+    instances own their completion contract (snapshot_inputs stamped at
+    creation / first conclude)."""
+    from commcare_connect.workflow.data_access import WorkflowDefinitionRecord
+    from commcare_connect.workflow.templates import TEMPLATES, resolve_snapshot_contract
+
+    template = TEMPLATES["program_admin_report"]
+    assert "build_snapshot" not in template
+    assert template["supports_saved_runs"] is True
+    assert "watched_summary" in template["snapshot_inputs"]["state_keys"]
+    # And every state key the render reads is captured by the manifest.
+    for key in ("window_start", "window_end", "expected_weeks", "display_window_start", "display_window_end"):
+        assert key in template["snapshot_inputs"]["state_keys"]
+
+    definition = WorkflowDefinitionRecord(
+        {
+            "id": 1,
+            "experiment": "workflow",
+            "type": "workflow_definition",
+            "opportunity_id": 700,
+            "data": {"name": "X", "config": {"templateType": "program_admin_report"}},
+        }
     )
-    assert snapshot["error"] == "missing_window"
-    # missing-window error path returns the legacy top-level shape (no state)
-    assert snapshot["watched_summary"] == []
+    contract = resolve_snapshot_contract(definition)
+    assert contract["ok"] is True
+    assert contract["source"] == "template_inputs"
+
+
+def test_rollup_job_handler_persists_state_and_returns_results(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from commcare_connect.workflow.job_handlers.program_admin_report import program_admin_rollup
+
+    fake_run = MagicMock()
+    fake_run.is_completed = False
+    fake_run.data = {
+        "state": {
+            "window_start": "2025-11-04T00:00:00Z",
+            "window_end": "2025-11-25T23:59:59Z",
+            "watched_sources": [{"opportunity_id": 10001, "workflow_definition_id": 47}],
+        }
+    }
+    fake_wda = MagicMock()
+    fake_wda.get_run.return_value = fake_run
+
+    rollup = {
+        "watched_summary": [{"opportunity_id": 10001, "workflow_definition_id": 47, "runs": []}],
+        "window_start": "2025-11-04T00:00:00Z",
+        "window_end": "2025-11-25T23:59:59Z",
+        "watched_sources": [{"opportunity_id": 10001, "workflow_definition_id": 47}],
+    }
+    monkeypatch.setattr(
+        "commcare_connect.workflow.data_access.WorkflowDataAccess",
+        MagicMock(return_value=fake_wda),
+    )
+    monkeypatch.setattr(
+        "commcare_connect.workflow.templates.program_admin_report.compute_program_admin_rollup",
+        MagicMock(return_value=rollup),
+    )
+
+    results = program_admin_rollup({"run_id": 600, "opportunity_id": 10001}, access_token="t")
+
+    fake_wda.update_run_state.assert_called_once_with(600, rollup)
+    assert results["successful"] == 1
+    assert results["watched_summary"] == rollup["watched_summary"]
+
+
+def test_rollup_job_handler_refuses_completed_run(monkeypatch):
+    from unittest.mock import MagicMock
+
+    import pytest as _pytest
+
+    from commcare_connect.workflow.job_handlers.program_admin_report import program_admin_rollup
+
+    fake_run = MagicMock()
+    fake_run.is_completed = True
+    fake_wda = MagicMock()
+    fake_wda.get_run.return_value = fake_run
+    monkeypatch.setattr(
+        "commcare_connect.workflow.data_access.WorkflowDataAccess",
+        MagicMock(return_value=fake_wda),
+    )
+
+    with _pytest.raises(ValueError, match="completed"):
+        program_admin_rollup({"run_id": 600, "opportunity_id": 10001}, access_token="t")
+    fake_wda.update_run_state.assert_not_called()

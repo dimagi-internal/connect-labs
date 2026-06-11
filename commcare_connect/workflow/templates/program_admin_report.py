@@ -35,15 +35,6 @@ DEFINITION = {
 }
 
 
-def _build_request_for_hook():
-    """Hook seam — the framework currently passes pipelines/state into hooks
-    but not the full request. For now hooks run with the same access scope
-    as the user who triggered completion; the LabsRecord API enforces ACL
-    on the underlying writes. See spec §5.3 for the rationale.
-    """
-    return None
-
-
 def _parse_iso(s):
     if not s:
         return None
@@ -53,38 +44,44 @@ def _parse_iso(s):
         return None
 
 
-def build_snapshot(
+def compute_program_admin_rollup(
     *,
-    pipelines,
     state,
-    opportunity_id,
-    workers=None,
-    opportunity_ids=None,
-    definition_id=None,
     request=None,
     access_token=None,
+    progress_callback=None,
     **_,
 ):
-    """Freeze a window-scoped rollup of per-FLW flags + their associated
-    audit/task records at run completion time. See spec §5.3.
+    """Compute the window-scoped rollup of per-FLW flags + their associated
+    audit/task records. See spec §5.3.
+
+    This used to be the template's ``build_snapshot`` completion hook. It is
+    now invoked *during* the run (via the ``program_admin_rollup`` job
+    handler, or the synthetic demo seeder) and its result is written into run
+    **state** — completion then captures that state declaratively via the
+    template's ``snapshot_inputs`` manifest, like every other saved-runs
+    template. Returns a state-shaped dict:
+    ``{"watched_summary": [...], "window_start", "window_end",
+    "watched_sources"}`` (plus ``"error"`` when the window is missing).
 
     `state` must contain ``window_start``, ``window_end``, ``watched_sources``.
 
-    Auth: the hook accepts either ``request`` (web view path — token is
-    extracted from session) or ``access_token`` (MCP/CLI path — caller has
-    the Connect OAuth token already). Exactly one must yield a token; the
-    DAOs raise ``ValueError`` if neither is present.
-
-    ``workers``, ``opportunity_ids``, and ``definition_id`` are accepted for
-    framework-call compatibility but not used here — this snapshot is read
-    from `state.watched_sources`, not the run's own workers/pipelines.
+    Auth: accepts either ``request`` (web view path — token is extracted from
+    session) or ``access_token`` (MCP/CLI/Celery path — caller has the
+    Connect OAuth token already). Exactly one must yield a token; the DAOs
+    raise ``ValueError`` if neither is present.
     """
+
+    def _progress(msg):
+        if progress_callback:
+            progress_callback(msg)
+
     window_start = _parse_iso(state.get("window_start"))
     window_end = _parse_iso(state.get("window_end"))
     watched_sources = state.get("watched_sources", [])
 
     if not window_start or not window_end:
-        return {"schema_version": 1, "watched_summary": [], "error": "missing_window"}
+        return {"watched_summary": [], "error": "missing_window"}
 
     # Don't pass a shared WDA here — the reader constructs a per-source
     # scoped WDA internally so list_runs hits the LabsRecord API with the
@@ -106,6 +103,7 @@ def build_snapshot(
     watched_summary = []
     for src in sources:
         src_opp_id = src["opportunity_id"]
+        _progress(f"Rolling up opportunity #{src_opp_id} ({len(src['runs'])} run(s))…")
         fda = FlagsDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
         tda = TaskDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
         ada = AuditDataAccess(request=request, access_token=access_token, opportunity_id=src_opp_id)
@@ -206,28 +204,73 @@ def build_snapshot(
                 "runs": run_summaries,
             }
         )
-    # Wrap in `state` so useRunView's `view.state = snapshot.state` path
-    # finds the rollup. We preserve the window + sources alongside so the
-    # render code never has to reach into the definition config.
+    # State-shaped: the job handler writes this into run state, and the
+    # declarative snapshot manifest captures it from there at completion. We
+    # echo the window + sources alongside so the render code never has to
+    # reach into the definition config.
     return {
-        "schema_version": 1,
-        "state": {
-            "watched_summary": watched_summary,
-            "window_start": state.get("window_start"),
-            "window_end": state.get("window_end"),
-            "watched_sources": watched_sources,
-        },
+        "watched_summary": watched_summary,
+        "window_start": state.get("window_start"),
+        "window_end": state.get("window_end"),
+        "watched_sources": watched_sources,
     }
 
 
-RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
-    var state = (view && view.state) || {};
+RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
+    // Live refresh overlays the server-computed rollup until the next page
+    // load (the job handler persists it into run state, so view.state has it
+    // from then on — and conclude freezes it declaratively).
+    var [rollupOverlay, setRollupOverlay] = React.useState(null);
+    var baseState = (view && view.state) || {};
+    var state = rollupOverlay ? Object.assign({}, baseState, rollupOverlay) : baseState;
     var summary = state.watched_summary || [];
     var expectedWeeks = state.expected_weeks || [];
     var displayStart = state.display_window_start || state.window_start || '';
     var displayEnd = state.display_window_end || state.window_end || '';
 
     var [selectedCell, setSelectedCell] = React.useState(null);
+    var [jobStatus, setJobStatus] = React.useState('idle'); // idle | running | error
+    var [jobMessage, setJobMessage] = React.useState(null);
+
+    function refreshRollup() {
+        if (!actions || !actions.startJob || jobStatus === 'running') return;
+        setJobStatus('running');
+        setJobMessage('Starting rollup…');
+        actions.startJob(instance.id, {
+            job_type: 'program_admin_rollup',
+            run_id: instance.id,
+            opportunity_id: instance.opportunity_id,
+        }).then(function (resp) {
+            if (!resp || !resp.success || !resp.task_id) {
+                setJobStatus('error');
+                setJobMessage((resp && resp.error) || 'Failed to start rollup job');
+                return;
+            }
+            actions.streamJobProgress(
+                resp.task_id,
+                function (data) { if (data.message) setJobMessage(data.message); },
+                null,
+                function (results) {
+                    if (results && results.watched_summary) {
+                        setRollupOverlay({
+                            watched_summary: results.watched_summary,
+                            window_start: results.window_start || baseState.window_start,
+                            window_end: results.window_end || baseState.window_end
+                        });
+                    }
+                    setJobStatus('idle');
+                    setJobMessage(null);
+                },
+                function (err) {
+                    setJobStatus('error');
+                    setJobMessage(err || 'Rollup failed');
+                }
+            );
+        }).catch(function () {
+            setJobStatus('error');
+            setJobMessage('Rollup job failed to start');
+        });
+    }
 
     function fmtDate(iso) {
         if (!iso) return '';
@@ -610,7 +653,15 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view }) {
                     fmtDate(displayStart) + ' – ' + fmtDate(displayEnd) + ' · ' + summary.length + ' opportunities watched'
                 )
             ),
-            view.isCompleted ? pill('📌 Snapshot', 'indigo') : pill('● Live', 'gray')
+            React.createElement('div', {style: {display: 'flex', gap: 10, alignItems: 'center'}},
+                jobMessage ? React.createElement('span', {style: {fontSize: 12, color: jobStatus === 'error' ? '#b91c1c' : '#6b7280'}}, jobMessage) : null,
+                view.isCompleted ? null : React.createElement('button', {
+                    onClick: refreshRollup,
+                    disabled: jobStatus === 'running',
+                    style: {background: jobStatus === 'running' ? '#a5b4fc' : '#4f46e5', color: 'white', border: 0, padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: jobStatus === 'running' ? 'default' : 'pointer'}
+                }, jobStatus === 'running' ? 'Refreshing…' : '↻ Refresh data'),
+                view.isCompleted ? pill('📌 Snapshot', 'indigo') : pill('● Live', 'gray')
+            )
         ),
         // Column header row
         React.createElement('div', {style: {display: 'grid', gridTemplateColumns: gridTemplate, gap: 10, marginBottom: 6, padding: '0 2px'}},
@@ -708,15 +759,33 @@ TEMPLATE = {
     "color": "purple",
     "multi_opp": True,
     "supports_saved_runs": True,
+    # Declarative completion contract (no build_snapshot hook): the rollup is
+    # computed into run state while the run is live (program_admin_rollup job
+    # handler / demo seeder), and conclude captures these state keys verbatim.
     "snapshot_inputs": {
-        "pipelines": None,
+        "pipelines": [],
         "workers": False,
-        "state_keys": ["watched_summary"],
+        "state_keys": [
+            "watched_summary",
+            "window_start",
+            "window_end",
+            "watched_sources",
+            "weeks",
+            "expected_weeks",
+            "display_window_start",
+            "display_window_end",
+        ],
     },
     "snapshot_schema": {
-        "version": 1,
+        "version": 2,
         "keys": {
-            "state.watched_summary": "Per-watched-source rollup frozen at run completion",
+            "state.watched_summary": "Per-watched-source rollup computed while live, frozen at completion",
+            "state.window_start": "Report window start (ISO)",
+            "state.window_end": "Report window end (ISO)",
+            "state.watched_sources": "Watched {opportunity_id, workflow_definition_id} pairs",
+            "state.expected_weeks": "Optional expected week-start dates driving the grid columns",
+            "state.display_window_start": "Optional display override for the window start",
+            "state.display_window_end": "Optional display override for the window end",
         },
     },
     "definition": DEFINITION,
