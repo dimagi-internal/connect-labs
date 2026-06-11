@@ -230,4 +230,4 @@ The dashboard leads with the finding a funder can actually rely on: **independen
 
 The treatment-vs-comparison ward section is presented below the headline and is explicitly labelled as **descriptive**. A note on that section states that the comparison ward is an observational neighbour, not a randomised control, so the dashboard never implies a causal-impact claim its design cannot support. Any technical terms (such as confidence interval) are glossed in plain English the first time they appear, and the survey's data quality indicators are labelled as exactly that — survey quality — rather than being left as unexplained numbers.
 
-The dashboard presents results neutrally and lets the viewer draw their own conclusions. Everything it shows is read from its saved run state — it never fetches live data during a viewing session, so every viewing of the same run produces exactly the same screen.
+The **survey-quality scorecard** shows per-surveyor indicators such as identity checks, GPS-location agreement, and outcome agreement. All scorecard columns — including the **back-check column** — are scoped to the **current round only
