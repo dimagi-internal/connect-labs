@@ -252,12 +252,13 @@
           </div>
 
           <div id="sampling-config" class="hidden space-y-2">
+            <div class="text-[10px] text-gray-400 mb-1 cursor-help underline decoration-dotted underline-offset-2" title="How the sample is drawn: every building in the area is grouped into clusters (PSUs); clusters are selected with probability proportional to their building count — bigger clusters are likelier, so every building has a roughly equal chance and the sample stays representative. Within each selected cluster the tool picks the primary buildings to survey plus ranked alternates as backups, so surveyors work a few tight pockets instead of scattered random buildings.">How the sample is drawn &#9432;</div>
             <div class="grid grid-cols-3 gap-1">
-              <label class="block"><span class="text-gray-600">PSUs</span>
+              <label class="block cursor-help" title="Primary Sampling Units — how many building clusters to select. The area's buildings are grouped into clusters; this many are chosen, with bigger clusters more likely (probability proportional to size)."><span class="text-gray-600 underline decoration-dotted underline-offset-2">PSUs</span>
                 <input id="cfg-target-clusters" type="number" value="25" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
-              <label class="block"><span class="text-gray-600">Primary</span>
+              <label class="block cursor-help" title="Buildings actually surveyed in each selected cluster — e.g. 8 primary x 25 PSUs = 200 planned surveys."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Primary</span>
                 <input id="cfg-primary" type="number" value="8" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
-              <label class="block"><span class="text-gray-600">Alternate</span>
+              <label class="block cursor-help" title="Ranked backup buildings per cluster. Used in order when a primary building is vacant, locked, refused, or inaccessible — so you reach the target sample size without biasing toward easy-to-reach buildings."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Alternate</span>
                 <input id="cfg-alternate" type="number" value="8" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
             </div>
             <div class="border-t border-gray-100 pt-2">
