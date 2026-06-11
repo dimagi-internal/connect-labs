@@ -1147,6 +1147,21 @@ def save_worker_result_api(request, run_id):
             data_access.close()
 
 
+def _detect_template_key_from_name(definition_name: str) -> str | None:
+    """Strict name→template-key match: key equals the snake_cased name, or the
+    template's display name equals the definition name (case-insensitive).
+    Workflows created outside the from-template flow (blank MCP create,
+    wholesale definition overwrites) can lack config.templateType; this is the
+    shared recovery used by template sync and run completion."""
+    if not definition_name:
+        return None
+    name_lower = definition_name.lower().replace(" ", "_")
+    for key, template in TEMPLATES.items():
+        if key == name_lower or template.get("name", "").lower() == definition_name.lower():
+            return key
+    return None
+
+
 @login_required
 @require_POST
 def complete_run_api(request, run_id):
@@ -1186,11 +1201,23 @@ def complete_run_api(request, run_id):
             return JsonResponse({"error": "Workflow definition not found"}, status=404)
 
         template_key = definition.template_type
+        stamped_fallback_key = None
         if not template_key:
-            return JsonResponse(
-                {"error": "Workflow has no template_type; cannot resolve completion handler"},
-                status=400,
-            )
+            template_key = _detect_template_key_from_name(definition.name)
+            stamped_fallback_key = template_key
+            if not template_key:
+                return JsonResponse(
+                    {
+                        "error": (
+                            "Workflow has no template_type and its name does not match a "
+                            "known template; cannot resolve completion handler. Set "
+                            "config.templateType on the workflow definition (e.g. via the "
+                            "workflow_update_definition MCP tool) to the key of the template "
+                            "this workflow was built from."
+                        )
+                    },
+                    status=400,
+                )
 
         template = TEMPLATES.get(template_key)
         if not template:
@@ -1205,6 +1232,23 @@ def complete_run_api(request, run_id):
                 },
                 status=400,
             )
+
+        if stamped_fallback_key:
+            # Self-heal: persist the recovered key so future completions (and
+            # templateType-based filtering) don't depend on the name match.
+            # Best-effort — completion proceeds even if the stamp write fails.
+            try:
+                new_def_data = dict(definition.data)
+                new_def_config = dict(new_def_data.get("config") or {})
+                new_def_config["templateType"] = stamped_fallback_key
+                new_def_data["config"] = new_def_config
+                data_access.update_definition(definition_id, new_def_data)
+            except Exception:
+                logger.exception(
+                    "Failed to stamp recovered templateType=%s on definition %s",
+                    stamped_fallback_key,
+                    definition_id,
+                )
 
         opportunity_id = run.opportunity_id or definition.opportunity_id
         if not opportunity_id:
@@ -1629,11 +1673,7 @@ def sync_template_render_code_api(request, definition_id):
 
         # Auto-detect template from definition name if not provided
         if not template_key:
-            name_lower = definition.name.lower().replace(" ", "_")
-            for key in TEMPLATES:
-                if key == name_lower or TEMPLATES[key]["name"].lower() == definition.name.lower():
-                    template_key = key
-                    break
+            template_key = _detect_template_key_from_name(definition.name)
 
         if not template_key:
             return JsonResponse(

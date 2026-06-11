@@ -266,3 +266,119 @@ class TestUpdateOpportunityIdsView:
 
         response = UpdateOpportunityIdsView.as_view()(request, definition_id=1)
         assert response.status_code == 400
+
+
+class TestCompleteRunTemplateFallback:
+    """complete_run_api recovers a missing config.templateType from the
+    workflow name (same strict match template sync uses) and self-heals the
+    definition record, instead of dead-ending the conclude with a 400."""
+
+    TEMPLATE_KEY = "__tv_saved_runs__"
+
+    def _records(self, definition_name):
+        from commcare_connect.workflow.data_access import WorkflowDefinitionRecord, WorkflowRunRecord
+
+        definition = WorkflowDefinitionRecord(
+            {
+                "id": 10,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "opportunity_id": 700,
+                "data": {"name": definition_name, "config": {}, "statuses": []},
+            }
+        )
+        run = WorkflowRunRecord(
+            {
+                "id": 55,
+                "experiment": "workflow",
+                "type": "workflow_run",
+                "opportunity_id": 700,
+                "data": {"definition_id": 10, "status": "in_progress", "state": {}},
+            }
+        )
+        return definition, run
+
+    def _request(self, rf, user):
+        request = rf.post("/labs/workflow/api/run/55/complete/", data="{}", content_type="application/json")
+        request.user = user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {"labs_oauth": {"access_token": "t", "organization_data": {"opportunities": []}}}
+        return request
+
+    def _call(self, rf, user, definition, run):
+        from commcare_connect.workflow.views import complete_run_api
+
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_run.return_value = run
+            mock_wda.get_definition.return_value = definition
+            mock_wda.get_pipeline_data.return_value = {}
+            mock_wda.get_workers.return_value = []
+            completed = MagicMock()
+            completed.status = "completed"
+            completed.completed_at = "2026-06-11T00:00:00Z"
+            completed.snapshot = {}
+            mock_wda.complete_run.return_value = completed
+            response = complete_run_api(request=self._request(rf, user), run_id=55)
+        return response, mock_wda
+
+    def test_name_match_completes_and_stamps_template_type(self, dimagi_user, rf: RequestFactory):
+        import json as _json
+
+        from commcare_connect.workflow.templates import TEMPLATES
+
+        TEMPLATES[self.TEMPLATE_KEY] = {
+            "key": self.TEMPLATE_KEY,
+            "name": "TV Saved Runs",
+            "description": "d",
+            "supports_saved_runs": True,
+            "snapshot_inputs": {},
+            "definition": {"name": "TV Saved Runs", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+        }
+        try:
+            definition, run = self._records("TV Saved Runs")
+            response, mock_wda = self._call(rf, dimagi_user, definition, run)
+
+            assert response.status_code == 200, response.content
+            assert _json.loads(response.content)["success"] is True
+            # Self-heal: the recovered key was written back onto the definition.
+            stamped_data = mock_wda.update_definition.call_args.args[1]
+            assert stamped_data["config"]["templateType"] == self.TEMPLATE_KEY
+        finally:
+            TEMPLATES.pop(self.TEMPLATE_KEY, None)
+
+    def test_no_name_match_returns_actionable_400(self, dimagi_user, rf: RequestFactory):
+        import json as _json
+
+        definition, run = self._records("Some Bespoke Workflow")
+        response, mock_wda = self._call(rf, dimagi_user, definition, run)
+
+        assert response.status_code == 400
+        error = _json.loads(response.content)["error"]
+        assert "config.templateType" in error
+        mock_wda.update_definition.assert_not_called()
+        mock_wda.complete_run.assert_not_called()
+
+    def test_name_match_without_saved_runs_support_returns_400_and_no_stamp(self, dimagi_user, rf: RequestFactory):
+        import json as _json
+
+        from commcare_connect.workflow.templates import TEMPLATES
+
+        TEMPLATES[self.TEMPLATE_KEY] = {
+            "key": self.TEMPLATE_KEY,
+            "name": "TV Saved Runs",
+            "description": "d",
+            "definition": {"name": "TV Saved Runs", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+        }
+        try:
+            definition, run = self._records("TV Saved Runs")
+            response, mock_wda = self._call(rf, dimagi_user, definition, run)
+
+            assert response.status_code == 400
+            assert "supports_saved_runs" in _json.loads(response.content)["error"]
+            mock_wda.update_definition.assert_not_called()
+        finally:
+            TEMPLATES.pop(self.TEMPLATE_KEY, None)
