@@ -444,3 +444,53 @@ class TestCreateFromTemplateStampsManifest:
         }
         kwargs = self._create()
         assert "snapshot_inputs" not in kwargs
+
+
+class TestSnapshotSizeCap:
+    """The 5 MB hard cap rejects (SnapshotTooLargeError) instead of logging —
+    a 112 MB verbatim-pipeline snapshot OOM-killed a web worker on a
+    102k-visit opp while the log-only guard watched."""
+
+    def test_under_soft_cap_passes_silently(self):
+        from commcare_connect.workflow.templates import _check_snapshot_size
+
+        _check_snapshot_size("tiny", {"state": {"a": 1}})  # no raise
+
+    def test_between_caps_warns_but_passes(self, caplog):
+        import logging
+
+        from commcare_connect.workflow.templates import _check_snapshot_size
+
+        with caplog.at_level(logging.WARNING):
+            _check_snapshot_size("warm", {"blob": "x" * (2 * 1024 * 1024)})
+        assert any("soft cap" in r.message for r in caplog.records)
+
+    def test_at_hard_cap_raises(self):
+        import pytest
+
+        from commcare_connect.workflow.templates import SnapshotTooLargeError, _check_snapshot_size
+
+        with pytest.raises(SnapshotTooLargeError) as exc:
+            _check_snapshot_size("huge", {"blob": "x" * (6 * 1024 * 1024)})
+        assert exc.value.template_key == "huge"
+        assert "snapshot_inputs" in str(exc.value)
+
+    def test_build_snapshot_for_contract_propagates_size_error(self):
+        import pytest
+
+        from commcare_connect.workflow.templates import SnapshotTooLargeError, build_snapshot_for_contract
+
+        contract = {
+            "ok": True,
+            "source": "definition",
+            "template_key": None,
+            "snapshot_inputs": {"pipelines": [], "workers": False, "state_keys": ["blob"]},
+            "recovered_template_key": False,
+        }
+        with pytest.raises(SnapshotTooLargeError):
+            build_snapshot_for_contract(
+                contract,
+                pipelines={},
+                state={"blob": "x" * (6 * 1024 * 1024)},
+                opportunity_id=700,
+            )
