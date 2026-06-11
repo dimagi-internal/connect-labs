@@ -207,6 +207,14 @@ Practical implications for administrators:
 - **Workflows not built from a template** — custom-built workflows that were created from scratch can use the conclude-and-save-baseline flow in exactly the same way as template-based workflows. There is no requirement to link a workflow back to a starter template for Conclude to work.
 - **Removing pipelines or fields** — if you remove something from the manifest, it will no longer appear in future snapshots. Review the manifest carefully before removing anything that historical comparisons may depend on.
 
+### Program Admin Report
+
+The **Program Admin Report** template gives program administrators a cross-opportunity compliance rollup — flags, audits, and tasks aggregated across all opportunities the admin is watching.
+
+**While the run is live**, the report does not fill in automatically on page load. Instead, click the **Refresh data** button to pull the latest flags, audits, and tasks from all watched opportunities into the report on demand. You can refresh as many times as you like during the run. Each refresh overwrites the previous live snapshot with the most current data.
+
+**Concluding the run** freezes exactly what is on screen at that moment — the same conclude-and-save flow used by all other workflow templates. Once concluded, the run is a locked historical record and the Refresh data button is no longer active.
+
 ### Verified Monitoring dashboard
 
 The **Verified Monitoring** template is designed for programs that commission independent surveys to verify their own coverage numbers — for example, a vitamin-A home-visit program where an outside team surveys households to confirm whether a visit actually occurred.
@@ -222,6 +230,4 @@ A single screen contains four panels:
 - **Verification headline panel** — the gap chart and plain-English summary described above; this is the first thing a viewer sees.
 - **Per-ward coverage table** — one row per ward, showing verified coverage for a treatment ward and an adjacent comparison ward (labelled observational, not a randomised control). Each row includes per-round sparklines and a neutral "measured difference" figure between the two wards.
 - **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds over time, with each round's date shown on the x-axis (R1 Feb 2025 → R6 Dec 2025) so the chart reads as a time progression from earliest to latest. The header reads "6 bi-monthly rounds over time" and the caption frames the view as the gap between self-report and the independent survey tracked across the monitoring period. End-of-line value labels are positioned so they do not collide with the selected-cycle highlight. The legend explains the shaded gap band, and a caption makes clear this is a descriptive cross-cycle comparison, not a causal estimate.
-- **Two-ward map** — uses three clearly separable colours: **green** for the program's own logged service-delivery visits (intervention ward only), **indigo** for independently surveyed households confirmed as reached, and **rose** for surveyed households that were not reached. This makes the program-vs-control contrast land at a glance — the control ward reads visibly as "surveyed, mostly not reached". Independent survey points are drawn as faint, smaller pins on a separate layer, keeping the two types of data visually distinct. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
-
-**Map legibility — both wards covered:** The map makes clear that the independent survey covered both wards,
+- **Two-ward map** — uses three clearly separable colours: **green** for the program's own logged service-delivery visits (intervention ward only), **indigo** for independently surveyed households confirmed as reached, and **rose** for surveyed households that were not reached. This makes
