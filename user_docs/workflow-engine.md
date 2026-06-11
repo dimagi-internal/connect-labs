@@ -133,6 +133,14 @@ Program managers can update a case's status directly from the workflow view. Sta
 
 When you are ready to save a run as complete, click **Conclude** on the workflow run. The system marks the run as finished and locks it as a historical record.
 
+When a run is concluded, the saved snapshot captures what **that workflow** is currently set up to track at the time you click Conclude. This means:
+
+- If your team has added new data pipelines or tracking fields to the workflow since it was first created, those additions will be included in the snapshot — as long as the workflow's manifest has been updated to reflect them.
+- Workflows that were built from scratch rather than from a starter template can also use the conclude-and-save flow in the same way.
+
+!!! note "Keeping snapshots current after workflow changes"
+    If your program administrator adds new pipelines or columns to a workflow, those changes will appear in future concluded runs automatically once the workflow's manifest is updated. Runs that were already concluded before the change are unaffected — they remain exactly as they were saved.
+
 !!! note "If Conclude fails with a template error"
     In rare cases — most commonly seen on MBW Auditing workflows — Conclude may show an error such as *"Failed to complete run: Workflow has no template_type; cannot resolve completion handler."* This happens when the workflow's internal definition is missing its template link.
 
@@ -189,6 +197,16 @@ All aggregation belongs in SQL. If Claude Code ever suggests doing aggregation i
 
 The `custom_analysis/` section of Labs predates the workflow engine. Most of those dashboards could now be rebuilt as workflows. Write custom Django or Python only for a genuinely complex multi-step UI — and even then, the better answer is usually to split the work into multiple simpler workflows.
 
+### Snapshot contracts and workflow definitions
+
+When a run is concluded, the snapshot is built from what the **workflow itself** declares it tracks — not from what the original template declared when the workflow was first created. This means the workflow's own manifest is the source of truth for every concluded run.
+
+Practical implications for administrators:
+
+- **Adding pipelines or fields to an existing workflow** — update the workflow's manifest to include them. Future concluded runs will capture the new data. Runs already concluded are unaffected.
+- **Workflows not built from a template** — custom-built workflows that were created from scratch can use the conclude-and-save-baseline flow in exactly the same way as template-based workflows. There is no requirement to link a workflow back to a starter template for Conclude to work.
+- **Removing pipelines or fields** — if you remove something from the manifest, it will no longer appear in future snapshots. Review the manifest carefully before removing anything that historical comparisons may depend on.
+
 ### Verified Monitoring dashboard
 
 The **Verified Monitoring** template is designed for programs that commission independent surveys to verify their own coverage numbers — for example, a vitamin-A home-visit program where an outside team surveys households to confirm whether a visit actually occurred.
@@ -206,14 +224,4 @@ A single screen contains four panels:
 - **Six-round bi-monthly trend chart** — tracks verified coverage across up to six survey rounds over time, with each round's date shown on the x-axis (R1 Feb 2025 → R6 Dec 2025) so the chart reads as a time progression from earliest to latest. The header reads "6 bi-monthly rounds over time" and the caption frames the view as the gap between self-report and the independent survey tracked across the monitoring period. End-of-line value labels are positioned so they do not collide with the selected-cycle highlight. The legend explains the shaded gap band, and a caption makes clear this is a descriptive cross-cycle comparison, not a causal estimate.
 - **Two-ward map** — uses three clearly separable colours: **green** for the program's own logged service-delivery visits (intervention ward only), **indigo** for independently surveyed households confirmed as reached, and **rose** for surveyed households that were not reached. This makes the program-vs-control contrast land at a glance — the control ward reads visibly as "surveyed, mostly not reached". Independent survey points are drawn as faint, smaller pins on a separate layer, keeping the two types of data visually distinct. The map is drawn over a real CARTO basemap of Kaduna State, Nigeria, so actual administrative boundaries and real place names (Kafanchan, Manchok, and the two programme wards — Kaura and Gedawa) are visible underneath the data layers. Independent survey pins can be toggled on top of the delivery layer to show where verifying interviews took place. Labels use funder-plain language rather than technical field names.
 
-**Map legibility — both wards covered:** The map makes clear that the independent survey covered both wards, not just the treatment ward. Control-ward survey points are drawn darker and larger than before so the ward no longer appears empty. The legend leads with "Independent survey · both wards" and the colour key sits inside the map frame rather than below the fold where it could be missed when forwarding the dashboard to a funder.
-
-**Map legend with per-ward coverage figures:** The map legend states each ward's confirmed coverage outright — for example, **Attakar (intervention) 64.5% confirmed** and **Gura (control) 4.9% confirmed** — so the program-vs-control contrast reads from the numbers, not just the pin colours. The legend is rendered at a larger size and higher contrast than earlier versions. In the demo walkthrough, the map is presented as a full hero panel rather than being positioned alongside the cycle-button row above it, so the geographic picture gets the visual weight it deserves.
-
-**Reading the per-surveyor GPS drill-down:** When you expand a surveyor's row to inspect their GPS data, the distance column displays as a bar chart anchored to each household and scaled to metres — not as a plain table. A reference tick marks the 15 m threshold on each bar so you can see at a glance which offsets fall inside or outside the acceptable range without interpreting raw numbers.
-
-**Quality scorecard colour key:** The green/rose colour key for the quality scorecard is displayed above the table so you can read what the colours mean before scanning the rows.
-
-**Scrolling and sticky headers:** The scorecard and back-check sections each keep their header row visible as you scroll. The headers are positioned so they remain fully visible and are not obscured by the sticky top navigation bar.
-
-**Back-check method explainer:** Clicking the ⓘ icon next to a back
+**Map legibility — both wards covered:** The map makes clear that the independent survey covered both wards,
