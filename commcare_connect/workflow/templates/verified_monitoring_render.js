@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V52
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V53
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -183,10 +183,69 @@ function WorkflowUI(props) {
     indN > 0 ? 1.96 * Math.sqrt((_indP * (1 - _indP)) / indN) * 100 : null;
   var q = rd.quality || {};
   var bc = rd.backcheck || {};
+
+  // Per-round, per-surveyor back-check — scoped to THIS round's records only.
+  // The program rotates wards each cycle, so a surveyor label (T1..T6) is a
+  // different person in a different ward each round; pooling their back-checks
+  // across cycles would conflate them. Build each surveyor's profile from this
+  // round's back-check rows (rd.backcheck.rows, tagged with the original
+  // `enumerator`), computed the same way the all-cycles library does.
+  function roundBackcheckBySurveyor() {
+    var t2 = bc.t2_thresh_m || 25;
+    var byS = {};
+    (bc.rows || []).forEach(function (r) {
+      if (!r.enumerator) return;
+      (byS[r.enumerator] = byS[r.enumerator] || []).push(r);
+    });
+    function t1ok(r) {
+      var fs = r.fields || [];
+      for (var i = 0; i < fs.length; i++)
+        if (fs[i].type === 'type1' && !fs[i].match) return false;
+      return true;
+    }
+    function t2ok(r) {
+      return r.gps_delta_m != null && r.gps_delta_m <= t2;
+    }
+    function t3ok(r) {
+      var fs = r.fields || [];
+      for (var i = 0; i < fs.length; i++)
+        if (fs[i].type === 'outcome') return !!fs[i].match;
+      return false;
+    }
+    function pctOf(rows, pred) {
+      if (!rows.length) return null;
+      var k = 0;
+      for (var i = 0; i < rows.length; i++) if (pred(rows[i])) k++;
+      return Math.round((1000 * k) / rows.length) / 10;
+    }
+    function mismatches(r) {
+      var m = 0,
+        fs = r.fields || [];
+      for (var i = 0; i < fs.length; i++) if (!fs[i].match) m++;
+      if (!t2ok(r)) m++;
+      return m;
+    }
+    var out = {};
+    Object.keys(byS).forEach(function (s) {
+      var rows = byS[s].slice().sort(function (a, b) {
+        return mismatches(b) - mismatches(a);
+      });
+      out[s] = {
+        n: rows.length,
+        type1_pct: pctOf(rows, t1ok),
+        type2_pct: pctOf(rows, t2ok),
+        type3_pct: pctOf(rows, t3ok),
+        t2_thresh_m: t2,
+        rows: rows,
+      };
+    });
+    return out;
+  }
+
   // The back-check always opens on a surveyor — default to the one whose work
   // most needs review (lowest outcome agreement); clicking a scorecard row
   // selects a different one. No confusing round-level mode.
-  var sbMap = data.surveyor_backcheck || {};
+  var sbMap = roundBackcheckBySurveyor();
   var bcIds = Object.keys(sbMap);
   function _t3(k) {
     return sbMap[k] && sbMap[k].type3_pct != null ? sbMap[k].type3_pct : 100;
@@ -1012,10 +1071,10 @@ function WorkflowUI(props) {
   function scorecardTable() {
     var rows = rd.surveyor_scorecard || [];
     if (!rows.length) return null;
-    // Back-check is a cumulative signal — a single cycle's per-surveyor sample
-    // is too small. Show each surveyor's all-cycles outcome agreement (the exact
-    // number the drill-in headlines as Type 3), so column and drill-in match.
-    var sbMap = data.surveyor_backcheck || {};
+    // Back-check column shows THIS round's per-surveyor outcome agreement (the
+    // exact number the drill-in headlines), scoped to the round via the
+    // round-level sbMap above — surveyors rotate wards each cycle, so the
+    // back-check belongs to the round it happened in, like the other columns.
     rows = rows.map(function (r) {
       var sb = sbMap[r.surveyor];
       return sb
@@ -1228,7 +1287,7 @@ function WorkflowUI(props) {
                           letterSpacing: 0,
                         }}
                       >
-                        all cycles
+                        this round
                       </div>
                     ) : null}
                   </th>
@@ -1413,13 +1472,13 @@ function WorkflowUI(props) {
             marginBottom: 2,
           }}
         >
-          Surveyor {sid} {'·'} {sb.n} households independently re-surveyed
-          across all cycles
+          Surveyor {sid} {'·'} {sb.n} households independently re-surveyed in{' '}
+          {tWard} this round
         </div>
         <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
           Two rows per household — what the surveyor recorded vs the independent
-          re-survey. Back-checks are a stratified sample of surveys (n={sb.n} of{' '}
-          this surveyor's work across cycles); showing{' '}
+          re-survey. Back-checks are a stratified sample of this surveyor's
+          surveys in {tWard} this round (n={sb.n}); showing{' '}
           {Math.min(rows.length, sb.n)}, mismatches first. Each section header
           shows the share that agreed {'·'} tap{' '}
           <b style={{ fontFamily: mono }}>i</b> for what it means.
@@ -1871,8 +1930,7 @@ function WorkflowUI(props) {
             threshold
           </span>
           <span>
-            quality columns = this cycle · back-check = all cycles (small
-            per-cycle sample)
+            quality columns + back-check = this round
           </span>
           <span style={{ color: INDIGO }}>
             click a quality cell → detail · click a surveyor → back-check below
