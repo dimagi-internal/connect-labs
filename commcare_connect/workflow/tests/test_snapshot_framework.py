@@ -242,3 +242,205 @@ class TestDefaultHookSnapshotInputs:
             )
         assert "registrations" in caplog.text
         assert "registrations" not in snap["pipelines"]
+
+
+class TestResolveSnapshotContract:
+    """The workflow definition is the source of truth for the completion
+    contract: an instance-owned snapshot_inputs manifest wins over the
+    template registry; the registry is a fallback for legacy instances and
+    Python-hook templates."""
+
+    KEY = "__tv_contract__"
+
+    def _definition(self, data):
+        from commcare_connect.workflow.data_access import WorkflowDefinitionRecord
+
+        return WorkflowDefinitionRecord(
+            {
+                "id": 1,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "opportunity_id": 700,
+                "data": data,
+            }
+        )
+
+    def _register(self, **overrides):
+        template = {
+            "key": self.KEY,
+            "name": "TV Contract",
+            "description": "d",
+            "definition": {"name": "TV Contract", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "supports_saved_runs": True,
+            "snapshot_inputs": {"workers": True, "state_keys": ["template_key_only"]},
+        }
+        template.update(overrides)
+        TEMPLATES[self.KEY] = template
+
+    def teardown_method(self):
+        TEMPLATES.pop(self.KEY, None)
+
+    def test_instance_manifest_wins_over_template_manifest(self):
+        from commcare_connect.workflow.templates import build_snapshot_for_contract, resolve_snapshot_contract
+
+        self._register()
+        definition = self._definition(
+            {
+                "name": "Anything",
+                "config": {"templateType": self.KEY},
+                "snapshot_inputs": {"workers": False, "state_keys": ["instance_key"], "pipelines": []},
+            }
+        )
+        contract = resolve_snapshot_contract(definition)
+        assert contract["ok"] is True
+        assert contract["source"] == "definition"
+        assert contract["snapshot_inputs"]["state_keys"] == ["instance_key"]
+
+        snap = build_snapshot_for_contract(
+            contract,
+            pipelines={"data": {"rows": [1]}},
+            state={"instance_key": "kept", "template_key_only": "dropped"},
+            opportunity_id=700,
+            workers=[{"username": "a"}],
+        )
+        assert snap["state"] == {"instance_key": "kept"}
+        assert "workers" not in snap
+        assert snap["pipelines"] == {}
+
+    def test_bespoke_workflow_completes_via_instance_manifest_alone(self):
+        from commcare_connect.workflow.templates import build_snapshot_for_contract, resolve_snapshot_contract
+
+        definition = self._definition({"name": "Totally Bespoke", "config": {}, "snapshot_inputs": {}})
+        contract = resolve_snapshot_contract(definition)
+        assert contract["ok"] is True
+        assert contract["source"] == "definition"
+        assert contract["template_key"] is None
+
+        snap = build_snapshot_for_contract(
+            contract,
+            pipelines={"data": {"rows": []}},
+            state={"k": 1},
+            opportunity_id=700,
+            workers=[],
+        )
+        # Empty manifest = capture everything.
+        assert snap["pipelines"] == {"data": {"rows": []}}
+        assert snap["state"] == {"k": 1}
+        assert snap["workers"] == []
+
+    def test_instance_manifest_overrides_template_hook(self):
+        from commcare_connect.workflow.templates import resolve_snapshot_contract
+
+        self._register(build_snapshot=lambda **kwargs: {"hook": True})
+        definition = self._definition(
+            {"name": "X", "config": {"templateType": self.KEY}, "snapshot_inputs": {"workers": True}}
+        )
+        contract = resolve_snapshot_contract(definition)
+        assert contract["source"] == "definition"
+
+    def test_template_hook_fallback_when_no_instance_manifest(self):
+        from commcare_connect.workflow.templates import build_snapshot_for_contract, resolve_snapshot_contract
+
+        self._register(build_snapshot=lambda **kwargs: {"hook": True, "opp": kwargs["opportunity_id"]})
+        definition = self._definition({"name": "X", "config": {"templateType": self.KEY}})
+        contract = resolve_snapshot_contract(definition)
+        assert contract["ok"] is True
+        assert contract["source"] == "template_hook"
+
+        snap = build_snapshot_for_contract(contract, pipelines={}, state={}, opportunity_id=42)
+        assert snap == {"hook": True, "opp": 42}
+
+    def test_template_inputs_fallback_when_no_instance_manifest(self):
+        from commcare_connect.workflow.templates import resolve_snapshot_contract
+
+        self._register()
+        definition = self._definition({"name": "X", "config": {"templateType": self.KEY}})
+        contract = resolve_snapshot_contract(definition)
+        assert contract["ok"] is True
+        assert contract["source"] == "template_inputs"
+        assert contract["snapshot_inputs"]["state_keys"] == ["template_key_only"]
+
+    def test_name_recovery_marks_recovered_flag(self):
+        from commcare_connect.workflow.templates import resolve_snapshot_contract
+
+        self._register()
+        definition = self._definition({"name": "TV Contract", "config": {}})
+        contract = resolve_snapshot_contract(definition)
+        assert contract["ok"] is True
+        assert contract["recovered_template_key"] is True
+        assert contract["template_key"] == self.KEY
+
+    def test_no_contract_when_nothing_resolves(self):
+        from commcare_connect.workflow.templates import resolve_snapshot_contract
+
+        definition = self._definition({"name": "No Match Here", "config": {}})
+        contract = resolve_snapshot_contract(definition)
+        assert contract == {"ok": False, "error": "no_contract", "template_key": None}
+
+    def test_template_without_saved_runs_support_errors(self):
+        from commcare_connect.workflow.templates import resolve_snapshot_contract
+
+        self._register(supports_saved_runs=False)
+        definition = self._definition({"name": "X", "config": {"templateType": self.KEY}})
+        contract = resolve_snapshot_contract(definition)
+        assert contract["ok"] is False
+        assert contract["error"] == "template_not_saved_runs"
+        assert contract["template_key"] == self.KEY
+
+
+class TestCreateFromTemplateStampsManifest:
+    """create_workflow_from_template stamps the template's snapshot manifest
+    onto the new definition so the instance owns its completion contract."""
+
+    KEY = "__tv_stamp__"
+
+    def teardown_method(self):
+        TEMPLATES.pop(self.KEY, None)
+
+    def _create(self):
+        from unittest.mock import MagicMock
+
+        from commcare_connect.workflow.templates import create_workflow_from_template
+
+        data_access = MagicMock()
+        data_access.access_token = None
+        create_workflow_from_template(data_access, self.KEY, request=None)
+        return data_access.create_definition.call_args.kwargs
+
+    def test_declarative_saved_runs_template_stamps_snapshot_inputs(self):
+        TEMPLATES[self.KEY] = {
+            "key": self.KEY,
+            "name": "TV Stamp",
+            "description": "d",
+            "definition": {"name": "TV Stamp", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "supports_saved_runs": True,
+            "snapshot_inputs": {"workers": True, "state_keys": ["worker_states"]},
+        }
+        kwargs = self._create()
+        assert kwargs["snapshot_inputs"] == {"workers": True, "state_keys": ["worker_states"]}
+
+    def test_hook_template_does_not_stamp(self):
+        TEMPLATES[self.KEY] = {
+            "key": self.KEY,
+            "name": "TV Stamp",
+            "description": "d",
+            "definition": {"name": "TV Stamp", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+            "supports_saved_runs": True,
+            "build_snapshot": lambda **kwargs: {"hook": True},
+        }
+        kwargs = self._create()
+        assert "snapshot_inputs" not in kwargs
+
+    def test_action_shaped_template_does_not_stamp(self):
+        TEMPLATES[self.KEY] = {
+            "key": self.KEY,
+            "name": "TV Stamp",
+            "description": "d",
+            "definition": {"name": "TV Stamp", "description": "d", "statuses": [], "config": {}},
+            "render_code": "function X(){return null}",
+        }
+        kwargs = self._create()
+        assert "snapshot_inputs" not in kwargs

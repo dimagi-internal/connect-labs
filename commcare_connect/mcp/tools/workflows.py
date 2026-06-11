@@ -174,28 +174,35 @@ def workflow_get(user, workflow_id: int, opportunity_id: int, include_render_cod
         "pipeline_sources": enriched_sources,
     }
 
-    # Saved-runs metadata — only present when the workflow was created from a
-    # template that's still registered. Tells callers whether render code
-    # should expect the `view` prop and what shape the snapshot takes when
-    # the run is completed. See WORKFLOW_REFERENCE.md §"Saved-runs templates".
+    # Saved-runs metadata — resolved the same way completion resolves it: the
+    # definition's own snapshot_inputs manifest first, template registry as
+    # fallback. `source` tells callers who owns the contract. Tells callers
+    # whether render code should expect the `view` prop and what shape the
+    # snapshot takes when the run is completed. See WORKFLOW_REFERENCE.md
+    # §"Saved-runs templates".
     from commcare_connect.workflow.templates import TEMPLATES as _TEMPLATES
+    from commcare_connect.workflow.templates import resolve_snapshot_contract as _resolve_contract
 
     template = _TEMPLATES.get(definition.template_type) if definition.template_type else None
-    if template is not None:
+    contract = _resolve_contract(definition)
+    if contract["ok"]:
         saved_runs_meta: dict = {
-            "supports_saved_runs": bool(template.get("supports_saved_runs", False)),
+            "supports_saved_runs": True,
+            "source": contract["source"],
         }
-        # Only include the optional manifests when present — keeps the response
-        # tight for action-shaped templates that opt out entirely.
-        if "snapshot_inputs" in template:
-            saved_runs_meta["snapshot_inputs"] = template["snapshot_inputs"]
-        if "snapshot_schema" in template:
+        if contract["snapshot_inputs"] is not None:
+            saved_runs_meta["snapshot_inputs"] = contract["snapshot_inputs"]
+        if template and "snapshot_schema" in template:
             saved_runs_meta["snapshot_schema"] = template["snapshot_schema"]
-        # Surface whether the template defines a custom build_snapshot hook
-        # (callable) vs relying on the default-input fallback. Useful for the
-        # agent to know whether the snapshot shape is computed or verbatim.
-        saved_runs_meta["has_build_snapshot_hook"] = callable(template.get("build_snapshot"))
+        # Whether the snapshot shape is computed (Python hook) vs verbatim
+        # capture of the declared inputs.
+        saved_runs_meta["has_build_snapshot_hook"] = contract["source"] == "template_hook"
         out["saved_runs"] = saved_runs_meta
+    elif template is not None:
+        out["saved_runs"] = {
+            "supports_saved_runs": False,
+            "has_build_snapshot_hook": callable(template.get("build_snapshot")),
+        }
 
     if include_render_code:
         out["render_code"] = render_code.component_code if render_code else None
@@ -228,16 +235,44 @@ from commcare_connect.workflow.templates import (  # noqa: E402
     create_workflow_from_template as _create_workflow_from_template,
 )
 
-_DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config"}
+_DEFINITION_PATCH_ALLOWED = {"name", "description", "statuses", "config", "snapshot_inputs"}
+
+_SNAPSHOT_INPUTS_ALLOWED_KEYS = {"pipelines", "workers", "state_keys"}
+
+
+def _validate_snapshot_inputs(value) -> None:
+    """Validate an instance snapshot manifest. Raises MCPToolError on junk —
+    a typo'd manifest would otherwise silently change what completed runs
+    capture forever."""
+    if not isinstance(value, dict):
+        raise MCPToolError("INVALID_SCHEMA", "snapshot_inputs must be a dict (or null to revert to the template)")
+    unknown = set(value) - _SNAPSHOT_INPUTS_ALLOWED_KEYS
+    if unknown:
+        raise MCPToolError(
+            "INVALID_SCHEMA",
+            f"Unknown snapshot_inputs keys: {sorted(unknown)}. Allowed: {sorted(_SNAPSHOT_INPUTS_ALLOWED_KEYS)}",
+        )
+    pipelines = value.get("pipelines")
+    if pipelines is not None and not (isinstance(pipelines, list) and all(isinstance(p, str) for p in pipelines)):
+        raise MCPToolError("INVALID_SCHEMA", "snapshot_inputs.pipelines must be a list of alias strings (or null)")
+    if "workers" in value and not isinstance(value["workers"], bool):
+        raise MCPToolError("INVALID_SCHEMA", "snapshot_inputs.workers must be a bool")
+    state_keys = value.get("state_keys")
+    if state_keys is not None and not (isinstance(state_keys, list) and all(isinstance(k, str) for k in state_keys)):
+        raise MCPToolError("INVALID_SCHEMA", "snapshot_inputs.state_keys must be a list of strings (or null)")
 
 
 @register(
     name="workflow_update_definition",
     description=(
         "Update fields on a workflow definition. Accepts a patch dict. "
-        "Allowed keys: name, description, statuses, config. `statuses` replaces "
-        "wholesale; `config` shallow-merges. Unknown keys rejected with INVALID_SCHEMA. "
-        "Uses expected_version for optimistic concurrency."
+        "Allowed keys: name, description, statuses, config, snapshot_inputs. "
+        "`statuses` replaces wholesale; `config` shallow-merges; "
+        "`snapshot_inputs` (the instance-owned completion-snapshot manifest: "
+        "{pipelines: [aliases]|null, workers: bool, state_keys: [keys]|null}) "
+        "replaces wholesale, or pass null to revert the workflow to "
+        "template-registry resolution. Unknown keys rejected with "
+        "INVALID_SCHEMA. Uses expected_version for optimistic concurrency."
     ),
     input_schema={
         "type": "object",
@@ -294,6 +329,15 @@ def workflow_update_definition(
             merged_config = dict(new_data.get("config", {}))
             merged_config.update(patch["config"])
             new_data["config"] = merged_config
+        if "snapshot_inputs" in patch:
+            # Instance-owned completion contract: replaces wholesale; null
+            # removes it (reverting the workflow to template-registry
+            # resolution at completion time).
+            if patch["snapshot_inputs"] is None:
+                new_data.pop("snapshot_inputs", None)
+            else:
+                _validate_snapshot_inputs(patch["snapshot_inputs"])
+                new_data["snapshot_inputs"] = patch["snapshot_inputs"]
         new_data["version"] = expected_version + 1
 
         updated = wda.update_definition(
@@ -596,6 +640,16 @@ def workflow_create_from_template(
                     "version 1. Real syntax checking happens in the browser via Babel at render time."
                 ),
             },
+            "snapshot_inputs": {
+                "type": "object",
+                "description": (
+                    "Optional instance-owned completion-snapshot manifest "
+                    "({pipelines: [aliases]|null, workers: bool, state_keys: [keys]|null}). "
+                    "Declaring it makes this workflow's runs completable (saved-runs "
+                    "lifecycle) without any template. An empty dict means 'capture "
+                    "everything'."
+                ),
+            },
         },
         "required": ["opportunity_id", "name"],
         "additionalProperties": False,
@@ -612,6 +666,7 @@ def workflow_create(
     pipeline_sources: list = None,
     opportunity_ids: list = None,
     render_code: str = None,
+    snapshot_inputs: dict = None,
 ):
     token = require_connect_token(user)
 
@@ -620,6 +675,8 @@ def workflow_create(
     # before any write).
     if render_code is not None:
         _validate_render_code(render_code)
+    if snapshot_inputs is not None:
+        _validate_snapshot_inputs(snapshot_inputs)
 
     # Validate opportunity_ids the same way workflow_update_opportunity_ids and
     # workflow_create_from_template do: de-dupe, reject non-ints, and confirm the
@@ -665,6 +722,8 @@ def workflow_create(
             create_kwargs["pipeline_sources"] = pipeline_sources
         if cleaned_opp_ids:
             create_kwargs["opportunity_ids"] = cleaned_opp_ids
+        if snapshot_inputs is not None:
+            create_kwargs["snapshot_inputs"] = snapshot_inputs
 
         definition = wda.create_definition(
             name=name,

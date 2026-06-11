@@ -2,7 +2,9 @@
 
 The canonical "saved run" pattern in this codebase stores `data["snapshot"]`
 on workflow **run** records (see `workflow/views.py` complete_run flow). The
-snapshot is built by `build_snapshot_for_template` and persisted via
+snapshot contract is resolved by `resolve_snapshot_contract` (definition-owned
+manifest first, template registry as fallback), built by
+`build_snapshot_for_contract`, and persisted via
 `WorkflowDataAccess.complete_run`. This tool wraps that exact path so MCP
 callers (e.g. Phase 6 ACE seeds) save snapshots the same way the runner UI
 does.
@@ -32,9 +34,11 @@ def _wda_for_user(user, opportunity_id: int | None = None):
 @register(
     name="workflow_save_snapshot",
     description=(
-        "Save a snapshot of a workflow run by completing it. The snapshot is "
-        "built via the template's build_snapshot hook (or the framework's "
-        "default `snapshot_inputs` resolver) and persisted on the run record "
+        "Save a snapshot of a workflow run by completing it. The snapshot "
+        "contract is resolved from the workflow definition's own "
+        "`snapshot_inputs` manifest first, falling back to the template "
+        "registry (Python build_snapshot hook or template manifest) for "
+        "legacy instances. The snapshot is persisted on the run record "
         "as `data.snapshot`, alongside `status=completed` and `completed_at`. "
         "Mirrors the canonical run-completion endpoint. opportunity_id must "
         "match the run's owning opp — it scopes the upstream GET so the run "
@@ -61,7 +65,7 @@ def workflow_save_snapshot(
     snapshot_name: str,
     captured_at: str,
 ) -> dict[str, Any]:
-    from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
+    from commcare_connect.workflow.templates import build_snapshot_for_contract, resolve_snapshot_contract
 
     wda = _wda_for_user(user, opportunity_id=opportunity_id)
     try:
@@ -82,20 +86,21 @@ def workflow_save_snapshot(
         if definition is None:
             raise MCPToolError("NOT_FOUND", f"workflow definition {definition_id} not found")
 
-        template_key = definition.template_type
-        if not template_key:
+        contract = resolve_snapshot_contract(definition)
+        if not contract["ok"]:
+            if contract["error"] == "unknown_template":
+                raise MCPToolError("NOT_FOUND", f"unknown template: {contract['template_key']}")
+            if contract["error"] == "template_not_saved_runs":
+                raise MCPToolError(
+                    "INVALID_SCHEMA",
+                    f"template {contract['template_key']!r} does not declare supports_saved_runs=True; "
+                    "to opt this workflow in anyway, set snapshot_inputs on its definition",
+                )
             raise MCPToolError(
                 "INVALID_SCHEMA",
-                "workflow definition has no template_type; cannot resolve snapshot builder",
-            )
-
-        template = TEMPLATES.get(template_key)
-        if not template:
-            raise MCPToolError("NOT_FOUND", f"unknown template: {template_key}")
-        if not template.get("supports_saved_runs"):
-            raise MCPToolError(
-                "INVALID_SCHEMA",
-                f"template {template_key!r} does not declare supports_saved_runs=True",
+                "workflow definition has no snapshot_inputs manifest, no template_type, and its "
+                "name does not match a known template; set snapshot_inputs (or config.templateType) "
+                "via workflow_update_definition so a snapshot builder can be resolved",
             )
 
         # Cross-check: the upstream GET already filtered by opportunity_id, so
@@ -122,8 +127,8 @@ def workflow_save_snapshot(
                 # Match views.py tolerance — skip opps the user can't enumerate.
                 pass
 
-        snapshot_payload = build_snapshot_for_template(
-            template_key=template_key,
+        snapshot_payload = build_snapshot_for_contract(
+            contract,
             pipelines=pipelines,
             state=run.data.get("state", {}),
             opportunity_id=opportunity_id,
@@ -139,7 +144,7 @@ def workflow_save_snapshot(
         if not isinstance(snapshot_payload, dict):
             raise MCPToolError(
                 "UPSTREAM_ERROR",
-                f"build_snapshot for {template_key!r} returned non-dict",
+                "snapshot builder returned non-dict",
             )
 
         snapshot_payload["name"] = snapshot_name
