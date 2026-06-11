@@ -32,6 +32,9 @@ def test_workflow_save_snapshot_completes_run(user, monkeypatch):
     fake_definition.template_type = "performance_review"
     fake_definition.opportunity_id = 4242
     fake_definition.opportunity_ids = []  # falls back to [opportunity_id]
+    # Real dict so resolve_snapshot_contract sees no instance manifest and
+    # falls back to the (patched) template registry.
+    fake_definition.data = {"name": "Performance Review", "config": {"templateType": "performance_review"}}
 
     fake_completed = MagicMock()
 
@@ -53,8 +56,8 @@ def test_workflow_save_snapshot_completes_run(user, monkeypatch):
     )
     monkeypatch.setattr(
         templates_mod,
-        "build_snapshot_for_template",
-        lambda **kwargs: {
+        "build_snapshot_for_contract",
+        lambda contract, **kwargs: {
             "metrics": {"workers_reviewed": 1},
             "state": kwargs["state"],
         },

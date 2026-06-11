@@ -1147,38 +1147,25 @@ def save_worker_result_api(request, run_id):
             data_access.close()
 
 
-def _detect_template_key_from_name(definition_name: str) -> str | None:
-    """Strict name→template-key match: key equals the snake_cased name, or the
-    template's display name equals the definition name (case-insensitive).
-    Workflows created outside the from-template flow (blank MCP create,
-    wholesale definition overwrites) can lack config.templateType; this is the
-    shared recovery used by template sync and run completion."""
-    if not definition_name:
-        return None
-    name_lower = definition_name.lower().replace(" ", "_")
-    for key, template in TEMPLATES.items():
-        if key == name_lower or template.get("name", "").lower() == definition_name.lower():
-            return key
-    return None
-
-
 @login_required
 @require_POST
 def complete_run_api(request, run_id):
     """Mark a workflow run as completed — atomic terminal transition.
 
-    Builds the snapshot via the template's `build_snapshot` hook (or the
-    declarative-input fallback), then writes status=completed, completed_at,
-    and the snapshot in a single LabsRecord write. If snapshot assembly
-    raises, the run stays in_progress.
+    The snapshot contract is resolved from the workflow definition itself
+    (instance-owned `snapshot_inputs` manifest) with the template registry as
+    fallback for legacy instances and hook templates — see
+    `resolve_snapshot_contract`. The snapshot is built, then status=completed,
+    completed_at, and the snapshot are written in a single LabsRecord write.
+    If snapshot assembly raises, the run stays in_progress.
 
     Returns:
       - 200 with `{success, status, completed_at, snapshot}` on success.
       - 404 if the run/definition is missing.
       - 409 if the run is already completed.
-      - 400 if the workflow's template doesn't declare `supports_saved_runs`.
+      - 400 if no completion contract can be resolved.
     """
-    from commcare_connect.workflow.templates import TEMPLATES, build_snapshot_for_template
+    from commcare_connect.workflow.templates import build_snapshot_for_contract, resolve_snapshot_contract
 
     data_access = None
     try:
@@ -1200,53 +1187,46 @@ def complete_run_api(request, run_id):
         if not definition:
             return JsonResponse({"error": "Workflow definition not found"}, status=404)
 
-        template_key = definition.template_type
-        stamped_fallback_key = None
-        if not template_key:
-            template_key = _detect_template_key_from_name(definition.name)
-            stamped_fallback_key = template_key
-            if not template_key:
-                return JsonResponse(
-                    {
-                        "error": (
-                            "Workflow has no template_type and its name does not match a "
-                            "known template; cannot resolve completion handler. Set "
-                            "config.templateType on the workflow definition (e.g. via the "
-                            "workflow_update_definition MCP tool) to the key of the template "
-                            "this workflow was built from."
-                        )
-                    },
-                    status=400,
+        contract = resolve_snapshot_contract(definition)
+        if not contract["ok"]:
+            if contract["error"] == "no_contract":
+                message = (
+                    "Workflow has no snapshot_inputs manifest, no template_type, and its "
+                    "name does not match a known template; cannot resolve a completion "
+                    "contract. Set snapshot_inputs on the workflow definition (e.g. via "
+                    "the workflow_update_definition MCP tool) to declare what the "
+                    "snapshot should capture — or set config.templateType to the key of "
+                    "the template this workflow was built from."
                 )
+            elif contract["error"] == "unknown_template":
+                message = f"Unknown template: {contract['template_key']}"
+            else:
+                message = (
+                    f"Template {contract['template_key']!r} does not declare "
+                    "supports_saved_runs=True; this template's runs cannot be marked "
+                    "complete. To opt this workflow in anyway, set snapshot_inputs on "
+                    "its definition."
+                )
+            return JsonResponse({"error": message}, status=400)
 
-        template = TEMPLATES.get(template_key)
-        if not template:
-            return JsonResponse({"error": f"Unknown template: {template_key}"}, status=400)
-        if not template.get("supports_saved_runs"):
-            return JsonResponse(
-                {
-                    "error": (
-                        f"Template {template_key!r} does not declare supports_saved_runs=True; "
-                        "this template's runs cannot be marked complete."
-                    )
-                },
-                status=400,
-            )
-
-        if stamped_fallback_key:
-            # Self-heal: persist the recovered key so future completions (and
-            # templateType-based filtering) don't depend on the name match.
+        if contract["recovered_template_key"] or contract["source"] == "template_inputs":
+            # Self-heal: persist what we resolved so future completions read it
+            # straight off the definition — a name-recovered templateType, and
+            # (for declarative templates) the manifest itself, making the
+            # instance the owner of its completion contract from now on.
             # Best-effort — completion proceeds even if the stamp write fails.
             try:
                 new_def_data = dict(definition.data)
-                new_def_config = dict(new_def_data.get("config") or {})
-                new_def_config["templateType"] = stamped_fallback_key
-                new_def_data["config"] = new_def_config
+                if contract["recovered_template_key"]:
+                    new_def_config = dict(new_def_data.get("config") or {})
+                    new_def_config["templateType"] = contract["template_key"]
+                    new_def_data["config"] = new_def_config
+                if contract["source"] == "template_inputs":
+                    new_def_data["snapshot_inputs"] = dict(contract["snapshot_inputs"] or {})
                 data_access.update_definition(definition_id, new_def_data)
             except Exception:
                 logger.exception(
-                    "Failed to stamp recovered templateType=%s on definition %s",
-                    stamped_fallback_key,
+                    "Failed to stamp resolved snapshot contract on definition %s",
                     definition_id,
                 )
 
@@ -1266,8 +1246,8 @@ def complete_run_api(request, run_id):
             except Exception:
                 logger.exception("Failed to load workers for opp %s", oid)
 
-        snapshot_payload = build_snapshot_for_template(
-            template_key=template_key,
+        snapshot_payload = build_snapshot_for_contract(
+            contract,
             pipelines=pipelines,
             state=run.data.get("state", {}),
             opportunity_id=opportunity_id,
@@ -1282,7 +1262,7 @@ def complete_run_api(request, run_id):
         )
         if not isinstance(snapshot_payload, dict):
             return JsonResponse(
-                {"error": f"build_snapshot for {template_key!r} returned non-dict"},
+                {"error": "Snapshot builder returned non-dict; run stays in_progress"},
                 status=500,
             )
 
@@ -1673,7 +1653,9 @@ def sync_template_render_code_api(request, definition_id):
 
         # Auto-detect template from definition name if not provided
         if not template_key:
-            template_key = _detect_template_key_from_name(definition.name)
+            from commcare_connect.workflow.templates import detect_template_key_from_name
+
+            template_key = detect_template_key_from_name(definition.name)
 
         if not template_key:
             return JsonResponse(
