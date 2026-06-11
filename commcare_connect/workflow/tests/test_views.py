@@ -313,7 +313,7 @@ class TestCompleteRunTemplateFallback:
             MockWDA.return_value = mock_wda
             mock_wda.get_run.return_value = run
             mock_wda.get_definition.return_value = definition
-            mock_wda.get_pipeline_data.return_value = {}
+            mock_wda.get_cached_pipeline_data.return_value = {}
             mock_wda.get_workers.return_value = []
             completed = MagicMock()
             completed.status = "completed"
@@ -420,3 +420,117 @@ class TestCompleteRunTemplateFallback:
             mock_wda.update_definition.assert_not_called()
         finally:
             TEMPLATES.pop(self.TEMPLATE_KEY, None)
+
+
+class TestCompleteRunCacheOnlyPipelines:
+    """Run completion must never execute pipelines — the snapshot freezes what
+    the user was looking at, read from the processed cache the runner page
+    populated, and only for the aliases the contract captures. A 102k-visit
+    opp re-executed at conclude time took ~18 minutes and OOM-killed a worker
+    before this contract existed."""
+
+    def _records(self, snapshot_inputs):
+        from commcare_connect.workflow.data_access import WorkflowDefinitionRecord, WorkflowRunRecord
+
+        definition = WorkflowDefinitionRecord(
+            {
+                "id": 10,
+                "experiment": "workflow",
+                "type": "workflow_definition",
+                "opportunity_id": 700,
+                "data": {
+                    "name": "Cache Only WF",
+                    "config": {},
+                    "statuses": [],
+                    "snapshot_inputs": snapshot_inputs,
+                },
+            }
+        )
+        run = WorkflowRunRecord(
+            {
+                "id": 55,
+                "experiment": "workflow",
+                "type": "workflow_run",
+                "opportunity_id": 700,
+                "data": {"definition_id": 10, "status": "in_progress", "state": {"decisions": {"a": 1}}},
+            }
+        )
+        return definition, run
+
+    def _request(self, rf, user):
+        request = rf.post("/labs/workflow/api/run/55/complete/", data="{}", content_type="application/json")
+        request.user = user
+        request.labs_context = {"opportunity_id": 700}
+        request.session = {"labs_oauth": {"access_token": "t", "organization_data": {"opportunities": []}}}
+        return request
+
+    def _call(self, rf, user, definition, run, cached_side_effect=None, cached_return=None):
+        from commcare_connect.workflow.views import complete_run_api
+
+        with patch("commcare_connect.workflow.views.WorkflowDataAccess") as MockWDA:
+            mock_wda = MagicMock()
+            MockWDA.return_value = mock_wda
+            mock_wda.get_run.return_value = run
+            mock_wda.get_definition.return_value = definition
+            if cached_side_effect is not None:
+                mock_wda.get_cached_pipeline_data.side_effect = cached_side_effect
+            else:
+                mock_wda.get_cached_pipeline_data.return_value = cached_return or {}
+            mock_wda.get_workers.return_value = []
+            completed = MagicMock()
+            completed.status = "completed"
+            completed.completed_at = "2026-06-11T00:00:00Z"
+            completed.snapshot = {}
+            mock_wda.complete_run.return_value = completed
+            response = complete_run_api(request=self._request(rf, user), run_id=55)
+        return response, mock_wda
+
+    def test_empty_pipelines_manifest_skips_pipeline_fetch_entirely(self, dimagi_user, rf: RequestFactory):
+        definition, run = self._records({"pipelines": [], "workers": True, "state_keys": ["decisions"]})
+        response, mock_wda = self._call(rf, dimagi_user, definition, run)
+
+        assert response.status_code == 200, response.content
+        mock_wda.get_cached_pipeline_data.assert_not_called()
+        mock_wda.get_pipeline_data.assert_not_called()
+        snapshot = mock_wda.complete_run.call_args.args[1]
+        assert snapshot["pipelines"] == {}
+        assert snapshot["state"] == {"decisions": {"a": 1}}
+
+    def test_manifest_aliases_scope_the_cached_read(self, dimagi_user, rf: RequestFactory):
+        definition, run = self._records({"pipelines": ["visits"], "workers": True, "state_keys": []})
+        response, mock_wda = self._call(
+            rf, dimagi_user, definition, run, cached_return={"visits": {"rows": [], "metadata": {}}}
+        )
+
+        assert response.status_code == 200, response.content
+        mock_wda.get_cached_pipeline_data.assert_called_once_with(10, 700, aliases=["visits"])
+        mock_wda.get_pipeline_data.assert_not_called()
+
+    def test_cache_miss_returns_409_and_leaves_run_in_progress(self, dimagi_user, rf: RequestFactory):
+        import json as _json
+
+        from commcare_connect.workflow.data_access import PipelineCacheMiss
+
+        definition, run = self._records({"pipelines": ["visits"], "workers": True, "state_keys": []})
+        response, mock_wda = self._call(
+            rf, dimagi_user, definition, run, cached_side_effect=PipelineCacheMiss("visits", 700, "MBW Visits")
+        )
+
+        assert response.status_code == 409
+        error = _json.loads(response.content)["error"]
+        assert "Reload the run page" in error
+        assert "MBW Visits" in error
+        mock_wda.complete_run.assert_not_called()
+
+    def test_oversize_snapshot_returns_400_and_leaves_run_in_progress(self, dimagi_user, rf: RequestFactory):
+        import json as _json
+
+        # ~6 MB of state captured by the manifest blows the 5 MB hard cap.
+        definition, run = self._records({"pipelines": [], "workers": False, "state_keys": ["blob"]})
+        run.data["state"] = {"blob": "x" * (6 * 1024 * 1024)}
+        response, mock_wda = self._call(rf, dimagi_user, definition, run)
+
+        assert response.status_code == 400
+        error = _json.loads(response.content)["error"]
+        assert "MB" in error and "snapshot_inputs" in error
+        mock_wda.complete_run.assert_not_called()

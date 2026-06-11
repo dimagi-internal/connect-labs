@@ -25,7 +25,7 @@ from commcare_connect.labs.analysis.sse_streaming import BaseSSEStreamView
 from commcare_connect.labs.context import get_org_data
 from commcare_connect.tasks.data_access import TaskDataAccess
 from commcare_connect.utils.feature_access import can_create_from_template, get_allowed_templates
-from commcare_connect.workflow.data_access import PipelineDataAccess, WorkflowDataAccess
+from commcare_connect.workflow.data_access import PipelineCacheMiss, PipelineDataAccess, WorkflowDataAccess
 from commcare_connect.workflow.templates import TEMPLATES
 from commcare_connect.workflow.templates import create_workflow_from_template as create_from_template
 
@@ -1165,7 +1165,11 @@ def complete_run_api(request, run_id):
       - 409 if the run is already completed.
       - 400 if no completion contract can be resolved.
     """
-    from commcare_connect.workflow.templates import build_snapshot_for_contract, resolve_snapshot_contract
+    from commcare_connect.workflow.templates import (
+        SnapshotTooLargeError,
+        build_snapshot_for_contract,
+        resolve_snapshot_contract,
+    )
 
     data_access = None
     try:
@@ -1234,8 +1238,32 @@ def complete_run_api(request, run_id):
         if not opportunity_id:
             return JsonResponse({"error": "Run has no opportunity_id"}, status=400)
 
-        # Single source of truth: same pipeline+worker fetch the runner uses.
-        pipelines = data_access.get_pipeline_data(definition_id, opportunity_id)
+        # Snapshot pipelines come from the processed cache the runner page
+        # already populated — never re-executed here. The snapshot's job is to
+        # freeze what the user was looking at when they concluded; re-running
+        # pipelines inside this request both captured the wrong data (whatever
+        # was live at conclude time, not what was reviewed) and turned the
+        # button into a multi-minute batch job on large opps (102k visits =
+        # ~18 minutes + an OOM-killed worker on opp 765). Only the aliases the
+        # resolved contract actually captures are read; hook contracts get all.
+        contract_inputs = contract.get("snapshot_inputs")
+        aliases = None if contract["source"] == "template_hook" else (contract_inputs or {}).get("pipelines")
+        if aliases == []:
+            pipelines = {}
+        else:
+            try:
+                pipelines = data_access.get_cached_pipeline_data(definition_id, opportunity_id, aliases=aliases)
+            except PipelineCacheMiss as e:
+                return JsonResponse(
+                    {
+                        "error": (
+                            f"The dashboard data for pipeline {e.pipeline_name or e.alias!r} is no "
+                            "longer cached, so the snapshot can't capture what you were reviewing. "
+                            "Reload the run page, let the dashboard finish loading, then conclude again."
+                        )
+                    },
+                    status=409,
+                )
 
         effective_opp_ids = definition.opportunity_ids or [opportunity_id]
         workers: list[dict] = []
@@ -1246,20 +1274,23 @@ def complete_run_api(request, run_id):
             except Exception:
                 logger.exception("Failed to load workers for opp %s", oid)
 
-        snapshot_payload = build_snapshot_for_contract(
-            contract,
-            pipelines=pipelines,
-            state=run.data.get("state", {}),
-            opportunity_id=opportunity_id,
-            workers=workers,
-            opportunity_ids=effective_opp_ids,
-            # Optional context fields that some templates' build_snapshot hooks
-            # accept (definition_id, request). The framework relays via
-            # **context — hooks that don't use these fields just absorb them
-            # into **_.
-            definition_id=definition_id,
-            request=request,
-        )
+        try:
+            snapshot_payload = build_snapshot_for_contract(
+                contract,
+                pipelines=pipelines,
+                state=run.data.get("state", {}),
+                opportunity_id=opportunity_id,
+                workers=workers,
+                opportunity_ids=effective_opp_ids,
+                # Optional context fields that some templates' build_snapshot hooks
+                # accept (definition_id, request). The framework relays via
+                # **context — hooks that don't use these fields just absorb them
+                # into **_.
+                definition_id=definition_id,
+                request=request,
+            )
+        except SnapshotTooLargeError as e:
+            return JsonResponse({"error": str(e)}, status=400)
         if not isinstance(snapshot_payload, dict):
             return JsonResponse(
                 {"error": "Snapshot builder returned non-dict; run stays in_progress"},

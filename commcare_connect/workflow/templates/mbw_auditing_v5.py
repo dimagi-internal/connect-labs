@@ -221,15 +221,20 @@ RENDER_CODE = (Path(__file__).parent / "mbw_auditing_v5_render.js").read_text(en
 # (sub-project 2) will consume these snapshots.
 #
 # What we capture:
-#   - All 4 pipelines verbatim: render computes everything from these rows,
-#     so they ARE the dashboard's source of truth.
+#   - NO raw pipeline rows. A real MBW opp has 100k+ visits — a verbatim
+#     capture measured 112 MB on opp 765 and OOM-killed a web worker. The
+#     dashboard table the user was actually looking at is what gets frozen:
+#     the render saves it into state as `concluded_*` keys in the same
+#     state write that precedes view.complete(), so conclude does zero
+#     pipeline work server-side.
 #   - workers (FLW list at completion time).
-#   - State keys: every key the render writes via onUpdateState.
+#   - State keys: every key the render writes via onUpdateState, plus the
+#     concluded_* dashboard captures.
 #
-# Estimated size for a 30-FLW opp with ~50 visits each: ~200 KB. Comfortably
-# under the framework's 1 MB warn line. See WORKFLOW_REFERENCE.md §9.
+# Per-FLW aggregates for ~100 FLWs come to a few hundred KB — under the
+# framework's 1 MB warn line. See WORKFLOW_REFERENCE.md §9.
 SNAPSHOT_INPUTS = {
-    "pipelines": ["visits", "visits_agg", "registrations", "gs_forms"],
+    "pipelines": [],
     "workers": True,
     "state_keys": [
         "selected_workers",
@@ -238,16 +243,15 @@ SNAPSHOT_INPUTS = {
         "audit_statuses",
         "previous_metrics",
         "previous_categories",
+        "concluded_summaries",
+        "concluded_prev_categories",
+        "concluded_tab2",
     ],
 }
 
 SNAPSHOT_SCHEMA = {
-    "version": 1,
+    "version": 2,
     "keys": {
-        "pipelines.visits": "Per-visit rows used to compute mother attribution, GPS, duration, follow-up rates",
-        "pipelines.visits_agg": "Per-FLW aggregated counts (num_mothers, bf_count, ebf_count)",
-        "pipelines.registrations": "Per-mother registration rows with visit schedules and eligibility",
-        "pipelines.gs_forms": "Gold Standard visit checklist forms with FLW scores",
         "workers": "FLW list at completion (with opportunity_id tags for multi-opp)",
         "state.selected_workers": "FLWs selected at run launch",
         "state.worker_results": "Per-FLW performance category decisions",
@@ -255,6 +259,9 @@ SNAPSHOT_SCHEMA = {
         "state.audit_statuses": "Per-FLW audit-required / audit-not-required gate",
         "state.previous_metrics": "Per-FLW metric snapshot captured at conclude time",
         "state.previous_categories": "Per-FLW category snapshot captured at conclude time",
+        "state.concluded_summaries": "Computed per-FLW dashboard rows (flw_summaries) as rendered at conclude",
+        "state.concluded_prev_categories": "The baseline categories the Prev Category column showed at conclude",
+        "state.concluded_tab2": "Per-flagged-FLW baseline-rate (Tab 2) results as of conclude",
     },
 }
 

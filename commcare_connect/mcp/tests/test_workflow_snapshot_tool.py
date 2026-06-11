@@ -41,7 +41,7 @@ def test_workflow_save_snapshot_completes_run(user, monkeypatch):
     fake_wda = MagicMock()
     fake_wda.get_run.return_value = fake_run
     fake_wda.get_definition.return_value = fake_definition
-    fake_wda.get_pipeline_data.return_value = {"flw_kpis": {"rows": []}}
+    fake_wda.get_cached_pipeline_data.return_value = {"flw_kpis": {"rows": []}}
     fake_wda.get_workers.return_value = [{"username": "asha"}]
     fake_wda.complete_run.return_value = fake_completed
 

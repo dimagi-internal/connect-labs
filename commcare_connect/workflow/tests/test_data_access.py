@@ -517,3 +517,83 @@ class TestGetPipelineDataMultiOpp:
             assert rows[0]["opportunity_id"] == 700
             per_opp = result["visits"]["metadata"]["per_opp"]
             assert per_opp["825"].get("error") == "schema invalid"
+
+
+class TestGetCachedPipelineData:
+    """Cache-only pipeline read used by run completion: never executes,
+    scopes to the manifest's aliases, and raises PipelineCacheMiss instead of
+    silently snapshotting partial data."""
+
+    def _make_definition(self, pipeline_sources=None, opportunity_ids=None):
+        data = {
+            "name": "WF",
+            "description": "d",
+            "pipeline_sources": pipeline_sources
+            or [
+                {"pipeline_id": 101, "alias": "visits"},
+                {"pipeline_id": 102, "alias": "registrations"},
+            ],
+            "opportunity_ids": opportunity_ids or [],
+        }
+        return _make_definition_record(definition_id=1, data=data)
+
+    def test_reads_only_wanted_aliases_and_never_executes(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        wda.get_definition = MagicMock(return_value=self._make_definition())
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+            mock_instance.get_cached_pipeline_result.return_value = {
+                "rows": [{"username": "a"}],
+                "metadata": {"row_count": 1, "from_cache": True},
+            }
+
+            result = wda.get_cached_pipeline_data(definition_id=1, opportunity_id=700, aliases=["visits"])
+
+            mock_instance.execute_pipeline.assert_not_called()
+            assert mock_instance.get_cached_pipeline_result.call_count == 1
+            assert mock_instance.get_cached_pipeline_result.call_args.args == (101, 700)
+            assert set(result.keys()) == {"visits"}
+            assert result["visits"]["rows"][0]["opportunity_id"] == 700
+
+    def test_none_aliases_reads_all_sources(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        wda.get_definition = MagicMock(return_value=self._make_definition())
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+            mock_instance.get_cached_pipeline_result.return_value = {"rows": [], "metadata": {}}
+
+            result = wda.get_cached_pipeline_data(definition_id=1, opportunity_id=700, aliases=None)
+
+            assert mock_instance.get_cached_pipeline_result.call_count == 2
+            assert set(result.keys()) == {"visits", "registrations"}
+
+    def test_cache_miss_raises_with_alias_and_opp(self, workflow_data_access):
+        from commcare_connect.workflow.data_access import PipelineCacheMiss
+
+        wda, _ = workflow_data_access
+        wda.get_definition = MagicMock(return_value=self._make_definition())
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            mock_instance = MagicMock()
+            MockPipelineAccess.return_value = mock_instance
+            mock_instance.get_cached_pipeline_result.return_value = None
+
+            with pytest.raises(PipelineCacheMiss) as exc:
+                wda.get_cached_pipeline_data(definition_id=1, opportunity_id=700, aliases=["visits"])
+
+            assert exc.value.alias == "visits"
+            assert exc.value.opportunity_id == 700
+
+    def test_no_matching_aliases_returns_empty_without_touching_pipelines(self, workflow_data_access):
+        wda, _ = workflow_data_access
+        wda.get_definition = MagicMock(return_value=self._make_definition())
+
+        with patch("commcare_connect.workflow.data_access.PipelineDataAccess") as MockPipelineAccess:
+            result = wda.get_cached_pipeline_data(definition_id=1, opportunity_id=700, aliases=["nonexistent"])
+
+            assert result == {}
+            MockPipelineAccess.assert_not_called()

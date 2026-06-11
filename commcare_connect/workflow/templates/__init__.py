@@ -135,12 +135,27 @@ def list_templates() -> list[dict]:
     ]
 
 
-# Soft size guards on snapshot blobs. JSON-serialized size is a reasonable
-# proxy for what ends up in LabsRecord.data. Warn at 1 MB; log loudly at
-# 5 MB (the design's hard-reject threshold — kept as a log for now to avoid
-# breaking adopters mid-migration).
+# Size guards on snapshot blobs. JSON-serialized size is a reasonable
+# proxy for what ends up in LabsRecord.data. Warn at 1 MB; reject at 5 MB.
+# The hard cap really rejects (SnapshotTooLargeError): a 112 MB snapshot
+# built from a 102k-visit opp's verbatim pipeline capture OOM-killed a web
+# worker before the log-only version of this guard could help anyone.
 _SNAPSHOT_SIZE_WARN_BYTES = 1 * 1024 * 1024
 _SNAPSHOT_SIZE_HARD_BYTES = 5 * 1024 * 1024
+
+
+class SnapshotTooLargeError(Exception):
+    """The built snapshot exceeds the hard size cap and must not be persisted."""
+
+    def __init__(self, template_key: str, size_bytes: int):
+        self.template_key = template_key
+        self.size_bytes = size_bytes
+        super().__init__(
+            f"Snapshot for {template_key!r} is {size_bytes / 1024 / 1024:.1f} MB "
+            f"(cap {_SNAPSHOT_SIZE_HARD_BYTES / 1024 / 1024:.0f} MB). Trim the workflow's "
+            "snapshot_inputs manifest — capture derived aggregates in state keys instead "
+            "of raw pipeline rows."
+        )
 
 
 def _default_snapshot_from_inputs(
@@ -182,7 +197,7 @@ def _default_snapshot_from_inputs(
 
 
 def _check_snapshot_size(template_key: str, snapshot: dict) -> None:
-    """Log a warning if the JSON-serialized snapshot is larger than the soft cap."""
+    """Warn above the soft cap; raise SnapshotTooLargeError at the hard cap."""
     import json as _json
 
     try:
@@ -192,12 +207,12 @@ def _check_snapshot_size(template_key: str, snapshot: dict) -> None:
         return
     if size >= _SNAPSHOT_SIZE_HARD_BYTES:
         logger.error(
-            "Snapshot for template %r is %.1f MB (>= %.0f MB hard cap). "
-            "Consider declaring snapshot_inputs to trim, or a custom build_snapshot hook.",
+            "Snapshot for template %r is %.1f MB (>= %.0f MB hard cap) — rejecting.",
             template_key,
             size / 1024 / 1024,
             _SNAPSHOT_SIZE_HARD_BYTES / 1024 / 1024,
         )
+        raise SnapshotTooLargeError(template_key, size)
     elif size >= _SNAPSHOT_SIZE_WARN_BYTES:
         logger.warning(
             "Snapshot for template %r is %.1f MB (>= %.0f MB soft cap).",
