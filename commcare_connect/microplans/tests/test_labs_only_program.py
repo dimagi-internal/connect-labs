@@ -14,10 +14,7 @@ from __future__ import annotations
 import pytest
 
 from commcare_connect.labs.synthetic.models import LabsLocalRecord, SyntheticOpportunity
-from commcare_connect.microplans.core.data_access import (
-    TYPE_PLAN,
-    ProgramPlanDataAccess,
-)
+from commcare_connect.microplans.core.data_access import TYPE_PLAN, ProgramPlanDataAccess
 
 _HULLS = {
     "type": "FeatureCollection",
@@ -26,9 +23,7 @@ _HULLS = {
             "type": "Feature",
             "geometry": {
                 "type": "Polygon",
-                "coordinates": [
-                    [[8.0, 9.0], [8.1, 9.0], [8.1, 9.1], [8.0, 9.1], [8.0, 9.0]]
-                ],
+                "coordinates": [[[8.0, 9.0], [8.1, 9.0], [8.1, 9.1], [8.0, 9.1], [8.0, 9.0]]],
             },
             "properties": {
                 "cluster": "C0",
@@ -64,9 +59,7 @@ def test_negative_program_id_carries_backing_synthetic_opp(synthetic_program):
 @pytest.mark.django_db
 def test_plan_round_trips_through_the_labs_db_not_production(synthetic_program):
     da = ProgramPlanDataAccess(-10_007, access_token="labs-local")
-    plan = da.create_plan(
-        region="Attakar", name="Attakar", mode="coverage", pins=_EMPTY, hulls=_HULLS
-    )
+    plan = da.create_plan(region="Attakar", name="Attakar", mode="coverage", pins=_EMPTY, hulls=_HULLS)
 
     # Stored as a local record scoped to the negative program id + backing opp...
     row = LabsLocalRecord.objects.get(id=plan.id)
