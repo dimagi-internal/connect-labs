@@ -56,6 +56,22 @@ def test_negative_program_id_carries_backing_synthetic_opp(synthetic_program):
     assert da.program_id == -10_007
 
 
+def test_negative_program_id_is_url_routable():
+    """A labs-only program's NEGATIVE id must route (and reverse) — Django's built-in
+    ``int`` converter rejects the minus, so the workspace/group pages 404 without the
+    custom ``signed_int`` converter. Regression guard for that gap."""
+    from django.urls import resolve, reverse
+
+    m = resolve("/microplans/program/-10007/")
+    assert m.view_name == "microplans:program_workspace"
+    assert m.kwargs["program_id"] == -10_007
+    # Nested (program + positive group) and reverse (the {% url %} path templates use).
+    assert resolve("/microplans/program/-10007/group/55/manage/").kwargs == {"program_id": -10_007, "group_id": 55}
+    assert reverse("microplans:program_workspace", args=[-10_007]) == "/microplans/program/-10007/"
+    # Positive ids still route unchanged.
+    assert resolve("/microplans/program/42/").kwargs["program_id"] == 42
+
+
 @pytest.mark.django_db
 def test_plan_round_trips_through_the_labs_db_not_production(synthetic_program):
     da = ProgramPlanDataAccess(-10_007, access_token="labs-local")
