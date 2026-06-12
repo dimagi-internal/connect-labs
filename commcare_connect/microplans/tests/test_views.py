@@ -1459,12 +1459,8 @@ def test_initial_plan_hulls_coverage_grids_via_frame(monkeypatch):
         "commcare_connect.microplans.coverage.frame.generate_coverage_frame",
         lambda areas, config: SimpleNamespace(areas_geojson=cells, stats=[]),
     )
-    boundary = SimpleNamespace(
-        boundary_id="NGA-W-x",
-        name="X",
-        geometry=SimpleNamespace(geojson='{"type":"Polygon","coordinates":[[[0,0],[0,0.01],[0.01,0.01],[0,0]]]}'),
-    )
-    out = tasks._initial_plan_hulls(boundary, "coverage", 100)
+    geometry = {"type": "Polygon", "coordinates": [[[0, 0], [0, 0.01], [0.01, 0.01], [0, 0]]]}
+    out = tasks._initial_plan_hulls(geometry, "coverage", 100)
     assert len(out["features"]) == 3  # gridded — NOT a single whole-ward cell
 
 
@@ -1473,12 +1469,8 @@ def test_initial_plan_hulls_sampling_is_empty_boundary_only():
     is drawn later), so there are no work-area hulls at creation."""
     from commcare_connect.microplans import tasks
 
-    boundary = SimpleNamespace(
-        boundary_id="b",
-        name="B",
-        geometry=SimpleNamespace(geojson='{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[0,0]]]}'),
-    )
-    out = tasks._initial_plan_hulls(boundary, "sampling", 100)
+    geometry = {"type": "Polygon", "coordinates": [[[0, 0], [0, 1], [1, 1], [0, 0]]]}
+    out = tasks._initial_plan_hulls(geometry, "sampling", 100)
     assert out["features"] == []
 
 

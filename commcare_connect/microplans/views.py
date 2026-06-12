@@ -697,13 +697,15 @@ class ProgramGroupBulkCreateFromBoundariesView(LoginRequiredMixin, View):
             if not state:
                 state = _adm1_state_for([geometry], empty_fc)
             try:
-                plan = da.create_plan(
-                    region=region,
-                    name=name,
+                from commcare_connect.microplans.tasks import create_boundary_plan
+
+                plan = create_boundary_plan(
+                    da,
                     mode="sampling",
-                    pins=empty_fc,
-                    hulls=empty_fc,
-                    input_areas=[geometry],
+                    name=name,
+                    region=region,
+                    geometry=geometry,
+                    boundary_id=str(item.get("boundary_id") or "").strip(),
                     lga=lga,
                     state=state,
                 )
