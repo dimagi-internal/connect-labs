@@ -116,14 +116,20 @@ scenes:
     stepping the cycle selector flies the map to the next real ward pair.
   design_intent: Real labelled admin boundaries (intervention indigo / control slate)
     on a light Mapbox basemap via the shared ConnectMap module, with a service-delivery
-    point layer, a survey-pin layer, layer toggles, and a re-fit on each cycle.
+    point layer, a survey-pin layer, layer toggles, and a re-fit on each cycle. The
+    survey pins sit on the real sampled household footprints and distinguish the unit
+    the surveyor was assigned to try first (primary — solid) from a substituted backup
+    (alternate — hollow ring), so the sampling-fidelity mix is visible on the map.
   features:
   - description: A full-width two-ward Mapbox map — service-delivery points in the
-      intervention ward, survey pins in both wards, labelled boundaries + legend +
-      toggles — that re-centres on a new real ward pair when the cycle changes.
+      intervention ward, survey pins in both wards (each on a real sampled footprint,
+      solid for the primary unit / hollow ring for a substituted alternate), labelled
+      boundaries + legend + toggles — that re-centres on a new real ward pair when the
+      cycle changes.
     id: two-ward-map
-    verify: Assert both labelled ward boundaries and the legend render; clicking R1
-      then R6 re-centres the map on a different program/comparison ward pair.
+    verify: Assert both labelled ward boundaries and the legend (incl. a primary vs
+      alternate key) render; clicking R1 then R6 re-centres the map on a different
+      program/comparison ward pair.
   full_page: false
   narrative: 'To see where his program actually reached, David drops to the map: his
     program''s logged visits fill the intervention ward and stop at its boundary,
@@ -144,19 +150,24 @@ scenes:
     is visible and accountable rather than averaged away.
   design_intent: A dense scorecard, one row per surveyor, green within threshold /
     rose below, with a REVIEW tag where a surveyor's integrity signals fail together;
-    the back-check column is cumulative across cycles.
+    the back-check column is cumulative across cycles. An On-primary column shows the
+    share of each surveyor's surveys that landed on the assigned first-choice household
+    (vs a substituted alternate) — a sampling-fidelity signal where heavy substitution
+    reads rose.
   features:
-  - description: A per-surveyor survey-quality scorecard (evidence, GPS, completeness,
-      duration, consistency, duplicates, back-check) computed per surveyor, with rose
-      cells below threshold and a REVIEW tag on the flagged surveyor.
+  - description: A per-surveyor survey-quality scorecard (evidence, GPS, on-primary,
+      completeness, duration, consistency, duplicates, back-check) computed per surveyor,
+      with rose cells below threshold and a REVIEW tag on the flagged surveyor.
     id: surveyor-scorecard
-    verify: Assert the table renders one row per surveyor with computed values; exactly
-      the flagged surveyor (T6) shows a REVIEW tag; its rose cells coincide with sub-threshold
-      values.
+    verify: Assert the table renders one row per surveyor with computed values, including
+      an On-primary column; exactly the flagged surveyor (T6) shows a REVIEW tag; its
+      rose cells (including a sub-threshold On-primary) coincide with sub-threshold values.
   full_page: false
   narrative: Before David trusts any of the survey, David checks the people who collected
     it. The scorecard gives David one row per surveyor, every figure computed from
-    that surveyor's own records — and one row is flagged for review.
+    that surveyor's own records — evidence, GPS, and how often each reached the
+    household they were assigned to try first rather than falling back on a substitute
+    — and one row is flagged for review.
   persona: david
   provenance: S2
   show: The per-surveyor quality scorecard — evidence, GPS-within-15m, completeness,

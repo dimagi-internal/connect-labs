@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V53
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V54
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -144,9 +144,29 @@ function WorkflowUI(props) {
             strokeColor: 'rgba(255,255,255,0.95)',
           });
           try {
-            map.setPaintProperty('vm-pins', 'circle-opacity', 0.95);
-            map.setPaintProperty('vm-pins', 'circle-stroke-width', 1.2);
-            map.setPaintProperty('vm-pins', 'circle-stroke-color', 'rgba(255,255,255,0.95)');
+            // Primary (first-choice) vs alternate (substituted backup) read as a
+            // FILL channel on top of the confirmed/absent colour: a primary is a
+            // solid dot, an alternate a hollow ring — so the substitution mix is
+            // visible on the map without a third colour. Ungrounded rounds carry no
+            // sample_type, so they default to solid (treated as primary).
+            var isAlt = ['==', ['get', 'sample_type'], 'alternate'];
+            map.setPaintProperty('vm-pins', 'circle-opacity', [
+              'case',
+              isAlt,
+              0.18,
+              0.95,
+            ]);
+            map.setPaintProperty('vm-pins', 'circle-stroke-width', [
+              'case',
+              isAlt,
+              2.2,
+              1.2,
+            ]);
+            map.setPaintProperty(
+              'vm-pins',
+              'circle-stroke-color',
+              'rgba(255,255,255,0.95)',
+            );
           } catch (e) {}
         }
         CM.fit(map, overlay.ward_boundaries, 64);
@@ -1019,7 +1039,9 @@ function WorkflowUI(props) {
                 fontSize="8.5"
                 textAnchor="middle"
               >
-                {(rounds[i] || {}).label || (rounds[i] || {}).treatment_ward || ''}
+                {(rounds[i] || {}).label ||
+                  (rounds[i] || {}).treatment_ward ||
+                  ''}
               </text>
               <rect
                 x={X(i) - 26}
@@ -1096,6 +1118,7 @@ function WorkflowUI(props) {
     var COLS = [
       ['evidence', 'Evidence', 90, false, false],
       ['gps', 'GPS ≤15m', 90, false, false],
+      ['primary_rate', 'On primary', 85, false, false],
       ['completeness', 'Complete', 98, false, false],
       ['duration', 'Duration', 90, false, false],
       ['consistency', 'Consistency', 98, false, false],
@@ -1120,6 +1143,7 @@ function WorkflowUI(props) {
       var n = 0;
       if (fail(row.evidence, 90, false)) n++;
       if (fail(row.gps, 90, false)) n++;
+      if (fail(row.primary_rate, 85, false)) n++;
       if (fail(row.backcheck, 90, false)) n++;
       return n >= 2;
     }
@@ -1150,6 +1174,7 @@ function WorkflowUI(props) {
       n: indN,
       evidence: q.evidence_capture && q.evidence_capture.value,
       gps: q.gps_within_15m && q.gps_within_15m.value,
+      primary_rate: q.primary_rate && q.primary_rate.value,
       completeness: q.field_completeness && q.field_completeness.value,
       duration: q.duration_plausibility && q.duration_plausibility.value,
       consistency: q.consistency_pass && q.consistency_pass.value,
@@ -1733,8 +1758,8 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Service-delivery data vs independent survey — {(trend.rounds || []).length}{' '}
-          bi-monthly rounds over time
+          Service-delivery data vs independent survey —{' '}
+          {(trend.rounds || []).length} bi-monthly rounds over time
         </div>
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
         <div
@@ -1765,9 +1790,9 @@ function WorkflowUI(props) {
           }}
         >
           {(trend.rounds || []).length} bi-monthly survey rounds over time —
-          earliest at left, most recent at right. The independent survey's coverage
-          tracked against the program's self-report at each round; every round
-          verifies a rotating ward against its adjacent control.
+          earliest at left, most recent at right. The independent survey's
+          coverage tracked against the program's self-report at each round;
+          every round verifies a rotating ward against its adjacent control.
         </div>
       </div>
 
@@ -1857,14 +1882,12 @@ function WorkflowUI(props) {
                 pointerEvents: 'none',
               }}
             >
-              <span
-                style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}
-              >
+              <span style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}>
                 Independent survey · both wards
               </span>
               <span style={{ color: SUBINK }}>
-                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention) —{' '}
-                <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
+                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention)
+                — <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
               </span>
               <span style={{ color: SUBINK }}>
                 <span style={{ color: COMP }}>▰</span> {cWard} (control) —{' '}
@@ -1880,6 +1903,10 @@ function WorkflowUI(props) {
               <span>
                 <span style={{ color: INDIGO }}>●</span> survey confirmed &nbsp;
                 <span style={{ color: ROSE }}>●</span> surveyed · not reached
+              </span>
+              <span>
+                <span style={{ color: SUBINK }}>●</span> primary unit &nbsp;
+                <span style={{ color: SUBINK }}>◌</span> alternate (substituted)
               </span>
             </div>
           </div>
@@ -1929,9 +1956,7 @@ function WorkflowUI(props) {
             <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = below
             threshold
           </span>
-          <span>
-            quality columns + back-check = this round
-          </span>
+          <span>quality columns + back-check = this round</span>
           <span style={{ color: INDIGO }}>
             click a quality cell → detail · click a surveyor → back-check below
           </span>
