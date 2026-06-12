@@ -42,6 +42,42 @@ def _pipeline_scope_where(opportunity_id: int, pipeline_id: int | None, *, alias
     return f"{prefix}opportunity_id = {opportunity_id} AND {prefix}pipeline_id = {pipeline_id}"
 
 
+def _date_window_where(config: AnalysisPipelineConfig, *, alias: str = "") -> str:
+    """SQL WHERE-fragment restricting visits to config's half-open [date_from,
+    date_to) window, or "" when neither bound is set.
+
+    Returns a leading-" AND " fragment so callers can append it directly to an
+    existing WHERE clause. The window is half-open — `>= date_from AND <
+    date_to` — so back-to-back periods (week N ending == week N+1 starting) do
+    not double-count the boundary day.
+
+    SAFETY: both bounds are parsed through `date.fromisoformat`, so only a
+    validated literal `YYYY-MM-DD` is ever interpolated into SQL. A malformed
+    or empty bound contributes no predicate (fails open to "no bound on that
+    side"). The bounds originate server-side from a run's period, never from
+    user free-text, but this keeps the builder injection-proof regardless.
+    """
+    from datetime import date as _date
+
+    def _parse(s: str):
+        if not s or not isinstance(s, str):
+            return None
+        try:
+            return _date.fromisoformat(s[:10])
+        except ValueError:
+            return None
+
+    lo = _parse(getattr(config, "date_from", ""))
+    hi = _parse(getattr(config, "date_to", ""))
+    prefix = f"{alias}." if alias else ""
+    parts = []
+    if lo is not None:
+        parts.append(f"{prefix}visit_date >= '{lo.isoformat()}'")
+    if hi is not None:
+        parts.append(f"{prefix}visit_date < '{hi.isoformat()}'")
+    return (" AND " + " AND ".join(parts)) if parts else ""
+
+
 def _jsonb_path_to_sql(path: str, column: str = "form_json") -> str:
     """
     Convert a dot-notation path to PostgreSQL JSONB extraction.
@@ -1159,7 +1195,9 @@ def build_flw_aggregation_query(
             select_parts.append(f"{field_sql} as {field_name}")
 
     select_clause = ",\n    ".join(select_parts)
-    where_clause = _pipeline_scope_where(opportunity_id, pipeline_id)
+    # Period scoping (ace#764): append the run's half-open visit-date window
+    # when set. Default (no window) leaves the WHERE clause byte-identical.
+    where_clause = _pipeline_scope_where(opportunity_id, pipeline_id) + _date_window_where(config)
 
     with_clause = _build_cte_prologue(config, opportunity_id, include_owners=True)
 
