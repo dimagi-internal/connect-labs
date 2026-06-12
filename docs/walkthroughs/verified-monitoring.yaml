@@ -54,7 +54,7 @@ personas:
 scenes:
 - actions:
   - kind: goto
-    target: /labs/workflow/3699/run/?opportunity_id=10008&run_id=3720
+    target: ${runner_path}
   - kind: wait_for
     target: Service-delivery data vs independent survey
   - kind: scroll_to
@@ -235,4 +235,11 @@ scenes:
   show: The independent back-check for the flagged surveyor — Identity (incl. roof)
     / Location / Outcome, original over re-survey, the method behind an info button.
   title: The independent back-check confirms it
+# The synthetic generator is the single setup entrypoint: it generates the
+# demo data on labs, then emits the FLAT vars JSON (run_id, runner_path, ...)
+# that the scenes interpolate as ${var}.
+setup:
+  command: "python scripts/walkthroughs/verified-monitoring/regenerate.py"
+  outputs: "scripts/walkthroughs/verified-monitoring/.run_ids.json"
+  rerun: per_render
 why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml

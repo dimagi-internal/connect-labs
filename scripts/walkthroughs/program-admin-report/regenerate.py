@@ -1,41 +1,146 @@
-"""Regenerate the Program Admin Report demo from demo_config.json.
+"""Synthetic generator entrypoint for the Program Admin Report walkthrough.
 
-Loads ``demo_config.json``, invokes the synthetic data generator
-(``commcare_connect.labs.synthetic.program_admin_demo``), and persists
-the resulting run ids to ``.run_ids.json`` so the recorder scripts can
-pick them up without copy-pasting integers between terminals.
+This is the single setup command for the demo — the one a canopy
+``setup:`` block invokes before rendering. One run does all of:
+
+1. **Generate** — load ``demo_config.json`` and call the
+   ``program_admin_demo_seed`` MCP tool on labs. The tool executes
+   server-side, inside the labs app, so the labs-only synthetic opps
+   (10000/10001) are written through the local records backend on the
+   labs DB — the only transport that actually reaches labs prod for
+   synthetic opportunities.
+2. **Verify** — run the ``_lib.verify`` smoke checks on the generation
+   result (opps present, week counts, PAR run, in_progress week shape).
+3. **Freshness preflight** — fetch the freshly-generated run pages over
+   HTTP (labs session cookies) and compare the served ``render_code``
+   against the local checkout's templates (AST-extracted). Aborts loudly
+   when labs is serving stale template code — the 2-4 min ECS
+   worker-cutover lag after a deploy "succeeds". Wait and re-run.
+   ``SKIP_FRESHNESS=1`` bypasses the check (DANGEROUS — you'll record or
+   grade a UI that doesn't match the code you think is live).
+4. **Discover** — walk the PAR snapshot (``_lib.discovery``) to resolve
+   the "good" (closed satisfactory) and "incomplete" (in-review /
+   investigating) drill targets. This used to happen at record time in
+   ``record_drill_through.py``; doing it at generation time means every
+   downstream consumer (recorders, capture, the future canopy spec)
+   reads the same resolved targets from the vars file.
+5. **Emit a FLAT vars JSON** at ``.run_ids.json`` — every dynamic value
+   the walkthrough needs: raw ids, path-relative URLs (the spec carries
+   ``base_url``), and the archetype-derived FLW usernames used as click
+   targets. String/number values only, no nesting. See the README's
+   "Vars contract" section for the key list.
+
+Requirements:
+
+- ``LABS_MCP_TOKEN`` — a labs MCP PAT (mint at ``/labs/mcp/tokens/``;
+  NOT the Connect OAuth token), or a configured ``connect_labs`` server
+  in ``~/.claude.json``.
+- A labs browser session file at ``~/.ace/labs-session.json`` (run
+  ``/ace:labs-login``; override via ``LABS_SESSION_FILE``) — the run
+  pages and the snapshot API are session-auth'd.
 
 Usage::
 
-    # From a connect-labs checkout, with the labs venv active:
     python scripts/walkthroughs/program-admin-report/regenerate.py
-
-    # Or via the MCP from Claude:
-    #   read demo_config.json
-    #   pass its contents to mcp__connect_labs__program_admin_demo_seed
-
-Writes ``scripts/walkthroughs/program-admin-report/.run_ids.json``
-with these keys (consumed by the recorders + capture_walkthrough):
-
-    par_run_id        — the cross-opp Program Admin Report run
-    wk4_run_id        — Northern's last-week in_progress run (manager-flow target)
-    opp_id            — primary opportunity id (Northern, by convention)
-    workflow_def_id   — chc_nutrition_analysis workflow definition id
 """
 
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
+
+import httpx
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from walkthroughs._lib import config as wcfg  # noqa: E402
+from walkthroughs._lib.discovery import find_drill_targets  # noqa: E402
+from walkthroughs._lib.freshness import (  # noqa: E402
+    assert_served_current,
+    served_render_code_from_html,
+    skip_requested,
+)
+from walkthroughs._lib.labs_mcp import LabsMCPSession  # noqa: E402
 from walkthroughs._lib.verify import report, run_checks  # noqa: E402
+
+# ---------------------------------------------------------------------- #
+# Path-relative URL builders (the spec carries base_url; vars carry paths)
+# ---------------------------------------------------------------------- #
+
+
+def _run_path(definition_id: int, run_id: int, opp_id: int) -> str:
+    return f"/labs/workflow/{definition_id}/run/?run_id={run_id}&opportunity_id={opp_id}"
+
+
+def _audit_path(audit_id: int, opp_id: int) -> str:
+    return f"/audit/{audit_id}/?opportunity_id={opp_id}"
+
+
+def _task_path(task_id: int, opp_id: int) -> str:
+    return f"/tasks/{task_id}/edit/?opportunity_id={opp_id}"
+
+
+def _derive_manager_flagged_flw(config: dict) -> str | None:
+    """The FLW the manager-flow scenes audit + coach live.
+
+    Convention: in the opp whose last week is left in_progress, the FLW
+    whose archetype flags in that final week (``jumoke_n`` in the shipped
+    config). Derived from the config so the walkthrough spec never
+    hardcodes an archetype-derived username.
+    """
+    last_idx = len(config.get("weeks", [])) - 1
+    if last_idx < 0:
+        return None
+    for opp in config.get("opps", []):
+        if not opp.get("in_progress_last_week"):
+            continue
+        for flw in opp.get("flws", []):
+            if flw.get("archetype") == "solid":
+                continue
+            if last_idx in (flw.get("flag_week"), flw.get("second_flag_week")):
+                return flw["id"]
+    return None
+
+
+def _labs_http_client() -> httpx.Client:
+    """Session-cookie HTTP client for the labs run pages + snapshot API.
+
+    Reuses the recorders' Playwright storage state (``/ace:labs-login``)
+    — these endpoints are session-auth'd, so the MCP PAT won't do.
+    """
+    cookies = wcfg.session_cookies()
+    if "sessionid" not in cookies:
+        raise SystemExit(
+            f"ERROR: no labs sessionid cookie in {wcfg.session_path()}. "
+            "Run /ace:labs-login to refresh the labs session, then re-run."
+        )
+    return httpx.Client(timeout=60, cookies=cookies, follow_redirects=True)
+
+
+def _check_freshness(client: httpx.Client, path: str, template_type: str, *, label: str) -> None:
+    """Fetch a run page and assert it serves the local checkout's render_code."""
+    if skip_requested():
+        print(f"  !! SKIP_FRESHNESS=1 — skipping {template_type} freshness fetch ({label}). DANGEROUS.")
+        return
+    url = f"{wcfg.LABS_BASE_URL}{path}"
+    resp = client.get(url)
+    served = served_render_code_from_html(resp.text)
+    if served is None:
+        hint = ""
+        if "login" in str(resp.url).lower() or resp.status_code in (401, 403):
+            hint = " The labs session looks expired — run /ace:labs-login and retry."
+        raise SystemExit(
+            f"ERROR: could not read the served render_code from {url} "
+            f"(status {resp.status_code}).{hint} "
+            "(SKIP_FRESHNESS=1 bypasses this preflight — dangerous.)"
+        )
+    try:
+        assert_served_current(served, template_type, label=label)
+    except RuntimeError as e:
+        raise SystemExit(str(e))
 
 
 def main() -> int:
@@ -43,60 +148,124 @@ def main() -> int:
     config = json.loads(config_path.read_text())
     config.pop("_comment", None)
 
-    # Django setup so we can import the seed function directly.
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
-    import django
-
-    django.setup()
-
-    from commcare_connect.labs.synthetic.program_admin_demo import program_admin_demo_seed
-
-    if not os.environ.get("LABS_CONNECT_TOKEN"):
-        sys.exit(
-            "ERROR: LABS_CONNECT_TOKEN env var is required. Export your labs "
-            "OAuth access token before running this script. The recorder "
-            "scripts use the same token via the session file at "
-            f"{wcfg.session_path()}."
+    # ---------------- 1. Generate (server-side, via the MCP shim) -------- #
+    print("Generating synthetic data via program_admin_demo_seed on labs...")
+    with LabsMCPSession() as mcp:
+        result, is_error = mcp.tool(
+            "program_admin_demo_seed",
+            {
+                "weeks": config["weeks"],
+                "opps": config["opps"],
+                "cleanup_first": bool(config.get("cleanup_first", True)),
+            },
         )
+    if is_error or not isinstance(result, dict):
+        print("program_admin_demo_seed ERROR:")
+        print(json.dumps(result, indent=2, default=str)[:2000])
+        return 1
+    print(json.dumps(result, indent=2))
 
-    class _User:
-        # Minimal surface: `username` for record provenance + access via env
-        # for the OAuth token resolver.
-        username = os.environ.get("LABS_USER", "manager")
+    # ---------------- 2. Verify the generation result -------------------- #
+    print("\nRunning verify checks...")
+    rc = report(run_checks(result, config))
+    if rc:
+        return rc
 
-    result = program_admin_demo_seed(
-        user=_User(),
-        weeks=config["weeks"],
-        opps=config["opps"],
-        cleanup_first=bool(config.get("cleanup_first", True)),
+    # Resolve the base ids.
+    par = result["program_admin_report"]
+    par_def_id = int(par["definition_id"])
+    par_run_id = int(par["run_id"])
+    primary_opp_id = int(config["opps"][0]["opportunity_id"])
+    primary = next(opp for opp in result["opportunities"] if opp["opportunity_id"] == primary_opp_id)
+    workflow_def_id = int(primary["workflow_definition_id"])
+    wk4 = next((w for w in primary["weeks"] if w.get("in_progress")), None)
+
+    par_url = _run_path(par_def_id, par_run_id, primary_opp_id)
+    wk4_url = _run_path(workflow_def_id, int(wk4["run_id"]), primary_opp_id) if wk4 else None
+
+    client = _labs_http_client()
+
+    # ---------------- 3. Freshness preflight ----------------------------- #
+    # Abort loudly if labs is serving stale template code (the 2-4 min ECS
+    # worker-cutover lag): regeneration stamps each def's render_code from
+    # the template the *running* worker has, so a stale worker writes stale
+    # JSX. Wait for the cutover, then re-run this generator.
+    print("\nFreshness preflight (served render_code vs local checkout)...")
+    _check_freshness(client, par_url, "program_admin_report", label="PAR run page")
+    if wk4_url:
+        _check_freshness(client, wk4_url, "chc_nutrition_analysis", label="Wk4 in_progress run page")
+    else:
+        print("  ! no in_progress week configured — skipping chc_nutrition_analysis check")
+
+    # ---------------- 4. Discover drill targets --------------------------- #
+    # The PAR-snapshot walk used to run at record time (record_drill_through);
+    # at generation time every consumer reads the same resolved targets.
+    print("\nDiscovering drill targets from the PAR snapshot...")
+    targets = find_drill_targets(
+        client.get,
+        par_run_id,
+        labs_base_url=wcfg.LABS_BASE_URL,
+        primary_opp_id=primary_opp_id,
+    )
+    good = targets["good"]
+    bad = targets["incomplete"]
+    print(
+        f"  good:       {good['opp_label']} Wk{good['week_idx'] + 1} "
+        f"flw={good['flw_id']}  audit #{good['audit_id']}, task #{good['task_id']}"
+    )
+    print(
+        f"  incomplete: {bad['opp_label']} Wk{bad['week_idx'] + 1} "
+        f"flw={bad['flw_id']}  audit #{bad['audit_id']}, task #{bad['task_id']}"
     )
 
-    # Resolve the four ids the recorders need.
-    par_run_id = result["program_admin_report"]["run_id"]
-    primary_opp_cfg = config["opps"][0]
-    primary_opp_id = primary_opp_cfg["opportunity_id"]
-    primary = next(opp for opp in result["opportunities"] if opp["opportunity_id"] == primary_opp_id)
-    wk4 = next((w for w in primary["weeks"] if w.get("in_progress")), None)
-    ids = {
+    # ---------------- 5. Emit the FLAT vars JSON --------------------------- #
+    # Contract: string/number values only — a canopy setup.outputs file the
+    # walkthrough spec interpolates as ${var}. URLs are path-relative (the
+    # spec carries base_url). FLW usernames are archetype-derived here so
+    # the spec never hardcodes them.
+    vars_json = {
+        # Raw ids (recorders require par_run_id / wk4_run_id / opp_id /
+        # workflow_def_id — keep those names stable).
+        "par_def_id": par_def_id,
         "par_run_id": par_run_id,
         "opp_id": primary_opp_id,
-        "workflow_def_id": primary["workflow_definition_id"],
+        "workflow_def_id": workflow_def_id,
+        # Path-relative URLs.
+        "par_url": par_url,
+        "chc_good_url": _run_path(good["wf_def_id"], good["run_id"], good["opp_id"]),
+        "audit_good_url": _audit_path(good["audit_id"], good["opp_id"]),
+        "task_good_url": _task_path(good["task_id"], good["opp_id"]),
+        "audit_incomplete_url": _audit_path(bad["audit_id"], bad["opp_id"]),
+        "task_incomplete_url": _task_path(bad["task_id"], bad["opp_id"]),
+        # Drill targets — grid-cell coordinates + click-target ids.
+        "good_opp_id": good["opp_id"],
+        "good_opp_label": good["opp_label"],
+        "good_week_idx": good["week_idx"],
+        "good_run_id": good["run_id"],
+        "good_audit_id": good["audit_id"],
+        "good_task_id": good["task_id"],
+        "incomplete_opp_id": bad["opp_id"],
+        "incomplete_opp_label": bad["opp_label"],
+        "incomplete_week_idx": bad["week_idx"],
+        "incomplete_run_id": bad["run_id"],
+        "incomplete_audit_id": bad["audit_id"],
+        "incomplete_task_id": bad["task_id"],
+        # Archetype-derived FLW usernames used as click targets.
+        "flagged_flw_good": good["flw_id"],
+        "flagged_flw_incomplete": bad["flw_id"],
     }
     if wk4:
-        ids["wk4_run_id"] = wk4["run_id"]
+        vars_json["wk4_run_id"] = int(wk4["run_id"])
+        vars_json["wk4_url"] = wk4_url
+    flagged_manager = _derive_manager_flagged_flw(config)
+    if flagged_manager:
+        vars_json["flagged_flw_manager"] = flagged_manager
 
-    written = wcfg.write_run_ids(HERE, ids)
-    print(json.dumps(result, indent=2))
-    print()
-    for k, v in ids.items():
+    written = wcfg.write_run_ids(HERE, vars_json)
+    print(f"\nWrote {written}:")
+    for k, v in vars_json.items():
         print(f"  {k}={v}")
-    print(f"\nWrote {written}")
-
-    # Pre-record smoke check — surface any mismatch immediately rather
-    # than during the recorder's scene 2.
-    print("\nRunning verify checks...")
-    issues = run_checks(result, config)
-    return report(issues)
+    return 0
 
 
 if __name__ == "__main__":

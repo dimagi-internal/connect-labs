@@ -15,7 +15,11 @@ Usage::
     export LABS_MCP_TOKEN=...        # or it is read from ~/.claude.json
     python scripts/walkthroughs/verified-monitoring/regenerate.py
 
-Writes ``.run_ids.json`` (run_id, opp_id, workflow_def_id, runner_url).
+Writes ``.run_ids.json`` — a FLAT vars JSON (run_id, opp_id,
+workflow_def_id, runner_path, runner_url). This script is the demo's
+synthetic-generator entrypoint: the ``setup:`` block in
+``docs/walkthroughs/verified-monitoring.yaml`` runs it per render and the
+spec interpolates the vars (e.g. ``goto: ${runner_path}``).
 """
 
 from __future__ import annotations
@@ -137,9 +141,24 @@ def main() -> int:
             print("workflow_create_run ERROR:", json.dumps(run, default=str)[:400])
             return 1
         run_id = run.get("run_id") if isinstance(run, dict) else None
-        runner_url = f"https://labs.connect.dimagi.com/labs/workflow/{wf}/run/?opportunity_id={opp}&run_id={run_id}"
+        # FLAT vars JSON (string/number values only) — the canopy setup block
+        # points its `outputs:` at this file and the walkthrough spec
+        # interpolates the keys as ${var}. `runner_path` is path-relative
+        # (the spec carries base_url); `runner_url` stays absolute for
+        # humans pasting it into a browser.
+        runner_path = f"/labs/workflow/{wf}/run/?opportunity_id={opp}&run_id={run_id}"
+        runner_url = f"https://labs.connect.dimagi.com{runner_path}"
         (HERE / ".run_ids.json").write_text(
-            json.dumps({"run_id": run_id, "opp_id": opp, "workflow_def_id": wf, "runner_url": runner_url}, indent=2)
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "opp_id": opp,
+                    "workflow_def_id": wf,
+                    "runner_path": runner_path,
+                    "runner_url": runner_url,
+                },
+                indent=2,
+            )
             + "\n"
         )
         print(f"\nrun_id={run_id}\n{runner_url}")
