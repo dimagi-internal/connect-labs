@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from shapely import wkt
+from shapely.geometry import shape
 
 from commcare_connect.microplans.core.geo import project_to_meters
-from commcare_connect.microplans.core.workarea import build_work_areas, to_api_payload, to_csv_rows
+from commcare_connect.microplans.core.workarea import (
+    build_work_areas,
+    to_api_payload,
+    to_csv_rows,
+)
 
 PINS = {
     "type": "FeatureCollection",
@@ -13,12 +18,22 @@ PINS = {
         {
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [13.155, 11.832]},
-            "properties": {"arm": "intervention", "cluster": "C3", "role": "primary", "order_in_cluster": 1},
+            "properties": {
+                "arm": "intervention",
+                "cluster": "C3",
+                "role": "primary",
+                "order_in_cluster": 1,
+            },
         },
         {
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [13.156, 11.833]},
-            "properties": {"arm": "comparison", "cluster": "C7", "role": "alternate", "order_in_cluster": 9},
+            "properties": {
+                "arm": "comparison",
+                "cluster": "C7",
+                "role": "alternate",
+                "order_in_cluster": 9,
+            },
         },
     ],
 }
@@ -57,10 +72,60 @@ def test_boundary_is_a_small_square_around_the_pin():
     assert 14 < width_m < 18
 
 
+def test_boundary_uses_the_real_building_footprint_when_present():
+    # A ~10m x 6m building footprint riding on the pin's properties.
+    footprint = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [13.15500, 11.83200],
+                [13.15509, 11.83200],
+                [13.15509, 11.83205],
+                [13.15500, 11.83205],
+                [13.15500, 11.83200],
+            ]
+        ],
+    }
+    pins = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [13.155045, 11.832025]},
+                "properties": {
+                    "arm": "intervention",
+                    "cluster": "C3",
+                    "role": "primary",
+                    "order_in_cluster": 1,
+                    "geom_json": footprint,
+                },
+            }
+        ],
+    }
+    was = build_work_areas(pins, boundary_buffer_m=3.0)
+    poly = wkt.loads(was[0].boundary_wkt)
+    assert poly.geom_type == "Polygon"
+    raw_poly = shape(footprint)
+
+    def _width_m(p):
+        xs, ys = p.exterior.coords.xy
+        mx = project_to_meters(list(xs), list(ys))[0]
+        return max(mx) - min(mx)
+
+    raw_width = _width_m(raw_poly)
+    out_width = _width_m(poly)
+    # The exported boundary tracks the real building footprint, just grown by the
+    # ~3m doorstep buffer on each side — not the generic centroid square.
+    assert out_width > raw_width
+    assert raw_width < out_width < raw_width + 10  # ≈ +2*3m, with rounding slack
+
+
 def test_ward_defaults_to_arm_but_is_overridable():
     default = build_work_areas(PINS)
     assert default[0].ward == "intervention"
-    mapped = build_work_areas(PINS, ward_for_arm={"intervention": "Gwange", "comparison": "Tsaki"})
+    mapped = build_work_areas(
+        PINS, ward_for_arm={"intervention": "Gwange", "comparison": "Tsaki"}
+    )
     assert mapped[0].ward == "Gwange"
     assert mapped[1].ward == "Tsaki"
 
