@@ -70,7 +70,11 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
         program_label = opp.program_name or "Labs Synthetic"
         # Stable synthetic slug/id so the same opp gets the same shell across requests.
         org_slug = f"labs-synthetic-{_slugify(org_label)}"
-        program_id = -opp.opportunity_id  # negative ID can't collide with real Connect program PKs
+        # Labs-only program id, in the reserved >= 10_000 range so it can't collide with
+        # real Connect program PKs. Defaults to the opp's own id (1 opp = 1 program), but
+        # several opps can share one program by setting SyntheticOpportunity.program_id —
+        # the dedup below then files them all under that one program.
+        program_id = opp.program_id or opp.opportunity_id
 
         opportunities.append(
             {

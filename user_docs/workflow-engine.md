@@ -141,6 +141,8 @@ When a run is concluded, the snapshot captures what **that workflow** is current
 - If your team has added new data pipelines or tracking fields to the workflow since it was first created, those additions will be included in the snapshot — as long as the workflow's manifest has been updated to reflect them.
 - Workflows that were built from scratch rather than from a starter template can also use the conclude-and-save flow in the same way.
 
+**For recurring periodic reviews** (such as the LLO Weekly FLW Review), each concluded run saves only the figures for its own period. Week 1's snapshot shows Week 1 visits, Week 2's snapshot shows Week 2 visits, and so on. This means you can open any past weekly run and see exactly what that week looked like, and week-over-week comparisons reflect genuine change rather than the same all-time totals repeated across every run.
+
 !!! note "Keeping snapshots current after workflow changes"
     If your program administrator adds new pipelines or columns to a workflow, those changes will appear in future concluded runs automatically once the workflow's manifest is updated. Runs that were already concluded before the change are unaffected — they remain exactly as they were saved.
 
@@ -221,6 +223,8 @@ The `custom_analysis/` section of Labs predates the workflow engine. Most of tho
 
 When a run is concluded, the snapshot is built from what the user **sees on screen at the moment they click Conclude** — the dashboard's cached data, scoped to what the workflow's manifest declares it tracks. The system never refetches or recomputes data during the conclude step itself. This means the workflow's own manifest is the source of truth for what is captured, and the screen state at conclude time is the source of truth for the values saved.
 
+For **recurring periodic workflows**, each run's snapshot is additionally scoped to that run's own period. This ensures that when you save Week 1 and Week 2 as separate concluded runs, each snapshot holds only that week's per-FLW figures — not all-time totals that would look identical across every run.
+
 Practical implications for administrators:
 
 - **Adding pipelines or fields to an existing workflow** — update the workflow's manifest to include them. Future concluded runs will capture the new data. Runs already concluded are unaffected.
@@ -232,12 +236,4 @@ Practical implications for administrators:
 
 The **Program Admin Report** template gives program administrators a cross-opportunity compliance rollup — flags, audits, and tasks aggregated across all opportunities the admin is watching.
 
-**While the run is live**, the report does not fill in automatically on page load. Instead, click the **Refresh data** button to pull the latest flags, audits, and tasks from all watched opportunities into the report on demand. You can refresh as many times as you like during the run. Each refresh overwrites the previous live snapshot with the most current data.
-
-**Concluding the run** freezes exactly what is on screen at that moment — the same conclude-and-save flow used by all other workflow templates. Once concluded, the run is a locked historical record and the Refresh data button is no longer active.
-
-### Verified Monitoring dashboard
-
-The **Verified Monitoring** template is designed for programs that commission independent surveys to verify their own coverage numbers — for example, a vitamin-A home-visit program where an outside team surveys households to confirm whether a visit actually occurred.
-
-The dashboard leads with the finding a funder can actually rely on: **independent verification**. The headline panel shows a single gap chart with a one-line plain-English summary —
+**While the run is live**, the report does not fill in automatically on page load. Instead, click the **Refresh data** button to pull the latest flags, audits, and tasks from all watched opportunities into the report on demand. You can refresh

@@ -280,6 +280,15 @@
               <label class="block mt-1"><span class="text-gray-600">Min Google confidence</span>
                 <input id="cfg-min-confidence" type="number" value="0.7" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs"></label>
               <p class="text-[10px] text-gray-500 mt-0.5">Google carries a per-building confidence; OSM/Microsoft don't. Counts appear after you generate.</p>
+              <div class="mt-2 cursor-help" title="Keeps only building footprints whose ground area falls in this range. The minimum drops tiny specks — sheds, market stalls, digitizing noise; the maximum drops oversized non-dwellings — warehouses, schools, walled compounds. So the sample targets real households.">
+                <span class="text-gray-600 underline decoration-dotted underline-offset-2">Building footprint size (m²) &#9432;</span>
+                <div class="grid grid-cols-2 gap-1 mt-0.5">
+                  <label class="block"><span class="text-[10px] text-gray-500">Min</span>
+                    <input id="cfg-area-min" type="number" value="9" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
+                  <label class="block"><span class="text-[10px] text-gray-500">Max</span>
+                    <input id="cfg-area-max" type="number" value="330" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
+                </div>
+              </div>
             </div>
             <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">Generate sample</button>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
@@ -1819,6 +1828,9 @@
       alternates_per_psu: parseInt($("cfg-alternate")?.value || "8", 10),
       sources: sources,
       min_confidence: isNaN(conf) ? null : conf,
+      // Footprint-size filter (m²); from_payload clamps to sane bounds.
+      area_min_m2: parseFloat($("cfg-area-min")?.value || "9"),
+      area_max_m2: parseFloat($("cfg-area-max")?.value || "330"),
     };
   }
 

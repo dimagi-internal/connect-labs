@@ -34,10 +34,16 @@ urlpatterns = [
     # compare page. Program-scope-agnostic; one page covers the whole vocabulary.
     path("glossary/", views.MetricGlossaryView.as_view(), name="metric_glossary"),
     path(
-        "program/<int:program_id>/plan/compare/", views.ProgramComparePlansView.as_view(), name="program_plan_compare"
+        "program/<int:program_id>/plan/compare/",
+        views.ProgramComparePlansView.as_view(),
+        name="program_plan_compare",
     ),
     path("program/<int:program_id>/new/", views.ProgramSetupView.as_view(), name="program_create_plan_page"),
-    path("program/<int:program_id>/plan/create/", views.ProgramCreatePlanView.as_view(), name="program_create_plan"),
+    path(
+        "program/<int:program_id>/plan/create/",
+        views.ProgramCreatePlanView.as_view(),
+        name="program_create_plan",
+    ),
     # Bulk-create: paste a ward list, resolve against admin_boundaries,
     # preview matched + unresolved rows, confirm, then materialize one plan per ward
     # in one server call.
@@ -109,9 +115,15 @@ urlpatterns = [
         name="program_group_delete",
     ),
     path(
-        "program/<int:program_id>/plan/<int:plan_id>/review/", views.ProgramReviewView.as_view(), name="program_review"
+        "program/<int:program_id>/plan/<int:plan_id>/review/",
+        views.ProgramReviewView.as_view(),
+        name="program_review",
     ),
-    path("program/<int:program_id>/groups/create/", views.ProgramGroupsAPIView.as_view(), name="program_group_create"),
+    path(
+        "program/<int:program_id>/groups/create/",
+        views.ProgramGroupsAPIView.as_view(),
+        name="program_group_create",
+    ),
     path(
         "program/<int:program_id>/group/<int:group_id>/",
         views.ProgramGroupUpdateView.as_view(),

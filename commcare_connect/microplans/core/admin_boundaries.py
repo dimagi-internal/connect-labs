@@ -8,7 +8,7 @@ Two sources, in default preference order:
     ``source``). Where a country has these boundaries loaded (e.g. Nigeria's
     ~9,300 wards from GeoPoDe/WHO) it is *better than Overture's default*, so it
     wins wherever it has data for the requested level. Shown in the UI as
-    "Other 3rd Party Sources" (see ``SOURCE_LABELS``).
+    "Enriched Boundaries" — the curated/corrected set (see ``SOURCE_LABELS``).
   * **overture** — Overture Maps' global ``divisions`` theme (via ``boundaries``),
     the universal default/fallback for every country.
 
@@ -54,14 +54,15 @@ DEFAULT_SOURCE_ORDER: tuple[str, ...] = ("labs", "overture")
 # Friendly labels for the UI source picker. New sources just add an entry.
 #
 # The ``labs`` key is NOT a single data source — it's the curated AdminBoundary
-# table, a UNION of per-row sources (GeoPoDe, geoBoundaries, OSM, GRID3, …), so we
-# label it generically as third-party rather than over-claiming one provenance.
-# Each row's true origin is recorded in ``AdminBoundary.source``; see that model's
-# docstring for the per-source provenance + licensing. (To surface per-row
-# provenance in the picker later, swap this static label for one derived from the
-# boundary's ``source`` + upstream provider.)
+# table, a UNION of per-row sources (GeoPoDe, geoBoundaries, OSM, GRID3, …) that
+# someone vetted/corrected for a country, so we label it "Enriched Boundaries":
+# the human-curated set that's *better than Overture's generic default* and wins
+# wherever it has data. Each row's true origin is recorded in
+# ``AdminBoundary.source``; see that model's docstring for the per-source
+# provenance + licensing. (To surface per-row provenance in the picker later, swap
+# this static label for one derived from the boundary's ``source`` + provider.)
 SOURCE_LABELS: dict[str, str] = {
-    "labs": "Other 3rd Party Sources",
+    "labs": "Enriched Boundaries",
     "overture": "Overture",
 }
 
