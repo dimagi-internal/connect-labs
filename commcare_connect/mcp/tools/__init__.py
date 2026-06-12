@@ -9,6 +9,7 @@ from . import custom_analysis_run  # noqa: F401  -- registers custom_analysis_ru
 from . import funds  # noqa: F401
 from . import labs_context  # noqa: F401
 from . import mbw_parity  # noqa: F401
+from . import microplans  # noqa: F401  -- registers microplans_list_plans, microplans_plan_work_areas
 from . import microplans_study  # noqa: F401  -- registers microplans_study_ensure, microplans_study_reset_round
 from . import pipelines  # noqa: F401
 from . import program_admin_demo  # noqa: F401  -- registers program_admin_demo_seed

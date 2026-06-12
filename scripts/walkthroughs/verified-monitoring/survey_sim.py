@@ -29,6 +29,7 @@ if str(_REPO) not in sys.path:
 
 from commcare_connect.labs.survey_quality import results_to_map, run_metrics  # noqa: E402
 from commcare_connect.labs.survey_quality.stats import bbox, point_in_geom  # noqa: E402
+from commcare_connect.labs.survey_sim import SimParams, simulate_plan  # noqa: E402
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _M_PER_DEG = 111_320.0  # metres per degree latitude (good enough at this scale)
@@ -81,8 +82,65 @@ def _round_label(round0: str, i: int) -> tuple:
 # --------------------------------------------------------------- record gen
 
 
+def _sim_params(cfg, arm_key, arm_cfg, round_idx, n_rounds):
+    """Translate the demo config into a generic ``SimParams`` for one arm-round.
+
+    The flagged surveyor's degraded quality + lower primary rate apply only on
+    their own arm; the comparison arm draws everyone from the program mean."""
+    q = cfg["quality"]
+    n_enum = arm_cfg.get("enumerators", 5)
+    enum_ids = [f"{arm_key[0].upper()}{k + 1}" for k in range(n_enum)]
+    flagged = cfg.get("flagged_surveyor") or {}
+    on_arm = flagged.get("arm") == arm_key
+    pr = dict(cfg.get("primary_rate") or {})
+    if not on_arm:  # the flagged surveyor's substitution story is on their arm only
+        pr.pop("flagged_id", None)
+        pr.pop("flagged_mean", None)
+    return SimParams.from_dict(
+        {
+            "enumerators": enum_ids,
+            "coverage_start": arm_cfg["coverage_start"],
+            "coverage_end": arm_cfg["coverage_end"],
+            "coverage_noise": arm_cfg.get("coverage_noise", 0.0),
+            "round_idx": round_idx,
+            "n_rounds": n_rounds,
+            "arm": arm_key,
+            "primary_rate": pr,
+            "gps_within_15m": q["gps_within_15m"],
+            "gps_near_m": q.get("gps_offset_near_m", [1, 13]),
+            "gps_far_m": q.get("gps_offset_far_m", [16, 55]),
+            "evidence_complete": q["evidence_complete"],
+            "field_complete": q.get("field_complete", 1.0),
+            "duration": q["duration_min"],
+            "eligibility": cfg.get("eligibility", {}),
+            "flagged": (
+                {
+                    "id": flagged.get("id"),
+                    "evidence": flagged.get("evidence"),
+                    "gps_within_15m": flagged.get("gps_within_15m"),
+                }
+                if on_arm
+                else None
+            ),
+        }
+    )
+
+
+def _arm_records(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id, work_areas=None):
+    """One arm's primary records for one round.
+
+    When the round's plan ``work_areas`` are supplied (the live, grounded path),
+    delegate to the generic ``simulate_plan`` so the captured GPS sits on the real
+    sampled primary/alternate footprints. Without them (offline / no live plan),
+    fall back to the legacy random-in-ward generator."""
+    if work_areas:
+        params = _sim_params(cfg, arm_key, arm_cfg, round_idx, n_rounds)
+        return simulate_plan(work_areas, params, rng, ward_name=arm_cfg["ward"], ward_geom=geom, base_id=base_id)
+    return _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id)
+
+
 def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id):
-    """Generate one arm's primary records for one round."""
+    """Generate one arm's primary records for one round (legacy random-in-ward)."""
     q = cfg["quality"]
     elig = cfg.get("eligibility", {})
     n = max(1, int(round(arm_cfg["n_per_round"] + rng.uniform(-1, 1) * arm_cfg.get("n_jitter", 0))))
@@ -326,6 +384,9 @@ def _surveyor_scorecard(cfg, records):
                 "n": (qm.get("field_completeness") or {}).get("n"),
                 "evidence": _v(qm, "evidence_capture"),
                 "gps": _v(qm, "gps_within_15m"),
+                # Share of this surveyor's surveys on the PRIMARY (first-choice) unit
+                # vs a substituted ALTERNATE; null when the round isn't plan-grounded.
+                "primary_rate": _v(qm, "primary_rate"),
                 "completeness": _v(qm, "field_completeness"),
                 "duration": _v(qm, "duration_plausibility"),
                 "consistency": _v(qm, "consistency_pass"),
@@ -460,18 +521,38 @@ def _pins_sample(rng, records, cap_per_ward):
     for _ward, rs in by_ward.items():
         pick = rs if len(rs) <= cap_per_ward else rng.sample(rs, cap_per_ward)
         for r in pick:
-            feats.append(_pt(r["lat"], r["lon"], {"confirmed": bool(r["vitamin_a_received"]), "ward": r["ward"]}))
+            feats.append(
+                _pt(
+                    r["lat"],
+                    r["lon"],
+                    {
+                        "confirmed": bool(r["vitamin_a_received"]),
+                        "ward": r["ward"],
+                        # primary (first-choice) vs alternate (substituted backup) —
+                        # the map styles the two so the substitution mix is visible.
+                        "sample_type": r.get("sample_type"),
+                    },
+                )
+            )
     return _fc(feats)
 
 
-def build_state(cfg: dict, here: Path) -> tuple:
+def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tuple:
     """Generate all rounds and assemble the workflow instance.state payload.
 
     Rotating wards: each round surveys a DIFFERENT (program, comparison) ward
     pair (``cfg["rounds_wards"]``), so the map moves cycle to cycle. Every round
     carries its own ward names + map overlay; the render reads them per round.
 
+    ``rounds_plans`` (optional) maps a 0-based round index to that round's live
+    sampled plans, ``{ri: {"treatment": {"work_areas": [...]}, "comparison":
+    {...}}}``. When present, survey GPS is grounded on the real primary/alternate
+    footprints (the generic ``simulate_plan``); when absent, the round falls back
+    to the legacy random-in-ward generator. Mixed is fine — ground the rounds
+    that have a live study, scatter the rest.
+
     Returns (state, all_records)."""
+    rounds_plans = rounds_plans or {}
     rng = random.Random(cfg["rng_seed"])
     wards = _load_wards(here / cfg["wards_geojson"])  # ALL wards, keyed by name
     pairs = cfg["rounds_wards"]
@@ -490,8 +571,15 @@ def build_state(cfg: dict, here: Path) -> tuple:
             "treatment": {**cfg["arms"]["treatment"], "ward": tw},
             "comparison": {**cfg["arms"]["comparison"], "ward": cw},
         }
-        recs = _gen_arm_round(rng, cfg, "treatment", arm_cfg["treatment"], tgeom, ri, n_rounds, f"{base_id}t")
-        recs += _gen_arm_round(rng, cfg, "comparison", arm_cfg["comparison"], cgeom, ri, n_rounds, f"{base_id}c")
+        rp = rounds_plans.get(ri) or {}
+        tw_was = (rp.get("treatment") or {}).get("work_areas")
+        cw_was = (rp.get("comparison") or {}).get("work_areas")
+        recs = _arm_records(
+            rng, cfg, "treatment", arm_cfg["treatment"], tgeom, ri, n_rounds, f"{base_id}t", work_areas=tw_was
+        )
+        recs += _arm_records(
+            rng, cfg, "comparison", arm_cfg["comparison"], cgeom, ri, n_rounds, f"{base_id}c", work_areas=cw_was
+        )
         recs += _gen_backchecks(rng, cfg, [r for r in recs if r["form_type"] == "primary"], ri, base_id)
 
         summary = _round_summary(cfg, recs, ri, label, as_of, tw, cw)

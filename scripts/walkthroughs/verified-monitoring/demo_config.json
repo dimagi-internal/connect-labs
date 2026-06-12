@@ -7,7 +7,7 @@
     "name": "Vitamin-A community-health home-visit monitoring",
     "cadence": "bi-monthly"
   },
-  "_study_comment": "Read by the microplans study-design CREATION seeder (scripts/walkthroughs/study-design/ensure_study.py). One round = one two-arm STUDY GROUP of per-ward microplans on the labs-only program -10008 (= -opportunity_id). treatment->intervention arm, comparison->comparison arm; both arms sampled with the SHARED `sampling` config below so they're comparable by construction. 24 PSUs x 12 primary ~= 288, matching the ~285 households/round the monitoring sim (arms.treatment.n_per_round) surveys. `live_demo_round` (1-indexed) is the round the creation walkthrough re-creates live on camera (reset first); the other rounds are the always-present backdrop both narratives share.",
+  "_study_comment": "Read by the microplans study-design CREATION seeder (scripts/walkthroughs/study-design/ensure_study.py). One round = one two-arm STUDY GROUP of per-ward microplans on the labs-only program 10008 (= opportunity_id; labs-only program id is the positive backing opp id, >= 10000 floor). treatment->intervention arm, comparison->comparison arm; both arms sampled with the SHARED `sampling` config below so they're comparable by construction. 24 PSUs x 12 primary ~= 288, matching the ~285 households/round the monitoring sim (arms.treatment.n_per_round) surveys. `live_demo_round` (1-indexed) is the round the creation walkthrough re-creates live on camera (reset first); the other rounds are the always-present backdrop both narratives share.",
   "study": {
     "sampling": {
       "target_clusters": 24,
@@ -36,6 +36,13 @@
     "gps_within_15m": 0.83,
     "backcheck_agreement": 0.78,
     "backcheck_type1_agreement": 0.86
+  },
+  "_primary_rate_comment": "Share of completed surveys that land on the PRIMARY (first-choice) sampled household vs a ranked ALTERNATE backup, when the round is grounded on a live plan. Drawn per surveyor ~ Normal(mean, variance); the flagged surveyor (T6) substitutes far more (flagged_mean), so heavy substitution is part of why they're flagged. A 'good run' = high primary rate.",
+  "primary_rate": {
+    "mean": 0.9,
+    "variance": 0.04,
+    "flagged_mean": 0.58,
+    "flagged_id": "T6"
   },
   "round0": "2025-02",
   "rounds": 6,

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -118,12 +119,50 @@ def _session(c, headers):
     return h
 
 
+def _fetch_rounds_plans(c, h, program_id: int) -> dict:
+    """Live-fetch each study's sampled plans (per arm) via the microplans MCP read
+    tools, so survey GPS can be grounded on the real primary/alternate footprints.
+
+    Returns ``{round_idx: {"treatment": {...}, "comparison": {...}}}`` (round index
+    parsed from the study group's ``R<n>`` name). Empty dict on any failure — the
+    generator then scatters in-ward, so a missing/undeployed read path degrades
+    gracefully instead of breaking the demo."""
+    overview, err = _call(c, h, "microplans_list_plans", {"program_id": program_id})
+    if err or not isinstance(overview, dict) or "groups" not in overview:
+        print("  microplans_list_plans unavailable -> in-ward scatter:", str(overview)[:160])
+        return {}
+    plans_by_id = {p["id"]: p for p in overview.get("plans", [])}
+    rounds: dict = {}
+    for g in overview.get("groups", []):
+        if g.get("kind") != "study":
+            continue
+        m = re.search(r"R(\d+)", g.get("name", ""))
+        if not m:
+            continue
+        ri = int(m.group(1)) - 1
+        roles: dict = {}
+        for pid_s, arm in (g.get("arm_for") or {}).items():
+            role = (
+                "treatment"
+                if arm in ("intervention", "treatment")
+                else ("comparison" if arm in ("control", "comparison") else None)
+            )
+            if role is None:
+                continue
+            pid = int(pid_s)
+            wa, werr = _call(c, h, "microplans_plan_work_areas", {"program_id": program_id, "plan_id": pid})
+            if werr or not isinstance(wa, dict) or not wa.get("work_areas"):
+                continue
+            p = plans_by_id.get(pid, {})
+            roles[role] = {"plan_id": pid, "ward": p.get("region") or p.get("name"), "work_areas": wa["work_areas"]}
+        if roles:
+            rounds[ri] = roles
+    return rounds
+
+
 def main() -> int:
     cfg = json.loads((HERE / "demo_config.json").read_text())
     cfg = {k: v for k, v in cfg.items() if not k.startswith("_")}
-    state, records = build_state(cfg, HERE)
-    print(f"generated {len(records)} records across {len(state['rounds'])} rounds")
-    print(summarize(state))
 
     opp, wf = cfg["opportunity_id"], cfg["workflow_def_id"]
     token = _token()
@@ -132,8 +171,23 @@ def main() -> int:
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
     }
-    with httpx.Client(timeout=180) as c:
+    with httpx.Client(timeout=600) as c:
         h = _session(c, headers)
+        # Guarantee the study plans exist (idempotent; re-run is a no-op), then
+        # live-fetch them so survey GPS grounds on real footprints. The labs-only
+        # program id IS the opportunity id (positive, >= 10_000 floor).
+        ens, eerr = _call(c, h, "microplans_study_ensure", {"generate": True})
+        if eerr:
+            print("  microplans_study_ensure unavailable (continuing):", str(ens)[:160])
+        else:
+            print(f"  study ensure: {json.dumps(ens, default=str)[:200]}")
+        rounds_plans = _fetch_rounds_plans(c, h, opp)
+        grounded = sorted(ri + 1 for ri in rounds_plans)
+        print(f"grounded rounds (on live plans of program {opp}): {grounded or 'none -> in-ward scatter'}")
+        state, records = build_state(cfg, HERE, rounds_plans=rounds_plans)
+        print(f"generated {len(records)} records across {len(state['rounds'])} rounds")
+        print(summarize(state))
+
         run, err = _call(
             c, h, "workflow_create_run", {"definition_id": wf, "opportunity_id": opp, "initial_state": state}
         )
