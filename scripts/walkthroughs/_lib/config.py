@@ -59,6 +59,31 @@ def require_session_file() -> Path:
     return p
 
 
+def session_cookies(*, host: str | None = None) -> dict[str, str]:
+    """Return the labs-host cookies from the Playwright storage state.
+
+    Lets non-Playwright callers (the synthetic generators' discovery +
+    freshness HTTP fetches) reuse the same authenticated session the
+    recorders use — the labs run pages and the workflow snapshot API are
+    session-auth'd, so a plain Bearer token won't do.
+
+    ``host`` defaults to the ``LABS_BASE_URL`` hostname; cookies stored
+    for other domains in the session file (CCHQ, analytics) are filtered
+    out so duplicate names can't shadow the labs ``sessionid``.
+    """
+    import urllib.parse
+
+    p = require_session_file()
+    state = json.loads(p.read_text())
+    host = host or urllib.parse.urlparse(LABS_BASE_URL).hostname or ""
+    out: dict[str, str] = {}
+    for c in state.get("cookies", []):
+        dom = (c.get("domain") or "").lstrip(".")
+        if dom and (host == dom or host.endswith("." + dom)):
+            out[c["name"]] = c["value"]
+    return out
+
+
 def run_ids_path(walkthrough_dir: Path) -> Path:
     return walkthrough_dir / ".run_ids.json"
 

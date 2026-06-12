@@ -39,13 +39,23 @@ The intended final artifact for sharing is the concatenated MP4
 
 ## Pipeline
 
+`regenerate.py` is the **single synthetic-generator entrypoint** — the
+command a canopy `setup:` block invokes before rendering. One run
+generates the data, verifies it, gates on deploy freshness, resolves the
+drill targets, and emits the FLAT vars JSON every downstream consumer
+reads.
+
 ```text
 demo_config.json
    │
-   │  regenerate.py  ──►  labs prod synthetic data
-   │                       writes .run_ids.json + runs verify checks
+   │  regenerate.py
+   │    1. generate   — program_admin_demo_seed MCP tool (server-side on labs)
+   │    2. verify     — _lib/verify smoke checks on the generation result
+   │    3. freshness  — served render_code vs local checkout (abort on stale deploy)
+   │    4. discover   — _lib/discovery PAR-snapshot walk → good/incomplete targets
+   │    5. emit vars  — FLAT .run_ids.json (ids + path-relative URLs + FLW names)
    ▼
-.run_ids.json
+.run_ids.json  (the vars contract — see below)
    │
    ├─►  record_manager_flow.py  ──►  /tmp/par_preview/video_manager/*.webm
    ├─►  record_drill_through.py  ─►  /tmp/par_preview/video/*.webm
@@ -57,16 +67,48 @@ demo_config.json
             └─►  canopy generate_presentation.py  ──►  program-admin-report.html
 ```
 
+**DDD migration direction**: the Playwright recorders are slated to be
+replaced by a canopy DDD unified spec whose `setup:` block runs
+`regenerate.py` and whose scenes interpolate the vars JSON
+(`goto: ${par_url}`, `click: text:Audit #${incomplete_audit_id}`, …).
+Their hard-won selector + flow knowledge is preserved in
+[`ACTIONS_MAP.md`](ACTIONS_MAP.md) — the recorders are deleted only after
+a DDD render proves parity against that map.
+
 ## Files
 
-| File                      | What it does                                                                                                                                                                     |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `demo_config.json`        | The opps + FLW-archetypes + flag-weeks config passed to the synthetic generator. Edit this to change the demo narrative.                                                         |
-| `regenerate.py`           | Loads `demo_config.json`, calls `program_admin_demo_seed`, writes `.run_ids.json`, and runs the verify checks. Requires `LABS_CONNECT_TOKEN`.                                    |
-| `.run_ids.json`           | Generated. Holds `par_run_id`, `wk4_run_id`, `opp_id`, `workflow_def_id`. The recorders read this — never falls back to a stale hardcoded int.                                   |
-| `record_manager_flow.py`  | Playwright recorder for the manager-flow video. Reads `.run_ids.json`; drives clicks via `_lib/recorder.py` primitives.                                                          |
-| `record_drill_through.py` | Playwright recorder for the completed-PAR drill-through. Uses `_lib/discovery.py` to walk the PAR snapshot and pick "good" + "incomplete" drill targets.                         |
-| `capture_walkthrough.py`  | Screenshot pass for the HTML deck. Each scene is keyed by a `target` keyword in `docs/walkthroughs/program-admin-report.yaml`; this script maps target → URL + post-load action. |
+| File                      | What it does                                                                                                                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `demo_config.json`        | The opps + FLW-archetypes + flag-weeks config passed to the synthetic generator. Edit this to change the demo narrative.                                                                                                 |
+| `regenerate.py`           | The synthetic-generator entrypoint: generate (via the `program_admin_demo_seed` MCP tool) → verify → freshness gate → drill-target discovery → emit the FLAT vars JSON. Requires `LABS_MCP_TOKEN` + a labs session file. |
+| `.run_ids.json`           | Generated. The FLAT vars contract (see below) — raw ids, path-relative URLs, and archetype-derived FLW names. The recorders read this — never falls back to a stale hardcoded int.                                       |
+| `ACTIONS_MAP.md`          | Scene-by-scene map of every recorder interaction in canopy action vocabulary, with `${var}` placeholders. Source material for the future DDD unified spec.                                                               |
+| `record_manager_flow.py`  | Playwright recorder for the manager-flow video. Reads `.run_ids.json`; drives clicks via `_lib/recorder.py` primitives.                                                                                                  |
+| `record_drill_through.py` | Playwright recorder for the completed-PAR drill-through. Re-walks the PAR snapshot at record time (the canonical resolution now happens in `regenerate.py`).                                                             |
+| `capture_walkthrough.py`  | Screenshot pass for the HTML deck. Each scene is keyed by a `target` keyword in `docs/walkthroughs/program-admin-report.yaml`; this script maps target → URL + post-load action.                                         |
+
+## Vars contract (.run_ids.json)
+
+FLAT JSON — string/number values only — so a canopy `setup.outputs` block
+can interpolate any key as `${var}`. URLs are **path-relative** (the spec
+carries `base_url`). FLW usernames are archetype-derived at generation
+time so the spec never hardcodes them.
+
+| Key                                            | Meaning                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------- |
+| `generated_at`                                 | ISO timestamp of the generation (staleness check in `_lib/config`). |
+| `par_def_id`, `par_run_id`                     | Program Admin Report definition + completed run.                    |
+| `opp_id`, `workflow_def_id`                    | Primary opp (Northern) + its chc_nutrition definition.              |
+| `wk4_run_id`                                   | Northern's last-week in_progress run (manager-flow target).         |
+| `par_url`, `wk4_url`                           | Run-page paths for the two entry points.                            |
+| `chc_good_url`                                 | Weekly-review path for the good drill run.                          |
+| `audit_good_url`, `task_good_url`              | Good drill: completed audit + closed task pages.                    |
+| `audit_incomplete_url`, `task_incomplete_url`  | Incomplete drill: in-review audit + investigating task pages.       |
+| `good_opp_id/_label`, `good_week_idx`          | Grid-cell coordinates for the good drill cell.                      |
+| `good_run_id`, `good_audit_id`, `good_task_id` | Raw ids (click targets like `Task #${good_task_id}`).               |
+| `incomplete_*` (same shape as `good_*`)        | Grid-cell coordinates + raw ids for the incomplete drill.           |
+| `flagged_flw_manager`                          | FLW the manager audits + coaches live (e.g. `jumoke_n`).            |
+| `flagged_flw_good`, `flagged_flw_incomplete`   | FLWs behind the good / incomplete drills (e.g. `hawa_n`, `ola_s`).  |
 
 ## Architecture
 
@@ -102,12 +144,16 @@ LabsRecord write plumbing.
 ## Running it end-to-end
 
 ```bash
-# 1. Get the OAuth token for labs prod (one-time per session).
-export LABS_CONNECT_TOKEN=...
-# Optional: override the Playwright session file location.
+# 1. Auth (one-time per session):
+#    - a labs MCP PAT for the synthetic generator (or a configured
+#      connect_labs server in ~/.claude.json):
+export LABS_MCP_TOKEN=...
+#    - a labs browser session for the freshness/discovery fetches and the
+#      recorders (run /ace:labs-login; override path via LABS_SESSION_FILE):
 # export LABS_SESSION_FILE=~/.ace/labs-session.json
 
-# 2. Regenerate the synthetic data + write .run_ids.json + verify.
+# 2. Run the synthetic generator: generate + verify + freshness gate +
+#    drill-target discovery + emit the FLAT vars JSON.
 python scripts/walkthroughs/program-admin-report/regenerate.py
 
 # 3. Record the manager-flow prepend.
@@ -146,9 +192,10 @@ This is the main reason `_lib/` exists. To add another demo:
 1. Create a new sibling folder under `scripts/walkthroughs/` (e.g.
    `scripts/walkthroughs/kmc-longitudinal/`).
 2. Write the per-walkthrough config (`demo_config.json` or equivalent).
-3. Write a thin `regenerate.py` that calls your seeder + uses
-   `_lib.config.write_run_ids` to persist whatever ids your recorders
-   need.
+3. Write a thin `regenerate.py` that calls your synthetic generator (via
+   the `connect_labs` MCP — see `_lib/labs_mcp.py`) + uses
+   `_lib.config.write_run_ids` to emit a FLAT vars JSON with every id and
+   path-relative URL your scenes need.
 4. Write `record_*.py` scripts that open a `_lib.recorder.RecorderSession`
    and walk through your scenes.
 5. If your generator can share the chc_nutrition story shape, you can
@@ -160,9 +207,9 @@ This is the main reason `_lib/` exists. To add another demo:
    (~30 lines — pattern of `commcare_connect/mcp/tools/program_admin_demo.py`).
 
 The expensive primitives (cursor overlay, PAR snapshot walker, ffmpeg
-concat, FLW row scroll/click) are already in `_lib/`; the new
-walkthrough should be ~60 LOC of scene sequence + a few hundred lines
-of demo-specific seeder.
+concat, FLW row scroll/click, MCP client, freshness guard) are already in
+`_lib/`; the new walkthrough should be ~60 LOC of scene sequence + a few
+hundred lines of demo-specific synthetic generator.
 
 ## Evolution notes (footguns to watch for)
 
@@ -194,7 +241,7 @@ of demo-specific seeder.
   Create Audit/Create Task menu items flip to "View Audit"/"View Task"
   (state-aware, PR #289) instead of offering a fresh create. Always
   regenerate (which cleans first) before re-recording. The verify
-  checks in `regenerate.py` catch most of these post-seed.
+  checks in `regenerate.py` catch most of these post-generation.
 
 ## Operating playbook (read this before recording after a deploy)
 
@@ -206,41 +253,44 @@ from skipping a step here.
 1. **Land your code** (PR merged to `main`).
 2. **Deploy labs** (`gh workflow run deploy-labs.yml --ref main`) and wait
    for it to report success.
-3. **Wait for worker cutover, then re-seed.** The deploy "succeeding" does
-   NOT mean the new code is live — ECS workers serve the OLD image for
+3. **Wait for worker cutover, then regenerate.** The deploy "succeeding"
+   does NOT mean the new code is live — ECS workers serve the OLD image for
    **2-4 more minutes** (hard-cutover task replacement + gunicorn warm-up).
-   Re-seeding immediately writes stale template code (see "re-seed is the
-   upgrade path" below). Poll: re-seed in a loop, fetch the def via
-   `workflow_get`, and grep the served `render_code` for a string unique to
-   your change; only proceed once it appears.
-4. **Record.** Both recorders run a **freshness preflight**
-   (`_lib/freshness.py`) right after loading their first run page: they
-   compare the server's shipped `render_code` (from the `#workflow-data`
-   json_script) to your local checkout's template (AST-extracted) and
-   **abort loudly on mismatch**. So if you skipped step 3, the recorder
-   tells you instead of silently filming stale UI.
+   Regenerating immediately writes stale template code (see "regeneration is
+   the upgrade path" below). You no longer need to poll by hand:
+   `regenerate.py` runs a **freshness preflight** itself — after generating,
+   it fetches the run pages and compares the served `render_code` (from the
+   `#workflow-data` json_script) to your local checkout's template
+   (AST-extracted, `_lib/freshness.py`) and **aborts loudly on mismatch**
+   with a wait-and-retry message. `SKIP_FRESHNESS=1` bypasses the gate —
+   dangerous; you'd be staging a demo on UI that doesn't match the code you
+   think is live.
+4. **Record.** Both recorders re-run the same freshness check
+   (`assert_page_current`) right after loading their first run page, as a
+   belt-and-braces guard for the time gap between generation and recording.
 5. **Concat + upload** (see "Running it end-to-end").
 
-### Why re-seeding is the upgrade path
+### Why regeneration is the upgrade path
 
-Re-seed does NOT delete workflow definitions (only runs/flags/tasks/
-audits), so a def survives across seeds. The seed's `_refresh_render_code`
-(PR #290) rewrites the reused def's `render_code` from the _currently
-running_ template — so **re-seeding after a deploy is how new render code
-reaches an existing def**. There is no separate "push template" step in the
-golden path. (You CAN hot-push with the `connect_labs` MCP
-`workflow_sync_from_template_file`, but DON'T — see the gotcha below.)
+Regeneration does NOT delete workflow definitions (only runs/flags/tasks/
+audits), so a def survives across runs of the synthetic generator. The
+generator's `_refresh_render_code` (PR #290) rewrites the reused def's
+`render_code` from the _currently running_ template — so **regenerating
+after a deploy is how new render code reaches an existing def**. There is
+no separate "push template" step in the golden path. (You CAN hot-push
+with the `connect_labs` MCP `workflow_sync_from_template_file`, but DON'T
+— see the gotcha below.)
 
 ### Gotchas that cost real time
 
 - **`workflow_sync_from_template_file` is destructive to a live def.** It
   rewrites `config` and `pipeline_sources`, which strips
   `config.templateType` and the pipeline link. A def that loses its
-  `templateType` becomes invisible to the seed's reuse filter
-  (`template_type == "<key>"`), so the next seed creates a _brand-new_ def
-  → unbounded accumulation. We deleted **11 orphan CHC defs** on opp 10000
-  that this produced. Don't hot-push to a def you intend to keep re-seeding
-  against; deploy + re-seed instead.
+  `templateType` becomes invisible to the synthetic generator's reuse
+  filter (`template_type == "<key>"`), so the next generation creates a
+  _brand-new_ def → unbounded accumulation. We deleted **11 orphan CHC
+  defs** on opp 10000 that this produced. Don't hot-push to a def you
+  intend to keep regenerating against; deploy + regenerate instead.
 - **Deploy-cutover lag** — see step 3. This bit us three times before the
   freshness guard existed.
 - **Auto-flags need no reload (PR #294)** — chc merges `ensureAutoFlags`'s
