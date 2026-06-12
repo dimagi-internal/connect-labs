@@ -16,9 +16,20 @@ from shapely.ops import unary_union
 
 from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
-from commcare_connect.microplans.core.footprints import DEFAULT_SOURCES, fetch_buildings, source_counts
-from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
-from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
+from commcare_connect.microplans.core.footprints import (
+    DEFAULT_SOURCES,
+    fetch_buildings,
+    source_counts,
+)
+from commcare_connect.microplans.sampling.cluster import (
+    ClusterConfig,
+    cluster_buildings,
+)
+from commcare_connect.microplans.sampling.sample import (
+    PinConfig,
+    sample_pins,
+    select_psus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +72,18 @@ class FrameConfig:
             target_clusters=_clamp(int(d.get("target_clusters", 25)), 1, 500),
             primary_per_psu=_clamp(int(d.get("primary_per_psu", 8)), 1, 100),
             alternates_per_psu=_clamp(int(d.get("alternates_per_psu", 8)), 0, 100),
-            min_confidence=(None if conf in (None, "", 0) else _clampf(float(conf), 0.0, 1.0)),
+            min_confidence=(
+                None if conf in (None, "", 0) else _clampf(float(conf), 0.0, 1.0)
+            ),
             area_min_m2=_clampf(float(d.get("area_min_m2", 9)), 0.0, 1e6),
             area_max_m2=_clampf(float(d.get("area_max_m2", 330)), 1.0, 1e7),
             # A non-empty list selects those providers; missing/empty falls back to
             # the pilot default so a sample is never silently empty.
-            sources=([str(s) for s in src] if isinstance(src, list) and src else list(DEFAULT_SOURCES)),
+            sources=(
+                [str(s) for s in src]
+                if isinstance(src, list) and src
+                else list(DEFAULT_SOURCES)
+            ),
             reference_point=(float(rp[0]), float(rp[1])) if rp else None,
         )
 
@@ -123,7 +140,12 @@ def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
         if "area_m2" in sub.columns:
             areas.extend(float(a) for a in sub["area_m2"].tolist() if a and a > 0)
         if n >= 3:
-            hull_km2 = transform(tf, MultiPoint(list(zip(sub["lon"], sub["lat"]))).convex_hull).area / 1e6
+            hull_km2 = (
+                transform(
+                    tf, MultiPoint(list(zip(sub["lon"], sub["lat"]))).convex_hull
+                ).area
+                / 1e6
+            )
             if hull_km2 > 0:
                 densities.append(n / hull_km2)
     return {
@@ -155,26 +177,48 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
         area = unary_union(geoms)
         # Fetch once across all providers (confidence-filtered) so we can report the
         # per-source breakdown, then sample only from the chosen sources.
-        all_buildings = fetch_buildings(area, min_confidence=config.min_confidence)
+        all_buildings = fetch_buildings(
+            area, min_confidence=config.min_confidence, with_geom=True
+        )
         src_counts = source_counts(all_buildings)
+        # (lon, lat) → footprint polygon, so each sampled pin's exported work area
+        # can be the real building outline instead of a generic box. Keyed on the
+        # exact centroid the pins carry, so the round-trip join is lossless.
+        geom_by_coord = {
+            (round(float(lo), 7), round(float(la), 7)): gj
+            for lo, la, gj in zip(
+                all_buildings["lon"], all_buildings["lat"], all_buildings["geom_json"]
+            )
+        }
         buildings = (
             all_buildings
             if not config.sources
-            else all_buildings[all_buildings["dataset"].isin(config.sources)].reset_index(drop=True)
+            else all_buildings[
+                all_buildings["dataset"].isin(config.sources)
+            ].reset_index(drop=True)
         )
         filtered = apply_frame_filters(
-            buildings, FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2)
+            buildings,
+            FilterConfig(
+                area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2
+            ),
         )
         clustered = cluster_buildings(
             filtered.buildings,
             ClusterConfig(target_psus=config.target_clusters),
             reference_point=config.reference_point,
         )
-        selected = select_psus(clustered.psu_frame, n_take=config.target_clusters, size_strata=config.size_strata)
+        selected = select_psus(
+            clustered.psu_frame,
+            n_take=config.target_clusters,
+            size_strata=config.size_strata,
+        )
         pins = sample_pins(
             clustered.buildings,
             selected,
-            PinConfig(n_primary=config.primary_per_psu, n_alternate=config.alternates_per_psu),
+            PinConfig(
+                n_primary=config.primary_per_psu, n_alternate=config.alternates_per_psu
+            ),
         )
         stratum_by_cluster = dict(zip(selected["cluster"], selected["stratum"]))
 
@@ -189,7 +233,12 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
                         "role": p["role"],
                         "order_in_cluster": int(p["order_in_cluster"]),
                         "stratum": stratum_by_cluster.get(p["cluster"], "Low"),
-                        "weight": None if pd.isna(p["weight"]) else round(float(p["weight"]), 4),
+                        "weight": None
+                        if pd.isna(p["weight"])
+                        else round(float(p["weight"]), 4),
+                        "geom_json": geom_by_coord.get(
+                            (round(float(p["lon"]), 7), round(float(p["lat"]), 7))
+                        ),
                     },
                 }
             )
@@ -199,10 +248,18 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
             if len(pts) >= 3:
                 hull = MultiPoint(list(zip(pts["lon"], pts["lat"]))).convex_hull
                 hull_features.append(
-                    {"type": "Feature", "geometry": mapping(hull), "properties": {"arm": arm, "cluster": cluster}}
+                    {
+                        "type": "Feature",
+                        "geometry": mapping(hull),
+                        "properties": {"arm": arm, "cluster": cluster},
+                    }
                 )
 
-        stratum_counts = clustered.psu_frame["stratum"].value_counts().to_dict() if len(clustered.psu_frame) else {}
+        stratum_counts = (
+            clustered.psu_frame["stratum"].value_counts().to_dict()
+            if len(clustered.psu_frame)
+            else {}
+        )
         stats.append(
             {
                 "arm": arm,
@@ -217,7 +274,9 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
                 "psus_selected": len(selected),
                 "pins": len(pins),
                 "primaries": int((pins["role"] == "primary").sum()) if len(pins) else 0,
-                "alternates": int((pins["role"] == "alternate").sum()) if len(pins) else 0,
+                "alternates": int((pins["role"] == "alternate").sum())
+                if len(pins)
+                else 0,
                 # Per-arm PSU/building balance summary (mean, sd) for corrected
                 # cross-arm comparability — the selected PSUs the survey visits.
                 **psu_summary(clustered.buildings, selected),
