@@ -288,8 +288,8 @@
               <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
             </details>
             <div id="save-study-row" class="hidden border-t border-gray-100 pt-2 space-y-1">
-              <button type="button" id="btn-save-study" class="button button-sm primary-dark w-full">Create sampling plan</button>
-              <p class="text-[10px] text-gray-500">Saves the sampled work areas as this plan.</p>
+              <button type="button" id="btn-save-study" class="button button-sm primary-dark w-full">{% if plan_id %}Regenerate work areas{% else %}Create sampling plan{% endif %}</button>
+              <p class="text-[10px] text-gray-500">{% if plan_id %}Replaces this plan's work areas with the new sample. CHW assignments and per-area edits are reset.{% else %}Saves the sampled work areas as this plan.{% endif %}</p>
               <p class="text-[10px] text-gray-500" id="save-study-status"></p>
             </div>
           </div>
@@ -1957,13 +1957,34 @@
   on("btn-save-study", "click", async () => {
     const statusEl = $("save-study-status");
     if (!lastSample || !(lastSample.pins.features || []).length) { if (statusEl) statusEl.textContent = "Generate a sample first."; return; }
-    if (!CREATE_PLAN_URL) { if (statusEl) statusEl.textContent = "Save unavailable on this page."; return; }
-    const name = ($("inp-plan-name")?.value || "").trim();
-    const region = ($("inp-plan-region")?.value || "").trim();
-    if (!name && !region) { if (statusEl) statusEl.textContent = "Give the plan a name (or region) first."; return; }
     const btn = $("btn-save-study"); if (btn) btn.disabled = true;
-    if (statusEl) statusEl.textContent = "Saving plan…";
     try {
+      if (PLAN_ID) {
+        // Existing sampling plan → regenerate its work areas in place, same
+        // destructive-rebuild contract coverage uses on "Apply geographic frame".
+        // (The backend regenerate_plan already supports mode="sampling".)
+        if (!REGENERATE_URL) { if (statusEl) statusEl.textContent = "Regenerate URL not available."; return; }
+        if (!confirm("Regenerate work areas? CHW assignments and per-area edits will be wiped.")) return;
+        if (statusEl) statusEl.textContent = "Regenerating work areas…";
+        const data = await Microplans.enqueueAndPoll(
+          REGENERATE_URL,
+          { mode: "sampling", pins: lastSample.pins, hulls: lastSample.hulls,
+            input_areas: collectArmAreas(), grouping: {}, revision: planRevision },
+          { csrf: CSRF, onProgress: (m) => { if (statusEl) statusEl.textContent = m; } },
+        );
+        if (conflictResult(data, (m) => { if (statusEl) statusEl.textContent = m; })) return;
+        if (data.status !== "ok") { if (statusEl) statusEl.textContent = data.detail || "Regenerate failed."; return; }
+        if (statusEl) statusEl.textContent = `Regenerated ${data.work_areas.length} work areas.`;
+        prefillSetupForm(data); render(data);
+        if (footprintsLoaded) loadFootprints();
+        return;
+      }
+      // New plan → create it, then navigate to its review page.
+      if (!CREATE_PLAN_URL) { if (statusEl) statusEl.textContent = "Save unavailable on this page."; return; }
+      const name = ($("inp-plan-name")?.value || "").trim();
+      const region = ($("inp-plan-region")?.value || "").trim();
+      if (!name && !region) { if (statusEl) statusEl.textContent = "Give the plan a name (or region) first."; return; }
+      if (statusEl) statusEl.textContent = "Saving plan…";
       const resp = await post(CREATE_PLAN_URL, {
         name, region, lga: region, state: ($("inp-plan-state")?.value || "").trim(), mode: "sampling",
         pins: lastSample.pins, hulls: lastSample.hulls,
