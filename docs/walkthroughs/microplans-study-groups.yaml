@@ -24,7 +24,7 @@ base_url: https://labs.connect.dimagi.com
 auth:
   type: session
 why_brief: ../../.canopy/ddd/runs/microplans-study-groups-2026-06-05-001/why_brief.yaml
-narrative_locked: false
+narrative_locked: true
 personas:
   maya:
     name: Maya
