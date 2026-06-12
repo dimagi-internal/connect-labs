@@ -1,11 +1,13 @@
 """Map sampled rooftop pins → Connect microplanning WorkAreas.
 
 Building-as-WorkArea (per the design decision): each sampled pin becomes one
-tiny WorkArea — centroid = the pin, boundary = a small square around it,
-building_count = 1, expected_visit_count = 1. This preserves rooftop's
-exact-building pinning inside Connect's first-class microplanning feature
-(assignment, mobile delivery, visit tracking, the inaccessibility/substitution
-flow) without inventing a parallel mechanism.
+tiny WorkArea — centroid = the pin, boundary = the building's real footprint
+polygon (lightly buffered by a small doorstep margin), building_count = 1,
+expected_visit_count = 1. When a pin carries no footprint we fall back to a
+small square around the centroid. This preserves rooftop's exact-building
+pinning inside Connect's first-class microplanning feature (assignment, mobile
+delivery, visit tracking, the inaccessibility/substitution flow) without
+inventing a parallel mechanism.
 
 `role` (primary/alternate), `cluster`, and `order_in_cluster` ride in
 `case_properties` so the FLW app and dashboards can distinguish targets from
@@ -23,6 +25,7 @@ Two output shapes:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 
 from pyproj import Transformer
@@ -77,15 +80,54 @@ class WorkAreaPayload:
     case_properties: dict = field(default_factory=dict)
 
 
-def _square_boundary_wkt(lon: float, lat: float, half_m: float) -> str:
-    """A small axis-aligned square (in meters) centered on the pin, as WGS84 WKT."""
+def _square_boundary_shape(lon: float, lat: float, half_m: float):
+    """A small axis-aligned square (in meters) centered on the pin, as a WGS84 shapely Polygon."""
     epsg = utm_epsg_for(lon, lat)
     fwd = Transformer.from_crs(4326, epsg, always_xy=True)
     inv = Transformer.from_crs(epsg, 4326, always_xy=True)
     x, y = fwd.transform(lon, lat)
     square_m = box(x - half_m, y - half_m, x + half_m, y + half_m)
-    square_wgs = transform(lambda xs, ys, z=None: inv.transform(xs, ys), square_m)
-    return square_wgs.wkt
+    return transform(lambda xs, ys, z=None: inv.transform(xs, ys), square_m)
+
+
+def _square_boundary_wkt(lon: float, lat: float, half_m: float) -> str:
+    return _square_boundary_shape(lon, lat, half_m).wkt
+
+
+def footprint_boundary_shape(
+    geom_json, lon: float, lat: float, buffer_m: float, fallback_half_m: float
+):
+    """The building's real footprint polygon (lightly buffered, in meters), as a WGS84 shapely geom.
+
+    This is the WorkArea boundary an FLW actually receives — the outline of the
+    sampled building plus a small doorstep margin, not a generic box. Falls back to
+    a small square around the centroid when the pin carries no footprint (legacy
+    pins, or a source row whose polygon wasn't cached).
+    """
+    if not geom_json:
+        return _square_boundary_shape(lon, lat, fallback_half_m)
+    try:
+        raw = geom_json if isinstance(geom_json, dict) else json.loads(geom_json)
+        g = shape(raw)
+        if g.is_empty:
+            return _square_boundary_shape(lon, lat, fallback_half_m)
+        if buffer_m and buffer_m > 0:
+            epsg = utm_epsg_for(lon, lat)
+            fwd = Transformer.from_crs(4326, epsg, always_xy=True)
+            inv = Transformer.from_crs(epsg, 4326, always_xy=True)
+            g_m = transform(lambda xs, ys, z=None: fwd.transform(xs, ys), g)
+            g = transform(
+                lambda xs, ys, z=None: inv.transform(xs, ys), g_m.buffer(buffer_m)
+            )
+        return g
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return _square_boundary_shape(lon, lat, fallback_half_m)
+
+
+def _footprint_boundary_wkt(
+    geom_json, lon: float, lat: float, buffer_m: float, fallback_half_m: float
+) -> str:
+    return footprint_boundary_shape(geom_json, lon, lat, buffer_m, fallback_half_m).wkt
 
 
 def build_work_areas(
@@ -95,6 +137,7 @@ def build_work_areas(
     lga: str = "",
     state: str = "",
     boundary_half_m: float = 8.0,
+    boundary_buffer_m: float = 3.0,
 ) -> list[WorkAreaPayload]:
     """Convert a pins FeatureCollection (from sampling.frame) into WorkArea payloads."""
     ward_for_arm = ward_for_arm or {}
@@ -113,7 +156,9 @@ def build_work_areas(
                 ward=ward_for_arm.get(arm, arm),
                 centroid_lon=lon,
                 centroid_lat=lat,
-                boundary_wkt=_square_boundary_wkt(lon, lat, boundary_half_m),
+                boundary_wkt=_footprint_boundary_wkt(
+                    props.get("geom_json"), lon, lat, boundary_buffer_m, boundary_half_m
+                ),
                 building_count=1,
                 expected_visit_count=1,
                 target_population=0,
@@ -164,7 +209,13 @@ def build_coverage_work_areas(
                 building_count=building_count,
                 expected_visit_count=building_count,  # coverage: visit every household
                 target_population=0,
-                case_properties={"cluster": cluster, "arm": arm, "mode": "coverage", "lga": lga, "state": state},
+                case_properties={
+                    "cluster": cluster,
+                    "arm": arm,
+                    "mode": "coverage",
+                    "lga": lga,
+                    "state": state,
+                },
             )
         )
     return out
@@ -176,7 +227,10 @@ def to_api_payload(payloads: list[WorkAreaPayload]) -> list[dict]:
         {
             "slug": p.slug,
             "ward": p.ward,
-            "centroid": {"type": "Point", "coordinates": [p.centroid_lon, p.centroid_lat]},
+            "centroid": {
+                "type": "Point",
+                "coordinates": [p.centroid_lon, p.centroid_lat],
+            },
             "boundary_wkt": p.boundary_wkt,
             "building_count": p.building_count,
             "expected_visit_count": p.expected_visit_count,

@@ -20,7 +20,7 @@ import math
 import statistics
 from datetime import datetime, timezone
 
-from shapely.geometry import shape
+from shapely.geometry import mapping, shape
 
 # Mirror Connect microplanning.models.WorkAreaStatus. Planning only sets
 # UNASSIGNED (default) and EXCLUDED; the execution states (VISITED, …) are kept
@@ -32,7 +32,13 @@ PLANNING_PHASE = "planning"
 
 # The fields Connect's @pghistory.track records on WorkArea. Our planning audit
 # records changes to exactly these, so the two histories share one shape.
-TRACKED_FIELDS = ("expected_visit_count", "work_area_group", "status", "opportunity_access", "excluded_reason")
+TRACKED_FIELDS = (
+    "expected_visit_count",
+    "work_area_group",
+    "status",
+    "opportunity_access",
+    "excluded_reason",
+)
 
 ACTIONS = {"exclude", "unexclude", "resize", "regroup", "reassign"}
 
@@ -46,7 +52,13 @@ PLAN_IN_REVIEW = "in_review"
 PLAN_APPROVED = "approved"
 PLAN_DEPLOYED = "deployed"
 PLAN_ARCHIVED = "archived"
-PLAN_STATUSES = (PLAN_DRAFT, PLAN_IN_REVIEW, PLAN_APPROVED, PLAN_DEPLOYED, PLAN_ARCHIVED)
+PLAN_STATUSES = (
+    PLAN_DRAFT,
+    PLAN_IN_REVIEW,
+    PLAN_APPROVED,
+    PLAN_DEPLOYED,
+    PLAN_ARCHIVED,
+)
 PLANNING_STATUSES = (PLAN_DRAFT, PLAN_IN_REVIEW, PLAN_APPROVED)
 PLAN_STATUS_LABELS = {
     PLAN_DRAFT: "Draft",
@@ -75,7 +87,9 @@ def can_transition(frm: str, to: str) -> bool:
     return to in PLAN_TRANSITIONS.get(frm, set())
 
 
-def transition_plan(plan_data: dict, to: str, actor: str, opportunity_id=None, now: str | None = None) -> dict:
+def transition_plan(
+    plan_data: dict, to: str, actor: str, opportunity_id=None, now: str | None = None
+) -> dict:
     """Move a plan to status ``to`` in place, appending a status_log entry.
     Deploying requires an opportunity_id (the live Connect opp the plan binds to).
     Raises ValueError on an illegal transition."""
@@ -87,7 +101,9 @@ def transition_plan(plan_data: dict, to: str, actor: str, opportunity_id=None, n
     if to == PLAN_DEPLOYED:
         opp = opportunity_id or plan_data.get("opportunity_id")
         if not opp:
-            raise ValueError("deploying requires an opportunity_id (the live Connect opp)")
+            raise ValueError(
+                "deploying requires an opportunity_id (the live Connect opp)"
+            )
         plan_data["opportunity_id"] = opp
     plan_data["status"] = to
     plan_data.setdefault("status_log", []).append(
@@ -96,7 +112,9 @@ def transition_plan(plan_data: dict, to: str, actor: str, opportunity_id=None, n
             "actor": actor,
             "from": frm,
             "to": to,
-            "phase": PLANNING_PHASE if to in PLANNING_STATUSES else ("deploy" if to == PLAN_DEPLOYED else to),
+            "phase": PLANNING_PHASE
+            if to in PLANNING_STATUSES
+            else ("deploy" if to == PLAN_DEPLOYED else to),
         }
     )
     return plan_data
@@ -124,7 +142,9 @@ def _wa_id(props: dict, index: int) -> str:
     return "-".join(parts).lower()
 
 
-def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | None = None) -> list[dict]:
+def materialize_work_areas(
+    mode: str, pins: dict, hulls: dict, grouping: dict | None = None
+) -> list[dict]:
     """Build the editable work-area list from a generated frame.
 
     Coverage: one work area per grid cell, auto-grouped via ``grouping`` (default
@@ -137,6 +157,7 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | 
     to that default.
     """
     from commcare_connect.microplans.core import grouping as grouping_lib
+    from commcare_connect.microplans.core.workarea import footprint_boundary_shape
 
     fc = hulls if mode == "coverage" else pins
     out: list[dict] = []
@@ -148,12 +169,27 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | 
     for i, feat in enumerate(fc.get("features", [])):
         props = feat.get("properties", {}) or {}
         geom = feat.get("geometry")
+        # Sampling pins arrive as Points. The WorkArea an FLW receives must be a
+        # polygon, so we swap each pin for its real building footprint (lightly
+        # buffered), falling back to a small square when the pin has no footprint.
+        # (Coverage cells are already polygons — leave them be.)
+        if mode != "coverage" and geom and geom.get("type") == "Point":
+            lon, lat = geom["coordinates"]
+            geom = mapping(
+                footprint_boundary_shape(props.get("geom_json"), lon, lat, 3.0, 8.0)
+            )
         building_count = int(props.get("building_count", 1))
         # coverage carries expected_visit_count == building_count; sampling pin = 1 visit
-        expected = int(props.get("expected_visit_count", building_count if mode == "coverage" else 1))
+        expected = int(
+            props.get(
+                "expected_visit_count", building_count if mode == "coverage" else 1
+            )
+        )
         arm = props.get("arm", "")
         if mode == "coverage":
-            group = props.get("arm", "intervention")  # placeholder; overridden by grouping below
+            group = props.get(
+                "arm", "intervention"
+            )  # placeholder; overridden by grouping below
         else:
             key = (arm, props.get("cluster", ""))
             if key not in psu_group:
@@ -173,7 +209,11 @@ def materialize_work_areas(mode: str, pins: dict, hulls: dict, grouping: dict | 
                 "opportunity_access": None,  # unassigned worker at planning time
                 "excluded_by": "",
                 "excluded_reason": "",
-                "properties": {k: v for k, v in props.items() if k != "arm"},
+                # geom_json was consumed into `geometry` above; drop it from the
+                # shared bucket (no raw footprint duplicated into Connect-facing props).
+                "properties": {
+                    k: v for k, v in props.items() if k not in ("arm", "geom_json")
+                },
                 "audit": [],
             }
         )
@@ -187,7 +227,9 @@ def _tracked(wa: dict) -> dict:
     return {f: wa.get(f) for f in TRACKED_FIELDS}
 
 
-def apply_action(wa: dict, action: str, params: dict, actor: str, now: str | None = None) -> dict:
+def apply_action(
+    wa: dict, action: str, params: dict, actor: str, now: str | None = None
+) -> dict:
     """Apply one edit to a work area in place and append a phase=planning audit
     event (Connect pghistory shape: old→new over the tracked fields). Returns wa."""
     if action not in ACTIONS:
@@ -196,7 +238,9 @@ def apply_action(wa: dict, action: str, params: dict, actor: str, now: str | Non
 
     if action == "exclude":
         wa["status"] = STATUS_EXCLUDED
-        wa["excluded_reason"] = str(params.get("reason", "")).strip()[:500]  # match Connect max_length
+        wa["excluded_reason"] = str(params.get("reason", "")).strip()[
+            :500
+        ]  # match Connect max_length
         wa["excluded_by"] = actor
     elif action == "unexclude":
         wa["status"] = STATUS_UNASSIGNED
@@ -214,10 +258,14 @@ def apply_action(wa: dict, action: str, params: dict, actor: str, now: str | Non
         # the LLO may pre-group cells (regroup) then assign CHWs to groups, or skip
         # grouping entirely (color-by-CHW falls back to opportunity_access on the map).
         worker = params.get("opportunity_access")
-        wa["opportunity_access"] = str(worker)[:255] if worker not in (None, "") else None
+        wa["opportunity_access"] = (
+            str(worker)[:255] if worker not in (None, "") else None
+        )
 
     after = _tracked(wa)
-    changes = {f: [before[f], after[f]] for f in TRACKED_FIELDS if before[f] != after[f]}
+    changes = {
+        f: [before[f], after[f]] for f in TRACKED_FIELDS if before[f] != after[f]
+    }
     if changes:
         wa.setdefault("audit", []).append(
             {
@@ -245,7 +293,9 @@ def summarize(work_areas: list[dict]) -> dict:
         agg: dict[str, dict] = {}
         for w in active:
             k = w.get(key) or "(unassigned)"
-            a = agg.setdefault(str(k), {"work_areas": 0, "buildings": 0, "expected_visits": 0})
+            a = agg.setdefault(
+                str(k), {"work_areas": 0, "buildings": 0, "expected_visits": 0}
+            )
             a["work_areas"] += 1
             a["buildings"] += int(w.get("building_count", 0))
             a["expected_visits"] += int(w.get("expected_visit_count", 0))
@@ -268,10 +318,15 @@ def _haversine_km(p: list[float], q: list[float]) -> float:
     # Centroids are server-computed [lon, lat] floats, but guard malformed/short
     # input so one bad work area can't blow up the whole plan's KPI computation.
     try:
-        lon1, lat1, lon2, lat2 = map(math.radians, [float(p[0]), float(p[1]), float(q[0]), float(q[1])])
+        lon1, lat1, lon2, lat2 = map(
+            math.radians, [float(p[0]), float(p[1]), float(q[0]), float(q[1])]
+        )
     except (TypeError, ValueError, IndexError):
         return 0.0
-    a = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    a = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    )
     a = min(1.0, max(0.0, a))  # guard float error so asin(sqrt) can't domain-error
     return 2 * _EARTH_KM * math.asin(math.sqrt(a))
 
@@ -294,7 +349,9 @@ def _territory_diameter_km(centroids: list[list[float]]) -> float:
         try:
             from shapely.geometry import MultiPoint
 
-            hull = MultiPoint([(float(c[0]), float(c[1])) for c in centroids]).convex_hull
+            hull = MultiPoint(
+                [(float(c[0]), float(c[1])) for c in centroids]
+            ).convex_hull
             if hull.geom_type == "Polygon":
                 pts = [list(xy) for xy in hull.exterior.coords]
             elif hull.geom_type == "LineString":
@@ -321,7 +378,9 @@ def _std(values: list[float]) -> float | None:
 
 
 def plan_kpis(
-    work_areas: list[dict], input_areas: list[dict] | None = None, area_buildings: int | None = None
+    work_areas: list[dict],
+    input_areas: list[dict] | None = None,
+    area_buildings: int | None = None,
 ) -> dict:
     """Plan-quality KPIs (Neal Lesh's microplan spec): per-FLW territory spread +
     population/building balance + exclusions.
@@ -359,7 +418,9 @@ def plan_kpis(
                 "work_areas": len(was),
                 "buildings": sum(int(w.get("building_count", 0)) for w in was),
                 "population": sum(int(w.get("population") or 0) for w in was),
-                "expected_visits": sum(int(w.get("expected_visit_count", 0)) for w in was),
+                "expected_visits": sum(
+                    int(w.get("expected_visit_count", 0)) for w in was
+                ),
                 "spread_km": round(_territory_diameter_km(cents), 2),
             }
         )
@@ -382,7 +443,9 @@ def plan_kpis(
         # workload balance — population if we have it, buildings always
         "has_population": has_pop,
         "target_population_per_unit": round(pop_total / n) if n and has_pop else 0,
-        "pop_imbalance_pct": _imbalance_pct(pops, pop_total / n) if (n and has_pop) else None,
+        "pop_imbalance_pct": _imbalance_pct(pops, pop_total / n)
+        if (n and has_pop)
+        else None,
         "pop_std": _std(pops) if has_pop else None,
         "target_buildings_per_unit": round(bld_total / n) if n else 0,
         "building_imbalance_pct": _imbalance_pct(blds, bld_total / n) if n else None,
@@ -399,8 +462,13 @@ def plan_kpis(
         # populations for legacy plans that don't carry boundary population
         # on input_areas yet.
         "total_population": (
-            sum(int(ia.get("population") or 0) for ia in (input_areas or []) if isinstance(ia, dict))
-            if input_areas and any(isinstance(ia, dict) and ia.get("population") for ia in input_areas)
+            sum(
+                int(ia.get("population") or 0)
+                for ia in (input_areas or [])
+                if isinstance(ia, dict)
+            )
+            if input_areas
+            and any(isinstance(ia, dict) and ia.get("population") for ia in input_areas)
             else pop_total
         ),
         # "Buildings" + "Pop / building" describe the AREA's footprint universe (the
@@ -418,7 +486,9 @@ def plan_kpis(
         "pop_per_building": None,  # set after total_population is known, below
     }
     if plan["total_buildings"]:
-        plan["pop_per_building"] = round(plan["total_population"] / plan["total_buildings"], 2)
+        plan["pop_per_building"] = round(
+            plan["total_population"] / plan["total_buildings"], 2
+        )
 
     excl_bld = sum(int(w.get("building_count", 0)) for w in excluded)
     excluded_block = {
