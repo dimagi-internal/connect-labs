@@ -59,7 +59,9 @@ personas:
       reviews — which network manager is on top of things and which workers need attention.
     name: Priya Sharma
     role: Program Admin, Continuum Health
+prewarm: true
 record_video: true
+review_mode: human
 scenes:
 - actions:
   - kind: wait_for
@@ -207,8 +209,15 @@ scenes:
     must_succeed: true
     note: exact label - the button reads 'Save Progress' until every photo is decided
     target: text:Complete Image Review
+  - kind: wait_for
+    must_succeed: true
+    note: commit signal - on success the page redirects to the workflow list; waiting
+      for the URL change guarantees the completion POST landed, so the scene can't
+      end on a mid-save frame ('Saving...' spinner / 'Unsaved changes' badge)
+    seconds: 20
+    target: url:**/labs/workflow/**
   - kind: hold
-    seconds: 2
+    seconds: 1.5
   concept_claim: An auditor can review each assessment photo individually with a pass/fail
     decision per photo, and the audit only offers "Complete Image Review" once every
     photo has a decision.
@@ -305,9 +314,11 @@ scenes:
     seconds: 15
     target: css:textarea[placeholder="Instructions for the bot..."]
   - kind: wait_for
-    note: bot list loaded (observed >10s on cold loads in iter0)
-    seconds: 20
-    target: css:select option[value="synthetic-muac-coaching"]
+    note: bot list loaded - wait on the SELECT containing the option, never the
+      option itself (options in a closed select are invisible to visibility
+      waits and burn the full timeout as frozen film)
+    seconds: 10
+    target: css:select:has(option[value="synthetic-muac-coaching"])
   - kind: select
     must_succeed: true
     note: native select - never click it; scope to the bot select (the task page

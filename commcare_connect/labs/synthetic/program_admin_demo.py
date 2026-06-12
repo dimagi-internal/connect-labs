@@ -19,10 +19,14 @@ What this generator produces, per ``demo_config.json``:
   PAR window on purpose: the PAR grid only watches completed weeks, so
   the live manager run never renders as a "NO RUN" hole in the grid.
 - Audit + Task records per (run × FLW) materialized from the FLW's
-  archetype trajectory (``_actions_for_flw_across_weeks``). Flags are
-  NOT seeded — the chc_nutrition render code derives them from the
-  pipeline data at render time and persists them via
-  view.ensureAutoFlags.
+  archetype trajectory (``_actions_for_flw_across_weeks``).
+- Flag records for flagged FLWs on COMPLETED runs, mirrored from the
+  chc_nutrition render code's FLAG_CATALOG (``_auto_flags_for_row``).
+  The render's view.ensureAutoFlags only fires on live (in_progress)
+  runs, so completed seeded runs would otherwise carry no flags and the
+  PAR drill panels would show FLAGS "—" beside tasks asserting the rule.
+  The in_progress current-week run stays flag-free on purpose — the
+  manager-flow walkthrough films ensureAutoFlags creating those live.
 - A ``program_admin_report`` rollup run watching all the chc runs.
 
 Generic primitives (cleanup, backdated-run writer, archetype-driven
@@ -76,9 +80,10 @@ def _actions_for_flw_across_weeks(flw: dict, week_count: int) -> list[dict | Non
     The FLW-archetype → (audit_archetype, task_archetype) mapping below
     is the single place to tune what an "improver_warned" or "suspended_
     repeat_offense" trajectory looks like in terms of concrete audit/task
-    evidence. Flags themselves are not seeded here — the chc_nutrition
-    render code derives them from the pipeline data at render time and
-    persists them via view.ensureAutoFlags.
+    evidence. Flags are not derived from these specs — they come from the
+    pipeline rows themselves (``_auto_flags_for_row``, mirroring the chc
+    render's FLAG_CATALOG), seeded for completed runs and computed live
+    via view.ensureAutoFlags for the in_progress current week.
     """
     archetype = flw["archetype"]
     out: list[dict | None] = [None] * week_count
@@ -211,6 +216,116 @@ def _chc_pipeline_snapshot(opp_id: int, flws: list[dict], week_idx: int) -> dict
     """
     rows = _build_chc_pipeline_rows(opp_id, flws, week_idx)
     return {"data": {"rows": rows}} if rows else {}
+
+
+# ---------------------------------------------------------------------- #
+# Auto-flag mirror — chc_nutrition_analysis's FLAG_CATALOG, in Python
+# ---------------------------------------------------------------------- #
+
+# Labels MUST match the JS catalog in
+# commcare_connect/workflow/templates/chc_nutrition_analysis.py byte for
+# byte — the PAR rollup and the chc pills render these strings directly.
+# Guarded by test_auto_flag_mirror_matches_chc_template_catalog.
+AUTO_FLAG_LABELS = {
+    "sam_low": "SAM rate < 1%",
+    "mam_low": "MAM rate < 3%",
+    "gender_skew": "Gender split outside 40-60%",
+}
+
+
+def _auto_flags_for_row(row: dict) -> list[dict]:
+    """Python mirror of the chc_nutrition render code's FLAG_CATALOG.
+
+    On an OPEN run the render code derives flags from the pipeline rows on
+    mount and persists them via ``view.ensureAutoFlags`` — but that only
+    fires on a live (in_progress) run. Seeded COMPLETED runs are never
+    mounted while open, so without this mirror their FLW rows carry no
+    Flag records and the PAR drill panels render FLAGS "—" right beside a
+    coaching task that asserts the rule. Keys, labels, evidence shapes,
+    and thresholds (SAM < 1%, MAM < 3%, gender outside 40-60%, ≥ 10 MUAC
+    measurements floor) stay in lockstep with the JS catalog.
+    """
+    flags: list[dict] = []
+    mc = row.get("muac_distribution_count") or row.get("muac_measurements_count") or 0
+    sam = (row.get("muac_9_5_10_5_visits") or 0) + (row.get("muac_10_5_11_5_visits") or 0)
+    mam = row.get("muac_11_5_12_5_visits") or 0
+    if mc >= 10:
+        sam_pct = sam / mc * 100
+        if sam_pct < 1:
+            flags.append(
+                {
+                    "flag_key": "sam_low",
+                    "flag_label": AUTO_FLAG_LABELS["sam_low"],
+                    "evidence": {"sam_pct": sam_pct, "n": mc},
+                }
+            )
+        mam_pct = mam / mc * 100
+        if mam_pct < 3:
+            flags.append(
+                {
+                    "flag_key": "mam_low",
+                    "flag_label": AUTO_FLAG_LABELS["mam_low"],
+                    "evidence": {"mam_pct": mam_pct, "n": mc},
+                }
+            )
+    male = row.get("male_count") or 0
+    female = row.get("female_count") or 0
+    total = male + female
+    if total > 0:
+        female_pct = round(female / total * 1000) / 10  # same rounding as the JS genderPct
+        if female_pct < 40 or female_pct > 60:
+            flags.append(
+                {
+                    "flag_key": "gender_skew",
+                    "flag_label": AUTO_FLAG_LABELS["gender_skew"],
+                    "evidence": {"female_pct": female_pct},
+                }
+            )
+    return flags
+
+
+def _seed_auto_flags_for_run(
+    *,
+    fda,
+    rows: list[dict],
+    workflow_run_id: int,
+    opportunity_id: int,
+    monday_iso: str,
+    flagged_by: str,
+) -> int:
+    """Create the Flag records ``ensureAutoFlags`` would have created for a
+    completed run's pipeline rows.
+
+    Stamped a few minutes BEFORE the run's completed_at (the weekly review
+    derives flags while it is still open), attributed to the opp's network
+    manager persona — the actor who would have been driving the review.
+    Returns the number of flags created. Only call this for COMPLETED
+    runs; the in_progress current-week run is deliberately left flag-free
+    so the manager-flow walkthrough films ensureAutoFlags creating them
+    live on mount.
+    """
+    from commcare_connect.labs.synthetic.walkthrough_kit import monday_dt
+
+    created = 0
+    flagged_at_base = monday_dt(monday_iso, hour=8, minute=47)
+    for row in rows:
+        flw_id = row.get("username")
+        if not flw_id:
+            continue
+        for f in _auto_flags_for_row(row):
+            fda.create_flag(
+                workflow_run_id=workflow_run_id,
+                opportunity_id=opportunity_id,
+                flw_id=flw_id,
+                flag_key=f["flag_key"],
+                flag_label=f["flag_label"],
+                evidence=f["evidence"],
+                source="auto",
+                flagged_by=flagged_by,
+                flagged_at=(flagged_at_base + dt.timedelta(seconds=created * 13)).isoformat(),
+            )
+            created += 1
+    return created
 
 
 # ---------------------------------------------------------------------- #
@@ -404,6 +519,19 @@ def program_admin_demo_seed(
                     pipelines=pipelines_snapshot,
                 )
 
+                # Completed runs were never mounted while open, so the chc
+                # render's ensureAutoFlags never ran for them. Seed the same
+                # Flag records it would have created, so the PAR rollup's
+                # drill panels show real flag chips instead of FLAGS "—".
+                flags_seeded = _seed_auto_flags_for_run(
+                    fda=fda,
+                    rows=pipelines_snapshot.get("data", {}).get("rows", []),
+                    workflow_run_id=run_id,
+                    opportunity_id=opp_id,
+                    monday_iso=monday_iso,
+                    flagged_by=nm,
+                )
+
                 actions_taken = 0
                 tasks_spawned = 0
                 audits_spawned = 0
@@ -442,6 +570,7 @@ def program_admin_demo_seed(
                         "actions": actions_taken,
                         "tasks_spawned": tasks_spawned,
                         "audits_spawned": audits_spawned,
+                        "flags_seeded": flags_seeded,
                         "active_flws": active_flw_count,
                     }
                 )
