@@ -14,6 +14,13 @@ PIPELINE_SCHEMA = {
     "version": 1,
     "grouping_key": "username",
     "terminal_stage": "aggregated",
+    # This is a weekly review: each saved run carries a period, and its
+    # snapshot must reflect only that week's visits. `period_scoped` tells the
+    # snapshot builder to re-aggregate this pipeline to the run's
+    # `[period_start, period_end)` visit-date window instead of freezing the
+    # all-time total — so Week 1 and Week 2 snapshots differ (ace#764). The
+    # window is applied at read time from the existing cache; no recompute.
+    "period_scoped": True,
     "fields": [
         # Real fields are injected by the seeding step using kpi_config —
         # the scaffold ships an empty list because field paths depend on the

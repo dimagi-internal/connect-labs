@@ -293,29 +293,27 @@ def create_boundary_plan(
     )
 
 
-@celery_app.task(bind=True)
-def generate_group_samples_task(self, program_id, group_id, config, access_token):
-    """Run the rooftop sampling engine across every member plan of a group, using
-    one shared config so the only intended difference between arms is the area.
+def sample_group_plans(da, group, fcfg, *, progress=None):
+    """Sample every member plan of a group with ONE shared ``FrameConfig``, in-process.
 
-    Each member plan's stored area (``input_areas``) is resolved to geometry,
-    tagged with the plan's study arm, sampled, and the plan regenerated to
-    ``phase:sampled``. Reports per-plan progress; flips the group to status
-    ``sampled`` at the end. Arm stays labs-side (it shapes colour/comparability,
-    never the plan's work areas)."""
+    The shared core of the study "Generate" pass: resolve each plan's stored area
+    (``input_areas``, tagged with the plan's study arm), draw the PSU sample, and
+    regenerate the plan to ``phase:sampled``. The only intended difference between
+    arms is the area — arm stays labs-side (colour/comparability, never the work
+    areas). Returns ``{"results": [...], "created": <n_ok>, "total": <n_members>}``.
+
+    ``progress(done, total, results, ok)`` is called after each plan when supplied.
+    Shared by the Celery ``generate_group_samples_task`` and the study seeder
+    (``microplans.study_seed``), so both sample studies identically."""
     import json as _json
 
     from commcare_connect.labs.admin_boundaries.models import AdminBoundary
-    from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
     from commcare_connect.microplans.core.plan import plan_sample_areas
-    from commcare_connect.microplans.sampling.frame import FrameConfig, generate_frame
+    from commcare_connect.microplans.sampling.frame import generate_frame
 
-    da = ProgramPlanDataAccess(int(program_id), access_token=access_token)
-    group = da.get_group(int(group_id))
     plans_by_id = {p.id: p for p in da.list_plans()}
     members = [plans_by_id[pid] for pid in group.plan_ids if pid in plans_by_id]
     total = len(members)
-    fcfg = FrameConfig.from_payload(config or {})
     results: list[dict] = []
     ok = 0
 
@@ -349,13 +347,34 @@ def generate_group_samples_task(self, program_id, group_id, config, access_token
             except ValueError as e:
                 results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": str(e)})
             except Exception:  # noqa: BLE001
-                logger.exception("generate_group_samples: plan failed (group=%s plan=%s)", group_id, p.id)
+                logger.exception("sample_group_plans: plan failed (group=%s plan=%s)", group.id, p.id)
                 results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": "generate failed"})
-        set_task_progress(self, f"{index + 1}/{total}", results=list(results), created=ok, total=total)
+        if progress is not None:
+            progress(index + 1, total, results, ok)
 
-    if ok:
+    return {"results": results, "created": ok, "total": total}
+
+
+@celery_app.task(bind=True)
+def generate_group_samples_task(self, program_id, group_id, config, access_token):
+    """Celery wrapper around :func:`sample_group_plans`: sample a study group's member
+    plans with one shared config, reporting per-plan progress and flipping the group
+    to status ``sampled`` at the end. Returns the same ``{"status": "ok", ...}``
+    envelope the preview status view expects."""
+    from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
+    from commcare_connect.microplans.sampling.frame import FrameConfig
+
+    da = ProgramPlanDataAccess(int(program_id), access_token=access_token)
+    group = da.get_group(int(group_id))
+    fcfg = FrameConfig.from_payload(config or {})
+
+    def progress(done, total, results, ok):
+        set_task_progress(self, f"{done}/{total}", results=list(results), created=ok, total=total)
+
+    out = sample_group_plans(da, group, fcfg, progress=progress)
+    if out["created"]:
         try:
             da.update_group(int(group_id), status="sampled")
         except Exception:  # noqa: BLE001
             logger.exception("generate_group_samples: status flip failed (group=%s)", group_id)
-    return {"status": "ok", "results": results, "created": ok, "total": total}
+    return {"status": "ok", **out}

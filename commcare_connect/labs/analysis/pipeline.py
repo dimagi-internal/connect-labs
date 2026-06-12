@@ -330,6 +330,26 @@ class AnalysisPipeline:
             return self.backend.get_cached_entity_result(opp_id, config, 0)
         return self.backend.get_cached_visit_result(opp_id, config, 0)
 
+    def get_period_scoped_result_only(
+        self,
+        config: AnalysisPipelineConfig,
+        opportunity_id: int | None = None,
+    ) -> FLWAnalysisResult | None:
+        """Read a period-scoped FLW result from the existing raw-visit cache.
+
+        Like `get_cached_result_only`, this never downloads or recomputes from
+        source — it re-aggregates the already-cached visits with the window in
+        `config.date_from`/`date_to` applied (ace#764). Only the AGGREGATED
+        (FLW) terminal stage is supported; other stages return None (the caller
+        falls back to the all-time cache read). Returns None on a cache miss.
+        """
+        opp_id = opportunity_id or self.opportunity_id
+        if not opp_id:
+            return None
+        if config.terminal_stage != CacheStage.AGGREGATED:
+            return None
+        return self.backend.get_period_scoped_flw_result(opp_id, config)
+
     def _consume_raw_visits_stream(
         self,
         opp_id: int,

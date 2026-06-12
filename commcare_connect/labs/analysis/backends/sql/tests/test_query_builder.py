@@ -5,17 +5,22 @@ GROUP BY / correlated-subquery bug that broke `first`/`last` aggregations
 for every pipeline preview.
 """
 
-from commcare_connect.labs.analysis.backends.sql.query_builder import _aggregation_to_sql, build_flw_aggregation_query
+from commcare_connect.labs.analysis.backends.sql.query_builder import (
+    _aggregation_to_sql,
+    _date_window_where,
+    build_flw_aggregation_query,
+)
 from commcare_connect.labs.analysis.config import AnalysisPipelineConfig, FieldComputation
 
 
-def _config(fields):
+def _config(fields, **kwargs):
     return AnalysisPipelineConfig(
         grouping_key="username",
         fields=fields,
         histograms=[],
         filters={},
         experiment="test",
+        **kwargs,
     )
 
 
@@ -44,6 +49,55 @@ class TestBuildFlwAggregationQuery:
         config = _config([FieldComputation(name="n", path="form.x", aggregation="count")])
         query = build_flw_aggregation_query(config, opportunity_id=999)
         assert "WHERE opportunity_id = 999" in query
+
+    def test_no_date_window_leaves_where_clause_unchanged(self):
+        """Default (no period) path must be byte-identical to pre-ace#764:
+        no visit_date predicate appears unless a window is set."""
+        config = _config([FieldComputation(name="n", path="form.x", aggregation="count")])
+        query = build_flw_aggregation_query(config, opportunity_id=999)
+        assert "visit_date >=" not in query
+        assert "visit_date <" not in query
+
+    def test_period_window_adds_half_open_visit_date_predicate(self):
+        """A set [date_from, date_to) window scopes the aggregation by visit_date
+        — `>= from` and `< to` (half-open, so adjacent weeks don't double-count
+        the boundary day). This is the mechanism that makes Week 1 and Week 2
+        snapshots differ (ace#764)."""
+        config = _config(
+            [FieldComputation(name="n", path="form.x", aggregation="count")],
+            date_from="2026-05-15T00:00:00",
+            date_to="2026-05-22",
+        )
+        query = build_flw_aggregation_query(config, opportunity_id=999)
+        assert "opportunity_id = 999" in query
+        assert "visit_date >= '2026-05-15'" in query
+        assert "visit_date < '2026-05-22'" in query
+
+
+class TestDateWindowWhere:
+    def test_empty_window_is_no_predicate(self):
+        assert _date_window_where(_config([])) == ""
+
+    def test_only_lower_bound(self):
+        frag = _date_window_where(_config([], date_from="2026-05-15"))
+        assert frag == " AND visit_date >= '2026-05-15'"
+
+    def test_only_upper_bound(self):
+        frag = _date_window_where(_config([], date_to="2026-05-22"))
+        assert frag == " AND visit_date < '2026-05-22'"
+
+    def test_iso_datetime_truncated_to_date(self):
+        frag = _date_window_where(_config([], date_from="2026-05-15T13:45:00+00:00"))
+        assert frag == " AND visit_date >= '2026-05-15'"
+
+    def test_malformed_bound_fails_open_no_injection(self):
+        """A non-date string contributes no predicate (and cannot inject SQL)."""
+        frag = _date_window_where(_config([], date_from="2026'; DROP TABLE x;--"))
+        assert frag == ""
+
+    def test_alias_qualifies_column(self):
+        frag = _date_window_where(_config([], date_from="2026-05-15"), alias="sub")
+        assert frag == " AND sub.visit_date >= '2026-05-15'"
 
 
 class TestAggregationToSql:

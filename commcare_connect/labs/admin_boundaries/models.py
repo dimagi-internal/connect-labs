@@ -22,7 +22,7 @@ from:
 - GRID3 (https://grid3.org/) - varies by country
 - HDX/OCHA COD (https://data.humdata.org/) - varies by dataset
 
-In the microplans UI these are shown collectively as "Other 3rd Party Sources"
+In the microplans UI these are shown collectively as "Enriched Boundaries"
 (vs Overture); see ``microplans.core.admin_boundaries.SOURCE_LABELS``.
 """
 

@@ -128,7 +128,17 @@ def workflow_save_snapshot(
             pipelines = {}
         else:
             try:
-                pipelines = wda.get_cached_pipeline_data(definition_id, opportunity_id, aliases=aliases)
+                pipelines = wda.get_cached_pipeline_data(
+                    definition_id,
+                    opportunity_id,
+                    aliases=aliases,
+                    # Period-scope pipelines that opt in, so each saved run
+                    # freezes its own window rather than the all-time aggregate
+                    # (ace#764). No-op for runs without a period / opted-out
+                    # pipelines.
+                    period_start=run.period_start,
+                    period_end=run.period_end,
+                )
             except PipelineCacheMiss as e:
                 raise MCPToolError(
                     "UPSTREAM_ERROR",
