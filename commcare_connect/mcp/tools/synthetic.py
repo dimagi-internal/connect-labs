@@ -367,6 +367,13 @@ def synthetic_generate_from_manifest(
             "gdrive_folder_id": {"type": "string"},
             "org_name": {"type": "string", "default": "Labs Synthetic"},
             "program_name": {"type": "string", "default": "Labs Synthetic"},
+            "program_id": {
+                "type": ["integer", "null"],
+                "default": None,
+                "description": "Labs-only program this opp belongs to (reserved >= 10_000). Set it to file "
+                "this opp under an existing labs-only program (e.g. a study's program) instead of giving "
+                "it its own. Unset = the opp is its own program (program_id = opportunity_id).",
+            },
             "allowed_domains": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -388,6 +395,7 @@ def synthetic_create_labs_only(
     gdrive_folder_id: str,
     org_name: str = "Labs Synthetic",
     program_name: str = "Labs Synthetic",
+    program_id: int | None = None,
     allowed_domains: list[str] | None = None,
     enabled: bool = True,
     notes: str = "",
@@ -399,6 +407,7 @@ def synthetic_create_labs_only(
         gdrive_folder_id=gdrive_folder_id,
         org_name=org_name,
         program_name=program_name,
+        program_id=program_id,
         allowed_domains=allowed_domains if allowed_domains is not None else ["@dimagi.com"],
         enabled=enabled,
         notes=notes,
@@ -412,6 +421,7 @@ def synthetic_create_labs_only(
         "gdrive_folder_id": row.gdrive_folder_id,
         "org_name": row.org_name,
         "program_name": row.program_name,
+        "program_id": row.program_id,
         "allowed_domains": list(row.allowed_domains),
         "labs_only": True,
         "enabled": row.enabled,
