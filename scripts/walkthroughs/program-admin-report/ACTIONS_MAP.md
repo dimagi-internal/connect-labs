@@ -166,12 +166,21 @@ Then:
 ```yaml
 - kind: click # EXACT text match; button reads "Save Progress"
   target: text:Complete Image Review # until all 5 photos are reviewed
+- kind: wait_for # commit signal — the page redirects to the workflow list
+  # once the completion POST lands. Wait for the URL change, NOT a fixed
+  # hold: a hold ends the scene on a mid-save frame ("Saving..." spinner /
+  # "Unsaved changes" badge), i.e. an uncommitted audit (iter3 judge).
+  must_succeed: true
+  seconds: 20
+  target: url:**/labs/workflow/**
 - kind: hold
-  seconds: 2
+  seconds: 1.5
 ```
 
 (`click_text_exact` deliberately skips any networkidle wait — GDrive image
-streaming keeps the network busy forever.)
+streaming keeps the network busy forever. The bulk page's green "Completed
+on …" banner only renders server-side on a later visit, so the redirect IS
+the only reliable on-page committed-state signal.)
 
 ### M4 — Back to the Wk4 review
 
@@ -222,8 +231,10 @@ from `task.data.coaching_prompt` (PR #282).
   target: css:button:has-text("Initiate AI Assistant")
 - kind: wait_for # textarea prefilled: value.length > 50; 15s
   target: css:textarea[placeholder="Instructions for the bot..."]
-- kind: wait_for # synthetic bot option present in a <select>; 10s
-  target: css:select option[value="synthetic-muac-coaching"]
+- kind: wait_for # synthetic bot option present; wait on the SELECT via :has() —
+  # bare `option` targets are invisible inside a closed select and burn the
+  # whole timeout as frozen film (hit in DDD iter1/iter2: 20s dead frame)
+  target: css:select:has(option[value="synthetic-muac-coaching"])
 - kind: select # native <select> — use select, never click; MUST scope to the
   # bot select via :has() — the task page has other <select>s (Status) and a
   # bare css:select silently selects nothing (hit in DDD iter0)
@@ -257,8 +268,12 @@ append lands mid-word. Use `ControlOrMeta+ArrowDown` (+ `End`).
 
 The modal's confirm button reads exactly `Initiate AI` — NOT the outer
 `Initiate AI Assistant` button. Exact-match the text. The synthetic
-short-circuit writes the canned conversation onto `task.data.ocs_conversation`
-and the modal reloads the page ~2s after success.
+short-circuit writes the conversation onto `task.data.ocs_conversation`
+and the modal reloads the page ~2s after success. At initiate time only
+the manager's instruction banner + the assistant's OPENING message exist,
+both stamped now() (≥ the task's own creation — a fuller backdated
+transcript used to predate the task and read as canned; mid-conversation
+and closed states belong to the SEEDED tasks).
 
 ```yaml
 - kind: click

@@ -210,6 +210,182 @@ TEMPLATES: dict[str, list[dict]] = {
             "text": "Closing this task as 'suspended'. I know this is hard news — your supervisor will follow up tomorrow.",
         },
     ],
+    # ------------------------------------------------------------------
+    # Reason-key variants. Key grammar: "<base_key>__<reason_key>".
+    # resolve_template_key() prefers these over the base template when the
+    # task carries a matching reason_key, so the transcript talks about
+    # the SAME issue the task's flag asserts — a gender-split task must
+    # not close on a photo-framing conversation. Reason themes:
+    #   bad_muac_distribution → cherry-picking (suspiciously low SAM/MAM =
+    #       only visiting easy, better-fed households; post-PR-281 flag
+    #       direction)
+    #   gender_skew → screening list skewed outside the 40-60% band
+    #   misleading_photos → suspected photo fraud
+    # ------------------------------------------------------------------
+    "coaching_resolved_clean__bad_muac_distribution": [
+        {
+            "role": "bot",
+            "text": "Hi {flw_name}, your supervisor flagged this week's screening numbers — almost none of the children you measured screened as malnourished, which is unusual for your area. Can we talk through which households you visited?",
+        },
+        {
+            "role": "flw",
+            "text": "Mostly the compounds near the health post — they are the quickest to reach and I can do more visits in a day.",
+        },
+        {
+            "role": "bot",
+            "text": "That explains the pattern. The families closest to the health post tend to be better off — the children most at risk are usually in the farther households. If we only screen the easy ones, we miss the kids who most need referral. Could you plan next week's route to include the outer settlements?",
+        },
+        {
+            "role": "flw",
+            "text": "Yes, I can do the far side on Tuesday and Wednesday when I have more time for the walk.",
+        },
+        {
+            "role": "bot",
+            "text": "Checking back in — this week's screening profile looks much more like the area's expected picture, including two referrals that got children into treatment. That's exactly the change we hoped for.",
+        },
+        {
+            "role": "flw",
+            "text": "The route plan helped. The far households take longer but those visits matter more.",
+        },
+        {
+            "role": "bot",
+            "text": "Agreed. Closing this task as resolved — keep that route rotation going, {flw_name}.",
+        },
+    ],
+    "coaching_resolved_clean__gender_skew": [
+        {
+            "role": "bot",
+            "text": "Hi {flw_name}, quick check-in from this week's review — your screening list was almost entirely boys this week, which is outside the balance we'd expect. Is something making it harder to reach the girls?",
+        },
+        {
+            "role": "flw",
+            "text": "Some mothers were away at the market with their daughters when I visited in the mornings.",
+        },
+        {
+            "role": "bot",
+            "text": "That makes sense. Try splitting your rounds — mornings for some compounds, late afternoon for the ones where you keep missing the girls. Every child under five in the household should be screened, even if it means a second stop.",
+        },
+        {"role": "flw", "text": "I will try afternoon visits for those compounds this week."},
+        {
+            "role": "bot",
+            "text": "Checking back — this week's split looks much healthier, roughly half girls. Whatever you changed, it worked.",
+        },
+        {
+            "role": "flw",
+            "text": "The afternoon visits helped. I also ask the caregiver to bring every child under five before I start.",
+        },
+        {
+            "role": "bot",
+            "text": "That's exactly right. Closing this task as resolved — nice work, {flw_name}.",
+        },
+    ],
+    "coaching_formal_warning__bad_muac_distribution": [
+        {
+            "role": "bot",
+            "text": "Hi {flw_name}. The weekly review flagged your screening numbers — across this week's visits, almost no children screened as SAM or MAM. In your catchment that pattern usually means the harder-to-reach households are being skipped. This needs to be a formal coaching call.",
+        },
+        {
+            "role": "flw",
+            "text": "The far compounds take most of a day to reach. I have been covering the nearer ones to keep my visit count up.",
+        },
+        {
+            "role": "bot",
+            "text": "I appreciate the honesty. But visit counts only matter if they reach the children at risk — and those are concentrated in exactly the households being skipped. Screening only well-fed children near the road isn't coverage, it's the appearance of coverage.",
+        },
+        {"role": "flw", "text": "I understand. I can plan two days each week for the outer settlements."},
+        {
+            "role": "bot",
+            "text": "Good. Your supervisor will review next week's route against the household register, and I'm recording this as a formal warning — if the screening profile stays this skewed next week, the next step is suspension from the roster.",
+        },
+        {"role": "flw", "text": "It will not happen again."},
+        {
+            "role": "bot",
+            "text": "I believe you. Closing this task as 'warned', {flw_name} — reach out if you want help planning the route.",
+        },
+    ],
+    "coaching_formal_warning__gender_skew": [
+        {
+            "role": "bot",
+            "text": "Hi {flw_name}. The weekly review flagged your screening list — over 80% of the children you measured this week were boys, well outside the expected balance. This needs to be a formal coaching conversation.",
+        },
+        {"role": "flw", "text": "I record whoever the family brings to me when I arrive."},
+        {
+            "role": "bot",
+            "text": "I understand, but the protocol is to screen every child under five in the household, not only the ones brought forward. When girls are missed systematically, malnourished girls go unreferred — that's exactly why this threshold exists.",
+        },
+        {"role": "flw", "text": "I see. I did not realize it had become that uneven."},
+        {
+            "role": "bot",
+            "text": "Three things for this week: (1) ask the caregiver to bring every under-five child before you start, (2) record any child you could not screen and why, (3) your supervisor will review next week's split. I'm recording this as a formal warning — if the split stays outside the band, the next step is suspension.",
+        },
+        {"role": "flw", "text": "Understood. I will ask for all the children at every visit."},
+        {
+            "role": "bot",
+            "text": "Thank you, {flw_name}. Closing this task as 'warned'. Your supervisor will check in after next week's review.",
+        },
+    ],
+    "coaching_formal_warning__misleading_photos": [
+        {
+            "role": "bot",
+            "text": "Hi {flw_name}. The audit on this week's visits raised a serious concern — several of your MUAC photos don't appear to show a measurement on a child's arm at all. We need to talk about this formally.",
+        },
+        {"role": "flw", "text": "Some of the photos were taken quickly. Maybe the angle was bad."},
+        {
+            "role": "bot",
+            "text": "The reviewers considered that — but in two photos the tape appears to be wrapped around something other than an arm. I have to be direct: submitting photos that aren't real measurements is treated as fraud, and a child who isn't measured can't be referred.",
+        },
+        {"role": "flw", "text": "I understand. It will not happen again."},
+        {
+            "role": "bot",
+            "text": "For now this is recorded as a formal warning, with re-verification: your supervisor will accompany your next three visits and re-check this week's households. If the audit team sees anything like this again, the program standard is immediate suspension.",
+        },
+        {"role": "flw", "text": "Okay. I will redo the visits with my supervisor."},
+        {
+            "role": "bot",
+            "text": "Thank you. Closing this task as 'warned', {flw_name} — please treat this with the seriousness it carries.",
+        },
+    ],
+    "coaching_in_progress__bad_muac_distribution": [
+        {
+            "role": "bot",
+            "text": "Hi {flw_name}, your supervisor asked me to follow up on this week's review. Your screening numbers came in much lower than expected — almost no children flagged as malnourished, which is unusual for your area. Can you walk me through which households you reached this week?",
+        },
+        {
+            "role": "flw",
+            "text": "Mostly the ones along the main road. The rains made the paths to the far compounds difficult.",
+        },
+        {
+            "role": "bot",
+            "text": "That's understandable — but the far compounds are where most of the at-risk children live, so a week of road-side visits will look exactly like this. Were any of the far households reachable on foot, even if it takes longer?",
+        },
+        {
+            "role": "flw",
+            "text": "Some of them, yes. I can try the dry path on the school side and see which ones I can reach.",
+        },
+        {
+            "role": "bot",
+            "text": "Please do — map out which of the far households you can reach this week and reply here. Once I have your list, your supervisor and I will decide whether the remaining ones need a re-visit plan.",
+        },
+    ],
+    "coaching_in_progress__gender_skew": [
+        {
+            "role": "bot",
+            "text": "Hi {flw_name}, following up from this week's review — your screening list was heavily skewed toward boys this week. Before anything formal, your supervisor wanted to understand what's happening. Can you talk me through it?",
+        },
+        {
+            "role": "flw",
+            "text": "I think it is the timing. The girls are often with their mothers at the market when I come by.",
+        },
+        {
+            "role": "bot",
+            "text": "That would explain it. Could you check your visit log — were the girls recorded as absent, or were those households marked fully screened?",
+        },
+        {"role": "flw", "text": "I am not sure. I will check the log tonight and tell you."},
+        {
+            "role": "bot",
+            "text": "Thanks — once you've checked, reply here. If the households were marked fully screened with the girls missing, we'll need to schedule re-visits for those compounds.",
+        },
+    ],
     "coaching_in_progress": [
         # investigating — mid-conversation, no resolution yet.
         {
@@ -233,6 +409,24 @@ TEMPLATES: dict[str, list[dict]] = {
 }
 
 _DEFAULT_KEY = "positive_reinforcement"
+
+
+def resolve_template_key(base_key: str | None, reason_key: str | None = None) -> str | None:
+    """Resolve the effective template key for a (task archetype, reason) pair.
+
+    Prefers the reason-specific variant (``"<base>__<reason>"``) when one
+    exists in TEMPLATES; falls back to the base key otherwise. This is how
+    a seeded task's coaching transcript stays coherent with the flag that
+    spawned it — a ``gender_skew`` task gets the gender-balance
+    conversation, never a photo-framing one.
+    """
+    if not base_key:
+        return None
+    if reason_key:
+        variant = f"{base_key}__{reason_key}"
+        if variant in TEMPLATES:
+            return variant
+    return base_key
 
 
 def render_transcript(
