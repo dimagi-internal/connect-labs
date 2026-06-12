@@ -1856,10 +1856,10 @@
     if (!map.getLayer("samp-pins-layer")) {
       map.addLayer({ id: "samp-pins-layer", type: "circle", source: "samp-pins",
         paint: {
-          "circle-radius": ["case", ["==", ["get", "role"], "primary"], 5, 3],
+          "circle-radius": ["case", ["==", ["get", "sample_type"], "primary"], 5, 3],
           "circle-color": armPaint("arm", ARM_COLOR.intervention, ARM_COLOR.comparison),
-          "circle-opacity": ["case", ["==", ["get", "role"], "primary"], 0.95, 0.45],
-          "circle-stroke-width": ["case", ["==", ["get", "role"], "primary"], 1.2, 0.5],
+          "circle-opacity": ["case", ["==", ["get", "sample_type"], "primary"], 0.95, 0.45],
+          "circle-stroke-width": ["case", ["==", ["get", "sample_type"], "primary"], 1.2, 0.5],
           "circle-stroke-color": "#ffffff",
         } });
     }
