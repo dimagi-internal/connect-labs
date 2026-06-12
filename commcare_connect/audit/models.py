@@ -34,6 +34,25 @@ class AuditSessionRecord(LocalLabsRecord):
         return self.data.get("overall_result")
 
     @property
+    def completed_at(self):
+        """When the image review was completed (None while in progress).
+
+        Returned as a datetime, parsed from the ISO string the completion
+        flow writes into ``data["completed_at"]`` — the bulk-assessment
+        template formats this with the ``|date`` filter, which silently
+        renders '' for raw strings.
+        """
+        import datetime as dt
+
+        raw = self.data.get("completed_at")
+        if not raw:
+            return None
+        try:
+            return dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+
+    @property
     def notes(self):
         """General audit notes."""
         return self.data.get("notes", "")

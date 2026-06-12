@@ -46,6 +46,7 @@ Usage::
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import sys
 from pathlib import Path
@@ -83,24 +84,43 @@ def _task_path(task_id: int, opp_id: int) -> str:
     return f"/tasks/{task_id}/edit/?opportunity_id={opp_id}"
 
 
+def compute_week_window(completed_weeks: int, *, today: dt.date | None = None) -> tuple[list[str], str]:
+    """Return ``(weeks, current_week)`` — ISO Mondays, computed from today.
+
+    ``weeks`` is the trailing ``completed_weeks`` COMPLETE weeks (the PAR
+    window — it always ends the Sunday before the current week, i.e. at
+    the present). ``current_week`` is this week's Monday — the in-progress
+    manager-flow run, deliberately OUTSIDE the PAR window so the live demo
+    week never renders as a "NO RUN" hole in the grid.
+
+    Dynamic on purpose: the demo previously told a hardcoded November-2025
+    story while live-created records stamped today's date. Anchoring the
+    window to now keeps seeded and live timestamps coherent forever.
+    """
+    today = today or dt.date.today()
+    current_monday = today - dt.timedelta(days=today.weekday())
+    weeks = [(current_monday - dt.timedelta(weeks=completed_weeks - i)).isoformat() for i in range(completed_weeks)]
+    return weeks, current_monday.isoformat()
+
+
 def _derive_manager_flagged_flw(config: dict) -> str | None:
     """The FLW the manager-flow scenes audit + coach live.
 
-    Convention: in the opp whose last week is left in_progress, the FLW
-    whose archetype flags in that final week (``jumoke_n`` in the shipped
-    config). Derived from the config so the walkthrough spec never
-    hardcodes an archetype-derived username.
+    Convention: in the opp that runs the in-progress CURRENT week, the FLW
+    whose archetype flags in that week — trajectory index ``len(weeks)``
+    (``jumoke_n`` in the shipped config). Derived from the config so the
+    walkthrough spec never hardcodes an archetype-derived username.
     """
-    last_idx = len(config.get("weeks", [])) - 1
-    if last_idx < 0:
+    if not config.get("current_week"):
         return None
+    current_idx = len(config.get("weeks", []))
     for opp in config.get("opps", []):
-        if not opp.get("in_progress_last_week"):
+        if not opp.get("in_progress_current_week"):
             continue
         for flw in opp.get("flws", []):
             if flw.get("archetype") == "solid":
                 continue
-            if last_idx in (flw.get("flag_week"), flw.get("second_flag_week")):
+            if current_idx in (flw.get("flag_week"), flw.get("second_flag_week")):
                 return flw["id"]
     return None
 
@@ -148,6 +168,15 @@ def main() -> int:
     config = json.loads(config_path.read_text())
     config.pop("_comment", None)
 
+    # The week window is computed at generation time so the demo stays
+    # current-dated forever: trailing N complete Mondays (the PAR window)
+    # + the current week's Monday (the in-progress manager-flow run).
+    completed_weeks = int(config.pop("completed_weeks", 4))
+    weeks, current_week = compute_week_window(completed_weeks)
+    config["weeks"] = weeks
+    config["current_week"] = current_week
+    print(f"Week window: {weeks[0]} .. {weeks[-1]} (completed) + {current_week} (current, in progress)")
+
     # ---------------- 1. Generate (server-side, via the MCP shim) -------- #
     print("Generating synthetic data via program_admin_demo_seed on labs...")
     with LabsMCPSession() as mcp:
@@ -155,6 +184,7 @@ def main() -> int:
             "program_admin_demo_seed",
             {
                 "weeks": config["weeks"],
+                "current_week": config["current_week"],
                 "opps": config["opps"],
                 "cleanup_first": bool(config.get("cleanup_first", True)),
             },
@@ -171,17 +201,20 @@ def main() -> int:
     if rc:
         return rc
 
-    # Resolve the base ids.
+    # Resolve the base ids. The in-progress run is the CURRENT week,
+    # outside the PAR window — the emitted var keys stay "wk4_*" because
+    # the walkthrough spec references them (the name is historical: it
+    # used to be the 4th window week, it is now the live 5th week).
     par = result["program_admin_report"]
     par_def_id = int(par["definition_id"])
     par_run_id = int(par["run_id"])
     primary_opp_id = int(config["opps"][0]["opportunity_id"])
     primary = next(opp for opp in result["opportunities"] if opp["opportunity_id"] == primary_opp_id)
     workflow_def_id = int(primary["workflow_definition_id"])
-    wk4 = next((w for w in primary["weeks"] if w.get("in_progress")), None)
+    current_wk = next((w for w in primary["weeks"] if w.get("in_progress")), None)
 
     par_url = _run_path(par_def_id, par_run_id, primary_opp_id)
-    wk4_url = _run_path(workflow_def_id, int(wk4["run_id"]), primary_opp_id) if wk4 else None
+    wk4_url = _run_path(workflow_def_id, int(current_wk["run_id"]), primary_opp_id) if current_wk else None
 
     client = _labs_http_client()
 
@@ -193,9 +226,9 @@ def main() -> int:
     print("\nFreshness preflight (served render_code vs local checkout)...")
     _check_freshness(client, par_url, "program_admin_report", label="PAR run page")
     if wk4_url:
-        _check_freshness(client, wk4_url, "chc_nutrition_analysis", label="Wk4 in_progress run page")
+        _check_freshness(client, wk4_url, "chc_nutrition_analysis", label="current-week in_progress run page")
     else:
-        print("  ! no in_progress week configured — skipping chc_nutrition_analysis check")
+        print("  ! no in_progress current week configured — skipping chc_nutrition_analysis check")
 
     # ---------------- 4. Discover drill targets --------------------------- #
     # The PAR-snapshot walk used to run at record time (record_drill_through);
@@ -254,8 +287,11 @@ def main() -> int:
         "flagged_flw_good": good["flw_id"],
         "flagged_flw_incomplete": bad["flw_id"],
     }
-    if wk4:
-        vars_json["wk4_run_id"] = int(wk4["run_id"])
+    if current_wk:
+        # Key names are historical ("wk4" = the old 4th window week); the
+        # run they point at is the CURRENT week's in-progress manager run.
+        # Kept stable because the walkthrough spec interpolates them.
+        vars_json["wk4_run_id"] = int(current_wk["run_id"])
         vars_json["wk4_url"] = wk4_url
     flagged_manager = _derive_manager_flagged_flw(config)
     if flagged_manager:

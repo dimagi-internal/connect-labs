@@ -55,9 +55,20 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
     coherent with the cherry-picking flag (low SAM/MAM = only visiting
     easier, better-nourished households), which is what the post-PR-281
     flag direction means.
+
+    Each turn carries a ``ts`` spread over the preceding ~10 minutes (the
+    task UI renders "Coach · <ts>" per bubble) — identical or missing
+    timestamps on every message read as canned.
     """
+    import datetime as dt
+
+    now = dt.datetime.now(dt.timezone.utc)
+    # Minutes-ago offsets for the 5 turns: system prompt first, then the
+    # exchange unfolding with believable reply gaps, ending just now.
+    offsets = (11, 9, 6, 4, 1)
+    stamps = [(now - dt.timedelta(minutes=m, seconds=(m * 17) % 53)).isoformat() for m in offsets]
     return [
-        {"role": "system", "text": prompt_text},
+        {"role": "system", "text": prompt_text, "ts": stamps[0]},
         {
             "role": "bot",
             "text": (
@@ -66,6 +77,7 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
                 "area — almost no children flagged as malnourished. Can you tell me a bit about "
                 "which households you were able to reach this week?"
             ),
+            "ts": stamps[1],
         },
         {
             "role": "flw",
@@ -73,6 +85,7 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
                 "Mostly the ones close to the health post and along the main road — they're "
                 "quickest to get to and the families are usually expecting me."
             ),
+            "ts": stamps[2],
         },
         {
             "role": "bot",
@@ -83,12 +96,14 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
                 "kids who most need screening. Could you plan next week's route to include a few "
                 "of the further households you'd normally skip?"
             ),
+            "ts": stamps[3],
         },
         {
             "role": "flw",
             "text": (
                 "Okay, that's fair. I'll map out the homes on the far side and include them in " "next week's visits."
             ),
+            "ts": stamps[4],
         },
     ]
 
@@ -139,6 +154,17 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
         if not monday_iso:
             return JsonResponse({"error": "Run is missing period_start"}, status=400)
 
+        # "Audit Last 7 days" is clicked live during the demo — anchor the
+        # audit (and its trailing-7-day visit spread) at TODAY when today
+        # falls inside the run's period, so the audit window reads as the
+        # actual last 7 days at the moment of creation. Fall back to the
+        # run's period_start for backdated/in-the-past runs.
+        import datetime as dt
+
+        period_end = run.data.get("period_end") or run.data.get("state", {}).get("period_end") or monday_iso
+        today_iso = dt.date.today().isoformat()
+        anchor_iso = today_iso if monday_iso <= today_iso <= period_end else monday_iso
+
         # Build the audit's data dict via the same archetype helper the seed
         # uses. visit_id_base = millisecond epoch so each manager click gets
         # a unique pool — running the recorder twice in a session shouldn't
@@ -148,7 +174,7 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
         audit_data = build_audit_data(
             archetype_name="pending_all_clean",
             flw_id=flw_id,
-            monday_iso=monday_iso,
+            monday_iso=anchor_iso,
             opportunity_id=opportunity_id,
             opportunity_name=opp_name,
             workflow_run_id=run_id,

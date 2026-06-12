@@ -27,10 +27,12 @@ from ..tool_registry import register
         "improver_* / suspended_* / new_hire), generates AuditSession + Task "
         "records from named audit_archetype + task_archetype vocabularies "
         "(see commcare_connect/labs/synthetic/archetypes.py), and creates a "
-        "final program_admin_report run watching all opps. Audits attach real "
-        "MUAC stock images so the bulk-assessment view renders thumbnails. "
-        "Pass cleanup_first=true (default) to wipe prior runs/flags/tasks/"
-        "audits for the opps before regenerating (idempotent)."
+        "final program_admin_report run watching all opps. ``weeks`` are the "
+        "PAR window's COMPLETED weeks; ``current_week`` (optional) adds an "
+        "in-progress run for the live manager-flow demo OUTSIDE that window. "
+        "Audits attach real MUAC stock images so the bulk-assessment view "
+        "renders thumbnails. Pass cleanup_first=true (default) to wipe prior "
+        "runs/flags/tasks/audits for the opps before regenerating (idempotent)."
     ),
     input_schema={
         "type": "object",
@@ -40,6 +42,23 @@ from ..tool_registry import register
                 "type": "array",
                 "items": {"type": "string", "description": "ISO Monday date"},
                 "minItems": 1,
+                "description": (
+                    "COMPLETED weeks — the Program Admin Report's watched "
+                    "window. Every week here gets a completed run (unless "
+                    "listed in an opp's missed_week_idxs)."
+                ),
+            },
+            "current_week": {
+                "type": ["string", "null"],
+                "default": None,
+                "description": (
+                    "ISO Monday of the in-progress CURRENT week, outside the "
+                    "PAR window. Opps with in_progress_current_week=true get "
+                    "one extra status=in_progress run for this week with no "
+                    "seeded audits/tasks (the manager-flow walkthrough creates "
+                    "those live). FLW flag_week indices may reference this "
+                    "week as index len(weeks)."
+                ),
             },
             "opps": {
                 "type": "array",
@@ -54,14 +73,15 @@ from ..tool_registry import register
                             "items": {"type": "integer"},
                             "default": [],
                         },
-                        "in_progress_last_week": {
+                        "in_progress_current_week": {
                             "type": "boolean",
                             "default": False,
                             "description": (
-                                "If True, leave the LAST week's run as status=in_progress "
-                                "with no audits/tasks generated. Used to set up "
-                                "manager-flow walkthroughs where the demo recording drives "
-                                "the manager doing the review live."
+                                "If True (and current_week is set), add one "
+                                "status=in_progress run for the current week with no "
+                                "audits/tasks generated. Used to set up manager-flow "
+                                "walkthroughs where the demo recording drives the "
+                                "manager doing the review live."
                             ),
                         },
                         "flws": {
@@ -87,5 +107,6 @@ def program_admin_demo_seed(
     weeks: list[str],
     opps: list[dict],
     cleanup_first: bool = True,
+    current_week: str | None = None,
 ) -> dict[str, Any]:
-    return _seed(user=user, weeks=weeks, opps=opps, cleanup_first=cleanup_first)
+    return _seed(user=user, weeks=weeks, opps=opps, cleanup_first=cleanup_first, current_week=current_week)

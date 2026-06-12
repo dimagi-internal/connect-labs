@@ -13,15 +13,20 @@ recording framework.
 ## What it produces
 
 1. A **synthetic data set** on labs prod (`labs.connect.dimagi.com`):
-   2 opps, 4 weekly chc_nutrition runs each, real audits + tasks per
-   FLW archetype, and a cross-opp Program Admin Report run that watches
-   them. Flags are NOT seeded — chc_nutrition's render code derives them
+   2 opps with 4 COMPLETED weekly chc_nutrition runs each (the PAR
+   window — computed dynamically as the trailing 4 complete Mondays, so
+   the demo is always current-dated), real audits + tasks per FLW
+   archetype, and a cross-opp Program Admin Report run that watches
+   them. Northern completes all 4 weeks (aggregate reads **SOP MET**);
+   Southern misses one and carries the open work (reads **BELOW**).
+   Flags are NOT seeded — chc_nutrition's render code derives them
    from the pipeline data at render time and persists them via
-   `view.ensureAutoFlags`. Northern's last week is left `in_progress`
-   so the manager-flow video can show a real "do the review live"
-   sequence.
+   `view.ensureAutoFlags`. Northern additionally gets an `in_progress`
+   run for the CURRENT week — deliberately OUTSIDE the PAR window, so
+   the manager-flow video can show a real "do the review live"
+   sequence without the grid rendering a NO RUN hole for that week.
 2. A **manager-flow video** (`manager_flow.mp4`, ~40s) — the network
-   manager arriving at the in_progress Wk4 review, the auto-flags
+   manager arriving at the in_progress current-week review, the auto-flags
    appearing on mount, auditing the one flagged FLW (jumoke_n) live
    via the `Create Audit ▾` menu's "Audit Last 7 days" item,
    navigating to the resulting task via the `Create Task ▾` menu's
@@ -77,15 +82,15 @@ a DDD render proves parity against that map.
 
 ## Files
 
-| File                      | What it does                                                                                                                                                                                                             |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `demo_config.json`        | The opps + FLW-archetypes + flag-weeks config passed to the synthetic generator. Edit this to change the demo narrative.                                                                                                 |
-| `regenerate.py`           | The synthetic-generator entrypoint: generate (via the `program_admin_demo_seed` MCP tool) → verify → freshness gate → drill-target discovery → emit the FLAT vars JSON. Requires `LABS_MCP_TOKEN` + a labs session file. |
-| `.run_ids.json`           | Generated. The FLAT vars contract (see below) — raw ids, path-relative URLs, and archetype-derived FLW names. The recorders read this — never falls back to a stale hardcoded int.                                       |
-| `ACTIONS_MAP.md`          | Scene-by-scene map of every recorder interaction in canopy action vocabulary, with `${var}` placeholders. Source material for the future DDD unified spec.                                                               |
-| `record_manager_flow.py`  | Playwright recorder for the manager-flow video. Reads `.run_ids.json`; drives clicks via `_lib/recorder.py` primitives.                                                                                                  |
-| `record_drill_through.py` | Playwright recorder for the completed-PAR drill-through. Re-walks the PAR snapshot at record time (the canonical resolution now happens in `regenerate.py`).                                                             |
-| `capture_walkthrough.py`  | Screenshot pass for the HTML deck. Each scene is keyed by a `target` keyword in `docs/walkthroughs/program-admin-report.yaml`; this script maps target → URL + post-load action.                                         |
+| File                      | What it does                                                                                                                                                                                                                                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `demo_config.json`        | The opps + FLW-archetypes + flag-weeks config passed to the synthetic generator. Edit this to change the demo narrative. The week window itself is NOT in the config — `regenerate.py` computes `completed_weeks` trailing complete Mondays (the PAR window) plus the current week (the in-progress manager run) from today's date. |
+| `regenerate.py`           | The synthetic-generator entrypoint: generate (via the `program_admin_demo_seed` MCP tool) → verify → freshness gate → drill-target discovery → emit the FLAT vars JSON. Requires `LABS_MCP_TOKEN` + a labs session file.                                                                                                            |
+| `.run_ids.json`           | Generated. The FLAT vars contract (see below) — raw ids, path-relative URLs, and archetype-derived FLW names. The recorders read this — never falls back to a stale hardcoded int.                                                                                                                                                  |
+| `ACTIONS_MAP.md`          | Scene-by-scene map of every recorder interaction in canopy action vocabulary, with `${var}` placeholders. Source material for the future DDD unified spec.                                                                                                                                                                          |
+| `record_manager_flow.py`  | Playwright recorder for the manager-flow video. Reads `.run_ids.json`; drives clicks via `_lib/recorder.py` primitives.                                                                                                                                                                                                             |
+| `record_drill_through.py` | Playwright recorder for the completed-PAR drill-through. Re-walks the PAR snapshot at record time (the canonical resolution now happens in `regenerate.py`).                                                                                                                                                                        |
+| `capture_walkthrough.py`  | Screenshot pass for the HTML deck. Each scene is keyed by a `target` keyword in `docs/walkthroughs/program-admin-report.yaml`; this script maps target → URL + post-load action.                                                                                                                                                    |
 
 ## Vars contract (.run_ids.json)
 
@@ -94,21 +99,21 @@ can interpolate any key as `${var}`. URLs are **path-relative** (the spec
 carries `base_url`). FLW usernames are archetype-derived at generation
 time so the spec never hardcodes them.
 
-| Key                                            | Meaning                                                             |
-| ---------------------------------------------- | ------------------------------------------------------------------- |
-| `generated_at`                                 | ISO timestamp of the generation (staleness check in `_lib/config`). |
-| `par_def_id`, `par_run_id`                     | Program Admin Report definition + completed run.                    |
-| `opp_id`, `workflow_def_id`                    | Primary opp (Northern) + its chc_nutrition definition.              |
-| `wk4_run_id`                                   | Northern's last-week in_progress run (manager-flow target).         |
-| `par_url`, `wk4_url`                           | Run-page paths for the two entry points.                            |
-| `chc_good_url`                                 | Weekly-review path for the good drill run.                          |
-| `audit_good_url`, `task_good_url`              | Good drill: completed audit + closed task pages.                    |
-| `audit_incomplete_url`, `task_incomplete_url`  | Incomplete drill: in-review audit + investigating task pages.       |
-| `good_opp_id/_label`, `good_week_idx`          | Grid-cell coordinates for the good drill cell.                      |
-| `good_run_id`, `good_audit_id`, `good_task_id` | Raw ids (click targets like `Task #${good_task_id}`).               |
-| `incomplete_*` (same shape as `good_*`)        | Grid-cell coordinates + raw ids for the incomplete drill.           |
-| `flagged_flw_manager`                          | FLW the manager audits + coaches live (e.g. `jumoke_n`).            |
-| `flagged_flw_good`, `flagged_flw_incomplete`   | FLWs behind the good / incomplete drills (e.g. `hawa_n`, `ola_s`).  |
+| Key                                            | Meaning                                                                                                                     |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `generated_at`                                 | ISO timestamp of the generation (staleness check in `_lib/config`).                                                         |
+| `par_def_id`, `par_run_id`                     | Program Admin Report definition + completed run.                                                                            |
+| `opp_id`, `workflow_def_id`                    | Primary opp (Northern) + its chc_nutrition definition.                                                                      |
+| `wk4_run_id`                                   | Northern's CURRENT-week in_progress run (manager-flow target). Key name is historical; the run sits outside the PAR window. |
+| `par_url`, `wk4_url`                           | Run-page paths for the two entry points.                                                                                    |
+| `chc_good_url`                                 | Weekly-review path for the good drill run.                                                                                  |
+| `audit_good_url`, `task_good_url`              | Good drill: completed audit + closed task pages.                                                                            |
+| `audit_incomplete_url`, `task_incomplete_url`  | Incomplete drill: in-review audit + investigating task pages.                                                               |
+| `good_opp_id/_label`, `good_week_idx`          | Grid-cell coordinates for the good drill cell.                                                                              |
+| `good_run_id`, `good_audit_id`, `good_task_id` | Raw ids (click targets like `Task #${good_task_id}`).                                                                       |
+| `incomplete_*` (same shape as `good_*`)        | Grid-cell coordinates + raw ids for the incomplete drill.                                                                   |
+| `flagged_flw_manager`                          | FLW the manager audits + coaches live (e.g. `jumoke_n`).                                                                    |
+| `flagged_flw_good`, `flagged_flw_incomplete`   | FLWs behind the good / incomplete drills (e.g. `hawa_n`, `ola_s`).                                                          |
 
 ## Architecture
 

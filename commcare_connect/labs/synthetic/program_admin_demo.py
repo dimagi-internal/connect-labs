@@ -10,8 +10,14 @@ What this generator produces, per ``demo_config.json``:
 
 - A ``chc_nutrition_analysis`` workflow definition per opportunity,
   reused on re-runs.
-- One backdated workflow_run per (opp × week) — last week of the
-  first opp can be left ``in_progress`` for manager-flow walkthroughs.
+- One backdated, COMPLETED workflow_run per (opp × week). ``weeks`` is
+  the Program Admin Report's window — every week in it is a finished
+  week, so a fully-compliant opp reads SOP MET on the PAR aggregate.
+- Optionally one ``in_progress`` run for the CURRENT week
+  (``current_week`` + per-opp ``in_progress_current_week``) — the
+  manager-flow walkthrough target. The current week sits OUTSIDE the
+  PAR window on purpose: the PAR grid only watches completed weeks, so
+  the live manager run never renders as a "NO RUN" hole in the grid.
 - Audit + Task records per (run × FLW) materialized from the FLW's
   archetype trajectory (``_actions_for_flw_across_weeks``). Flags are
   NOT seeded — the chc_nutrition render code derives them from the
@@ -271,17 +277,25 @@ def program_admin_demo_seed(
     weeks: list[str],
     opps: list[dict],
     cleanup_first: bool = True,
+    current_week: str | None = None,
 ) -> dict[str, Any]:
     """Seed the full PAR demo: per-opp chc_nutrition runs + a PAR rollup.
 
     Inputs:
-      ``weeks`` — list of ISO Monday dates, one per chc_nutrition run.
+      ``weeks`` — list of ISO Monday dates, one per COMPLETED chc_nutrition
+          run. This is also the Program Admin Report's watched window.
       ``opps`` — list of opp configs, each with:
           opportunity_id, label, network_manager, flws (list of FLW dicts
           with id + archetype + per-archetype params), and optionally
-          missed_week_idxs + in_progress_last_week.
+          missed_week_idxs + in_progress_current_week.
       ``cleanup_first`` — wipe prior runs/flags/tasks/audits for the
           opps before re-seeding. Default True.
+      ``current_week`` — ISO Monday of the in-progress CURRENT week,
+          outside the PAR window. Opps with ``in_progress_current_week``
+          get one extra status=in_progress run for this week with no
+          seeded audits/tasks (the manager-flow walkthrough creates those
+          live). FLW ``flag_week`` indices may reference this week as
+          index ``len(weeks)``.
     """
     # Defensive: some MCP clients double-encode list args as JSON strings
     # when their cached schema doesn't know the property is an array. Parse
@@ -328,7 +342,7 @@ def program_admin_demo_seed(
         opp_id = opp_cfg["opportunity_id"]
         flws = opp_cfg["flws"]
         missed = set(opp_cfg.get("missed_week_idxs", []))
-        in_progress_last_week = bool(opp_cfg.get("in_progress_last_week", False))
+        in_progress_current_week = bool(opp_cfg.get("in_progress_current_week", False)) and bool(current_week)
         nm = opp_cfg["network_manager"]
 
         wda = WorkflowDataAccess(opportunity_id=opp_id, access_token=token)
@@ -368,26 +382,25 @@ def program_admin_demo_seed(
 
             watched_sources.append({"opportunity_id": opp_id, "workflow_definition_id": definition.id})
 
-            per_flw_specs = {f["id"]: _actions_for_flw_across_weeks(f, week_count) for f in flws}
+            # FLW trajectories cover the completed window plus (when this
+            # opp runs the live demo) the in-progress current week, whose
+            # index is len(weeks).
+            trajectory_week_count = week_count + (1 if in_progress_current_week else 0)
+            per_flw_specs = {f["id"]: _actions_for_flw_across_weeks(f, trajectory_week_count) for f in flws}
 
             week_summaries: list[dict] = []
-            last_week_idx = week_count - 1
             for week_idx, monday_iso in enumerate(weeks):
                 if week_idx in missed:
                     week_summaries.append({"week": monday_iso, "ran": False})
                     continue
 
-                # Manager-demo: leave the LAST week's run as in_progress with
-                # no audits/tasks generated; the walkthrough recorder
-                # writes those live so viewers see the flow.
-                is_in_progress_week = in_progress_last_week and week_idx == last_week_idx
                 pipelines_snapshot = _chc_pipeline_snapshot(opp_id, flws, week_idx)
                 run_id = create_backdated_workflow_run(
                     wda=wda,
                     definition_id=definition.id,
                     opportunity_id=opp_id,
                     monday_iso=monday_iso,
-                    in_progress=is_in_progress_week,
+                    in_progress=False,
                     pipelines=pipelines_snapshot,
                 )
 
@@ -400,8 +413,6 @@ def program_admin_demo_seed(
                     if spec is None:
                         continue
                     active_flw_count += 1
-                    if is_in_progress_week:
-                        continue
                     if spec.get("task_archetype"):
                         tasks_spawned += 1
                     if spec.get("audit_archetype"):
@@ -427,10 +438,39 @@ def program_admin_demo_seed(
                         "week": monday_iso,
                         "ran": True,
                         "run_id": run_id,
-                        "in_progress": is_in_progress_week,
+                        "in_progress": False,
                         "actions": actions_taken,
                         "tasks_spawned": tasks_spawned,
                         "audits_spawned": audits_spawned,
+                        "active_flws": active_flw_count,
+                    }
+                )
+
+            # Manager-demo: one extra in_progress run for the CURRENT week
+            # (outside the PAR window) with no audits/tasks generated; the
+            # walkthrough recorder writes those live so viewers see the flow.
+            if in_progress_current_week:
+                week_idx = week_count
+                pipelines_snapshot = _chc_pipeline_snapshot(opp_id, flws, week_idx)
+                run_id = create_backdated_workflow_run(
+                    wda=wda,
+                    definition_id=definition.id,
+                    opportunity_id=opp_id,
+                    monday_iso=current_week,
+                    in_progress=True,
+                    pipelines=pipelines_snapshot,
+                )
+                active_flw_count = sum(1 for f in flws if per_flw_specs[f["id"]][week_idx] is not None)
+                week_summaries.append(
+                    {
+                        "week": current_week,
+                        "ran": True,
+                        "run_id": run_id,
+                        "in_progress": True,
+                        "current_week": True,
+                        "actions": 0,
+                        "tasks_spawned": 0,
+                        "audits_spawned": 0,
                         "active_flws": active_flw_count,
                     }
                 )
@@ -483,8 +523,13 @@ def program_admin_demo_seed(
         # post-deploy template changes too.
         _refresh_render_code(par_wda, par_def, "program_admin_report")
 
-        last_monday = weeks[-1]
-        par_completed_at = (monday_dt(last_monday) + dt.timedelta(days=1)).isoformat()
+        # The PAR run "concludes" once its window is over: Monday morning of
+        # the current week when one is configured, else the day after the
+        # last watched Monday (legacy shape).
+        if current_week:
+            par_completed_at = monday_dt(current_week, hour=8).isoformat()
+        else:
+            par_completed_at = (monday_dt(weeks[-1]) + dt.timedelta(days=1)).isoformat()
         window_start = weeks[0]
         # End window at today+1 so the filter catches the seeded runs even
         # if completed_at is the historical Monday.
