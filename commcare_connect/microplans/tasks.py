@@ -14,6 +14,23 @@ Each task returns the same response envelope the old synchronous view returned �
 for an *expected*, user-actionable ``ValueError`` (e.g. "area too large"). An
 unexpected exception is allowed to propagate so Celery marks the task FAILURE
 and the status view surfaces a generic message without leaking internals.
+
+Plan lifecycle (how a plan gets its work areas)
+-----------------------------------------------
+A plan's ``phase`` is derived from whether it has work areas yet (see
+``PlanRecord.phase``): ``"boundary"`` (area defined in ``input_areas``, no work
+areas) → ``"sampled"`` (work areas exist). The two modes reach ``sampled``
+differently:
+
+* **Coverage** is sampled *at creation* — gridding a ward into cells is cheap and
+  deterministic, so ``create_plan`` materialises the grid in one step.
+* **Sampling** is *two-step* — a plan is created **boundary-only**, then the PSU
+  sample (PPS → primary/alternate) is drawn as a separate, config-driven pass. This
+  split exists because sampling is tunable (PSU count, sources, confidence) and,
+  for a two-arm study, every arm must be sampled with one shared config for
+  comparability. The sampling pass runs per-plan in the editor ("Generate sample")
+  or for a whole study at once via ``generate_group_samples_task`` ("Generate" on
+  the study page) — both call ``generate_frame`` then ``regenerate_plan``.
 """
 
 import logging
@@ -129,12 +146,18 @@ def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, acces
 
 @celery_app.task(bind=True)
 def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_size_m, access_token, group_id=None):
-    """Create N draft plans from confirmed admin boundaries — one per ward.
+    """Create one draft plan per confirmed admin boundary (one ward each), on the worker.
 
-    Unlike the old inline streaming view, each ward is GRIDDED here: coverage plans
-    run ``generate_coverage_frame`` over the ward boundary (the Overture fetch +
-    clustering, which is why this is on the worker, not the web tier) so the plan is
-    a real grid of work areas rather than one cell covering the whole ward.
+    Plans get their work areas one of two ways (see ``PlanRecord.phase`` and the
+    module docstring's "Plan lifecycle"):
+
+    * **Coverage** is sampled at creation — each ward is gridded into work areas via
+      ``generate_coverage_frame`` (the Overture fetch + clustering, which is why this
+      runs on the worker, not the web tier).
+    * **Sampling** is two-step — the plan is created *boundary-only*
+      (``phase="boundary"``: the ward lives in ``input_areas``, no work areas yet);
+      the PSU sample is drawn later as its own config-driven pass (study "Generate" →
+      ``generate_group_samples_task``, or the single-plan editor).
 
     Reports incremental per-ward progress via ``set_task_progress`` (a growing
     ``results`` list in the task meta) so the front-end can flip each row's pill as
@@ -171,13 +194,13 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
         display_name = name or boundary.name
         row["name"] = display_name
         try:
-            ward_geojson = _ward_grid_hulls(boundary, mode, cell_size_m)
+            initial_hulls = _initial_plan_hulls(boundary, mode, cell_size_m)
             plan = da.create_plan(
                 region=display_name,
                 name=display_name,
                 mode=mode,
                 pins={"type": "FeatureCollection", "features": []},
-                hulls=ward_geojson,
+                hulls=initial_hulls,
                 input_areas=[
                     {
                         "kind": "admin_boundary",
@@ -213,30 +236,26 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
     return {"status": "ok", "results": results, "created": ok, "total": total}
 
 
-def _ward_grid_hulls(boundary, mode, cell_size_m):
-    """Grid a ward boundary into the ``hulls`` FeatureCollection create_plan expects.
+def _initial_plan_hulls(boundary, mode, cell_size_m):
+    """The ``hulls`` FeatureCollection ``create_plan`` materialises into work areas
+    at creation, by mode.
 
-    Coverage: tile the ward via ``generate_coverage_frame`` (one cell per work area).
-    Sampling/other: fall back to the single-feature boundary (one work area)."""
-    import json
-
-    geom_geojson = json.loads(boundary.geometry.geojson)
+    * **Coverage** is sampled at creation: tile the ward into a grid via
+      ``generate_coverage_frame`` (one work area per cell).
+    * **Sampling** is two-step: the plan is created *boundary-only* (no work areas;
+      ``phase="boundary"`` — the ward lives in ``input_areas``), and the PSU sample
+      is drawn later by ``generate_group_samples_task`` / the single-plan editor.
+      So there are no hulls yet — and ``materialize_work_areas`` reads ``pins``, not
+      ``hulls``, for sampling anyway — hence an empty collection."""
     if mode == "coverage":
+        import json
+
         from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
 
         cfg = CoverageConfig.from_payload({"cell_size_m": cell_size_m})
-        result = generate_coverage_frame([{"geometry": geom_geojson}], cfg)
+        result = generate_coverage_frame([{"geometry": json.loads(boundary.geometry.geojson)}], cfg)
         return result.areas_geojson
-    return {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "properties": {"boundary_id": boundary.boundary_id, "name": boundary.name},
-                "geometry": geom_geojson,
-            }
-        ],
-    }
+    return {"type": "FeatureCollection", "features": []}
 
 
 @celery_app.task(bind=True)
