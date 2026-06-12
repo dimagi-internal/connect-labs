@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -37,38 +36,36 @@ logger = logging.getLogger(__name__)
 
 
 def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[dict]:
-    """An in-progress coaching transcript suitable for the task page.
+    """The conversation state that exists the moment coaching is INITIATED.
 
     Structure:
       1. A ``system`` entry holding the manager's *instruction* to the
          assistant (the "Prompt Instructions" the manager typed). This
          is rendered as a distinct setup banner — NOT as the assistant's
          first chat message — so viewers see "here's what the assistant
-         was told to do" separately from the conversation it then had.
-      2. The assistant's own opening message (generated from, but not
+         was told to do" separately from the conversation it then has.
+      2. The assistant's OPENING message only (generated from, but not
          echoing, the instruction).
-      3. The worker's reply, the assistant's coaching, and the worker's
-         acknowledgement.
 
-    The conversation deliberately stops mid-flow (no closing message) to
-    convey "still open" — matching the demo narrative. It's written to be
-    coherent with the cherry-picking flag (low SAM/MAM = only visiting
-    easier, better-nourished households), which is what the post-PR-281
-    flag direction means.
+    Nothing else exists yet — the worker hasn't replied, because the
+    coaching was started seconds ago. Both entries are stamped now(), so
+    no message can predate the task's own creation. (An earlier version
+    materialized a complete 4-turn exchange with timestamps backdated up
+    to ~11 minutes, which produced chat bubbles OLDER than the task they
+    belonged to — an instant tell that the conversation was canned.)
+    Mid-conversation and closed coaching states are the SEEDED tasks' job
+    (see ``generator/ocs_templates.py`` reason-key variants), not the
+    live initiate flow's.
 
-    Each turn carries a ``ts`` spread over the preceding ~10 minutes (the
-    task UI renders "Coach · <ts>" per bubble) — identical or missing
-    timestamps on every message read as canned.
+    The opening message is written to be coherent with the cherry-picking
+    flag (low SAM/MAM = only visiting easier, better-nourished
+    households), which is what the post-PR-281 flag direction means.
     """
     import datetime as dt
 
     now = dt.datetime.now(dt.timezone.utc)
-    # Minutes-ago offsets for the 5 turns: system prompt first, then the
-    # exchange unfolding with believable reply gaps, ending just now.
-    offsets = (11, 9, 6, 4, 1)
-    stamps = [(now - dt.timedelta(minutes=m, seconds=(m * 17) % 53)).isoformat() for m in offsets]
     return [
-        {"role": "system", "text": prompt_text, "ts": stamps[0]},
+        {"role": "system", "text": prompt_text, "ts": now.isoformat()},
         {
             "role": "bot",
             "text": (
@@ -77,33 +74,7 @@ def _coaching_conversation(prompt_text: str, flw_name: str = "there") -> list[di
                 "area — almost no children flagged as malnourished. Can you tell me a bit about "
                 "which households you were able to reach this week?"
             ),
-            "ts": stamps[1],
-        },
-        {
-            "role": "flw",
-            "text": (
-                "Mostly the ones close to the health post and along the main road — they're "
-                "quickest to get to and the families are usually expecting me."
-            ),
-            "ts": stamps[2],
-        },
-        {
-            "role": "bot",
-            "text": (
-                "That's a sensible way to cover a lot of visits, but those closer households tend "
-                "to be better off — the children most at risk of malnutrition are often in the "
-                "harder-to-reach homes further out. If we only see the easy ones, we can miss the "
-                "kids who most need screening. Could you plan next week's route to include a few "
-                "of the further households you'd normally skip?"
-            ),
-            "ts": stamps[3],
-        },
-        {
-            "role": "flw",
-            "text": (
-                "Okay, that's fair. I'll map out the homes on the far side and include them in " "next week's visits."
-            ),
-            "ts": stamps[4],
+            "ts": (now + dt.timedelta(seconds=4)).isoformat(),
         },
     ]
 
@@ -166,10 +137,16 @@ def manager_audit_create_api(request: HttpRequest, run_id: int) -> JsonResponse:
         anchor_iso = today_iso if monday_iso <= today_iso <= period_end else monday_iso
 
         # Build the audit's data dict via the same archetype helper the seed
-        # uses. visit_id_base = millisecond epoch so each manager click gets
-        # a unique pool — running the recorder twice in a session shouldn't
-        # collide visit_ids across audits.
-        visit_id_base = int(time.time() * 1000) & 0x7FFFFFFF
+        # uses. The base comes from live_visit_id_base() so live audits'
+        # photo cards render visit ids in the SAME 8-digit synthetic
+        # namespace as the seeded audits (a previous ms-epoch base produced
+        # 11-digit ids — two visibly different id grammars on the same
+        # audit UI). Time-derived, so each manager click gets a distinct
+        # pool — running the recorder twice in a session won't collide
+        # visit_ids across audits.
+        from commcare_connect.labs.synthetic.walkthrough_kit import live_visit_id_base
+
+        visit_id_base = live_visit_id_base()
         opp_name = run.data.get("opportunity_name") or ""  # cosmetic only
         audit_data = build_audit_data(
             archetype_name="pending_all_clean",

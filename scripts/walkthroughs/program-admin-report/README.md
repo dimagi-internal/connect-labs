@@ -19,9 +19,10 @@ recording framework.
    archetype, and a cross-opp Program Admin Report run that watches
    them. Northern completes all 4 weeks (aggregate reads **SOP MET**);
    Southern misses one and carries the open work (reads **BELOW**).
-   Flags are NOT seeded — chc_nutrition's render code derives them
-   from the pipeline data at render time and persists them via
-   `view.ensureAutoFlags`. Northern additionally gets an `in_progress`
+   COMPLETED runs get seeded Flag records mirroring what the chc render's
+   `view.ensureAutoFlags` would have created (it only fires on live runs,
+   so without seeding the PAR drill panels showed FLAGS "—" beside tasks
+   asserting the rule). Northern additionally gets an `in_progress`
    run for the CURRENT week — deliberately OUTSIDE the PAR window, so
    the manager-flow video can show a real "do the review live"
    sequence without the grid rendering a NO RUN hole for that week.

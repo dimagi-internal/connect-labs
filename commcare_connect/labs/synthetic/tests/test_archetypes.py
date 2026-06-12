@@ -529,3 +529,97 @@ def test_closed_suspended_fraud_uses_fraud_template():
     bot_messages = " ".join(m["text"] for m in data["ocs_conversation"] if m["role"] == "bot").lower()
     # The fraud template specifically mentions the photo-not-of-a-child finding
     assert "finger" in bot_messages or "fraud" in bot_messages or "real measurements" in bot_messages
+
+
+# ---------------------------------------------------------------------------
+# Reason-key conversation variants — a seeded coaching transcript must talk
+# about the SAME issue the task's flag asserts (round-2 realism fixes).
+# ---------------------------------------------------------------------------
+
+
+def _task_for_reason(archetype_name: str, reason_key: str | None, flw_id: str = "isha_n") -> dict:
+    return build_task_data(
+        archetype_name=archetype_name,
+        flw_id=flw_id,
+        monday_iso="2026-05-04",
+        opportunity_id=10000,
+        workflow_run_id=77,
+        audit_session_id=None,
+        title=f"Coach {flw_id} — demo",
+        creator_name="amani_nm",
+        reason_key=reason_key,
+    )
+
+
+def _transcript_text(data: dict) -> str:
+    return " ".join(m["text"].lower() for m in data["ocs_conversation"])
+
+
+def test_gender_split_task_never_closes_on_photo_conversation():
+    """The iter3 judge's showcase drill: isha_n's gender-split flag closed on
+    a photo-framing conversation. The gender_skew variant must discuss the
+    screening balance, never photo quality."""
+    data = _task_for_reason("closed_satisfactory", "gender_skew")
+    text = _transcript_text(data)
+    assert "boys" in text or "girls" in text
+    assert "framing" not in text
+    assert "photo" not in text
+
+
+def test_bad_muac_reason_gets_cherry_picking_conversation():
+    """bad_muac_distribution means suspiciously-low SAM/MAM (cherry-picking
+    easy households, post-PR-281 direction) — the transcript must be about
+    household reach, not photo framing."""
+    data = _task_for_reason("closed_satisfactory", "bad_muac_distribution")
+    text = _transcript_text(data)
+    assert "household" in text
+    assert "framing" not in text
+
+
+def test_every_demo_reason_combo_resolves_to_a_matched_variant():
+    """Every (task archetype, reason_key) pair the PAR demo config can
+    produce — except the repeated_failure suspensions, whose base templates
+    already narrate the repeat offense — must resolve to a reason-specific
+    conversation variant, not silently fall back to the base."""
+    from commcare_connect.labs.synthetic.generator.ocs_templates import resolve_template_key
+
+    combos = [
+        ("closed_satisfactory", "bad_muac_distribution"),
+        ("closed_satisfactory", "gender_skew"),
+        ("closed_warned", "bad_muac_distribution"),
+        ("closed_warned", "gender_skew"),
+        ("closed_warned", "misleading_photos"),
+        ("investigating", "bad_muac_distribution"),
+        ("investigating", "gender_skew"),
+    ]
+    for archetype_name, reason_key in combos:
+        base = TASK_ARCHETYPES[archetype_name].ocs_template_key
+        resolved = resolve_template_key(base, reason_key)
+        assert (
+            resolved == f"{base}__{reason_key}"
+        ), f"({archetype_name}, {reason_key}) fell back to {resolved!r} — add the variant"
+
+
+def test_unknown_reason_key_falls_back_to_base_template():
+    from commcare_connect.labs.synthetic.generator.ocs_templates import resolve_template_key
+
+    assert resolve_template_key("coaching_resolved_clean", "some_future_reason") == "coaching_resolved_clean"
+    assert resolve_template_key("coaching_resolved_clean", None) == "coaching_resolved_clean"
+    assert resolve_template_key(None, "gender_skew") is None
+
+
+def test_conversation_timestamps_never_predate_task_creation():
+    """Every seeded transcript message must be stamped at or after the task's
+    own created event — chat older than the task it belongs to is the
+    instant canned-data tell the iter3 judge caught."""
+    import datetime as dt
+
+    for archetype_name in TASK_ARCHETYPES:
+        for reason_key in (None, "gender_skew", "bad_muac_distribution"):
+            data = _task_for_reason(archetype_name, reason_key)
+            created = dt.datetime.fromisoformat(data["events"][0]["timestamp"])
+            for msg in data["ocs_conversation"]:
+                ts = dt.datetime.fromisoformat(msg["ts"])
+                assert (
+                    ts >= created
+                ), f"{archetype_name}/{reason_key}: message at {ts} predates task creation {created}"

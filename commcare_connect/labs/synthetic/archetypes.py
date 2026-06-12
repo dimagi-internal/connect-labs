@@ -552,8 +552,14 @@ def build_task_data(
     audit_session_id: int | None,
     title: str,
     creator_name: str,
+    reason_key: str | None = None,
 ) -> dict[str, Any]:
     """Build a complete Task ``data`` dict for the given archetype.
+
+    ``reason_key`` (e.g. ``gender_skew``, ``bad_muac_distribution``) picks
+    the reason-matched coaching-conversation variant when one exists, so
+    the transcript discusses the same issue the task is about. Without it
+    the archetype's base template is used.
 
     Pass the result to ``labs_api.create_record(experiment='tasks', type='Task', ...)``.
     """
@@ -598,10 +604,10 @@ def build_task_data(
     # days before the task History says it happened.
     ocs_conversation: list[dict[str, Any]] = []
     if archetype.ocs_template_key:
-        from .generator.ocs_templates import render_transcript
+        from .generator.ocs_templates import render_transcript, resolve_template_key
 
         ocs_conversation = render_transcript(
-            template_key=archetype.ocs_template_key,
+            template_key=resolve_template_key(archetype.ocs_template_key, reason_key),
             flw_name=flw_id,
             base_timestamp=created_at + dt.timedelta(hours=1),
             close_timestamp=closed_at,

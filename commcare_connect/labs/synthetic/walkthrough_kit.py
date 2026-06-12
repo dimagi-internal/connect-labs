@@ -16,10 +16,11 @@ What's generic vs walkthrough-specific:
         — thin wrappers over ``archetypes.build_audit_data`` /
         ``build_task_data``.
       * ``apply_action_spec`` — materialize one (run, flw) action spec
-        into (optional) Audit + (optional) Task records. Flags are NOT
-        seeded by the synthetic flow: per-opp report render code computes
-        them at render time from the pipeline data and persists them via
-        view.ensureAutoFlags.
+        into (optional) Audit + (optional) Task records. Flags are not
+        created here: per-opp report render code computes them at render
+        time on live runs (view.ensureAutoFlags), and the per-demo
+        orchestrator seeds the equivalent Flag records for COMPLETED runs
+        (see program_admin_demo._seed_auto_flags_for_run).
 
   - Walkthrough-specific (in the per-demo orchestrator):
       * The archetype trajectory ("solid does no_issues every week,
@@ -56,6 +57,21 @@ def week_end_iso(monday_iso: str, *, days: int = 6) -> str:
     return (dt.date.fromisoformat(monday_iso) + dt.timedelta(days=days)).isoformat()
 
 
+def compose_task_title(*, flw_id: str, reason: str | None) -> str:
+    """The ONE task-title grammar the synthetic generator uses.
+
+    ``Coach isha_n — gender split off threshold`` — a sentence a manager
+    would actually type. The previous dev-style ``[Gender split off
+    threshold] isha_n`` bracket form read as a debug artifact on the task
+    page and in the PAR drill panels. The reason label keeps its internal
+    casing (acronyms like MUAC survive) but is decapitalized so the title
+    reads as one phrase.
+    """
+    label = (reason or "follow-up").strip()
+    label = label[:1].lower() + label[1:]
+    return f"Coach {flw_id} — {label}"
+
+
 class VisitIdSequence:
     """Per-orchestrator monotonic counter for synthetic visit_ids.
 
@@ -72,6 +88,32 @@ class VisitIdSequence:
     def next(self) -> int:
         self._next += 1
         return self._next
+
+
+# Floor for visit-id bases minted at RECORD time (live manager-flow audits).
+# Kept inside the same 8-digit synthetic namespace as VisitIdSequence
+# (9_000_001, 9_000_002, …) but in a disjoint sub-range so a live audit can
+# never collide with a seeded one.
+LIVE_VISIT_ID_FLOOR = 9_500_000
+_LIVE_VISIT_ID_SPAN = 400_000
+
+
+def live_visit_id_base(now_ts: float | None = None) -> int:
+    """Visit-id base for audits created LIVE during a walkthrough recording.
+
+    Seeded audits draw bases from ``VisitIdSequence`` so their photo cards
+    render visit ids like ``#90000010``. Live manager-flow audits used to
+    derive the base from a millisecond epoch, which produced 11-digit ids —
+    the same bulk-assessment UI then displayed two visibly different id
+    grammars between seeded and live audits. This keeps live ids in the
+    same 8-digit ``9X XXX XXX`` shape (bases 9_500_000..9_899_999 →
+    visit ids 95_000_000..98_999_999), time-derived for uniqueness across
+    recorder reruns.
+    """
+    import time as _time
+
+    ts = int(now_ts if now_ts is not None else _time.time())
+    return LIVE_VISIT_ID_FLOOR + ts % _LIVE_VISIT_ID_SPAN
 
 
 # ---------------------------------------------------------------------- #
@@ -276,11 +318,15 @@ def generate_task_from_archetype(
     title: str,
     task_archetype: str,
     creator_name: str,
+    reason_key: str | None = None,
 ) -> int:
     """Generate a Task record from a named task archetype.
 
-    Returns the task id. See ``commcare_connect/labs/synthetic/archetypes.py``
-    for the archetype catalog.
+    ``reason_key`` (e.g. ``gender_skew``) selects a reason-specific coaching
+    conversation variant when one exists, so the transcript talks about the
+    same issue the task's flag asserts. Returns the task id. See
+    ``commcare_connect/labs/synthetic/archetypes.py`` for the archetype
+    catalog.
     """
     from commcare_connect.labs.synthetic.archetypes import build_task_data
 
@@ -293,6 +339,7 @@ def generate_task_from_archetype(
         audit_session_id=audit_session_id,
         title=title,
         creator_name=creator_name,
+        reason_key=reason_key,
     )
     rec = tda.labs_api.create_record(
         experiment="tasks",
@@ -305,10 +352,11 @@ def generate_task_from_archetype(
 
 # ---------------------------------------------------------------------- #
 # Action spec application — synthetic generator for per-(run, flw) audits
-# and tasks. Flags are not seeded here; per-opp report render code
-# computes them from the pipeline data at render time via
-# view.ensureAutoFlags. The synthetic flow only needs to produce the
-# artifacts that the manager would have created as actions in response.
+# and tasks. Flags are not created here: live runs derive them at render
+# time via view.ensureAutoFlags, and the per-demo orchestrator seeds them
+# for completed runs (program_admin_demo._seed_auto_flags_for_run). This
+# module only produces the artifacts the manager would have created as
+# actions in response.
 # ---------------------------------------------------------------------- #
 
 
@@ -330,7 +378,10 @@ def apply_action_spec(
     ``spec`` dict keys (all optional — empty spec is a no-op):
         - ``audit_archetype``: name of an audit archetype from archetypes.py
         - ``task_archetype``: name of a task archetype from archetypes.py
-        - ``reason_label`` / ``reason_key``: only used as the task title hint
+        - ``reason_label``: human label composed into the task title
+        - ``reason_key``: selects the reason-matched coaching conversation
+          variant (see ``generator/ocs_templates.py``) so a gender-split
+          task never closes on a photo-framing transcript
     """
     audit_archetype = spec.get("audit_archetype")
     task_archetype = spec.get("task_archetype")
@@ -349,7 +400,7 @@ def apply_action_spec(
         )
 
     if task_archetype:
-        task_title = f"[{spec.get('reason_label', spec.get('reason_key', 'Action'))}] {flw_id}"
+        task_title = compose_task_title(flw_id=flw_id, reason=spec.get("reason_label") or spec.get("reason_key"))
         generate_task_from_archetype(
             tda=tda,
             opportunity_id=opportunity_id,
@@ -360,4 +411,5 @@ def apply_action_spec(
             title=task_title,
             task_archetype=task_archetype,
             creator_name=creator_name,
+            reason_key=spec.get("reason_key"),
         )
