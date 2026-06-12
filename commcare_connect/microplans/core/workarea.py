@@ -9,12 +9,17 @@ pinning inside Connect's first-class microplanning feature (assignment, mobile
 delivery, visit tracking, the inaccessibility/substitution flow) without
 inventing a parallel mechanism.
 
-`role` (primary/alternate), `cluster`, and `order_in_cluster` ride in
+`sample_type` (primary/alternate), `cluster`, and `order_in_cluster` ride in
 `case_properties` so the FLW app and dashboards can distinguish targets from
-their 15m substitutes. The study `arm` (intervention/comparison) is a LABS-SIDE
+their ranked substitutes. The study `arm` (intervention/comparison) is a LABS-SIDE
 field, deliberately kept OUT of `case_properties` — arm assignment must stay
 blind to the LLO/FLWs (a shared two-arm plan that reveals which side is which is
 an anti-pattern), so it never enters the Connect-facing bucket.
+
+Each work area's labs-side `properties` key-value bag (built by
+`plan._sampling_properties` / `_coverage_properties`, schema below) is stored on
+the plan/LabsRecord and is what becomes the Connect WorkArea `case_properties`
+once the API accepts them. ``WorkAreaProperties`` documents the recognised keys.
 
 Two output shapes:
   * `to_api_payload` — for the (proposed) `POST /export/opportunity/<id>/work_areas/`
@@ -27,12 +32,32 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 from pyproj import Transformer
 from shapely.geometry import box, shape
 from shapely.ops import transform
 
 from commcare_connect.microplans.core.geo import utm_epsg_for
+
+
+class WorkAreaProperties(TypedDict, total=False):
+    """The recognised keys in a work area's labs-side ``properties`` bag.
+
+    It is a key-value store (stored on the plan/LabsRecord, serialised with the
+    work area) — typed here so producers don't sling magic strings, but stored and
+    sent as a plain dict. This bag is what becomes the Connect WorkArea
+    ``case_properties`` once that API exists; it grows as we add analysis
+    dimensions. (``arm`` is intentionally NOT here — it stays labs-side first-class.)
+    """
+
+    sample_type: str  # sampling: "primary" (a unit to survey) | "alternate" (ranked backup)
+    cluster: str  # the cluster the unit belongs to (sampling: the PSU; coverage: the grid cluster)
+    order_in_cluster: int  # sampling: rank within the PSU (1 = first)
+    stratum: str  # sampling: PSU size stratum
+    weight: float  # sampling: inclusion weight (primaries only)
+    cell_size_m: float  # coverage: grid cell edge in metres
+
 
 # Connect's WorkAreaCSVImporter column labels.
 #
@@ -94,9 +119,7 @@ def _square_boundary_wkt(lon: float, lat: float, half_m: float) -> str:
     return _square_boundary_shape(lon, lat, half_m).wkt
 
 
-def footprint_boundary_shape(
-    geom_json, lon: float, lat: float, buffer_m: float, fallback_half_m: float
-):
+def footprint_boundary_shape(geom_json, lon: float, lat: float, buffer_m: float, fallback_half_m: float):
     """The building's real footprint polygon (lightly buffered, in meters), as a WGS84 shapely geom.
 
     This is the WorkArea boundary an FLW actually receives — the outline of the
@@ -116,17 +139,13 @@ def footprint_boundary_shape(
             fwd = Transformer.from_crs(4326, epsg, always_xy=True)
             inv = Transformer.from_crs(epsg, 4326, always_xy=True)
             g_m = transform(lambda xs, ys, z=None: fwd.transform(xs, ys), g)
-            g = transform(
-                lambda xs, ys, z=None: inv.transform(xs, ys), g_m.buffer(buffer_m)
-            )
+            g = transform(lambda xs, ys, z=None: inv.transform(xs, ys), g_m.buffer(buffer_m))
         return g
     except (ValueError, TypeError, json.JSONDecodeError):
         return _square_boundary_shape(lon, lat, fallback_half_m)
 
 
-def _footprint_boundary_wkt(
-    geom_json, lon: float, lat: float, buffer_m: float, fallback_half_m: float
-) -> str:
+def _footprint_boundary_wkt(geom_json, lon: float, lat: float, buffer_m: float, fallback_half_m: float) -> str:
     return footprint_boundary_shape(geom_json, lon, lat, buffer_m, fallback_half_m).wkt
 
 
@@ -147,9 +166,9 @@ def build_work_areas(
         props = feat.get("properties", {})
         arm = props.get("arm", "intervention")
         cluster = props.get("cluster", "C0")
-        role = props.get("role", "primary")
+        sample_type = props.get("sample_type", "primary")
         order = int(props.get("order_in_cluster", 0))
-        slug = f"{arm[:3]}-{cluster}-{role[:4]}-{order}".lower()
+        slug = f"{arm[:3]}-{cluster}-{sample_type[:4]}-{order}".lower()
         out.append(
             WorkAreaPayload(
                 slug=slug,
@@ -164,7 +183,7 @@ def build_work_areas(
                 target_population=0,
                 arm=arm,  # labs-side only — never pushed to Connect
                 case_properties={
-                    "role": role,
+                    "sample_type": sample_type,
                     "cluster": cluster,
                     "order_in_cluster": order,
                     "lga": lga,

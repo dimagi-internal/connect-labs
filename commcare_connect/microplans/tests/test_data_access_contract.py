@@ -243,7 +243,7 @@ _PINS_2 = {
             "properties": {
                 "arm": "intervention",
                 "cluster": "C0",
-                "role": "primary",
+                "sample_type": "primary",
                 "order_in_cluster": 1,
             },
         },
@@ -253,7 +253,7 @@ _PINS_2 = {
             "properties": {
                 "arm": "intervention",
                 "cluster": "C1",
-                "role": "primary",
+                "sample_type": "primary",
                 "order_in_cluster": 1,
             },
         },
