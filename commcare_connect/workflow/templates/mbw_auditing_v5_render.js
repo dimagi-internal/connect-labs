@@ -2275,29 +2275,14 @@ function WorkflowUI({
         if (
           !enrichedData
             .filter(function (f) {
-              return f.flags.type === 'red';
-            })
-            .every(function (f) {
-              return (
-                taskStates[f.username] && taskStates[f.username].triggered_at
-              );
-            })
-        )
-          return false;
-        if (
-          !enrichedData
-            .filter(function (f) {
               return f.flags.type === 'yellow';
             })
             .every(function (f) {
               var as = auditStatuses[f.username] || {};
-              if (!as.status) return false;
-              if (as.status === 'audit_not_required') return !!as.reason;
-              if (as.status === 'audit_required')
-                return !!(
-                  taskStates[f.username] && taskStates[f.username].triggered_at
-                );
-              return false;
+              return (
+                as.status === 'audit_required' ||
+                as.status === 'audit_not_required'
+              );
             })
         )
           return false;
@@ -4779,26 +4764,13 @@ function WorkflowUI({
                   t.status !== 'completed'
                 );
               });
-              var redNoTask = enrichedData.filter(function (f) {
-                return (
-                  f.flags.type === 'red' &&
-                  !(
-                    taskStates[f.username] &&
-                    taskStates[f.username].triggered_at
-                  )
-                );
-              });
               var yellowNotTriaged = enrichedData.filter(function (f) {
                 if (f.flags.type !== 'yellow') return false;
                 var as = auditStatuses[f.username] || {};
-                if (!as.status) return true;
-                if (as.status === 'audit_not_required') return !as.reason;
-                if (as.status === 'audit_required')
-                  return !(
-                    taskStates[f.username] &&
-                    taskStates[f.username].triggered_at
-                  );
-                return false;
+                return (
+                  as.status !== 'audit_required' &&
+                  as.status !== 'audit_not_required'
+                );
               });
               var items = [
                 {
@@ -4809,19 +4781,12 @@ function WorkflowUI({
                       : openTasks.length + ' task(s) still open',
                 },
                 {
-                  ok: redNoTask.length === 0,
-                  label:
-                    redNoTask.length === 0
-                      ? 'All red-flagged FLWs have tasks'
-                      : redNoTask.length + ' red-flagged FLW(s) missing a task',
-                },
-                {
                   ok: yellowNotTriaged.length === 0,
                   label:
                     yellowNotTriaged.length === 0
                       ? 'All yellow-flagged FLWs triaged'
                       : yellowNotTriaged.length +
-                        ' yellow-flagged FLW(s) need audit status or task',
+                        ' yellow-flagged FLW(s) need audit status set',
                 },
               ];
               return React.createElement(
