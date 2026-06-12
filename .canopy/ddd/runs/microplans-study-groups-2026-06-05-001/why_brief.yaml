@@ -1,0 +1,121 @@
+schema_version: 1
+narrative_slug: microplans-study-groups
+feature: microplans-study-groups
+problem: >-
+  A program owner who wants to measure a field program's impact has no place to
+  design a controlled two-arm study — an intervention ward the program covered and
+  a comparable control ward it didn't — that field surveyors can execute completely
+  blind. Done by hand, the two arms are picked by name (not by where the program
+  actually delivered), sampled differently, and the arm leaks into the field file,
+  biasing the very survey meant to measure the effect.
+
+spine:
+  - id: S12
+    claim: >-
+      A controlled study starts as an empty named container the planner fills from
+      the map, before any ward names are committed up front.
+    rationale: >-
+      The planner knows where the program worked, not the ward names a paste-list
+      wants. Starting empty and filling from the map keeps the design grounded in
+      real delivery instead of a guessed list.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-101
+
+  - id: S13
+    claim: >-
+      The planner chooses the study's wards on a delivery map: the program's own
+      service-delivery points show where it worked, and ward-wide saturation is what
+      makes surveying the whole intervention ward the honest unit.
+    rationale: >-
+      Exposure, not a name, defines the intervention ward. Seeing the delivery
+      footprint cover an entire ward justifies treating that whole ward as
+      intervention and picking an adjacent un-served ward as the control.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-102
+
+  - id: S3
+    claim: >-
+      Each selected ward becomes one plan and one opportunity; the map's multi-select
+      fans out into one boundary-only plan per ward, assembled into the study.
+    rationale: >-
+      The executable unit is one ward = one plan = one opportunity, so a study is a
+      group of per-ward plans rather than a single blob, and each ward can later
+      export to its own Connect opportunity.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-103
+
+  - id: S11
+    claim: >-
+      Arm assignment (intervention vs control) is a deliberate planner choice stored
+      only on the study group, never on the wards' own plans or work areas.
+    rationale: >-
+      Keeping the arm off the executable plan makes the field file blind by
+      construction — there is nothing to strip at export, so a surveyor can never see
+      which arm a household belongs to.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-104
+
+  - id: S7
+    claim: >-
+      Both wards sample from one shared configuration — size-balanced PSU bands and a
+      building-footprint-size filter — so the only intended difference between the
+      arms is the ward, not the sampling method.
+    rationale: >-
+      Comparability starts at sampling. One shared, size-balanced configuration means
+      a measured difference between arms reflects the wards being compared, not an
+      artifact of how each was drawn.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-105
+
+  - id: S6
+    claim: >-
+      Each ward can be studied on its own review map, and both arms can be overlaid
+      on one map coloured by arm, so the planner understands each arm and then
+      compares them in real geography.
+    rationale: >-
+      A planner needs to understand each arm on its own before judging comparability,
+      then see them side by side in the actual landscape to sanity-check the match.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-106
+
+  - id: S8
+    claim: >-
+      The comparability panel reports the arms as objective data classified by
+      property — structural axes that can't be fixed after the fact vs adjustable
+      baseline covariates a DiD corrects for — and never issues a use/don't-use
+      verdict.
+    rationale: >-
+      The planner, not the tool, should make the call. Presenting standardized
+      differences with an objective classification (and marginal values shown as
+      'acceptable, marginal', not green) keeps the judgement with the analyst.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-107
+
+  - id: S14
+    claim: >-
+      Completing the study leaves a blind, balanced two-arm design where each ward
+      exports to its own Connect work-area file with no arm column.
+    rationale: >-
+      The planning page shows the arm so the planner can reason about the design, but
+      the export is arm-free by construction, so the field never sees the arm and the
+      study stays blind through execution.
+    status: grounded
+    evidence:
+      - kind: implemented
+        ref: EV-108
+
+gaps: []
