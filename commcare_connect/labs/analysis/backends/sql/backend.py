@@ -35,6 +35,66 @@ from commcare_connect.labs.analysis.models import (
 logger = logging.getLogger(__name__)
 
 
+def _flw_data_to_rows(config: AnalysisPipelineConfig, flw_data: list[dict]) -> list[FLWRow]:
+    """Map raw FLW-aggregation dicts (from `execute_flw_aggregation`) to FLWRow
+    objects, attaching config/histogram custom fields.
+
+    Extracted so the live compute path and the period-scoped snapshot read
+    (`get_period_scoped_flw_result`, ace#764) produce byte-identical row shapes
+    — the only difference between them is the date window baked into the SQL.
+    """
+    flw_rows: list[FLWRow] = []
+    for row in flw_data:
+        # Standard fields
+        # Note: use _base_ prefix for date fields to avoid conflicts with custom config fields
+        flw_row = FLWRow(
+            username=row["username"],
+            total_visits=row.get("total_visits", 0),
+            approved_visits=row.get("approved_visits", 0),
+            pending_visits=row.get("pending_visits", 0),
+            rejected_visits=row.get("rejected_visits", 0),
+            flagged_visits=row.get("flagged_visits", 0),
+            first_visit_date=row.get("_base_first_visit_date"),
+            last_visit_date=row.get("_base_last_visit_date"),
+        )
+
+        # Custom fields (from config fields + histograms). days_active is
+        # surfaced here (rather than as a FLWRow attribute) so it flows
+        # transparently through the cache JSON and out to pipeline-output
+        # consumers (workflow render code) alongside any user-defined fields.
+        custom = {}
+        custom["days_active"] = row.get("_base_days_active") or 0
+        for field in config.fields:
+            if field.name in row:
+                custom[field.name] = row[field.name]
+
+        # Add histogram fields
+        for hist in config.histograms:
+            bin_width = (hist.upper_bound - hist.lower_bound) / hist.num_bins
+            for i in range(hist.num_bins):
+                bin_lower = hist.lower_bound + (i * bin_width)
+                bin_upper = bin_lower + bin_width
+                lower_str = str(bin_lower).replace(".", "_")
+                upper_str = str(bin_upper).replace(".", "_")
+                bin_name = f"{hist.bin_name_prefix}_{lower_str}_{upper_str}_visits"
+                if bin_name in row:
+                    custom[bin_name] = row[bin_name] or 0
+
+            # Add summary stats (convert Decimal to float for JSON compatibility)
+            if f"{hist.name}_mean" in row:
+                mean_val = row[f"{hist.name}_mean"]
+                if isinstance(mean_val, Decimal):
+                    mean_val = float(mean_val)
+                custom[f"{hist.name}_mean"] = mean_val
+            if f"{hist.name}_count" in row:
+                custom[f"{hist.name}_count"] = row[f"{hist.name}_count"]
+
+        flw_row.custom_fields = custom
+        flw_rows.append(flw_row)
+
+    return flw_rows
+
+
 def _model_to_visit_dict(row, skip_form_json=False) -> dict:
     """Convert RawVisitCache model instance to visit dict."""
     return {
@@ -369,6 +429,52 @@ class SQLBackend:
             metadata={"total_visits": visit_count, "from_sql_cache": True},
         )
 
+    def get_period_scoped_flw_result(
+        self,
+        opportunity_id: int,
+        config: AnalysisPipelineConfig,
+    ) -> FLWAnalysisResult | None:
+        """Re-aggregate the EXISTING raw-visit cache to FLW level, restricted to
+        the window in `config.date_from`/`date_to` (ace#764).
+
+        Unlike `get_cached_flw_result`, which returns the pre-aggregated all-time
+        FLW cache, this re-runs the FLW GROUP BY over the per-pipeline raw visit
+        cache with a `visit_date` predicate. That cache already holds every
+        visit (the window is excluded from the config hash), so this is a single
+        bounded SQL aggregation — no download, no recompute, and nothing is
+        written back to any cache. It is the read path saved-run snapshots use
+        to freeze a period-scoped slice instead of the whole-program total.
+
+        Returns None when the raw visit cache is empty for this pipeline slot
+        (caller treats that as a cache miss — "load the pipeline first"). An
+        empty window with a populated cache legitimately returns a result with
+        zero rows, so emptiness of the *result* is never treated as a miss.
+        """
+        cache_manager = SQLCacheManager(opportunity_id, config)
+        if cache_manager.get_raw_visit_count() == 0:
+            logger.info(
+                "[SQL] Period-scoped FLW read: no raw visit cache for opp %s pipeline %s — miss",
+                opportunity_id,
+                config.pipeline_id,
+            )
+            return None
+
+        flw_data = execute_flw_aggregation(config, opportunity_id)
+        flw_rows = _flw_data_to_rows(config, flw_data)
+        total_visits = sum(r.total_visits for r in flw_rows)
+        return FLWAnalysisResult(
+            opportunity_id=opportunity_id,
+            rows=flw_rows,
+            metadata={
+                "total_visits": total_visits,
+                "total_flws": len(flw_rows),
+                "from_sql_cache": True,
+                "period_scoped": True,
+                "date_from": config.date_from,
+                "date_to": config.date_to,
+            },
+        )
+
     def get_cached_visit_result(
         self,
         opportunity_id: int,
@@ -701,58 +807,8 @@ class SQLBackend:
         flw_data = execute_flw_aggregation(config, opportunity_id)
 
         # Convert to FLWRow objects
-        flw_rows = []
-        total_visits = 0
-
-        for row in flw_data:
-            # Standard fields
-            # Note: use _base_ prefix for date fields to avoid conflicts with custom config fields
-            flw_row = FLWRow(
-                username=row["username"],
-                total_visits=row.get("total_visits", 0),
-                approved_visits=row.get("approved_visits", 0),
-                pending_visits=row.get("pending_visits", 0),
-                rejected_visits=row.get("rejected_visits", 0),
-                flagged_visits=row.get("flagged_visits", 0),
-                first_visit_date=row.get("_base_first_visit_date"),
-                last_visit_date=row.get("_base_last_visit_date"),
-            )
-
-            # Custom fields (from config fields + histograms). days_active is
-            # surfaced here (rather than as a FLWRow attribute) so it flows
-            # transparently through the cache JSON and out to pipeline-output
-            # consumers (workflow render code) alongside any user-defined fields.
-            custom = {}
-            custom["days_active"] = row.get("_base_days_active") or 0
-            for field in config.fields:
-                if field.name in row:
-                    custom[field.name] = row[field.name]
-
-            # Add histogram fields
-            for hist in config.histograms:
-                bin_width = (hist.upper_bound - hist.lower_bound) / hist.num_bins
-                for i in range(hist.num_bins):
-                    bin_lower = hist.lower_bound + (i * bin_width)
-                    bin_upper = bin_lower + bin_width
-                    lower_str = str(bin_lower).replace(".", "_")
-                    upper_str = str(bin_upper).replace(".", "_")
-                    bin_name = f"{hist.bin_name_prefix}_{lower_str}_{upper_str}_visits"
-                    if bin_name in row:
-                        custom[bin_name] = row[bin_name] or 0
-
-                # Add summary stats (convert Decimal to float for JSON compatibility)
-                if f"{hist.name}_mean" in row:
-                    mean_val = row[f"{hist.name}_mean"]
-                    if isinstance(mean_val, Decimal):
-                        mean_val = float(mean_val)
-                    custom[f"{hist.name}_mean"] = mean_val
-                if f"{hist.name}_count" in row:
-                    custom[f"{hist.name}_count"] = row[f"{hist.name}_count"]
-
-            flw_row.custom_fields = custom
-
-            flw_rows.append(flw_row)
-            total_visits += flw_row.total_visits
+        flw_rows = _flw_data_to_rows(config, flw_data)
+        total_visits = sum(r.total_visits for r in flw_rows)
 
         # Build result
         flw_result = FLWAnalysisResult(
