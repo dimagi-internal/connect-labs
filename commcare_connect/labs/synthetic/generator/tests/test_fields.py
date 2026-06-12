@@ -1,9 +1,10 @@
 import random
 
-from commcare_connect.labs.synthetic.generator.fields import fill_form_json
+from commcare_connect.labs.synthetic.generator.fields import _outlier, fill_form_json
 from commcare_connect.labs.synthetic.generator.manifest import (
     Anomaly,
     BeneficiaryCohort,
+    BinaryDistribution,
     FlwPersona,
     MeanStddev,
     NormalDistribution,
@@ -161,3 +162,49 @@ def test_persona_uniform_override_works_with_transform():
     female_rate = sum(s == "female" for s in samples) / len(samples)
     # high=0.3 means values < 0.5 ~ always (so transform → "male"); female_rate ≈ 0.
     assert female_rate < 0.1, f"persona override should skew female rate low; got {female_rate}"
+
+
+def test_outlier_on_binary_field_returns_rare_outcome():
+    # A field_outlier on a binary field used to raise TypeError (ace#762).
+    # The outlier is the rare/failed outcome: opposite the expected majority.
+    rng = random.Random(0)
+    # Success is the majority (rate >= 0.5) -> outlier is the failure (0.0).
+    majority_success = BinaryDistribution(distribution="binary", rate=0.8)
+    assert _outlier(majority_success, rng) == 0.0
+    # Failure is the majority (rate < 0.5) -> outlier is the rare success (1.0).
+    majority_failure = BinaryDistribution(distribution="binary", rate=0.2)
+    assert _outlier(majority_failure, rng) == 1.0
+    # Boundary: rate == 0.5 counts as success-majority -> failure outlier.
+    assert _outlier(BinaryDistribution(distribution="binary", rate=0.5), rng) == 0.0
+
+
+def test_fill_form_json_anomaly_on_binary_field_does_not_raise():
+    # Regression for ace#762: routing a field_outlier through a binary-distributed
+    # field used to crash fill_form_json with TypeError. It now yields the rare
+    # outcome (opposite the expected majority) instead.
+    schema = FormSchema(questions=[QuestionSpec("form.vitamin_a_given", "int")])
+    cohort = BeneficiaryCohort(
+        id="primary",
+        size=10,
+        field_distributions={
+            # rate high -> success (1) is the majority outcome.
+            "form.vitamin_a_given": BinaryDistribution(distribution="binary", rate=0.9),
+        },
+        progression="flat",
+    )
+    anomaly = Anomaly(
+        id="vit_a_outlier",
+        type="field_outlier",
+        flw_ids=["ravi"],
+        field_path="form.vitamin_a_given",
+        week=5,
+    )
+    out = fill_form_json(
+        schema=schema,
+        cohort=cohort,
+        anomalies_for_visit=[anomaly],
+        rng=random.Random(7),
+    )
+    # Success (1) is the majority for rate=0.9, so the outlier is the rare
+    # failure (0). The "int" question kind rounds the 0.0 draw to int 0.
+    assert out["form"]["vitamin_a_given"] == 0
