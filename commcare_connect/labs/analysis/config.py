@@ -582,6 +582,16 @@ class AnalysisPipelineConfig:
     filters: dict[str, Any] = field(default_factory=dict)
     date_field: str = "visit_date"
 
+    # Optional half-open visit-date window [date_from, date_to) applied at
+    # QUERY time. Like `filters`, this is deliberately EXCLUDED from the config
+    # hash (see get_config_hash) so a single cache serves every window — the
+    # bound is just a WHERE clause on the cached visits. Empty string = no
+    # bound on that side. Used by saved-runs snapshots that must reflect the
+    # run's period instead of the all-time aggregate (ace#764). Dates are ISO
+    # strings (YYYY-MM-DD or full ISO datetime; only the date part is used).
+    date_from: str = ""
+    date_to: str = ""
+
     # Pipeline metadata (optional, backwards compatible with defaults)
     experiment: str = ""
     terminal_stage: CacheStage = CacheStage.AGGREGATED
