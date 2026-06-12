@@ -188,12 +188,17 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         overall_result=None,
         image_spec=AuditImageSpec(good_count=1, bad_count=1, pending_count=3, pending_good_ratio=0.4),
     ),
+    # NOTE for maintainers (do NOT move this into ``description`` — that field
+    # renders in the audit UI): this archetype backs the manager-flow demo.
+    # All 5 photos come from the clean (good) pool but arrive UNREVIEWED, so
+    # the manager can be recorded passing each photo live; the audit resolves
+    # to an honest all-pass once reviewed. The description below is the
+    # in-story text a reviewer should actually see on the audit page.
     "pending_all_clean": AuditArchetype(
         name="pending_all_clean",
         description=(
-            "Fresh audit — all 5 photos are clean (good pool) but UNREVIEWED. "
-            "Used by the manager-flow demo so the manager can be filmed passing "
-            "each photo on camera; ends up an all-pass once reviewed."
+            "Weekly SOP audit — MUAC photo review for a flagged screening "
+            "pattern. All photos awaiting reviewer decision."
         ),
         status="in_progress",
         overall_result=None,
@@ -277,6 +282,56 @@ def _pick_blob_ids(spec: AuditImageSpec, rng_seed: int) -> list[tuple[str, str |
     return out
 
 
+# In-story household surnames for visit entity names. One per synthetic
+# visit so an "Audit Last 7 days" reads like five real household visits,
+# not five copies of the same placeholder entity.
+_HOUSEHOLD_NAMES = (
+    "Abubakar",
+    "Adeyemi",
+    "Bello",
+    "Danjuma",
+    "Eze",
+    "Ibrahim",
+    "Lawal",
+    "Mensah",
+    "Musa",
+    "Okafor",
+    "Okonkwo",
+    "Suleiman",
+)
+
+
+def _visit_datetimes(anchor: dt.datetime, count: int, rng) -> list[dt.datetime]:
+    """Spread ``count`` visit datetimes across the trailing 7 days ending at
+    ``anchor``'s date, with plausible workday times.
+
+    The first and last day of the window are always represented (so an
+    "Audit Last 7 days" header shows a true 7-day range, not "Nov 24 to
+    Nov 24"), and same-day visits stay strictly before ``anchor``'s
+    clock time so no visit postdates the audit that reviews it.
+    """
+    if count <= 0:
+        return []
+    if count == 1:
+        offsets = [rng.randint(1, 6)]
+    elif count <= 7:
+        offsets = [6, 0] + rng.sample(range(1, 6), count - 2)
+    else:
+        offsets = [6, 0] + [rng.randrange(7) for _ in range(count - 2)]
+    out = []
+    for off in offsets:
+        day = anchor.date() - dt.timedelta(days=off)
+        if off == 0:
+            # Anchor day: keep the visit in the early morning, before the
+            # 10:00 audit creation time.
+            t = dt.time(rng.randint(8, 9), rng.randint(0, 55))
+        else:
+            t = dt.time(rng.randint(9, 16), rng.randint(0, 59))
+        out.append(dt.datetime.combine(day, t, tzinfo=dt.timezone.utc))
+    out.sort()
+    return out
+
+
 def build_audit_data(
     *,
     archetype_name: str,
@@ -296,74 +351,90 @@ def build_audit_data(
     metadata) and ``visit_results`` (the per-visit aggregate + per-image
     assessment) — both keyed by stringified visit_id.
 
+    Each photo gets its OWN synthetic visit, and the visits are spread
+    across the trailing 7 days ending at ``monday_iso`` with plausible
+    workday times — the bulk-assessment header derives its date range from
+    per-visit dates, so a single shared timestamp used to render
+    "Nov 24, 2025 to Nov 24, 2025" for a supposed 7-day audit. Completed
+    archetypes also stamp ``completed_at`` (same day as creation, a few
+    hours later) so the audit page's "Completed on" line has a real date.
+
     Args:
-        visit_id_base: arbitrary unique integer; this archetype expands a
-            single audit into one "synthetic visit" with multiple photos
-            attached. Pass distinct values per (opp, run, flw) so visit_ids
-            don't collide across audits.
-        rng_seed: when provided, image selection is deterministic on this
-            seed. Defaults to ``visit_id_base`` so calling this twice with
-            the same parameters yields the same photo set.
+        monday_iso: the audit's anchor/reference date (ISO). Visits land in
+            the 7 days ending on this date; the audit itself is created at
+            10:00 UTC on it.
+        visit_id_base: arbitrary unique integer; each photo's visit_id is
+            derived as ``visit_id_base * 10 + photo_index``. Pass distinct
+            bases per (opp, run, flw) so visit_ids don't collide across
+            audits.
+        rng_seed: when provided, image selection AND visit timing are
+            deterministic on this seed. Defaults to ``visit_id_base`` so
+            calling this twice with the same parameters yields the same
+            audit.
     """
+    import random
+
     archetype = AUDIT_ARCHETYPES[archetype_name]
     rng_seed = rng_seed if rng_seed is not None else visit_id_base
     photos = _pick_blob_ids(archetype.image_spec, rng_seed)
+    rng = random.Random(rng_seed ^ 0x5EED)
 
-    monday_dt = dt.datetime.fromisoformat(monday_iso).replace(hour=10, minute=0, tzinfo=dt.timezone.utc)
-    visit_iso = monday_dt.isoformat()
-    visit_id = visit_id_base
+    anchor = dt.datetime.fromisoformat(monday_iso).replace(hour=10, minute=0, tzinfo=dt.timezone.utc)
+    created_iso = anchor.isoformat()
+    visit_dates = _visit_datetimes(anchor, len(photos), rng)
+    if len(photos) <= len(_HOUSEHOLD_NAMES):
+        households = rng.sample(_HOUSEHOLD_NAMES, len(photos))
+    else:
+        households = [rng.choice(_HOUSEHOLD_NAMES) for _ in photos]
 
-    # visit_images is read by BulkAssessmentDataView. Each entry is one photo.
-    images_for_visit = []
-    for blob_id, _result in photos:
+    # One visit per photo. visit_images is read by BulkAssessmentDataView,
+    # which takes the visit's date from its first image — so per-visit
+    # dates (not per-image dates within one visit) are what spread the
+    # audit window.
+    visit_ids: list[int] = []
+    visit_images: dict[str, list[dict[str, Any]]] = {}
+    visit_results: dict[str, dict[str, Any]] = {}
+    for i, ((blob_id, result), visit_dt) in enumerate(zip(photos, visit_dates)):
+        visit_id = visit_id_base * 10 + i
+        visit_ids.append(visit_id)
         # filename is purely cosmetic in the UI; reconstruct a stable one
         # from the blob_id so logs are readable.
         pool = "good" if "-good-" in blob_id else "bad"
         suffix = blob_id.rsplit("-", 1)[-1]
         filename = f"muac_{pool}_{suffix}.jpg"
-        images_for_visit.append(
+        visit_images[str(visit_id)] = [
             {
                 "blob_id": blob_id,
                 "name": filename,
                 "question_id": "muac_photo",
                 "username": flw_id,
-                "visit_date": visit_iso,
-                "entity_name": f"{flw_id} household sample",
+                "visit_date": visit_dt.isoformat(),
+                "entity_name": f"{households[i]} household",
                 "related_fields": [],
             }
-        )
-    visit_images = {str(visit_id): images_for_visit}
-
-    # visit_results.assessments holds per-photo pass/fail. For pending photos,
-    # we omit them from assessments entirely (the UI treats no-assessment as
-    # pending).
-    assessments: dict[str, dict[str, Any]] = {}
-    for blob_id, result in photos:
-        if result is None:
-            continue
-        assessments[blob_id] = {
-            "result": result,
+        ]
+        # Pending photos are omitted from assessments entirely (the UI
+        # treats no-assessment as pending) and leave the visit's aggregate
+        # result empty.
+        assessments: dict[str, dict[str, Any]] = {}
+        if result is not None:
+            assessments[blob_id] = {
+                "result": result,
+                "notes": "",
+                "ai_result": "",
+                "ai_notes": "",
+            }
+        visit_results[str(visit_id)] = {
+            "result": result or "",
             "notes": "",
-            "ai_result": "",
-            "ai_notes": "",
-        }
-    if archetype.status == "completed":
-        visit_result_value = archetype.overall_result or "pass"
-    else:
-        visit_result_value = ""  # pending → no aggregate result yet
-    visit_results = {
-        str(visit_id): {
-            "result": visit_result_value,
-            "notes": archetype.description,
             "assessments": assessments,
         }
-    }
 
     pass_count = sum(1 for _b, r in photos if r == "pass")
     fail_count = sum(1 for _b, r in photos if r == "fail")
     pending_count = sum(1 for _b, r in photos if r is None)
 
-    return {
+    data = {
         "title": archetype.title_template.format(flw_id=flw_id),
         "tag": "synthetic_demo",
         "status": archetype.status,
@@ -375,10 +446,10 @@ def build_audit_data(
         "criteria": {
             "audit_type": "last_n_per_flw",
             "count_per_flw": len(photos),
-            "start_date": monday_iso,
-            "end_date": monday_iso,
+            "start_date": (anchor.date() - dt.timedelta(days=6)).isoformat(),
+            "end_date": anchor.date().isoformat(),
         },
-        "visit_ids": [visit_id],
+        "visit_ids": visit_ids,
         "visit_images": visit_images,
         "visit_results": visit_results,
         "image_count": len(photos),
@@ -390,8 +461,14 @@ def build_audit_data(
         "notes": archetype.description,
         "kpi_notes": "",
         "related_fields": [],
-        "created_at": visit_iso,
+        "created_at": created_iso,
     }
+    if archetype.status == "completed":
+        # The reviewer finished the same day, a few hours after creation —
+        # the audit page's "Completed on" line reads this field.
+        completed_dt = anchor + dt.timedelta(hours=rng.randint(2, 5), minutes=rng.randint(0, 59))
+        data["completed_at"] = completed_dt.isoformat()
+    return data
 
 
 # -----------------------------------------------------------------------------
@@ -492,6 +569,7 @@ def build_task_data(
         }
     ]
     resolution_details: dict[str, Any] = {}
+    closed_at: dt.datetime | None = None
 
     if archetype.status == "closed":
         assert archetype.close_delay_days is not None
@@ -515,6 +593,9 @@ def build_task_data(
     # ``data.ocs_conversation`` as a "Coaching Conversation" panel when set
     # (see commcare_connect/templates/tasks/task_create_edit.html and the
     # task-data composition in commcare_connect/tasks/views.py).
+    # ``close_timestamp`` keeps the coach's closing message consistent with
+    # the History close event — the transcript must not announce a closure
+    # days before the task History says it happened.
     ocs_conversation: list[dict[str, Any]] = []
     if archetype.ocs_template_key:
         from .generator.ocs_templates import render_transcript
@@ -523,6 +604,7 @@ def build_task_data(
             template_key=archetype.ocs_template_key,
             flw_name=flw_id,
             base_timestamp=created_at + dt.timedelta(hours=1),
+            close_timestamp=closed_at,
         )
 
     return {
