@@ -33,6 +33,7 @@ differently:
   the study page) — both call ``generate_frame`` then ``regenerate_plan``.
 """
 
+import json
 import logging
 
 from commcare_connect.utils.celery import set_task_progress
@@ -194,26 +195,14 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
         display_name = name or boundary.name
         row["name"] = display_name
         try:
-            initial_hulls = _initial_plan_hulls(boundary, mode, cell_size_m)
-            plan = da.create_plan(
-                region=display_name,
-                name=display_name,
+            plan = create_boundary_plan(
+                da,
                 mode=mode,
-                pins={"type": "FeatureCollection", "features": []},
-                hulls=initial_hulls,
-                input_areas=[
-                    {
-                        "kind": "admin_boundary",
-                        "boundary_id": boundary_id,
-                        "name": boundary.name,
-                        # Carry the boundary's population estimate onto the plan so
-                        # plan_kpis().plan.total_population reports the boundary's
-                        # known population, not a bottom-up sum of work-area
-                        # apportionments. None when the boundary has no population
-                        # estimate loaded; plan_kpis falls back gracefully.
-                        "population": int(boundary.population) if boundary.population is not None else None,
-                    }
-                ],
+                name=display_name,
+                geometry=json.loads(boundary.geometry.geojson),
+                boundary_id=boundary_id,
+                population=int(boundary.population) if boundary.population is not None else None,
+                cell_size_m=cell_size_m,
                 grouping=grouping,
             )
             ok += 1
@@ -236,9 +225,9 @@ def bulk_create_plans_task(self, program_id, plans_input, mode, grouping, cell_s
     return {"status": "ok", "results": results, "created": ok, "total": total}
 
 
-def _initial_plan_hulls(boundary, mode, cell_size_m):
+def _initial_plan_hulls(geometry, mode, cell_size_m):
     """The ``hulls`` FeatureCollection ``create_plan`` materialises into work areas
-    at creation, by mode.
+    at creation, by mode. ``geometry`` is the ward's GeoJSON geometry.
 
     * **Coverage** is sampled at creation: tile the ward into a grid via
       ``generate_coverage_frame`` (one work area per cell).
@@ -248,14 +237,60 @@ def _initial_plan_hulls(boundary, mode, cell_size_m):
       So there are no hulls yet — and ``materialize_work_areas`` reads ``pins``, not
       ``hulls``, for sampling anyway — hence an empty collection."""
     if mode == "coverage":
-        import json
-
         from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
 
         cfg = CoverageConfig.from_payload({"cell_size_m": cell_size_m})
-        result = generate_coverage_frame([{"geometry": json.loads(boundary.geometry.geojson)}], cfg)
-        return result.areas_geojson
+        return generate_coverage_frame([{"geometry": geometry}], cfg).areas_geojson
     return {"type": "FeatureCollection", "features": []}
+
+
+def create_boundary_plan(
+    da,
+    *,
+    mode,
+    name,
+    geometry,
+    region=None,
+    boundary_id="",
+    population=None,
+    cell_size_m=100.0,
+    lga="",
+    state="",
+    grouping=None,
+):
+    """Create one boundary plan from an admin boundary — the shared core of BOTH
+    bulk-create-from-boundaries paths (the sync study "add wards from map" view and
+    the async bulk-create-page task), so they build plans identically.
+
+    Coverage is gridded into work areas at creation; sampling starts boundary-only
+    and is sampled later (see the module "Plan lifecycle"). Stores ONE consistent
+    ``input_areas`` entry: inline ``geometry`` (resilience + the footprints overlay),
+    the ``boundary_id`` (so the study "Generate" pass can re-resolve the ward), and
+    the boundary ``population`` (for plan KPIs — looked up from ``boundary_id`` when
+    not supplied)."""
+    if population is None and boundary_id:
+        from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+
+        b = AdminBoundary.objects.filter(boundary_id=boundary_id).first()
+        population = int(b.population) if (b is not None and b.population is not None) else None
+    input_area = {"kind": "admin_boundary", "geometry": geometry}
+    if boundary_id:
+        input_area["boundary_id"] = boundary_id
+    if name:
+        input_area["name"] = name
+    if population is not None:
+        input_area["population"] = int(population)
+    return da.create_plan(
+        region=region if region is not None else name,
+        name=name,
+        mode=mode,
+        pins={"type": "FeatureCollection", "features": []},
+        hulls=_initial_plan_hulls(geometry, mode, cell_size_m),
+        input_areas=[input_area],
+        lga=lga,
+        state=state,
+        grouping=grouping,
+    )
 
 
 @celery_app.task(bind=True)
