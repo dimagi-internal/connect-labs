@@ -52,6 +52,11 @@ def _outlier(distribution, rng: random.Random) -> float:
         return distribution.mean + sign * (4 + rng.random()) * max(distribution.stddev, 0.01)
     if isinstance(distribution, UniformDistribution):
         return distribution.low - 1 if rng.random() < 0.5 else distribution.high + 1
+    if isinstance(distribution, BinaryDistribution):
+        # An outlier on a binary field is the rare/failed outcome: return the
+        # value opposite the expected majority. If success (1.0) is the majority
+        # (rate >= 0.5), the outlier is the failure (0.0), and vice versa.
+        return 0.0 if distribution.rate >= 0.5 else 1.0
     raise TypeError(f"unknown distribution: {distribution!r}")
 
 
