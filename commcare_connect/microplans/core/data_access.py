@@ -10,12 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from commcare_connect.microplans.core import plan as plan_lib
-from commcare_connect.microplans.core.models import (
-    TYPE_PLAN,
-    TYPE_PLAN_GROUP,
-    PlanGroupRecord,
-    PlanRecord,
-)
+from commcare_connect.microplans.core.models import TYPE_PLAN, TYPE_PLAN_GROUP, PlanGroupRecord, PlanRecord
 from commcare_connect.workflow.data_access import BaseDataAccess
 
 # Bump when the `microplan_plan` `data` shape changes, so readers can branch on
@@ -58,9 +53,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         # labs DB (no prod round-trip, no membership check) — exactly like a synthetic
         # opportunity. Real programs (positive PKs) are untouched and still hit prod.
         if program_id < 0 and not kwargs.get("opportunity_id"):
-            from commcare_connect.labs.synthetic.local_records_backend import (
-                is_labs_only_opportunity_id,
-            )
+            from commcare_connect.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
 
             backing_opp = -program_id
             if is_labs_only_opportunity_id(backing_opp):
@@ -95,9 +88,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         requires non-empty (see ``microplans/CONNECT_IMPORT_CONTRACT.md``); stored at
         creation so the Connect-import CSV export populates them without the caller
         re-supplying them. ``lga`` falls back to ``region`` when blank."""
-        work_areas = plan_lib.materialize_work_areas(
-            mode, pins, hulls, grouping=grouping
-        )
+        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_PLAN,
@@ -149,16 +140,12 @@ class ProgramPlanDataAccess(BaseDataAccess):
         for w in active:
             if old_workers[w["id"]] != new_workers[w["id"]]:
                 w["opportunity_access"] = old_workers[w["id"]]
-                plan_lib.apply_action(
-                    w, "reassign", {"opportunity_access": new_workers[w["id"]]}, actor
-                )
+                plan_lib.apply_action(w, "reassign", {"opportunity_access": new_workers[w["id"]]}, actor)
         data["work_areas"] = work_areas
         data["assignment"] = assignment
         return self._save_plan(plan, data, base_revision)
 
-    def regroup_plan(
-        self, plan_id: int, grouping: dict, actor: str, base_revision: int | None = None
-    ) -> PlanRecord:
+    def regroup_plan(self, plan_id: int, grouping: dict, actor: str, base_revision: int | None = None) -> PlanRecord:
         """Re-apply grouping (cells → work_area_group) to an existing plan.
 
         Phase 1 of the two-phase pipeline. Snapshots each cell's old group, runs
@@ -180,9 +167,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         new_groups = {w["id"]: w.get("work_area_group", "") for w in active}
         for w in active:
             w["work_area_group"] = old_groups[w["id"]]
-            plan_lib.apply_action(
-                w, "regroup", {"work_area_group": new_groups[w["id"]]}, actor
-            )
+            plan_lib.apply_action(w, "regroup", {"work_area_group": new_groups[w["id"]]}, actor)
         data["work_areas"] = work_areas
         data["grouping"] = grouping
         return self._save_plan(plan, data, base_revision)
@@ -212,9 +197,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         """
         plan = self.get_plan(plan_id)
         data = dict(plan.data)
-        work_areas = plan_lib.materialize_work_areas(
-            mode, pins, hulls, grouping=grouping
-        )
+        work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
         data["work_areas"] = work_areas
         data["input_areas"] = list(input_areas or [])
         data["mode"] = mode
@@ -246,9 +229,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
             model_class=PlanRecord,
         )
 
-    def _save_plan(
-        self, plan: PlanRecord, data: dict, base_revision: int | None = None
-    ) -> PlanRecord:
+    def _save_plan(self, plan: PlanRecord, data: dict, base_revision: int | None = None) -> PlanRecord:
         """Persist mutated plan ``data``, bumping the optimistic-concurrency
         ``revision``. If ``base_revision`` is given (the revision the caller loaded)
         and it no longer matches the freshly-read plan, raise ``StalePlanError`` —
@@ -323,9 +304,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         member). Refuses if it's not ours — never deletes by raw id. See
         :class:`RecordNotInProgramError`."""
         if self.get_plan(int(plan_id)) is None:
-            raise RecordNotInProgramError(
-                f"plan {plan_id} is not in program {self.program_id}"
-            )
+            raise RecordNotInProgramError(f"plan {plan_id} is not in program {self.program_id}")
         self.labs_api.delete_record(int(plan_id))
 
     # ---- plan groups (shareable subset offered to an LLO) ----
@@ -424,7 +403,5 @@ class ProgramPlanDataAccess(BaseDataAccess):
         """Hard-delete a plan group record. Use sparingly. Reads it scoped to this
         program first and refuses if it's not ours (see :class:`RecordNotInProgramError`)."""
         if self.get_group(int(group_id)) is None:
-            raise RecordNotInProgramError(
-                f"group {group_id} is not in program {self.program_id}"
-            )
+            raise RecordNotInProgramError(f"group {group_id} is not in program {self.program_id}")
         self.labs_api.delete_record(int(group_id))
