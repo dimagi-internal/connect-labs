@@ -14,17 +14,31 @@ _HULLS = {
             "type": "Feature",
             "geometry": {
                 "type": "Polygon",
-                "coordinates": [[[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.1], [3.0, 6.0]]],
+                "coordinates": [
+                    [[3.0, 6.0], [3.1, 6.0], [3.1, 6.1], [3.0, 6.1], [3.0, 6.0]]
+                ],
             },
-            "properties": {"arm": "coverage", "cluster": "C0", "building_count": 100, "expected_visit_count": 100},
+            "properties": {
+                "arm": "coverage",
+                "cluster": "C0",
+                "building_count": 100,
+                "expected_visit_count": 100,
+            },
         },
         {
             "type": "Feature",
             "geometry": {
                 "type": "Polygon",
-                "coordinates": [[[3.2, 6.0], [3.3, 6.0], [3.3, 6.1], [3.2, 6.1], [3.2, 6.0]]],
+                "coordinates": [
+                    [[3.2, 6.0], [3.3, 6.0], [3.3, 6.1], [3.2, 6.1], [3.2, 6.0]]
+                ],
             },
-            "properties": {"arm": "coverage", "cluster": "C1", "building_count": 80, "expected_visit_count": 80},
+            "properties": {
+                "arm": "coverage",
+                "cluster": "C1",
+                "building_count": 80,
+                "expected_visit_count": 80,
+            },
         },
     ],
 }
@@ -59,7 +73,12 @@ class TestMaterialize:
                 {
                     "type": "Feature",
                     "geometry": {"type": "Point", "coordinates": [3.05, 6.05]},
-                    "properties": {"arm": "intervention", "cluster": "C0", "role": "primary", "order_in_cluster": 1},
+                    "properties": {
+                        "arm": "intervention",
+                        "cluster": "C0",
+                        "role": "primary",
+                        "order_in_cluster": 1,
+                    },
                 },
             ],
         }
@@ -71,14 +90,22 @@ class TestActions:
     def test_exclude_sets_fields_and_audits_phase_planning(self):
         wa = _materialize()[0]
         plan.apply_action(
-            wa, "exclude", {"reason": "lake, not a settlement"}, actor="llo_user", now="2026-05-28T00:00:00Z"
+            wa,
+            "exclude",
+            {"reason": "lake, not a settlement"},
+            actor="llo_user",
+            now="2026-05-28T00:00:00Z",
         )
         assert wa["status"] == plan.STATUS_EXCLUDED
         assert wa["excluded_reason"] == "lake, not a settlement"
         assert wa["excluded_by"] == "llo_user"
         assert len(wa["audit"]) == 1
         ev = wa["audit"][0]
-        assert ev["phase"] == "planning" and ev["actor"] == "llo_user" and ev["action"] == "exclude"
+        assert (
+            ev["phase"] == "planning"
+            and ev["actor"] == "llo_user"
+            and ev["action"] == "exclude"
+        )
         # audit mirrors Connect pghistory: old->new over the tracked fields that changed
         assert ev["changes"]["status"] == ["UNASSIGNED", "EXCLUDED"]
         assert ev["changes"]["excluded_reason"] == ["", "lake, not a settlement"]
@@ -99,14 +126,20 @@ class TestActions:
     def test_noop_edit_records_no_audit(self):
         wa = _materialize()[0]
         # Re-set the work_area_group to its current auto-assigned value: no change → no audit.
-        plan.apply_action(wa, "regroup", {"work_area_group": wa["work_area_group"]}, "u")
+        plan.apply_action(
+            wa, "regroup", {"work_area_group": wa["work_area_group"]}, "u"
+        )
         assert wa["audit"] == []
 
     def test_unexclude_clears(self):
         wa = _materialize()[0]
         plan.apply_action(wa, "exclude", {"reason": "x"}, "u")
         plan.apply_action(wa, "unexclude", {}, "u")
-        assert wa["status"] == plan.STATUS_UNASSIGNED and wa["excluded_reason"] == "" and wa["excluded_by"] == ""
+        assert (
+            wa["status"] == plan.STATUS_UNASSIGNED
+            and wa["excluded_reason"] == ""
+            and wa["excluded_by"] == ""
+        )
 
     def test_unknown_action_raises(self):
         import pytest
@@ -162,7 +195,15 @@ class TestKpis:
     def _poly(self, lon, lat, d=0.01):
         return {
             "type": "Polygon",
-            "coordinates": [[[lon, lat], [lon + d, lat], [lon + d, lat + d], [lon, lat + d], [lon, lat]]],
+            "coordinates": [
+                [
+                    [lon, lat],
+                    [lon + d, lat],
+                    [lon + d, lat + d],
+                    [lon, lat + d],
+                    [lon, lat],
+                ]
+            ],
         }
 
     def _was(self):
@@ -171,21 +212,38 @@ class TestKpis:
             {
                 "type": "Feature",
                 "geometry": self._poly(3.0, 6.0),
-                "properties": {"arm": "coverage", "cluster": "C0", "building_count": 100, "expected_visit_count": 100},
+                "properties": {
+                    "arm": "coverage",
+                    "cluster": "C0",
+                    "building_count": 100,
+                    "expected_visit_count": 100,
+                },
             },
             {
                 "type": "Feature",
                 "geometry": self._poly(3.5, 6.0),
-                "properties": {"arm": "coverage", "cluster": "C1", "building_count": 90, "expected_visit_count": 90},
+                "properties": {
+                    "arm": "coverage",
+                    "cluster": "C1",
+                    "building_count": 90,
+                    "expected_visit_count": 90,
+                },
             },
             {
                 "type": "Feature",
                 "geometry": self._poly(3.05, 6.0),
-                "properties": {"arm": "coverage", "cluster": "C2", "building_count": 60, "expected_visit_count": 60},
+                "properties": {
+                    "arm": "coverage",
+                    "cluster": "C2",
+                    "building_count": 60,
+                    "expected_visit_count": 60,
+                },
             },
         ]
         return plan.materialize_work_areas(
-            "coverage", {"type": "FeatureCollection", "features": []}, {"type": "FeatureCollection", "features": feats}
+            "coverage",
+            {"type": "FeatureCollection", "features": []},
+            {"type": "FeatureCollection", "features": feats},
         )
 
     def test_dimension_falls_back_to_group_before_assignment(self):
@@ -214,7 +272,9 @@ class TestKpis:
     def test_population_balance_and_exclusion(self):
         was = self._was()
         for w in was:
-            w["population"] = {"c0": 1000, "c1": 500, "c2": 300}.get(w["properties"]["cluster"].lower(), 0)
+            w["population"] = {"c0": 1000, "c1": 500, "c2": 300}.get(
+                w["properties"]["cluster"].lower(), 0
+            )
         plan.apply_action(was[0], "reassign", {"opportunity_access": "A"}, "u")
         plan.apply_action(was[1], "reassign", {"opportunity_access": "B"}, "u")
         plan.apply_action(was[2], "exclude", {"reason": "lake"}, "u")
@@ -233,7 +293,13 @@ class TestKpis:
         # The caller passes area_buildings (the footprint universe) so pop/building stays
         # a real per-structure estimate; the sample size is kept as sampled_buildings.
         was = [
-            {"centroid": [8.6, 9.0], "building_count": 1, "population": 0, "work_area_group": "g", "status": "active"}
+            {
+                "centroid": [8.6, 9.0],
+                "building_count": 1,
+                "population": 0,
+                "work_area_group": "g",
+                "status": "active",
+            }
             for _ in range(8)
         ]
         ia = [{"population": 22844}]
@@ -257,7 +323,9 @@ class TestHaversine:
 
     def test_diameter_no_domain_error_on_dense_points(self):
         cents = [[3.0 + i * 1e-7, 6.0] for i in range(50)]  # near-identical points
-        assert plan._territory_diameter_km(cents) >= 0.0  # must not raise math domain error
+        assert (
+            plan._territory_diameter_km(cents) >= 0.0
+        )  # must not raise math domain error
 
     def test_diameter_hull_path_equals_brute_force(self):
         # The convex-hull optimization (n>50) must give the EXACT same diameter as
@@ -267,7 +335,11 @@ class TestHaversine:
         def brute(cents):
             n = len(cents)
             return max(
-                (plan._haversine_km(cents[i], cents[j]) for i in range(n) for j in range(i + 1, n)),
+                (
+                    plan._haversine_km(cents[i], cents[j])
+                    for i in range(n)
+                    for j in range(i + 1, n)
+                ),
                 default=0.0,
             )
 
@@ -278,7 +350,9 @@ class TestHaversine:
             lat = 11.9 + (math.cos(i * 78.233) % 1) * 0.3
             cents.append([lon, lat])
         assert len(cents) > 50  # exercises the hull branch
-        assert plan._territory_diameter_km(cents) == pytest.approx(brute(cents), rel=0, abs=1e-9)
+        assert plan._territory_diameter_km(cents) == pytest.approx(
+            brute(cents), rel=0, abs=1e-9
+        )
 
     def test_diameter_all_coincident_is_zero_via_hull(self):
         cents = [[3.0, 6.0] for _ in range(60)]  # >50 identical → hull is a Point
@@ -292,7 +366,11 @@ class TestLifecycle:
         plan.transition_plan(d, plan.PLAN_APPROVED, "u")
         plan.transition_plan(d, plan.PLAN_DEPLOYED, "u", opportunity_id=1882)
         assert d["status"] == plan.PLAN_DEPLOYED and d["opportunity_id"] == 1882
-        assert [e["to"] for e in d["status_log"]] == ["in_review", "approved", "deployed"]
+        assert [e["to"] for e in d["status_log"]] == [
+            "in_review",
+            "approved",
+            "deployed",
+        ]
         assert d["status_log"][-1]["phase"] == "deploy"
         assert d["status_log"][0]["phase"] == "planning"
 
@@ -301,7 +379,9 @@ class TestLifecycle:
 
         d = {"status": plan.PLAN_DRAFT}
         with pytest.raises(ValueError):
-            plan.transition_plan(d, plan.PLAN_DEPLOYED, "u", opportunity_id=1)  # draft can't jump to deployed
+            plan.transition_plan(
+                d, plan.PLAN_DEPLOYED, "u", opportunity_id=1
+            )  # draft can't jump to deployed
 
     def test_deploy_requires_opportunity(self):
         import pytest
@@ -348,11 +428,15 @@ class TestRecordModels:
     def test_plan_record_instantiates_from_api_data(self):
         from commcare_connect.microplans.core.models import PlanRecord
 
-        rec = PlanRecord(self._plan_api_data())  # must not raise (property-shadow regression)
+        rec = PlanRecord(
+            self._plan_api_data()
+        )  # must not raise (property-shadow regression)
         assert rec.id == 501
         assert rec.program_id == 133  # base instance attr, not shadowed
         assert rec.opportunity_id is None  # base record-level field
-        assert rec.data.get("opportunity_id") == "1742"  # deploy-bound opp lives in data
+        assert (
+            rec.data.get("opportunity_id") == "1742"
+        )  # deploy-bound opp lives in data
         assert rec.status == "deployed" and rec.region == "Kano North LGA"
         assert len(rec.work_areas) == 1
 
@@ -394,7 +478,12 @@ class TestRecordModels:
             "type": "microplan_plan_group",
             "opportunity_id": None,
             "program_id": 133,
-            "data": {"name": "For Hilltop Health", "plan_ids": [1, 2], "offered_to": "Hilltop", "shared": True},
+            "data": {
+                "name": "For Hilltop Health",
+                "plan_ids": [1, 2],
+                "offered_to": "Hilltop",
+                "shared": True,
+            },
         }
         rec = PlanGroupRecord(api_data)  # must not raise
         assert rec.program_id == 133 and rec.name == "For Hilltop Health"
@@ -463,16 +552,28 @@ def test_sampling_materialize_keeps_arm_labs_side_and_blind():
             {
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [3.0, 6.0]},
-                "properties": {"arm": "intervention", "cluster": "C1", "role": "primary", "order_in_cluster": 1},
+                "properties": {
+                    "arm": "intervention",
+                    "cluster": "C1",
+                    "role": "primary",
+                    "order_in_cluster": 1,
+                },
             },
             {
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [3.5, 6.0]},
-                "properties": {"arm": "comparison", "cluster": "C1", "role": "primary", "order_in_cluster": 1},
+                "properties": {
+                    "arm": "comparison",
+                    "cluster": "C1",
+                    "role": "primary",
+                    "order_in_cluster": 1,
+                },
             },
         ],
     }
-    was = plan.materialize_work_areas("sampling", pins, {"type": "FeatureCollection", "features": []})
+    was = plan.materialize_work_areas(
+        "sampling", pins, {"type": "FeatureCollection", "features": []}
+    )
     assert len(was) == 2
     arms = {w["arm"] for w in was}
     assert arms == {"intervention", "comparison"}  # system knows arm
@@ -487,22 +588,92 @@ def test_sampling_materialize_keeps_arm_labs_side_and_blind():
     assert was[0]["work_area_group"] != was[1]["work_area_group"]
 
 
+def test_sampling_work_area_geometry_is_the_building_footprint_not_a_point():
+    """The WorkArea an FLW receives must be a polygon. A sampling pin carrying its
+    building footprint becomes a (buffered) footprint polygon; a pin with no
+    footprint falls back to a small square — never a bare Point (which renders
+    nothing on the fill/line map and exports as POINT())."""
+    from shapely.geometry import shape
+
+    footprint = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [3.0000, 6.0000],
+                [3.0001, 6.0000],
+                [3.0001, 6.00006],
+                [3.0000, 6.00006],
+                [3.0000, 6.0000],
+            ]
+        ],
+    }
+    pins = {
+        "type": "FeatureCollection",
+        "features": [
+            {  # has a footprint → real building outline
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [3.00005, 6.00003]},
+                "properties": {
+                    "arm": "intervention",
+                    "cluster": "C1",
+                    "role": "primary",
+                    "order_in_cluster": 1,
+                    "geom_json": footprint,
+                },
+            },
+            {  # no footprint → square fallback, still a polygon
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [3.5, 6.0]},
+                "properties": {
+                    "arm": "comparison",
+                    "cluster": "C2",
+                    "role": "alternate",
+                    "order_in_cluster": 2,
+                },
+            },
+        ],
+    }
+    was = plan.materialize_work_areas(
+        "sampling", pins, {"type": "FeatureCollection", "features": []}
+    )
+    assert len(was) == 2
+    for w in was:
+        assert w["geometry"]["type"] == "Polygon", (
+            "sampling work area must be a polygon, not a Point"
+        )
+        assert shape(w["geometry"]).is_valid
+        # the raw footprint must not be duplicated into the shared/Connect-facing bucket
+        assert "geom_json" not in w["properties"]
+    # The footprinted work area tracks the building (its bbox is the elongated
+    # footprint + buffer), distinct from the square fallback.
+    footprinted = shape(was[0]["geometry"])
+    assert footprinted.contains(shape(footprint).centroid)
+
+
 class TestDeriveLgaState:
     """``derive_lga_state`` resolves the LGA/State labels Connect's importer
     requires non-empty (see microplans/CONNECT_IMPORT_CONTRACT.md)."""
 
     def test_explicit_lga_state_win(self):
-        assert plan.derive_lga_state({"lga": "Kano North LGA", "state": "Kano", "region": "ignored"}) == (
+        assert plan.derive_lga_state(
+            {"lga": "Kano North LGA", "state": "Kano", "region": "ignored"}
+        ) == (
             "Kano North LGA",
             "Kano",
         )
 
     def test_lga_falls_back_to_region(self):
         # plans created before lga was captured carry only `region`
-        assert plan.derive_lga_state({"region": "Kano North LGA"}) == ("Kano North LGA", "")
+        assert plan.derive_lga_state({"region": "Kano North LGA"}) == (
+            "Kano North LGA",
+            "",
+        )
 
     def test_explicit_lga_overrides_region(self):
-        assert plan.derive_lga_state({"lga": "Real LGA", "region": "label"}) == ("Real LGA", "")
+        assert plan.derive_lga_state({"lga": "Real LGA", "region": "label"}) == (
+            "Real LGA",
+            "",
+        )
 
     def test_state_has_no_fallback(self):
         # State is never invented — an empty State is reported as empty so the
@@ -525,7 +696,9 @@ class TestPlanSampleAreas:
 
         poly = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
         out = plan_sample_areas(
-            [{"kind": "draw", "geometry": poly}], "intervention", resolve_boundary=lambda bid: None
+            [{"kind": "draw", "geometry": poly}],
+            "intervention",
+            resolve_boundary=lambda bid: None,
         )
         assert out == [{"arm": "intervention", "geometry": poly}]
 
@@ -544,6 +717,8 @@ class TestPlanSampleAreas:
         from commcare_connect.microplans.core.plan import plan_sample_areas
 
         out = plan_sample_areas(
-            [{"kind": "admin_boundary", "boundary_id": "missing"}], "intervention", resolve_boundary=lambda bid: None
+            [{"kind": "admin_boundary", "boundary_id": "missing"}],
+            "intervention",
+            resolve_boundary=lambda bid: None,
         )
         assert out == []
