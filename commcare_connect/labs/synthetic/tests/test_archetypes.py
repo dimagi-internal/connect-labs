@@ -25,6 +25,19 @@ def test_bad_muac_filenames_for_category_returns_only_that_category():
     assert set(tape).isdisjoint(framing)
 
 
+def _all_photos(data):
+    """Flatten visit_images (one synthetic visit per photo) into one list."""
+    return [img for imgs in data["visit_images"].values() for img in imgs]
+
+
+def _all_assessments(data):
+    """Flatten per-visit assessments into one {blob_id: assessment} dict."""
+    out = {}
+    for vr in data["visit_results"].values():
+        out.update(vr.get("assessments", {}))
+    return out
+
+
 def test_audit_completed_pass_clean_attaches_5_good_images():
     data = build_audit_data(
         archetype_name="completed_pass_clean",
@@ -38,14 +51,21 @@ def test_audit_completed_pass_clean_attaches_5_good_images():
     assert data["status"] == "completed"
     assert data["overall_result"] == "pass"
     assert data["image_results"] == {"pass": 5, "fail": 0, "pending": 0}
-    photos = data["visit_images"]["9000001"]
+    # One synthetic visit per photo (the audit window derives from
+    # per-visit dates), ids derived from the base.
+    assert len(data["visit_ids"]) == 5
+    assert len(set(data["visit_ids"])) == 5
+    assert all(str(vid).startswith("9000001") for vid in data["visit_ids"])
+    photos = _all_photos(data)
     assert len(photos) == 5
     # All photos should be from the good pool
     assert all("-good-" in p["blob_id"] for p in photos)
     # All photos should have a "pass" assessment recorded
-    assessments = data["visit_results"]["9000001"]["assessments"]
+    assessments = _all_assessments(data)
     assert len(assessments) == 5
     assert all(a["result"] == "pass" for a in assessments.values())
+    # Every per-visit aggregate result agrees
+    assert all(vr["result"] == "pass" for vr in data["visit_results"].values())
 
 
 def test_audit_completed_fail_misleading_prefers_misleading_category():
@@ -61,7 +81,7 @@ def test_audit_completed_fail_misleading_prefers_misleading_category():
     assert data["status"] == "completed"
     assert data["overall_result"] == "fail"
     assert data["image_results"] == {"pass": 0, "fail": 5, "pending": 0}
-    photos = data["visit_images"]["9000002"]
+    photos = _all_photos(data)
     # All 5 photos are from the bad pool (the catalog is only ~13 photos
     # across 5 categories, so a 5-fail audit naturally tops up beyond the
     # primary category — but at least some must be from misleading).
@@ -90,12 +110,15 @@ def test_audit_in_review_partial_has_pending_photos_no_overall_result():
     # 1 pass + 1 fail = 2 assessed; 3 pending = 5 total
     assert data["image_results"]["pending"] == 3
     assert data["image_results"]["pass"] + data["image_results"]["fail"] == 2
-    photos = data["visit_images"]["9000003"]
+    photos = _all_photos(data)
     assert len(photos) == 5
-    # visit_results.result should be empty (no aggregate yet)
-    assert data["visit_results"]["9000003"]["result"] == ""
-    # Only 2 photos should have assessments recorded
-    assert len(data["visit_results"]["9000003"]["assessments"]) == 2
+    # Only 2 photos should have assessments recorded across all visits
+    assert len(_all_assessments(data)) == 2
+    # Pending visits carry an empty aggregate result
+    empty_results = [vr for vr in data["visit_results"].values() if vr["result"] == ""]
+    assert len(empty_results) == 3
+    # An in-progress audit must not claim a completion date
+    assert "completed_at" not in data
 
 
 def test_audit_data_is_deterministic_for_same_seed():
@@ -110,7 +133,68 @@ def test_audit_data_is_deterministic_for_same_seed():
     )
     a = build_audit_data(**kw)
     b = build_audit_data(**kw)
-    assert [p["blob_id"] for p in a["visit_images"]["9000010"]] == [p["blob_id"] for p in b["visit_images"]["9000010"]]
+    # Same seed → identical photo set, visit dates, entities, completion time.
+    assert a == b
+
+
+def test_audit_visits_spread_across_trailing_7_days():
+    """The audited visits must span a true 7-day window ending at the
+    anchor date — a single shared timestamp used to render
+    'Nov 24, 2025 to Nov 24, 2025' for an 'Audit Last 7 days'."""
+    from datetime import date, datetime
+
+    data = build_audit_data(
+        archetype_name="completed_pass_clean",
+        flw_id="alice",
+        monday_iso="2025-11-24",
+        opportunity_id=10001,
+        opportunity_name="Demo Opp",
+        workflow_run_id=200,
+        visit_id_base=9000020,
+    )
+    dates = sorted(datetime.fromisoformat(img["visit_date"]) for img in _all_photos(data))
+    assert dates[0].date() == date(2025, 11, 18)  # anchor - 6 days
+    assert dates[-1].date() == date(2025, 11, 24)  # the anchor day itself
+    # Distinct days, not five copies of one timestamp
+    assert len({d.date() for d in dates}) >= 3
+    # No visit postdates the audit's creation moment
+    created = datetime.fromisoformat(data["created_at"])
+    assert all(d <= created for d in dates)
+    # criteria advertises the same true range
+    assert data["criteria"]["start_date"] == "2025-11-18"
+    assert data["criteria"]["end_date"] == "2025-11-24"
+
+
+def test_completed_audit_carries_completed_at():
+    """'Completed on' on the audit page reads data['completed_at'] — a
+    completed audit without it renders a blank completion line."""
+    from datetime import datetime
+
+    data = build_audit_data(
+        archetype_name="completed_mixed_tape_usage",
+        flw_id="bob",
+        monday_iso="2025-11-10",
+        opportunity_id=10001,
+        opportunity_name="Demo Opp",
+        workflow_run_id=200,
+        visit_id_base=9000030,
+    )
+    completed = datetime.fromisoformat(data["completed_at"])
+    created = datetime.fromisoformat(data["created_at"])
+    assert completed > created
+    assert completed.date() == created.date()  # reviewed the same day
+
+
+def test_archetype_descriptions_are_story_true():
+    """Archetype descriptions are written into user-visible record fields
+    (audit notes/description, task description). Film-direction or
+    scaffolding vocabulary must never appear there — it ends up on camera."""
+    banned = ("demo", "filmed", "film", "camera", "smoke test", "synthetic", "recorder", "walkthrough", "scene")
+    for catalog in (AUDIT_ARCHETYPES, TASK_ARCHETYPES):
+        for name, arche in catalog.items():
+            text = arche.description.lower()
+            for word in banned:
+                assert word not in text, f"{name} description leaks staging vocabulary: {word!r}"
 
 
 def test_task_closed_warned_has_close_event_and_resolution():
@@ -200,6 +284,54 @@ def test_task_carries_archetype_appropriate_ocs_conversation():
 
         for m in conv:
             datetime.fromisoformat(m["ts"])
+
+
+def test_closed_task_transcript_close_agrees_with_history():
+    """The coach's closing message must be stamped at (just before) the
+    task History's close event — not days earlier. A transcript that says
+    'Closing this task' on Nov 10 under a History that closes Nov 16 is
+    the inconsistency this guards against."""
+    from datetime import datetime, timedelta
+
+    for archetype_name in ("closed_satisfactory", "closed_warned", "closed_suspended", "closed_suspended_fraud"):
+        data = build_task_data(
+            archetype_name=archetype_name,
+            flw_id="grace",
+            monday_iso="2025-11-03",
+            opportunity_id=10001,
+            workflow_run_id=200,
+            audit_session_id=300,
+            title=f"[demo] {archetype_name}",
+            creator_name="kwame_nm",
+        )
+        closed_event = next(e for e in data["events"] if e["event_type"] == "closed")
+        closed_at = datetime.fromisoformat(closed_event["timestamp"])
+        last_msg_ts = datetime.fromisoformat(data["ocs_conversation"][-1]["ts"])
+        assert last_msg_ts <= closed_at, f"{archetype_name}: closing message postdates the close event"
+        assert closed_at - last_msg_ts <= timedelta(minutes=15), (
+            f"{archetype_name}: closing message ({last_msg_ts}) is not aligned " f"with the close event ({closed_at})"
+        )
+
+
+def test_transcript_turns_are_not_metronomic():
+    """Messages must not all land in the same minute / at one fixed
+    interval — reply gaps should vary like a real conversation."""
+    from datetime import datetime
+
+    data = build_task_data(
+        archetype_name="investigating",
+        flw_id="frank",
+        monday_iso="2025-11-17",
+        opportunity_id=10001,
+        workflow_run_id=340,
+        audit_session_id=345,
+        title="[demo] investigating",
+        creator_name="kwame_nm",
+    )
+    stamps = [datetime.fromisoformat(m["ts"]) for m in data["ocs_conversation"]]
+    gaps = [(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])]
+    assert all(g > 0 for g in gaps), "timestamps must strictly increase"
+    assert len(set(gaps)) > 1, "reply gaps must vary, not tick at a fixed interval"
 
 
 def test_closed_satisfactory_transcript_tone_is_supportive():

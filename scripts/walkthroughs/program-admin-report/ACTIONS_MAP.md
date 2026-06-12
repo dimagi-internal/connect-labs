@@ -44,17 +44,46 @@ primitives).
   target URL once on a non-recorded page first (warms the GDrive image cache,
   ~20s) and only then starts the video (`defer_record=True`). A DDD render
   should either keep a warm pass or budget longer photo waits.
+- **Scenes that END on an audit page need a must-succeed first-image wait +
+  settle hold.** A soft (log-and-continue) image wait let a scene's final
+  frame land mid-load with five blank photo tiles (DDD iter1, scenes 2 + 12).
+  Make `css:img[src*="/audit/image/"]` a `must_succeed: true` wait (~30s),
+  then hold ~1.5-2s before the scene's closing holds / any Pass clicks.
+- **Caret-to-end in a textarea: `ControlOrMeta+End` does NOT move the caret
+  on darwin.** It scrolled the page and left the caret mid-word, so the
+  append typed "househol Please be friendly.ds" (DDD iter1, scene 5). Use
+  `press: ControlOrMeta+ArrowDown` (end of textarea content on macOS),
+  optionally followed by `press: End`, before `type`.
+- **Cursor parking — park via `hover` on neutral chrome, never rely on where
+  the last click left the cursor.** Two failure shapes from iter1: (a) the
+  inline detail panel inserts BELOW the clicked row and shifts later rows
+  up/down under a parked cursor — it visually landed on the OTHER cluster's
+  week cell while the first cluster's cell wore the SELECTED badge; (b) the
+  scene-start cursor occluded the breadcrumb / the "WINDOW AGGREGATE" header.
+  Known-good neutral park targets on the PAR page: `text:opportunities
+watched` (top-strip summary line), `text:Run detail` (detail-panel header
+  chrome), and the aggregate cards' runs-count lines (`text:4/4 runs` /
+  `text:3/4 runs` — beside, not on, the SOP MET / BELOW pills).
+- **Week-window contract (post-restructure).** The PAR window is the trailing
+  4 COMPLETED weeks (Northern 4/4 → aggregate "SOP MET"; Southern 3/4 with a
+  missed week + the open-work week → "BELOW"). The manager-flow in-progress
+  run is the CURRENT week, OUTSIDE the PAR window, so the grid never shows a
+  "NO RUN" hole for the week the manager is filmed working. `regenerate.py`
+  computes all Mondays from today's date — the demo stays current-dated. The
+  emitted var keys `wk4_run_id` / `wk4_url` are kept for spec stability; they
+  point at the current-week in-progress run (the name is historical).
 
 ---
 
 ## Manager flow (`record_manager_flow.py`, ~40s)
 
-Target page: the in_progress Wk4 weekly review,
+Target page: the in_progress CURRENT-week weekly review,
 `${wk4_url}` = `/labs/workflow/${workflow_def_id}/run/?run_id=${wk4_run_id}&opportunity_id=${opp_id}`.
-The flagged FLW is `${flagged_flw_manager}` (archetype-derived; `jumoke_n` in
-the shipped config).
+(The `wk4` var name is historical — the run is the live current week, outside
+the PAR window.) The flagged FLW is `${flagged_flw_manager}`
+(archetype-derived; `jumoke_n` in the shipped config).
 
-### M0 — Arrive at the Wk4 in_progress review
+### M0 — Arrive at the current-week in_progress review
 
 ```yaml
 - kind: goto
@@ -195,8 +224,10 @@ from `task.data.coaching_prompt` (PR #282).
   target: css:textarea[placeholder="Instructions for the bot..."]
 - kind: wait_for # synthetic bot option present in a <select>; 10s
   target: css:select option[value="synthetic-muac-coaching"]
-- kind: select # native <select> — use select, never click
-  target: css:select
+- kind: select # native <select> — use select, never click; MUST scope to the
+  # bot select via :has() — the task page has other <select>s (Status) and a
+  # bare css:select silently selects nothing (hit in DDD iter0)
+  target: css:select:has(option[value="synthetic-muac-coaching"])
   value: synthetic-muac-coaching # must dispatch input + change events
 - kind: hold
   seconds: 1.5
@@ -205,11 +236,18 @@ from `task.data.coaching_prompt` (PR #282).
 ### M7 — Edit the prompt slightly
 
 Conveys "the manager is tailoring this". Focus the textarea, move the caret to
-the end, then type (60ms/char in the recorder).
+the end, then type (60ms/char in the recorder). **Caret gotcha:**
+`ControlOrMeta+End` does not move the caret in a textarea on darwin — the
+append lands mid-word. Use `ControlOrMeta+ArrowDown` (+ `End`).
 
 ```yaml
-- kind: fill # APPEND, don't replace — caret to end first
+- kind: click # focus the textarea
   target: css:textarea[placeholder="Instructions for the bot..."]
+- kind: press # caret to end of content (macOS-safe; NOT ControlOrMeta+End)
+  value: ControlOrMeta+ArrowDown
+- kind: press # then end-of-line
+  value: End
+- kind: type # APPEND, don't replace
   value: ' Please be friendly.'
 - kind: hold
   seconds: 1.5
@@ -282,6 +320,11 @@ selector. The canonical locate-and-click (from `_lib/grid.py`):
 - kind: hold
   seconds: 3 # detail panel slides out under the row
 ```
+
+**Cursor parking after the cell click**: the panel inserts below the clicked
+row and shifts every later row — a cursor parked at fixed viewport coords ends
+up visually resting on the OTHER cluster's week cell. After the panel renders,
+re-park with `hover: text:Run detail` (the panel's header chrome).
 
 ### D2b — "Open the run" → CHC Nutrition weekly review
 
@@ -403,17 +446,29 @@ The detail panel links audits by id — the click target is literal text.
 
 ### D8 — Back to the aggregate, linger
 
+The closing beat must NOT be a pixel-identical replay of the grid-overview
+scene — give it its own motion: scroll to the aggregate column, then hover
+each cluster's aggregate card in turn (the SOP MET vs BELOW contrast IS the
+scene). Hover the runs-count line inside each card, beside — not on — the
+verdict pill, and never park on the "WINDOW AGGREGATE" column header.
+
 ```yaml
 - kind: goto
-  target: back
+  target: ${par_url}
+- kind: wait_for
+  target: text:Window aggregate
+- kind: scroll_to
+  target: text:Window aggregate
+- kind: hover # Northern's aggregate card — the SOP MET side
+  target: text:4/4 runs
+  seconds: 2
 - kind: hold
-  seconds: 0.6
-- kind: scroll
-  value: '0' # smooth scroll to top
+  seconds: 1.5
+- kind: hover # Southern's aggregate card — the BELOW side; final rest
+  target: text:3/4 runs
+  seconds: 2
 - kind: hold
-  seconds:
-    3 # cursor rests near the aggregate column
-    # (~x=1310, y=240 on a 1440×900 viewport)
+  seconds: 3
 ```
 
 ---

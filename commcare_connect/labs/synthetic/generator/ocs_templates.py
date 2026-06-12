@@ -118,7 +118,7 @@ TEMPLATES: dict[str, list[dict]] = {
         {"role": "flw", "text": "Yes please."},
         {
             "role": "bot",
-            "text": "Here's photo #3 from yesterday — see how the reading window is cut off by the thumb? Just slightly rotating the wrist fixes that. Try a few practice shots next visit and your supervisor will spot-check.",
+            "text": "When you open yesterday's batch in the app, look at the third photo — the reading window is partly covered by the thumb. Slightly rotating the wrist before you take the shot fixes that. Try a few practice shots next visit and your supervisor will spot-check.",
         },
         {"role": "flw", "text": "Got it, I'll be careful with framing. Thanks for the help."},
         {
@@ -240,13 +240,41 @@ def render_transcript(
     template_key: str,
     flw_name: str,
     base_timestamp: dt.datetime,
+    close_timestamp: dt.datetime | None = None,
 ) -> list[dict[str, str]]:
-    """Fill a template with FLW name and absolute timestamps."""
+    """Fill a template with the FLW name and realistic absolute timestamps.
+
+    Turns are spaced with varied, plausible reply gaps (the coach replies
+    within a couple of minutes; the worker takes longer) instead of a
+    metronomic fixed interval — a transcript whose every message lands in
+    the same few minutes reads as fake.
+
+    ``close_timestamp`` (set for closed tasks) stamps the FINAL coach
+    message — the one announcing the closure — just before the task's
+    History close event, so the transcript and the History agree on when
+    the case was closed instead of the coach "closing" days earlier.
+
+    Deterministic per (template_key, flw_name) so regenerations are stable.
+    """
+    import random
+
     template = TEMPLATES.get(template_key, TEMPLATES[_DEFAULT_KEY])
+    rng = random.Random(f"{template_key}:{flw_name}")
+
+    stamps: list[dt.datetime] = []
+    ts = base_timestamp
+    for i, msg in enumerate(template):
+        if i:
+            gap_minutes = rng.randint(1, 3) if msg["role"] == "bot" else rng.randint(2, 9)
+            ts = ts + dt.timedelta(minutes=gap_minutes, seconds=rng.randint(0, 59))
+        stamps.append(ts)
+    if close_timestamp is not None and stamps:
+        closing_ts = close_timestamp - dt.timedelta(minutes=rng.randint(3, 9))
+        if closing_ts > stamps[-1]:
+            stamps[-1] = closing_ts
 
     result = []
-    for i, msg in enumerate(template):
-        ts = base_timestamp + dt.timedelta(minutes=i * 2)
+    for msg, ts in zip(template, stamps):
         result.append(
             {
                 "role": msg["role"],
