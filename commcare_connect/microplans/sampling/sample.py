@@ -122,9 +122,11 @@ class PinConfig:
 
 
 def sample_pins(buildings: pd.DataFrame, selected_psus: pd.DataFrame, config: PinConfig | None = None) -> pd.DataFrame:
-    """One row per sampled pin: cluster, lon, lat, area_m2, role, order_in_cluster, weight.
+    """One row per sampled pin: cluster, lon, lat, area_m2, sample_type, order_in_cluster, weight.
 
-    `selected_psus` is the DataFrame from `select_psus` (carries n_buildings + P_psu).
+    ``sample_type`` is ``"primary"`` (a unit to survey) or ``"alternate"`` (a ranked
+    backup). ``selected_psus`` is the DataFrame from `select_psus` (carries
+    n_buildings + P_psu).
     """
     config = config or PinConfig()
     out = []
@@ -154,12 +156,12 @@ def sample_pins(buildings: pd.DataFrame, selected_psus: pd.DataFrame, config: Pi
                     "lon": float(sub.loc[i, "lon"]),
                     "lat": float(sub.loc[i, "lat"]),
                     "area_m2": float(sub.loc[i, "area_m2"]) if "area_m2" in sub.columns else None,
-                    "role": "primary" if is_primary else "alternate",
+                    "sample_type": "primary" if is_primary else "alternate",
                     "order_in_cluster": rank,
                     "weight": weight,
                 }
             )
-    return pd.DataFrame(out, columns=["cluster", "lon", "lat", "area_m2", "role", "order_in_cluster", "weight"])
+    return pd.DataFrame(out, columns=["cluster", "lon", "lat", "area_m2", "sample_type", "order_in_cluster", "weight"])
 
 
 def _thin_to_separated(pts: np.ndarray, target_n: int, min_sep_m: float, rng: np.random.Generator) -> list[int]:

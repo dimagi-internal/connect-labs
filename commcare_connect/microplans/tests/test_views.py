@@ -172,7 +172,7 @@ def test_generate_frame_task_returns_envelope(monkeypatch):
                 {
                     "type": "Feature",
                     "geometry": {"type": "Point", "coordinates": [13.1, 11.8]},
-                    "properties": {"role": "primary", "cluster": "C0", "arm": "intervention"},
+                    "properties": {"sample_type": "primary", "cluster": "C0", "arm": "intervention"},
                 }
             ],
         },
@@ -184,7 +184,7 @@ def test_generate_frame_task_returns_envelope(monkeypatch):
 
     out = generate_frame_task.run([{"arm": "intervention"}], {"target_clusters": 1})
     assert out["status"] == "ok"
-    assert out["pins"]["features"][0]["properties"]["role"] == "primary"
+    assert out["pins"]["features"][0]["properties"]["sample_type"] == "primary"
     assert out["stats"][0]["psus_selected"] == 1
 
 

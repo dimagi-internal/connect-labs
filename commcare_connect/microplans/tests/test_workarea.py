@@ -21,7 +21,7 @@ PINS = {
             "properties": {
                 "arm": "intervention",
                 "cluster": "C3",
-                "role": "primary",
+                "sample_type": "primary",
                 "order_in_cluster": 1,
             },
         },
@@ -31,7 +31,7 @@ PINS = {
             "properties": {
                 "arm": "comparison",
                 "cluster": "C7",
-                "role": "alternate",
+                "sample_type": "alternate",
                 "order_in_cluster": 9,
             },
         },
@@ -46,7 +46,7 @@ def test_one_workarea_per_pin_with_tiny_area_semantics():
         assert w.building_count == 1
         assert w.expected_visit_count == 1
     a, b = was
-    assert a.case_properties["role"] == "primary"
+    assert a.case_properties["sample_type"] == "primary"
     assert a.case_properties["cluster"] == "C3"
     assert a.case_properties["lga"] == "Maiduguri"
     # arm is a labs-side field, intentionally NOT in case_properties (keeps the
@@ -95,7 +95,7 @@ def test_boundary_uses_the_real_building_footprint_when_present():
                 "properties": {
                     "arm": "intervention",
                     "cluster": "C3",
-                    "role": "primary",
+                    "sample_type": "primary",
                     "order_in_cluster": 1,
                     "geom_json": footprint,
                 },
@@ -123,9 +123,7 @@ def test_boundary_uses_the_real_building_footprint_when_present():
 def test_ward_defaults_to_arm_but_is_overridable():
     default = build_work_areas(PINS)
     assert default[0].ward == "intervention"
-    mapped = build_work_areas(
-        PINS, ward_for_arm={"intervention": "Gwange", "comparison": "Tsaki"}
-    )
+    mapped = build_work_areas(PINS, ward_for_arm={"intervention": "Gwange", "comparison": "Tsaki"})
     assert mapped[0].ward == "Gwange"
     assert mapped[1].ward == "Tsaki"
 
