@@ -47,17 +47,18 @@ class ProgramPlanDataAccess(BaseDataAccess):
 
     def __init__(self, program_id, **kwargs):
         program_id = int(program_id)
-        # Labs-only program: a synthetic opp surfaced in user_programs as a negative
-        # id (= -opportunity_id) by labs.context._merge_labs_only_opps. Carry the
-        # backing synthetic opp id so the LabsRecord API client short-circuits to the
-        # labs DB (no prod round-trip, no membership check) — exactly like a synthetic
-        # opportunity. Real programs (positive PKs) are untouched and still hit prod.
-        if program_id < 0 and not kwargs.get("opportunity_id"):
+        # Labs-only program: a synthetic opp surfaced in user_programs by
+        # labs.context._merge_labs_only_opps as a program id in the reserved range
+        # (>= LABS_ONLY_OPP_ID_FLOOR / 10_000; = the backing opp's id). Carry that
+        # backing opp id so the LabsRecord API client short-circuits to the labs DB
+        # (no prod round-trip, no membership check) — exactly like a synthetic
+        # opportunity. Real programs (PKs below the floor) return False here and
+        # are untouched, still hitting prod.
+        if not kwargs.get("opportunity_id"):
             from commcare_connect.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
 
-            backing_opp = -program_id
-            if is_labs_only_opportunity_id(backing_opp):
-                kwargs["opportunity_id"] = backing_opp
+            if is_labs_only_opportunity_id(program_id):
+                kwargs["opportunity_id"] = program_id
         super().__init__(program_id=program_id, **kwargs)
 
     @property
