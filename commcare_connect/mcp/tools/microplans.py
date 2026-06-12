@@ -3,9 +3,10 @@
 A generic, read-only window onto a program's plans, study groups, and sampled
 work areas — enough for an external caller (e.g. the synthetic survey generator)
 to ground synthetic data on the real primary/alternate footprints without a
-session. Works for labs-only synthetic programs (negative ``program_id`` =
-``-opportunity_id``), which short-circuit to the labs DB; real (positive) program
-reads go through the production LabsRecord API, which enforces membership.
+session. Works for labs-only synthetic programs (``program_id`` in the reserved
+``>= LABS_ONLY_OPP_ID_FLOOR`` range = the backing opp id), which short-circuit to
+the labs DB; real program reads (PKs below the floor) go through the production
+LabsRecord API, which enforces membership.
 """
 
 from __future__ import annotations
@@ -18,15 +19,23 @@ from ..tool_registry import MCPToolError, register
 logger = logging.getLogger(__name__)
 
 
+def _is_labs_only(program_id) -> bool:
+    """A labs-only program surfaces as a program id in the reserved
+    ``>= LABS_ONLY_OPP_ID_FLOOR`` range (= its backing opp id)."""
+    from commcare_connect.labs.synthetic.local_records_backend import is_labs_only_opportunity_id
+
+    return is_labs_only_opportunity_id(int(program_id))
+
+
 def _require_program_access(user, program_id: int) -> None:
     """Gate access. Labs-only programs are checked via the synthetic opp's labs
-    visibility; real programs rely on the prod LabsRecord API membership check at
-    read time, so we only require the caller to carry a Connect token."""
-    program_id = int(program_id)
-    if program_id < 0:
+    visibility (the program id IS the backing opp id); real programs rely on the
+    prod LabsRecord API membership check at read time, so we only require the
+    caller to carry a Connect token."""
+    if _is_labs_only(program_id):
         from .synthetic import _require_opportunity_access
 
-        _require_opportunity_access(user, -program_id)
+        _require_opportunity_access(user, int(program_id))
     else:
         require_connect_token(user)
 
@@ -38,15 +47,14 @@ def _data_access(user, program_id: int):
     user has no Connect token."""
     from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
 
-    program_id = int(program_id)
-    if program_id < 0:
+    if _is_labs_only(program_id):
         try:
             token = require_connect_token(user)
         except MCPToolError:
             token = "labs-local"  # unused for labs-only programs
     else:
         token = require_connect_token(user)
-    return ProgramPlanDataAccess(program_id, user=user, access_token=token)
+    return ProgramPlanDataAccess(int(program_id), user=user, access_token=token)
 
 
 @register(
