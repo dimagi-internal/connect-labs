@@ -170,13 +170,13 @@ def materialize_work_areas(
         props = feat.get("properties", {}) or {}
         geom = feat.get("geometry")
         # Sampling pins arrive as Points. The WorkArea an FLW receives must be a
-        # polygon, so we swap each pin for its real building footprint (lightly
-        # buffered), falling back to a small square when the pin has no footprint.
-        # (Coverage cells are already polygons — leave them be.)
+        # polygon, so we swap each pin for its real building footprint (the exact
+        # outline, unbuffered), falling back to a small square when the pin has no
+        # footprint. (Coverage cells are already polygons — leave them be.)
         if mode != "coverage" and geom and geom.get("type") == "Point":
             lon, lat = geom["coordinates"]
             geom = mapping(
-                footprint_boundary_shape(props.get("geom_json"), lon, lat, 3.0, 8.0)
+                footprint_boundary_shape(props.get("geom_json"), lon, lat, 0.0, 8.0)
             )
         building_count = int(props.get("building_count", 1))
         # coverage carries expected_visit_count == building_count; sampling pin = 1 visit
