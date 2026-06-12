@@ -126,7 +126,7 @@ class TestSamplePins:
         sel = _psu_df(["C0"], [60])
         pins = sample_pins(df, sel, PinConfig(n_primary=8, n_alternate=8, min_sep_m=15))
         assert len(pins) <= 16
-        assert (pins["role"] == "primary").sum() == 8
+        assert (pins["sample_type"] == "primary").sum() == 8
 
     def test_min_separation_enforced(self):
         df = self._clustered(80, seed=7)
@@ -143,8 +143,8 @@ class TestSamplePins:
         # P_psu = 0.5, N_buildings = 60, m_eff = 8 → Pi = 0.5*8/60, weight = 1/Pi = 15
         sel = pd.DataFrame({"cluster": ["C0"], "n_buildings": [60], "stratum": ["Low"], "P_psu": [0.5]})
         pins = sample_pins(df, sel, PinConfig(n_primary=8, n_alternate=8, min_sep_m=15))
-        primaries = pins[pins["role"] == "primary"]
-        alternates = pins[pins["role"] == "alternate"]
+        primaries = pins[pins["sample_type"] == "primary"]
+        alternates = pins[pins["sample_type"] == "alternate"]
         assert np.allclose(primaries["weight"], 15.0, atol=1e-6)
         assert alternates["weight"].isna().all()  # alternates carry no inclusion weight
 
