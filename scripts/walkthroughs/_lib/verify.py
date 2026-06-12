@@ -53,16 +53,22 @@ def check_opps_present(result: dict, config: dict) -> Iterator[Issue]:
 
 
 def check_week_counts(result: dict, config: dict) -> Iterator[Issue]:
-    """Each opp should have one weekly run entry per configured week
-    (including missed weeks, which appear as ran=False entries)."""
-    expected_weeks = config.get("weeks", [])
+    """Each opp should have one weekly run entry per configured COMPLETED
+    week (including missed weeks, which appear as ran=False entries), plus
+    one extra entry for the in-progress current week when the opp opts in
+    via ``in_progress_current_week``."""
+    expected_completed = len(config.get("weeks", []))
+    has_current = bool(config.get("current_week"))
+    cfg_by_id = {opp["opportunity_id"]: opp for opp in config.get("opps", [])}
     for opp in result.get("opportunities", []):
+        cfg = cfg_by_id.get(opp["opportunity_id"], {})
+        expected = expected_completed + (1 if has_current and cfg.get("in_progress_current_week") else 0)
         weeks = opp.get("weeks", [])
-        if len(weeks) != len(expected_weeks):
+        if len(weeks) != expected:
             yield Issue(
                 "error",
                 "WEEK_COUNT_MISMATCH",
-                f"opp {opp['opportunity_id']}: " f"expected {len(expected_weeks)} week entries, got {len(weeks)}.",
+                f"opp {opp['opportunity_id']}: " f"expected {expected} week entries, got {len(weeks)}.",
             )
 
 
@@ -86,40 +92,52 @@ def check_par_run_present(result: dict, config: dict) -> Iterator[Issue]:
 
 
 def check_in_progress_week(result: dict, config: dict) -> Iterator[Issue]:
-    """If any opp sets ``in_progress_last_week=true``, its last week's
-    run must show ``in_progress=True`` and zero actions (audits/tasks
-    that the recorder is going to write live during the scene)."""
-    last_idx = len(config.get("weeks", [])) - 1
-    if last_idx < 0:
-        return
-    in_prog_opp_ids = {opp["opportunity_id"] for opp in config.get("opps", []) if opp.get("in_progress_last_week")}
-    if not in_prog_opp_ids:
-        return
+    """If any opp sets ``in_progress_current_week=true``, it must carry one
+    extra week entry (the CURRENT week, outside the PAR window) marked
+    ``in_progress=True`` with zero actions — the audits/tasks for it are
+    written live by the manager-flow recording. Every PAR-window week, by
+    contrast, must be completed (never in_progress) or the grid shows a
+    NO RUN hole for a week the window claims to watch."""
+    current_week = config.get("current_week")
+    in_prog_opp_ids = {opp["opportunity_id"] for opp in config.get("opps", []) if opp.get("in_progress_current_week")}
+    completed_count = len(config.get("weeks", []))
     for opp in result.get("opportunities", []):
+        weeks = opp.get("weeks", [])
+        # No PAR-window week may be in_progress, for any opp.
+        for w in weeks[:completed_count]:
+            if w.get("in_progress"):
+                yield Issue(
+                    "error",
+                    "WINDOW_WEEK_IN_PROGRESS",
+                    f"opp {opp['opportunity_id']}: PAR-window week {w.get('week')} "
+                    "is in_progress — the window must contain only completed weeks "
+                    "(the live manager run belongs to current_week, outside it).",
+                )
         if opp["opportunity_id"] not in in_prog_opp_ids:
             continue
-        weeks = opp.get("weeks", [])
-        if len(weeks) <= last_idx:
+        if not current_week:
             yield Issue(
                 "error",
-                "IN_PROGRESS_MISSING",
-                f"opp {opp['opportunity_id']}: expected an in_progress last "
-                f"week (index {last_idx}) but week list is shorter.",
+                "NO_CURRENT_WEEK",
+                f"opp {opp['opportunity_id']}: in_progress_current_week is set "
+                "but the config carries no current_week.",
             )
             continue
-        last_week = weeks[last_idx]
-        if not last_week.get("in_progress"):
+        current = weeks[completed_count] if len(weeks) > completed_count else None
+        if current is None or not current.get("in_progress"):
             yield Issue(
                 "error",
                 "NOT_IN_PROGRESS",
-                f"opp {opp['opportunity_id']}: last week run " f"{last_week.get('run_id')} is not marked in_progress.",
+                f"opp {opp['opportunity_id']}: expected an in_progress run for "
+                f"the current week ({current_week}) after the {completed_count} "
+                "window weeks, but none was generated.",
             )
-        elif last_week.get("actions"):
+        elif current.get("actions"):
             yield Issue(
                 "warning",
                 "IN_PROGRESS_HAS_ACTIONS",
-                f"opp {opp['opportunity_id']}: in_progress week already has "
-                f"{last_week['actions']} action(s) seeded — the manager-flow "
+                f"opp {opp['opportunity_id']}: in_progress current week already "
+                f"has {current['actions']} action(s) seeded — the manager-flow "
                 "recorder expects to create the audit + task live.",
             )
 
