@@ -4,7 +4,7 @@ Thin ``@register`` shims over ``commcare_connect.microplans.study_seed`` so the
 study can be seeded/reset on DEPLOYED labs (the MCP runs in-app, server-side),
 where Overture building footprints + the same-region extract are available — the
 local CLI (``scripts/walkthroughs/study-design/ensure_study.py``) is the same
-logic for local/dev. The study is a labs-only program (``-opportunity_id``), so
+logic for local/dev. The study is a labs-only program (``opportunity_id``), so
 the data-access short-circuits to the local labs DB; no Connect token is needed.
 """
 
@@ -21,7 +21,7 @@ from ..tool_registry import register
     name="microplans_study_ensure",
     description=(
         "Idempotently ensure the Vitamin-A Kaura two-arm study exists on the labs-only "
-        "program (-opportunity_id from verified-monitoring/demo_config.json, the SAME "
+        "program (opportunity_id from verified-monitoring/demo_config.json, the SAME "
         "manifest the monitoring narrative reads). Per round: two per-ward boundary plans "
         "(keyed by ward boundary_id), one study group (keyed by name) with labs-side arms "
         "(treatment->intervention, comparison->comparison), and — unless generate=false — "

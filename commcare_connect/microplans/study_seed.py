@@ -3,7 +3,7 @@
 Single source of truth = ``scripts/walkthroughs/verified-monitoring/demo_config.json``
 — the SAME file the monitoring narrative reads — plus ``geo/kaura_lga_wards.geojson``.
 One **round** = one two-arm study group of per-ward microplans on the labs-only
-program ``-opportunity_id`` (e.g. ``-10008``): the treatment ward in the
+program ``opportunity_id`` (e.g. ``10008``): the treatment ward in the
 ``intervention`` arm, the comparison ward in the ``comparison`` arm, both sampled
 with the one shared ``study.sampling`` config so the arms are comparable by
 construction. Arm assignment is labs-side only (never written onto the plans).
@@ -72,7 +72,7 @@ class RoundSpec:
 @dataclass(frozen=True)
 class StudyManifest:
     opportunity_id: int
-    program_id: int  # = -opportunity_id (labs-only program surface)
+    program_id: int  # = opportunity_id (labs-only program surface)
     program_name: str
     sampling: dict  # the shared FrameConfig payload for every arm
     rounds: list[RoundSpec]
@@ -144,7 +144,7 @@ def load_manifest(config_path: Path | str = DEMO_CONFIG_PATH) -> StudyManifest:
         )
     return StudyManifest(
         opportunity_id=opp_id,
-        program_id=-opp_id,
+        program_id=opp_id,
         program_name=(cfg.get("program") or {}).get("name", ""),
         sampling=sampling,
         rounds=rounds,
@@ -156,7 +156,7 @@ def load_manifest(config_path: Path | str = DEMO_CONFIG_PATH) -> StudyManifest:
 
 def ensure_synthetic_program(manifest: StudyManifest, *, user=None) -> int:
     """Make sure the backing labs-only ``SyntheticOpportunity`` exists + is enabled so
-    ``ProgramPlanDataAccess(-opp_id)`` routes to the local labs DB. Never clobbers an
+    ``ProgramPlanDataAccess(opp_id)`` routes to the local labs DB. Never clobbers an
     existing row (the monitoring narrative owns its gdrive fixtures). Returns opp id."""
     from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 
