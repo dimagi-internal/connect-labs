@@ -1993,11 +1993,11 @@ class ProgramBulkCreatePlansView(LoginRequiredMixin, View):
     """Enqueue a batch create of N draft plans from confirmed admin boundaries.
 
     Body: ``{"plans": [{"boundary_id", "name"}], "mode", "grouping", "cell_size_m"}``.
-    Each ward is gridded on the Celery worker — coverage plans tile the boundary via
-    the Overture coverage generator, so a plan is a real grid of work areas rather
-    than one cell covering the whole ward. This validates + enqueues and returns
-    ``202 {task_id, poll_url}``; the client polls ``microplans:bulk_create_status``
-    for incremental per-ward results."""
+    Coverage plans are gridded into work areas on the Celery worker (the Overture
+    coverage generator). Sampling plans are created boundary-only and sampled later
+    via the study "Generate" action — see ``bulk_create_plans_task`` and
+    ``PlanRecord.phase``. Validates + enqueues and returns ``202 {task_id, poll_url}``;
+    the client polls ``microplans:bulk_create_status`` for incremental per-ward results."""
 
     def post(self, request, program_id):
         from commcare_connect.microplans.tasks import bulk_create_plans_task
