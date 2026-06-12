@@ -16,20 +16,9 @@ from shapely.ops import unary_union
 
 from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
-from commcare_connect.microplans.core.footprints import (
-    DEFAULT_SOURCES,
-    fetch_buildings,
-    source_counts,
-)
-from commcare_connect.microplans.sampling.cluster import (
-    ClusterConfig,
-    cluster_buildings,
-)
-from commcare_connect.microplans.sampling.sample import (
-    PinConfig,
-    sample_pins,
-    select_psus,
-)
+from commcare_connect.microplans.core.footprints import DEFAULT_SOURCES, fetch_buildings, source_counts
+from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
+from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +45,21 @@ class FrameConfig:
     # Optional (lon, lat) of the verification reference point. When set, clusters
     # are stratified High/Medium/Low on distance_to_visit; otherwise single pool.
     reference_point: tuple[float, float] | None = None
-    # R2: number of PSU size bands for size-stratified systematic PPS (0/1 = plain
-    # PPS). Stratifying draws a matched size-mix across arms so they're comparable on
-    # PSU size by construction. See sample.select_psus.
-    size_strata: int = 0
+    # Number of building-count bands for size-stratified systematic PPS (0/1 = plain
+    # PPS). Banding draws a matched size-mix across arms so they're comparable on
+    # cluster size by construction. See sample.select_psus.
+    size_balance_bands: int = 0
 
     @classmethod
     def from_payload(cls, d: dict) -> FrameConfig:
         rp = d.get("reference_point")
         conf = d.get("min_confidence")
         src = d.get("sources")
+        # Accept the legacy `size_strata` key so studies persisted before the rename
+        # keep their banded draw; new payloads use `size_balance_bands`.
+        bands = d.get("size_balance_bands", d.get("size_strata", 0))
         return cls(
-            size_strata=_clamp(int(d.get("size_strata", 0) or 0), 0, 20),
+            size_balance_bands=_clamp(int(bands or 0), 0, 20),
             # clamp to sane bounds so a malformed payload can't crash or stall sampling
             target_clusters=_clamp(int(d.get("target_clusters", 25)), 1, 500),
             primary_per_psu=_clamp(int(d.get("primary_per_psu", 8)), 1, 100),
@@ -192,7 +184,7 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
         selected = select_psus(
             clustered.psu_frame,
             n_take=config.target_clusters,
-            size_strata=config.size_strata,
+            size_balance_bands=config.size_balance_bands,
         )
         pins = sample_pins(
             clustered.buildings,
