@@ -7,6 +7,16 @@
     "name": "Vitamin-A community-health home-visit monitoring",
     "cadence": "bi-monthly"
   },
+  "_study_comment": "Read by the microplans study-design CREATION seeder (scripts/walkthroughs/study-design/ensure_study.py). One round = one two-arm STUDY GROUP of per-ward microplans on the labs-only program -10008 (= -opportunity_id). treatment->intervention arm, comparison->comparison arm; both arms sampled with the SHARED `sampling` config below so they're comparable by construction. 24 PSUs x 12 primary ~= 288, matching the ~285 households/round the monitoring sim (arms.treatment.n_per_round) surveys. `live_demo_round` (1-indexed) is the round the creation walkthrough re-creates live on camera (reset first); the other rounds are the always-present backdrop both narratives share.",
+  "study": {
+    "sampling": {
+      "target_clusters": 24,
+      "primary_per_psu": 12,
+      "alternates_per_psu": 6,
+      "size_balance_bands": 3
+    },
+    "live_demo_round": 6
+  },
   "_geography_comment": "ROTATING wards: the program works a DIFFERENT ward each bi-monthly cycle, verified against an adjacent comparison ward. All 12 wards are REAL, adjacent pairs in the Kaura LGA area (Kaduna State, Nigeria), sourced from the labs admin-boundary backend (geo/kaura_lga_wards.geojson). Survey + service-delivery points are sampled INSIDE these real polygons; the map moves to each round's pair.",
   "wards_geojson": "geo/kaura_lga_wards.geojson",
   "rounds_wards": [

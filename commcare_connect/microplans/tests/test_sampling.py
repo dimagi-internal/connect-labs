@@ -175,6 +175,18 @@ class TestConfigAndGuards:
         assert cfg.min_confidence == 1.0  # clamped down from 2.5
         assert cfg.area_min_m2 == 0.0  # clamped up from -10
 
+    def test_size_balance_bands_reads_new_key_and_legacy_alias(self):
+        from commcare_connect.microplans.sampling.frame import FrameConfig
+
+        # New canonical key.
+        assert FrameConfig.from_payload({"size_balance_bands": 3}).size_balance_bands == 3
+        # Legacy `size_strata` key (studies persisted before the rename) still maps over.
+        assert FrameConfig.from_payload({"size_strata": 4}).size_balance_bands == 4
+        # New key wins when both are present.
+        assert FrameConfig.from_payload({"size_balance_bands": 2, "size_strata": 9}).size_balance_bands == 2
+        # Absent → plain PPS (0).
+        assert FrameConfig.from_payload({}).size_balance_bands == 0
+
     def test_fetch_buildings_rejects_oversized_area(self):
         import pytest
         from shapely.geometry import box
@@ -250,8 +262,8 @@ def test_select_psus_size_stratified_spreads_across_size_range():
 
     # 30 PSUs with sizes 16..45; plain PPS over-weights the big end.
     frame = pd.DataFrame({"cluster": range(30), "n_buildings": np.arange(16, 46), "stratum": "Low"})
-    plain = select_psus(frame, n_take=12, size_strata=0)
-    strat = select_psus(frame, n_take=12, size_strata=3)
+    plain = select_psus(frame, n_take=12, size_balance_bands=0)
+    strat = select_psus(frame, n_take=12, size_balance_bands=3)
 
     assert len(plain) == 12 and len(strat) == 12
     # Stratified reaches further into the small-PSU end than plain PPS.

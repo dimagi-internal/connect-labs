@@ -96,12 +96,11 @@ def fetch_ocs_sessions_as_visit_dicts(
         ValueError: If experiment_id is not configured or OCS token is missing.
     """
     if not data_source.experiment_id:
-        raise ValueError(
-            "ocs_sessions data source requires experiment_id to be set in the pipeline schema."
-        )
+        raise ValueError("ocs_sessions data source requires experiment_id to be set in the pipeline schema.")
+
+    from django.conf import settings
 
     from commcare_connect.labs.integrations.ocs.api_client import OCSAPIError, OCSDataAccess
-    from django.conf import settings
 
     experiment_id = data_source.experiment_id
 
@@ -127,8 +126,7 @@ def fetch_ocs_sessions_as_visit_dicts(
         client = OCSDataAccess(request=request)
         if not client.check_token_valid():
             raise ValueError(
-                "OCS OAuth not configured or expired. "
-                "Please authorize OCS access at /labs/ocs/initiate/"
+                "OCS OAuth not configured or expired. " "Please authorize OCS access at /labs/ocs/initiate/"
             )
         base_url = client.base_url
         http_client = client.http_client
