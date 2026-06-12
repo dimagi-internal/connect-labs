@@ -92,6 +92,30 @@ def test_layer1_metrics():
     assert m["duration_plausibility"]["value"] == 90.0  # 1 of 10 too fast
 
 
+def test_primary_rate_metric():
+    # 7 surveys on primary, 3 on alternate across two surveyors.
+    recs = []
+    for i in range(10):
+        st = "alternate" if i in (3, 6, 9) else "primary"
+        recs.append(
+            _rec(record_id=f"p{i}", household_id=f"H{i}", enumerator_id=("E1" if i % 2 == 0 else "E2"), sample_type=st)
+        )
+    m = results_to_map(run_metrics(recs, layers=["survey_quality"]))
+    pr = m["primary_rate"]
+    assert pr["value"] == 70.0  # 7 of 10 on primary
+    assert pr["n"] == 10
+    assert pr["detail"]["n_primary"] == 7
+    assert pr["detail"]["n_alternate"] == 3
+    assert set(pr["detail"]["by_surveyor"]) == {"E1", "E2"}
+
+
+def test_primary_rate_ignores_records_without_sample_type():
+    # The legacy ward-scatter fixture carries no sample_type -> metric is null, not 0.
+    m = results_to_map(run_metrics(_fixture(), layers=["survey_quality"]))
+    assert m["primary_rate"]["value"] is None
+    assert m["primary_rate"]["n"] == 0
+
+
 def test_backcheck_metrics():
     cfg = {}
     m = results_to_map(run_metrics(_fixture(), layers=["backcheck"], config=cfg))
