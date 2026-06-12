@@ -1252,7 +1252,16 @@ def complete_run_api(request, run_id):
             pipelines = {}
         else:
             try:
-                pipelines = data_access.get_cached_pipeline_data(definition_id, opportunity_id, aliases=aliases)
+                pipelines = data_access.get_cached_pipeline_data(
+                    definition_id,
+                    opportunity_id,
+                    aliases=aliases,
+                    # Period-scope opted-in pipelines to the run's window so each
+                    # saved run freezes its own period, not the all-time
+                    # aggregate (ace#764). No-op when the run has no period.
+                    period_start=run.period_start,
+                    period_end=run.period_end,
+                )
             except PipelineCacheMiss as e:
                 return JsonResponse(
                     {

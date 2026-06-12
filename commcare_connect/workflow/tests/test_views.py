@@ -503,7 +503,12 @@ class TestCompleteRunCacheOnlyPipelines:
         )
 
         assert response.status_code == 200, response.content
-        mock_wda.get_cached_pipeline_data.assert_called_once_with(10, 700, aliases=["visits"])
+        # period_start/period_end are threaded so opted-in pipelines can be
+        # period-scoped (ace#764); this run carries no period, so both are None
+        # and the read behaves exactly as the all-time cache read.
+        mock_wda.get_cached_pipeline_data.assert_called_once_with(
+            10, 700, aliases=["visits"], period_start=None, period_end=None
+        )
         mock_wda.get_pipeline_data.assert_not_called()
 
     def test_cache_miss_returns_409_and_leaves_run_in_progress(self, dimagi_user, rf: RequestFactory):

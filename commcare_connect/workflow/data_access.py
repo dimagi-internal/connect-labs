@@ -982,7 +982,12 @@ class WorkflowDataAccess(BaseDataAccess):
         return results
 
     def get_cached_pipeline_data(
-        self, definition_id: int, opportunity_id: int, aliases: list[str] | None = None
+        self,
+        definition_id: int,
+        opportunity_id: int,
+        aliases: list[str] | None = None,
+        period_start: str | None = None,
+        period_end: str | None = None,
     ) -> dict[str, dict]:
         """Cache-only counterpart of `get_pipeline_data`, scoped to a manifest.
 
@@ -992,6 +997,14 @@ class WorkflowDataAccess(BaseDataAccess):
         read to the pipelines a snapshot contract actually captures (None
         means all of the workflow's sources; the caller should skip calling
         this entirely for an empty manifest).
+
+        When `period_start`/`period_end` are given (a saved run that carries a
+        period), any source whose pipeline schema sets `period_scoped: true` is
+        re-aggregated to that half-open `[period_start, period_end)` visit-date
+        window instead of returning the all-time cache (ace#764) — so each
+        weekly snapshot freezes its own slice rather than the whole-program
+        total. This still reads from the existing cache (no download/recompute);
+        sources without the flag are unaffected.
 
         Raises PipelineCacheMiss if any required pipeline has no usable cache
         for any of the workflow's opportunities — completion should fail fast
@@ -1028,6 +1041,8 @@ class WorkflowDataAccess(BaseDataAccess):
         if configs_by_alias:
             resolve_join_hashes(configs_by_alias)
 
+        want_period = bool(period_start and period_end)
+
         results: dict[str, dict] = {}
         try:
             for source in ordered_sources:
@@ -1038,12 +1053,28 @@ class WorkflowDataAccess(BaseDataAccess):
                 if wanted is not None and alias not in wanted:
                     continue
 
+                # Period-scope this source only when the run carries a period
+                # AND the pipeline's own schema opts in via `period_scoped`.
+                period_scoped = False
+                if want_period:
+                    pdef = pipeline_access.get_definition(pipeline_id)
+                    period_scoped = bool(pdef and (pdef.schema or {}).get("period_scoped"))
+
                 merged_rows: list[dict] = []
                 per_opp_meta: dict[str, dict] = {}
                 for opp_id in opp_ids:
-                    cached = pipeline_access.get_cached_pipeline_result(
-                        pipeline_id, opp_id, config=configs_by_alias.get(alias)
-                    )
+                    if period_scoped:
+                        cached = pipeline_access.get_period_scoped_pipeline_result(
+                            pipeline_id,
+                            opp_id,
+                            period_start,
+                            period_end,
+                            config=configs_by_alias.get(alias),
+                        )
+                    else:
+                        cached = pipeline_access.get_cached_pipeline_result(
+                            pipeline_id, opp_id, config=configs_by_alias.get(alias)
+                        )
                     if cached is None:
                         raise PipelineCacheMiss(alias, opp_id, source.get("name", ""))
                     merged_rows.extend({**row, "opportunity_id": opp_id} for row in cached.get("rows", []))
@@ -1924,6 +1955,71 @@ class PipelineDataAccess(BaseDataAccess):
             }
         except Exception:
             logger.exception("Cached pipeline read failed for pipeline %s opp %s", definition_id, opportunity_id)
+            return None
+
+    def get_period_scoped_pipeline_result(
+        self,
+        definition_id: int,
+        opportunity_id: int,
+        date_from: str | None,
+        date_to: str | None,
+        config=None,
+    ) -> dict | None:
+        """Read a pipeline result re-aggregated to a `[date_from, date_to)`
+        visit-date window from the EXISTING cache (ace#764).
+
+        The period-scoped counterpart of `get_cached_pipeline_result`. Used by
+        saved-run snapshots whose template marks a pipeline `period_scoped` so
+        each run freezes its own period instead of the whole-program total. Like
+        the cache read it never downloads or recomputes from source — it re-runs
+        the FLW GROUP BY over the already-cached visits with a date predicate
+        (cheap, bounded, writes nothing). The window is excluded from the config
+        hash, so the same cache slot serves every period. Returns `{"rows",
+        "metadata"}` on a hit, or None on a cache miss (caller surfaces it the
+        same way as a `get_cached_pipeline_result` miss).
+        """
+        from commcare_connect.labs.analysis.pipeline import AnalysisPipeline
+
+        definition = self.get_definition(definition_id)
+        if not definition:
+            return None
+        schema = definition.schema
+        if not schema:
+            return None
+
+        try:
+            if config is None:
+                config = self._schema_to_config(schema, definition_id)
+            # Window is query-time only (excluded from config hash), so setting
+            # it here does not move the cache key the join-resolution already
+            # used — the raw-visit slot is found identically.
+            config.date_from = date_from or ""
+            config.date_to = date_to or ""
+            if self.request is not None:
+                pipeline = AnalysisPipeline(self.request)
+            else:
+                pipeline = AnalysisPipeline(access_token=self.access_token)
+            result = pipeline.get_period_scoped_result_only(config, opportunity_id)
+            if result is None:
+                return None
+            rows = self._serialize_pipeline_rows(result)
+            return {
+                "rows": rows,
+                "metadata": {
+                    "row_count": len(rows),
+                    "from_cache": True,
+                    "period_scoped": True,
+                    "date_from": config.date_from,
+                    "date_to": config.date_to,
+                    "pipeline_id": definition_id,
+                    "pipeline_name": definition.name,
+                    "terminal_stage": schema.get("terminal_stage", "visit_level"),
+                },
+            }
+        except Exception:
+            logger.exception(
+                "Period-scoped pipeline read failed for pipeline %s opp %s", definition_id, opportunity_id
+            )
             return None
 
     def execute_pipeline_from_schema(self, schema: dict, opportunity_id: int, alias: str = "pipeline") -> dict:
