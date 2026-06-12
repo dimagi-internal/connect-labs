@@ -171,12 +171,19 @@ def main() -> int:
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
     }
-    with httpx.Client(timeout=180) as c:
+    with httpx.Client(timeout=600) as c:
         h = _session(c, headers)
-        # Live-fetch the sampled plans first so survey GPS grounds on real footprints.
-        rounds_plans = _fetch_rounds_plans(c, h, -opp)
+        # Guarantee the study plans exist (idempotent; re-run is a no-op), then
+        # live-fetch them so survey GPS grounds on real footprints. The labs-only
+        # program id IS the opportunity id (positive, >= 10_000 floor).
+        ens, eerr = _call(c, h, "microplans_study_ensure", {"generate": True})
+        if eerr:
+            print("  microplans_study_ensure unavailable (continuing):", str(ens)[:160])
+        else:
+            print(f"  study ensure: {json.dumps(ens, default=str)[:200]}")
+        rounds_plans = _fetch_rounds_plans(c, h, opp)
         grounded = sorted(ri + 1 for ri in rounds_plans)
-        print(f"grounded rounds (on live plans of program {-opp}): {grounded or 'none -> in-ward scatter'}")
+        print(f"grounded rounds (on live plans of program {opp}): {grounded or 'none -> in-ward scatter'}")
         state, records = build_state(cfg, HERE, rounds_plans=rounds_plans)
         print(f"generated {len(records)} records across {len(state['rounds'])} rounds")
         print(summarize(state))

@@ -10,7 +10,7 @@ from commcare_connect.mcp.tool_registry import get_tool
 from commcare_connect.microplans.core.data_access import ProgramPlanDataAccess
 
 OPP = 10_088  # labs-only opp floor is 10_000
-PROG = -OPP
+PROG = OPP  # labs-only program id IS the backing opp id (positive, >= floor)
 
 
 @pytest.fixture(autouse=True)
