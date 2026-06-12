@@ -35,26 +35,19 @@ scenes:
 - persona: maya
   title: Maya starts a study from scratch
   url: /microplans/program/10008/
-  show: From the Vitamin-A Kaura programme portfolio — already holding five earlier study rounds — Maya starts a brand-new two-arm study, names it, and lands on an empty study with no wards in it yet.
-  concept_claim: Maya creates an empty named study from scratch on the labs-only Kaura programme and lands on its page ready to add wards, before committing any ward names.
+  show: From the Vitamin-A Kaura programme portfolio — already holding five earlier study rounds — Maya starts a brand-new two-arm study with one click and lands on its empty study page, with no wards in it yet, ready to be named and filled.
+  concept_claim: Maya creates an empty two-arm study from scratch on the labs-only Kaura programme with one click and lands on its manage page, ready to add wards, before any ward names are committed.
   provenance: S12
-  design_intent: 'Bet: a study should start as an empty container the planner fills from the map, not a list of names committed up front.'
+  design_intent: 'Bet: a study should start as an empty container the planner fills from the map, not a list of names committed up front — so "+ New study" creates it in one click (an Untitled study renamed later), no name-first form.'
   actions:
   - kind: wait_for
     target: Plan groups & studies
   - kind: scroll_to
-    target: + New study
+    target: 'css:#new-study'
   - kind: click
-    target: + New study
-    note: open the inline new-study form
+    target: 'css:#new-study'
+    note: one click creates an "Untitled study" and routes to its empty manage page (/group/<new_id>/manage/) — no name dialog
     must_succeed: true
-  - kind: fill
-    target: css:input[placeholder='Untitled study']
-    value: Kaura Vitamin-A rooftop impact study
-    note: name the study
-  - kind: press
-    value: Enter
-    note: creating the study navigates to its empty manage page (/group/<new_id>/manage/)
   - kind: wait_for
     target: No plans in this group yet
     seconds: 20
