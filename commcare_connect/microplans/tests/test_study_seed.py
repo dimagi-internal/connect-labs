@@ -17,7 +17,7 @@ from commcare_connect.microplans import study_seed
 def test_load_manifest_from_real_shared_config():
     m = study_seed.load_manifest()
     assert m.opportunity_id == 10008
-    assert m.program_id == -10008
+    assert m.program_id == 10008
     assert len(m.rounds) == 6
     # The shared sampling config the study UI defaults match (size-balanced two-arm draw).
     assert m.sampling["size_balance_bands"] == 3

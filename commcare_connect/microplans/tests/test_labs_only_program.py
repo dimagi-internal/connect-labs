@@ -1,12 +1,13 @@
 """A microplans program can be labs-only (synthetic): its plans live in the labs
 DB, not production Connect.
 
-A labs-only program is a synthetic opportunity surfaced in ``user_programs`` as a
-negative id (``= -opportunity_id``) by ``labs.context._merge_labs_only_opps``.
-``ProgramPlanDataAccess`` recognises the negative id, carries the backing
-synthetic opp, and the LabsRecord API client short-circuits to the local backend
-— no prod round-trip, no membership check. Real (positive-PK) programs are
-untouched.
+A labs-only program is a synthetic opportunity surfaced in ``user_programs`` by
+``labs.context._merge_labs_only_opps`` as a program id in the reserved range
+(``>= LABS_ONLY_OPP_ID_FLOOR`` / 10_000; = the backing opp's id, or a shared
+``SyntheticOpportunity.program_id``). ``ProgramPlanDataAccess`` recognises it via
+``is_labs_only_opportunity_id`` and carries the backing synthetic opp, so the
+LabsRecord API client short-circuits to the local backend — no prod round-trip, no
+membership check. Real programs (PKs below the floor) are untouched.
 """
 
 from __future__ import annotations
@@ -49,55 +50,51 @@ def synthetic_program(db):
 
 
 @pytest.mark.django_db
-def test_negative_program_id_carries_backing_synthetic_opp(synthetic_program):
-    da = ProgramPlanDataAccess(-10_007, access_token="labs-local")
+def test_labs_only_program_id_carries_backing_synthetic_opp(synthetic_program):
+    da = ProgramPlanDataAccess(10_007, access_token="labs-local")
     # The DA auto-resolved the backing synthetic opp so the client short-circuits local.
     assert da.opportunity_id == 10_007
-    assert da.program_id == -10_007
+    assert da.program_id == 10_007
 
 
-def test_negative_program_id_is_url_routable():
-    """A labs-only program's NEGATIVE id must route (and reverse) — Django's built-in
-    ``int`` converter rejects the minus, so the workspace/group pages 404 without the
-    custom ``signed_int`` converter. Regression guard for that gap."""
+def test_labs_only_program_id_is_url_routable():
+    """A labs-only program id (reserved >= 10_000 range, positive) must route and
+    reverse so its workspace/group pages are reachable in the UI."""
     from django.urls import resolve, reverse
 
-    m = resolve("/microplans/program/-10007/")
+    m = resolve("/microplans/program/10007/")
     assert m.view_name == "microplans:program_workspace"
-    assert m.kwargs["program_id"] == -10_007
-    # Nested (program + positive group) and reverse (the {% url %} path templates use).
-    assert resolve("/microplans/program/-10007/group/55/manage/").kwargs == {"program_id": -10_007, "group_id": 55}
-    assert reverse("microplans:program_workspace", args=[-10_007]) == "/microplans/program/-10007/"
-    # Positive ids still route unchanged.
-    assert resolve("/microplans/program/42/").kwargs["program_id"] == 42
+    assert m.kwargs["program_id"] == 10_007
+    # Nested (program + group) and reverse (the {% url %} path templates use).
+    assert resolve("/microplans/program/10007/group/55/manage/").kwargs == {"program_id": 10_007, "group_id": 55}
+    assert reverse("microplans:program_workspace", args=[10_007]) == "/microplans/program/10007/"
 
 
 @pytest.mark.django_db
 def test_plan_round_trips_through_the_labs_db_not_production(synthetic_program):
-    da = ProgramPlanDataAccess(-10_007, access_token="labs-local")
+    da = ProgramPlanDataAccess(10_007, access_token="labs-local")
     plan = da.create_plan(region="Attakar", name="Attakar", mode="coverage", pins=_EMPTY, hulls=_HULLS)
 
-    # Stored as a local record scoped to the negative program id + backing opp...
+    # Stored as a local record scoped to the labs-only program id + backing opp...
     row = LabsLocalRecord.objects.get(id=plan.id)
     assert row.type == TYPE_PLAN
     assert row.opportunity_id == 10_007
-    assert row.program_id == -10_007
-    assert row.experiment == "-10007"
+    assert row.program_id == 10_007
+    assert row.experiment == "10007"
     # ...and it reads back through the same labs-local path (no prod call).
     assert [p.id for p in da.list_plans()] == [plan.id]
     assert da.get_plan(plan.id).data["region"] == "Attakar"
 
 
 @pytest.mark.django_db
-def test_unregistered_negative_id_does_not_short_circuit():
-    # A negative id whose backing opp isn't a registered labs-only synthetic opp
-    # must NOT be treated as labs-local (no opportunity carried → falls through to
-    # the normal production path).
-    da = ProgramPlanDataAccess(-999_999, access_token="labs-local")
+def test_unregistered_reserved_id_does_not_short_circuit():
+    # A reserved-range id with no registered labs-only synthetic opp behind it must
+    # NOT be treated as labs-local (no opportunity carried → normal production path).
+    da = ProgramPlanDataAccess(99_999, access_token="labs-local")
     assert da.opportunity_id is None
 
 
 @pytest.mark.django_db
-def test_positive_program_id_is_untouched(synthetic_program):
+def test_real_program_id_below_floor_is_untouched(synthetic_program):
     da = ProgramPlanDataAccess(133, access_token="labs-local")
-    assert da.opportunity_id is None  # real program → production path, no opp carried
+    assert da.opportunity_id is None  # real program (< 10_000) → production path, no opp carried

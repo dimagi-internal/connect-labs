@@ -45,6 +45,14 @@ class SyntheticOpportunity(models.Model):
         blank=True,
         help_text="Display-only program name for labs-only opps. Ignored when labs_only=False.",
     )
+    program_id = models.IntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Labs-only program this opp belongs to (reserved >= 10_000 range). When unset, "
+        "the opp is its own program (program_id = opportunity_id). Set it to file several opps "
+        "(e.g. a study + its service-delivery opp) under one program. Ignored when labs_only=False.",
+    )
     allowed_domains = ArrayField(
         models.CharField(max_length=100),
         default=list,
