@@ -152,6 +152,20 @@ When a run is concluded, the snapshot captures what **that workflow** is current
 !!! note "If Conclude fails with a snapshot size error"
     On very large opportunities, Conclude may show an error indicating the snapshot is too large to save. This is a safeguard to protect system stability. Contact your program administrator or post in **#connect-labs** with the workflow name and run number so the snapshot scope can be reviewed and adjusted.
 
+### MBW Auditing V5 — conclude requirements
+
+The **MBW Auditing V5** template uses a checklist-style conclude dialog that reflects how the MBW program team actually works. Before the run can be saved, the following two conditions must be met:
+
+1. **All triggered tasks are resolved** — every task that was created during the run must be marked as complete.
+2. **Every yellow-flagged FLW has an audit status set** — each worker whose row carries a yellow flag must have an audit status recorded before the run can close.
+
+These are the only two items the conclude dialog checks. Specifically:
+
+- Red-flagged FLWs do **not** require a task to be created before concluding.
+- Rows where the audit outcome is **"audit not required"** do **not** require a written reason to be entered.
+
+If either condition is unmet when you click Conclude, the dialog will highlight which rows still need attention. Once both conditions are satisfied, the Conclude button becomes active and you can save the run as a locked historical record.
+
 ---
 
 ## Starter Templates
@@ -226,8 +240,4 @@ The **Program Admin Report** template gives program administrators a cross-oppor
 
 The **Verified Monitoring** template is designed for programs that commission independent surveys to verify their own coverage numbers — for example, a vitamin-A home-visit program where an outside team surveys households to confirm whether a visit actually occurred.
 
-The dashboard leads with the finding a funder can actually rely on: **independent verification**. The headline panel shows a single gap chart with a one-line plain-English summary — for example, *"The implementer reported 88.0% coverage; an independent rooftop survey verified 68.1% (95% CI ±5.4) — a 19.9-point overstatement."* The verified figure, the self-reported figure, and the gap between them are each clearly labelled so nothing requires interpretation.
-
-The treatment-vs-comparison ward section is presented below the headline and is explicitly labelled as **descriptive**. A note on that section states that the comparison ward is an observational neighbour, not a randomised control, so the dashboard never implies a causal-impact claim its design cannot support. Any technical terms (such as confidence interval) are glossed in plain English the first time they appear, and the survey's data quality indicators are labelled as exactly that — survey quality — rather than being left as unexplained numbers.
-
-The **survey-quality scorecard** shows per-surveyor indicators such as identity checks, GPS-location agreement, and outcome agreement. All scorecard columns — including the **back-check column** — are scoped to the **current round only
+The dashboard leads with the finding a funder can actually rely on: **independent verification**. The headline panel shows a single gap chart with a one-line plain-English summary —
