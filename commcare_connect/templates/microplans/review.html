@@ -323,7 +323,14 @@
     <p class="px-1 pt-1 text-[10px] text-gray-400 italic leading-snug">Grouping, assignment, and export act on the plan's work areas; available once you <b>Create the plan</b> above.</p>
     {% endif %}
 
-    <details class="mp-acc mp-card" open>
+    <!-- Sampling note: groups are the PSUs from generation; geometric auto-grouping
+         is a coverage concept and is hidden in sampling mode (toggled by setMode). -->
+    <div class="mp-card hidden" id="sampling-group-note">
+      <div class="text-xs font-semibold text-gray-700 mb-1">Work area groups</div>
+      <p class="text-[11px] text-gray-500 leading-snug">Each sampled cluster is already its own group — <b>PSU 1…N</b>. Assign workers to those PSUs below, or merge/rename a few via <b>Bulk (selected)</b>. (Geometric re-grouping is for coverage plans, so it's hidden here.)</p>
+    </div>
+
+    <details class="mp-acc mp-card" open id="group-strategy-card">
       <summary><span class="ic">⬡</span><span class="lbl">Create work area groups</span><span class="chev">›</span></summary>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
@@ -1505,6 +1512,9 @@
   // current grouping/assignment — the user can see "what was used" by just
   // reading the form, and re-apply with one click after tweaking anything.
   function prefillSetupForm(data) {
+    // Restore the saved plan's mode so the editor shows its real tools (a sampling
+    // plan must load with the sampling controls + PSU grouping, not coverage's).
+    if (data.mode) setMode(data.mode);
     const g = data.grouping || {};
     const a = data.assignment || {};
     if (g.strategy) {
@@ -1767,6 +1777,11 @@
     $("sampling-config")?.classList.toggle("hidden", !samp);
     // Coverage commits on "Create plan / Apply"; sampling previews on "Generate".
     $("btn-apply-area")?.classList.toggle("hidden", samp);
+    // Sampling groups are the PSUs from generation — geometric auto-grouping is a
+    // coverage tool, so swap it for the PSU note in sampling mode. (Assign workers
+    // + Bulk regroup stay available for both.)
+    $("group-strategy-card")?.classList.toggle("hidden", samp);
+    $("sampling-group-note")?.classList.toggle("hidden", !samp);
   }
   on("btn-mode-coverage", "click", () => setMode("coverage"));
   on("btn-mode-sampling", "click", () => setMode("sampling"));
