@@ -83,6 +83,37 @@ resolve(country, level) →
   (upload GeoJSON → store → resolver picks it up). Mirror connect-gis's tiled
   ingest pattern only if a dataset is too big for a single file.
 
+## Plan lifecycle — `boundary` → `sampled` (the bit that confuses)
+
+A plan's **`phase`** is *derived* from whether it has work areas yet
+(`PlanRecord.phase`): `"boundary"` (area defined in `input_areas`, **no work
+areas**) → `"sampled"` (work areas exist). The two modes reach `sampled`
+differently — this is the single most confusing thing about plan creation, so:
+
+- **Coverage** is **sampled at creation**. Gridding a ward into cells is cheap and
+  deterministic, so `create_plan` materialises the grid in one step (work areas =
+  the cells).
+- **Sampling** is **two-step**. A plan is created **boundary-only** (a deliberate
+  placeholder — *not* a broken/empty plan), then the PSU sample (PPS →
+  primary/alternate) is drawn as a separate, config-driven pass. The split exists
+  because sampling is tunable (PSU count, sources, confidence) and, for a two-arm
+  study, **every arm must be sampled with one shared config** for comparability.
+
+Creation entry points (all converge on `data_access.create_plan` →
+`plan.materialize_work_areas`):
+
+| Surface | Path | Produces |
+| --- | --- | --- |
+| Single-plan editor | "Generate sample" → "Create sampling plan" | a sampled plan (one step) |
+| Study "add wards from map" | `ProgramGroupBulkCreateFromBoundariesView` → `tasks.create_boundary_plan` | boundary-only sampling plans, filed into the study |
+| Bulk-create page | `ProgramBulkCreatePlansView` → `bulk_create_plans_task` → `tasks.create_boundary_plan` | coverage = gridded now; sampling = boundary-only |
+| Study "Generate" | `ProgramGroupGenerateView` → `generate_group_samples_task` | draws the PSU sample for every boundary-only member (→ `sampled`) |
+
+Both bulk paths share `tasks.create_boundary_plan` (one consistent `input_areas`
+shape). Per-work-area provenance (`sample_type` = primary/alternate, `cluster`,
+`weight`, …) rides in the work area's `properties` k-v bag (typed by
+`workarea.WorkAreaProperties`) — labs-side now, Connect `case_properties` later.
+
 ## Monitoring — one dashboard, two lenses
 
 - coverage: % of expected visits reached per area/cluster, workload balance,
