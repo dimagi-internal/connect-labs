@@ -1109,9 +1109,9 @@ class ProgramGroupGenerateView(LoginRequiredMixin, View):
             return JsonResponse({"status": "error", "detail": "Group not found."}, status=404)
         config = dict(payload.get("config") or group.sampling_config or {})
         if group.kind == "study":
-            # Two-arm studies sample with R2 size-stratified PPS by default so the arms
-            # are comparable on PSU size by construction (see sample.select_psus).
-            config.setdefault("size_strata", 3)
+            # Two-arm studies sample with size-stratified PPS by default so the arms
+            # are comparable on cluster size by construction (see sample.select_psus).
+            config.setdefault("size_balance_bands", 3)
         task = generate_group_samples_task.delay(int(program_id), int(group_id), config, access_token)
         return JsonResponse(
             {

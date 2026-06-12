@@ -146,7 +146,11 @@ function WorkflowUI(props) {
           try {
             map.setPaintProperty('vm-pins', 'circle-opacity', 0.95);
             map.setPaintProperty('vm-pins', 'circle-stroke-width', 1.2);
-            map.setPaintProperty('vm-pins', 'circle-stroke-color', 'rgba(255,255,255,0.95)');
+            map.setPaintProperty(
+              'vm-pins',
+              'circle-stroke-color',
+              'rgba(255,255,255,0.95)',
+            );
           } catch (e) {}
         }
         CM.fit(map, overlay.ward_boundaries, 64);
@@ -1019,7 +1023,9 @@ function WorkflowUI(props) {
                 fontSize="8.5"
                 textAnchor="middle"
               >
-                {(rounds[i] || {}).label || (rounds[i] || {}).treatment_ward || ''}
+                {(rounds[i] || {}).label ||
+                  (rounds[i] || {}).treatment_ward ||
+                  ''}
               </text>
               <rect
                 x={X(i) - 26}
@@ -1733,8 +1739,8 @@ function WorkflowUI(props) {
             letterSpacing: '.05em',
           }}
         >
-          Service-delivery data vs independent survey — {(trend.rounds || []).length}{' '}
-          bi-monthly rounds over time
+          Service-delivery data vs independent survey —{' '}
+          {(trend.rounds || []).length} bi-monthly rounds over time
         </div>
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
         <div
@@ -1765,9 +1771,9 @@ function WorkflowUI(props) {
           }}
         >
           {(trend.rounds || []).length} bi-monthly survey rounds over time —
-          earliest at left, most recent at right. The independent survey's coverage
-          tracked against the program's self-report at each round; every round
-          verifies a rotating ward against its adjacent control.
+          earliest at left, most recent at right. The independent survey's
+          coverage tracked against the program's self-report at each round;
+          every round verifies a rotating ward against its adjacent control.
         </div>
       </div>
 
@@ -1857,14 +1863,12 @@ function WorkflowUI(props) {
                 pointerEvents: 'none',
               }}
             >
-              <span
-                style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}
-              >
+              <span style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}>
                 Independent survey · both wards
               </span>
               <span style={{ color: SUBINK }}>
-                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention) —{' '}
-                <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
+                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention)
+                — <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
               </span>
               <span style={{ color: SUBINK }}>
                 <span style={{ color: COMP }}>▰</span> {cWard} (control) —{' '}
@@ -1929,9 +1933,7 @@ function WorkflowUI(props) {
             <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = below
             threshold
           </span>
-          <span>
-            quality columns + back-check = this round
-          </span>
+          <span>quality columns + back-check = this round</span>
           <span style={{ color: INDIGO }}>
             click a quality cell → detail · click a surveyor → back-check below
           </span>

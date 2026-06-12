@@ -47,8 +47,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(
+  background: radial-gradient(
       ellipse 60% 80% at 0% 50%,
       rgba(56, 67, 208, 0.14),
       transparent 60%
@@ -64,8 +63,10 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(142, 161, 255, 0.05) 1px, transparent 1px),
+  background-image: linear-gradient(
+      rgba(142, 161, 255, 0.05) 1px,
+      transparent 1px
+    ),
     linear-gradient(90deg, rgba(142, 161, 255, 0.05) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(

@@ -23,15 +23,17 @@ import numpy as np
 import pandas as pd
 
 
-def select_psus(psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926, size_strata: int = 0) -> pd.DataFrame:
+def select_psus(
+    psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926, size_balance_bands: int = 0
+) -> pd.DataFrame:
     """Return selected PSUs as a DataFrame [cluster, n_buildings, stratum, P_psu].
 
     `P_psu` is the PSU's inclusion probability (proportional to building count).
 
-    `size_strata > 1` switches on **R2 size-stratified systematic PPS** (the DHS/MICS
-    standard): split the PSU frame into that many size bands, allocate the draw evenly
-    across bands, and run systematic PPS within each band. This draws a *matched
-    size-mix* so two arms sampled the same way are comparable on PSU size by
+    `size_balance_bands > 1` switches on **size-stratified systematic PPS** (the DHS/MICS
+    standard): split the PSU frame into that many building-count bands, allocate the draw
+    evenly across bands, and run systematic PPS within each band. This draws a *matched
+    size-mix* so two arms sampled the same way are comparable on cluster size by
     construction, instead of plain PPS concentrating each arm's draw on its own
     largest settlements. Inclusion probabilities (and hence design weights 1/Pi) are
     computed per band so estimates stay design-unbiased. `0`/`1` = plain PPS.
@@ -50,8 +52,8 @@ def select_psus(psu_frame: pd.DataFrame, n_take: int, seed: int = 20250926, size
             out["stratum"] = "Low"
         return out[cols].reset_index(drop=True)
 
-    if size_strata and size_strata > 1:
-        return _select_size_stratified(psu_frame, sizes, n_take, seed, size_strata, cols)
+    if size_balance_bands and size_balance_bands > 1:
+        return _select_size_stratified(psu_frame, sizes, n_take, seed, size_balance_bands, cols)
 
     pi = np.clip(n_take * sizes / sizes.sum(), 1e-9, 1 - 1e-9)
     rng = np.random.default_rng(seed)
