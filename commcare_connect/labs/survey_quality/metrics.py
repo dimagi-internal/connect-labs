@@ -100,6 +100,31 @@ def gps_in_ward(recs, cfg):
     return {"value": _pct(ok, len(p)), "n": len(p)}
 
 
+@register_metric("primary_rate", "Surveys on the primary (first-choice) unit", "survey_quality", threshold=85.0)
+def primary_rate(recs, cfg):
+    """Share of completed surveys that landed on the **primary** sampled unit (the
+    household a surveyor was assigned to try first) rather than a ranked
+    **alternate** backup. Low = heavy substitution, which can bias the realized
+    sample away from the design — a per-surveyor fidelity signal, computed from
+    each surveyor's own records. Only records that carry a ``sample_type`` count
+    (older ward-scatter records without one are ignored)."""
+    p = [r for r in _primary(recs) if r.get("sample_type") in ("primary", "alternate")]
+    ok = sum(1 for r in p if r.get("sample_type") == "primary")
+    by = {}  # surveyor -> [on_primary, total]
+    for r in p:
+        e = r.get("enumerator_id")
+        by.setdefault(e, [0, 0])
+        by[e][1] += 1
+        if r.get("sample_type") == "primary":
+            by[e][0] += 1
+    by_surveyor = {e: _pct(v[0], v[1]) for e, v in sorted(by.items())}
+    return {
+        "value": _pct(ok, len(p)),
+        "n": len(p),
+        "detail": {"n_primary": ok, "n_alternate": len(p) - ok, "by_surveyor": by_surveyor},
+    }
+
+
 @register_metric("field_completeness", "Required-field completeness", "survey_quality", threshold=98.0)
 def field_completeness(recs, cfg):
     """Records with every required field present, plus per-field missingness
