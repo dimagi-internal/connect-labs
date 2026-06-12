@@ -1440,8 +1440,8 @@ def test_boundary_viewport_bbox_snaps_to_grid():
 # --- bulk-create: gridding (#5) + Celery offload (#4) -------------------------
 
 
-def test_ward_grid_hulls_coverage_grids_via_frame(monkeypatch):
-    """The #5 fix: a coverage ward is gridded into many cells, not one feature."""
+def test_initial_plan_hulls_coverage_grids_via_frame(monkeypatch):
+    """Coverage is sampled at creation: a ward is gridded into many cells, not one feature."""
     from commcare_connect.microplans import tasks
 
     cells = {
@@ -1464,11 +1464,13 @@ def test_ward_grid_hulls_coverage_grids_via_frame(monkeypatch):
         name="X",
         geometry=SimpleNamespace(geojson='{"type":"Polygon","coordinates":[[[0,0],[0,0.01],[0.01,0.01],[0,0]]]}'),
     )
-    out = tasks._ward_grid_hulls(boundary, "coverage", 100)
+    out = tasks._initial_plan_hulls(boundary, "coverage", 100)
     assert len(out["features"]) == 3  # gridded — NOT a single whole-ward cell
 
 
-def test_ward_grid_hulls_non_coverage_is_single_feature():
+def test_initial_plan_hulls_sampling_is_empty_boundary_only():
+    """Sampling is two-step: the plan starts boundary-only (no hulls — the PSU sample
+    is drawn later), so there are no work-area hulls at creation."""
     from commcare_connect.microplans import tasks
 
     boundary = SimpleNamespace(
@@ -1476,8 +1478,8 @@ def test_ward_grid_hulls_non_coverage_is_single_feature():
         name="B",
         geometry=SimpleNamespace(geojson='{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[0,0]]]}'),
     )
-    out = tasks._ward_grid_hulls(boundary, "sampling", 100)
-    assert len(out["features"]) == 1
+    out = tasks._initial_plan_hulls(boundary, "sampling", 100)
+    assert out["features"] == []
 
 
 def test_bulk_create_enqueues(client, django_user_model, monkeypatch):
