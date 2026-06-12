@@ -27,6 +27,13 @@
     "backcheck_agreement": 0.78,
     "backcheck_type1_agreement": 0.86
   },
+  "_primary_rate_comment": "Share of completed surveys that land on the PRIMARY (first-choice) sampled household vs a ranked ALTERNATE backup, when the round is grounded on a live plan. Drawn per surveyor ~ Normal(mean, variance); the flagged surveyor (T6) substitutes far more (flagged_mean), so heavy substitution is part of why they're flagged. A 'good run' = high primary rate.",
+  "primary_rate": {
+    "mean": 0.9,
+    "variance": 0.04,
+    "flagged_mean": 0.58,
+    "flagged_id": "T6"
+  },
   "round0": "2025-02",
   "rounds": 6,
   "arms": {

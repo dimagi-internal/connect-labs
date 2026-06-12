@@ -69,6 +69,7 @@ def study(db):
 def test_list_plans_returns_plans_and_group_arms(study, user):
     out = get_tool("microplans_list_plans").handler(user=user, program_id=PROG)
     assert {p["name"] for p in out["plans"]} == {"Tse", "Danto"}
+    assert {p["region"] for p in out["plans"]} == {"Tse", "Danto"}
     assert all(p["phase"] == "sampled" for p in out["plans"])
     assert len(out["groups"]) == 1
     g = out["groups"][0]

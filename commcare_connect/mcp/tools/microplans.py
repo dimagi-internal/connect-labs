@@ -72,6 +72,7 @@ def microplans_list_plans(user, *, program_id):
             {
                 "id": p.id,
                 "name": p.name,
+                "region": p.region,
                 "phase": p.phase,
                 "status": p.status,
                 "n_work_areas": len(p.work_areas),
