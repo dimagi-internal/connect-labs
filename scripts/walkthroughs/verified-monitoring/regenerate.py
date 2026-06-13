@@ -1,7 +1,7 @@
 """Regenerate the Verified Monitoring (N1) demo and seed it onto synthetic opp 10008.
 
 Thin wire: read ``demo_config.json`` -> generate per-round, row-level survey
-records and compute all KPIs via ``survey_sim.build_state`` (which uses the
+records and compute all KPIs via ``dashboard_state.build_state`` (which uses the
 shared ``commcare_connect.labs.synthetic.generator.core.survey_quality`` library) -> create a workflow run
 on the synthetic opp via the ``connect_labs`` MCP. The dashboard render
 (``commcare_connect/workflow/templates/verified_monitoring_render.js``) reads the
@@ -35,7 +35,7 @@ import httpx
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from survey_sim import build_state, summarize  # noqa: E402
+from dashboard_state import build_state, summarize  # noqa: E402
 
 MCP_URL = os.environ.get("LABS_MCP_URL", "https://labs.connect.dimagi.com/mcp/")
 

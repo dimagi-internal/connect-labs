@@ -13,7 +13,15 @@ back-check/scorecard assembly consume, plus ``sample_type`` / ``cluster`` /
 ``work_area_id`` for the primary-vs-alternate mix.
 """
 
+from .backcheck import simulate_backchecks
 from .params import PrimaryRate, SimParams
 from .plan import simulate_plan
+from .scatter import scatter_primaries
 
-__all__ = ["simulate_plan", "SimParams", "PrimaryRate"]
+__all__ = [
+    "simulate_plan",
+    "scatter_primaries",
+    "simulate_backchecks",
+    "SimParams",
+    "PrimaryRate",
+]

@@ -15,7 +15,6 @@ The output is the workflow ``instance.state`` payload the render reads.
 
 from __future__ import annotations
 
-import math
 import random
 
 # Make the repo root importable so the shared algorithm library resolves whether
@@ -28,15 +27,15 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from commcare_connect.labs.synthetic.generator.core.survey_quality import results_to_map, run_metrics  # noqa: E402
-from commcare_connect.labs.synthetic.generator.core.survey_quality.stats import bbox, point_in_geom  # noqa: E402
-from commcare_connect.labs.synthetic.generator.core.survey_sim import SimParams, simulate_plan  # noqa: E402
+from commcare_connect.labs.synthetic.generator.core.survey_sim import (  # noqa: E402
+    SimParams,
+    scatter_primaries,
+    simulate_backchecks,
+    simulate_plan,
+)
+from commcare_connect.labs.synthetic.generator.core.survey_sim.geo import _interp, _sample_in_geom  # noqa: E402
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-_M_PER_DEG = 111_320.0  # metres per degree latitude (good enough at this scale)
-# Stable household attribute used as a Type-1 back-check identifier (a roof can't
-# change between two visits a week apart — a mismatch is a fabrication signal).
-_ROOF_TYPES = ["thatch", "metal sheet", "mud", "tile"]
-_ROOF_WEIGHTS = [0.42, 0.34, 0.16, 0.08]
 
 
 # --------------------------------------------------------------- geometry utils
@@ -47,29 +46,6 @@ def _load_wards(path: Path) -> dict:
 
     fc = json.loads(Path(path).read_text())
     return {f["properties"]["name"]: f for f in fc["features"]}
-
-
-def _sample_in_geom(rng: random.Random, geom: dict, n: int) -> list:
-    x0, y0, x1, y1 = bbox(geom)
-    pts, guard = [], 0
-    while len(pts) < n and guard < n * 200:
-        guard += 1
-        lon, lat = rng.uniform(x0, x1), rng.uniform(y0, y1)
-        if point_in_geom(geom, lat, lon):
-            pts.append((lat, lon))
-    return pts
-
-
-def _offset(rng: random.Random, lat: float, lon: float, meters: float) -> tuple:
-    """Move a point by ``meters`` in a random bearing (small-distance approx)."""
-    bearing = rng.uniform(0, 2 * math.pi)
-    dlat = (meters * math.cos(bearing)) / _M_PER_DEG
-    dlon = (meters * math.sin(bearing)) / (_M_PER_DEG * math.cos(math.radians(lat)))
-    return lat + dlat, lon + dlon
-
-
-def _interp(a: float, b: float, i: int, n: int) -> float:
-    return a if n <= 1 else a + (b - a) * (i / (n - 1))
 
 
 def _round_label(round0: str, i: int) -> tuple:
@@ -136,166 +112,7 @@ def _arm_records(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id,
     if work_areas:
         params = _sim_params(cfg, arm_key, arm_cfg, round_idx, n_rounds)
         return simulate_plan(work_areas, params, rng, ward_name=arm_cfg["ward"], ward_geom=geom, base_id=base_id)
-    return _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id)
-
-
-def _gen_arm_round(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id):
-    """Generate one arm's primary records for one round (legacy random-in-ward)."""
-    q = cfg["quality"]
-    elig = cfg.get("eligibility", {})
-    n = max(1, int(round(arm_cfg["n_per_round"] + rng.uniform(-1, 1) * arm_cfg.get("n_jitter", 0))))
-    coverage = _interp(arm_cfg["coverage_start"], arm_cfg["coverage_end"], round_idx, n_rounds)
-    coverage = max(0.0, coverage + rng.gauss(0, arm_cfg.get("coverage_noise", 0.0)))
-    n_enum = arm_cfg.get("enumerators", 5)
-    enum_ids = [f"{arm_key[0].upper()}{k + 1}" for k in range(n_enum)]
-    # Optional flagged surveyor — one enumerator whose data quality is degraded,
-    # so the per-surveyor scorecard (and the back-check) catch them.
-    flagged = cfg.get("flagged_surveyor") or {}
-    flag_id = flagged.get("id") if flagged.get("arm") == arm_key else None
-    near = q.get("gps_offset_near_m", [1, 13])
-    far = q.get("gps_offset_far_m", [16, 55])
-    dur = q["duration_min"]
-
-    recs = []
-    pts = _sample_in_geom(rng, geom, n)
-    for j in range(n):
-        surveyor = enum_ids[j % n_enum]
-        bad = surveyor == flag_id
-        gps_p = flagged.get("gps_within_15m", q["gps_within_15m"]) if bad else q["gps_within_15m"]
-        ev_p = flagged.get("evidence", q["evidence_complete"]) if bad else q["evidence_complete"]
-        alat, alon = pts[j % len(pts)]
-        within = rng.random() < gps_p
-        offset_m = rng.uniform(*near) if within else rng.uniform(*far)
-        clat, clon = _offset(rng, alat, alon, offset_m)
-        present = rng.random() < elig.get("present_rate", 0.99)
-        age = rng.randint(elig.get("age_min_months", 6), elig.get("age_max_months", 59))
-        eligible = present and (elig.get("age_min_months", 6) <= age <= elig.get("age_max_months", 59))
-        received = bool(eligible and rng.random() < coverage)
-        # duration: occasional implausibly-short record
-        if rng.random() < dur.get("short_rate", 0.0):
-            duration = round(rng.uniform(*dur.get("short_range", [1, 3])), 1)
-        else:
-            duration = round(max(dur.get("floor", 4), rng.gauss(dur["mean"], dur["sd"])), 1)
-        rec = {
-            "record_id": f"{base_id}-p{j}",
-            "round": round_idx + 1,
-            "form_type": "primary",
-            "household_id": f"{base_id}-H{j:04d}",
-            "ward": arm_cfg["ward"],
-            "arm": arm_key,
-            "enumerator_id": surveyor,
-            "lat": round(clat, 6),
-            "lon": round(clon, 6),
-            "assigned_lat": round(alat, 6),
-            "assigned_lon": round(alon, 6),
-            "gps_offset_m": round(offset_m, 1),
-            "in_ward": point_in_geom(geom, clat, clon),
-            "start_ts": 1_700_000_000 + round_idx * 5_000_000 + j * 900,
-            "end_ts": 1_700_000_000 + round_idx * 5_000_000 + j * 900 + int(duration * 60),
-            "duration_min": duration,
-            "evidence_photo": rng.random() < ev_p,
-            "child_present": present,
-            "child_sex": rng.choice(["M", "F"]),
-            "child_age_months": age,
-            "roof_type": rng.choices(_ROOF_TYPES, weights=_ROOF_WEIGHTS, k=1)[0],
-            "eligible": eligible,
-            "vitamin_a_received": received,
-            "dose_source": rng.choice(["campaign", "routine", "facility"]) if received else None,
-            "original_record_id": None,
-            "original_enumerator_id": None,
-        }
-        # rare required-field drop -> exercises completeness metric
-        if rng.random() > q.get("field_complete", 1.0):
-            rec[rng.choice(["evidence_photo", "child_age_months"])] = None
-        recs.append(rec)
-    return recs
-
-
-def _gen_backchecks(rng, cfg, primaries, round_idx, base_id):
-    """Re-survey a stratified sample of primaries with a different enumerator."""
-    bc = cfg["backcheck"]
-    n_bc_enum = bc.get("enumerators", 3)
-    bc_ids = [f"BC{k + 1}" for k in range(n_bc_enum)]
-    pct = bc["sample_pct"]
-    if round_idx < bc.get("front_load_rounds", 0):
-        pct = bc.get("front_load_pct", pct)
-    # stratify by enumerator so every enumerator gets covered
-    by_enum = {}
-    for r in primaries:
-        by_enum.setdefault(r["enumerator_id"], []).append(r)
-    selected = []
-    for _enum, rs in by_enum.items():
-        k = max(1, int(round(len(rs) * pct)))
-        selected.extend(rng.sample(rs, min(k, len(rs))))
-
-    flagged = cfg.get("flagged_surveyor") or {}
-    out = []
-    for idx, o in enumerate(selected):
-        # Re-survey values: agree most of the time, perturb otherwise. A flagged
-        # surveyor's originals agree LESS with the independent re-survey — the
-        # signal that catches them (the J-PAL back-check error rate per surveyor).
-        is_flagged = flagged.get("id") == o.get("enumerator_id") and flagged.get("arm") == o.get("arm")
-        # Type-3 (outcome): a flagged surveyor's originals agree LESS with the
-        # independent re-survey — the headline back-check signal that catches them.
-        agree_p = (
-            flagged.get("backcheck_agreement", bc["outcome_agreement"]) if is_flagged else bc["outcome_agreement"]
-        )
-        outcome = o["vitamin_a_received"]
-        if rng.random() > agree_p:
-            outcome = not outcome
-        sex = o["child_sex"]
-        present = o["child_present"]
-        age = o["child_age_months"]
-        roof = o.get("roof_type")
-        # Type-1 (identity): a flagged surveyor also shows more identity discordance.
-        # Covers the respondent (sex/age/present) AND the household (roof type).
-        t1_p = flagged.get("backcheck_type1_agreement", bc["type1_agreement"]) if is_flagged else bc["type1_agreement"]
-        if rng.random() > t1_p:
-            # introduce a Type-1 discordance on one identifier
-            roll = rng.random()
-            if roll < 0.25:
-                sex = "M" if sex == "F" else "F"
-            elif roll < 0.5:
-                present = not present
-            elif roll < 0.75:
-                roof = rng.choice([r for r in _ROOF_TYPES if r != roof] or _ROOF_TYPES)
-            elif age is not None:
-                age = age + rng.choice([-4, 4, 6])
-        # Type-2 (location/protocol): the re-survey lands further from a flagged
-        # surveyor's claimed household — their original location was sloppy.
-        off_m = rng.uniform(22, 45) if is_flagged else rng.uniform(2, 12)
-        blat, blon = _offset(rng, o["assigned_lat"], o["assigned_lon"], off_m)
-        out.append(
-            {
-                "record_id": f"{base_id}-b{idx}",
-                "round": round_idx + 1,
-                "form_type": "back_check",
-                "household_id": o["household_id"],
-                "ward": o["ward"],
-                "arm": o["arm"],
-                "enumerator_id": bc_ids[idx % n_bc_enum],
-                "lat": round(blat, 6),
-                "lon": round(blon, 6),
-                "assigned_lat": o["assigned_lat"],
-                "assigned_lon": o["assigned_lon"],
-                "gps_offset_m": round(off_m, 1),
-                "in_ward": True,
-                "start_ts": o["start_ts"] + 86_400,
-                "end_ts": o["start_ts"] + 86_400 + 600,
-                "duration_min": round(rng.gauss(9, 2), 1),
-                "evidence_photo": o["evidence_photo"],  # not a back-check variable; carried, not re-drawn
-                "child_present": present,
-                "child_sex": sex,
-                "child_age_months": age,
-                "roof_type": roof,
-                "eligible": o["eligible"],
-                "vitamin_a_received": outcome,
-                "dose_source": o["dose_source"],
-                "original_record_id": o["record_id"],
-                "original_enumerator_id": o["enumerator_id"],
-            }
-        )
-    return out
+    return scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id)
 
 
 # --------------------------------------------------------------- assembly
@@ -580,7 +397,7 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
         recs += _arm_records(
             rng, cfg, "comparison", arm_cfg["comparison"], cgeom, ri, n_rounds, f"{base_id}c", work_areas=cw_was
         )
-        recs += _gen_backchecks(rng, cfg, [r for r in recs if r["form_type"] == "primary"], ri, base_id)
+        recs += simulate_backchecks(rng, cfg, [r for r in recs if r["form_type"] == "primary"], ri, base_id)
 
         summary = _round_summary(cfg, recs, ri, label, as_of, tw, cw)
         sd_pts = _sample_in_geom(rng, tgeom, sd_cfg.get("sample_points", 0))
