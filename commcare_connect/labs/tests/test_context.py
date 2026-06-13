@@ -99,6 +99,34 @@ class TestContextValidation:
         assert validated["opportunity_id"] == 999
         assert "opportunity" not in validated
 
+    def test_validate_context_access_passes_through_with_empty_org_data(self):
+        """opportunity_id / program_id pass through even when cached OAuth org_data is empty.
+
+        A session whose ``organization_data`` came back empty (e.g. the Connect
+        org-list API flaked at login, stored as ``{}`` — see oauth_views.py) must
+        still be able to apply an opportunity/program context from a deep link.
+        Returning ``{}`` here would make LabsContextMiddleware treat the param as
+        "no access" and strip it from the URL, defeating opportunity-scoped deep
+        links (e.g. headless walkthrough renders). Downstream LabsRecord API calls
+        enforce real access, so passthrough is safe.
+        """
+        factory = RequestFactory()
+        request = factory.get("/")
+
+        user = User.objects.create(username="testuser_empty", email="empty@example.com")
+        request.user = user
+        # organization_data stored empty — the API-failed-at-login case.
+        request.session = {"labs_oauth": {"organization_data": {}}}
+
+        context = {"opportunity_id": 2018, "program_id": 77}
+        validated = validate_context_access(request, context)
+
+        assert validated["opportunity_id"] == 2018
+        assert validated["program_id"] == 77
+        # No org/opportunity objects to resolve without cached data — IDs only.
+        assert "opportunity" not in validated
+        assert "program" not in validated
+
 
 @pytest.mark.django_db
 class TestAutoSelection:

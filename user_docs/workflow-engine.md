@@ -198,6 +198,35 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
 | **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
 
+### Verified Monitoring dashboard
+
+The **Verified Monitoring** dashboard contrasts what the program self-reported with what an independent survey verified. It is organized into four panels:
+
+**Trend panel**
+
+The Trend panel leads with a headline callout showing the gap between self-reported and independently-verified coverage in percentage points — for example, *"+17pp — program reported 86.7%, the independent survey verified 69.7%"*. This means you can read the key finding immediately without having to subtract the two lines yourself.
+
+**Map panel**
+
+Survey pins on the map use two distinct visual styles to distinguish visit types:
+
+- **Solid dots** — primary (first-choice) households
+- **Hollow rings** — substitute households where the surveyor visited an alternate instead of the originally selected household
+
+Substitute pins are intentionally lighter so they do not dominate the map, but remain legible when you need to identify them.
+
+**Scorecard panel**
+
+When a surveyor has been selected for review, their row is marked with a high-contrast **REVIEW** badge so they are immediately identifiable in the scorecard table.
+
+**Back-check panel**
+
+The back-check panel shows results from an independent re-survey conducted to validate a flagged surveyor's work. The GPS-location section is labelled **"% within 25 m · cells = distance"** so it is clear that the percentage shown is the share of visits whose GPS coordinates fall within 25 metres of the original recorded location, and that each cell in the table represents a distance measurement — not an error or a missing value.
+
+The GPS drill-down also shows a count chip summarising the full picture at a glance — for example, *"12 flagged · 34 ok · 46 total"* — alongside a full-census caption so you always know how many visits the percentage is based on.
+
+Back-check data reflects real discordance across identity, location, and outcome dimensions. When a surveyor is flagged, the re-survey results will show genuine disagreement in all three areas if the evidence supports it, giving you a complete and consistent picture of where the back-check found problems.
+
 ---
 
 ## Creating and Customizing Workflows
@@ -219,20 +248,4 @@ All workflows follow the same core pattern — the same approach Superset uses:
 
 1. CommCare form submissions are synced into a Connect Labs SQL database.
 2. **Pipelines** run JSON-based SQL queries against that data to extract and aggregate it — one row per visit, one row per FLW, counts, percentages, and more.
-3. The **workflow dashboard** renders the query results and lets users interact with them.
-
-All aggregation belongs in SQL. If Claude Code ever suggests doing aggregation in Python instead, that is a signal the session has gone off track — ask in **#connect-labs** before continuing. Because the pipelines use the same JSON query approach as Superset, you can paste a pipeline's SQL directly into Superset to debug it if something looks wrong.
-
-The `custom_analysis/` section of Labs predates the workflow engine. Most of those dashboards could now be rebuilt as workflows. Write custom Django or Python only for a genuinely complex multi-step UI — and even then, the better answer is usually to split the work into multiple simpler workflows.
-
-### Snapshot contracts and workflow definitions
-
-When a run is concluded, the snapshot is built from what the user **sees on screen at the moment they click Conclude** — the dashboard's cached data, scoped to what the workflow's manifest declares it tracks. The system never refetches or recomputes data during the conclude step itself. This means the workflow's own manifest is the source of truth for what is captured, and the screen state at conclude time is the source of truth for the values saved.
-
-For **recurring periodic workflows**, each run's snapshot is additionally scoped to that run's own period. This ensures that when you save Week 1 and Week 2 as separate concluded runs, each snapshot holds only that week's per-FLW figures — not all-time totals that would look identical across every run.
-
-Practical implications for administrators:
-
-- **Adding pipelines or fields to an existing workflow** — update the workflow's manifest to include them. Future concluded runs will capture the new data. Runs already concluded are unaffected.
-- **Workflows not built from a template** — custom-built workflows that were created from scratch can use the conclude-and-save-baseline flow in exactly the same way as template-based workflows. There is no requirement to link a workflow back to a starter template for Conclude to work.
-- **Removing pipelines or fields** — if you remove something from the manifest, it will no longer appear in future snapshots. Review the manifest carefully before removing anything that historical compar
+3. The **workflow dashboard** renders the
