@@ -16,6 +16,7 @@ ordering, context, and output contract.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,6 +60,37 @@ ENSURERS: dict[str, Callable] = {
     "tasks": ensure_tasks,
     "rollup": ensure_rollup,
 }
+
+
+# Where the checked-in env manifests live, resolved off the synthetic package
+# dir (NOT the cwd) so name-based resolution works identically whether the code
+# runs from a dev checkout or the deployed labs app's working directory. The
+# ensure package is ``.../labs/synthetic/ensure``; the manifests sit a level up
+# at ``.../labs/synthetic/envs/<env>.yaml`` next to their per-opp manifests.
+ENVS_DIR = Path(__file__).resolve().parent.parent / "envs"
+
+# An env name is a single path segment of safe chars only — no separators, no
+# ``..`` — so resolution can never escape ``ENVS_DIR``.
+_ENV_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def resolve_env_path(env: str) -> Path:
+    """Map an env NAME (e.g. ``"program-admin-report"``) to its manifest path.
+
+    Resolves ``<ENVS_DIR>/<env>.yaml`` off the package dir, not the cwd, so it
+    works inside the deployed labs app. Rejects anything that isn't a plain,
+    single-segment name (no path separators, no ``..``) to foreclose path
+    traversal, then verifies the resolved file actually exists and stays within
+    ``ENVS_DIR``. Raises ``ValueError`` on a bad/unknown name.
+    """
+    if not isinstance(env, str) or not _ENV_NAME_RE.match(env):
+        raise ValueError(f"Invalid env name {env!r}: expected a plain name like 'program-admin-report'.")
+    candidate = (ENVS_DIR / f"{env}.yaml").resolve()
+    # Defense in depth: the resolved path must live directly under ENVS_DIR.
+    if candidate.parent != ENVS_DIR.resolve() or not candidate.is_file():
+        available = sorted(p.stem for p in ENVS_DIR.glob("*.yaml"))
+        raise ValueError(f"Unknown env {env!r}. Available envs: {available}")
+    return candidate
 
 
 def ensure_synthetic_data(env_path: str, out: str | None = None) -> dict:
