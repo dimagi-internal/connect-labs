@@ -27,6 +27,10 @@
   'use strict';
 
   const COLOR = '#a855f7';
+  // Two-arm sampling: per-boundary study arm. Matches review.html ARM_COLOR.
+  const ARMS = ['intervention', 'comparison'];
+  const ARM_COLOR = { intervention: '#10b981', comparison: '#3b82f6' };
+  const ARM_LABEL = { intervention: 'Interv', comparison: 'Control' };
   const SRC = 'mp-admin';
   const LINE = 'mp-admin-line';
   const FILL = 'mp-admin-fill';
@@ -46,6 +50,12 @@
     const isAreaPhase = opts.isAreaPhase || (() => false);
     const onAreaAdd = opts.onAreaAdd || function () {};
     const onAreaRemove = opts.onAreaRemove || function () {};
+    // Two-arm sampling support. When armEnabled() is true, each selected boundary
+    // carries its own intervention/comparison arm, set via a per-row pill in the
+    // rail. onAreaAdd's 4th arg + onArmChange let the host tag the boundary's draw
+    // feature with the arm so collectArmAreas + the sample paint read it.
+    const onArmChange = opts.onArmChange || function () {};
+    const armEnabled = opts.armEnabled || (() => false);
     const post = (url, body) => M.post(url, body, { csrf: opts.csrf });
     // When a controlsHost (a left-rail element) is provided, the source picker /
     // search / selected list mount THERE and the map-panel "Boundaries" layer is
@@ -124,26 +134,62 @@
           km2,
         ).toLocaleString()} km²`;
       }
-      // x-deletable list of the selected boundaries (lives in the rail)
+      // x-deletable list of the selected boundaries (lives in the rail). In
+      // sampling mode each row also carries a per-boundary arm pill.
       if (!selectedListEl) return;
       selectedListEl.innerHTML = '';
-      selected.forEach((v) => {
+      const showArm = armEnabled();
+      selected.forEach((v, id) => {
         const row = document.createElement('div');
         row.className =
-          'flex items-center justify-between gap-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200';
+          'flex items-center justify-between gap-1.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200';
         const name = document.createElement('span');
-        name.className = 'truncate';
+        name.className = 'truncate flex-1';
         name.textContent = (v.desc && v.desc.name) || '(area)';
+        row.appendChild(name);
+        if (showArm) row.appendChild(armPill(id, v));
         const x = document.createElement('button');
         x.type = 'button';
-        x.className = 'text-gray-400 hover:text-red-600 leading-none px-1';
+        x.className =
+          'text-gray-400 hover:text-red-600 leading-none px-1 shrink-0';
         x.textContent = '×';
         x.title = 'Remove from plan area';
         x.addEventListener('click', () => toggleSelect(v.desc));
-        row.appendChild(name);
         row.appendChild(x);
         selectedListEl.appendChild(row);
       });
+    }
+    // Slick per-boundary arm selector: a two-segment Interv / Control pill, the
+    // active half filled with its arm colour. Changing it re-tags the boundary's
+    // draw feature via the host's onArmChange.
+    function setArm(id, arm) {
+      const v = selected.get(id);
+      if (!v || v.arm === arm) return;
+      v.arm = arm;
+      onArmChange(id, arm);
+      renderSummary();
+    }
+    function armPill(id, v) {
+      const arm = v.arm || 'intervention';
+      const wrap = document.createElement('div');
+      wrap.className =
+        'inline-flex rounded overflow-hidden border border-gray-200 text-[9px] font-semibold leading-none shrink-0';
+      wrap.title = 'Study arm for this ward (intervention vs control)';
+      ARMS.forEach((a) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        const on = a === arm;
+        b.className = 'px-1.5 py-0.5 transition-colors';
+        b.style.background = on ? ARM_COLOR[a] : '#fff';
+        b.style.color = on ? '#fff' : '#6b7280';
+        b.textContent = ARM_LABEL[a];
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setArm(id, a);
+        });
+        wrap.appendChild(b);
+      });
+      return wrap;
     }
     function renderHint() {
       hintEl.textContent = isAreaPhase()
@@ -491,8 +537,9 @@
           setStatus(d.detail || 'Geometry lookup failed');
           return;
         }
-        selected.set(id, { desc, geometry: d.geometry });
-        onAreaAdd(id, d.geometry, desc);
+        // New picks default to the intervention arm; the per-row pill changes it.
+        selected.set(id, { desc, geometry: d.geometry, arm: 'intervention' });
+        onAreaAdd(id, d.geometry, desc, 'intervention');
         syncSelectedSource();
         renderSummary();
         setStatus('');
@@ -719,6 +766,9 @@
     return {
       layer,
       refresh,
+      // Re-render the selected-boundary list (e.g. when the host toggles sampling
+      // mode on/off, so the per-boundary arm pills appear/disappear).
+      renderSelected: renderSummary,
       enable() {
         layer.setEnabled(true);
       },
