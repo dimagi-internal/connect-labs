@@ -279,12 +279,14 @@ def generate_audit_from_archetype(
     monday_iso: str,
     audit_archetype: str,
     visit_id: int,
+    flw_name: str | None = None,
 ) -> int:
     """Generate an AuditSession record from a named audit archetype.
 
     Returns the audit id. The archetype controls status / overall_result /
     image set (real blob_ids backed by the MUAC stock corpus); see
-    ``commcare_connect/labs/synthetic/archetypes.py``.
+    ``commcare_connect/labs/synthetic/archetypes.py``. ``flw_name`` is the
+    worker's real display name, stamped onto the audit data + visit cards.
     """
     from commcare_connect.labs.synthetic.archetypes import build_audit_data
 
@@ -296,6 +298,7 @@ def generate_audit_from_archetype(
         opportunity_name=opportunity_name,
         workflow_run_id=workflow_run_id,
         visit_id_base=visit_id,
+        flw_name=flw_name,
     )
     rec = ada.labs_api.create_record(
         experiment="audit",
@@ -319,14 +322,17 @@ def generate_task_from_archetype(
     task_archetype: str,
     creator_name: str,
     reason_key: str | None = None,
+    flw_name: str | None = None,
 ) -> int:
     """Generate a Task record from a named task archetype.
 
     ``reason_key`` (e.g. ``gender_skew``) selects a reason-specific coaching
     conversation variant when one exists, so the transcript talks about the
-    same issue the task's flag asserts. Returns the task id. See
-    ``commcare_connect/labs/synthetic/archetypes.py`` for the archetype
-    catalog.
+    same issue the task's flag asserts. ``flw_name`` is the worker's real
+    display name, written to the task's ``flw_name`` field — the task hero
+    header and tasks list read it instead of the raw username. Returns the
+    task id. See ``commcare_connect/labs/synthetic/archetypes.py`` for the
+    archetype catalog.
     """
     from commcare_connect.labs.synthetic.archetypes import build_task_data
 
@@ -340,6 +346,7 @@ def generate_task_from_archetype(
         title=title,
         creator_name=creator_name,
         reason_key=reason_key,
+        flw_name=flw_name,
     )
     rec = tda.labs_api.create_record(
         experiment="tasks",
@@ -372,6 +379,7 @@ def apply_action_spec(
     monday_iso: str,
     creator_name: str,
     visit_id_seq: VisitIdSequence,
+    flw_name: str | None = None,
 ) -> None:
     """Materialize one (run, flw) action spec into Audit + Task records.
 
@@ -382,10 +390,18 @@ def apply_action_spec(
         - ``reason_key``: selects the reason-matched coaching conversation
           variant (see ``generator/ocs_templates.py``) so a gender-split
           task never closes on a photo-framing transcript
+
+    ``flw_name`` is the worker's real human display name; it's stamped onto
+    the Audit + Task records so the task hero header / audit cards / PAR
+    drill render a real name instead of the raw ``flw_id`` username.
+    Defaults to ``flw_id``. ``creator_name`` is the (already human-readable)
+    name of the manager who took the action — used for task authorship and
+    the title is composed from the worker's display name.
     """
     audit_archetype = spec.get("audit_archetype")
     task_archetype = spec.get("task_archetype")
     spawned_audit_id: int | None = None
+    flw_name = flw_name or flw_id
 
     if audit_archetype:
         spawned_audit_id = generate_audit_from_archetype(
@@ -397,10 +413,11 @@ def apply_action_spec(
             monday_iso=monday_iso,
             audit_archetype=audit_archetype,
             visit_id=visit_id_seq.next(),
+            flw_name=flw_name,
         )
 
     if task_archetype:
-        task_title = compose_task_title(flw_id=flw_id, reason=spec.get("reason_label") or spec.get("reason_key"))
+        task_title = compose_task_title(flw_id=flw_name, reason=spec.get("reason_label") or spec.get("reason_key"))
         generate_task_from_archetype(
             tda=tda,
             opportunity_id=opportunity_id,
@@ -412,4 +429,5 @@ def apply_action_spec(
             task_archetype=task_archetype,
             creator_name=creator_name,
             reason_key=spec.get("reason_key"),
+            flw_name=flw_name,
         )

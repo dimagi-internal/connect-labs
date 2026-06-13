@@ -237,6 +237,10 @@ def test_rollup_joins_flags_audits_tasks_by_flw(fake_run, monkeypatch):
     assert len(run["flw_rows"]) == 1
     fr = run["flw_rows"][0]
     assert fr["flw_id"] == "amina"
+    # No flw_name on any record here → the row carries None, and the render
+    # falls back to flw_id. (The real-name path is covered by
+    # test_rollup_prefers_flw_name_when_records_carry_it.)
+    assert fr["flw_name"] is None
     assert len(fr["flags"]) == 1
     assert fr["flags"][0]["flag_key"] == "sam_low"
     assert len(fr["audits"]) == 1
@@ -251,6 +255,79 @@ def test_rollup_joins_flags_audits_tasks_by_flw(fake_run, monkeypatch):
     audit = fr["audits"][0]
     assert audit["status"] == "completed"
     assert audit["pass_count"] == 5
+
+
+def test_rollup_prefers_flw_name_when_records_carry_it(fake_run, monkeypatch):
+    """When the seeded audit/task records carry a real ``flw_name`` (the
+    synthetic generator now stamps display names from its name map), the
+    rollup row carries it through so the PAR drill renders the human name
+    instead of the raw username. A name equal to the id is treated as
+    absent (so the render still falls back to flw_id)."""
+    from unittest.mock import MagicMock
+
+    from commcare_connect.audit.models import AuditSessionRecord
+    from commcare_connect.tasks.models import TaskRecord
+    from commcare_connect.workflow.templates import program_admin_report as par
+
+    mock_fda_class = MagicMock()
+    mock_tda_class = MagicMock()
+    mock_ada_class = MagicMock()
+    mock_get_saved_runs = MagicMock(
+        return_value=[{"opportunity_id": 10001, "workflow_definition_id": 47, "runs": [fake_run]}]
+    )
+
+    mock_fda_class.return_value.get_flags_for_run.return_value = []
+    mock_ada_class.return_value.get_sessions_by_workflow_run.return_value = [
+        AuditSessionRecord(
+            {
+                "id": 77,
+                "experiment": "audit",
+                "type": "AuditSession",
+                "username": "jumoke_n",
+                "opportunity_id": 10001,
+                "data": {
+                    "status": "completed",
+                    "overall_result": "fail",
+                    "flw_name": "Jumoke Balogun",
+                    "image_results": {"pass": 3, "fail": 2, "pending": 0},
+                },
+            }
+        )
+    ]
+    mock_tda_class.return_value.get_tasks_for_run.return_value = [
+        TaskRecord(
+            {
+                "id": 123,
+                "experiment": "tasks",
+                "type": "Task",
+                "username": "jumoke_n",
+                "opportunity_id": 10001,
+                "data": {
+                    "username": "jumoke_n",
+                    "flw_name": "Jumoke Balogun",
+                    "status": "investigating",
+                    "events": [{"event_type": "created", "timestamp": "2025-11-10T11:01:00Z"}],
+                },
+            }
+        )
+    ]
+
+    monkeypatch.setattr(par, "FlagsDataAccess", mock_fda_class)
+    monkeypatch.setattr(par, "TaskDataAccess", mock_tda_class)
+    monkeypatch.setattr(par, "get_saved_runs_for_program_report", mock_get_saved_runs)
+    monkeypatch.setattr("commcare_connect.audit.data_access.AuditDataAccess", mock_ada_class)
+
+    rollup = par.compute_program_admin_rollup(
+        state={
+            "window_start": "2025-11-04T00:00:00Z",
+            "window_end": "2025-11-25T23:59:59Z",
+            "watched_sources": [{"opportunity_id": 10001, "workflow_definition_id": 47}],
+        }
+    )
+
+    fr = rollup["watched_summary"][0]["runs"][0]["flw_rows"][0]
+    assert fr["flw_id"] == "jumoke_n"
+    assert fr["flw_name"] == "Jumoke Balogun"
 
 
 def test_rollup_missing_window_returns_error(monkeypatch):
@@ -273,7 +350,13 @@ def test_program_admin_report_has_no_build_snapshot_hook():
     assert template["supports_saved_runs"] is True
     assert "watched_summary" in template["snapshot_inputs"]["state_keys"]
     # And every state key the render reads is captured by the manifest.
-    for key in ("window_start", "window_end", "expected_weeks", "display_window_start", "display_window_end"):
+    for key in (
+        "window_start",
+        "window_end",
+        "expected_weeks",
+        "display_window_start",
+        "display_window_end",
+    ):
         assert key in template["snapshot_inputs"]["state_keys"]
 
     definition = WorkflowDefinitionRecord(
