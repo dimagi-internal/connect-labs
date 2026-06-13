@@ -1014,17 +1014,29 @@
     // result) adds the boundary's full geometry to the MapboxDraw area layer.
     if (window.MicroplansAdminBoundaries && BOUNDARY_VIEWPORT_URL) {
       const adminDrawIds = {}; // boundary_id -> [draw feature ids]
-      function adminAddGeometry(boundaryId, geom) {
+      function adminAddGeometry(boundaryId, geom, arm) {
         if (!draw) return;
+        // In sampling mode each picked boundary belongs to a study arm (set via the
+        // per-boundary pill in the rail). Tag the draw feature so collectArmAreas +
+        // the sample paint read it; coverage mode carries no arm.
+        const props = mpMode === "sampling" ? { arm: arm || "intervention" } : {};
         const polys = geom.type === "MultiPolygon"
           ? geom.coordinates.map((c) => ({ type: "Polygon", coordinates: c }))
           : [geom];
         adminDrawIds[boundaryId] = [];
         polys.forEach((g) => {
-          const ids = draw.add({ type: "Feature", geometry: g, properties: {} });
+          const ids = draw.add({ type: "Feature", geometry: g, properties: { ...props } });
           (ids || []).forEach((id) => adminDrawIds[boundaryId].push(id));
         });
         if (typeof refreshAreaStats === "function") refreshAreaStats();
+      }
+      // Re-tag a picked boundary's draw feature(s) when its arm pill changes, so the
+      // next Generate samples it under the right arm.
+      function adminSetArm(boundaryId, arm) {
+        if (!draw || mpMode !== "sampling") return;
+        (adminDrawIds[boundaryId] || []).forEach((id) => {
+          try { draw.setFeatureProperty(id, "arm", arm); } catch (_) {}
+        });
       }
       function adminRemoveGeometry(boundaryId) {
         if (draw && adminDrawIds[boundaryId]) draw.delete(adminDrawIds[boundaryId]);
@@ -1040,8 +1052,10 @@
           const d = document.querySelector("details.area-def");
           return !!(d && d.open);
         },
-        onAreaAdd: (boundaryId, geometry, feature) => { adminAddGeometry(boundaryId, geometry); autofillFromBoundary(feature); },
+        onAreaAdd: (boundaryId, geometry, feature, arm) => { adminAddGeometry(boundaryId, geometry, arm); autofillFromBoundary(feature); },
         onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
+        onArmChange: (boundaryId, arm) => adminSetArm(boundaryId, arm),
+        armEnabled: () => mpMode === "sampling",
       });
       // Boundaries is the default area mode on a fresh plan — turn the layer on
       // so its lines render and clicks select straight away. Defer to style-load:
@@ -1791,6 +1805,8 @@
     // + Bulk regroup stay available for both.)
     $("group-strategy-card")?.classList.toggle("hidden", samp);
     $("sampling-group-note")?.classList.toggle("hidden", !samp);
+    // Show/hide the per-boundary arm pills as we enter/leave two-arm sampling.
+    try { adminBoundaries?.renderSelected?.(); } catch (_) {}
   }
   on("btn-mode-coverage", "click", () => setMode("coverage"));
   on("btn-mode-sampling", "click", () => setMode("sampling"));
