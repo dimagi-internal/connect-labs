@@ -207,17 +207,22 @@ scenes:
     seconds: 0.6
   - kind: wait_for
     must_succeed: true
-    note: gate the completion click on the button flip. The label is computed from
-      stats.pending (optimistic, client-side) - it reads 'Save Progress' until all
-      five Pass clicks have registered, then flips to 'Complete Image Review'. On a
-      cold render the last photo's GDrive fetch can delay its Pass landing, so wait
-      for the flipped label rather than racing it with a fail-fast click.
+    note: 'gate on the BUTTON flip, scoped to button: the page also has a static
+      <h2>Complete Image Review</h2> section header that is always present, so an
+      unscoped text:Complete Image Review matches that heading instantly and never
+      waits for anything. The submit button''s label is computed from stats.pending
+      (optimistic) - it reads ''Save Progress'' until all five Pass clicks register,
+      then flips to ''Complete Image Review''. Scoping to button:has-text makes this
+      a real gate on the flip.'
     seconds: 15
-    target: text:Complete Image Review
+    target: css:button:has-text("Complete Image Review")
   - kind: click
     must_succeed: true
-    note: exact label - the button reads 'Save Progress' until every photo is decided
-    target: text:Complete Image Review
+    note: 'click the BUTTON, not the static <h2> header. An unscoped
+      text:Complete Image Review resolves to the always-present section heading (a
+      non-interactive <h2>), so completeAudit() never fires and the page never
+      redirects. Scope to the button so the completion POST + workflow redirect run.'
+    target: css:button:has-text("Complete Image Review")
   - kind: wait_for
     must_succeed: true
     note: commit signal - on success the page redirects to the workflow list; waiting
