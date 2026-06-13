@@ -178,6 +178,83 @@ def test_outlier_on_binary_field_returns_rare_outcome():
     assert _outlier(BinaryDistribution(distribution="binary", rate=0.5), rng) == 0.0
 
 
+def test_binary_select_field_honors_rate_within_tolerance():
+    # ace#773: a binary distribution on a select question must render the choice
+    # at the requested rate (not a 50/50 default), as the strings "yes"/"no".
+    schema = FormSchema(questions=[QuestionSpec("form.slept_under_net", "select", choices=["yes", "no"])])
+    cohort = BeneficiaryCohort(
+        id="endemic_district",
+        size=4000,
+        field_distributions={
+            "form.slept_under_net": BinaryDistribution(distribution="binary", rate=0.72),
+        },
+        progression="flat",
+    )
+    rng = random.Random(7)
+    values = [
+        fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng)["form"]["slept_under_net"]
+        for _ in range(4000)
+    ]
+    # Values are the choice strings, never floats.
+    assert all(v in ("yes", "no") for v in values), "binary select must render yes/no, not a float"
+    yes_rate = sum(v == "yes" for v in values) / len(values)
+    assert 0.69 <= yes_rate <= 0.75, f"expected ~0.72 yes; got {yes_rate}"
+
+
+def test_binary_leaf_key_resolves_to_question():
+    # ace#773 root case: the manifest keyed the distribution by the BARE LEAF
+    # ("slept_under_net") while the schema question's json_path is the full dotted
+    # path ("form.slept_under_net"). Leaf-resolution must still apply the rate.
+    schema = FormSchema(questions=[QuestionSpec("form.slept_under_net", "select", choices=["yes", "no"])])
+    cohort = BeneficiaryCohort(
+        id="endemic_district",
+        size=4000,
+        field_distributions={
+            "slept_under_net": BinaryDistribution(distribution="binary", rate=0.72),
+        },
+        progression="flat",
+    )
+    rng = random.Random(7)
+    values = []
+    for _ in range(4000):
+        out = fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng)
+        values.append(out["form"]["slept_under_net"])
+    assert all(v in ("yes", "no") for v in values), "leaf-keyed binary select must render yes/no"
+    yes_rate = sum(v == "yes" for v in values) / len(values)
+    assert 0.69 <= yes_rate <= 0.75, f"expected ~0.72 yes from leaf-keyed dist; got {yes_rate}"
+    # The leaf key was CONSUMED by the schema question — it must not also be
+    # orphan-written as a bare top-level "slept_under_net" float.
+    assert "slept_under_net" not in out, "consumed leaf key must not be double-written as an orphan"
+
+
+def test_ambiguous_leaf_key_does_not_guess():
+    # Two questions share the leaf "status". An effective key keyed only by that
+    # bare leaf is ambiguous, so leaf-resolution must NOT guess: both questions
+    # fall through to their per-kind default, and the ambiguous key is left to
+    # the orphan-write loop (documented behavior: emitted as a top-level float).
+    schema = FormSchema(
+        questions=[
+            QuestionSpec("form.a.status", "select", choices=["yes", "no"]),
+            QuestionSpec("form.b.status", "select", choices=["yes", "no"]),
+        ]
+    )
+    cohort = BeneficiaryCohort(
+        id="primary",
+        size=10,
+        field_distributions={
+            "status": BinaryDistribution(distribution="binary", rate=0.9),
+        },
+        progression="flat",
+    )
+    rng = random.Random(0)
+    out = fill_form_json(schema=schema, cohort=cohort, anomalies_for_visit=[], rng=rng)
+    # No crash; both questions resolved to their select default (a valid choice).
+    assert out["form"]["a"]["status"] in ("yes", "no")
+    assert out["form"]["b"]["status"] in ("yes", "no")
+    # The ambiguous key was NOT consumed, so it remains an orphan top-level float.
+    assert out["status"] in (0.0, 1.0)
+
+
 def test_fill_form_json_anomaly_on_binary_field_does_not_raise():
     # Regression for ace#762: routing a field_outlier through a binary-distributed
     # field used to crash fill_form_json with TypeError. It now yields the rare
