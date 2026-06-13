@@ -464,7 +464,8 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 - The function **must** be named `WorkflowUI` (not a variable assignment)
 - Use `var` for all variable declarations (`const` and `let` work in modern browsers but `var` is the safest choice for Babel standalone + eval)
 - No imports -- only `React` is available as a global
-- CDN libraries available via `window`: Chart.js 4.4.0 (`window.Chart`), chartjs-adapter-date-fns 3.0.0, Leaflet 1.9.4 (`window.L`)
+- CDN libraries available via `window`: Chart.js 4.4.0 (`window.Chart`), chartjs-adapter-date-fns 3.0.0, Leaflet 1.9.4 (`window.L`), Mapbox GL 3.13.0 (`window.mapboxgl`)
+- **Shared map components** for drawing CommCare / microplan data on a Mapbox map: `window.ConnectMap` (boundaries, points, survey pins) and `window.PlanLayers` (the canonical microplan plan layers — work areas, PSU hulls, sample pins, footprints). **Use these instead of hand-rolling layer paint** — they are the same definitions the plan editor uses, so a render draws a plan identically. See [§4a Shared map components](#4a-shared-map-components-connectmap--planlayers).
 - Tailwind CSS classes are available for styling
 - All React hooks are accessed via `React.useState`, `React.useEffect`, `React.useMemo`, `React.useRef`, `React.useCallback`
 
@@ -479,6 +480,87 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 | `links`         | `LinkHelpers`                    | URL builders: `links.auditUrl(params)`, `links.taskUrl(params)`                      |
 | `actions`       | `ActionHandlers`                 | Action methods (see Section 5)                                                       |
 | `onUpdateState` | `(newState) => Promise<void>`    | Merge-save instance state                                                            |
+
+### 4a. Shared map components (ConnectMap & PlanLayers)
+
+The render runtime loads two shared Mapbox-GL modules on `window`. They exist so a
+workflow render draws CommCare / microplan data **the same way the rest of the app
+does** — don't re-implement layer paint by hand; call these.
+
+> How to discover what's available: this section is the canonical list. It's served
+> verbatim by the `workflow_authoring_guide` MCP tool, so any AI authoring a template
+> sees it alongside the rest of the contract. When a new shared component is added to
+> the runtime (`templates/workflow/run.html`), it is documented here.
+
+**`window.ConnectMap`** — generic CommCare map helpers (`static/maps/connect_map.js`):
+
+| Method                                        | Purpose                                    |
+| --------------------------------------------- | ------------------------------------------ |
+| `createMap(el, opts)`                         | init a Mapbox map (`{center,zoom,style}`)  |
+| `bounds(geojson)` / `fit(map, geojson, pad)`  | compute / fit viewport                     |
+| `boundary(map, id, fc, opts)`                 | admin-boundary fill+line(+label) layers    |
+| `points(map, id, fc, opts)`                   | dense point layer (e.g. delivery visits)   |
+| `pins(map, id, fc, opts)`                     | survey pins coloured by a boolean property |
+| `setSource(map, id, fc)` / `remove(map, ids)` | upsert source / tear down                  |
+
+**`window.PlanLayers`** — the canonical **microplan plan layers** (`static/maps/plan_layers.js`).
+These are the exact paint/source definitions the plan editor uses, so a render shows a
+plan identically. Each drawer is idempotent (upsert source, add layers if absent) and
+returns its layer ids; interactivity is the caller's job.
+
+| Method                  | Draws                                    | Data shape (`opts.data` = FeatureCollection)                   |
+| ----------------------- | ---------------------------------------- | -------------------------------------------------------------- |
+| `workAreas(map, opts)`  | territory polygons (`wa-fill`/`wa-line`) | Polygon features w/ `{id, status, fill, outline}`              |
+| `hulls(map, opts)`      | PSU / cluster hulls, two-arm             | Polygon features w/ `{arm: 'intervention'\|'comparison'}`      |
+| `pins(map, opts)`       | sampled household pins                   | Point features w/ `{arm, sample_type: 'primary'\|'alternate'}` |
+| `footprints(map, opts)` | building footprints                      | Polygon (fill) or Point (centroid dot) features                |
+| `remove(map, ids)`      | tear down                                | —                                                              |
+
+Common `opts`: `data` (FeatureCollection), `src` (source id), and overrides like
+`armProp` / `colors` / `typeProp` so the same paint can run over differently-tagged data.
+
+**Drawing a saved plan** (work areas + arm wards) from its JSON — fetch the plan API
+(`/microplans/program/<program_id>/plan/<plan_id>/`, which returns `work_areas`,
+`input_areas`, `psu_hulls`, `sampling_stats`) and hand each piece to `PlanLayers`:
+
+```javascript
+var map = window.ConnectMap.createMap(el, { center: [lng, lat], zoom: 10 });
+fetch('/microplans/program/' + programId + '/plan/' + planId + '/')
+  .then(function (r) {
+    return r.json();
+  })
+  .then(function (plan) {
+    // arm-coloured study wards from the plan's input_areas
+    var wards = {
+      type: 'FeatureCollection',
+      features: (plan.input_areas || []).map(function (a) {
+        return {
+          type: 'Feature',
+          geometry: a.geometry,
+          properties: { arm: a.arm || 'intervention' },
+        };
+      }),
+    };
+    window.PlanLayers.hulls(map, { data: wards });
+    // the sampled work-area footprints
+    var was = {
+      type: 'FeatureCollection',
+      features: (plan.work_areas || []).map(function (w) {
+        return {
+          type: 'Feature',
+          geometry: w.geometry,
+          properties: {
+            id: w.id,
+            status: 'ACTIVE',
+            fill: '#6366f1',
+            outline: '#4338ca',
+          },
+        };
+      }),
+    };
+    window.PlanLayers.workAreas(map, { data: was });
+  });
+```
 
 ### Pipeline Data Access
 
