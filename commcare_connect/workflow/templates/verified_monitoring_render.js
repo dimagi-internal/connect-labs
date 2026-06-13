@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V57
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V63
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -1367,6 +1367,337 @@ function WorkflowUI(props) {
     );
   }
 
+  // ---- Layer-3 statistical fabrication screen ("Distributions") ----
+  // One row per program-ward surveyor: robust (median/MAD) z-scores vs peers on
+  // dose yes-rate, interview speed, and answer-distribution uniformity, plus a
+  // composite band — all computed server-side via the shared `outlier` layer and
+  // read straight off rd.surveyor_distributions. Needs NO second field visit.
+  // (GPS co-location is intentionally omitted: on plan-grounded data every survey
+  // lands on a distinct real footprint, so that signal is structurally zero.)
+  // Clicking a surveyor drives the same back-check selection as the scorecard.
+  function distributionsTable() {
+    var rows = rd.surveyor_distributions || [];
+    if (!rows.length) return null;
+    var thD = {
+      textAlign: 'right',
+      color: MUT,
+      fontSize: 10,
+      textTransform: 'uppercase',
+      letterSpacing: '.04em',
+      padding: '7px 10px',
+      borderBottom: '1px solid ' + LINE,
+      whiteSpace: 'nowrap',
+    };
+    var thD0 = Object.assign({}, thD, { textAlign: 'left' });
+    var tdD = {
+      textAlign: 'right',
+      padding: '8px 10px',
+      fontSize: 12.5,
+      fontFamily: mono,
+      borderBottom: '1px solid ' + LINE,
+    };
+    var tdD0 = Object.assign({}, tdD, {
+      textAlign: 'left',
+      fontFamily: 'inherit',
+      fontWeight: 600,
+      color: SUBINK,
+    });
+    var subStyle = {
+      fontSize: 9,
+      color: '#94a3b8',
+      fontWeight: 400,
+      fontFamily: mono,
+    };
+    var glossStyle = {
+      fontSize: 8.5,
+      color: '#94a3b8',
+      fontWeight: 400,
+      textTransform: 'none',
+      letterSpacing: 0,
+    };
+    function bandColor(b) {
+      return b === 'red' ? ROSE : b === 'amber' ? AMBER : GREEN;
+    }
+    // Combined lens: each signal on its own RAW-units axis (minutes / % / HHI)
+    // with the team-typical median as the centre line, a dark notch at this
+    // surveyor's actual value (where they sit + which side), and a coloured bar
+    // whose WIDTH is |z| — a thin mark for a normal surveyor, a fat red bar for
+    // a clear outlier.
+    var SW = 60; // lens width (px) — compact, sits inline next to value + z
+    function _vals(key) {
+      return rows
+        .map(function (r) {
+          return r[key];
+        })
+        .filter(function (v) {
+          return v != null;
+        });
+    }
+    function _domain(key) {
+      var v = _vals(key);
+      if (!v.length) return { lo: 0, hi: 1, center: 0.5 };
+      var s = v.slice().sort(function (a, b) {
+        return a - b;
+      });
+      var n = s.length;
+      var med = n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+      var lo = s[0];
+      var hi = s[n - 1];
+      var pad = (hi - lo) * 0.18 || Math.abs(med) * 0.1 || 1;
+      return { lo: lo - pad, hi: hi + pad, center: med };
+    }
+    var DOMS = {
+      yes_rate: _domain('yes_rate'),
+      speed_med: _domain('speed_med'),
+      uniformity_hhi: _domain('uniformity_hhi'),
+    };
+    function px(v, dom) {
+      var span = dom.hi - dom.lo || 1;
+      var c = Math.max(dom.lo, Math.min(dom.hi, v));
+      return ((c - dom.lo) / span) * SW;
+    }
+    function zWidth(z) {
+      // |z| -> bar width px: floor so a normal surveyor is still a small mark,
+      // (most of) the track at |z| = 6, capped so it can't overflow.
+      return Math.max(4, Math.min(SW - 8, (Math.abs(z) / 6) * (SW - 8)));
+    }
+    // the "lens": raw-units axis + centre + |z|-width bar + value notch
+    function lens(rawVal, z, dom) {
+      var a = Math.abs(z);
+      var hot = a > 3.5;
+      var amb = !hot && a >= 2;
+      var col = hot ? ROSE : amb ? AMBER : SLATE;
+      var ctr = px(dom.center, dom);
+      var pos = px(rawVal, dom);
+      var w = zWidth(z);
+      var left = Math.max(0, Math.min(SW - w, pos - w / 2));
+      return (
+        <span
+          style={{
+            position: 'relative',
+            width: SW,
+            height: 10,
+            flex: '0 0 auto',
+          }}
+          title="notch = this surveyor's value on its own scale; bar width = |z| (how big an outlier)"
+        >
+          <span
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: 4,
+              height: 2,
+              background: '#eef2f7',
+              borderRadius: 2,
+            }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              left: ctr,
+              top: 0,
+              height: 10,
+              width: 1,
+              background: '#cbd5e1',
+            }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              left: left,
+              width: w,
+              top: 3,
+              height: 4,
+              borderRadius: 2,
+              background: col,
+              opacity: 0.9,
+            }}
+          />
+          <span
+            style={{
+              position: 'absolute',
+              left: pos - 0.75,
+              top: 0,
+              height: 10,
+              width: 1.5,
+              borderRadius: 1,
+              background: '#0f172a',
+            }}
+          />
+        </span>
+      );
+    }
+    // one compact row per signal: value · z · lens (no vertical stacking)
+    function cell(rawVal, z, valTxt, dom) {
+      if (z == null) return <span style={{ color: MUT }}>—</span>;
+      var a = Math.abs(z);
+      var hot = a > 3.5;
+      var amb = !hot && a >= 2;
+      return (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            justifyContent: 'flex-end',
+          }}
+        >
+          <span
+            style={{
+              color: MUT,
+              fontSize: 11,
+              minWidth: 32,
+              textAlign: 'right',
+            }}
+          >
+            {valTxt}
+          </span>
+          <span
+            style={{
+              color: hot ? ROSE : amb ? AMBER : SUBINK,
+              fontWeight: hot ? 700 : amb ? 600 : 500,
+              minWidth: 38,
+              textAlign: 'right',
+            }}
+          >
+            {'z ' + (z >= 0 ? '+' : '') + z.toFixed(1)}
+          </span>
+          {lens(rawVal, z, dom)}
+        </span>
+      );
+    }
+    function tag(fam) {
+      return (
+        <span
+          style={{
+            fontSize: 8,
+            fontWeight: 800,
+            padding: '1px 4px',
+            borderRadius: 4,
+            marginLeft: 4,
+            background: fam === 'B' ? '#f0fdf4' : '#eef2ff',
+            color: fam === 'B' ? GREEN : INDIGO,
+          }}
+        >
+          {fam}
+        </span>
+      );
+    }
+    function pill(b) {
+      var c = b || 'green';
+      return (
+        <span
+          style={{
+            display: 'inline-block',
+            padding: '2px 9px',
+            borderRadius: 999,
+            fontSize: 10,
+            fontWeight: 700,
+            background:
+              c === 'red' ? '#fff1f2' : c === 'amber' ? '#fffbeb' : '#ecfdf5',
+            color: c === 'red' ? ROSE : c === 'amber' ? '#b45309' : GREEN,
+          }}
+        >
+          {c.toUpperCase()}
+        </span>
+      );
+    }
+    return (
+      <div style={{ overflowX: 'auto' }}>
+        <table
+          style={{ borderCollapse: 'collapse', width: '100%', minWidth: 560 }}
+        >
+          <thead>
+            <tr>
+              <th style={thD0}>Surveyor</th>
+              <th style={thD}>
+                Dose yes-rate{tag('A')}
+                <div style={glossStyle}>vs peers</div>
+              </th>
+              <th style={thD}>
+                Interview speed{tag('A')}
+                <div style={glossStyle}>median min</div>
+              </th>
+              <th style={thD}>
+                Answer uniformity{tag('B')}
+                <div style={glossStyle}>roof-mix HHI</div>
+              </th>
+              <th style={thD}>Composite</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(function (r) {
+              var on = effSurv === r.surveyor;
+              return (
+                <tr
+                  key={r.surveyor}
+                  style={{
+                    background: on
+                      ? '#eef2ff'
+                      : r.band === 'red'
+                      ? '#fff1f2'
+                      : 'transparent',
+                    boxShadow: on ? 'inset 3px 0 0 ' + INDIGO : 'none',
+                  }}
+                >
+                  <td
+                    onClick={function () {
+                      setQSel(null);
+                      setSelSurv(r.surveyor);
+                    }}
+                    title="Show this surveyor's back-check above"
+                    style={Object.assign({}, tdD0, { cursor: 'pointer' })}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        background: bandColor(r.band),
+                        marginRight: 7,
+                        verticalAlign: 'middle',
+                      }}
+                    />
+                    {'Surveyor ' + r.surveyor}
+                  </td>
+                  <td style={tdD}>
+                    {cell(
+                      r.yes_rate,
+                      r.yes_z,
+                      r.yes_rate != null ? r.yes_rate + '%' : '—',
+                      DOMS.yes_rate,
+                    )}
+                  </td>
+                  <td style={tdD}>
+                    {cell(
+                      r.speed_med,
+                      r.speed_z,
+                      r.speed_med != null ? r.speed_med + 'm' : '—',
+                      DOMS.speed_med,
+                    )}
+                  </td>
+                  <td style={tdD}>
+                    {cell(
+                      r.uniformity_hhi,
+                      r.uniformity_z,
+                      r.uniformity_hhi != null
+                        ? r.uniformity_hhi.toFixed(2)
+                        : '—',
+                      DOMS.uniformity_hhi,
+                    )}
+                  </td>
+                  <td style={tdD}>{pill(r.band)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   // Back-check sections — descriptive names up front (the J-PAL/IPA
   // "Type 1/2/3" labels are specialist jargon, so the provenance lives behind
   // an info button instead of in the column header).
@@ -1969,7 +2300,7 @@ function WorkflowUI(props) {
         </div>
       </div>
 
-      {/* PER-SURVEYOR SCORECARD — one row per program-ward surveyor, KPI columns */}
+      {/* QUALITY — scorecard + its back-check / quality-detail panel, one card */}
       <div style={Object.assign({ marginTop: 16, padding: 14 }, cardStyle)}>
         <div
           style={{
@@ -1984,8 +2315,8 @@ function WorkflowUI(props) {
             scrollMarginTop: 96,
           }}
         >
-          Survey-quality scorecard · {tWard} · R{rd.round} — one row per
-          surveyor
+          Quality · {tWard} · R{rd.round} — survey-quality scorecard, one row
+          per surveyor
         </div>
         <div
           style={{
@@ -2013,9 +2344,33 @@ function WorkflowUI(props) {
           </span>
         </div>
         {scorecardTable()}
+        {/* in-card detail: this surveyor's back-check (or a clicked quality metric) */}
+        <div
+          style={{
+            marginTop: 16,
+            paddingTop: 14,
+            borderTop: '1px solid ' + LINE,
+          }}
+        >
+          <div
+            style={{
+              color: MUT,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '.05em',
+              marginBottom: 10,
+            }}
+          >
+            {qSel && QMETA[qSel.key]
+              ? 'Survey-quality detail'
+              : 'Independent back-check' +
+                (effSurv ? ' · Surveyor ' + effSurv : '')}
+          </div>
+          {backcheckSection()}
+        </div>
       </div>
 
-      {/* INDEPENDENT BACK-CHECK — household side-by-side, original vs re-survey */}
+      {/* DISTRIBUTIONS — Layer-3 statistical fabrication screen, one card, no drill */}
       <div style={Object.assign({ marginTop: 16, padding: 14 }, cardStyle)}>
         <div
           style={{
@@ -2026,12 +2381,53 @@ function WorkflowUI(props) {
             marginBottom: 10,
           }}
         >
-          {qSel && QMETA[qSel.key]
-            ? 'Survey-quality detail'
-            : 'Independent back-check' +
-              (effSurv ? ' · Surveyor ' + effSurv : '')}
+          Distributions · {tWard} · R{rd.round} — statistical fabrication
+          screen, one row per surveyor
         </div>
-        {backcheckSection()}
+        <div
+          style={{
+            fontSize: 11,
+            color: MUT,
+            marginBottom: 10,
+            lineHeight: 1.5,
+            maxWidth: 760,
+          }}
+        >
+          Flags a surveyor whose numbers don't behave like their peers' —
+          interviews too short to be real, or answers too uniform to occur
+          naturally. Each lens places this surveyor at their real value on its
+          own scale (the notch; the line is the team-typical), and the coloured
+          bar's width is |z| — how big an outlier (robust median/MAD). No second
+          field visit required.
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 16,
+            marginBottom: 10,
+            fontSize: 11,
+            color: MUT,
+            fontFamily: mono,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>
+            <span style={{ color: GREEN, fontWeight: 700 }}>●</span> within peer
+            range
+          </span>
+          <span>
+            <span style={{ color: AMBER, fontWeight: 700 }}>●</span> elevated —
+            corroborating
+          </span>
+          <span>
+            <span style={{ color: ROSE, fontWeight: 700 }}>●</span> flagged
+            (|z|&nbsp;&gt;&nbsp;3.5)
+          </span>
+          <span style={{ color: INDIGO }}>
+            A = compare a number · B = compare a distribution
+          </span>
+        </div>
+        {distributionsTable()}
       </div>
       {bcInfoPopup()}
     </div>

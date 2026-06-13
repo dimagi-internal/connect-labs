@@ -70,7 +70,18 @@ class SimParams:
         default_factory=lambda: {"present_rate": 0.99, "age_min_months": 6, "age_max_months": 59}
     )
 
-    # Per-surveyor quality degradation for the flagged surveyor (evidence/gps).
+    # Categorical "answer" field the distribution screen profiles (roof type).
+    roof_types: list = field(default_factory=lambda: ["thatch", "metal sheet", "mud", "tile"])
+    roof_weights: list = field(default_factory=lambda: [0.42, 0.34, 0.16, 0.08])
+    # How much honest surveyors' answer-mix / pace differ by working area. 0 ==
+    # everyone identical (legacy); a small positive value gives the natural
+    # between-surveyor spread the Layer-3 screen needs to read as discriminating.
+    surveyor_heterogeneity: float = 0.0
+
+    # Per-surveyor quality degradation for the flagged surveyor. Carries the
+    # evidence/gps knobs AND the fabrication signature the Layer-3 screen catches:
+    #   duration_mean / duration_sd  -> short "curbstoned" interviews
+    #   roof_concentration           -> answers collapsed onto the modal value
     # The flagged identity is shared with ``primary_rate.flagged_id``.
     flagged: dict | None = None
 
@@ -97,6 +108,9 @@ class SimParams:
             eligibility=dict(
                 d.get("eligibility") or {"present_rate": 0.99, "age_min_months": 6, "age_max_months": 59}
             ),
+            roof_types=list(d.get("roof_types") or ["thatch", "metal sheet", "mud", "tile"]),
+            roof_weights=list(d.get("roof_weights") or [0.42, 0.34, 0.16, 0.08]),
+            surveyor_heterogeneity=float(d.get("surveyor_heterogeneity", 0.0)),
             flagged=d.get("flagged"),
         )
 
@@ -106,6 +120,55 @@ class SimParams:
         if surveyor == pr.flagged_id and pr.flagged_mean is not None:
             return _clamp(pr.flagged_mean, 0.0, 1.0)
         return _clamp(rng.gauss(pr.mean, pr.variance), 0.0, 1.0)
+
+    def _idx(self, surveyor: str) -> int:
+        try:
+            return self.enumerators.index(surveyor)
+        except ValueError:
+            return 0
+
+    def surveyor_roof_weights(self, surveyor: str) -> list:
+        """Stable per-surveyor roof-type weights — deterministic (index-based, no
+        rng draw), so swapping these into the existing ``rng.choices`` call shifts
+        only the chosen answers, never the random sequence.
+
+        The flagged surveyor's answers collapse onto the modal value
+        (``flagged.roof_concentration`` share); honest surveyors get a mild,
+        per-area tilt scaled by ``surveyor_heterogeneity``."""
+        base = list(self.roof_weights)
+        n = len(base)
+        fl = self.flagged or {}
+        conc = fl.get("roof_concentration")
+        if surveyor == fl.get("id") and conc is not None:
+            c = _clamp(float(conc), 1.0 / n, 0.98)
+            rest = (1.0 - c) / (n - 1) if n > 1 else 0.0
+            return [c] + [rest] * (n - 1)
+        if self.surveyor_heterogeneity <= 0:
+            return base
+        # Rotate the weight vector per area: each honest surveyor has a different
+        # dominant roof material but the SAME overall concentration (HHI), so no
+        # honest surveyor ever looks more uniform than another — only the
+        # fabricator's collapsed answers stand out on the distribution screen.
+        i = self._idx(surveyor)
+        r = i % n
+        return base[r:] + base[:r]
+
+    def surveyor_duration_mean_sd(self, surveyor: str) -> tuple:
+        """Stable per-surveyor (mean, sd) interview minutes — deterministic, no
+        rng draw. The flagged surveyor curbstones (short ``duration_mean``);
+        honest surveyors get a small per-area pace offset scaled by
+        ``surveyor_heterogeneity``."""
+        mean = float(self.duration.get("mean", 18))
+        sd = float(self.duration.get("sd", 5))
+        fl = self.flagged or {}
+        if surveyor == fl.get("id") and fl.get("duration_mean") is not None:
+            return float(fl["duration_mean"]), float(fl.get("duration_sd", 2.0))
+        h = self.surveyor_heterogeneity
+        if h <= 0:
+            return mean, sd
+        i = self._idx(surveyor)
+        offset = ((i % 5) - 2) * (h * 3.0)  # e.g. h=0.6 -> +/-3.6 min across surveyors
+        return mean + offset, sd
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:
