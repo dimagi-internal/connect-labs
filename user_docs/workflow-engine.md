@@ -200,7 +200,7 @@ Labs includes pre-built workflow templates for common program types. Your progra
 
 ### Verified Monitoring dashboard
 
-The **Verified Monitoring** dashboard contrasts what the program self-reported with what an independent survey verified. It is organized into four panels:
+The **Verified Monitoring** dashboard contrasts what the program self-reported with what an independent survey verified. It is organized into panels:
 
 **Trend panel**
 
@@ -215,37 +215,29 @@ Survey pins on the map use two distinct visual styles to distinguish visit types
 
 Substitute pins are intentionally lighter so they do not dominate the map, but remain legible when you need to identify them.
 
-**Scorecard panel**
+**Quality card**
 
-When a surveyor has been selected for review, their row is marked with a high-contrast **REVIEW** badge so they are immediately identifiable in the scorecard table.
+The Quality card is the per-surveyor review tool. Select a surveyor to see their scorecard row marked with a high-contrast **REVIEW** badge so they are immediately identifiable. The back-check detail panel — results from an independent re-survey conducted to validate a flagged surveyor's work — lives inside this card.
 
-**Back-check panel**
-
-The back-check panel shows results from an independent re-survey conducted to validate a flagged surveyor's work. The GPS-location section is labelled **"% within 25 m · cells = distance"** so it is clear that the percentage shown is the share of visits whose GPS coordinates fall within 25 metres of the original recorded location, and that each cell in the table represents a distance measurement — not an error or a missing value.
+The GPS-location section of the back-check is labelled **"% within 25 m · cells = distance"** so it is clear that the percentage shown is the share of visits whose GPS coordinates fall within 25 metres of the original recorded location, and that each cell in the table represents a distance measurement — not an error or a missing value.
 
 The GPS drill-down also shows a count chip summarising the full picture at a glance — for example, *"12 flagged · 34 ok · 46 total"* — alongside a full-census caption so you always know how many visits the percentage is based on.
 
 Back-check data reflects real discordance across identity, location, and outcome dimensions. When a surveyor is flagged, the re-survey results will show genuine disagreement in all three areas if the evidence supports it, giving you a complete and consistent picture of where the back-check found problems.
 
----
+**Distributions card**
 
-## Creating and Customizing Workflows
+The Distributions card runs a **statistical fabrication screen** — a way to spot a problematic surveyor using only the data already collected, without needing a second field visit.
 
-This section is for program administrators and technical staff who want to build or adapt a workflow for their program. End users who just want to read a workflow dashboard don't need to read this section.
+For each surveyor, the screen compares three signals against the rest of the team:
 
-### Templates vs. Instances
+| Signal | What it detects |
+| ------ | --------------- |
+| **Dose yes-rate** | Is this surveyor reporting "received" far more or less often than peers? |
+| **Interview speed** | Are their interviews implausibly short — a sign of curbstoning (recording answers without actually conducting the interview)? |
+| **Answer uniformity** | Are their answers suspiciously consistent — too little natural variation in responses like roof type or household composition to reflect real fieldwork? |
 
-Every workflow you see in Labs is an **instance** — a copy attached to a specific CommCare opportunity. Instances are created from **templates**, which are reusable blueprints.
+Each surveyor receives a **red / amber / green** verdict based on how their figures compare to the team as a whole. Each cell in the table shows two things at once: the surveyor's actual value on its own scale (a notch marker), and a coloured bar whose **width reflects how much of an outlier they are** and whose **direction shows which way they deviate** from the team norm.
 
-- A **template** never runs on its own. It defines the SQL pipelines and display logic that will be applied when a workflow is created for an opportunity.
-- An **instance** is what you see in the Workflows list: a template applied to one opportunity, with real data flowing through it.
-
-The recommended starting point: pick the closest existing template from the [Starter Templates](#starter-templates) list, have Claude Code derive a new template from it, deploy it to Labs, then create an instance for your opportunity.
-
-### How Data Gets into a Workflow
-
-All workflows follow the same core pattern — the same approach Superset uses:
-
-1. CommCare form submissions are synced into a Connect Labs SQL database.
-2. **Pipelines** run JSON-based SQL queries against that data to extract and aggregate it — one row per visit, one row per FLW, counts, percentages, and more.
-3. The **workflow dashboard** renders the
+!!! note "The Distributions screen corroborates — it does not replace — field back-checks"
+    A red verdict on the Distributions card means the surveyor's data patterns stand out statistically from their peers. This is a strong
