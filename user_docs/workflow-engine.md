@@ -65,6 +65,8 @@ When you open a report, the system reads the data and applies all relevant flags
 
 Each active concern appears as a coloured pill in the Flags cell. The pill displays only the label text — there are no icons inside the pill. A row can carry more than one flag at the same time. Flag pills never break mid-phrase — the FLAGS column widens to fit the full label of whichever flags are active on that row.
 
+**Flagged rows are lightly tinted** so that workers with active flags stand out in the table at a glance, rather than being visually indistinguishable from unflagged rows.
+
 ### Actions column
 
 Every row has an **Actions** column. What the Actions cell shows depends on whether an audit or task has already been created for that worker in the current run, and whether the run is still in progress or has been saved as completed.
@@ -103,6 +105,10 @@ The CHC Nutrition Analysis dashboard uses the following flag catalog:
 | **SAM rate < 1%**               | The FLW's SAM case rate is below 1% — a signal they may be visiting easier-to-reach households and missing the most at-risk cases |
 | **MAM rate < 3%**               | The FLW's MAM case rate is below 3% — same pattern as the SAM flag but for moderate acute malnutrition                            |
 | **Gender split outside 40–60%** | The gender split of the FLW's caseload falls outside the 40–60% range, in either direction                                        |
+
+Percentage values in the CHC Nutrition table are formatted consistently throughout: one decimal place with the underlying counts shown in parentheses — for example, **92.0% (27/30)**. This applies to every percentage column in the table so figures are always directly comparable.
+
+Worker names appear as full display names (for example, "Jumoke Balogun") everywhere in the CHC Nutrition table, in task and audit headers, and in the PAR drill-down — not as raw system usernames.
 
 !!! note "SAM/MAM flags signal too few at-risk cases, not too many"
 These flags trigger when an FLW's rate is **below** the expected threshold. A very low SAM or MAM rate suggests the worker is not reaching the households most likely to have malnourished children, not that their caseload is unusually healthy.
@@ -229,11 +235,4 @@ Practical implications for administrators:
 
 - **Adding pipelines or fields to an existing workflow** — update the workflow's manifest to include them. Future concluded runs will capture the new data. Runs already concluded are unaffected.
 - **Workflows not built from a template** — custom-built workflows that were created from scratch can use the conclude-and-save-baseline flow in exactly the same way as template-based workflows. There is no requirement to link a workflow back to a starter template for Conclude to work.
-- **Removing pipelines or fields** — if you remove something from the manifest, it will no longer appear in future snapshots. Review the manifest carefully before removing anything that historical comparisons may depend on.
-- **Snapshot size** — the system rejects snapshots that exceed a safe size limit and returns an explanatory error rather than crashing. If you hit this limit, reduce the scope of what the workflow captures or contact **#connect-labs** for guidance.
-
-### Program Admin Report
-
-The **Program Admin Report** template gives program administrators a cross-opportunity compliance rollup — flags, audits, and tasks aggregated across all opportunities the admin is watching.
-
-**While the run is live**, the report does not fill in automatically on page load. Instead, click the **Refresh data** button to pull the latest flags, audits, and tasks from all watched opportunities into the report on demand. You can refresh
+- **Removing pipelines or fields** — if you remove something from the manifest, it will no longer appear in future snapshots. Review the manifest carefully before removing anything that historical compar
