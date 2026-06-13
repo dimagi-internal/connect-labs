@@ -16,7 +16,6 @@ ordering, context, and output contract.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,7 +26,10 @@ from .ensurers.run_audits import ensure_run_audits
 from .ensurers.tasks import ensure_tasks
 from .ensurers.weekly_runs import ensure_weekly_runs
 from .env_manifest import EnvManifest
+from .registry import ENVS_DIR, get_env_path
 from .window import resolve_window
+
+__all__ = ["EnsureContext", "ENSURERS", "ENVS_DIR", "resolve_env_path", "ensure_synthetic_data"]
 
 
 @dataclass
@@ -62,35 +64,11 @@ ENSURERS: dict[str, Callable] = {
 }
 
 
-# Where the checked-in env manifests live, resolved off the synthetic package
-# dir (NOT the cwd) so name-based resolution works identically whether the code
-# runs from a dev checkout or the deployed labs app's working directory. The
-# ensure package is ``.../labs/synthetic/ensure``; the manifests sit a level up
-# at ``.../labs/synthetic/envs/<env>.yaml`` next to their per-opp manifests.
-ENVS_DIR = Path(__file__).resolve().parent.parent / "envs"
-
-# An env name is a single path segment of safe chars only — no separators, no
-# ``..`` — so resolution can never escape ``ENVS_DIR``.
-_ENV_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
-
-
-def resolve_env_path(env: str) -> Path:
-    """Map an env NAME (e.g. ``"program-admin-report"``) to its manifest path.
-
-    Resolves ``<ENVS_DIR>/<env>.yaml`` off the package dir, not the cwd, so it
-    works inside the deployed labs app. Rejects anything that isn't a plain,
-    single-segment name (no path separators, no ``..``) to foreclose path
-    traversal, then verifies the resolved file actually exists and stays within
-    ``ENVS_DIR``. Raises ``ValueError`` on a bad/unknown name.
-    """
-    if not isinstance(env, str) or not _ENV_NAME_RE.match(env):
-        raise ValueError(f"Invalid env name {env!r}: expected a plain name like 'program-admin-report'.")
-    candidate = (ENVS_DIR / f"{env}.yaml").resolve()
-    # Defense in depth: the resolved path must live directly under ENVS_DIR.
-    if candidate.parent != ENVS_DIR.resolve() or not candidate.is_file():
-        available = sorted(p.stem for p in ENVS_DIR.glob("*.yaml"))
-        raise ValueError(f"Unknown env {env!r}. Available envs: {available}")
-    return candidate
+# Env name -> manifest path resolution (and ``ENVS_DIR``) is centralized in
+# ``registry.py``. ``resolve_env_path`` is kept as a thin alias of the
+# registry's ``get_env_path`` so existing callers (and ``ensure_synthetic_data``)
+# keep working unchanged.
+resolve_env_path = get_env_path
 
 
 def ensure_synthetic_data(env_path: str, out: str | None = None) -> dict:

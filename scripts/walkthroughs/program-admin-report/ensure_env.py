@@ -6,7 +6,7 @@ declarative composite ENV manifest
 (``commcare_connect/labs/synthetic/envs/program-admin-report.yaml``)
 instead of ``demo_config.json``. One run does all of:
 
-1. **Ensure** — call the ``ensure_synthetic_env`` MCP tool on labs with
+1. **Ensure** — call the ``synthetic_env_ensure`` MCP tool on labs with
    ``env="program-admin-report"``. The tool executes server-side, inside
    the labs app, so the labs-only synthetic opps (10000/10001) are written
    through the local-records backend on the labs DB — the only transport
@@ -108,11 +108,11 @@ def _check_freshness(client: httpx.Client, path: str, template_type: str, *, lab
 
 def main() -> int:
     # ---------------- 1. Ensure (server-side, via the MCP tool) ---------- #
-    print(f"Ensuring synthetic env {ENV_NAME!r} via ensure_synthetic_env on labs...")
+    print(f"Ensuring synthetic env {ENV_NAME!r} via synthetic_env_ensure on labs...")
     with LabsMCPSession() as mcp:
-        result, is_error = mcp.tool("ensure_synthetic_env", {"env": ENV_NAME})
+        result, is_error = mcp.tool("synthetic_env_ensure", {"env": ENV_NAME})
     if is_error or not isinstance(result, dict):
-        print("ensure_synthetic_env ERROR:")
+        print("synthetic_env_ensure ERROR:")
         print(json.dumps(result, indent=2, default=str)[:2000])
         return 1
     print(f"Realized {len(result)} variable(s).")
