@@ -197,9 +197,15 @@ def validate_context_access(request: HttpRequest, context: dict) -> dict:
     Returns:
         Dict with validated context and full objects from OAuth data
     """
-    org_data = get_org_data(request)
-    if not org_data:
-        return {}
+    # Note: we intentionally do NOT bail out when org_data is empty. A session whose
+    # cached OAuth `organization_data` came back empty (e.g. the Connect org-list API
+    # flaked at login and was stored as {} — see oauth_views.py) must still be able to
+    # apply an opportunity_id/program_id from the URL. The per-field passthrough below
+    # forwards those IDs for downstream LabsRecord API enforcement; returning {} here
+    # instead would make LabsContextMiddleware treat the param as "no access" and strip
+    # it from the URL, breaking opportunity-scoped deep links (e.g. headless renders).
+    # organization_id (a slug) stays unresolved without cached data, which is correct.
+    org_data = get_org_data(request) or {}
 
     validated = {}
 
