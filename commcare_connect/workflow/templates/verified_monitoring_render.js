@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V54
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V56
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -150,23 +150,35 @@ function WorkflowUI(props) {
             // visible on the map without a third colour. Ungrounded rounds carry no
             // sample_type, so they default to solid (treated as primary).
             var isAlt = ['==', ['get', 'sample_type'], 'alternate'];
+            // Alternate (substituted) pins render as a clearly HOLLOW ring: a
+            // larger radius, a near-empty fill, and a thick DARK ring, so the
+            // substitution mix reads even at ward zoom where pins are tiny — an
+            // unmistakable open ring against the solid primary dots, legible on
+            // the light basemap.
+            map.setPaintProperty('vm-pins', 'circle-radius', [
+              'case',
+              isAlt,
+              4.2,
+              3.4,
+            ]);
             map.setPaintProperty('vm-pins', 'circle-opacity', [
               'case',
               isAlt,
-              0.18,
+              0.06,
               0.95,
             ]);
             map.setPaintProperty('vm-pins', 'circle-stroke-width', [
               'case',
               isAlt,
-              2.2,
+              1.8,
               1.2,
             ]);
-            map.setPaintProperty(
-              'vm-pins',
-              'circle-stroke-color',
+            map.setPaintProperty('vm-pins', 'circle-stroke-color', [
+              'case',
+              isAlt,
+              '#0f172a',
               'rgba(255,255,255,0.95)',
-            );
+            ]);
           } catch (e) {}
         }
         CM.fit(map, overlay.ward_boundaries, 64);
@@ -624,6 +636,25 @@ function WorkflowUI(props) {
               · {who} · this cycle
             </span>{' '}
             <span style={{ fontFamily: mono, color: INDIGO }}>{valTxt}</span>
+            {/* On-screen count chip so the flagged/within split is SHOWN, not
+                just stated in the caption — the all-red visible rows otherwise
+                read as a filtered list. */}
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 10.5,
+                fontFamily: mono,
+                fontWeight: 700,
+                color: ROSE,
+                background: '#fff1f2',
+                border: '1px solid #fecdd3',
+                borderRadius: 5,
+                padding: '2px 7px',
+                verticalAlign: 'middle',
+              }}
+            >
+              {nFlag} flagged · {nTotal - nFlag} ok · {nTotal} total
+            </span>
           </div>
           <button
             onClick={function () {
@@ -644,8 +675,9 @@ function WorkflowUI(props) {
           </button>
         </div>
         <div style={{ color: MUT, fontSize: 11.5, marginBottom: 8 }}>
-          {m.blurb} One row per survey — all {nTotal} this cycle ({nFlag}{' '}
-          flagged).
+          {m.blurb} Every survey this cycle — the full census of {nTotal},
+          sorted worst-first: {nFlag} beyond threshold, then the{' '}
+          {nTotal - nFlag} within (scroll for the rest).
         </div>
         <div style={{ overflow: 'auto', maxHeight: 380 }}>
           <table
@@ -1224,11 +1256,15 @@ function WorkflowUI(props) {
               <span
                 style={{
                   marginLeft: 7,
-                  fontSize: 10,
-                  color: ROSE,
+                  fontSize: 9.5,
+                  color: '#fff',
+                  background: ROSE,
                   fontFamily: mono,
-                  fontWeight: 700,
-                  letterSpacing: '.04em',
+                  fontWeight: 800,
+                  letterSpacing: '.05em',
+                  padding: '2px 6px',
+                  borderRadius: 5,
+                  verticalAlign: 'middle',
                 }}
               >
                 REVIEW
@@ -1553,6 +1589,21 @@ function WorkflowUI(props) {
                         >
                           {s.pct == null ? '—' : s.pct.toFixed(0) + '%'}
                         </span>
+                        {/* For the location section the % is "share within
+                            threshold" and the cells below are raw distances, so
+                            spell that out — otherwise "0%" sitting over "40 m"
+                            cells reads as a binding bug. */}
+                        {s.mode === 'distance' ? (
+                          <span
+                            style={{
+                              color: MUT,
+                              fontWeight: 600,
+                              fontSize: 10,
+                            }}
+                          >
+                            within {thr} m · cells = distance
+                          </span>
+                        ) : null}
                         {infoBtn(s)}
                       </div>
                     </th>
@@ -1761,6 +1812,30 @@ function WorkflowUI(props) {
           Service-delivery data vs independent survey —{' '}
           {(trend.rounds || []).length} bi-monthly rounds over time
         </div>
+        {/* Hero: state the gap as a number so the payoff doesn't rely on the
+            viewer subtracting two lines. The program's self-report vs what the
+            independent survey verified, for the selected round. */}
+        {rd.self_report_pct != null && rd.intervention_pct != null ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 10,
+              flexWrap: 'wrap',
+              marginTop: 8,
+            }}
+          >
+            <span style={{ fontSize: 22, fontWeight: 700, color: ROSE }}>
+              +{Math.round((rd.premium_pp || 0) * 10) / 10}pp
+            </span>
+            <span style={{ fontSize: 12.5, color: SUBINK }}>
+              percentage-point self-report gap in {rd.label} — program reported{' '}
+              <b>{pct(rd.self_report_pct)}</b>, the independent survey verified{' '}
+              <b style={{ color: INDIGO }}>{pct(rd.intervention_pct)}</b> in{' '}
+              {rd.treatment_ward}
+            </span>
+          </div>
+        ) : null}
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
         <div
           style={{
