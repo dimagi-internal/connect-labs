@@ -11,11 +11,14 @@ from django.conf import settings
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
 from commcare_connect.labs.synthetic.dump import _fetch_endpoint
 from commcare_connect.labs.synthetic.gdrive import DriveClient
-from commcare_connect.labs.synthetic.generator.engine import generate as _generate
-from commcare_connect.labs.synthetic.generator.manifest import Manifest, ManifestValidationError
-from commcare_connect.labs.synthetic.generator.profiler import profile as _profile
-from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, parse_form_schema_from_app_json
-from commcare_connect.labs.synthetic.generator.uploader import upload_and_register
+from commcare_connect.labs.synthetic.generator.fixtures.engine import generate as _generate
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest, ManifestValidationError
+from commcare_connect.labs.synthetic.generator.fixtures.profiler import profile as _profile
+from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import (
+    FormSchema,
+    parse_form_schema_from_app_json,
+)
+from commcare_connect.labs.synthetic.generator.io.uploader import upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 from commcare_connect.labs.synthetic.registry import invalidate_cache
 

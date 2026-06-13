@@ -12,7 +12,7 @@ Repeated cross-sectional snapshots, NOT a difference-in-differences estimate.
 
 Self-contained: the render reads its data from `instance.state` (the payload
 seeded by scripts/walkthroughs/verified-monitoring via survey_sim, which computes
-every KPI from row-level records through commcare_connect.labs.survey_quality).
+every KPI from row-level records through commcare_connect.labs.synthetic.generator.core.survey_quality).
 Render code never fetches — all data arrives via props. No server-side job
 handler. Map is Mapbox GL via the shared ConnectMap module + real admin
 boundaries; charts are inline SVG. Renders an empty-state until seeded.

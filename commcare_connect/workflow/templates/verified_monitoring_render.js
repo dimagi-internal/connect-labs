@@ -1118,7 +1118,7 @@ function WorkflowUI(props) {
 
   // ---- per-surveyor quality scorecard ----
   // One row per program-ward surveyor; KPI columns computed by
-  // commcare_connect.labs.survey_quality over THAT surveyor's records
+  // commcare_connect.labs.synthetic.generator.core.survey_quality over THAT surveyor's records
   // (their primaries + the back-checks of their work). Cells turn rose when
   // they fall below the column threshold; a surveyor whose integrity signals
   // fail together is tagged REVIEW.

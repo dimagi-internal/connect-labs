@@ -581,7 +581,7 @@ def test_every_demo_reason_combo_resolves_to_a_matched_variant():
     produce — except the repeated_failure suspensions, whose base templates
     already narrate the repeat offense — must resolve to a reason-specific
     conversation variant, not silently fall back to the base."""
-    from commcare_connect.labs.synthetic.generator.ocs_templates import resolve_template_key
+    from commcare_connect.labs.synthetic.generator.fixtures.ocs_templates import resolve_template_key
 
     combos = [
         ("closed_satisfactory", "bad_muac_distribution"),
@@ -601,7 +601,7 @@ def test_every_demo_reason_combo_resolves_to_a_matched_variant():
 
 
 def test_unknown_reason_key_falls_back_to_base_template():
-    from commcare_connect.labs.synthetic.generator.ocs_templates import resolve_template_key
+    from commcare_connect.labs.synthetic.generator.fixtures.ocs_templates import resolve_template_key
 
     assert resolve_template_key("coaching_resolved_clean", "some_future_reason") == "coaching_resolved_clean"
     assert resolve_template_key("coaching_resolved_clean", None) == "coaching_resolved_clean"

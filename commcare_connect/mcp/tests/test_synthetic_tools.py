@@ -123,7 +123,7 @@ def test_synthetic_generate_from_manifest_creates_folder_and_row(user, monkeypat
         syn_tools,
         "_load_form_schema_for_opp",
         lambda opp_id, user: __import__(
-            "commcare_connect.labs.synthetic.generator.schema_loader",
+            "commcare_connect.labs.synthetic.generator.fixtures.schema_loader",
             fromlist=["FormSchema"],
         ).FormSchema(questions=[]),
     )

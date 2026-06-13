@@ -34,7 +34,7 @@ The MUAC image corpus that backs the audit archetypes lives in a shared
 Google Drive folder (``LABS_SYNTHETIC_STOCK_IMAGES_FOLDER_ID``); see
 ``docs/synthetic-data/audit-corpus.md`` for the full catalog of image
 filenames, categories, and per-image rationale. The catalog is also mirrored
-into ``commcare_connect/labs/synthetic/generator/muac_reasons.json`` so it's
+into ``commcare_connect/labs/synthetic/generator/fixtures/muac_reasons.json`` so it's
 inspectable from code without a GDrive fetch.
 """
 
@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 # ``listing_files`` lists everything the service account can see.
 _GOOD_POOL_SIZE = 8
 
-_REASONS_PATH = Path(__file__).parent / "generator" / "muac_reasons.json"
+_REASONS_PATH = Path(__file__).parent / "generator" / "fixtures" / "muac_reasons.json"
 
 
 def _load_muac_catalog() -> dict[str, Any]:
@@ -492,7 +492,7 @@ class TaskArchetype:
     transcript that renders in the Tasks UI's Coaching Conversation panel.
 
     ``ocs_template_key`` references a template key in
-    ``commcare_connect/labs/synthetic/generator/ocs_templates.py``.
+    ``commcare_connect/labs/synthetic/generator/fixtures/ocs_templates.py``.
     """
 
     name: str
@@ -621,7 +621,7 @@ def build_task_data(
     # days before the task History says it happened.
     ocs_conversation: list[dict[str, Any]] = []
     if archetype.ocs_template_key:
-        from .generator.ocs_templates import render_transcript, resolve_template_key
+        from .generator.fixtures.ocs_templates import render_transcript, resolve_template_key
 
         ocs_conversation = render_transcript(
             template_key=resolve_template_key(archetype.ocs_template_key, reason_key),
