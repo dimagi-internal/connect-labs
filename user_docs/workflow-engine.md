@@ -208,6 +208,12 @@ The Trend panel shows the self-reported and independently-verified coverage line
 
 **Map panel**
 
+The map panel has three toggles — **delivery**, **survey**, and **plan** — so you can control what is drawn on the map at any time.
+
+- **Delivery** — shows implementer-reported visit pins
+- **Survey** — shows independent surveyor visit pins
+- **Plan** — shows the designed study plan: the study wards and sampled work areas drawn exactly as they appear in the plan editor, so the plan you designed and the monitoring of it look like one coherent picture
+
 Survey pins on the map use two distinct visual styles to distinguish visit types:
 
 - **Solid dots** — primary (first-choice) households
@@ -237,7 +243,4 @@ For each surveyor, the screen compares three signals against the rest of the tea
 | **Interview speed** | Are their interviews implausibly short — a sign of curbstoning (recording answers without actually conducting the interview)? |
 | **Answer uniformity** | Are their answers suspiciously consistent — too little natural variation in responses like roof type or household composition to reflect real fieldwork? |
 
-Each surveyor receives a **red / amber / green** verdict based on how their figures compare to the team as a whole. Each cell in the table shows two things at once: the surveyor's actual value on its own scale (a notch marker), and a coloured bar whose **width reflects how much of an outlier they are** and whose **direction shows which way they deviate** from the team norm.
-
-!!! note "The Distributions screen corroborates — it does not replace — field back-checks"
-    A red verdict on the Distributions card means the surveyor's data patterns stand out statistically from their peers. This is a strong
+Each surveyor receives a **red / amber / green** verdict based on how their figures compare to the team as a whole. Each cell in the table shows two
