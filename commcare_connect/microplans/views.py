@@ -579,6 +579,23 @@ def _adm1_state_for(input_areas, hulls) -> str:
     return (adm1.name if adm1 else "")[:255]
 
 
+def _plan_scoped_urls(program_id, plan_id) -> dict:
+    """The per-plan endpoint URLs the review page binds to. Returned on create so
+    the client can adopt them in place (create-in-place) without a page reload."""
+    from django.urls import reverse
+
+    return {
+        "review": reverse("microplans:program_review", args=[program_id, plan_id]),
+        "plan": reverse("microplans:program_plan", args=[program_id, plan_id]),
+        "regenerate": reverse("microplans:program_plan_regenerate", args=[program_id, plan_id]),
+        "footprints": reverse("microplans:program_plan_footprints", args=[program_id, plan_id]),
+        "regroup": reverse("microplans:program_plan_regroup", args=[program_id, plan_id]),
+        "reassign": reverse("microplans:program_plan_reassign", args=[program_id, plan_id]),
+        "csv": reverse("microplans:program_plan_csv", args=[program_id, plan_id]),
+        "edit": reverse("microplans:program_plan_edit", args=[program_id, plan_id]),
+    }
+
+
 class ProgramCreatePlanView(LoginRequiredMixin, View):
     """Create a Draft plan in the program from a generated frame (region + geometry)."""
 
@@ -609,6 +626,11 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
             grouping = payload.get("grouping") or {}
             if not isinstance(grouping, dict):
                 grouping = {}
+            # Optional: per-arm sampling stats, stored so the review page can redraw
+            # the Sample details panel on load (parity with regenerate).
+            stats = payload.get("stats")
+            if not isinstance(stats, list):
+                stats = None
             # Optional: drop the new plan straight into a group (the group-page
             # "add a plan in the editor" path).
             group_id = payload.get("group_id")
@@ -633,10 +655,12 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
                 grouping=grouping,
                 lga=lga,
                 state=state,
+                stats=stats,
             )
         except Exception:  # noqa: BLE001
             logger.exception("microplans create_plan failed (program=%s)", program_id)
             return JsonResponse({"status": "error", "detail": "Could not create the plan."}, status=502)
+        group_warning = None
         if group_id is not None:
             try:
                 da.add_plan_to_group(int(group_id), plan.id)
@@ -649,10 +673,16 @@ class ProgramCreatePlanView(LoginRequiredMixin, View):
                     group_id,
                     plan.id,
                 )
-                return JsonResponse(
-                    {"status": "ok", "plan_id": plan.id, "group_warning": "added plan but not to group"}
-                )
-        return JsonResponse({"status": "ok", "plan_id": plan.id})
+                group_warning = "added plan but not to group"
+        # Return the full plan payload + its plan-scoped URLs so the client can
+        # hydrate the page in place (create-in-place) — no reload, identical to a
+        # freshly-opened plan. plan_id stays at the top level for older callers.
+        resp = serialization.plan_to_json(plan)
+        resp["plan_id"] = plan.id
+        resp["urls"] = _plan_scoped_urls(program_id, plan.id)
+        if group_warning:
+            resp["group_warning"] = group_warning
+        return JsonResponse(resp)
 
 
 class ProgramGroupBulkCreateFromBoundariesView(LoginRequiredMixin, View):
@@ -1490,6 +1520,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
             hulls = (payload.get("coverage_areas") or payload.get("hulls")) or empty_fc
             input_areas = payload.get("input_areas") if isinstance(payload.get("input_areas"), list) else []
             grouping = payload.get("grouping") if isinstance(payload.get("grouping"), dict) else {}
+            stats = payload.get("stats") if isinstance(payload.get("stats"), list) else None
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
@@ -1504,6 +1535,7 @@ class ProgramPlanRegenerateView(LoginRequiredMixin, View):
                 "hulls": hulls,
                 "input_areas": input_areas,
                 "grouping": grouping,
+                "stats": stats,
                 "revision": payload.get("revision"),
             },
         )

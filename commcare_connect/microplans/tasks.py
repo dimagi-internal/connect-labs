@@ -136,6 +136,7 @@ def apply_plan_mutation_task(self, op, program_id, plan_id, params, actor, acces
                 input_areas=params.get("input_areas") or [],
                 grouping=params.get("grouping") or {},
                 base_revision=base_revision,
+                stats=params.get("stats"),
             )
         else:
             return {"status": "error", "detail": f"unknown op {op!r}"}

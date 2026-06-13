@@ -64,6 +64,12 @@ def plan_to_json(plan) -> dict:
         "kpis": plan_lib.plan_kpis(work_areas, input_areas=plan.data.get("input_areas") or []),
         "grouping": plan.data.get("grouping") or {},
         "assignment": plan.data.get("assignment") or {},
+        # Sampling overlay so the review page redraws the ward boundaries + selected
+        # PSU hulls + Sample details on load — making a reopened plan render exactly
+        # like the just-created one. Empty/absent for coverage plans.
+        "input_areas": plan.data.get("input_areas") or [],
+        "psu_hulls": plan.data.get("psu_hulls") or {"type": "FeatureCollection", "features": []},
+        "sampling_stats": plan.data.get("sampling_stats") or [],
     }
 
 

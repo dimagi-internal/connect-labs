@@ -452,14 +452,27 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
         def get_plan(self, pid):
             return plans[int(pid)]
 
-        def create_plan(self, region, name, mode, pins, hulls, input_areas=None, grouping=None, lga="", state=""):
+        def create_plan(
+            self, region, name, mode, pins, hulls, input_areas=None, grouping=None, lga="", state="", stats=None
+        ):
             was = plan_lib.materialize_work_areas(mode, pins, hulls)
             pid = seq["plan"]
             seq["plan"] += 1
-            plans[pid] = _FakeProgramPlan(pid, mode, was, name=name, region=region, lga=lga, state=state)
+            plans[pid] = _FakeProgramPlan(
+                pid,
+                mode,
+                was,
+                name=name,
+                region=region,
+                lga=lga,
+                state=state,
+                input_areas=input_areas,
+                sampling_stats=stats,
+                psu_hulls=(hulls if mode == "sampling" else None),
+            )
             return plans[pid]
 
-        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None):
+        def regenerate_plan(self, pid, mode, pins, hulls, input_areas, grouping=None, base_revision=None, stats=None):
             was = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
             p = plans[int(pid)]
             p.work_areas = was
@@ -469,6 +482,10 @@ def _make_fake_program_da(monkeypatch, plans=None, groups=None):
             p.data["input_areas"] = list(input_areas or [])
             p.data["grouping"] = dict(grouping or {})
             p.data["assignment"] = {}
+            if mode == "sampling" and hulls is not None:
+                p.data["psu_hulls"] = hulls
+            if stats is not None:
+                p.data["sampling_stats"] = stats
             return p
 
         def apply_plan_edits(self, pid, wa_ids, action, params, actor, base_revision=None):
@@ -612,6 +629,44 @@ def test_program_create_plan(client, django_user_model, monkeypatch):
     # lga/state captured at creation for the Connect import (lga defaults to region)
     assert plans[pid].data["lga"] == "Zaria"
     assert plans[pid].data["state"] == "Kaduna"
+
+
+def test_program_create_sampling_plan_returns_overlay_and_urls(client, django_user_model, monkeypatch):
+    # create-in-place + created==opened consistency: the create response carries the
+    # plan's sampling overlay (input_areas + psu_hulls + sampling_stats) AND its
+    # plan-scoped URLs, so the client hydrates the page without a reload and a
+    # reopened plan replays the same boundaries/hulls/Sample-details.
+    _login(client, django_user_model)
+    plans, _ = _make_fake_program_da(monkeypatch, {}, {})
+    input_areas = [{"arm": "intervention", "geometry": _ward(8.3)}]
+    resp = client.post(
+        reverse("microplans:program_create_plan", kwargs={"program_id": 25}),
+        data=json.dumps(
+            {
+                "region": "Attakar",
+                "name": "Kaura study",
+                "mode": "sampling",
+                "hulls": _HULL_FC,
+                "input_areas": input_areas,
+                "stats": [{"arm": "intervention", "psus_selected": 12}],
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok" and body["plan_id"]
+    # overlay round-trips in the response (for in-place hydrate)...
+    assert body["input_areas"] == input_areas
+    assert body["psu_hulls"]["features"] == _HULL_FC["features"]
+    assert body["sampling_stats"][0]["psus_selected"] == 12
+    # ...and is persisted so a later open replays identically...
+    pid = body["plan_id"]
+    assert plans[pid].data["input_areas"] == input_areas
+    assert plans[pid].data["psu_hulls"]["features"] == _HULL_FC["features"]
+    # ...and the plan-scoped URLs are returned so the page adopts them without a reload.
+    for k in ("review", "plan", "regenerate", "footprints", "regroup", "reassign", "csv", "edit"):
+        assert k in body["urls"] and str(body["plan_id"]) in body["urls"][k]
 
 
 def test_program_plan_csv_defaults_lga_state_and_flags_readiness(client, django_user_model, monkeypatch):
