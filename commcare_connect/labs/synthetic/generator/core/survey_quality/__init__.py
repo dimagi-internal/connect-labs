@@ -4,7 +4,7 @@ A registry of field-survey quality indicators drawn from the established
 literature (DHS/MICS, World Bank LSMS/DIME, J-PAL & IPA back-checks), so any
 labs app, workflow, or synthetic-data generator computes them the same way:
 
-    from commcare_connect.labs.survey_quality import run_metrics
+    from commcare_connect.labs.synthetic.generator.core.survey_quality import run_metrics
     results = run_metrics(round_records, layers=["survey_quality", "backcheck"])
     payload = {r.key: r.to_dict() for r in results}
 

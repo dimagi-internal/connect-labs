@@ -2,8 +2,8 @@
 
 import random
 
-from commcare_connect.labs.survey_quality.stats import haversine_m
-from commcare_connect.labs.survey_sim import SimParams, simulate_plan
+from commcare_connect.labs.synthetic.generator.core.survey_quality.stats import haversine_m
+from commcare_connect.labs.synthetic.generator.core.survey_sim import SimParams, simulate_plan
 
 
 def _work_areas(n_clusters=4, primaries=10, alternates=4, lat0=11.75, lon0=8.27):

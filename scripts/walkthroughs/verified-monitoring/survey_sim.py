@@ -4,7 +4,7 @@ Robust + reusable: drive it from a per-program JSON config (see
 ``demo_config.json``) and it emits, **for each round** (each round modelled as its
 own opportunity), row-level household survey records — a ``primary`` form and a
 ``back_check`` form per the design — then computes every dashboard KPI from those
-records via the shared ``commcare_connect.labs.survey_quality`` algorithm library.
+records via the shared ``commcare_connect.labs.synthetic.generator.core.survey_quality`` algorithm library.
 Nothing is hand-entered: coverage, the QA strip, the back-check drill-down, and
 the map pins all roll up from the generated rows, so "let the numbers be
 computed" is honest and internally consistent. Point it at a different geojson +
@@ -27,9 +27,9 @@ _REPO = Path(__file__).resolve().parents[3]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
-from commcare_connect.labs.survey_quality import results_to_map, run_metrics  # noqa: E402
-from commcare_connect.labs.survey_quality.stats import bbox, point_in_geom  # noqa: E402
-from commcare_connect.labs.survey_sim import SimParams, simulate_plan  # noqa: E402
+from commcare_connect.labs.synthetic.generator.core.survey_quality import results_to_map, run_metrics  # noqa: E402
+from commcare_connect.labs.synthetic.generator.core.survey_quality.stats import bbox, point_in_geom  # noqa: E402
+from commcare_connect.labs.synthetic.generator.core.survey_sim import SimParams, simulate_plan  # noqa: E402
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _M_PER_DEG = 111_320.0  # metres per degree latitude (good enough at this scale)

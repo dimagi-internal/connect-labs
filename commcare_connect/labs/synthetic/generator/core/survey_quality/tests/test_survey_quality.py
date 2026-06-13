@@ -1,7 +1,7 @@
 """Unit tests for the survey-quality algorithm library.
 
 Pure-Python — no Django, DB, or GDAL — so it runs under pytest or standalone
-(``python commcare_connect/labs/survey_quality/tests/test_survey_quality.py``).
+(``python commcare_connect/labs/synthetic/generator/core/survey_quality/tests/test_survey_quality.py``).
 """
 
 from __future__ import annotations
@@ -10,9 +10,13 @@ import os
 import sys
 
 # Allow standalone execution from a repo checkout.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "..")))
 
-from commcare_connect.labs.survey_quality import REGISTRY, results_to_map, run_metrics  # noqa: E402
+from commcare_connect.labs.synthetic.generator.core.survey_quality import (  # noqa: E402
+    REGISTRY,
+    results_to_map,
+    run_metrics,
+)
 
 
 def _rec(**kw):

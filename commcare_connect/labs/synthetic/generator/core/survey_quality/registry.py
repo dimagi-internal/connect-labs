@@ -2,7 +2,7 @@
 
 Any labs code or workflow can compute the same indicators the same way:
 
-    from commcare_connect.labs.survey_quality import run_metrics
+    from commcare_connect.labs.synthetic.generator.core.survey_quality import run_metrics
     results = run_metrics(round_records, layers=["survey_quality", "backcheck"])
 
 Adding a new algorithm is a one-liner — decorate a function that takes the

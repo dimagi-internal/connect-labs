@@ -1,5 +1,5 @@
 {
-  "_comment": "Parameterized config for the Verified Monitoring (N1) synthetic survey. survey_sim.py generates per-round, row-level household records (each round = its own opp; a 'primary' research form + a 'back_check' form) and computes every dashboard KPI from those rows via commcare_connect.labs.survey_quality. Numbers below are GENERATION TARGETS — the displayed KPIs are computed from the generated records, so they land near these with sampling noise. Tune this file to recreate the dashboard for a different program/geography.",
+  "_comment": "Parameterized config for the Verified Monitoring (N1) synthetic survey. survey_sim.py generates per-round, row-level household records (each round = its own opp; a 'primary' research form + a 'back_check' form) and computes every dashboard KPI from those rows via commcare_connect.labs.synthetic.generator.core.survey_quality. Numbers below are GENERATION TARGETS — the displayed KPIs are computed from the generated records, so they land near these with sampling noise. Tune this file to recreate the dashboard for a different program/geography.",
   "opportunity_id": 10008,
   "workflow_def_id": 3699,
   "rng_seed": 20260618,

@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 import random
 
-from commcare_connect.labs.survey_quality.stats import point_in_geom
+from commcare_connect.labs.synthetic.generator.core.survey_quality.stats import point_in_geom
 
 from .params import SimParams
 

@@ -2,7 +2,7 @@
 
 Thin wire: read ``demo_config.json`` -> generate per-round, row-level survey
 records and compute all KPIs via ``survey_sim.build_state`` (which uses the
-shared ``commcare_connect.labs.survey_quality`` library) -> create a workflow run
+shared ``commcare_connect.labs.synthetic.generator.core.survey_quality`` library) -> create a workflow run
 on the synthetic opp via the ``connect_labs`` MCP. The dashboard render
 (``commcare_connect/workflow/templates/verified_monitoring_render.js``) reads the
 resulting ``instance.state`` and never fetches.
