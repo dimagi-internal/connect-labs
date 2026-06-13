@@ -134,6 +134,55 @@ def test_deterministic_for_same_seed():
     assert a == b
 
 
+def test_flagged_surveyor_curbstoning_signature():
+    """The flagged surveyor's records carry the Layer-3 fabrication signature:
+    much shorter interviews and answers collapsed onto the modal roof type."""
+    was = _work_areas(n_clusters=6, primaries=20, alternates=8)
+    params = _params(
+        enumerators=["T1", "T2", "T3", "T4", "T5", "T6"],
+        duration={"mean": 18, "sd": 3, "floor": 4, "short_rate": 0.0},
+        surveyor_heterogeneity=0.25,
+        flagged={"id": "T6", "duration_mean": 8.0, "duration_sd": 2.0, "roof_concentration": 0.72},
+    )
+    recs = simulate_plan(was, params, random.Random(6))
+
+    def med_dur(sid):
+        ds = sorted(r["duration_min"] for r in recs if r["enumerator_id"] == sid)
+        return ds[len(ds) // 2]
+
+    def roof_hhi(sid):
+        from collections import Counter
+
+        c = Counter(r["roof_type"] for r in recs if r["enumerator_id"] == sid)
+        tot = sum(c.values())
+        return sum((v / tot) ** 2 for v in c.values())
+
+    # T6 interviews far shorter than every honest peer
+    assert med_dur("T6") < 11
+    for good in ("T1", "T2", "T3", "T4", "T5"):
+        assert med_dur(good) > 14
+        # honest answer mixes stay un-concentrated; T6 collapses onto one value
+        assert roof_hhi(good) < roof_hhi("T6")
+
+
+def test_heterogeneity_rotates_roof_dominant_not_concentration():
+    """Honest surveyors get different dominant roof materials (rotation) but the
+    same overall concentration, so none looks like a fabricator."""
+    params = _params(enumerators=["T1", "T2", "T3", "T4"], surveyor_heterogeneity=0.25)
+    w1 = params.surveyor_roof_weights("T1")
+    w2 = params.surveyor_roof_weights("T2")
+    assert w1 != w2  # different mix per area
+    assert abs(sum(x * x for x in w1) - sum(x * x for x in w2)) < 1e-9  # same concentration
+
+
+def test_signature_off_by_default_preserves_legacy_shape():
+    """With no flagged signature / heterogeneity, durations and roof draws use
+    the shared defaults (no per-surveyor profiling)."""
+    params = _params()  # no flagged, heterogeneity 0
+    assert params.surveyor_roof_weights("T1") == params.surveyor_roof_weights("T2")
+    assert params.surveyor_duration_mean_sd("T1") == params.surveyor_duration_mean_sd("T2")
+
+
 def test_ward_geom_stamps_in_ward():
     was = _work_areas(n_clusters=1, primaries=6, alternates=0, lat0=0.0, lon0=0.0)
     # A small polygon around (0,0) that contains the cluster centroid but not far offsets.
