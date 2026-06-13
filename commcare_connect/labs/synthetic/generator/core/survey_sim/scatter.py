@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from commcare_connect.labs.synthetic.generator.core.survey_quality.stats import point_in_geom
 
-from .geo import _ROOF_TYPES, _ROOF_WEIGHTS, _interp, _offset, _sample_in_geom
+from .geo import _ROOF_TYPES, _ROOF_WEIGHTS, interp, offset, sample_in_geom
 
 
 def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id):
@@ -18,7 +18,7 @@ def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, bas
     q = cfg["quality"]
     elig = cfg.get("eligibility", {})
     n = max(1, int(round(arm_cfg["n_per_round"] + rng.uniform(-1, 1) * arm_cfg.get("n_jitter", 0))))
-    coverage = _interp(arm_cfg["coverage_start"], arm_cfg["coverage_end"], round_idx, n_rounds)
+    coverage = interp(arm_cfg["coverage_start"], arm_cfg["coverage_end"], round_idx, n_rounds)
     coverage = max(0.0, coverage + rng.gauss(0, arm_cfg.get("coverage_noise", 0.0)))
     n_enum = arm_cfg.get("enumerators", 5)
     enum_ids = [f"{arm_key[0].upper()}{k + 1}" for k in range(n_enum)]
@@ -31,7 +31,7 @@ def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, bas
     dur = q["duration_min"]
 
     recs = []
-    pts = _sample_in_geom(rng, geom, n)
+    pts = sample_in_geom(rng, geom, n)
     for j in range(n):
         surveyor = enum_ids[j % n_enum]
         bad = surveyor == flag_id
@@ -40,7 +40,7 @@ def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, bas
         alat, alon = pts[j % len(pts)]
         within = rng.random() < gps_p
         offset_m = rng.uniform(*near) if within else rng.uniform(*far)
-        clat, clon = _offset(rng, alat, alon, offset_m)
+        clat, clon = offset(rng, alat, alon, offset_m)
         present = rng.random() < elig.get("present_rate", 0.99)
         age = rng.randint(elig.get("age_min_months", 6), elig.get("age_max_months", 59))
         eligible = present and (elig.get("age_min_months", 6) <= age <= elig.get("age_max_months", 59))

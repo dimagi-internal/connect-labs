@@ -30,7 +30,7 @@ _ROOF_WEIGHTS = [0.42, 0.34, 0.16, 0.08]
 # --------------------------------------------------------------- geometry utils
 
 
-def _offset(rng: random.Random, lat: float, lon: float, meters: float) -> tuple:
+def offset(rng: random.Random, lat: float, lon: float, meters: float) -> tuple:
     """Move a point by ``meters`` in a random bearing (small-distance approx)."""
     bearing = rng.uniform(0, 2 * math.pi)
     dlat = (meters * math.cos(bearing)) / _M_PER_DEG
@@ -38,7 +38,7 @@ def _offset(rng: random.Random, lat: float, lon: float, meters: float) -> tuple:
     return lat + dlat, lon + dlon
 
 
-def _interp(a: float, b: float, i: int, n: int) -> float:
+def interp(a: float, b: float, i: int, n: int) -> float:
     return a if n <= 1 else a + (b - a) * (i / (n - 1))
 
 
@@ -115,7 +115,7 @@ def simulate_plan(
 
     flagged = params.flagged or {}
     flag_id = flagged.get("id")
-    coverage = _interp(params.coverage_start, params.coverage_end, params.round_idx, params.n_rounds)
+    coverage = interp(params.coverage_start, params.coverage_end, params.round_idx, params.n_rounds)
     coverage = max(0.0, coverage + rng.gauss(0, params.coverage_noise))
     elig = params.eligibility
     dur = params.duration
@@ -148,7 +148,7 @@ def simulate_plan(
         ev_p = flagged.get("evidence", params.evidence_complete) if bad else params.evidence_complete
         within = rng.random() < gps_p
         offset_m = rng.uniform(*params.gps_near_m) if within else rng.uniform(*params.gps_far_m)
-        clat, clon = _offset(rng, alat, alon, offset_m)
+        clat, clon = offset(rng, alat, alon, offset_m)
 
         present = rng.random() < elig.get("present_rate", 0.99)
         age = rng.randint(elig.get("age_min_months", 6), elig.get("age_max_months", 59))

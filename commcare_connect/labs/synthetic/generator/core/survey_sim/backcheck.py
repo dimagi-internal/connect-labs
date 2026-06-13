@@ -8,7 +8,7 @@ degraded rates for a flagged surveyor, so the back-check error rate catches them
 
 from __future__ import annotations
 
-from .geo import _ROOF_TYPES, _offset
+from .geo import _ROOF_TYPES, offset
 
 
 def simulate_backchecks(rng, cfg, primaries, round_idx, base_id):
@@ -64,7 +64,7 @@ def simulate_backchecks(rng, cfg, primaries, round_idx, base_id):
         # Type-2 (location/protocol): the re-survey lands further from a flagged
         # surveyor's claimed household — their original location was sloppy.
         off_m = rng.uniform(22, 45) if is_flagged else rng.uniform(2, 12)
-        blat, blon = _offset(rng, o["assigned_lat"], o["assigned_lon"], off_m)
+        blat, blon = offset(rng, o["assigned_lat"], o["assigned_lon"], off_m)
         out.append(
             {
                 "record_id": f"{base_id}-b{idx}",

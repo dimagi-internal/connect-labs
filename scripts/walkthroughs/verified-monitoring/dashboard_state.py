@@ -33,7 +33,7 @@ from commcare_connect.labs.synthetic.generator.core.survey_sim import (  # noqa:
     simulate_backchecks,
     simulate_plan,
 )
-from commcare_connect.labs.synthetic.generator.core.survey_sim.geo import _interp, _sample_in_geom  # noqa: E402
+from commcare_connect.labs.synthetic.generator.core.survey_sim.geo import interp, sample_in_geom  # noqa: E402
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -265,9 +265,7 @@ def _round_summary(cfg, records, round_idx, label, as_of, tw_name, cw_name):
     bmap = results_to_map(run_metrics(tw_records, layers=["backcheck"], config=cfg))
     t_pct, t_n = _coverage(records, "treatment")
     c_pct, c_n = _coverage(records, "comparison")
-    infl = _interp(
-        cfg["self_report"]["inflation_start"], cfg["self_report"]["inflation_end"], round_idx, cfg["rounds"]
-    )
+    infl = interp(cfg["self_report"]["inflation_start"], cfg["self_report"]["inflation_end"], round_idx, cfg["rounds"])
     sr_noise = cfg["self_report"].get("noise", 0.0)
     self_report = round(min(100.0, (t_pct or 0) * infl * (1 + random_jitter(cfg, round_idx, sr_noise))), 1)
     premium = round(self_report - (t_pct or 0), 1)
@@ -400,7 +398,7 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
         recs += simulate_backchecks(rng, cfg, [r for r in recs if r["form_type"] == "primary"], ri, base_id)
 
         summary = _round_summary(cfg, recs, ri, label, as_of, tw, cw)
-        sd_pts = _sample_in_geom(rng, tgeom, sd_cfg.get("sample_points", 0))
+        sd_pts = sample_in_geom(rng, tgeom, sd_cfg.get("sample_points", 0))
         summary["overlay"] = {
             "ward_boundaries": _fc(
                 [

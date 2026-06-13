@@ -21,7 +21,7 @@ _ROOF_TYPES = ["thatch", "metal sheet", "mud", "tile"]
 _ROOF_WEIGHTS = [0.42, 0.34, 0.16, 0.08]
 
 
-def _sample_in_geom(rng: random.Random, geom: dict, n: int) -> list:
+def sample_in_geom(rng: random.Random, geom: dict, n: int) -> list:
     x0, y0, x1, y1 = bbox(geom)
     pts, guard = [], 0
     while len(pts) < n and guard < n * 200:
@@ -32,7 +32,7 @@ def _sample_in_geom(rng: random.Random, geom: dict, n: int) -> list:
     return pts
 
 
-def _offset(rng: random.Random, lat: float, lon: float, meters: float) -> tuple:
+def offset(rng: random.Random, lat: float, lon: float, meters: float) -> tuple:
     """Move a point by ``meters`` in a random bearing (small-distance approx)."""
     bearing = rng.uniform(0, 2 * math.pi)
     dlat = (meters * math.cos(bearing)) / _M_PER_DEG
@@ -40,5 +40,5 @@ def _offset(rng: random.Random, lat: float, lon: float, meters: float) -> tuple:
     return lat + dlat, lon + dlon
 
 
-def _interp(a: float, b: float, i: int, n: int) -> float:
+def interp(a: float, b: float, i: int, n: int) -> float:
     return a if n <= 1 else a + (b - a) * (i / (n - 1))
