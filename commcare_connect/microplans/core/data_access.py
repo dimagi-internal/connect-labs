@@ -78,6 +78,7 @@ class ProgramPlanDataAccess(BaseDataAccess):
         grouping: dict | None = None,
         lga: str = "",
         state: str = "",
+        stats: list | None = None,
     ) -> PlanRecord:
         """Create a Draft plan in the program from a generated frame (one work area
         per cluster/pin). ``input_areas`` is the original draw/admin/pin payload
@@ -90,28 +91,38 @@ class ProgramPlanDataAccess(BaseDataAccess):
         creation so the Connect-import CSV export populates them without the caller
         re-supplying them. ``lga`` falls back to ``region`` when blank."""
         work_areas = plan_lib.materialize_work_areas(mode, pins, hulls, grouping=grouping)
+        data = {
+            "schema_version": SCHEMA_VERSION,
+            "program_id": self.program_id,
+            "opportunity_id": None,
+            "status": plan_lib.PLAN_DRAFT,
+            "region": region,
+            "lga": (lga or region or "").strip(),
+            "state": (state or "").strip(),
+            "name": name,
+            "mode": mode,
+            "work_areas": work_areas,
+            "input_areas": list(input_areas or []),
+            "grouping": dict(grouping or {}),
+            "status_log": [],
+            # Optimistic-concurrency counter; bumped on every _save_plan.
+            "revision": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Persist the sampling overlay (selected-PSU hulls + per-arm stats) so the
+        # review page can redraw the surveyed settlements + Sample details on load —
+        # the same keys regenerate_plan writes, so a created plan and a reopened plan
+        # render identically. (Pins aren't stored: the work areas ARE the pins.)
+        if mode == "sampling":
+            if hulls is not None:
+                data["psu_hulls"] = hulls
+            if stats is not None:
+                data["sampling_stats"] = stats
         record = self.labs_api.create_record(
             experiment=self._experiment,
             type=TYPE_PLAN,
             program_id=self.program_id,
-            data={
-                "schema_version": SCHEMA_VERSION,
-                "program_id": self.program_id,
-                "opportunity_id": None,
-                "status": plan_lib.PLAN_DRAFT,
-                "region": region,
-                "lga": (lga or region or "").strip(),
-                "state": (state or "").strip(),
-                "name": name,
-                "mode": mode,
-                "work_areas": work_areas,
-                "input_areas": list(input_areas or []),
-                "grouping": dict(grouping or {}),
-                "status_log": [],
-                # Optimistic-concurrency counter; bumped on every _save_plan.
-                "revision": 0,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
+            data=data,
         )
         return PlanRecord(record.to_api_dict())
 
