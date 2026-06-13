@@ -205,6 +205,15 @@ scenes:
     target: css:.assessment-widget:nth-of-type(5) button:has-text("Pass")
   - kind: hold
     seconds: 0.6
+  - kind: wait_for
+    must_succeed: true
+    note: gate the completion click on the button flip. The label is computed from
+      stats.pending (optimistic, client-side) - it reads 'Save Progress' until all
+      five Pass clicks have registered, then flips to 'Complete Image Review'. On a
+      cold render the last photo's GDrive fetch can delay its Pass landing, so wait
+      for the flipped label rather than racing it with a fail-fast click.
+    seconds: 15
+    target: text:Complete Image Review
   - kind: click
     must_succeed: true
     note: exact label - the button reads 'Save Progress' until every photo is decided
