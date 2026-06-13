@@ -49,6 +49,11 @@ class FrameConfig:
     # PPS). Banding draws a matched size-mix across arms so they're comparable on
     # cluster size by construction. See sample.select_psus.
     size_balance_bands: int = 0
+    # PPS-draw + pin-placement seed. None → a fresh random draw each call, so
+    # "Regenerate plan" re-rolls different PSUs + households every click. Pass an
+    # int to pin a reproducible sample (tests, deterministic walkthrough capture).
+    # The candidate-cluster frame stays seed-stable; only the draw and pins vary.
+    seed: int | None = None
 
     @classmethod
     def from_payload(cls, d: dict) -> FrameConfig:
@@ -71,6 +76,7 @@ class FrameConfig:
             # the pilot default so a sample is never silently empty.
             sources=([str(s) for s in src] if isinstance(src, list) and src else list(DEFAULT_SOURCES)),
             reference_point=(float(rp[0]), float(rp[1])) if rp else None,
+            seed=(int(d["seed"]) if d.get("seed") not in (None, "") else None),
         )
 
 
@@ -154,7 +160,14 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
     hull_features: list[dict] = []
     stats: list[dict] = []
 
-    for arm, geoms in by_arm.items():
+    # One base seed per call drives the PPS draw + pin placement. None in the config
+    # means re-roll: pick a fresh random base so each "Regenerate" yields a different
+    # sample. Each arm offsets the base so the two arms draw independently.
+    import secrets
+
+    base_seed = config.seed if config.seed is not None else secrets.randbelow(2_000_000_000)
+
+    for arm_idx, (arm, geoms) in enumerate(by_arm.items()):
         area = unary_union(geoms)
         # Fetch once across all providers (confidence-filtered) so we can report the
         # per-source breakdown, then sample only from the chosen sources.
@@ -184,12 +197,17 @@ def generate_frame(areas: list[dict], config: FrameConfig) -> FrameResult:
         selected = select_psus(
             clustered.psu_frame,
             n_take=config.target_clusters,
+            seed=base_seed + arm_idx,
             size_balance_bands=config.size_balance_bands,
         )
         pins = sample_pins(
             clustered.buildings,
             selected,
-            PinConfig(n_primary=config.primary_per_psu, n_alternate=config.alternates_per_psu),
+            PinConfig(
+                n_primary=config.primary_per_psu,
+                n_alternate=config.alternates_per_psu,
+                seed=base_seed + 1000 + arm_idx,
+            ),
         )
         stratum_by_cluster = dict(zip(selected["cluster"], selected["stratum"]))
 
