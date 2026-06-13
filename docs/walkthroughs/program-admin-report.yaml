@@ -762,8 +762,9 @@ scenes:
   title: Priya returns to the aggregate and makes her call
   url: ${par_url}
 setup:
-  command: python scripts/walkthroughs/program-admin-report/regenerate.py
-  outputs: scripts/walkthroughs/program-admin-report/.run_ids.json
+  command: python -m commcare_connect.labs.synthetic.ensure commcare_connect/labs/synthetic/envs/program-admin-report.yaml
+    --out scripts/walkthroughs/program-admin-report/realized.json
+  outputs: scripts/walkthroughs/program-admin-report/realized.json
   rerun: per_render
   timeout_seconds: 1800
 tagline: One grid that tells a program admin which network managers ran their weekly
