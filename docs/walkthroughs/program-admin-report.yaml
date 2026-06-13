@@ -225,17 +225,18 @@ scenes:
     target: css:button:has-text("Complete Image Review")
   - kind: wait_for
     must_succeed: true
-    note: 'commit signal - on success the page redirects to the workflow list; waiting
-      for the URL change guarantees the completion POST landed, so the scene can''t
-      end on a mid-save frame (''Saving...'' spinner / ''Unsaved changes'' badge).
-      Generous timeout: completeAudit() awaits the complete POST (which does a
-      synchronous S3 upsert + audit save server-side) AND a workflow run-state POST
-      before window.location.href fires. On a cold render (first-ever completion of a
-      freshly-created audit) that chain can run ~20-30s, so 20s could expire a beat
-      before the redirect lands even though completion succeeded. 60s absorbs the
-      cold-path latency. (Product follow-up: move the S3 upsert off the request.)'
+    note: 'commit signal - on success completeAudit() redirects to the workflow list
+      (/labs/workflow/). The recorder has NO url: target prefix (supported prefixes
+      are css/text/testid/aria/role), so an old url:**/labs/workflow/** target was
+      parsed as an auto/text match for a DOM element literally containing that string
+      - which never exists, so it ALWAYS timed out regardless of whether the redirect
+      fired. Wait instead for ''Workflows'', the visible heading on the workflow-list
+      page (absent from the audit page, which only has a singular ''Back to
+      Workflow'' link). This confirms the completion POST landed AND the redirect
+      navigated. Generous timeout: completeAudit awaits a synchronous S3 upsert +
+      run-state POST, then the heavy workflow-list page renders (~5-8s).'
     seconds: 60
-    target: url:**/labs/workflow/**
+    target: text:Workflows
   - kind: hold
     seconds: 1.5
   concept_claim: An auditor can review each assessment photo individually with a pass/fail
