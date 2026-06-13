@@ -68,6 +68,103 @@ REASON_LABELS = {
 
 
 # ---------------------------------------------------------------------- #
+# Display-name map (single source of truth)
+# ---------------------------------------------------------------------- #
+#
+# The synthetic users are identified by terse usernames (``amani_n``,
+# ``jumoke_n``, the network managers like ``amani_nm``). With no real
+# display name set, every page that shows a worker — the task hero header,
+# the tasks list, the audit/visit cards, and the Program Admin Report
+# drill table — renders the raw username. This map is the ONE place that
+# turns each synthetic user id into a realistic full human name, and the
+# generator stamps that name onto every user-bearing record it creates
+# (pipeline rows, audits, tasks, and the PAR rollup rows). Re-running the
+# seed is stable: a given id always maps to the same name.
+#
+# Cover EVERY id the demo touches — both clusters' FLWs and both network
+# managers, sourced from ``scripts/walkthroughs/program-admin-report/
+# demo_config.json`` and the archetype roster. Any id not listed here
+# falls back to a deterministic title-cased name derived from the id (see
+# ``display_name_for``), so a newly-added archetype still gets a real name
+# rather than leaking its username.
+DISPLAY_NAMES = {
+    # --- Northern Cluster FLWs (..._n) ---
+    "amina_n": "Amina Bello",
+    "binta_n": "Binta Sani",
+    "chinedu_n": "Chinedu Okeke",
+    "dorcas_n": "Dorcas Mensah",
+    "esi_n": "Esi Owusu",
+    "fatima_n": "Fatima Yusuf",
+    "grace_n": "Grace Adeyemi",
+    "hawa_n": "Hawa Diallo",
+    "isha_n": "Isha Kamara",
+    "jumoke_n": "Jumoke Balogun",
+    # --- Northern Cluster network manager (..._nm) ---
+    "amani_nm": "Amani Nwosu",
+    # --- Southern Cluster FLWs (..._s) ---
+    "kadi_s": "Kadiatu Conteh",
+    "lola_s": "Lola Ojo",
+    "miriam_s": "Miriam Achterberg",
+    "nia_s": "Nia Asante",
+    "ola_s": "Ola Ibrahim",
+    "pinda_s": "Pinda Kargbo",
+    "qisha_s": "Qisha Turay",
+    "rina_s": "Rina Fofana",
+    "sade_s": "Sade Adebayo",
+    "tola_s": "Tola Eze",
+    # --- Southern Cluster network manager (..._nm) ---
+    "kwame_nm": "Kwame Mensah",
+}
+
+# Suffix → surname pool for deterministic fallback names. Keeps fabricated
+# names plausibly West-African to match the seeded roster.
+_FALLBACK_SURNAMES = (
+    "Bello",
+    "Sani",
+    "Okeke",
+    "Mensah",
+    "Owusu",
+    "Yusuf",
+    "Adeyemi",
+    "Diallo",
+    "Kamara",
+    "Balogun",
+    "Conteh",
+    "Ojo",
+    "Asante",
+    "Ibrahim",
+    "Kargbo",
+    "Turay",
+    "Fofana",
+    "Adebayo",
+    "Eze",
+    "Nwosu",
+)
+
+
+def display_name_for(user_id: str) -> str:
+    """Map a synthetic user id to a realistic full human name.
+
+    Returns the curated name from ``DISPLAY_NAMES`` when present. For any
+    id not in the map, derive a stable, real-looking full name from the id
+    so a newly-added FLW/manager never leaks its raw username onto a page:
+    the given name is the id's first token title-cased (``amani_n`` →
+    ``Amani``), and the surname is picked deterministically from a pool so
+    the same id always yields the same name across re-seeds.
+    """
+    if not user_id:
+        return ""
+    curated = DISPLAY_NAMES.get(user_id)
+    if curated:
+        return curated
+    # Derive: first token before any underscore becomes the given name.
+    first_token = user_id.split("_", 1)[0]
+    given = first_token[:1].upper() + first_token[1:] if first_token else user_id
+    surname = _FALLBACK_SURNAMES[hash(user_id) % len(_FALLBACK_SURNAMES)]
+    return f"{given} {surname}"
+
+
+# ---------------------------------------------------------------------- #
 # Per-archetype weekly trajectory
 # ---------------------------------------------------------------------- #
 
@@ -192,7 +289,11 @@ def _build_chc_pipeline_rows(opp_id: int, flws: list[dict], week_idx: int) -> li
             reason = spec.get("reason_key") or ""
             if reason == "gender_skew":
                 kpi_issue = "gender"
-            elif reason in ("bad_muac_distribution", "misleading_photos", "repeated_failure"):
+            elif reason in (
+                "bad_muac_distribution",
+                "misleading_photos",
+                "repeated_failure",
+            ):
                 kpi_issue = "muac"
         seed = hash((opp_id, flw["id"], week_idx)) & 0xFFFFFFFF
         rows.append(
@@ -202,6 +303,7 @@ def _build_chc_pipeline_rows(opp_id: int, flws: list[dict], week_idx: int) -> li
                 flagged_this_week=flagged,
                 rng_seed=seed,
                 kpi_issue=kpi_issue,
+                display_name=display_name_for(flw["id"]),
             )
         )
     return rows
@@ -529,7 +631,7 @@ def program_admin_demo_seed(
                     workflow_run_id=run_id,
                     opportunity_id=opp_id,
                     monday_iso=monday_iso,
-                    flagged_by=nm,
+                    flagged_by=display_name_for(nm),
                 )
 
                 actions_taken = 0
@@ -555,8 +657,9 @@ def program_admin_demo_seed(
                         opportunity_id=opp_id,
                         opportunity_name=opp_cfg["label"],
                         flw_id=flw["id"],
+                        flw_name=display_name_for(flw["id"]),
                         monday_iso=monday_iso,
-                        creator_name=nm,
+                        creator_name=display_name_for(nm),
                         visit_id_seq=visit_id_seq,
                     )
                     actions_taken += 1
