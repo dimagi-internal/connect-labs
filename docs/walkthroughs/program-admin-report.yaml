@@ -225,10 +225,16 @@ scenes:
     target: css:button:has-text("Complete Image Review")
   - kind: wait_for
     must_succeed: true
-    note: commit signal - on success the page redirects to the workflow list; waiting
-      for the URL change guarantees the completion POST landed, so the scene can't
-      end on a mid-save frame ('Saving...' spinner / 'Unsaved changes' badge)
-    seconds: 20
+    note: 'commit signal - on success the page redirects to the workflow list; waiting
+      for the URL change guarantees the completion POST landed, so the scene can''t
+      end on a mid-save frame (''Saving...'' spinner / ''Unsaved changes'' badge).
+      Generous timeout: completeAudit() awaits the complete POST (which does a
+      synchronous S3 upsert + audit save server-side) AND a workflow run-state POST
+      before window.location.href fires. On a cold render (first-ever completion of a
+      freshly-created audit) that chain can run ~20-30s, so 20s could expire a beat
+      before the redirect lands even though completion succeeded. 60s absorbs the
+      cold-path latency. (Product follow-up: move the S3 upsert off the request.)'
+    seconds: 60
     target: url:**/labs/workflow/**
   - kind: hold
     seconds: 1.5
