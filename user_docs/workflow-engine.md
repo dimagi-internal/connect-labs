@@ -204,7 +204,7 @@ The **Verified Monitoring** dashboard contrasts what the program self-reported w
 
 **Trend panel**
 
-The Trend panel leads with a headline callout showing the gap between self-reported and independently-verified coverage in percentage points — for example, *"+17pp — program reported 86.7%, the independent survey verified 69.7%"*. This means you can read the key finding immediately without having to subtract the two lines yourself.
+The Trend panel shows the self-reported and independently-verified coverage lines over time. The right edge of the chart labels each line directly with its service-delivery, intervention, and control values, so you can read the current figures without needing to cross-reference a legend.
 
 **Map panel**
 
