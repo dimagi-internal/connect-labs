@@ -213,7 +213,48 @@ scenes:
       waits for anything. The submit button''s label is computed from stats.pending
       (optimistic) - it reads ''Save Progress'' until all five Pass clicks register,
       then flips to ''Complete Image Review''. Scoping to button:has-text makes this
-      a real gate on the flip.'
+      a real gate on the flip. This is also the scene''s end-frame: all five photos
+      decided and the Complete button now lit, i.e. the review itself - NOT the
+      post-completion redirect (that is scene 3b, so this scene shows the beat it
+      narrates).'
+    seconds: 15
+    target: css:button:has-text("Complete Image Review")
+  - kind: hold
+    note: settle on the reviewed grid (5 passed badges + Complete button enabled)
+      so the snapshot captures the photo review, not a later state
+    seconds: 1.5
+  concept_claim: An auditor can review each assessment photo individually with a pass/fail
+    decision per photo, and the audit only offers "Complete Image Review" once every
+    photo has a decision.
+  design_intent: Per-photo decisions (not one blanket verdict) keep the audit honest;
+    the complete button's label flips from "Save Progress" only when the review is
+    actually finished, so partial reviews stay visibly partial.
+  features:
+  - description: Each .assessment-widget renders the photo with Pass/Fail buttons
+      and a per-photo decision badge
+    id: per-photo-pass-fail
+    verify: 'Playwright: click Pass on each .assessment-widget in DOM order, assert
+      each widget shows the passed badge (.bg-green-600)'
+  - description: The audit page's primary button reads 'Save Progress' until all photos
+      are decided, then 'Complete Image Review' which finalizes the image review
+    id: complete-image-review
+    verify: 'Playwright: after passing all photos, assert button text ''Complete Image
+      Review'' is present and clicking it persists the completed state'
+  narrative: Amani scrolls through the audit one assessment at a time, looks at each
+    MUAC photo as it loads, and passes each one — by the last photo every assessment
+    carries a green Pass badge and the "Complete Image Review" button has lit up,
+    ready for his verdict.
+  persona: amani
+  provenance: S3
+  show: 'The bulk assessment view: one widget per photo. Amani scrolls to each widget,
+    waits for its image, and clicks Pass; the scene ends on the fully-reviewed grid
+    with all five Pass badges and the Complete button now enabled.'
+  title: Amani reviews the evidence photo by photo
+- actions:
+  - kind: wait_for
+    must_succeed: true
+    note: continue-scene on the same audit page (no goto) - re-assert the lit Complete
+      button before committing.
     seconds: 15
     target: css:button:has-text("Complete Image Review")
   - kind: click
@@ -239,32 +280,25 @@ scenes:
     target: text:Workflows
   - kind: hold
     seconds: 1.5
-  concept_claim: An auditor can review each assessment photo individually with a pass/fail
-    decision per photo, and the audit only offers "Complete Image Review" once every
-    photo has a decision.
-  design_intent: Per-photo decisions (not one blanket verdict) keep the audit honest;
-    the complete button's label flips from "Save Progress" only when the review is
-    actually finished, so partial reviews stay visibly partial.
+  concept_claim: Completing the image review records the auditor's verdict and returns
+    them to the program's workflow list, closing the loop from "flag spotted" to
+    "evidence reviewed" in one sitting.
+  design_intent: The complete action is a deliberate commit - it only unlocks once
+    every photo is decided, then finalizes the audit and hands the auditor back to
+    the workflow overview so the next flagged worker is one glance away.
   features:
-  - description: Each .assessment-widget renders the photo with Pass/Fail buttons
-      and a per-photo decision badge
-    id: per-photo-pass-fail
-    verify: 'Playwright: click Pass on each .assessment-widget in DOM order, assert
-      each widget shows the passed badge (.bg-green-600)'
-  - description: The audit page's primary button reads 'Save Progress' until all photos
-      are decided, then 'Complete Image Review' which finalizes the image review
-    id: complete-image-review
-    verify: 'Playwright: after passing all photos, assert button text ''Complete Image
-      Review'' is present and clicking it persists the completed state'
-  narrative: Amani scrolls through the audit one assessment at a time, looks at each
-    MUAC photo as it loads, and passes each one — then completes the image review,
-    recording his verdict on the evidence.
+  - description: Clicking 'Complete Image Review' finalizes the audit and redirects
+      to the workflow list
+    id: complete-redirects-to-workflow
+    verify: 'Playwright: click the Complete Image Review button, assert navigation
+      to /labs/workflow/ and the audit persists as completed'
+  narrative: Amani clicks "Complete Image Review" to record his verdict; the audit
+    finalizes and he lands back on the workflow list, the flagged week now closed out.
   persona: amani
   provenance: S3
-  show: 'The bulk assessment view: one widget per photo. Amani scrolls to each widget,
-    waits for its image, clicks Pass, and after the last one clicks "Complete Image
-    Review" to close out the photo review.'
-  title: Amani reviews the evidence photo by photo
+  show: Amani clicks the lit "Complete Image Review" button; the audit saves and the
+    page returns to the workflow list.
+  title: Amani records his verdict and closes out the review
 - actions:
   - kind: goto
     note: return to the review - the audit lives on its own page
