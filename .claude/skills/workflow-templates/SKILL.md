@@ -53,7 +53,7 @@ A seed workflow template is a Python file in `commcare_connect/workflow/template
 Each seed template is a single Python file exporting these module-level names:
 
 - `DEFINITION` — dict with `name`, `description`, `statuses` (list), `config` (dict). Shape is validated by the MCP tool when cloning.
-- `RENDER_CODE` — a string containing the JSX. Same rules as live workflows: must declare `function WorkflowUI(...)`, must use `var` (not `const`/`let`), only `React` + Chart.js + Leaflet globals are available.
+- `RENDER_CODE` — a string containing the JSX. Same rules as live workflows: must declare `function WorkflowUI(...)`, must use `var` (not `const`/`let`). Globals available: `React`, Chart.js, Leaflet, Mapbox GL (`window.mapboxgl`), and the shared map components `window.ConnectMap` + `window.PlanLayers` (draw microplan plan layers — work areas / hulls / sample pins / footprints — instead of hand-rolling paint). See WORKFLOW_REFERENCE.md §4a "Shared map components".
 - `PIPELINE_SCHEMAS` (optional) — a list of dicts, one per pipeline this template creates alongside the workflow. Each schema has `fields`, `aggregations`, `transforms`, `groupings`.
 - `TEMPLATE` — the registry export. Includes `key`, `name`, `description`, `icon`, `color`, `definition`, `render_code`, `pipeline_schema(s)`, plus optional flags described below.
 

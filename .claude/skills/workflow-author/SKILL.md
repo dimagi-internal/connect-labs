@@ -30,7 +30,7 @@ Use the `connect_labs` MCP tools to round-trip a workflow between labs and Claud
 
    - Must declare `function WorkflowUI(...)` as a function declaration (not arrow, not `const WorkflowUI = ...`)
    - Use `var`. No `const` or `let`.
-   - Only global `React` is available, plus Chart.js and Leaflet from CDN.
+   - Globals available: `React`, Chart.js, Leaflet, Mapbox GL (`window.mapboxgl`), and the shared map components `window.ConnectMap` + `window.PlanLayers` (draw microplan plan layers via these — see WORKFLOW_REFERENCE.md §4a "Shared map components" — rather than hand-rolling layer paint).
    - Props are `{definition, instance, workers, pipelines, links, actions, onUpdateState, view}`.
    - **Run-shaped templates (`workflow_get` returns `saved_runs.supports_saved_runs: true`):** read run data via `view`, not bare props.
      - `view.workers`, `view.pipelines`, `view.state` resolve to live data while in_progress and to snapshot data once completed — same shape, same render.
