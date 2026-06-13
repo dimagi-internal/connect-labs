@@ -56,47 +56,8 @@
         }
         if (!data || data.status !== 'ok')
           throw new Error((data && data.detail) || 'footprints failed');
-        const src = ctx.map.getSource('plan-fp');
-        if (src) {
-          src.setData(data.footprints);
-        } else {
-          ctx.map.addSource('plan-fp', {
-            type: 'geojson',
-            data: data.footprints,
-          });
-          const before = ctx.map.getLayer('wa-line') ? 'wa-line' : undefined;
-          // Polygon fill (for buildings whose geometry the cache has stored).
-          ctx.map.addLayer(
-            {
-              id: 'plan-fp-fill',
-              type: 'fill',
-              source: 'plan-fp',
-              filter: ['==', ['geometry-type'], 'Polygon'],
-              paint: {
-                'fill-color': '#f59e0b',
-                'fill-opacity': 0.55,
-                'fill-outline-color': '#b45309',
-              },
-            },
-            before,
-          );
-          // Centroid dot fallback (for legacy cache rows with no polygon stored).
-          ctx.map.addLayer(
-            {
-              id: 'plan-fp-dots',
-              type: 'circle',
-              source: 'plan-fp',
-              filter: ['==', ['geometry-type'], 'Point'],
-              paint: {
-                'circle-radius': 1.6,
-                'circle-color': '#f59e0b',
-                'circle-stroke-color': '#fff',
-                'circle-stroke-width': 0.4,
-              },
-            },
-            before,
-          );
-        }
+        // Polygon fill + centroid-dot fallback via the shared PlanLayers component.
+        window.PlanLayers.footprints(ctx.map, { data: data.footprints });
         ctx.footprintsLoaded = true;
         const dt = ((performance.now() - t0) / 1000).toFixed(1);
         if (ctx.fpLayer)

@@ -111,7 +111,6 @@
     COMPARABILITY_URL: COMPARABILITY_URL,
     CSRF: CSRF,
   });
-  const armPaint = _sd.armPaint;
   const renderSourceCounts = _sd.renderSourceCounts;
   const renderArmStats = _sd.renderArmStats;
   const renderRationale = _sd.renderRationale;
@@ -153,28 +152,8 @@
       /* headless / no webgl */
     }
   }
-  function colorExpr() {
-    // Color by per-feature "fill" property (computed in fc()); status overrides.
-    return [
-      'case',
-      ['==', ['get', 'status'], 'EXCLUDED'],
-      '#9ca3af',
-      ['get', 'fill'],
-    ];
-  }
-  function opacityExpr() {
-    // Excluded = faded; selected = bold; worker-filter inactive matches = dim.
-    return [
-      'case',
-      ['==', ['get', 'status'], 'EXCLUDED'],
-      0.18,
-      ['boolean', ['feature-state', 'sel'], false],
-      0.85,
-      ['boolean', ['feature-state', 'dim'], false],
-      0.18,
-      0.55,
-    ];
-  }
+  // Work-area fill/outline + opacity paint now lives in the shared PlanLayers
+  // component (static/maps/plan_layers.js); fc() still builds the per-feature data.
   function fc() {
     // Pre-compute BOTH worker and group colors per feature so the fill and
     // outline encode different dimensions simultaneously. Whichever colorDim
@@ -373,35 +352,12 @@
   function refreshMap() {
     if (!map || !mapReady) return;
     const data = fc();
-    const src = map.getSource('wa');
-    if (src) {
-      src.setData(data);
-    } else {
-      map.addSource('wa', { type: 'geojson', data, promoteId: 'id' });
-      map.addLayer({
-        id: 'wa-fill',
-        type: 'fill',
-        source: 'wa',
-        paint: { 'fill-color': colorExpr(), 'fill-opacity': opacityExpr() },
-      });
-      // Outline = the OTHER dim from the fill. Thick stroke, near-opaque, so
-      // it remains visible over the semi-transparent fill — that's how worker
-      // and group end up visually encoded simultaneously.
-      map.addLayer({
-        id: 'wa-line',
-        type: 'line',
-        source: 'wa',
-        paint: {
-          'line-color': [
-            'case',
-            ['==', ['get', 'status'], 'EXCLUDED'],
-            '#9ca3af',
-            ['get', 'outline'],
-          ],
-          'line-width': 0.8,
-          'line-opacity': 0.55,
-        },
-      });
+    // Work-area territories via the shared PlanLayers component (same paint the
+    // monitoring render uses). Selection + hover interactivity is review-only and
+    // wired once, on first creation.
+    const firstTime = !map.getLayer('wa-fill');
+    window.PlanLayers.workAreas(map, { data: data });
+    if (firstTime) {
       // Plain click selects just this work area (pins its WA+group inspector).
       // Shift/⌘/Ctrl-click adds/removes it from the selection and, once more than
       // one is selected, pins the bulk panel. Hover previews a single work area
@@ -1921,69 +1877,10 @@
     const pins = result.pins ||
       result.pins_geojson || { type: 'FeatureCollection', features: [] };
     lastSample = { pins, hulls, stats: result.stats || [] };
-    Microplans.upsertSource(map, 'samp-hulls', hulls);
-    if (!map.getLayer('samp-hull-fill')) {
-      map.addLayer({
-        id: 'samp-hull-fill',
-        type: 'fill',
-        source: 'samp-hulls',
-        paint: {
-          'fill-color': armPaint(
-            'arm',
-            ARM_COLOR.intervention,
-            ARM_COLOR.comparison,
-          ),
-          'fill-opacity': 0.12,
-        },
-      });
-      map.addLayer({
-        id: 'samp-hull-line',
-        type: 'line',
-        source: 'samp-hulls',
-        paint: {
-          'line-color': armPaint(
-            'arm',
-            ARM_COLOR.intervention,
-            ARM_COLOR.comparison,
-          ),
-          'line-width': 1.5,
-        },
-      });
-    }
-    Microplans.upsertSource(map, 'samp-pins', pins);
-    if (!map.getLayer('samp-pins-layer')) {
-      map.addLayer({
-        id: 'samp-pins-layer',
-        type: 'circle',
-        source: 'samp-pins',
-        paint: {
-          'circle-radius': [
-            'case',
-            ['==', ['get', 'sample_type'], 'primary'],
-            5,
-            3,
-          ],
-          'circle-color': armPaint(
-            'arm',
-            ARM_COLOR.intervention,
-            ARM_COLOR.comparison,
-          ),
-          'circle-opacity': [
-            'case',
-            ['==', ['get', 'sample_type'], 'primary'],
-            0.95,
-            0.45,
-          ],
-          'circle-stroke-width': [
-            'case',
-            ['==', ['get', 'sample_type'], 'primary'],
-            1.2,
-            0.5,
-          ],
-          'circle-stroke-color': '#ffffff',
-        },
-      });
-    }
+    // PSU hulls + sampled pins via the shared PlanLayers component (same paint the
+    // monitoring render uses). Interactivity / fitting stays here.
+    window.PlanLayers.hulls(map, { data: hulls });
+    window.PlanLayers.pins(map, { data: pins });
     const fitData = pins.features && pins.features.length ? pins : hulls;
     if (fitData.features && fitData.features.length)
       Microplans.fitTo(map, fitData, {
