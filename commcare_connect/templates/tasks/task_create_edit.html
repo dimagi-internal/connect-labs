@@ -1304,7 +1304,16 @@ function taskCreateEditPage() {
       this.botsNeedsOAuth = false;
 
       try {
-        const response = await fetch('{% url "tasks:ocs_bots" %}');
+        // Pass opportunity_id explicitly (like loadLearningModules/loadCompletedModules)
+        // so the bots API resolves the opp directly — for synthetic opps this is what
+        // surfaces the canned "synthetic-muac-coaching" bot. Without it the API falls
+        // back to a session-default opp via a 302, which is unreliable (e.g. it leaves
+        // the bot select empty in headless/walkthrough sessions).
+        const opportunityId = {{ opportunity_id|default:"null" }};
+        const botsUrl = opportunityId
+          ? '{% url "tasks:ocs_bots" %}?opportunity_id=' + opportunityId
+          : '{% url "tasks:ocs_bots" %}';
+        const response = await fetch(botsUrl);
 
         // Handle 401 (not connected to OCS)
         if (response.status === 401) {
