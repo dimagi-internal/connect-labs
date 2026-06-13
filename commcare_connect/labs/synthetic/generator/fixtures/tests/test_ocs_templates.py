@@ -1,6 +1,6 @@
 import datetime as dt
 
-from commcare_connect.labs.synthetic.generator.ocs_templates import TEMPLATES, render_transcript
+from commcare_connect.labs.synthetic.generator.fixtures.ocs_templates import TEMPLATES, render_transcript
 
 
 def test_templates_exist():

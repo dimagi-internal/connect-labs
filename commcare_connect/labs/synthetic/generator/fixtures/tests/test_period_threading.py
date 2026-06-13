@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import random
 
-from commcare_connect.labs.synthetic.generator.fields import fill_form_json
-from commcare_connect.labs.synthetic.generator.manifest import BeneficiaryCohort, BinaryDistribution
-from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema
+from commcare_connect.labs.synthetic.generator.fixtures.fields import fill_form_json
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import BeneficiaryCohort, BinaryDistribution
+from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import FormSchema
 
 
 def _outcome_rate(period: int, n: int = 3000) -> float:

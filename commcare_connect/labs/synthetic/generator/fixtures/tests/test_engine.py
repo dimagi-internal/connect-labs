@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from commcare_connect.labs.synthetic.generator.engine import generate
-from commcare_connect.labs.synthetic.generator.manifest import Manifest
-from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, QuestionSpec
+from commcare_connect.labs.synthetic.generator.fixtures.engine import generate
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest
+from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import FormSchema, QuestionSpec
 
 GOLDEN = Path(__file__).parent / "golden"
 

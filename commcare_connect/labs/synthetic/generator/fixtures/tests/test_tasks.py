@@ -1,7 +1,12 @@
 import datetime as dt
 
-from commcare_connect.labs.synthetic.generator.manifest import CoachingArc, CoachingMessage, TaskSpec, Timeline
-from commcare_connect.labs.synthetic.generator.tasks import build_task_records
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
+    CoachingArc,
+    CoachingMessage,
+    TaskSpec,
+    Timeline,
+)
+from commcare_connect.labs.synthetic.generator.fixtures.tasks import build_task_records
 
 
 def _make_timeline() -> Timeline:

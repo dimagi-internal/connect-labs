@@ -1,7 +1,7 @@
 import datetime as dt
 
-from commcare_connect.labs.synthetic.generator.manifest import FlwPersona, MeanStddev, Timeline
-from commcare_connect.labs.synthetic.generator.timeline import VisitSlot, expand_visit_schedule
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import FlwPersona, MeanStddev, Timeline
+from commcare_connect.labs.synthetic.generator.fixtures.timeline import VisitSlot, expand_visit_schedule
 
 
 def _persona(pid, archetype):

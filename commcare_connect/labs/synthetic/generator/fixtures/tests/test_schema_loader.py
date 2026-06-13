@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from commcare_connect.labs.synthetic.generator.schema_loader import (
+from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import (
     FormSchema,
     load_form_schema,
     parse_form_schema_from_app_json,

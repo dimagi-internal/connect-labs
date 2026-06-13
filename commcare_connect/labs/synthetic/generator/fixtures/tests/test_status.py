@@ -1,7 +1,7 @@
 import random
 
-from commcare_connect.labs.synthetic.generator.manifest import FlwPersona, MeanStddev
-from commcare_connect.labs.synthetic.generator.status import decide_visit_status
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import FlwPersona, MeanStddev
+from commcare_connect.labs.synthetic.generator.fixtures.status import decide_visit_status
 
 
 def _p(flag_rate, archetype="steady"):

@@ -1,5 +1,5 @@
-from commcare_connect.labs.synthetic.generator.manifest import FlwPersona, MeanStddev
-from commcare_connect.labs.synthetic.generator.user_data import build_user_data
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import FlwPersona, MeanStddev
+from commcare_connect.labs.synthetic.generator.fixtures.user_data import build_user_data
 
 
 def _p(pid, name, archetype="steady"):

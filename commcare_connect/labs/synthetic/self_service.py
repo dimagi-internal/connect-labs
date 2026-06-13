@@ -21,8 +21,8 @@ from django.utils import timezone
 
 from commcare_connect.labs.integrations.connect.api_client import LabsRecordAPIClient
 from commcare_connect.labs.integrations.connect.export_client import ExportAPIClient
-from commcare_connect.labs.synthetic.generator.engine import generate
-from commcare_connect.labs.synthetic.generator.manifest import (
+from commcare_connect.labs.synthetic.generator.fixtures.engine import generate
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
     BeneficiaryCohort,
     FlwPersona,
     KpiSpec,
@@ -31,7 +31,10 @@ from commcare_connect.labs.synthetic.generator.manifest import (
     NormalDistribution,
     Timeline,
 )
-from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, parse_form_schema_from_app_json
+from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import (
+    FormSchema,
+    parse_form_schema_from_app_json,
+)
 from commcare_connect.labs.synthetic.models import UserSyntheticDataset
 
 logger = logging.getLogger(__name__)

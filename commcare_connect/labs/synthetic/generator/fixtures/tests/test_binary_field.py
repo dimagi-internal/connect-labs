@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import random
 
-from commcare_connect.labs.synthetic.generator.fields import _draw
-from commcare_connect.labs.synthetic.generator.manifest import BinaryDistribution
+from commcare_connect.labs.synthetic.generator.fixtures.fields import _draw
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import BinaryDistribution
 
 
 def test_binary_draws_at_base_rate():

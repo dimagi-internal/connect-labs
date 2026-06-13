@@ -1,7 +1,7 @@
 import pytest
 from django.test import override_settings
 
-from commcare_connect.labs.synthetic.generator.uploader import UploadResult, upload_and_register
+from commcare_connect.labs.synthetic.generator.io.uploader import UploadResult, upload_and_register
 from commcare_connect.labs.synthetic.models import SyntheticOpportunity
 
 

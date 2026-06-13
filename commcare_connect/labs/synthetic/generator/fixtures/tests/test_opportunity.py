@@ -1,4 +1,4 @@
-from commcare_connect.labs.synthetic.generator.opportunity import build_opportunity
+from commcare_connect.labs.synthetic.generator.fixtures.opportunity import build_opportunity
 
 
 def test_build_opportunity_passes_through_known_keys():

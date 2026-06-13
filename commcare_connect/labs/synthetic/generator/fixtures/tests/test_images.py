@@ -1,7 +1,7 @@
 import random
 
-from commcare_connect.labs.synthetic.generator.images import assign_visit_images
-from commcare_connect.labs.synthetic.generator.manifest import ImageConfig
+from commcare_connect.labs.synthetic.generator.fixtures.images import assign_visit_images
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import ImageConfig
 
 
 def test_assign_images_adds_blob_ids():

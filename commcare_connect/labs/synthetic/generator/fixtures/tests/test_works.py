@@ -1,4 +1,4 @@
-from commcare_connect.labs.synthetic.generator.works import build_works_and_modules
+from commcare_connect.labs.synthetic.generator.fixtures.works import build_works_and_modules
 
 
 def test_build_works_one_per_approved_visit():

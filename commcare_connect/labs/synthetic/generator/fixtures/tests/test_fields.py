@@ -1,7 +1,7 @@
 import random
 
-from commcare_connect.labs.synthetic.generator.fields import _outlier, fill_form_json
-from commcare_connect.labs.synthetic.generator.manifest import (
+from commcare_connect.labs.synthetic.generator.fixtures.fields import _outlier, fill_form_json
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import (
     Anomaly,
     BeneficiaryCohort,
     BinaryDistribution,
@@ -10,7 +10,7 @@ from commcare_connect.labs.synthetic.generator.manifest import (
     NormalDistribution,
     UniformDistribution,
 )
-from commcare_connect.labs.synthetic.generator.schema_loader import FormSchema, QuestionSpec
+from commcare_connect.labs.synthetic.generator.fixtures.schema_loader import FormSchema, QuestionSpec
 
 
 def _schema():

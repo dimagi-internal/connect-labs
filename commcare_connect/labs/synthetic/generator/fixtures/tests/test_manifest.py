@@ -2,7 +2,7 @@ import datetime as dt
 
 import pytest
 
-from commcare_connect.labs.synthetic.generator.manifest import Manifest, ManifestValidationError
+from commcare_connect.labs.synthetic.generator.fixtures.manifest import Manifest, ManifestValidationError
 
 VALID_MANIFEST_YAML = """
 opportunity_id: 1237
