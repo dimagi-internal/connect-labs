@@ -784,3 +784,122 @@ def synthetic_profile_from_prod(
         "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
         "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
     }
+
+
+# =============================================================================
+# Composite env templates (synthetic_env_*)
+#
+# Env manifests are first-class TEMPLATES, discovered by a registry that mirrors
+# the workflow template registry. These three tools extend the synthetic_*
+# family with the same naming + (user, *, ...) signature + return-dict / error
+# conventions: list the available env templates, inspect one, and realize one
+# server-side via the ensure engine. ``synthetic_env_ensure`` is the rename of
+# the former one-off ``ensure_synthetic_env`` tool.
+# =============================================================================
+
+
+@register(
+    name="synthetic_env_list",
+    description=(
+        "List the available composite synthetic ENVIRONMENT templates "
+        "(checked-in manifests under commcare_connect/labs/synthetic/envs/). "
+        "Each entry is a summary of the env template (NOT a realization): its "
+        "key (pass to synthetic_env_get / synthetic_env_ensure), declared "
+        "resource kinds, and the opportunity ids it touches. Use this to "
+        "discover which envs exist before realizing one."
+    ),
+    input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+    is_write=False,
+)
+def synthetic_env_list(user) -> dict[str, Any]:
+    from commcare_connect.labs.synthetic.ensure.registry import list_envs
+
+    return {"envs": list_envs()}
+
+
+@register(
+    name="synthetic_env_get",
+    description=(
+        "Get the registry summary for a single composite synthetic ENV "
+        "template by key (e.g. 'program-admin-report'). Returns the template's "
+        "declared shape — env name, resource list (kind + opportunity ids), "
+        "timeline window — NOT a realization (use synthetic_env_ensure to "
+        "realize). Unknown or unsafe names raise NOT_FOUND."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "env": {
+                "type": "string",
+                "description": (
+                    "Env template key (a single plain segment, e.g. "
+                    "'program-admin-report'). Path separators and '..' are rejected."
+                ),
+            },
+        },
+        "required": ["env"],
+        "additionalProperties": False,
+    },
+    is_write=False,
+)
+def synthetic_env_get(user, *, env: str) -> dict[str, Any]:
+    from commcare_connect.labs.synthetic.ensure.registry import get_env
+
+    try:
+        entry = get_env(env)
+    except ValueError as exc:
+        raise MCPToolError("NOT_FOUND", str(exc))
+
+    summary = entry.summary
+    summary["resources"] = [
+        {
+            "kind": r.kind,
+            "opportunity_id": getattr(r, "opportunity_id", None),
+            "opportunity_ids": list(getattr(r, "opportunity_ids", None) or []),
+        }
+        for r in entry.manifest.resources
+    ]
+    return summary
+
+
+@register(
+    name="synthetic_env_ensure",
+    description=(
+        "Realize a composite synthetic ENVIRONMENT template server-side on labs "
+        "(idempotent). Resolves an env template key via the registry to the "
+        "checked-in manifest at commcare_connect/labs/synthetic/envs/<env>.yaml "
+        "and runs the ensure engine in-app, so labs-only synthetic opps are "
+        "written through the local-records backend on the labs DB — the only "
+        "transport that reaches labs prod for synthetic opportunities. Returns "
+        "the realized id map (the ${...} vars a walkthrough spec interpolates: "
+        "par_run_id, par_url, good_*/incomplete_* drill targets, wk4_*, etc.). "
+        "Re-running does not duplicate or churn ids (current-week runs may reset "
+        "per the manifest). Use env='program-admin-report' for the PAR demo."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "env": {
+                "type": "string",
+                "description": (
+                    "Env template key (a single plain segment, e.g. "
+                    "'program-admin-report'). Resolves to "
+                    "commcare_connect/labs/synthetic/envs/<env>.yaml. Path "
+                    "separators and '..' are rejected."
+                ),
+            },
+        },
+        "required": ["env"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_env_ensure(user, *, env: str) -> dict[str, Any]:
+    from commcare_connect.labs.synthetic.ensure.engine import ensure_synthetic_data
+    from commcare_connect.labs.synthetic.ensure.registry import get_env_path
+
+    try:
+        env_path = get_env_path(env)
+    except ValueError as exc:
+        raise MCPToolError("NOT_FOUND", str(exc))
+    return ensure_synthetic_data(str(env_path))
