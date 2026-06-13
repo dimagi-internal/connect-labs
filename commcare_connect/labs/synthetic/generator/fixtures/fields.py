@@ -60,6 +60,58 @@ def _outlier(distribution, rng: random.Random) -> float:
     raise TypeError(f"unknown distribution: {distribution!r}")
 
 
+def _binary_choice(spec: QuestionSpec, raw: float) -> Any:
+    """Render a no-transform binary draw on a choice/text question as yes/no.
+
+    A ``BinaryDistribution`` draws 1.0/0.0; on a ``select``/``multiselect``/``text``
+    question those floats are the wrong type for the field. Map ``raw >= 0.5`` to
+    the affirmative outcome and below to the negative — no inversion, so rate 0.72
+    yields ~72% affirmative. Prefer the question's own 2-valued ``choices`` (first
+    = affirmative, second = negative); otherwise emit the strings "yes"/"no".
+    """
+    if spec.choices and len(spec.choices) == 2:
+        affirmative, negative = spec.choices[0], spec.choices[1]
+    else:
+        affirmative, negative = "yes", "no"
+    return affirmative if raw >= 0.5 else negative
+
+
+def _resolve_dist(
+    effective: dict[str, Any],
+    spec: QuestionSpec,
+    *,
+    leaf_question_counts: dict[str, int],
+) -> tuple[Any, str | None]:
+    """Resolve the distribution for a question, exact-match first then leaf-match.
+
+    Returns ``(dist, consumed_key)``. ``consumed_key`` is the effective-map key
+    that should be excluded from the trailing orphan-write loop (so a leaf-keyed
+    distribution drives its matching question instead of being double-written as
+    an orphan float). An exact json_path match is the question's own path and is
+    already covered, so it returns ``consumed_key=None``.
+
+    Leaf resolution: if no exact match, look for effective keys whose bare leaf
+    equals this question's leaf. Use it ONLY if the mapping is unambiguous on BOTH
+    sides — EXACTLY ONE effective key has that leaf AND EXACTLY ONE schema question
+    (lacking its own exact key) has that leaf. If either side is ambiguous (zero or
+    more than one match), leave ``dist=None`` (unchanged fall-through to default);
+    an ambiguous leaf must not guess.
+    """
+    dist = effective.get(spec.json_path)
+    if dist is not None:
+        return dist, None
+
+    leaf = spec.json_path.rsplit(".", 1)[-1]
+    if leaf_question_counts.get(leaf, 0) != 1:
+        # More than one question shares this leaf — ambiguous on the question side.
+        return None, None
+    matches = [k for k in effective if k.rsplit(".", 1)[-1] == leaf]
+    if len(matches) == 1:
+        key = matches[0]
+        return effective[key], key
+    return None, None
+
+
 def _default_for_kind(spec: QuestionSpec, rng: random.Random) -> Any:
     if spec.kind in {"select", "multiselect"} and spec.choices:
         return rng.choice(spec.choices)
@@ -106,11 +158,24 @@ def fill_form_json(
     overrides = persona.field_overrides if persona else {}
     effective: dict[str, Any] = {**cohort.field_distributions, **overrides}
 
+    # Count, per leaf, how many questions would rely on leaf-resolution (i.e. lack
+    # their own exact effective-map key). A leaf shared by 2+ such questions is
+    # ambiguous and must not be leaf-resolved by any of them.
+    leaf_question_counts: dict[str, int] = {}
+    for spec in schema.questions:
+        if spec.json_path in effective:
+            continue
+        leaf = spec.json_path.rsplit(".", 1)[-1]
+        leaf_question_counts[leaf] = leaf_question_counts.get(leaf, 0) + 1
+
     out: dict[str, Any] = {}
     covered_paths: set[str] = set()
+    consumed_keys: set[str] = set()
     for spec in schema.questions:
         covered_paths.add(spec.json_path)
-        dist = effective.get(spec.json_path)
+        dist, consumed_key = _resolve_dist(effective, spec, leaf_question_counts=leaf_question_counts)
+        if consumed_key is not None:
+            consumed_keys.add(consumed_key)
         if dist is None:
             value = _default_for_kind(spec, rng)
         else:
@@ -120,6 +185,10 @@ def fill_form_json(
                 value = _apply_transform(raw, transform, rng)
             elif spec.kind == "int":
                 value = int(round(raw))
+            elif isinstance(dist, BinaryDistribution) and spec.kind in {"select", "multiselect", "text"}:
+                # A no-transform binary on a choice/text question renders as a
+                # yes/no choice, not a float 1.0/0.0 (ace#773).
+                value = _binary_choice(spec, raw)
             else:
                 value = round(float(raw), 3)
         _set_nested(out, spec.json_path, value)
@@ -127,8 +196,10 @@ def fill_form_json(
     # Write values for manifest field_distributions not covered by the HQ schema.
     # This ensures paths like form.case.update.soliciter_muac_cm get populated
     # even when the app structure API returns them under different question IDs.
+    # Keys consumed by leaf-resolution above already drive a schema question and
+    # must NOT be orphan-written (that would double-write the field).
     for path, dist in effective.items():
-        if path in covered_paths:
+        if path in covered_paths or path in consumed_keys:
             continue
         raw = _outlier(dist, rng) if path in anomaly_paths else _draw(dist, rng, period)
         transform = getattr(dist, "transform", None)
