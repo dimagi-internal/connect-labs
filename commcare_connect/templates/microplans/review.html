@@ -291,7 +291,7 @@
               </div>
             </div>
             <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">{% if plan_id %}Regenerate plan{% else %}Generate plan{% endif %}</button>
-            <p class="text-[10px] text-gray-500">{% if plan_id %}Re-rolls a fresh random sample and rebuilds this plan's work areas.{% else %}Draws the PSUs + households and saves them as this plan in one step.{% endif %}</p>
+            <p class="text-[10px] text-gray-500" id="generate-plan-hint">{% if plan_id %}Re-rolls a fresh random sample and rebuilds this plan's work areas.{% else %}Draws the PSUs + households and saves them as this plan in one step.{% endif %}</p>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
             <details id="sampling-rationale" class="hidden mt-1 border-t border-gray-100 pt-2">
               <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Sample details</summary>
@@ -324,15 +324,11 @@
     </details>
     {% endif %}
 
-    {% if not plan_id %}
-    <p class="px-1 pt-1 text-[10px] text-gray-400 italic leading-snug">Grouping, assignment, and export act on the plan's work areas; available once you <b>Create the plan</b> above.</p>
-    {% endif %}
+    <!-- Grouping / assignment / bulk / export act on a plan's work areas. They're
+         always shown but stay disabled (greyed) until work areas exist — i.e. until
+         Generate plan runs — then syncPlanTools() enables them and hides this hint. -->
+    <p id="plan-tools-hint" class="px-1 pt-1 text-[10px] text-gray-400 italic leading-snug">Grouping, assignment, and export act on the plan's work areas — available once you <b>Generate the plan</b> above.</p>
 
-    {% if plan_id %}
-    <!-- Grouping / assignment / bulk all act on an EXISTING plan's work areas, so
-         they only render once the plan exists. Before creation the note above
-         stands in for them — otherwise they read as out-of-place in the
-         define-area / sampling flow. -->
     <!-- Sampling note: groups are the PSUs from generation; geometric auto-grouping
          is a coverage concept and is hidden in sampling mode (toggled by setMode). -->
     <div class="mp-card hidden" id="sampling-group-note">
@@ -364,12 +360,12 @@
           <span class="text-gray-600">Target work areas per group</span>
           <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
         </label>
-        <button type="button" id="btn-regroup" class="button button-sm primary-dark"{% if not plan_id %} disabled{% endif %}>Apply grouping</button>
+        <button type="button" id="btn-regroup" class="button button-sm primary-dark" disabled>Apply grouping</button>
         <p class="text-[10px] text-gray-400">Re-groups every active work area. Audited per work area.</p>
       </div>
     </details>
 
-    <details class="mp-acc mp-card">
+    <details class="mp-acc mp-card" id="assign-workers-card">
       <summary><span class="ic">◎</span><span class="lbl">Assign workers</span><span class="chev">›</span></summary>
       <div class="flex flex-col gap-2 text-xs">
         <label class="block">
@@ -388,25 +384,24 @@
           <span class="text-gray-600">Optimization passes</span>
           <input id="asg-restarts" type="number" value="20" min="1" max="200" class="base-input mt-0.5 text-xs">
         </label>
-        <button type="button" id="btn-reassign" class="button button-sm primary-dark"{% if not plan_id %} disabled{% endif %}>Apply assignment</button>
+        <button type="button" id="btn-reassign" class="button button-sm primary-dark" disabled>Apply assignment</button>
         <p class="text-[10px] text-gray-400">Assigns every group to a worker. Audited per work area whose worker changes.</p>
       </div>
     </details>
 
-    <details class="mp-acc mp-card">
+    <details class="mp-acc mp-card" id="bulk-card">
       <summary><span class="ic">☰</span><span class="lbl">Bulk (selected)</span><span class="chev">›</span></summary>
       <div class="flex flex-col gap-2">
-        <button type="button" id="bulk-exclude" class="button button-sm primary-dark"{% if not plan_id %} disabled{% endif %}>Exclude selected…</button>
+        <button type="button" id="bulk-exclude" class="button button-sm primary-dark" disabled>Exclude selected…</button>
         <div class="grid grid-cols-2 gap-1">
           <input id="bulk-group" placeholder="group" class="base-input text-xs">
-          <button type="button" id="bulk-regroup" class="button button-sm outline-style"{% if not plan_id %} disabled{% endif %}>Set group</button>
+          <button type="button" id="bulk-regroup" class="button button-sm outline-style" disabled>Set group</button>
           <input id="bulk-worker" placeholder="worker" class="base-input text-xs">
-          <button type="button" id="bulk-reassign" class="button button-sm outline-style"{% if not plan_id %} disabled{% endif %}>Assign</button>
+          <button type="button" id="bulk-reassign" class="button button-sm outline-style" disabled>Assign</button>
         </div>
         <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
       </div>
     </details>
-    {% endif %}{# plan_id — grouping / assignment / bulk need existing work areas #}
 
     {% if not plan_id %}
     <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
@@ -434,7 +429,7 @@
 
     </div><!-- /railscroll -->
     <div class="railfoot">
-      <button type="button" id="btn-export" class="button button-sm outline-style w-full"{% if not plan_id %} disabled{% endif %}>Download Connect import CSV</button>
+      <button type="button" id="btn-export" class="button button-sm outline-style w-full" disabled>Download Connect import CSV</button>
       <div id="status" class="text-xs text-gray-500 mt-2"></div>
     </div>
   </aside>
@@ -596,15 +591,17 @@
   // derived server-side from the program's footprint ("" when unknown → the layer
   // auto-detects from whatever boundaries load once the user navigates).
   const OPP_COUNTRY_ISO = "{{ map_country_iso|default:''|escapejs }}";
-  const PLAN_URL = "{{ plan_url|escapejs }}";
-  const EDIT_URL = "{{ edit_url|escapejs }}";
-  const CSV_URL = "{{ csv_url|escapejs }}";
+  // Plan-scoped URLs. `let` (not const) because create-in-place adopts the new
+  // plan's URLs after a fresh Generate plan, without a page reload.
+  let PLAN_URL = "{{ plan_url|escapejs }}";
+  let EDIT_URL = "{{ edit_url|escapejs }}";
+  let CSV_URL = "{{ csv_url|escapejs }}";
   const COMPARE_URL = "{{ compare_url|escapejs }}";
-  const FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
+  let FOOTPRINTS_URL = "{{ footprints_url|default:''|escapejs }}";
   const PREVIEW_FOOTPRINTS_URL = "{{ preview_footprints_url|default:''|escapejs }}";
-  const REGROUP_URL = "{{ regroup_url|default:''|escapejs }}";
-  const REASSIGN_URL = "{{ reassign_url|default:''|escapejs }}";
-  const REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
+  let REGROUP_URL = "{{ regroup_url|default:''|escapejs }}";
+  let REASSIGN_URL = "{{ reassign_url|default:''|escapejs }}";
+  let REGENERATE_URL = "{{ regenerate_url|default:''|escapejs }}";
   const PREVIEW_COVERAGE_URL = "{{ preview_coverage_url|default:''|escapejs }}";
   const PREVIEW_FRAME_URL = "{{ preview_frame_url|default:''|escapejs }}";
   const COMPARABILITY_URL = "{{ arm_comparability_url|default:''|escapejs }}";
@@ -626,7 +623,8 @@
   // files into that group — see ProgramCreatePlanView's group_id handling.
   const GROUP_ID = new URLSearchParams(location.search).get("group");
   const PROGRAM_URL = "{{ program_url|default:''|escapejs }}";
-  const PLAN_ID = "{{ plan_id|default:''|escapejs }}";
+  // `let`: create-in-place sets this to the new plan's id after Generate plan.
+  let PLAN_ID = "{{ plan_id|default:''|escapejs }}";
   // No plan yet → many widgets are absent from the DOM. Guarded everywhere.
   const compareLink = document.getElementById("compare-link");
   if (compareLink) compareLink.href = COMPARE_URL;
@@ -700,7 +698,7 @@
     mapboxgl.accessToken = TOKEN;
     try {
       map = new mapboxgl.Map({ container: "review-map", style: "mapbox://styles/mapbox/satellite-streets-v12", center: [{{ map_center_lng|default:"8.6753" }}, {{ map_center_lat|default:"9.082" }}], zoom: {{ map_zoom|default:"5" }} });
-      map.on("load", () => { mapReady = true; refreshMap(); });
+      map.on("load", () => { mapReady = true; refreshMap(); drawSamplingOverlay(); });
     } catch (e) { /* headless / no webgl */ }
   }
   function colorExpr() {
@@ -1105,6 +1103,66 @@
     renderKpis(data.kpis || {});
     renderTable();
     refreshMap(); setSelState();
+    syncPlanTools();
+  }
+
+  // Grey-out: grouping / assignment / bulk / export all act on a plan's work areas,
+  // so they stay visible-but-disabled (and the hint shows) until work areas exist —
+  // i.e. until Generate plan has run — then enable. Driven off WAS.
+  function syncPlanTools() {
+    const hasWAs = Array.isArray(WAS) && WAS.length > 0;
+    ["btn-regroup", "btn-reassign", "bulk-exclude", "bulk-regroup", "bulk-reassign", "btn-export"].forEach((id) => {
+      const el = $(id); if (el) el.disabled = !hasWAs;
+    });
+    ["group-strategy-card", "assign-workers-card", "bulk-card"].forEach((id) => {
+      const el = $(id);
+      if (el) { el.classList.toggle("opacity-50", !hasWAs); el.classList.toggle("pointer-events-none", !hasWAs); }
+    });
+    const hint = $("plan-tools-hint"); if (hint) hint.classList.toggle("hidden", hasWAs);
+  }
+
+  // --- sampling overlay replay (load / create-in-place / regenerate) -----------
+  // A saved sampling plan stores its ward boundaries (input_areas) + selected-PSU
+  // hulls + per-arm stats. Replaying them makes a reopened plan look exactly like
+  // the just-created one. Deferred to map-ready (the plan fetch may resolve first).
+  let pendingSampling = null;
+  function drawSamplingOverlay() {
+    const d = pendingSampling;
+    if (!d || !map || !mapReady || !draw) return;
+    pendingSampling = null;
+    if (d.mode !== "sampling") return;
+    // Re-add the picked ward boundaries to the draw surface so they're visible AND
+    // collectArmAreas (Regenerate) can read them back.
+    const inputs = Array.isArray(d.input_areas) ? d.input_areas : [];
+    if (inputs.length) {
+      try {
+        draw.deleteAll();
+        inputs.forEach((a) => {
+          const g = a && a.geometry; if (!g) return;
+          const polys = g.type === "MultiPolygon"
+            ? g.coordinates.map((c) => ({ type: "Polygon", coordinates: c }))
+            : [g];
+          polys.forEach((poly) => draw.add({ type: "Feature", geometry: poly, properties: { arm: a.arm || "intervention" } }));
+        });
+        if (typeof refreshAreaStats === "function") refreshAreaStats();
+      } catch (_) { /* draw not ready — map-load will retry */ }
+    }
+    // Redraw the selected-PSU hulls + restore Sample details. No pins: the work
+    // areas already represent the surveyed houses (keeps created == opened).
+    const hulls = d.psu_hulls || { type: "FeatureCollection", features: [] };
+    if (hulls.features && hulls.features.length) {
+      renderSample({ hulls, pins: { type: "FeatureCollection", features: [] }, stats: d.sampling_stats || [] });
+    }
+  }
+
+  // Apply a plan payload (from load, create-in-place, or regenerate): forms + work
+  // areas + KPIs, then the sampling overlay, then tool enablement — one path so the
+  // three entry points can never diverge.
+  function applyPlanData(d) {
+    prefillSetupForm(d);
+    render(d);
+    pendingSampling = d;
+    drawSamplingOverlay();
   }
   function chip(label, value, hint) {
     // value/hint may carry plan/territory data — escape before innerHTML.
@@ -1780,13 +1838,24 @@
   // initial load — only fetch the plan when one exists.
   if (PLAN_URL) {
     fetch(PLAN_URL).then((r) => r.json()).then((d) => {
-      if (d.status === "ok") { prefillSetupForm(d); render(d); }
-      else { const s = $("status"); if (s) s.textContent = d.detail || "load failed"; }
-      setupAreaDef();
+      if (d.status === "ok") {
+        // Keep the original order so work-area layers stay BELOW the draw control:
+        // render (wa-fill/wa-line) → setupAreaDef (draw on top) → overlay (re-adds
+        // the ward boundaries into draw + redraws the PSU hulls).
+        prefillSetupForm(d);
+        render(d);
+        setupAreaDef();
+        pendingSampling = d;
+        drawSamplingOverlay();
+      } else {
+        const s = $("status"); if (s) s.textContent = d.detail || "load failed";
+        setupAreaDef();
+      }
     }).catch((e) => { const s = $("status"); if (s) s.textContent = "load failed: " + e; });
   } else {
-    // No plan yet: just init the area-definition surface.
+    // No plan yet: init the area-definition surface; tools start disabled.
     setupAreaDef();
+    syncPlanTools();
   }
 
   // ---- sampling mode (two-arm rooftop study) -------------------------------
@@ -1873,7 +1942,7 @@
     if (!map || !mapReady) return;
     const hulls = result.hulls || result.hulls_geojson || { type: "FeatureCollection", features: [] };
     const pins = result.pins || result.pins_geojson || { type: "FeatureCollection", features: [] };
-    lastSample = { pins, hulls };
+    lastSample = { pins, hulls, stats: result.stats || [] };
     Microplans.upsertSource(map, "samp-hulls", hulls);
     if (!map.getLayer("samp-hull-fill")) {
       map.addLayer({ id: "samp-hull-fill", type: "fill", source: "samp-hulls",
@@ -2006,17 +2075,19 @@
         const data = await Microplans.enqueueAndPoll(
           REGENERATE_URL,
           { mode: "sampling", pins: lastSample.pins, hulls: lastSample.hulls,
-            input_areas: areas, grouping: {}, revision: planRevision },
+            input_areas: areas, stats: lastSample.stats, grouping: {}, revision: planRevision },
           { csrf: CSRF, onProgress: (m) => { if (statusEl) statusEl.textContent = m; } },
         );
         if (conflictResult(data, (m) => { if (statusEl) statusEl.textContent = m; })) return;
         if (data.status !== "ok") { if (statusEl) statusEl.textContent = data.detail || "Regenerate failed."; return; }
-        prefillSetupForm(data); render(data);
+        applyPlanData(data);  // work areas + replayed boundaries/hulls + Sample details
         if (footprintsLoaded) loadFootprints();
         if (statusEl) statusEl.textContent = `Rebuilt ${data.work_areas.length} work areas from the new draw.`;
         return;
       }
-      // New plan → create it from this draw, then open its review page.
+      // New plan → create it from this draw, then hydrate the page in place (no
+      // reload): adopt the new plan's id + URLs, flip the button to "Regenerate
+      // plan", and render it exactly like an opened plan.
       if (!CREATE_PLAN_URL) { if (statusEl) statusEl.textContent = "Save unavailable on this page."; return; }
       const name = ($("inp-plan-name")?.value || "").trim();
       const region = ($("inp-plan-region")?.value || "").trim();
@@ -2025,12 +2096,27 @@
       const resp = await post(CREATE_PLAN_URL, {
         name, region, lga: region, state: ($("inp-plan-state")?.value || "").trim(), mode: "sampling",
         pins: lastSample.pins, hulls: lastSample.hulls,
-        input_areas: areas, grouping: {},
+        input_areas: areas, stats: lastSample.stats, grouping: {},
         group_id: GROUP_ID || undefined,
       });
       const data = await resp.json();
       if (!resp.ok || data.status !== "ok") { if (statusEl) statusEl.textContent = data.detail || ("HTTP " + resp.status); return; }
-      window.location = PROGRAM_URL + "plan/" + data.plan_id + "/review/";
+      // Adopt the created plan's identity + plan-scoped URLs without navigating.
+      PLAN_ID = String(data.plan_id);
+      const u = data.urls || {};
+      if (u.regenerate) REGENERATE_URL = u.regenerate;
+      if (u.plan) PLAN_URL = u.plan;
+      if (u.footprints) FOOTPRINTS_URL = u.footprints;
+      if (u.regroup) REGROUP_URL = u.regroup;
+      if (u.reassign) REASSIGN_URL = u.reassign;
+      if (u.csv) CSV_URL = u.csv;
+      if (u.edit) EDIT_URL = u.edit;
+      if (u.review) { try { history.pushState({}, "", u.review); } catch (_) {} }
+      const gbtn = $("btn-generate-sample"); if (gbtn) gbtn.textContent = "Regenerate plan";
+      const ghint = $("generate-plan-hint");
+      if (ghint) ghint.textContent = "Re-rolls a fresh random sample and rebuilds this plan's work areas.";
+      applyPlanData(data);  // boundaries + hulls + work areas + enabled tools (== opened)
+      if (statusEl) statusEl.textContent = `Plan created — ${(data.work_areas || []).length} work areas.`;
     } catch (e) {
       if (statusEl) statusEl.textContent = "Failed: " + (e && e.message ? e.message : e);
     } finally {
