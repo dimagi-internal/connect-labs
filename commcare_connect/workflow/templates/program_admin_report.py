@@ -136,8 +136,25 @@ def compute_program_admin_rollup(
 
                 def _row(flw_id: str) -> dict:
                     if flw_id not in by_flw:
-                        by_flw[flw_id] = {"flw_id": flw_id, "flags": [], "audits": [], "tasks": []}
+                        by_flw[flw_id] = {
+                            "flw_id": flw_id,
+                            "flw_name": None,
+                            "flags": [],
+                            "audits": [],
+                            "tasks": [],
+                        }
                     return by_flw[flw_id]
+
+                def _note_name(flw_id: str, name: str | None) -> None:
+                    # Record the worker's human display name the first time we
+                    # see a non-empty one that differs from the raw id, so the
+                    # PAR drill row renders a real name instead of the username.
+                    # Falls back to flw_id at render time when never set.
+                    if not name or name == flw_id:
+                        return
+                    row = _row(flw_id)
+                    if not row.get("flw_name"):
+                        row["flw_name"] = name
 
                 for f in run_flags:
                     if not f.flw_id:
@@ -157,6 +174,7 @@ def compute_program_admin_rollup(
                     flw_id = a.username or a.data.get("flw_id")
                     if not flw_id:
                         continue
+                    _note_name(flw_id, a.data.get("flw_name"))
                     img = a.data.get("image_results") or {}
                     _row(flw_id)["audits"].append(
                         {
@@ -173,6 +191,7 @@ def compute_program_admin_rollup(
                     flw_id = t.username or t.data.get("username")
                     if not flw_id:
                         continue
+                    _note_name(flw_id, t.data.get("flw_name"))
                     _row(flw_id)["tasks"].append(
                         {
                             "id": t.id,
@@ -568,7 +587,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
             React.createElement('span', {className: 'text-gray-400 text-xs'}, '—');
 
         return React.createElement('tr', {key: fr.flw_id, className: (fr.flags || []).length ? 'bg-amber-50' : ''},
-            React.createElement('td', {className: 'px-3 py-2 text-sm font-medium'}, fr.flw_id),
+            React.createElement('td', {className: 'px-3 py-2 text-sm font-medium'}, fr.flw_name || fr.flw_id),
             React.createElement('td', {className: 'px-3 py-2 text-sm'}, flagCell),
             React.createElement('td', {className: 'px-3 py-2 text-sm'}, auditCell),
             React.createElement('td', {className: 'px-3 py-2 text-sm'}, taskCell)
