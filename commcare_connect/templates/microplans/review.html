@@ -290,17 +290,13 @@
                 </div>
               </div>
             </div>
-            <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">Generate sample</button>
+            <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">{% if plan_id %}Regenerate plan{% else %}Generate plan{% endif %}</button>
+            <p class="text-[10px] text-gray-500">{% if plan_id %}Re-rolls a fresh random sample and rebuilds this plan's work areas.{% else %}Draws the PSUs + households and saves them as this plan in one step.{% endif %}</p>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
             <details id="sampling-rationale" class="hidden mt-1 border-t border-gray-100 pt-2">
-              <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Why this sample</summary>
+              <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Sample details</summary>
               <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
             </details>
-            <div id="save-study-row" class="hidden border-t border-gray-100 pt-2 space-y-1">
-              <button type="button" id="btn-save-study" class="button button-sm primary-dark w-full">{% if plan_id %}Regenerate work areas{% else %}Create sampling plan{% endif %}</button>
-              <p class="text-[10px] text-gray-500">{% if plan_id %}Replaces this plan's work areas with the new sample. CHW assignments and per-area edits are reset.{% else %}Saves the sampled work areas as this plan.{% endif %}</p>
-              <p class="text-[10px] text-gray-500" id="save-study-status"></p>
-            </div>
           </div>
 
           <dl class="space-y-0.5 pt-2 border-t border-gray-100">
@@ -1878,7 +1874,6 @@
     const hulls = result.hulls || result.hulls_geojson || { type: "FeatureCollection", features: [] };
     const pins = result.pins || result.pins_geojson || { type: "FeatureCollection", features: [] };
     lastSample = { pins, hulls };
-    $("save-study-row")?.classList.toggle("hidden", !(pins.features && pins.features.length));
     Microplans.upsertSource(map, "samp-hulls", hulls);
     if (!map.getLayer("samp-hull-fill")) {
       map.addLayer({ id: "samp-hull-fill", type: "fill", source: "samp-hulls",
@@ -1937,7 +1932,7 @@
           ${step(0, "Source", `<b>${esc(used)}</b>${avail ? ` &mdash; available in this area: ${avail}` : ""}.`)}
           ${step(1, "Building frame", `${fetched} rooftops fetched; dropped ${tiny} tiny/isolated (&lt;9 m²) and ${large} oversized (&gt;330 m²) &rarr; <b>${kept}</b> in the frame.`)}
           ${step(2, "PSUs formed", `grouped into <b>${psusFormed}</b> candidate clusters; under-16-building clusters merge into their nearest neighbour.`)}
-          ${step(3, "PPS selection", `<b>${psusSel}</b> PSUs drawn with probability proportional to building count &mdash; denser clusters are likelier, so the sample mirrors where people actually live.`)}
+          ${step(3, "PPS selection", `<b>${psusSel}</b> PSUs selected at random, each cluster's chance proportional to its building count &mdash; denser clusters are likelier, so the sample mirrors where people actually live. These are the highlighted clusters on the map; re-running draws a fresh set.`)}
           ${step(4, "Pins per PSU", `<b>${prim}</b> primary + <b>${alt}</b> alternate, spaced &ge;15 m apart; an alternate is the 15 m substitute when a primary roof can't be surveyed.`)}
           ${step(5, "Design weight", `each primary carries weight = 1 &divide; its inclusion probability, so coverage estimates stay unbiased despite the unequal draw.`)}
         </ol>
@@ -1980,6 +1975,12 @@
     } catch (e) { wrap.classList.add("hidden"); }
   }
 
+  // One action: draw a fresh random sample AND commit it in a single click — no
+  // separate Save step. New plan → create it + open its page; existing plan →
+  // rebuild its work areas in place. The draw is non-deterministic (the server
+  // reseeds each call), so every "Regenerate plan" yields different PSUs +
+  // households. mode="sampling" → the server materializes one tiny work area per
+  // pin, with arm stored labs-side, so the shared plan stays blind to arm.
   on("btn-generate-sample", "click", async () => {
     const statusEl = $("generate-sample-status");
     if (!PREVIEW_FRAME_URL) { if (statusEl) statusEl.textContent = "Sampling endpoint unavailable."; return; }
@@ -1988,63 +1989,50 @@
     const btn = $("btn-generate-sample"); if (btn) btn.disabled = true;
     if (statusEl) statusEl.textContent = "Sampling… fetching buildings + selecting (this can take ~30s).";
     try {
+      // 1. Draw the sample (PSUs + pins) and paint it on the map.
       const result = await Microplans.enqueueAndPoll(PREVIEW_FRAME_URL, { areas, config: samplingConfig() }, { csrf: CSRF });
       renderSample(result);
       updateComparability(areas, result.stats || []);
-      const arms = new Set(areas.map((a) => a.arm));
-      if (statusEl) statusEl.textContent = `Sampled ${arms.size} arm${arms.size === 1 ? "" : "s"}.`;
-    } catch (e) {
-      if (statusEl) statusEl.textContent = "Sampling failed: " + (e && e.message ? e.message : e);
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  });
-
-  // Save the two-arm sample as one named plan. mode="sampling" → the server
-  // materializes one tiny work area per pin, with arm stored labs-side (in the
-  // plan JSON), so the shared plan is blind to arm assignment.
-  on("btn-save-study", "click", async () => {
-    const statusEl = $("save-study-status");
-    if (!lastSample || !(lastSample.pins.features || []).length) { if (statusEl) statusEl.textContent = "Generate a sample first."; return; }
-    const btn = $("btn-save-study"); if (btn) btn.disabled = true;
-    try {
+      if (!lastSample || !(lastSample.pins.features || []).length) {
+        if (statusEl) statusEl.textContent = "No buildings sampled — try a larger area or different sources.";
+        return;
+      }
+      // 2. Commit it in the same click.
       if (PLAN_ID) {
-        // Existing sampling plan → regenerate its work areas in place, same
-        // destructive-rebuild contract coverage uses on "Apply geographic frame".
-        // (The backend regenerate_plan already supports mode="sampling".)
+        // Existing sampling plan → rebuild its work areas in place from this draw.
+        // No confirm: the click IS the action (re-rolling a plan under design).
         if (!REGENERATE_URL) { if (statusEl) statusEl.textContent = "Regenerate URL not available."; return; }
-        if (!confirm("Regenerate work areas? CHW assignments and per-area edits will be wiped.")) return;
-        if (statusEl) statusEl.textContent = "Regenerating work areas…";
+        if (statusEl) statusEl.textContent = "Rebuilding work areas…";
         const data = await Microplans.enqueueAndPoll(
           REGENERATE_URL,
           { mode: "sampling", pins: lastSample.pins, hulls: lastSample.hulls,
-            input_areas: collectArmAreas(), grouping: {}, revision: planRevision },
+            input_areas: areas, grouping: {}, revision: planRevision },
           { csrf: CSRF, onProgress: (m) => { if (statusEl) statusEl.textContent = m; } },
         );
         if (conflictResult(data, (m) => { if (statusEl) statusEl.textContent = m; })) return;
         if (data.status !== "ok") { if (statusEl) statusEl.textContent = data.detail || "Regenerate failed."; return; }
-        if (statusEl) statusEl.textContent = `Regenerated ${data.work_areas.length} work areas.`;
         prefillSetupForm(data); render(data);
         if (footprintsLoaded) loadFootprints();
+        if (statusEl) statusEl.textContent = `Rebuilt ${data.work_areas.length} work areas from the new draw.`;
         return;
       }
-      // New plan → create it, then navigate to its review page.
+      // New plan → create it from this draw, then open its review page.
       if (!CREATE_PLAN_URL) { if (statusEl) statusEl.textContent = "Save unavailable on this page."; return; }
       const name = ($("inp-plan-name")?.value || "").trim();
       const region = ($("inp-plan-region")?.value || "").trim();
       if (!name && !region) { if (statusEl) statusEl.textContent = "Give the plan a name (or region) first."; return; }
-      if (statusEl) statusEl.textContent = "Saving plan…";
+      if (statusEl) statusEl.textContent = "Creating plan…";
       const resp = await post(CREATE_PLAN_URL, {
         name, region, lga: region, state: ($("inp-plan-state")?.value || "").trim(), mode: "sampling",
         pins: lastSample.pins, hulls: lastSample.hulls,
-        input_areas: collectArmAreas(), grouping: {},
+        input_areas: areas, grouping: {},
         group_id: GROUP_ID || undefined,
       });
       const data = await resp.json();
       if (!resp.ok || data.status !== "ok") { if (statusEl) statusEl.textContent = data.detail || ("HTTP " + resp.status); return; }
       window.location = PROGRAM_URL + "plan/" + data.plan_id + "/review/";
     } catch (e) {
-      if (statusEl) statusEl.textContent = "Save failed: " + (e && e.message ? e.message : e);
+      if (statusEl) statusEl.textContent = "Failed: " + (e && e.message ? e.message : e);
     } finally {
       if (btn) btn.disabled = false;
     }

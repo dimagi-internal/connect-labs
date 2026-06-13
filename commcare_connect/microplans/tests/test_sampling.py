@@ -94,6 +94,31 @@ def _psu_df(clusters, n_buildings, stratum="Low", p_psu=0.5):
     )
 
 
+def test_frame_config_seed_is_optional_and_parsed():
+    # seed=None (default) → generate_frame re-rolls a fresh random draw each call,
+    # so "Regenerate plan" yields different PSUs/households. An explicit int pins a
+    # reproducible sample (tests, deterministic walkthrough capture).
+    from commcare_connect.microplans.sampling.frame import FrameConfig
+
+    assert FrameConfig.from_payload({}).seed is None
+    assert FrameConfig.from_payload({"seed": ""}).seed is None
+    assert FrameConfig.from_payload({"seed": None}).seed is None
+    assert FrameConfig.from_payload({"seed": 12345}).seed == 12345
+    assert FrameConfig.from_payload({"seed": "777"}).seed == 777
+
+
+def test_select_psus_draw_varies_with_seed_but_is_seed_reproducible():
+    # Re-rolling with a new seed must be able to pick a different PSU set (the basis
+    # for "Regenerate plan" producing different PSUs), while a given seed stays
+    # reproducible (so a pinned/saved sample is stable).
+    frame = _psu_df([f"C{i}" for i in range(12)], list(range(10, 34, 2)))
+    draws = {tuple(sorted(select_psus(frame, n_take=4, seed=s)["cluster"])) for s in range(8)}
+    assert len(draws) > 1  # different seeds → different draws
+    assert sorted(select_psus(frame, n_take=4, seed=3)["cluster"]) == sorted(
+        select_psus(frame, n_take=4, seed=3)["cluster"]
+    )
+
+
 class TestSelectPSUs:
     def test_selects_requested_count_with_inclusion_prob(self):
         psu = _psu_df([f"C{i}" for i in range(10)], [20] * 10)
