@@ -342,6 +342,7 @@ def build_audit_data(
     workflow_run_id: int,
     visit_id_base: int,
     rng_seed: int | None = None,
+    flw_name: str | None = None,
 ) -> dict[str, Any]:
     """Build a complete AuditSession ``data`` dict for the given archetype.
 
@@ -408,6 +409,7 @@ def build_audit_data(
                 "name": filename,
                 "question_id": "muac_photo",
                 "username": flw_id,
+                "flw_name": flw_name or flw_id,
                 "visit_date": visit_dt.isoformat(),
                 "entity_name": f"{households[i]} household",
                 "related_fields": [],
@@ -439,6 +441,13 @@ def build_audit_data(
         "tag": "synthetic_demo",
         "status": archetype.status,
         "overall_result": archetype.overall_result,
+        # Worker identity. ``username`` is the stable Connect id; ``flw_name``
+        # is the real human display name so any audit-detail surface that
+        # reads the record directly shows a real name. (The bulk-assessment
+        # page resolves the name from the opp's user_data export, not this
+        # field — but record-level consumers and exports benefit.)
+        "username": flw_id,
+        "flw_name": flw_name or flw_id,
         "workflow_run_id": workflow_run_id,
         "opportunity_id": opportunity_id,
         "opportunity_name": opportunity_name,
@@ -553,6 +562,7 @@ def build_task_data(
     title: str,
     creator_name: str,
     reason_key: str | None = None,
+    flw_name: str | None = None,
 ) -> dict[str, Any]:
     """Build a complete Task ``data`` dict for the given archetype.
 
@@ -561,9 +571,16 @@ def build_task_data(
     the transcript discusses the same issue the task is about. Without it
     the archetype's base template is used.
 
+    ``flw_name`` is the worker's real human display name. It's written to
+    the task's ``flw_name`` field (the Task model's ``flw_name`` property
+    and the task hero header / tasks list read it) and used as the speaker
+    name in the synthetic coaching transcript, so every surface shows the
+    real name instead of the raw ``flw_id`` username. Defaults to ``flw_id``.
+
     Pass the result to ``labs_api.create_record(experiment='tasks', type='Task', ...)``.
     """
     archetype = TASK_ARCHETYPES[archetype_name]
+    flw_name = flw_name or flw_id
     created_at = dt.datetime.fromisoformat(monday_iso).replace(hour=10, minute=15, tzinfo=dt.timezone.utc)
 
     events: list[dict[str, Any]] = [
@@ -608,7 +625,7 @@ def build_task_data(
 
         ocs_conversation = render_transcript(
             template_key=resolve_template_key(archetype.ocs_template_key, reason_key),
-            flw_name=flw_id,
+            flw_name=flw_name,
             base_timestamp=created_at + dt.timedelta(hours=1),
             close_timestamp=closed_at,
         )
@@ -619,7 +636,7 @@ def build_task_data(
         "priority": "high",
         "status": archetype.status,
         "username": flw_id,
-        "flw_name": flw_id,
+        "flw_name": flw_name,
         "user_id": None,
         "opportunity_id": opportunity_id,
         "assigned_to_type": "self",
@@ -784,6 +801,7 @@ def build_flw_pipeline_row(
     flagged_this_week: bool,
     rng_seed: int,
     kpi_issue: str | None = None,
+    display_name: str | None = None,
 ) -> dict[str, Any]:
     """Build a synthetic CHC Nutrition pipeline row for one FLW for one week.
 
@@ -794,6 +812,11 @@ def build_flw_pipeline_row(
       - ``"muac"``   — high SAM/MAM concentration in the MUAC distribution
       - ``"gender"`` — gender split outside the green band (>60% one sex)
       - ``None``     — clean across all KPIs (default for ``solid`` rows)
+
+    ``display_name`` (when set) is the worker's real human name, written to
+    the row's ``name`` field — the chc render and downstream pages read
+    ``name`` for the worker label, so without it the row shows the raw
+    ``flw_id`` username. Defaults to ``flw_id`` for backward compatibility.
     """
     import random
 
@@ -804,7 +827,11 @@ def build_flw_pipeline_row(
     # ``kpi_issue == 'gender'`` so the two issue types are independent.
     if archetype in ("solid", "new_hire"):
         severity = 0
-    elif archetype in ("improver_closed_satisfactory", "improver_warned", "improver_in_progress"):
+    elif archetype in (
+        "improver_closed_satisfactory",
+        "improver_warned",
+        "improver_in_progress",
+    ):
         # severity=2 puts the MUAC sparkline distinctly into SAM territory
         # (SAM ~22%), which trips the chc_nutrition render's "isFailing" gate
         # so the row is visibly flagged and bulk "Mark No Issue" correctly
@@ -837,7 +864,7 @@ def build_flw_pipeline_row(
     return {
         "username": flw_id,
         "commcare_userid": f"synth-{flw_id}",
-        "name": flw_id,
+        "name": display_name or flw_id,
         "total_visits": total_visits,
         "approved_visits": approved_visits,
         "days_active": rng.randint(3, 6),
