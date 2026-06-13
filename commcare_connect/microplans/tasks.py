@@ -79,7 +79,7 @@ def generate_coverage_task(self, areas, config_payload):
 
 @celery_app.task(bind=True)
 def fetch_footprints_task(self, areas):
-    """Building footprints (as point features) inside the drawn area(s)."""
+    """Building footprints (polygons, centroid-Point fallback) inside the drawn area(s)."""
     from shapely.ops import unary_union
 
     from commcare_connect.microplans.core.area_input import resolve_area
@@ -88,17 +88,18 @@ def fetch_footprints_task(self, areas):
     set_task_progress(self, _FETCHING)
     try:
         geom = unary_union([resolve_area(a) for a in areas])
-        df = fetch_buildings(geom, min_confidence=None)
+        # with_geom=True surfaces the real building polygon (`geom_json`); the
+        # overlay prefers it and only falls back to a centroid Point when a row
+        # has no stored geometry (matches the saved-plan footprints path).
+        df = fetch_buildings(geom, min_confidence=None, with_geom=True)
     except ValueError as e:
         return {"status": "error", "detail": str(e)}
-    features = [
-        {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]},
-            "properties": {},
-        }
-        for _, row in df.iterrows()
-    ]
+    has_geom = "geom_json" in df.columns
+    features = []
+    for _, row in df.iterrows():
+        poly = row["geom_json"] if has_geom else None
+        geometry = poly if poly else {"type": "Point", "coordinates": [float(row["lon"]), float(row["lat"])]}
+        features.append({"type": "Feature", "geometry": geometry, "properties": {}})
     return {
         "status": "ok",
         "footprints": {"type": "FeatureCollection", "features": features},

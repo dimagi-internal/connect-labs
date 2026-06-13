@@ -217,6 +217,40 @@ def test_generate_frame_task_propagates_unexpected(monkeypatch):
         generate_frame_task.run([{"arm": "intervention"}], {})
 
 
+def test_fetch_footprints_task_emits_polygons_with_centroid_fallback(monkeypatch):
+    # The building-overlay preview must return the real footprint POLYGON when the
+    # cache has it (with_geom=True), only falling back to a centroid Point for rows
+    # with no stored geometry. Regression: it used to always emit Points, so the
+    # new-plan overlay showed dots instead of buildings.
+    import pandas as pd
+
+    monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
+    poly = {"type": "Polygon", "coordinates": [[[0, 0], [0.001, 0], [0.001, 0.001], [0, 0]]]}
+    df = pd.DataFrame(
+        [
+            {"lon": 0.0005, "lat": 0.0005, "area_m2": 80, "confidence": 0.9, "dataset": "x", "geom_json": poly},
+            {"lon": 0.002, "lat": 0.002, "area_m2": 60, "confidence": 0.8, "dataset": "x", "geom_json": None},
+        ]
+    )
+    captured = {}
+
+    def fake_fetch(geom, **kwargs):
+        captured.update(kwargs)
+        return df
+
+    monkeypatch.setattr("commcare_connect.microplans.core.footprints.fetch_buildings", fake_fetch)
+    from commcare_connect.microplans.tasks import fetch_footprints_task
+
+    out = fetch_footprints_task.run(
+        [{"geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}}]
+    )
+    assert captured.get("with_geom") is True  # asked the cache for real geometry
+    feats = out["footprints"]["features"]
+    assert feats[0]["geometry"]["type"] == "Polygon"  # real footprint
+    assert feats[1]["geometry"]["type"] == "Point"  # centroid fallback for no-geom row
+    assert out["count"] == 2
+
+
 def test_generate_coverage_task_returns_envelope(monkeypatch):
     monkeypatch.setattr("commcare_connect.microplans.tasks.set_task_progress", lambda *a, **k: None)
     from commcare_connect.microplans.coverage.frame import CoverageFrameResult
