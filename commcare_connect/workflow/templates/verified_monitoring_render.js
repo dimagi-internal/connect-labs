@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V56
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V57
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -1812,30 +1812,6 @@ function WorkflowUI(props) {
           Service-delivery data vs independent survey —{' '}
           {(trend.rounds || []).length} bi-monthly rounds over time
         </div>
-        {/* Hero: state the gap as a number so the payoff doesn't rely on the
-            viewer subtracting two lines. The program's self-report vs what the
-            independent survey verified, for the selected round. */}
-        {rd.self_report_pct != null && rd.intervention_pct != null ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: 10,
-              flexWrap: 'wrap',
-              marginTop: 8,
-            }}
-          >
-            <span style={{ fontSize: 22, fontWeight: 700, color: ROSE }}>
-              +{Math.round((rd.premium_pp || 0) * 10) / 10}pp
-            </span>
-            <span style={{ fontSize: 12.5, color: SUBINK }}>
-              percentage-point self-report gap in {rd.label} — program reported{' '}
-              <b>{pct(rd.self_report_pct)}</b>, the independent survey verified{' '}
-              <b style={{ color: INDIGO }}>{pct(rd.intervention_pct)}</b> in{' '}
-              {rd.treatment_ward}
-            </span>
-          </div>
-        ) : null}
         <div style={{ marginTop: 8 }}>{trendChart()}</div>
         <div
           style={{
