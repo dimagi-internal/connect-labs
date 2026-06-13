@@ -1,0 +1,57 @@
+# Program Admin Report — composite environment manifest.
+#
+# The single declarative source of truth for the PAR demo environment that
+# `ensure_synthetic_data` realizes idempotently on labs. It ports
+# scripts/walkthroughs/program-admin-report/demo_config.json into the env-manifest
+# shape: two opps (Northern 10000, Southern 10001), their weekly chc_nutrition
+# saved runs, the run-linked audits + coaching tasks materialized from each opp's
+# manifest, and the cross-opp program_admin_report rollup.
+#
+# Resource order matters: opp_data stashes each opp's parsed Manifest on the
+# context (manifest:<opp>) for the downstream ensurers; weekly_runs stamps the
+# per-(opp, week) runs the audits/tasks/rollup ensurers find; run_audits +
+# tasks read the manifests' anomalies + coaching_arcs; rollup aggregates.
+#
+# Window: 4 trailing complete weeks (the PAR window) computed from today by the
+# ensure engine, plus the CURRENT week as an in-progress run (the live
+# manager-flow target) — see timeline.include_current_week + weekly_runs
+# current_week.reset. Northern runs every completed week (missed []); Southern
+# misses one (missed [1]) so it reads BELOW on the PAR aggregate.
+
+env: program-admin-report
+
+timeline:
+  completed_weeks: 4
+  include_current_week: true
+
+resources:
+  # --- Per-opp data: parse + stash each opp's generator Manifest. ---
+  - kind: opp_data
+    opportunity_id: 10000
+    manifest: manifests/par-northern.yaml
+  - kind: opp_data
+    opportunity_id: 10001
+    manifest: manifests/par-southern.yaml
+
+  # --- Weekly chc_nutrition saved runs for both opps. ---
+  - kind: weekly_runs
+    opportunity_ids: [10000, 10001]
+    template: chc_nutrition_analysis
+    missed_week_idxs:
+      10000: []
+      10001: [1]
+    current_week:
+      reset: true
+
+  # --- Run-linked completable audits from each manifest's audited anomalies. ---
+  - kind: run_audits
+    source: anomalies
+
+  # --- Coaching tasks from each manifest's coaching_arcs. ---
+  - kind: tasks
+    source: coaching_arcs
+
+  # --- Cross-opp Program Admin Report rollup watching both opps' chc runs. ---
+  - kind: rollup
+    opportunity_ids: [10000, 10001]
+    template: program_admin_report

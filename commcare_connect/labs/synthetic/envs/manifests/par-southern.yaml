@@ -1,0 +1,313 @@
+# Program Admin Report — Southern Cluster (opp 10001)
+#
+# Ported from scripts/walkthroughs/program-admin-report/demo_config.json
+# (the "Southern Cluster" opp) + commcare_connect/labs/synthetic/program_admin_demo.py
+# (DISPLAY_NAMES, the archetype -> flag mapping, and the reason-specific coaching
+# transcripts). Consumed by the `ensure_synthetic_data` engine the same way as
+# par-northern.yaml.
+#
+# Southern reads BELOW on the PAR aggregate: it MISSED a completed week
+# (missed_week_idxs [1] in the env manifest) AND it carries the heavier
+# enforcement story — a gender-skew formal warning (miriam), an in-progress
+# (still-open) MUAC investigation (ola, the "incomplete" coaching drill target),
+# two suspensions (pinda repeat-offense, rina fraud), and a new hire (tola).
+# It is fully completed (no live current-week run) and drives the 9-scene
+# drill-through.
+#
+# The network manager (kwame_nm = Kwame Mensah) is the FIRST persona so it stands
+# in as the flag attributer (weekly_runs) and the coaching-task creator (tasks);
+# no coaching_arc targets it.
+
+opportunity_id: 10001
+opportunity_name: Southern Cluster
+random_seed: 100001
+
+timeline:
+  start_date: 2026-05-04
+  end_date: 2026-06-01
+  weeks: 4
+  visit_cadence_per_week_per_flw: { mean: 16, stddev: 3 }
+
+flw_personas:
+  # --- Network manager FIRST (flag/task attribution stand-in). ---
+  - id: kwame_nm
+    display_name: Kwame Mensah
+    archetype: steady
+    accuracy_distribution: { mean: 0.97, stddev: 0.0 }
+    completeness_distribution: { mean: 0.99, stddev: 0.0 }
+    flag_rate: 0.0
+    notes: Southern Cluster network manager (not a field worker; first-persona stand-in for flag/task attribution).
+
+  # --- Solid FLWs ---
+  - id: kadi_s
+    display_name: Kadiatu Conteh
+    archetype: steady
+    accuracy_distribution: { mean: 0.93, stddev: 0.02 }
+    completeness_distribution: { mean: 0.95, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: lola_s
+    display_name: Lola Ojo
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.95, stddev: 0.02 }
+    completeness_distribution: { mean: 0.97, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: nia_s
+    display_name: Nia Asante
+    archetype: steady
+    accuracy_distribution: { mean: 0.92, stddev: 0.02 }
+    completeness_distribution: { mean: 0.94, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: qisha_s
+    display_name: Qisha Turay
+    archetype: steady
+    accuracy_distribution: { mean: 0.93, stddev: 0.02 }
+    completeness_distribution: { mean: 0.95, stddev: 0.02 }
+    flag_rate: 0.0
+  - id: sade_s
+    display_name: Sade Adebayo
+    archetype: rockstar
+    accuracy_distribution: { mean: 0.96, stddev: 0.02 }
+    completeness_distribution: { mean: 0.97, stddev: 0.02 }
+    flag_rate: 0.0
+
+  # --- miriam_s: improver_warned, gender skew flagged week index 0,
+  #     formal warning issued (closed). ---
+  - id: miriam_s
+    display_name: Miriam Achterberg
+    archetype: struggling
+    accuracy_distribution: { mean: 0.80, stddev: 0.03 }
+    completeness_distribution: { mean: 0.89, stddev: 0.02 }
+    flag_rate: 0.4
+    improvement_arc: { intervention_week: 2, post_intervention_lift: 0.10 }
+    notes: Flagged wk0 for gender skew; received a formal warning.
+
+  # --- ola_s: improver_in_progress, bad MUAC flagged week index 2,
+  #     investigation STILL OPEN (the "incomplete" coaching drill target). ---
+  - id: ola_s
+    display_name: Ola Ibrahim
+    archetype: struggling
+    accuracy_distribution: { mean: 0.78, stddev: 0.03 }
+    completeness_distribution: { mean: 0.87, stddev: 0.02 }
+    flag_rate: 0.5
+    notes: Flagged wk2 for bad MUAC distribution; coaching still in progress (open task).
+
+  # --- pinda_s: suspended_repeat_offense, bad MUAC flagged wk0 then wk2. ---
+  - id: pinda_s
+    display_name: Pinda Kargbo
+    archetype: struggling
+    accuracy_distribution: { mean: 0.66, stddev: 0.04 }
+    completeness_distribution: { mean: 0.82, stddev: 0.03 }
+    flag_rate: 0.7
+    notes: Repeat offender — bad MUAC wk0 (warning) then wk2 (suspension).
+
+  # --- rina_s: suspended_fraudulent, misleading photos flagged wk0 then wk2. ---
+  - id: rina_s
+    display_name: Rina Fofana
+    archetype: struggling
+    accuracy_distribution: { mean: 0.55, stddev: 0.04 }
+    completeness_distribution: { mean: 0.78, stddev: 0.03 }
+    flag_rate: 0.8
+    notes: Suspected fraud — misleading MUAC photos wk0 (warning) then wk2 (suspension).
+
+  # --- tola_s: new hire, joined week 3, no flags. ---
+  - id: tola_s
+    display_name: Tola Eze
+    archetype: new_hire
+    accuracy_distribution: { mean: 0.85, stddev: 0.03 }
+    completeness_distribution: { mean: 0.90, stddev: 0.02 }
+    flag_rate: 0.0
+    notes: New hire (joined wk3) — ramping, no flags.
+
+beneficiary_cohorts:
+  - id: under5_screened
+    size: 200
+    field_distributions:
+      'form.service_delivery.muac_group.soliciter_muac':
+        { distribution: normal, mean: 13.2, stddev: 0.9 }
+      'form.additional_case_info.childs_gender':
+        { distribution: binary, rate: 0.5 }
+    progression: improvement_curve
+
+anomalies:
+  # miriam_s: gender skew, completed week index 0, audited.
+  - id: miriam_gender_wk0
+    type: field_outlier
+    flw_ids: [miriam_s]
+    field_path: form.additional_case_info.childs_gender
+    week: 0
+    detection_path: form.additional_case_info.childs_gender
+    reviewer_visible_in: [audit]
+  # ola_s: bad MUAC distribution, completed week index 2, audited.
+  - id: ola_muac_wk2
+    type: field_outlier
+    flw_ids: [ola_s]
+    field_path: form.service_delivery.muac_group.soliciter_muac
+    week: 2
+    detection_path: form.service_delivery.muac_group.soliciter_muac
+    reviewer_visible_in: [audit]
+  # pinda_s: bad MUAC distribution, completed weeks 0 + 2, audited (repeat offense).
+  - id: pinda_muac_repeat
+    type: field_outlier
+    flw_ids: [pinda_s]
+    field_path: form.service_delivery.muac_group.soliciter_muac
+    weeks: [0, 2]
+    detection_path: form.service_delivery.muac_group.soliciter_muac
+    reviewer_visible_in: [audit]
+  # rina_s: misleading photos (fraud), completed weeks 0 + 2, audited.
+  - id: rina_misleading_repeat
+    type: duplicate_submission
+    flw_ids: [rina_s]
+    field_path: form.service_delivery.muac_group.muac_display_group_1.muac_photo
+    weeks: [0, 2]
+    detection_path: form.service_delivery.muac_group.muac_display_group_1.muac_photo
+    reviewer_visible_in: [audit]
+
+kpi_config:
+  - kpi: sam_rate
+    field_path: form.service_delivery.muac_group.soliciter_muac
+    aggregation: validated_rate
+    threshold_underperform: 0.01
+    threshold_target: 0.02
+  - kpi: gender_balance
+    field_path: form.additional_case_info.childs_gender
+    aggregation: non_null_rate
+    threshold_underperform: 0.40
+    threshold_target: 0.50
+
+coaching_arcs:
+  # miriam_s — gender skew, formal warning. flagged wk index 0 (week_triggered 1).
+  # Closed with a warning (follow_up_outcome_week set).
+  - flw_id: miriam_s
+    week_triggered: 1
+    persona: coaching_formal_warning__gender_skew
+    target_behavior: Gender split off threshold
+    follow_up_outcome_week: 2
+    transcript:
+      - role: bot
+        text: 'Hi {flw_name}. The weekly review flagged your screening list — over 80% of the children you measured this week were boys, well outside the expected balance. This needs to be a formal coaching conversation.'
+        ts: 2026-05-05T09:05:00
+      - role: flw
+        text: 'I record whoever the family brings to me when I arrive.'
+        ts: 2026-05-05T09:20:00
+      - role: bot
+        text: "I understand, but the protocol is to screen every child under five in the household, not only the ones brought forward. When girls are missed systematically, malnourished girls go unreferred — that's exactly why this threshold exists."
+        ts: 2026-05-05T09:23:00
+      - role: flw
+        text: 'I see. I did not realize it had become that uneven.'
+        ts: 2026-05-05T09:31:00
+      - role: bot
+        text: "Three things for this week: (1) ask the caregiver to bring every under-five child before you start, (2) record any child you could not screen and why, (3) your supervisor will review next week's split. I'm recording this as a formal warning — if the split stays outside the band, the next step is suspension."
+        ts: 2026-05-05T09:34:00
+      - role: flw
+        text: 'Understood. I will ask for all the children at every visit.'
+        ts: 2026-05-05T09:42:00
+      - role: bot
+        text: "Thank you, {flw_name}. Closing this task as 'warned'. Your supervisor will check in after next week's review."
+        ts: 2026-05-12T08:50:00
+
+  # ola_s — bad MUAC distribution, investigation STILL OPEN. flagged wk index 2
+  # (week_triggered 3). No follow_up_outcome_week -> investigating "incomplete" task.
+  - flw_id: ola_s
+    week_triggered: 3
+    persona: coaching_in_progress__bad_muac_distribution
+    target_behavior: Bad MUAC distribution
+    transcript:
+      - role: bot
+        text: "Hi {flw_name}, your supervisor asked me to follow up on this week's review. Your screening numbers came in much lower than expected — almost no children flagged as malnourished, which is unusual for your area. Can you walk me through which households you reached this week?"
+        ts: 2026-05-19T10:02:00
+      - role: flw
+        text: 'Mostly the ones along the main road. The rains made the paths to the far compounds difficult.'
+        ts: 2026-05-19T10:21:00
+      - role: bot
+        text: "That's understandable — but the far compounds are where most of the at-risk children live, so a week of road-side visits will look exactly like this. Were any of the far households reachable on foot, even if it takes longer?"
+        ts: 2026-05-19T10:24:00
+      - role: flw
+        text: 'Some of them, yes. I can try the dry path on the school side and see which ones I can reach.'
+        ts: 2026-05-19T10:33:00
+      - role: bot
+        text: 'Please do — map out which of the far households you can reach this week and reply here. Once I have your list, your supervisor and I will decide whether the remaining ones need a re-visit plan.'
+        ts: 2026-05-19T10:36:00
+
+  # pinda_s — repeat offense, suspension. Second flag wk index 2 (week_triggered 3).
+  # Closed as suspended (follow_up_outcome_week set).
+  - flw_id: pinda_s
+    week_triggered: 3
+    persona: coaching_repeat_offense_suspension
+    target_behavior: Repeat failure on prior coaching
+    follow_up_outcome_week: 4
+    transcript:
+      - role: bot
+        text: "Hi {flw_name}. We're following up on the audit again this week. I'm sorry to say the issues from your formal warning two weeks ago have continued."
+        ts: 2026-05-19T11:00:00
+      - role: flw
+        text: 'I tried to do better. What did the audit find?'
+        ts: 2026-05-19T11:14:00
+      - role: bot
+        text: "All five of your MUAC photos this week were flagged. The reviewers' conclusion was that the patterns are consistent with rushed measurements — same framing problems we discussed at the warning, plus two photos that appear to be of the same tape position rather than separate measurements."
+        ts: 2026-05-19T11:17:00
+      - role: flw
+        text: 'I see. I have been struggling to keep up.'
+        ts: 2026-05-19T11:25:00
+      - role: bot
+        text: "I appreciate your honesty. Given this is a repeat failure right after a formal warning, the program standard is suspension from the active roster. I want to be clear: this isn't permanent — it's pause to give you time to retrain properly without delivery pressure."
+        ts: 2026-05-19T11:28:00
+      - role: flw
+        text: 'What happens next?'
+        ts: 2026-05-19T11:36:00
+      - role: bot
+        text: "Three things. (1) Effective today you're off the visit roster. (2) Your supervisor will set up a full retraining session for you next week — at a pace that works. (3) After you complete the training and demonstrate competency on practice measurements, you can apply to rejoin."
+        ts: 2026-05-19T11:39:00
+      - role: flw
+        text: 'I understand. I want to come back when I am ready.'
+        ts: 2026-05-19T11:47:00
+      - role: bot
+        text: "That's the right attitude. We'd rather have you out for two weeks and confident than rushing and missing children who need help. Closing this task as 'suspended'. Your supervisor will be in touch about the retraining schedule."
+        ts: 2026-05-26T08:45:00
+
+  # rina_s — fraud, suspension. Second flag wk index 2 (week_triggered 3).
+  # Closed as suspended (follow_up_outcome_week set).
+  - flw_id: rina_s
+    week_triggered: 3
+    persona: coaching_repeat_offense_fraud_suspension
+    target_behavior: Misleading MUAC photos (suspected fraud)
+    follow_up_outcome_week: 4
+    transcript:
+      - role: bot
+        text: 'Hi {flw_name}. We need to discuss the audit findings on your recent visits. The reviewers flagged a serious concern.'
+        ts: 2026-05-19T13:00:00
+      - role: flw
+        text: 'Okay, what did they find?'
+        ts: 2026-05-19T13:13:00
+      - role: bot
+        text: "Multiple photos this week appear to show the MUAC tape on objects that don't look like a child's arm — the reviewer noted the tape was visibly on a finger in one image and on a piece of cloth in another. Combined with your warning two weeks ago, this is a pattern we can't continue with."
+        ts: 2026-05-19T13:16:00
+      - role: flw
+        text: 'I... had trouble reaching some of the households this week.'
+        ts: 2026-05-19T13:24:00
+      - role: bot
+        text: "I hear you. Reaching every household is hard, but submitting photos that aren't real measurements is a line we can't move on. Real children with SAM get missed when measurements aren't taken."
+        ts: 2026-05-19T13:27:00
+      - role: flw
+        text: 'I understand. What now?'
+        ts: 2026-05-19T13:35:00
+      - role: bot
+        text: "Suspension from the active roster, effective immediately. Your supervisor will reach out about next steps. There's a path back through retraining and a probationary period — but the audit team needs to be confident this won't recur before you'd resume visits."
+        ts: 2026-05-19T13:38:00
+      - role: flw
+        text: 'I understand.'
+        ts: 2026-05-19T13:46:00
+      - role: bot
+        text: "Closing this task as 'suspended'. I know this is hard news — your supervisor will follow up tomorrow."
+        ts: 2026-05-26T08:50:00
+
+image_config:
+  question_path: form.service_delivery.muac_group.muac_display_group_1.muac_photo
+  good_image_count: 15
+  bad_image_count: 10
+  default_bad_rate: 0.0
+  probability: 0.9
+  flw_bad_rates:
+    miriam_s: 0.3
+    ola_s: 0.5
+    pinda_s: 0.8
+    rina_s: 1.0
