@@ -332,6 +332,11 @@
     <p class="px-1 pt-1 text-[10px] text-gray-400 italic leading-snug">Grouping, assignment, and export act on the plan's work areas; available once you <b>Create the plan</b> above.</p>
     {% endif %}
 
+    {% if plan_id %}
+    <!-- Grouping / assignment / bulk all act on an EXISTING plan's work areas, so
+         they only render once the plan exists. Before creation the note above
+         stands in for them — otherwise they read as out-of-place in the
+         define-area / sampling flow. -->
     <!-- Sampling note: groups are the PSUs from generation; geometric auto-grouping
          is a coverage concept and is hidden in sampling mode (toggled by setMode). -->
     <div class="mp-card hidden" id="sampling-group-note">
@@ -405,6 +410,7 @@
         <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
       </div>
     </details>
+    {% endif %}{# plan_id — grouping / assignment / bulk need existing work areas #}
 
     {% if not plan_id %}
     <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
