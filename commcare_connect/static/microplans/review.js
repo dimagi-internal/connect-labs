@@ -465,106 +465,33 @@
     const s = $('status');
     if (s) s.textContent = t;
   };
-  async function loadFootprints() {
-    const t0 = performance.now();
-    try {
-      let data;
-      if (FOOTPRINTS_URL) {
-        // Existing plan: HTTP-cached plan footprints (rev busts on regenerate).
-        if (fpLayer) fpLayer.setMeta('Loading footprints…');
-        setStatus('Fetching footprints…');
-        const fpUrl =
-          FOOTPRINTS_URL +
-          (FOOTPRINTS_URL.includes('?') ? '&' : '?') +
-          'rev=' +
-          (planRevision == null ? '' : planRevision);
-        data = await (await fetch(fpUrl)).json();
-      } else if (PREVIEW_FOOTPRINTS_URL) {
-        // New plan: buildings INSIDE the currently-selected boundary/area. Reloads
-        // when the boundaries change (refreshAreaStats re-calls this while on).
-        const areas = collectAreas();
-        if (!areas.length) {
-          const s0 = map.getSource('plan-fp');
-          if (s0) s0.setData({ type: 'FeatureCollection', features: [] });
-          if (fpLayer)
-            fpLayer.setMeta('Select a boundary to see its buildings');
-          setStatus('');
-          return true; // stay on; reloads once an area is selected
-        }
-        if (fpLayer) fpLayer.setMeta('Loading footprints…');
-        data = await Microplans.enqueueAndPoll(
-          PREVIEW_FOOTPRINTS_URL,
-          { areas },
-          {
-            csrf: CSRF,
-            onProgress: (m) => {
-              if (fpLayer) fpLayer.setMeta(m);
-            },
-          },
-        );
-      } else {
-        return false;
-      }
-      if (!data || data.status !== 'ok')
-        throw new Error((data && data.detail) || 'footprints failed');
-      const src = map.getSource('plan-fp');
-      if (src) {
-        src.setData(data.footprints);
-      } else {
-        map.addSource('plan-fp', { type: 'geojson', data: data.footprints });
-        const before = map.getLayer('wa-line') ? 'wa-line' : undefined;
-        // Polygon fill (for buildings whose geometry the cache has stored).
-        map.addLayer(
-          {
-            id: 'plan-fp-fill',
-            type: 'fill',
-            source: 'plan-fp',
-            filter: ['==', ['geometry-type'], 'Polygon'],
-            paint: {
-              'fill-color': '#f59e0b',
-              'fill-opacity': 0.55,
-              'fill-outline-color': '#b45309',
-            },
-          },
-          before,
-        );
-        // Centroid dot fallback (for legacy cache rows with no polygon stored).
-        map.addLayer(
-          {
-            id: 'plan-fp-dots',
-            type: 'circle',
-            source: 'plan-fp',
-            filter: ['==', ['geometry-type'], 'Point'],
-            paint: {
-              'circle-radius': 1.6,
-              'circle-color': '#f59e0b',
-              'circle-stroke-color': '#fff',
-              'circle-stroke-width': 0.4,
-            },
-          },
-          before,
-        );
-      }
-      footprintsLoaded = true;
-      const dt = ((performance.now() - t0) / 1000).toFixed(1);
-      if (fpLayer) fpLayer.setMeta(`${data.count.toLocaleString()} buildings`);
-      setStatus(`${data.count.toLocaleString()} footprints loaded in ${dt}s.`);
-      return true;
-    } catch (e) {
-      if (fpLayer) fpLayer.setMeta('Failed — toggle to retry');
-      setStatus('Footprints failed: ' + e.message);
-      return false;
-    }
-  }
-  // Reload footprints for the new area when boundaries change (preview mode).
+  // Building-footprints overlay lives in static/microplans/review/footprints.js.
+  // Live state via ctx accessors; static deps (URLs / csrf / collectAreas / setStatus) by value.
+  const _fp = window.MPReview.footprints({
+    get map() {
+      return map;
+    },
+    get mapReady() {
+      return mapReady;
+    },
+    get fpLayer() {
+      return fpLayer;
+    },
+    get planRevision() {
+      return planRevision;
+    },
+    set footprintsLoaded(v) {
+      footprintsLoaded = v;
+    },
+    FOOTPRINTS_URL: FOOTPRINTS_URL,
+    PREVIEW_FOOTPRINTS_URL: PREVIEW_FOOTPRINTS_URL,
+    CSRF: CSRF,
+    collectAreas: collectAreas,
+    setStatus: setStatus,
+  });
+  const loadFootprints = _fp.loadFootprints;
+  const setFootprintsVisible = _fp.setFootprintsVisible;
   const reloadFootprintsDebounced = Microplans.debounce(loadFootprints, 600);
-  function setFootprintsVisible(isOn) {
-    if (!map || !mapReady) return;
-    ['plan-fp-fill', 'plan-fp-dots'].forEach((id) => {
-      if (map.getLayer(id))
-        map.setLayoutProperty(id, 'visibility', isOn ? 'visible' : 'none');
-    });
-  }
   if (map && window.MicroplansMapPanel && $('map-panel-mount')) {
     mapPanel = MicroplansMapPanel.create({ map, mount: $('map-panel-mount') });
     fpLayer = mapPanel.registerLayer({
