@@ -283,6 +283,27 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         return t > 0 ? Math.round(f / t * 1000) / 10 : null;
     }
 
+    // ── Percent formatting (uniform, one decimal place) ─────────
+    // Every percentage in this report — summary cards AND the FLW table —
+    // routes through these two helpers so the format is identical
+    // everywhere: one digit after the decimal ("92.0%", "100.0%", "12.0%")
+    // and, when a count is shown, a single space before the paren
+    // ("92.0% (27/30)"). fmtPct takes a ratio already expressed in percent
+    // points (e.g. 91.7), fmtPctRatio takes num/denom and computes it.
+    function fmtPct(pct) {
+        if (pct === null || pct === undefined || isNaN(pct)) return '-';
+        return pct.toFixed(1) + '%';
+    }
+    function fmtPctRatio(num, denom) {
+        if (!denom) return '-';
+        return fmtPct((num / denom) * 100);
+    }
+    // Percent + count, single space before the paren. `countStr` is the
+    // text shown inside the parens (e.g. "4" or "27/30").
+    function fmtPctCount(pct, countStr) {
+        return fmtPct(pct) + ' (' + countStr + ')';
+    }
+
     // ── Summary stats ───────────────────────────────────────────
     var totalFlws = rows.length;
     var totalVisits = rows.reduce(function(s, r) { return s + (r.total_visits || 0); }, 0);
@@ -583,7 +604,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
         var color = (pct >= 45 && pct <= 55) ? 'text-green-600' :
                     (pct < 40 || pct > 60) ? 'text-red-600' : 'text-yellow-600';
         return React.createElement('span', null,
-            React.createElement('span', {className: color + ' font-medium'}, pct + '%'),
+            React.createElement('span', {className: color + ' font-medium'}, fmtPct(pct)),
             React.createElement('span', {className: 'text-gray-500 text-xs ml-1'},
                 '(' + (r.female_count || 0) + 'F/' + (r.male_count || 0) + 'M)')
         );
@@ -729,14 +750,14 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                 React.createElement('div', {className: 'border-l-4 border-red-600 pl-3', title: 'Severe Acute Malnutrition (MUAC < 11.5 cm)'},
                     React.createElement('div', {className: 'text-sm text-gray-600'}, 'SAM Rate'),
                     React.createElement('div', {className: 'text-2xl font-bold text-red-600'},
-                        samRate + '%',
+                        fmtPct(samRate),
                         React.createElement('span', {className: 'text-base text-gray-500 ml-1'}, '(' + totalSam + ')')
                     )
                 ),
                 React.createElement('div', {className: 'border-l-4 border-yellow-500 pl-3', title: 'Moderate Acute Malnutrition (MUAC 11.5-12.5 cm)'},
                     React.createElement('div', {className: 'text-sm text-gray-600'}, 'MAM Rate'),
                     React.createElement('div', {className: 'text-2xl font-bold text-yellow-600'},
-                        mamRate + '%',
+                        fmtPct(mamRate),
                         React.createElement('span', {className: 'text-base text-gray-500 ml-1'}, '(' + totalMam + ')')
                     )
                 ),
@@ -803,11 +824,17 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                 var mc = muacCount(r);
                                 var sc = samCount(r);
                                 var mmc = mamCount(r);
-                                var samPct = mc > 0 ? Math.round(sc / mc * 100) : null;
-                                var mamPct = mc > 0 ? Math.round(mmc / mc * 100) : null;
+                                var samPct = mc > 0 ? (sc / mc * 100) : null;
+                                var mamPct = mc > 0 ? (mmc / mc * 100) : null;
                                 var name = displayName(r);
+                                // Light tint on flagged rows so a concern doesn't get
+                                // buried in the table (matches program_admin_report.py:
+                                // bg-amber-50 when the row carries any flag). hover stays
+                                // for unflagged rows.
+                                var hasFlags = flagsForRow(r.username).length > 0;
+                                var rowClass = hasFlags ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50';
 
-                                return React.createElement('tr', {key: r.username, className: 'hover:bg-gray-50'},
+                                return React.createElement('tr', {key: r.username, className: rowClass},
                                     // FLW Name
                                     React.createElement('td', {className: 'px-4 py-3 text-sm'},
                                         React.createElement('div', {className: 'font-medium text-gray-900'}, name),
@@ -820,7 +847,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     // Approved
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm text-gray-900'},
                                         r.total_visits > 0
-                                            ? (Math.round((r.approved_visits || 0) / r.total_visits * 1000) / 10) + '% (' + (r.approved_visits || 0) + ')'
+                                            ? fmtPctCount((r.approved_visits || 0) / r.total_visits * 100, (r.approved_visits || 0) + '/' + r.total_visits)
                                             : '-'
                                     ),
                                     // Days Active
@@ -834,7 +861,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         samPct !== null
                                             ? React.createElement('span', null,
-                                                React.createElement('span', {className: 'text-red-600 font-medium'}, samPct + '%'),
+                                                React.createElement('span', {className: 'text-red-600 font-medium'}, fmtPct(samPct)),
                                                 React.createElement('span', {className: 'text-gray-500 ml-1'}, '(' + sc + ')'))
                                             : React.createElement('span', {className: 'text-gray-400'}, '-')
                                     ),
@@ -842,7 +869,7 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, workers, pipelines
                                     React.createElement('td', {className: 'px-4 py-3 whitespace-nowrap text-sm'},
                                         mamPct !== null
                                             ? React.createElement('span', null,
-                                                React.createElement('span', {className: 'text-yellow-600 font-medium'}, mamPct + '%'),
+                                                React.createElement('span', {className: 'text-yellow-600 font-medium'}, fmtPct(mamPct)),
                                                 React.createElement('span', {className: 'text-gray-500 ml-1'}, '(' + mmc + ')'))
                                             : React.createElement('span', {className: 'text-gray-400'}, '-')
                                     ),
