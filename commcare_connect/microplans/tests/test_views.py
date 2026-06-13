@@ -847,11 +847,11 @@ def test_program_create_plan_page_renders(client, django_user_model, settings):
     assert resp.context["program_id"] == 25
     assert resp.context["plan_id"] is None
     # Unified template: new-plan page shows the click-to-edit plan-name title
-    # (placeholder "Untitled microplan") + the Create plan button (vs. the
-    # per-plan "Microplan review" + "Apply geographic frame" button on the
-    # existing-plan flow). The title became an editable input in #412.
+    # (placeholder "Untitled microplan") + the "Create work areas" button (vs. the
+    # per-plan "Apply geographic frame" button on the existing-plan flow). The
+    # title became an editable input in #412.
     assert "Untitled microplan" in body
-    assert "Create plan" in body
+    assert "Create work areas" in body  # new-plan affordance (plan_id-branched button text)
 
 
 def test_program_transition_advances_status(client, django_user_model, monkeypatch):
