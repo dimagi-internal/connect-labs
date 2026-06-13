@@ -20,6 +20,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .ensurers.opp_data import ensure_opp_data
+from .ensurers.rollup import ensure_rollup
+from .ensurers.run_audits import ensure_run_audits
+from .ensurers.tasks import ensure_tasks
+from .ensurers.weekly_runs import ensure_weekly_runs
 from .env_manifest import EnvManifest
 from .window import resolve_window
 
@@ -44,8 +49,16 @@ class EnsureContext:
 
 
 # Maps ``resource.kind`` -> ensurer callable ``(resource, ctx) -> dict | None``.
-# Empty here; populated in Task 9 by importing the per-kind ensurer modules.
-ENSURERS: dict[str, Callable] = {}
+# The ensurer modules import from env_manifest/generator/workflow — never from
+# this module — so a top-of-file import here is safe (no cycle). Kept a plain
+# module-level dict so existing tests can monkeypatch ``engine.ENSURERS``.
+ENSURERS: dict[str, Callable] = {
+    "opp_data": ensure_opp_data,
+    "weekly_runs": ensure_weekly_runs,
+    "run_audits": ensure_run_audits,
+    "tasks": ensure_tasks,
+    "rollup": ensure_rollup,
+}
 
 
 def ensure_synthetic_data(env_path: str, out: str | None = None) -> dict:
