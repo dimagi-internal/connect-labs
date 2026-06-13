@@ -112,6 +112,11 @@ def simulate_plan(
     # Stable assignments: each cluster -> one surveyor; each surveyor -> one rate.
     cluster_surveyor = {ck: enums[i % len(enums)] for i, ck in enumerate(cluster_keys)}
     surveyor_rate = {s: params.surveyor_primary_rate(s, rng) for s in enums}
+    # Stable per-surveyor answer-mix / pace profiles (deterministic, no rng draw),
+    # so the flagged surveyor's fabrication signature and honest between-area
+    # variation feed the Layer-3 screen without perturbing the random sequence.
+    roof_w = {s: params.surveyor_roof_weights(s) for s in enums}
+    dur_ms = {s: params.surveyor_duration_mean_sd(s) for s in enums}
 
     flagged = params.flagged or {}
     flag_id = flagged.get("id")
@@ -154,10 +159,11 @@ def simulate_plan(
         age = rng.randint(elig.get("age_min_months", 6), elig.get("age_max_months", 59))
         eligible = present and (elig.get("age_min_months", 6) <= age <= elig.get("age_max_months", 59))
         received = bool(eligible and rng.random() < coverage)
+        d_mean, d_sd = dur_ms[surveyor]
         if rng.random() < dur.get("short_rate", 0.0):
             duration = round(rng.uniform(*dur.get("short_range", [1, 3])), 1)
         else:
-            duration = round(max(dur.get("floor", 4), rng.gauss(dur["mean"], dur["sd"])), 1)
+            duration = round(max(dur.get("floor", 4), rng.gauss(d_mean, d_sd)), 1)
 
         rec = {
             "record_id": f"{base_id}-p{j}",
@@ -180,7 +186,7 @@ def simulate_plan(
             "child_present": present,
             "child_sex": rng.choice(["M", "F"]),
             "child_age_months": age,
-            "roof_type": rng.choices(_ROOF_TYPES, weights=_ROOF_WEIGHTS, k=1)[0],
+            "roof_type": rng.choices(params.roof_types, weights=roof_w[surveyor], k=1)[0],
             "eligible": eligible,
             "vitamin_a_received": received,
             "dose_source": rng.choice(["campaign", "routine", "facility"]) if received else None,

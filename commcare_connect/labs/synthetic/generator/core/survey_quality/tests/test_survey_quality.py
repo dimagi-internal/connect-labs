@@ -149,6 +149,54 @@ def test_outlier_scorecard_smoke():
     assert sc["value"] == 0
 
 
+def _roof_recs(eid, counts, roofs=("thatch", "metal sheet", "mud", "tile")):
+    """Records for one enumerator with a given per-roof count multiset."""
+    out = []
+    i = 0
+    for roof, c in zip(roofs, counts):
+        for _ in range(c):
+            out.append(_rec(enumerator_id=eid, roof_type=roof, household_id=f"{eid}-{i}", record_id=f"{eid}-{i}"))
+            i += 1
+    return out
+
+
+def test_answer_uniformity_flags_collapsed_distribution():
+    """The Layer-3 distribution screen flags a fabricator whose categorical
+    answers collapse onto one value, while honest enumerators (varied but
+    naturally-spread mixes) stay green."""
+    recs = []
+    # honest enumerators: spread roof mixes, mild between-area variation
+    for eid, counts in [
+        ("H0", (10, 10, 10, 10)),
+        ("H1", (12, 10, 10, 8)),
+        ("H2", (14, 10, 8, 8)),
+        ("H3", (11, 11, 9, 9)),
+        ("H4", (13, 9, 9, 9)),
+    ]:
+        recs += _roof_recs(eid, counts)
+    # fabricator: answers collapse onto one roof type
+    recs += _roof_recs("FAB", (34, 2, 2, 2))
+    cfg = {"outlier": {"z_threshold": 3.5, "uniformity_field": "roof_type"}}
+    m = results_to_map(run_metrics(recs, layers=["outlier"], config=cfg))
+    per = m["enum_answer_uniformity"]["detail"]["per_enumerator"]
+    assert per["FAB"]["flag"] is True
+    assert per["FAB"]["hhi"] > max(per[f"H{k}"]["hhi"] for k in range(5))
+    assert all(per[f"H{k}"]["flag"] is False for k in range(5))
+    # composite picks it up (uniformity weighted into the default scorecard)
+    sc = m["enum_scorecard"]["detail"]["per_enumerator"]
+    assert sc["FAB"]["band"] in ("amber", "red")
+    assert all(sc[f"H{k}"]["band"] == "green" for k in range(5))
+
+
+def test_gps_cluster_omitted_from_default_composite():
+    """GPS co-location stays registered but is no longer in the default
+    composite — it is structurally zero on plan-grounded data."""
+    assert "enum_gps_cluster" in REGISTRY
+    sc = results_to_map(run_metrics(_fixture(), layers=["outlier"]))["enum_scorecard"]
+    assert "enum_gps_cluster" not in sc["detail"]["weights"]
+    assert "enum_answer_uniformity" in sc["detail"]["weights"]
+
+
 def _main():
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

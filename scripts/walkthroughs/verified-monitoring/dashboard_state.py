@@ -89,11 +89,19 @@ def _sim_params(cfg, arm_key, arm_cfg, round_idx, n_rounds):
             "field_complete": q.get("field_complete", 1.0),
             "duration": q["duration_min"],
             "eligibility": cfg.get("eligibility", {}),
+            "roof_types": cfg.get("roof_types") or ["thatch", "metal sheet", "mud", "tile"],
+            "roof_weights": cfg.get("roof_weights") or [0.42, 0.34, 0.16, 0.08],
+            "surveyor_heterogeneity": cfg.get("surveyor_heterogeneity", 0.0),
             "flagged": (
                 {
                     "id": flagged.get("id"),
                     "evidence": flagged.get("evidence"),
                     "gps_within_15m": flagged.get("gps_within_15m"),
+                    # Layer-3 fabrication signature: short interviews + answers
+                    # collapsed onto the modal value (caught by the distributions screen).
+                    "duration_mean": flagged.get("duration_mean"),
+                    "duration_sd": flagged.get("duration_sd"),
+                    "roof_concentration": flagged.get("roof_concentration"),
                 }
                 if on_arm
                 else None
@@ -109,10 +117,10 @@ def _arm_records(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id,
     delegate to the generic ``simulate_plan`` so the captured GPS sits on the real
     sampled primary/alternate footprints. Without them (offline / no live plan),
     fall back to the legacy random-in-ward generator."""
+    params = _sim_params(cfg, arm_key, arm_cfg, round_idx, n_rounds)
     if work_areas:
-        params = _sim_params(cfg, arm_key, arm_cfg, round_idx, n_rounds)
         return simulate_plan(work_areas, params, rng, ward_name=arm_cfg["ward"], ward_geom=geom, base_id=base_id)
-    return scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id)
+    return scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id, params=params)
 
 
 # --------------------------------------------------------------- assembly
@@ -216,6 +224,46 @@ def _surveyor_scorecard(cfg, records):
     return rows
 
 
+def _surveyor_distributions(cfg, records):
+    """Layer-3 statistical fabrication screen — one row per program-ward surveyor.
+
+    Robust (median/MAD) z-scores vs peers on three signals that need no second
+    field visit: dose yes-rate, interview speed, and answer-distribution
+    uniformity, plus a composite red/amber/green band. All computed from the
+    surveyors' own records via the shared ``outlier`` layer. (GPS co-location is
+    intentionally omitted — on plan-grounded data every survey lands on a distinct
+    real footprint, so that signal is structurally always-zero here.)"""
+    tw = [r for r in records if r.get("arm") == "treatment" and r["form_type"] == "primary"]
+    om = results_to_map(run_metrics(tw, layers=["outlier"], config=cfg))
+
+    def _per(key):
+        return ((om.get(key) or {}).get("detail") or {}).get("per_enumerator", {})
+
+    yr, sp, un, sc = (
+        _per("enum_yes_rate_outlier"),
+        _per("enum_speed_outlier"),
+        _per("enum_answer_uniformity"),
+        _per("enum_scorecard"),
+    )
+    surveyors = sorted(set(yr) | set(sp) | set(un) | set(sc))
+    rows = []
+    for s in surveyors:
+        rows.append(
+            {
+                "surveyor": s,
+                "yes_rate": (yr.get(s) or {}).get("yes_rate"),
+                "yes_z": (yr.get(s) or {}).get("z"),
+                "speed_med": (sp.get(s) or {}).get("median_min"),
+                "speed_z": (sp.get(s) or {}).get("z"),
+                "uniformity_hhi": (un.get(s) or {}).get("hhi"),
+                "uniformity_z": (un.get(s) or {}).get("z"),
+                "band": (sc.get(s) or {}).get("band"),
+                "flags": (sc.get(s) or {}).get("flags", []),
+            }
+        )
+    return rows
+
+
 def _surveyor_backcheck(cfg, all_records, t2_thresh_m=25.0, max_rows=15):
     """Per-surveyor back-check profile across ALL cycles, by J-PAL type.
 
@@ -285,6 +333,7 @@ def _round_summary(cfg, records, round_idx, label, as_of, tw_name, cw_name):
         "premium_pp": premium,
         "quality": qmap,
         "surveyor_scorecard": _surveyor_scorecard(cfg, records),
+        "surveyor_distributions": _surveyor_distributions(cfg, records),
         "backcheck": {
             "coverage_pct": bmap.get("backcheck_coverage", {}).get("value"),
             "n_backchecked": bmap.get("backcheck_coverage", {}).get("n"),

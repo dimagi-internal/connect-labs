@@ -35,8 +35,14 @@
     "evidence": 0.79,
     "gps_within_15m": 0.83,
     "backcheck_agreement": 0.78,
-    "backcheck_type1_agreement": 0.74
+    "backcheck_type1_agreement": 0.74,
+    "_signature_comment": "Layer-3 fabrication signature the Distributions screen catches with no re-visit: curbstoned ~9-min interviews (duration_mean/sd) and roof-type answers collapsed onto the modal value (roof_concentration share). Honest surveyors get natural between-area variation via surveyor_heterogeneity, so the screen reads as discriminating, not rigged.",
+    "duration_mean": 8.0,
+    "duration_sd": 2.0,
+    "roof_concentration": 0.72
   },
+  "_distributions_comment": "Honest surveyors vary their answer-mix and pace by working area (surveyor_heterogeneity, kept mild so honest roof HHI ~0.30-0.35 and pace ~16-20 — wide enough for a believable z but never rivalling the flagged surveyor); the Layer-3 screen profiles the roof_type answer distribution (uniformity_field) with a robust MAD z, flagging at z_threshold.",
+  "surveyor_heterogeneity": 0.25,
   "_primary_rate_comment": "Share of completed surveys that land on the PRIMARY (first-choice) sampled household vs a ranked ALTERNATE backup, when the round is grounded on a live plan. Drawn per surveyor ~ Normal(mean, variance); the flagged surveyor (T6) substitutes far more (flagged_mean), so heavy substitution is part of why they're flagged. A 'good run' = high primary rate.",
   "primary_rate": {
     "mean": 0.9,
@@ -104,5 +110,9 @@
     "present_rate": 0.99,
     "eligible_rate": 0.97
   },
-  "outlier": { "z_threshold": 3.5, "gps_cluster_m": 8.0 }
+  "outlier": {
+    "z_threshold": 3.5,
+    "gps_cluster_m": 8.0,
+    "uniformity_field": "roof_type"
+  }
 }

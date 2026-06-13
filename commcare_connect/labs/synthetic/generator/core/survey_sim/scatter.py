@@ -13,8 +13,13 @@ from commcare_connect.labs.synthetic.generator.core.survey_quality.stats import 
 from .geo import _ROOF_TYPES, _ROOF_WEIGHTS, interp, offset, sample_in_geom
 
 
-def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id):
-    """Generate one arm's primary records for one round (legacy random-in-ward)."""
+def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, base_id, params=None):
+    """Generate one arm's primary records for one round (legacy random-in-ward).
+
+    When ``params`` (a ``SimParams``) is supplied, the flagged-surveyor
+    fabrication signature and honest between-area variation in answer-mix / pace
+    come from its stable per-surveyor profiles — same as the plan-grounded path —
+    so the Layer-3 screen reads identically whether or not the round is grounded."""
     q = cfg["quality"]
     elig = cfg.get("eligibility", {})
     n = max(1, int(round(arm_cfg["n_per_round"] + rng.uniform(-1, 1) * arm_cfg.get("n_jitter", 0))))
@@ -29,6 +34,10 @@ def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, bas
     near = q.get("gps_offset_near_m", [1, 13])
     far = q.get("gps_offset_far_m", [16, 55])
     dur = q["duration_min"]
+    # Stable per-surveyor answer-mix / pace profiles (deterministic, no rng draw).
+    roof_w = {s: params.surveyor_roof_weights(s) for s in enum_ids} if params else {}
+    dur_ms = {s: params.surveyor_duration_mean_sd(s) for s in enum_ids} if params else {}
+    roof_types = params.roof_types if params else _ROOF_TYPES
 
     recs = []
     pts = sample_in_geom(rng, geom, n)
@@ -46,10 +55,11 @@ def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, bas
         eligible = present and (elig.get("age_min_months", 6) <= age <= elig.get("age_max_months", 59))
         received = bool(eligible and rng.random() < coverage)
         # duration: occasional implausibly-short record
+        d_mean, d_sd = dur_ms.get(surveyor, (dur["mean"], dur["sd"]))
         if rng.random() < dur.get("short_rate", 0.0):
             duration = round(rng.uniform(*dur.get("short_range", [1, 3])), 1)
         else:
-            duration = round(max(dur.get("floor", 4), rng.gauss(dur["mean"], dur["sd"])), 1)
+            duration = round(max(dur.get("floor", 4), rng.gauss(d_mean, d_sd)), 1)
         rec = {
             "record_id": f"{base_id}-p{j}",
             "round": round_idx + 1,
@@ -71,7 +81,7 @@ def scatter_primaries(rng, cfg, arm_key, arm_cfg, geom, round_idx, n_rounds, bas
             "child_present": present,
             "child_sex": rng.choice(["M", "F"]),
             "child_age_months": age,
-            "roof_type": rng.choices(_ROOF_TYPES, weights=_ROOF_WEIGHTS, k=1)[0],
+            "roof_type": rng.choices(roof_types, weights=roof_w.get(surveyor, _ROOF_WEIGHTS), k=1)[0],
             "eligible": eligible,
             "vitamin_a_received": received,
             "dose_source": rng.choice(["campaign", "routine", "facility"]) if received else None,

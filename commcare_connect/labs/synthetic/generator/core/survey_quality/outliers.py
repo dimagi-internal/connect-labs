@@ -17,6 +17,8 @@ Importing this module registers the metrics.
 
 from __future__ import annotations
 
+from collections import Counter
+
 from .registry import register_metric
 from .stats import haversine_m, mad_modified_z, mean, median
 
@@ -130,6 +132,54 @@ def enum_gps_cluster(recs, cfg):
 
 
 @register_metric(
+    "enum_answer_uniformity",
+    "Answer-distribution uniformity (vs peers)",
+    "outlier",
+    unit="count",
+    threshold=0,
+    direction="lower_better",
+)
+def enum_answer_uniformity(recs, cfg):
+    """Per-enumerator concentration of a categorical answer (Herfindahl index =
+    Σ share²), flagged when it sits far ABOVE the pool (robust MAD z). Real
+    neighbourhoods vary house to house, so an enumerator whose answers collapse
+    onto one value is over-uniform — the "the right mix is hard to fake" signal.
+
+    Unlike GPS co-location this is robust on plan-grounded data (where every
+    survey lands on a distinct real footprint): it screens the *answers*, not the
+    coordinates. The field is configurable via ``cfg['outlier']['uniformity_field']``
+    (default ``roof_type``)."""
+    conf = cfg.get("outlier") or {}
+    fieldname = conf.get("uniformity_field", "roof_type")
+    groups = _by_enum(recs)
+
+    def _hhi(rs):
+        c = Counter(r.get(fieldname) for r in rs if r.get(fieldname) is not None)
+        tot = sum(c.values())
+        return (sum((v / tot) ** 2 for v in c.values()) if tot else None), tot
+
+    hhi = {e: _hhi(rs) for e, rs in groups.items()}
+    enums = [e for e in groups if hhi[e][0] is not None]
+    zs = mad_modified_z([hhi[e][0] for e in enums])
+    thr = _z_threshold(cfg)
+    per = {
+        e: {
+            "hhi": round(hhi[e][0], 3),
+            "n": hhi[e][1],
+            "z": (round(z, 2) if z is not None else None),
+            # higher concentration than peers is the suspicious direction
+            "flag": bool(z is not None and z > thr),
+        }
+        for e, z in zip(enums, zs)
+    }
+    return {
+        "value": sum(1 for v in per.values() if v["flag"]),
+        "n": len(enums),
+        "detail": {"per_enumerator": per, "threshold_z": thr, "field": fieldname},
+    }
+
+
+@register_metric(
     "enum_scorecard",
     "Enumerator quality scorecard",
     "outlier",
@@ -139,10 +189,20 @@ def enum_gps_cluster(recs, cfg):
 )
 def enum_scorecard(recs, cfg):
     """Composite: weighted sum of the per-enumerator flags above into a
-    red/amber/green band. Any 'hard' signal (GPS clustering) is weighted higher.
-    ``value`` = number of non-green enumerators."""
+    red/amber/green band. The two 'hard' signals (speeding, answer over-uniformity)
+    are weighted highest — two of them together push a surveyor to red; a single
+    signal reads amber. ``value`` = number of non-green enumerators.
+
+    GPS co-location (``enum_gps_cluster``) is still registered but is left OUT of
+    the default composite: on plan-grounded data every survey lands on a distinct
+    real footprint, so distinct households can never share a point and the signal
+    is structurally always-zero. Projects with un-grounded GPS can add it back via
+    ``cfg['outlier']['scorecard']``."""
     conf = cfg.get("outlier") or {}
-    components = conf.get("scorecard", {"enum_gps_cluster": 2, "enum_speed_outlier": 1, "enum_yes_rate_outlier": 1})
+    components = conf.get(
+        "scorecard",
+        {"enum_speed_outlier": 2, "enum_answer_uniformity": 2, "enum_yes_rate_outlier": 1},
+    )
     parts = {name: globals()[name](recs, cfg) for name in components}
     enums = set()
     for pr in parts.values():
