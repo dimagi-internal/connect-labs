@@ -2,11 +2,12 @@
 
 Single source of truth = ``scripts/walkthroughs/verified-monitoring/demo_config.json``
 — the SAME file the monitoring narrative reads — plus ``geo/kaura_lga_wards.geojson``.
-One **round** = one two-arm study group of per-ward microplans on the labs-only
-program ``opportunity_id`` (e.g. ``10008``): the treatment ward in the
-``intervention`` arm, the comparison ward in the ``comparison`` arm, both sampled
-with the one shared ``study.sampling`` config so the arms are comparable by
-construction. Arm assignment is labs-side only (never written onto the plans).
+One **round** = ONE two-arm microplan on the labs-only program ``opportunity_id``
+(e.g. ``10008``): both wards stored as arm-tagged ``input_areas`` — the treatment
+ward in the ``intervention`` arm, the comparison ward in the ``comparison`` arm —
+sampled together with the one shared ``study.sampling`` config so the arms are
+comparable by construction. This mirrors the single-plan two-arm UI (one plan, the
+arm on each area); the old per-ward-plans + study-group model is gone.
 
 Two verbs, both safe to re-run:
 
@@ -209,76 +210,72 @@ def _plans_by_boundary(plans) -> dict[str, object]:
     return out
 
 
+_EMPTY_FC = {"type": "FeatureCollection", "features": []}
+
+
+def _input_area_for(w: WardSpec) -> dict:
+    """One arm-tagged ``input_area`` for a study ward — inline geometry (resilience +
+    the footprints overlay), ``boundary_id`` (so a re-sample can re-resolve it), the
+    study ``arm``, and population (plan KPIs). How the two-arm SINGLE plan stores each
+    ward."""
+    area = {"kind": "admin_boundary", "geometry": w.geometry, "arm": w.arm, "name": w.name}
+    if w.boundary_id:
+        area["boundary_id"] = w.boundary_id
+    if w.population is not None:
+        area["population"] = int(w.population)
+    return area
+
+
+def _round_plan(da, rnd: RoundSpec):
+    """The round's single two-arm plan: a plan whose ``input_areas`` cover BOTH of the
+    round's ward boundaries. ``None`` until it's created."""
+    want = {w.boundary_id for w in rnd.wards if w.boundary_id}
+    if not want:
+        return None
+    for p in da.list_plans():
+        have = {a.get("boundary_id") for a in (p.data.get("input_areas") or []) if a.get("boundary_id")}
+        if want.issubset(have):
+            return p
+    return None
+
+
 def ensure_round(da, rnd: RoundSpec, manifest: StudyManifest, *, generate=True, progress=None) -> dict:
-    """Idempotently ensure one round: its two ward plans (by boundary_id), the study
-    group (by name) with arms + shared config, and — when ``generate`` — the PSU
-    sample for any not-yet-sampled member. Re-run with everything present is a no-op.
-    """
-    from commcare_connect.microplans.tasks import create_boundary_plan, sample_group_plans
+    """Idempotently ensure one round = ONE two-arm microplan: both wards stored as
+    arm-tagged ``input_areas`` (treatment → intervention, comparison → comparison),
+    and — when ``generate`` — the shared PSU sample across both arms. Re-run with the
+    plan present (and sampled) is a no-op.
 
-    plans_by_boundary = _plans_by_boundary(da.list_plans())
-    plan_ids: list[int] = []
-    arms: dict[str, str] = {}
+    Replaces the old per-ward-plans + study-group model: the single-plan two-arm UI is
+    the one we keep, so the synthetic data mirrors it (one plan, arms on its areas)."""
+    from commcare_connect.microplans.tasks import sample_plans
+
+    plan = _round_plan(da, rnd)
     created_plans: list[int] = []
-
-    for ward in rnd.wards:
-        plan = plans_by_boundary.get(ward.boundary_id)
-        if plan is None:
-            plan = create_boundary_plan(
-                da,
-                mode="sampling",
-                name=ward.name,
-                region=ward.name,
-                geometry=ward.geometry,
-                boundary_id=ward.boundary_id,
-                population=ward.population,
-                lga=ward.lga,
-                state=ward.state,
-            )
-            plans_by_boundary[ward.boundary_id] = plan
-            created_plans.append(plan.id)
-        plan_ids.append(plan.id)
-        arms[str(plan.id)] = ward.arm
-
-    groups_by_name = {g.data.get("name"): g for g in da.list_groups()}
-    group = groups_by_name.get(rnd.group_name)
-    if group is None:
-        group = da.create_group(
-            name=rnd.group_name,
-            plan_ids=plan_ids,
-            kind="study",
-            arms=arms,
-            sampling_config=manifest.sampling,
+    if plan is None:
+        treatment = rnd.wards[0]
+        plan = da.create_plan(
+            region=treatment.name,
+            name=rnd.label,
+            mode="sampling",
+            pins=dict(_EMPTY_FC),
+            hulls=dict(_EMPTY_FC),
+            input_areas=[_input_area_for(w) for w in rnd.wards],
+            lga=treatment.lga,
+            state=treatment.state,
         )
-    else:
-        # Reconcile drift (membership / arms / config / kind) without recreating.
-        fields = {}
-        if set(group.plan_ids) != set(plan_ids):
-            fields["plan_ids"] = plan_ids
-        if dict(group.arms) != arms:
-            fields["arms"] = arms
-        if group.data.get("sampling_config") != manifest.sampling:
-            fields["sampling_config"] = manifest.sampling
-        if group.data.get("kind") != "study":
-            fields["kind"] = "study"
-        if fields:
-            group = da.update_group(group.id, **fields)
+        created_plans = [plan.id]
 
     sampled = {"created": 0, "total": 0, "results": []}
-    if generate:
+    if generate and plan.phase != "sampled":
         from commcare_connect.microplans.sampling.frame import FrameConfig
 
-        members = [da.get_plan(pid) for pid in plan_ids]
-        if any(p.phase != "sampled" for p in members):
-            fcfg = FrameConfig.from_payload(manifest.sampling)
-            sampled = sample_group_plans(da, group, fcfg, progress=progress)
-            da.update_group(group.id, status="sampled")
+        fcfg = FrameConfig.from_payload(manifest.sampling)
+        sampled = sample_plans(da, [plan], fcfg, progress=progress)
 
     return {
         "key": rnd.key,
         "label": rnd.label,
-        "group_id": group.id,
-        "plan_ids": plan_ids,
+        "plan_id": plan.id,
         "created_plans": created_plans,
         "live_demo": rnd.live_demo,
         "sampled": sampled,
@@ -299,27 +296,43 @@ def ensure_study(da, manifest: StudyManifest, *, generate=True, only_round=None,
 
 
 def reset_round(da, manifest: StudyManifest, round_key: str) -> dict:
-    """Delete one round's study group + its member plans (and any plan still matching
-    the round's ward boundaries), so the creation walkthrough can re-create it live.
-    Safe to run when nothing exists yet."""
+    """Delete the round's two-arm plan, so the creation walkthrough can re-create it
+    live. Also cleans up any LEGACY artefacts from the old model (a study group + its
+    per-ward member plans). Safe to run when nothing exists yet."""
     rnd = manifest.round_by_key(round_key)
-    groups_by_name = {g.data.get("name"): g for g in da.list_groups()}
-    group = groups_by_name.get(rnd.group_name)
+    target_plan_ids: set[int] = set()
 
-    target_plan_ids: set[int] = set(group.plan_ids) if group else set()
+    # the current model: one two-arm plan covering both ward boundaries
+    plan = _round_plan(da, rnd)
+    if plan is not None:
+        target_plan_ids.add(plan.id)
+
+    # legacy model: per-ward plans (one boundary each) + a named study group
     plans_by_boundary = _plans_by_boundary(da.list_plans())
     for ward in rnd.wards:
         p = plans_by_boundary.get(ward.boundary_id)
         if p is not None:
             target_plan_ids.add(p.id)
-
+    groups_by_name = {g.data.get("name"): g for g in da.list_groups()}
+    group = groups_by_name.get(rnd.group_name)
     deleted_group = None
     if group is not None:
+        target_plan_ids.update(group.plan_ids)
         da.delete_group(group.id)
         deleted_group = group.id
+
     deleted_plans = []
     for pid in sorted(target_plan_ids):
-        da.delete_plan(pid)
-        deleted_plans.append(pid)
+        try:
+            da.delete_plan(pid)
+            deleted_plans.append(pid)
+        except Exception:  # noqa: BLE001
+            pass
 
-    return {"key": rnd.key, "label": rnd.label, "group_id": deleted_group, "plan_ids": deleted_plans}
+    return {
+        "key": rnd.key,
+        "label": rnd.label,
+        "plan_id": (plan.id if plan else None),
+        "group_id": deleted_group,
+        "plan_ids": deleted_plans,
+    }
