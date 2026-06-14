@@ -22,12 +22,12 @@ from ..tool_registry import register
     description=(
         "Idempotently ensure the Vitamin-A Kaura two-arm study exists on the labs-only "
         "program (opportunity_id from verified-monitoring/demo_config.json, the SAME "
-        "manifest the monitoring narrative reads). Per round: two per-ward boundary plans "
-        "(keyed by ward boundary_id), one study group (keyed by name) with labs-side arms "
-        "(treatment->intervention, comparison->comparison), and — unless generate=false — "
-        "the PSU sample drawn with the shared size-balanced config. Re-run is a no-op; "
-        "reconciles drift. Pass only_round='r6' to limit to one round. Returns the per-round "
-        "group_ids/plan_ids and sampling results."
+        "manifest the monitoring narrative reads). Per round: ONE two-arm plan (keyed by "
+        "its ward boundary_ids) whose input_areas carry both wards arm-tagged "
+        "(intervention + comparison) — no study group — and, unless generate=false, the "
+        "PSU sample drawn with the shared size-balanced config (pins + arm-coloured "
+        "psu_hulls). Re-run is a no-op; reconciles drift. Pass only_round='r6' to limit to "
+        "one round. Returns the per-round plan_id/created_plans and sampling results."
     ),
     input_schema={
         "type": "object",
@@ -36,7 +36,7 @@ from ..tool_registry import register
                 "type": "boolean",
                 "default": True,
                 "description": "Draw PSU samples for not-yet-sampled plans (fetches Overture footprints). "
-                "false = create groups + boundary-only plans only.",
+                "false = create the boundary-only two-arm plans only.",
             },
             "only_round": {
                 "type": ["string", "null"],
