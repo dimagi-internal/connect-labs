@@ -58,29 +58,28 @@ def test_ensure_synthetic_program_is_idempotent_and_labs_only():
 
 
 @pytest.mark.django_db
-def test_ensure_study_builds_groups_plans_and_labs_side_arms(study):
+def test_ensure_study_builds_one_two_arm_plan_per_round(study):
     manifest, da = study
     out = study_seed.ensure_study(da, manifest, generate=False)
 
     assert len(out["rounds"]) == 6
-    assert len(da.list_groups()) == 6
-    assert len(da.list_plans()) == 12  # 2 wards × 6 rounds
+    assert len(da.list_groups()) == 0  # single-plan model: no study groups
+    assert len(da.list_plans()) == 6  # ONE two-arm plan per round
 
-    # Each round: a study group with 2 boundary-only ward plans, freshly created.
+    # Each round: one boundary-only two-arm plan, freshly created, both wards as
+    # arm-tagged input_areas.
     for r in out["rounds"]:
-        assert len(r["plan_ids"]) == 2
-        assert len(r["created_plans"]) == 2
-        group = da.get_group(r["group_id"])
-        assert group.data["kind"] == "study"
-        assert group.data["sampling_config"] == manifest.sampling
-        # Plans are boundary-only (not sampled) when generate=False.
-        for pid in r["plan_ids"]:
-            assert da.get_plan(pid).phase == "boundary"
+        assert r["plan_id"] is not None
+        assert r["created_plans"] == [r["plan_id"]]
+        plan = da.get_plan(r["plan_id"])
+        assert plan.phase == "boundary"  # not sampled when generate=False
+        ias = plan.data["input_areas"]
+        assert len(ias) == 2
+        assert {a["arm"] for a in ias} == {study_seed.ARM_INTERVENTION, study_seed.ARM_COMPARISON}
 
-    # Arms are stored on the GROUP (labs-side), never written onto the plans.
-    r6_out = next(o for o in out["rounds"] if o["key"] == "r6")
-    group = da.get_group(r6_out["group_id"])
-    arms = {da.get_plan(pid).name: group.arm_for(pid) for pid in r6_out["plan_ids"]}
+    # Arms live on the plan's input_areas (the two-arm single-plan shape), not a group.
+    r6 = next(o for o in out["rounds"] if o["key"] == "r6")
+    arms = {a["name"]: a["arm"] for a in da.get_plan(r6["plan_id"]).data["input_areas"]}
     assert arms == {"Attakar": study_seed.ARM_INTERVENTION, "Gura": study_seed.ARM_COMPARISON}
 
 
@@ -90,36 +89,32 @@ def test_ensure_study_is_idempotent_no_duplicates(study):
     first = study_seed.ensure_study(da, manifest, generate=False)
     second = study_seed.ensure_study(da, manifest, generate=False)
 
-    # Re-run reuses everything: same group ids, nothing newly created, no dupes.
-    first_gids = [r["group_id"] for r in first["rounds"]]
-    second_gids = [r["group_id"] for r in second["rounds"]]
-    assert first_gids == second_gids
+    # Re-run reuses the same plans, creates nothing new, no dupes (and no groups).
+    first_pids = [r["plan_id"] for r in first["rounds"]]
+    second_pids = [r["plan_id"] for r in second["rounds"]]
+    assert first_pids == second_pids
     assert all(r["created_plans"] == [] for r in second["rounds"])
-    assert len(da.list_groups()) == 6
-    assert len(da.list_plans()) == 12
+    assert len(da.list_groups()) == 0
+    assert len(da.list_plans()) == 6
 
 
 @pytest.mark.django_db
 def test_reset_round_removes_only_that_round_then_can_recreate(study):
     manifest, da = study
-    study_seed.ensure_study(da, manifest, generate=False)
+    out = study_seed.ensure_study(da, manifest, generate=False)
+    r6_plan_id = next(o for o in out["rounds"] if o["key"] == "r6")["plan_id"]
 
-    r6_name = manifest.round_by_key("r6").group_name
     reset = study_seed.reset_round(da, manifest, "r6")
-    assert reset["group_id"] is not None
-    assert len(reset["plan_ids"]) == 2
+    assert reset["plan_id"] == r6_plan_id
+    assert r6_plan_id in reset["plan_ids"]
 
-    # R6 gone; the other five rounds untouched.
-    groups = {g.data["name"] for g in da.list_groups()}
-    assert r6_name not in groups
-    assert len(groups) == 5
-    assert len(da.list_plans()) == 10
+    # R6's plan gone; the other five rounds untouched.
+    assert r6_plan_id not in {p.id for p in da.list_plans()}
+    assert len(da.list_plans()) == 5
 
     # The creation walkthrough re-creates just R6 afterwards.
     study_seed.ensure_study(da, manifest, generate=False, only_round="r6")
-    assert len(da.list_groups()) == 6
-    assert len(da.list_plans()) == 12
-    assert r6_name in {g.data["name"] for g in da.list_groups()}
+    assert len(da.list_plans()) == 6
 
 
 @pytest.mark.django_db

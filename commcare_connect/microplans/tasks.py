@@ -357,6 +357,59 @@ def sample_group_plans(da, group, fcfg, *, progress=None):
     return {"results": results, "created": ok, "total": total}
 
 
+def sample_plans(da, plans, fcfg, *, progress=None):
+    """Sample a list of plans in-process with ONE shared ``FrameConfig``, reading each
+    plan's study arm from its ``input_areas`` — a two-arm SINGLE plan tags each area
+    with its own arm and ``plan_sample_areas`` honours that. The single-plan analogue
+    of :func:`sample_group_plans` (a study round is now ONE two-arm plan, not a group
+    of per-ward plans). Same ``{"results", "created", "total"}`` return shape."""
+    import json as _json
+
+    from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+    from commcare_connect.microplans.core.plan import plan_sample_areas
+    from commcare_connect.microplans.sampling.frame import generate_frame
+
+    total = len(plans)
+    results: list[dict] = []
+    ok = 0
+    _geom_cache: dict[str, dict | None] = {}
+
+    def resolve_boundary(bid):
+        if bid not in _geom_cache:
+            b = AdminBoundary.objects.filter(boundary_id=bid).first()
+            _geom_cache[bid] = _json.loads(b.geometry.geojson) if (b and b.geometry) else None
+        return _geom_cache[bid]
+
+    for index, p in enumerate(plans):
+        input_areas = p.data.get("input_areas") or []
+        # per-area arm wins; "intervention" is only the fallback for an untagged area.
+        areas = plan_sample_areas(input_areas, "intervention", resolve_boundary)
+        if not areas:
+            results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": "no area to sample"})
+        else:
+            try:
+                res = generate_frame(areas, fcfg)
+                da.regenerate_plan(
+                    p.id,
+                    mode="sampling",
+                    pins=res.pins_geojson,
+                    hulls=res.hulls_geojson,
+                    input_areas=input_areas,
+                    stats=res.stats,
+                )
+                ok += 1
+                results.append({"plan_id": p.id, "name": p.name, "status": "ok"})
+            except ValueError as e:
+                results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": str(e)})
+            except Exception:  # noqa: BLE001
+                logger.exception("sample_plans: plan failed (plan=%s)", p.id)
+                results.append({"plan_id": p.id, "name": p.name, "status": "error", "detail": "generate failed"})
+        if progress is not None:
+            progress(index + 1, total, results, ok)
+
+    return {"results": results, "created": ok, "total": total}
+
+
 @celery_app.task(bind=True)
 def generate_group_samples_task(self, program_id, group_id, config, access_token):
     """Celery wrapper around :func:`sample_group_plans`: sample a study group's member
