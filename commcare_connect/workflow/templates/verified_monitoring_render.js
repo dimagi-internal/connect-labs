@@ -56,12 +56,10 @@ function WorkflowUI(props) {
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   var mapLoadedRef = React.useRef(false);
-  // The DESIGNED plan (study wards + sampled work areas), pulled from the plan
-  // infrastructure and drawn via the shared PlanLayers component so this monitoring
-  // map matches the plan editor. Hardcoded plan for now. See WORKFLOW_REFERENCE.md §4a.
-  var PLAN_URL = '/microplans/program/10008/plan/4274/';
-  var planRef = React.useRef(null);
-  var planFetchedRef = React.useRef(false);
+  // The DESIGNED plan's selected-PSU hulls ride on the round's seeded state
+  // (overlay.plan_hulls — baked by regenerate.py from the real two-arm plan) and are
+  // drawn via the shared PlanLayers, so the monitoring map matches the plan editor.
+  // Show-don't-tell: read from state, never fetch. See WORKFLOW_REFERENCE.md §4a.
 
   React.useEffect(
     function () {
@@ -94,19 +92,6 @@ function WorkflowUI(props) {
         });
       }
       var map = mapRef.current;
-      // Fetch the designed plan once; redraw when it lands (draw() is hoisted).
-      if (!planFetchedRef.current && window.PlanLayers) {
-        planFetchedRef.current = true;
-        fetch(PLAN_URL)
-          .then(function (r) {
-            return r.json();
-          })
-          .then(function (plan) {
-            planRef.current = plan;
-            if (mapLoadedRef.current && map.isStyleLoaded()) draw();
-          })
-          .catch(function () {});
-      }
       function draw() {
         CM.remove(map, ['vm-sd', 'vm-pins', 'vm-wards']);
         CM.boundary(map, 'vm-wards', overlay.ward_boundaries, {
@@ -201,54 +186,27 @@ function WorkflowUI(props) {
             ]);
           } catch (e) {}
         }
-        // The DESIGNED plan, drawn with the SAME PlanLayers the editor uses (§4a):
-        // arm-coloured study wards (from input_areas) + the sampled work-area
-        // footprints, namespaced (vm-plan-*) so they sit under the monitoring marks.
-        if (planOn && window.PlanLayers && planRef.current) {
-          var plan = planRef.current;
-          var wards = {
-            type: 'FeatureCollection',
-            features: (plan.input_areas || []).map(function (a) {
-              return {
-                type: 'Feature',
-                geometry: a.geometry,
-                properties: { arm: a.arm || 'intervention' },
-              };
-            }),
-          };
+        // The DESIGNED plan's selected-PSU hulls, drawn with the SAME PlanLayers the
+        // editor uses (§4a) — arm-coloured, namespaced vm-plan-psu-* so they sit under
+        // the monitoring marks. Read from the round's seeded state (overlay.plan_hulls);
+        // never fetched.
+        var planHulls = overlay.plan_hulls;
+        if (
+          planOn &&
+          window.PlanLayers &&
+          planHulls &&
+          (planHulls.features || []).length
+        ) {
           window.PlanLayers.hulls(map, {
-            data: wards,
-            src: 'vm-plan-wards',
-            fillId: 'vm-plan-wards-fill',
-            lineId: 'vm-plan-wards-line',
+            data: planHulls,
+            src: 'vm-plan-psu',
+            fillId: 'vm-plan-psu-fill',
+            lineId: 'vm-plan-psu-line',
           });
-          var was = {
-            type: 'FeatureCollection',
-            features: (plan.work_areas || []).map(function (w) {
-              return {
-                type: 'Feature',
-                geometry: w.geometry,
-                properties: {
-                  id: w.id,
-                  status: 'ACTIVE',
-                  fill: '#6366f1',
-                  outline: '#4338ca',
-                },
-              };
-            }),
-          };
-          window.PlanLayers.workAreas(map, {
-            data: was,
-            src: 'vm-plan-wa',
-            fillId: 'vm-plan-wa-fill',
-            lineId: 'vm-plan-wa-line',
-          });
-        } else if (!planOn && window.PlanLayers) {
+        } else if (window.PlanLayers) {
           window.PlanLayers.remove(map, [
-            'vm-plan-wa-fill',
-            'vm-plan-wa-line',
-            'vm-plan-wards-fill',
-            'vm-plan-wards-line',
+            'vm-plan-psu-fill',
+            'vm-plan-psu-line',
           ]);
         }
         CM.fit(map, overlay.ward_boundaries, 64);
