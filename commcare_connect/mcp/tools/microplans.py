@@ -148,6 +148,10 @@ def microplans_plan_work_areas(user, *, program_id, plan_id):
             "phase": p.phase,
             "n": len(was),
             "work_areas": was,
+            # The arm-tagged study wards + the selected-PSU hulls, so a consumer (the
+            # verified-monitoring generator) can draw the DESIGNED plan via PlanLayers.
+            "input_areas": p.data.get("input_areas") or [],
+            "psu_hulls": p.data.get("psu_hulls") or {"type": "FeatureCollection", "features": []},
         }
     finally:
         da.close()

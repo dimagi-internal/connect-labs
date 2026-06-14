@@ -457,6 +457,10 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
             ),
             "service_delivery": _fc([_pt(lat, lon, {}) for lat, lon in sd_pts]),
             "survey_pins": _pins_sample(rng, recs, map_pin_cap),
+            # The DESIGNED plan's selected-PSU cluster hulls (arm-tagged), so the
+            # render can draw the plan via the shared PlanLayers — same as the editor.
+            # Baked into state (never fetched); empty when the round isn't plan-grounded.
+            "plan_hulls": (rp.get("psu_hulls") or {"type": "FeatureCollection", "features": []}),
         }
         summary["service_delivery_counts"] = {tw: sd_cfg.get("treatment", 0), cw: sd_cfg.get("comparison", 0)}
         rounds.append(summary)

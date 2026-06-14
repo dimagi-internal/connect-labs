@@ -120,42 +120,47 @@ def _session(c, headers):
 
 
 def _fetch_rounds_plans(c, h, program_id: int) -> dict:
-    """Live-fetch each study's sampled plans (per arm) via the microplans MCP read
-    tools, so survey GPS can be grounded on the real primary/alternate footprints.
+    """Live-fetch each study round's ONE two-arm plan via the microplans MCP read
+    tools, so survey GPS grounds on the real primary/alternate footprints AND the
+    monitoring map can draw the DESIGNED plan (PSU hulls) from state.
 
-    Returns ``{round_idx: {"treatment": {...}, "comparison": {...}}}`` (round index
-    parsed from the study group's ``R<n>`` name). Empty dict on any failure — the
-    generator then scatters in-ward, so a missing/undeployed read path degrades
-    gracefully instead of breaking the demo."""
+    A round is one two-arm plan named ``R<n> — …``; its work areas carry an ``arm``
+    (intervention/comparison) so we split them into treatment/comparison, and the
+    plan carries ``psu_hulls`` (the selected-PSU cluster polygons) for the overlay.
+    Returns ``{round_idx: {"treatment": {...}, "comparison": {...}, "psu_hulls": fc}}``.
+    Empty dict on any failure — the generator then scatters in-ward, so a missing /
+    undeployed read path degrades gracefully instead of breaking the demo."""
     overview, err = _call(c, h, "microplans_list_plans", {"program_id": program_id})
-    if err or not isinstance(overview, dict) or "groups" not in overview:
+    if err or not isinstance(overview, dict) or "plans" not in overview:
         print("  microplans_list_plans unavailable -> in-ward scatter:", str(overview)[:160])
         return {}
-    plans_by_id = {p["id"]: p for p in overview.get("plans", [])}
     rounds: dict = {}
-    for g in overview.get("groups", []):
-        if g.get("kind") != "study":
-            continue
-        m = re.search(r"R(\d+)", g.get("name", ""))
+    for p in overview.get("plans", []):
+        m = re.search(r"R(\d+)", p.get("name", "") or "")
         if not m:
             continue
         ri = int(m.group(1)) - 1
-        roles: dict = {}
-        for pid_s, arm in (g.get("arm_for") or {}).items():
+        detail, derr = _call(c, h, "microplans_plan_work_areas", {"program_id": program_id, "plan_id": p["id"]})
+        if derr or not isinstance(detail, dict) or not detail.get("work_areas"):
+            continue
+        by_arm: dict = {"treatment": [], "comparison": []}
+        for w in detail["work_areas"]:
+            arm = w.get("arm")
             role = (
                 "treatment"
                 if arm in ("intervention", "treatment")
-                else ("comparison" if arm in ("control", "comparison") else None)
+                else ("comparison" if arm in ("comparison", "control") else None)
             )
-            if role is None:
-                continue
-            pid = int(pid_s)
-            wa, werr = _call(c, h, "microplans_plan_work_areas", {"program_id": program_id, "plan_id": pid})
-            if werr or not isinstance(wa, dict) or not wa.get("work_areas"):
-                continue
-            p = plans_by_id.get(pid, {})
-            roles[role] = {"plan_id": pid, "ward": p.get("region") or p.get("name"), "work_areas": wa["work_areas"]}
+            if role:
+                by_arm[role].append(w)
+        roles: dict = {}
+        ward = p.get("region") or p.get("name")
+        if by_arm["treatment"]:
+            roles["treatment"] = {"plan_id": p["id"], "ward": ward, "work_areas": by_arm["treatment"]}
+        if by_arm["comparison"]:
+            roles["comparison"] = {"plan_id": p["id"], "ward": ward, "work_areas": by_arm["comparison"]}
         if roles:
+            roles["psu_hulls"] = detail.get("psu_hulls")
             rounds[ri] = roles
     return rounds
 
