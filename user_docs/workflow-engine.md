@@ -212,7 +212,9 @@ The map panel has three toggles — **delivery**, **survey**, and **plan** — s
 
 - **Delivery** — shows implementer-reported visit pins
 - **Survey** — shows independent surveyor visit pins
-- **Plan** — shows the designed study plan: the study wards and sampled work areas drawn exactly as they appear in the plan editor, so the plan you designed and the monitoring of it look like one coherent picture
+- **Plan** — shows the designed study plan: the selected cluster areas (PSUs) from the sampling plan, drawn in the same arm colours used in the plan editor — intervention areas in green and comparison areas in blue — so the plan you designed and the monitoring of it look like one coherent picture
+
+Previously the monitoring map displayed generic ward or work-area shapes. The plan overlay now shows the exact same cluster boundaries that were chosen during sampling, so "what we planned to visit" and "what we monitored" are directly comparable on the same map.
 
 Survey pins on the map use two distinct visual styles to distinguish visit types:
 
@@ -241,6 +243,3 @@ For each surveyor, the screen compares three signals against the rest of the tea
 | ------ | --------------- |
 | **Dose yes-rate** | Is this surveyor reporting "received" far more or less often than peers? |
 | **Interview speed** | Are their interviews implausibly short — a sign of curbstoning (recording answers without actually conducting the interview)? |
-| **Answer uniformity** | Are their answers suspiciously consistent — too little natural variation in responses like roof type or household composition to reflect real fieldwork? |
-
-Each surveyor receives a **red / amber / green** verdict based on how their figures compare to the team as a whole. Each cell in the table shows two
