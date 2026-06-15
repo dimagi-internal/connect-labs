@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load microplans_extras %}
 
 {% block title %}Rooftop Surveys — Setup{% endblock %}
 
@@ -56,30 +57,30 @@
       <div class="space-y-3 text-sm">
         <label class="block">
           <span class="text-gray-600">Target clusters (PSUs)</span>
-          <input id="cfg-clusters" type="number" value="25" min="1" class="mt-1 w-full rounded border-gray-300">
+          <input id="cfg-clusters" type="number" value="{% sampling_default 'target_clusters' %}" min="1" class="mt-1 w-full rounded border-gray-300">
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="block">
             <span class="text-gray-600">Primary / PSU</span>
-            <input id="cfg-primary" type="number" value="8" min="1" class="mt-1 w-full rounded border-gray-300">
+            <input id="cfg-primary" type="number" value="{% sampling_default 'primary_per_psu' %}" min="1" class="mt-1 w-full rounded border-gray-300">
           </label>
           <label class="block">
             <span class="text-gray-600">Alternates / PSU</span>
-            <input id="cfg-alternate" type="number" value="8" min="0" class="mt-1 w-full rounded border-gray-300">
+            <input id="cfg-alternate" type="number" value="{% sampling_default 'alternates_per_psu' %}" min="0" class="mt-1 w-full rounded border-gray-300">
           </label>
         </div>
         <label class="block">
           <span class="text-gray-600">Min roof confidence</span>
-          <input id="cfg-confidence" type="number" value="0.7" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300">
+          <input id="cfg-confidence" type="number" value="{% sampling_default 'min_confidence' %}" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300">
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="block">
             <span class="text-gray-600">Min area m²</span>
-            <input id="cfg-area-min" type="number" value="9" min="0" class="mt-1 w-full rounded border-gray-300">
+            <input id="cfg-area-min" type="number" value="{% sampling_default 'area_min_m2' %}" min="0" class="mt-1 w-full rounded border-gray-300">
           </label>
           <label class="block">
             <span class="text-gray-600">Max area m²</span>
-            <input id="cfg-area-max" type="number" value="330" min="0" class="mt-1 w-full rounded border-gray-300">
+            <input id="cfg-area-max" type="number" value="{% sampling_default 'area_max_m2' %}" min="0" class="mt-1 w-full rounded border-gray-300">
           </label>
         </div>
       </div>

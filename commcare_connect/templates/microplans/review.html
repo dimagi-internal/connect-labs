@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load microplans_extras %}
 
 {% block title %}Microplan review{% endblock %}
 
@@ -274,12 +275,12 @@
           <div id="sampling-config" class="hidden space-y-2">
             <div class="text-[10px] text-gray-400 mb-1 cursor-help underline decoration-dotted underline-offset-2" title="How the sample is drawn: every building in the area is grouped into clusters (PSUs); clusters are selected with probability proportional to their building count — bigger clusters are likelier, so every building has a roughly equal chance and the sample stays representative. Within each selected cluster the tool picks the primary buildings to survey plus ranked alternates as backups, so surveyors work a few tight pockets instead of scattered random buildings.">How the sample is drawn &#9432;</div>
             <div class="grid grid-cols-3 gap-1">
-              <label class="block cursor-help" title="Primary Sampling Units — how many building clusters to select. The area's buildings are grouped into clusters; this many are chosen, with bigger clusters more likely (probability proportional to size)."><span class="text-gray-600 underline decoration-dotted underline-offset-2">PSUs</span>
-                <input id="cfg-target-clusters" type="number" value="25" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
-              <label class="block cursor-help" title="Buildings actually surveyed in each selected cluster — e.g. 8 primary x 25 PSUs = 200 planned surveys."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Primary</span>
-                <input id="cfg-primary" type="number" value="8" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
-              <label class="block cursor-help" title="Ranked backup buildings per cluster. Used in order when a primary building is vacant, locked, refused, or inaccessible — so you reach the target sample size without biasing toward easy-to-reach buildings."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Alternate</span>
-                <input id="cfg-alternate" type="number" value="8" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
+              <label class="block cursor-help" title="Primary Sampling Units — how many building clusters to select. The area's buildings are grouped into clusters; this many are chosen, with bigger clusters more likely (probability proportional to size). Default 30 follows the WHO/EPI cluster-survey standard."><span class="text-gray-600 underline decoration-dotted underline-offset-2">PSUs</span>
+                <input id="cfg-target-clusters" type="number" value="{% sampling_default 'target_clusters' %}" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
+              <label class="block cursor-help" title="Buildings actually surveyed in each selected cluster — e.g. 10 primary x 30 PSUs = 300 planned surveys. A modest fixed take per cluster (with PPS selection) keeps the sample self-weighting."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Primary</span>
+                <input id="cfg-primary" type="number" value="{% sampling_default 'primary_per_psu' %}" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
+              <label class="block cursor-help" title="Ranked backup buildings per cluster. Used in order when a primary building is vacant, locked, refused, or inaccessible — so you reach the target sample size without biasing toward easy-to-reach buildings. Default 5 ≈ a 50% non-response reserve."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Alternate</span>
+                <input id="cfg-alternate" type="number" value="{% sampling_default 'alternates_per_psu' %}" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
             </div>
             <div class="border-t border-gray-100 pt-2">
               <div class="text-gray-600 mb-1">Building source</div>
@@ -298,18 +299,19 @@
                 </label>
               </div>
               <label class="block mt-1"><span class="text-gray-600">Min Google confidence</span>
-                <input id="cfg-min-confidence" type="number" value="0.7" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs"></label>
+                <input id="cfg-min-confidence" type="number" value="{% sampling_default 'min_confidence' %}" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs"></label>
               <p class="text-[10px] text-gray-500 mt-0.5">Google carries a per-building confidence; OSM/Microsoft don't. Counts appear after you generate.</p>
               <div class="mt-2 cursor-help" title="Keeps only building footprints whose ground area falls in this range. The minimum drops tiny specks — sheds, market stalls, digitizing noise; the maximum drops oversized non-dwellings — warehouses, schools, walled compounds. So the sample targets real households.">
                 <span class="text-gray-600 underline decoration-dotted underline-offset-2">Building footprint size (m²) &#9432;</span>
                 <div class="grid grid-cols-2 gap-1 mt-0.5">
                   <label class="block"><span class="text-[10px] text-gray-500">Min</span>
-                    <input id="cfg-area-min" type="number" value="9" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
+                    <input id="cfg-area-min" type="number" value="{% sampling_default 'area_min_m2' %}" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
                   <label class="block"><span class="text-[10px] text-gray-500">Max</span>
-                    <input id="cfg-area-max" type="number" value="330" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
+                    <input id="cfg-area-max" type="number" value="{% sampling_default 'area_max_m2' %}" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
                 </div>
               </div>
             </div>
+            {% sampling_defaults_json %}
             <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">{% if plan_id %}Regenerate plan{% else %}Generate plan{% endif %}</button>
             <p class="text-[10px] text-gray-500" id="generate-plan-hint">{% if plan_id %}Re-rolls a fresh random sample and rebuilds this plan's work areas.{% else %}Draws the PSUs + households and saves them as this plan in one step.{% endif %}</p>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
