@@ -1,9 +1,9 @@
-# Connect MCP & Safe Mode
+# Connect MCP
 
-Connect Labs gives technical program staff a way to edit workflows using Claude Code (an AI assistant) from the command line — without writing code themselves. **Safe Mode** adds security guardrails so that when AI has access to real program data, it cannot leak that data outside approved channels.
+Connect Labs gives technical program staff a way to edit workflows using Claude Code (an AI assistant) from the command line — without writing code themselves.
 
 !!! note "Who this is for"
-This feature is for program administrators and technical staff who are comfortable working in a terminal. If you just want to use the AI assistant inside the Labs browser app, see [AI Features](ai-features.md) instead.
+    This feature is for program administrators and technical staff who are comfortable working in a terminal. If you just want to use the AI assistant inside the Labs browser app, see [AI Features](ai-features.md) instead.
 
 ---
 
@@ -43,7 +43,7 @@ You'll also need:
 Ask in **#engineering-connect** if you're unsure about any of these.
 
 !!! note "You don't need to run Labs locally"
-For workflow editing, cloning the repository is enough — you do **not** need to run the Django app locally. Even a local instance fetches all data from Connect prod, so there is no isolation benefit. Claude Code pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.
+    For workflow editing, cloning the repository is enough — you do **not** need to run the Django app locally. Even a local instance fetches all data from Connect prod, so there is no isolation benefit. Claude Code pushes workflow changes directly to Labs prod, and you verify the result in your browser. Run locally only if you are modifying the core Connect Labs application code itself.
 
 ---
 
@@ -87,27 +87,9 @@ Follow the prompts. When asked, choose **Production labs environment**. Claude w
 
 ---
 
-## Running Safe-Mode Claude
-
-Pull the latest changes, then launch:
-
-```bash
-cd connect-labs
-git pull origin main
-source .venv/bin/activate
-inv safe-claude --auth=api-key
-```
-
-The `--auth` flag is required every time — choose:
-
-- `--auth=api-key` — Anthropic ZDR API key (recommended)
-- `--auth=vertex` — Google Vertex AI endpoint
-
----
-
 ## Editing Workflows
 
-Once inside `inv safe-claude`, use the MCP-powered workflow skill:
+Once inside a Claude Code session (see [Safe Mode](connect-safe-mode.md) for the recommended secure launch), use the MCP-powered workflow skill:
 
 ```
 /workflow-author
@@ -138,49 +120,8 @@ In a regular session, you can use `workflow_sync_from_template_file` to push a l
 
 ---
 
-## Safe Mode: What It Protects Against
-
-Safe Mode prevents accidental exposure of patient data when an AI assistant has access to real program information.
-
-```mermaid
-flowchart LR
-    SM[Safe Mode\nLaunch] -->|Blocks| B[Bash / Shell]
-    SM -->|Blocks| W[Web Fetch / Search]
-    SM -->|Blocks| F[File Write]
-    SM -->|Blocks| S[Subagent Spawn]
-    SM -->|Allows| MCP[connect_labs MCP\nWorkflow & Pipeline tools]
-    SM -->|Allows| HQ[CommCare HQ\nApp Structure only]
-    SM -->|Routes through| ZDR[Zero Data Retention\nAI Endpoint]
-```
-
-| Safe Mode blocks                    | Why                                                                |
-| ----------------------------------- | ------------------------------------------------------------------ |
-| Shell commands (`ls`, `curl`, etc.) | Can't execute arbitrary code or exfiltrate data via the filesystem |
-| Web fetch / web search              | Can't send data to external URLs                                   |
-| Writing local files                 | Can't dump patient data to disk                                    |
-| Spawning sub-agents                 | Keeps the session audit trail linear and reviewable                |
-
-**Safe Mode allows only:**
-
-- Reading and editing workflows and pipelines via the Labs MCP
-- Reading CommCare HQ app structure (form definitions only — no patient data)
-- Reading files in the connect-labs repository
-
----
-
-## Troubleshooting
-
-| Problem                           | Fix                                                                              |
-| --------------------------------- | -------------------------------------------------------------------------------- |
-| "No connect_labs PAT found"       | Run `/labs-token-setup` in a normal Claude Code session                          |
-| `op` errors or sign-in failures   | Run `op signin --account dimagi` in your terminal                                |
-| "Workflow not found" or 403 error | Check the workflow ID; confirm you can open it in Labs in the browser            |
-| Claude says "I can't edit files"  | That's correct in Safe Mode — ask it to use the `connect_labs` MCP tools instead |
-
----
-
 ## More Information
 
-- **[SAFE_MODE.md](https://github.com/jjackson/connect-labs/blob/main/docs/SAFE_MODE.md)** — full technical design and security model
 - **[MCP_SETUP.md](https://github.com/jjackson/connect-labs/blob/main/docs/MCP_SETUP.md)** — Labs MCP server and token details
+- For security guardrails when working with real program data, see [Safe Mode](connect-safe-mode.md)
 - For help, post in **#connect-labs** on Slack
