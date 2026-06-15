@@ -61,6 +61,8 @@ jobs:
           OVERRIDES=$(python3 -c "import json,os,shlex; print(json.dumps({'containerOverrides':[{'name':'web','command':['python','manage.py']+shlex.split(os.environ['MGMT_CMD'])}]}))")
           echo "Overrides: $OVERRIDES"
 
+          START_MS=$(( $(date +%s) * 1000 - 5000 ))
+
           TASK_DEF_ARN=$(aws ecs describe-task-definition \
             --task-definition ${{ env.ECS_WEB_SERVICE }} \
             --query 'taskDefinition.taskDefinitionArn' --output text)
@@ -86,15 +88,14 @@ jobs:
 
           # Tail the task's stdout/stderr into the Actions log so command OUTPUT is
           # visible here (awslogs stream name = "<prefix>/<container>/<task-id>").
-          TASK_ID=$(echo "$TASK_ARN" | awk -F/ '{print $NF}')
-          echo "----- command output (/ecs/${{ env.ECS_WEB_SERVICE }} : web/web/$TASK_ID) -----"
-          # CloudWatch ingestion lags task stop by a few seconds — retry until events appear.
+          echo "----- command output (/ecs/${{ env.ECS_WEB_SERVICE }} since task start) -----"
+          # filter-log-events searches the whole log group by time window — no need to
+          # guess the exact stream name. Retry: CloudWatch ingestion lags task stop.
           OUT=""
           for i in 1 2 3 4 5 6 7 8; do
-            OUT=$(aws logs get-log-events \
+            OUT=$(aws logs filter-log-events \
               --log-group-name "/ecs/${{ env.ECS_WEB_SERVICE }}" \
-              --log-stream-name "web/web/$TASK_ID" \
-              --limit 300 --start-from-head \
+              --start-time "$START_MS" \
               --query 'events[*].message' --output text 2>/dev/null || true)
             [ -n "$OUT" ] && break
             sleep 8
