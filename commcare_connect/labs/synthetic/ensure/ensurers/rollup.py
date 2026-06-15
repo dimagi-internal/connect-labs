@@ -282,24 +282,63 @@ def _select_drill_targets(ctx) -> tuple[dict | None, dict | None]:
             status_cache[task_id] = status
             return status
 
-        good: dict | None = None
-        incomplete: dict | None = None
+        # Classify by WEEK (run), not by individual cluster. The PAR report renders
+        # a week's status from ALL its flagged workers: "All resolved" only when
+        # every flag's task is closed, "N open" when any task is still
+        # investigating. The drill targets MUST agree with that rendering, or the
+        # walkthrough waits for a run the grid never marks resolved (the scene-8
+        # bug: an old per-cluster pick grabbed the first week containing ANY closed
+        # task, even a week that also had open work, so good_run_id pointed at a
+        # week the grid showed as "N open").
+        #
+        #   good       = a week where EVERY flagged cluster is resolved (closed
+        #                task) AND none is open -> the grid's "All resolved" week.
+        #   incomplete = a week with open work (>=1 investigating task), in a
+        #                DIFFERENT opp than good, so the two drills land on the
+        #                resolved opp + the still-open opp (Northern + Southern),
+        #                never two cells of the same opp.
+        from collections import defaultdict
+
+        by_run: dict[int, list[dict]] = defaultdict(list)
         for run_id, flw, audit_id, task_id in candidates:
             opp_id, week_idx, _monday = coords[run_id]
-            status = _task_status(opp_id, run_id, task_id)
-            cluster = {
-                "opp_id": opp_id,
-                "opp_label": _opp_label(opp_id),
-                "week_idx": week_idx,
-                "run_id": run_id,
-                "audit_id": audit_id,
-                "task_id": task_id,
-                "flw_id": flw,
-            }
-            if status == "closed" and good is None:
-                good = cluster
-            elif status == "investigating" and incomplete is None:
-                incomplete = cluster
+            by_run[run_id].append(
+                {
+                    "opp_id": opp_id,
+                    "opp_label": _opp_label(opp_id),
+                    "week_idx": week_idx,
+                    "run_id": run_id,
+                    "audit_id": audit_id,
+                    "task_id": task_id,
+                    "flw_id": flw,
+                    "status": _task_status(opp_id, run_id, task_id),
+                }
+            )
+
+        def _clean(c: dict) -> dict:
+            return {k: v for k, v in c.items() if k != "status"}
+
+        good: dict | None = None
+        open_runs: list[dict] = []  # (one representative open cluster per open week)
+        for run_id in sorted(by_run):
+            clusters = by_run[run_id]
+            resolved = [c for c in clusters if c["status"] == "closed"]
+            still_open = [c for c in clusters if c["status"] == "investigating"]
+            if still_open:
+                open_runs.append(still_open[0])
+            elif resolved and good is None:
+                good = _clean(resolved[0])  # fully-resolved week -> grid "All resolved"
+
+        # incomplete: the first open week in a different opp than good (fall back to
+        # any open week if good is None or no other-opp open week exists).
+        incomplete: dict | None = None
+        good_opp = good["opp_id"] if good else None
+        for c in open_runs:
+            if c["opp_id"] != good_opp:
+                incomplete = _clean(c)
+                break
+        if incomplete is None and open_runs:
+            incomplete = _clean(open_runs[0])
         return good, incomplete
     finally:
         for tda in daos.values():

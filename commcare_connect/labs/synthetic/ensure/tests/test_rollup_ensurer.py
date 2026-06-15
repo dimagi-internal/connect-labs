@@ -235,3 +235,61 @@ def test_rerun_is_idempotent(tmp_path):
     assert count_second == count_first, "re-run must not create a duplicate PAR run"
     assert realized_second["par_run_id"] == par_run_id_first, "the same PAR run must be reused"
     assert realized_second["par_def_id"] == realized_first["par_def_id"]
+
+
+def test_select_drill_targets_skips_mixed_week_for_good(monkeypatch):
+    """Regression for the scene-8 mismatch: a week with BOTH a closed and an open
+    task renders 'N open' in the PAR grid, so it must NOT be chosen as the `good`
+    ("All resolved") drill week. `good_run_id` must point at a week where every
+    flagged task is closed; `incomplete` at an open week in a different opp.
+
+    The old per-cluster logic grabbed the first week containing ANY closed task —
+    even a mixed week — so good_run_id pointed at a week the grid showed as open.
+    """
+    from commcare_connect.labs.synthetic.ensure.engine import EnsureContext
+    from commcare_connect.labs.synthetic.ensure.ensurers import rollup as R
+
+    class _M:
+        def __init__(self, oid, name):
+            self.opportunity_id, self.opportunity_name = oid, name
+
+    ids = {
+        # Northern (good opp): wk0 run 100 is MIXED (closed + open); wk1 run 200 CLEAN.
+        "run:10000:2026-05-18": 100,
+        "run:10000:2026-05-25": 200,
+        "run:10001:2026-05-18": 300,  # Southern: an open week
+        "task:100:hawa": 1001,
+        "audit:100:hawa": 9001,  # closed
+        "task:100:bola": 1002,
+        "audit:100:bola": 9002,  # open -> wk0 is "N open"
+        "task:200:hawa": 2001,
+        "audit:200:hawa": 9003,  # closed -> wk1 "All resolved"
+        "task:300:ola": 3001,
+        "audit:300:ola": 9004,  # open (Southern)
+        "manifest:10000": _M(10000, "Northern Region"),
+        "manifest:10001": _M(10001, "Southern Region"),
+    }
+    status = {1001: "closed", 1002: "investigating", 2001: "closed", 3001: "investigating"}
+
+    class _T:
+        def __init__(s, tid):
+            s.id, s.status = tid, status[tid]
+
+    class _TDA:
+        def __init__(s, opportunity_id, access_token=None):
+            pass
+
+        def get_tasks_for_run(s, run_id):
+            return [_T(tid) for k, tid in ids.items() if isinstance(k, str) and k.startswith(f"task:{run_id}:")]
+
+        def close(s):
+            pass
+
+    monkeypatch.setattr("commcare_connect.tasks.data_access.TaskDataAccess", _TDA)
+
+    ctx = EnsureContext(weeks=["2026-05-18", "2026-05-25"], ids=dict(ids))
+    good, incomplete = R._select_drill_targets(ctx)
+    assert good is not None and good["run_id"] == 200, "good must be the CLEAN week, not the mixed one"
+    assert good["opp_id"] == 10000
+    assert incomplete is not None and incomplete["run_id"] == 300, "incomplete must be the other opp's open week"
+    assert incomplete["opp_id"] == 10001
