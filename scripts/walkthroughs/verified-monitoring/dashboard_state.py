@@ -29,6 +29,7 @@ if str(_REPO) not in sys.path:
 from commcare_connect.labs.synthetic.generator.core.survey_quality import results_to_map, run_metrics  # noqa: E402
 from commcare_connect.labs.synthetic.generator.core.survey_sim import (  # noqa: E402
     SimParams,
+    cluster_surveyors,
     scatter_primaries,
     simulate_backchecks,
     simulate_plan,
@@ -385,6 +386,24 @@ def _round_plan_url(cfg: dict, rp: dict) -> str | None:
     return f"/microplans/program/{cfg['opportunity_id']}/plan/{pid}/"
 
 
+def _round_cluster_surveyors(arm_cfg: dict, tw_was, cw_was) -> dict:
+    """``{f"{arm}:{cluster}": surveyor}`` for the round, mirroring the generator's
+    cluster->surveyor assignment over each arm's work areas. The render tags each
+    work-area polygon (which carries arm + cluster) with its owning surveyor via this
+    map, so clicking a scorecard row can filter the map to one surveyor's PSUs."""
+    out: dict = {}
+    for arm_key, was in (("treatment", tw_was), ("comparison", cw_was)):
+        if not was:
+            continue
+        n_enum = arm_cfg[arm_key].get("enumerators", 5)
+        enum_ids = [f"{arm_key[0].upper()}{k + 1}" for k in range(n_enum)]
+        # The render keys by the work area's OWN arm value ('intervention'/'comparison').
+        arm_label = was[0].get("arm") or ("intervention" if arm_key == "treatment" else "comparison")
+        for cluster, surveyor in cluster_surveyors(was, enum_ids).items():
+            out[f"{arm_label}:{cluster}"] = surveyor
+    return out
+
+
 def _pins_sample(rng, records, cap_per_ward):
     """A legible per-ward sample of survey-pin features from the primary records."""
     by_ward = {}
@@ -406,6 +425,9 @@ def _pins_sample(rng, records, cap_per_ward):
                         # primary (first-choice) vs alternate (substituted backup) —
                         # the map styles the two so the substitution mix is visible.
                         "sample_type": r.get("sample_type"),
+                        # the owning surveyor, so clicking a scorecard row can filter
+                        # the map to just that surveyor's surveys.
+                        "surveyor": r.get("enumerator_id"),
                     },
                 )
             )
@@ -478,6 +500,9 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
             # polygons into state, so this one drill-down fetches on toggle. None when
             # the round isn't plan-grounded (footprints layer then no-ops).
             "plan_url": _round_plan_url(cfg, rp),
+            # {f"{arm}:{cluster}": surveyor} so the render can tag each work-area
+            # polygon with its owning surveyor and filter the map on a scorecard click.
+            "cluster_surveyor": _round_cluster_surveyors(arm_cfg, tw_was, cw_was),
         }
         summary["service_delivery_counts"] = {tw: sd_cfg.get("treatment", 0), cw: sd_cfg.get("comparison", 0)}
         rounds.append(summary)

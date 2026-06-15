@@ -84,6 +84,16 @@ def _clusters(work_areas: list) -> dict:
     return out
 
 
+def cluster_surveyors(work_areas: list, enumerators: list) -> dict:
+    """Stable ``{cluster: surveyor}`` assignment — clusters sorted, round-robin over
+    ``enumerators`` (each surveyor owns whole clusters). The single source of truth for
+    "which surveyor owns this PSU", used both by ``simulate_plan`` (to generate that
+    surveyor's records) and by the dashboard (to colour / filter the map per surveyor)."""
+    enums = list(enumerators) or ["S1"]
+    keys = sorted(_clusters(work_areas).keys())
+    return {ck: enums[i % len(enums)] for i, ck in enumerate(keys)}
+
+
 # --------------------------------------------------------------- generation
 
 
@@ -110,7 +120,7 @@ def simulate_plan(
     enums = list(params.enumerators) or ["S1"]
 
     # Stable assignments: each cluster -> one surveyor; each surveyor -> one rate.
-    cluster_surveyor = {ck: enums[i % len(enums)] for i, ck in enumerate(cluster_keys)}
+    cluster_surveyor = cluster_surveyors(work_areas, enums)
     surveyor_rate = {s: params.surveyor_primary_rate(s, rng) for s in enums}
     # Stable per-surveyor answer-mix / pace profiles (deterministic, no rng draw),
     # so the flagged surveyor's fabrication signature and honest between-area
