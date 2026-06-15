@@ -1992,20 +1992,43 @@
     el.textContent = parts.join(' · ');
   }
 
+  // Canonical sampling defaults injected by the page (microplans/sampling/defaults.py
+  // via the {% sampling_defaults_json %} tag) — the single source for empty-input
+  // fallbacks, so this file never hardcodes a default that could drift from the engine.
+  const SAMPLING_DEFAULTS = (function () {
+    try {
+      return JSON.parse(
+        document.getElementById('sampling-defaults').textContent,
+      );
+    } catch (e) {
+      return {};
+    }
+  })();
+
   function samplingConfig() {
     const sources = [...document.querySelectorAll('.src-cb:checked')].map(
       (c) => c.value,
     );
     const conf = parseFloat($('cfg-min-confidence')?.value);
+    const SD = SAMPLING_DEFAULTS;
     return {
-      target_clusters: parseInt($('cfg-target-clusters')?.value || '25', 10),
-      primary_per_psu: parseInt($('cfg-primary')?.value || '8', 10),
-      alternates_per_psu: parseInt($('cfg-alternate')?.value || '8', 10),
+      target_clusters: parseInt(
+        $('cfg-target-clusters')?.value || SD.target_clusters,
+        10,
+      ),
+      primary_per_psu: parseInt(
+        $('cfg-primary')?.value || SD.primary_per_psu,
+        10,
+      ),
+      alternates_per_psu: parseInt(
+        $('cfg-alternate')?.value || SD.alternates_per_psu,
+        10,
+      ),
       sources: sources,
       min_confidence: isNaN(conf) ? null : conf,
       // Footprint-size filter (m²); from_payload clamps to sane bounds.
-      area_min_m2: parseFloat($('cfg-area-min')?.value || '9'),
-      area_max_m2: parseFloat($('cfg-area-max')?.value || '330'),
+      area_min_m2: parseFloat($('cfg-area-min')?.value || SD.area_min_m2),
+      area_max_m2: parseFloat($('cfg-area-max')?.value || SD.area_max_m2),
     };
   }
 
