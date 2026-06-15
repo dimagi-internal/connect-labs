@@ -370,4 +370,12 @@ def ensure_weekly_runs(resource, ctx) -> dict:
     # Stash the watched sources for the rollup ensurer (PAR definition needs the
     # list of (opp, workflow_definition_id) it aggregates).
     ctx.ids["chc_watched_sources"] = watched
+    # Stash the per-opp missed-week indices for the rollup ensurer: a missed week
+    # has NO run (we skipped creating it above), so the rollup's snapshot can't
+    # infer "missed" from absence alone vs "no run yet". Carrying the declared
+    # set lets _build_snapshot stamp each source's missed_week_idxs so the PAR
+    # grid renders an explicit NO-RUN ("SOP missed") card for it.
+    ctx.ids["missed_week_idxs"] = {
+        opp_id: sorted(resource.missed_week_idxs.get(opp_id, [])) for opp_id in resource.opportunity_ids
+    }
     return realized

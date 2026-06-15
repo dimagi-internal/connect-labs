@@ -234,3 +234,44 @@ def test_current_week_reset_rebuilds_only_current_run(tmp_path):
     # Still exactly one in_progress run.
     in_progress = [r for r in _completed_chc_runs(OPP_ID, def_id) if r.data.get("status") == "in_progress"]
     assert len(in_progress) == 1
+
+
+@pytest.mark.django_db
+def test_missed_week_idxs_skips_run_and_stashes_no_id(tmp_path):
+    """A declared missed week creates NO completed run and stamps NO run id.
+
+    The PAR demo's "SOP missed" story needs a watched region to genuinely skip
+    a completed week. weekly_runs must (a) not create_backdated_workflow_run for
+    that (opp, week) and (b) leave ctx.ids["run:{opp}:{monday}"] unset so the
+    audits/tasks ensurers land nothing on a non-existent run.
+    """
+    ctx, weeks, current = _setup_ctx(tmp_path)
+    missed_idx = 1
+    resource = WeeklyRunsResource(
+        kind="weekly_runs",
+        opportunity_ids=[OPP_ID],
+        template="chc_nutrition_analysis",
+        missed_week_idxs={OPP_ID: [missed_idx]},
+        current_week=ResetFlag(reset=False),
+    )
+
+    ensure_weekly_runs(resource, ctx)
+    def_id = ctx.ids["chc_watched_sources"][0]["workflow_definition_id"]
+
+    completed = [r for r in _completed_chc_runs(OPP_ID, def_id) if r.data.get("status") == "completed"]
+    completed_periods = sorted(r.data.get("period_start") for r in completed)
+
+    # One fewer completed run; the missed week's Monday is absent.
+    assert len(completed) == len(weeks) - 1
+    assert weeks[missed_idx] not in completed_periods
+    assert all(weeks[i] in completed_periods for i in range(len(weeks)) if i != missed_idx)
+
+    # No run id stamped for the missed week; every other week is stamped.
+    assert ctx.ids.get(f"run:{OPP_ID}:{weeks[missed_idx]}") is None
+    for i, monday in enumerate(weeks):
+        if i == missed_idx:
+            continue
+        assert ctx.ids.get(f"run:{OPP_ID}:{monday}") is not None
+
+    # The declared missed set is stashed for the rollup ensurer's snapshot.
+    assert ctx.ids["missed_week_idxs"][OPP_ID] == [missed_idx]

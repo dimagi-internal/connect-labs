@@ -310,6 +310,52 @@ def generate_audit_from_archetype(
     return rec.id
 
 
+def update_audit_from_archetype(
+    *,
+    ada,
+    audit_id: int,
+    opportunity_id: int,
+    opportunity_name: str,
+    workflow_run_id: int,
+    flw_id: str,
+    monday_iso: str,
+    audit_archetype: str,
+    visit_id: int,
+    flw_name: str | None = None,
+) -> int:
+    """Rebuild an EXISTING AuditSession to a named archetype (upsert).
+
+    Mirror of :func:`generate_audit_from_archetype` for the reconcile path: when
+    an FLW's coaching arc has since resolved (or moved to a different audit
+    shape) but the existing seeded audit still carries the old status, this
+    rebuilds its ``data`` in place via ``update_record`` so the record matches
+    the arc's current state. Keeps the same record id (and its
+    ``workflow_run_id`` linkage) so downstream consumers and idempotency keys are
+    stable. Returns the audit id.
+    """
+    from commcare_connect.labs.synthetic.archetypes import build_audit_data
+
+    data = build_audit_data(
+        archetype_name=audit_archetype,
+        flw_id=flw_id,
+        monday_iso=monday_iso,
+        opportunity_id=opportunity_id,
+        opportunity_name=opportunity_name,
+        workflow_run_id=workflow_run_id,
+        visit_id_base=visit_id,
+        flw_name=flw_name,
+    )
+    ada.labs_api.update_record(
+        record_id=audit_id,
+        experiment="audit",
+        type="AuditSession",
+        data=data,
+        labs_record_id=workflow_run_id,
+        username=flw_id,
+    )
+    return audit_id
+
+
 def generate_task_from_archetype(
     *,
     tda,
