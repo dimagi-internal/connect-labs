@@ -58,7 +58,7 @@ jobs:
         run: |
           # Build the container command array safely from the input (via env, not
           # shell interpolation, so args can't break out of the JSON / shell).
-          OVERRIDES=$(python3 -c "import json,os; print(json.dumps({'containerOverrides':[{'name':'web','command':['python','manage.py']+os.environ['MGMT_CMD'].split()}]}))")
+          OVERRIDES=$(python3 -c "import json,os,shlex; print(json.dumps({'containerOverrides':[{'name':'web','command':['python','manage.py']+shlex.split(os.environ['MGMT_CMD'])}]}))")
           echo "Overrides: $OVERRIDES"
 
           TASK_DEF_ARN=$(aws ecs describe-task-definition \
