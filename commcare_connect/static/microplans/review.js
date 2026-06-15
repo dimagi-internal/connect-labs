@@ -571,8 +571,12 @@
         onAreaAdd: (boundaryId, geometry, feature, arm) => {
           adminAddGeometry(boundaryId, geometry, arm);
           autofillFromBoundary(feature);
+          recordWardPopulation(boundaryId, feature);
         },
-        onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
+        onAreaRemove: (boundaryId) => {
+          adminRemoveGeometry(boundaryId);
+          forgetWardPopulation(boundaryId);
+        },
         onArmChange: (boundaryId, arm) => adminSetArm(boundaryId, arm),
         armEnabled: () => mpMode === 'sampling',
       });
@@ -1815,6 +1819,13 @@
   }
   on('btn-mode-coverage', 'click', () => setMode('coverage'));
   on('btn-mode-sampling', 'click', () => setMode('sampling'));
+  // Clicking the suggestion fills the population field with the picked wards' total,
+  // overriding whatever's there (the user asked for this number explicitly).
+  on('cfg-pop-suggest', 'click', () => {
+    const inp = $('cfg-population');
+    const btn = $('cfg-pop-suggest');
+    if (inp && btn && btn.dataset.pop) inp.value = btn.dataset.pop;
+  });
 
   function setArm(a) {
     currentArm = a;
@@ -1849,6 +1860,50 @@
         arm: (f.properties && f.properties.arm) || 'intervention',
         geometry: f.geometry,
       }));
+  }
+
+  // Picked wards carry a `population` from their boundary source (e.g. GeoPoDe).
+  // We sum it across the selected wards and offer it as a one-click fill for the
+  // coverage population field, so visits are driven by real numbers instead of a
+  // blind guess. The field stays freely editable (manual override always wins).
+  const pickedWardPops = new Map(); // boundaryId -> { pop, source, name }
+
+  function recordWardPopulation(boundaryId, feature) {
+    const f = feature || {};
+    if (f.population != null && !isNaN(+f.population)) {
+      pickedWardPops.set(boundaryId, {
+        pop: +f.population,
+        source: f.source || '',
+        name: f.name || '',
+      });
+    }
+    refreshPopulationSuggestion();
+  }
+
+  function forgetWardPopulation(boundaryId) {
+    pickedWardPops.delete(boundaryId);
+    refreshPopulationSuggestion();
+  }
+
+  function refreshPopulationSuggestion() {
+    const btn = $('cfg-pop-suggest');
+    if (!btn) return;
+    const rows = [...pickedWardPops.values()];
+    if (!rows.length) {
+      btn.classList.add('hidden');
+      return;
+    }
+    const total = Math.round(rows.reduce((s, r) => s + r.pop, 0));
+    const sources = [...new Set(rows.map((r) => r.source).filter(Boolean))];
+    const srcLabel = sources.length === 1 ? sources[0] : 'mixed sources';
+    btn.dataset.pop = String(total);
+    btn.textContent = `Use ${total.toLocaleString()} (${srcLabel}, ${
+      rows.length
+    } ward${rows.length === 1 ? '' : 's'})`;
+    btn.classList.remove('hidden');
+    // Pre-fill only when the user hasn't typed their own number.
+    const inp = $('cfg-population');
+    if (inp && !String(inp.value || '').trim()) inp.value = total;
   }
 
   // Coverage config: cell size + the two cell-level exclusion filters + an optional
