@@ -47,6 +47,43 @@ def _band(smd: float) -> str:
     return "good" if smd < SMD_GOOD else ("ok" if smd < SMD_OK else "imbalanced")
 
 
+def psu_arms_from_stats(
+    stats: list[dict],
+    *,
+    names: dict | None = None,
+    ward_density: dict | None = None,
+) -> list[dict]:
+    """Map per-arm sampling-stats dicts to the ``arms`` input ``arm_comparability_psu``
+    consumes — the single assembly both comparability surfaces share.
+
+    Each ``stats`` entry carries its own ``arm`` plus the sampling summary
+    (``psu_size``/``psu_density``/``bldg_area`` as ``(mean, sd)``, ``n_psus``). The
+    single-plan review endpoint passes the plan's per-arm ``sampling_stats`` directly;
+    the study-group page passes one entry per member plan, tagged with that plan's arm.
+    ``names``/``ward_density`` are optional per-arm maps for the row label + the
+    context-only whole-ward density line.
+    """
+    names = names or {}
+    ward_density = ward_density or {}
+    arms: list[dict] = []
+    for s in stats or []:
+        if not isinstance(s, dict):
+            continue
+        arm = s.get("arm", "intervention")
+        arms.append(
+            {
+                "arm": arm,
+                "psu_size": s.get("psu_size", (0, 0)),
+                "psu_density": s.get("psu_density", (0, 0)),
+                "bldg_area": s.get("bldg_area", (0, 0)),
+                "n_psus": s.get("n_psus") or 0,
+                "ward_density": ward_density.get(arm, 0.0),
+                "name": names.get(arm, ""),
+            }
+        )
+    return arms
+
+
 def arm_comparability_psu(arms: list[dict]) -> dict:
     """Corrected arm comparability: compare the SELECTED PSUs / surveyed buildings,
     not whole-ward geography.
@@ -66,6 +103,9 @@ def arm_comparability_psu(arms: list[dict]) -> dict:
     out_arms = [
         {
             "arm": a.get("arm", "intervention"),
+            # Display name for the arm's row (plan name on the group page, ward name on
+            # the single-plan page). Echoed so the shared panel can label each row.
+            "name": a.get("name", ""),
             "psu_size_mean": int(round(float(a.get("psu_size", (0, 0))[0]))),
             "psu_density_mean": int(round(float(a.get("psu_density", (0, 0))[0]))),
             "bldg_area_mean": int(round(float(a.get("bldg_area", (0, 0))[0]))),

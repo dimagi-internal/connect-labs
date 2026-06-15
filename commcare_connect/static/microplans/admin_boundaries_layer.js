@@ -24,28 +24,28 @@
  *   });
  */
 (function (global) {
-  "use strict";
+  'use strict';
 
-  const COLOR = "#a855f7";
+  const COLOR = '#a855f7';
   // Two-arm sampling: per-boundary study arm. Matches review.html ARM_COLOR.
-  const ARMS = ["intervention", "comparison"];
-  const ARM_COLOR = { intervention: "#10b981", comparison: "#3b82f6" };
-  const ARM_LABEL = { intervention: "Interv", comparison: "Control" };
-  const SRC = "mp-admin";
-  const LINE = "mp-admin-line";
-  const FILL = "mp-admin-fill";
-  const FILL_HOVER = "mp-admin-fill-hover";
-  const HOVER = "mp-admin-hover";
-  const SEL_SRC = "mp-admin-sel";
-  const SEL_FILL = "mp-admin-sel-fill";
-  const SEL_LINE = "mp-admin-sel-line";
+  const ARMS = ['intervention', 'comparison'];
+  const ARM_COLOR = { intervention: '#10b981', comparison: '#3b82f6' };
+  const ARM_LABEL = { intervention: 'Interv', comparison: 'Control' };
+  const SRC = 'mp-admin';
+  const LINE = 'mp-admin-line';
+  const FILL = 'mp-admin-fill';
+  const FILL_HOVER = 'mp-admin-fill-hover';
+  const HOVER = 'mp-admin-hover';
+  const SEL_SRC = 'mp-admin-sel';
+  const SEL_FILL = 'mp-admin-sel-fill';
+  const SEL_LINE = 'mp-admin-sel-line';
 
   function register(opts) {
     const map = opts.map;
     const panel = opts.panel;
     const urls = opts.urls || {};
     const M = global.Microplans;
-    const esc = (M && M.esc) || ((s) => String(s == null ? "" : s));
+    const esc = (M && M.esc) || ((s) => String(s == null ? '' : s));
     const getCountryIso = opts.getCountryIso || (() => null);
     const isAreaPhase = opts.isAreaPhase || (() => false);
     const onAreaAdd = opts.onAreaAdd || function () {};
@@ -78,7 +78,7 @@
     // the map layer, so they live in the map-panel layer body. The rail
     // (controlsHost) keeps only the plan-building output: the selected-boundary
     // summary + x-deletable list.
-    const sourceBody = document.createElement("div");
+    const sourceBody = document.createElement('div');
     sourceBody.innerHTML = `
       <label class="block mb-1.5">
         <span class="text-gray-600">Source</span>
@@ -88,18 +88,18 @@
              placeholder="search a ward / LGA / state by name, then click to add…">
       <div class="mp-ab-status text-[10px] text-gray-500 mt-1"></div>
       <div class="mp-ab-results max-h-32 overflow-y-auto"></div>`;
-    const body = document.createElement("div");
+    const body = document.createElement('div');
     body.innerHTML = `
       <div class="mp-ab-summary text-[11px] font-medium text-purple-700 mt-1"></div>
       <div class="mp-ab-selected space-y-0.5 mt-1"></div>
       <p class="mp-ab-hint text-[10px] text-gray-400 mt-1"></p>`;
-    const sourceSel = sourceBody.querySelector(".mp-ab-source");
-    const searchEl = sourceBody.querySelector(".mp-ab-search");
-    const statusEl = sourceBody.querySelector(".mp-ab-status");
-    const resultsEl = sourceBody.querySelector(".mp-ab-results");
-    const summaryEl = body.querySelector(".mp-ab-summary");
-    const hintEl = body.querySelector(".mp-ab-hint");
-    const selectedListEl = body.querySelector(".mp-ab-selected");
+    const sourceSel = sourceBody.querySelector('.mp-ab-source');
+    const searchEl = sourceBody.querySelector('.mp-ab-search');
+    const statusEl = sourceBody.querySelector('.mp-ab-status');
+    const resultsEl = sourceBody.querySelector('.mp-ab-results');
+    const summaryEl = body.querySelector('.mp-ab-summary');
+    const hintEl = body.querySelector('.mp-ab-hint');
+    const selectedListEl = body.querySelector('.mp-ab-selected');
 
     if (controlsHost) {
       controlsHost.appendChild(body); // search + selected list mount in the rail
@@ -108,23 +108,23 @@
     }
 
     function setStatus(t) {
-      statusEl.textContent = t || "";
+      statusEl.textContent = t || '';
     }
     function renderSourceOptions() {
       sourceSel.innerHTML = (availableSources || [])
         .map(
           (n) =>
-            `<option value="${esc(n)}"${n === source ? " selected" : ""}>${esc(
+            `<option value="${esc(n)}"${n === source ? ' selected' : ''}>${esc(
               sourceLabels[n] || n,
             )}</option>`,
         )
-        .join("");
+        .join('');
       sourceSel.parentElement.style.display =
-        availableSources.length > 1 ? "" : "none";
+        availableSources.length > 1 ? '' : 'none';
     }
     function renderSummary() {
       if (!selected.size) {
-        summaryEl.textContent = "";
+        summaryEl.textContent = '';
       } else {
         let km2 = 0;
         selected.forEach((v) => {
@@ -137,29 +137,29 @@
       // x-deletable list of the selected boundaries (lives in the rail). In
       // sampling mode each row also carries a per-boundary arm pill.
       if (!selectedListEl) return;
-      selectedListEl.innerHTML = "";
+      selectedListEl.innerHTML = '';
       const showArm = armEnabled();
       selected.forEach((v, id) => {
-        const row = document.createElement("div");
+        const row = document.createElement('div');
         row.className =
-          "flex items-center justify-between gap-1.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200";
-        const name = document.createElement("span");
-        name.className = "truncate flex-1";
+          'flex items-center justify-between gap-1.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200';
+        const name = document.createElement('span');
+        name.className = 'truncate flex-1';
         // Include the parent (LGA/state) so identically-named wards are distinguishable.
         name.textContent =
-          ((v.desc && v.desc.name) || "(area)") +
-          (v.desc && v.desc.parent_name ? ` — ${v.desc.parent_name}` : "");
+          ((v.desc && v.desc.name) || '(area)') +
+          (v.desc && v.desc.parent_name ? ` — ${v.desc.parent_name}` : '');
         if (v.desc && v.desc.parent_name)
           name.title = `${v.desc.name} — ${v.desc.parent_name}`;
         row.appendChild(name);
         if (showArm) row.appendChild(armPill(id, v));
-        const x = document.createElement("button");
-        x.type = "button";
+        const x = document.createElement('button');
+        x.type = 'button';
         x.className =
-          "text-gray-400 hover:text-red-600 leading-none px-1 shrink-0";
-        x.textContent = "×";
-        x.title = "Remove from plan area";
-        x.addEventListener("click", () => toggleSelect(v.desc));
+          'text-gray-400 hover:text-red-600 leading-none px-1 shrink-0';
+        x.textContent = '×';
+        x.title = 'Remove from plan area';
+        x.addEventListener('click', () => toggleSelect(v.desc));
         row.appendChild(x);
         selectedListEl.appendChild(row);
       });
@@ -175,20 +175,20 @@
       renderSummary();
     }
     function armPill(id, v) {
-      const arm = v.arm || "intervention";
-      const wrap = document.createElement("div");
+      const arm = v.arm || 'intervention';
+      const wrap = document.createElement('div');
       wrap.className =
-        "inline-flex rounded overflow-hidden border border-gray-200 text-[9px] font-semibold leading-none shrink-0";
-      wrap.title = "Study arm for this ward (intervention vs control)";
+        'inline-flex rounded overflow-hidden border border-gray-200 text-[9px] font-semibold leading-none shrink-0';
+      wrap.title = 'Study arm for this ward (intervention vs control)';
       ARMS.forEach((a) => {
-        const b = document.createElement("button");
-        b.type = "button";
+        const b = document.createElement('button');
+        b.type = 'button';
         const on = a === arm;
-        b.className = "px-1.5 py-0.5 transition-colors";
-        b.style.background = on ? ARM_COLOR[a] : "#fff";
-        b.style.color = on ? "#fff" : "#6b7280";
+        b.className = 'px-1.5 py-0.5 transition-colors';
+        b.style.background = on ? ARM_COLOR[a] : '#fff';
+        b.style.color = on ? '#fff' : '#6b7280';
         b.textContent = ARM_LABEL[a];
-        b.addEventListener("click", (e) => {
+        b.addEventListener('click', (e) => {
           e.stopPropagation();
           setArm(id, a);
         });
@@ -198,49 +198,49 @@
     }
     function renderHint() {
       hintEl.textContent = isAreaPhase()
-        ? "Click a boundary on the map, OR use the search box above (by ward/LGA/state name) and click a result, to add it to the plan area."
-        : "Click a boundary to inspect it.";
+        ? 'Click a boundary on the map, OR use the search box above (by ward/LGA/state name) and click a result, to add it to the plan area.'
+        : 'Click a boundary to inspect it.';
     }
 
     // ---- map layers ----
     function ensureLayers() {
       if (!map.getSource(SRC)) {
-        map.addSource(SRC, { type: "geojson", data: empty() });
+        map.addSource(SRC, { type: 'geojson', data: empty() });
         // Invisible fill over every boundary so a click/hover INSIDE a polygon
         // (not only on its line) hits the layer and can toggle selection.
         map.addLayer({
           id: FILL,
-          type: "fill",
+          type: 'fill',
           source: SRC,
-          paint: { "fill-color": COLOR, "fill-opacity": 0 },
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0 },
         });
         // Fill the hovered boundary so it's visible even when you're zoomed
         // INSIDE it (its outline off-screen). Filtered to the hovered id.
         map.addLayer({
           id: FILL_HOVER,
-          type: "fill",
+          type: 'fill',
           source: SRC,
-          filter: ["==", ["get", "boundary_id"], "__none__"],
-          paint: { "fill-color": COLOR, "fill-opacity": 0.22 },
+          filter: ['==', ['get', 'boundary_id'], '__none__'],
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0.22 },
         });
         map.addLayer({
           id: LINE,
-          type: "line",
+          type: 'line',
           source: SRC,
           paint: {
-            "line-color": COLOR,
+            'line-color': COLOR,
             // coarser level (lower number) = thicker; finer = thinner
             // Scale with zoom so fine (ward) outlines stay clearly visible when
             // zoomed in, instead of staying hair-thin on the satellite imagery.
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
               6,
               [
-                "interpolate",
-                ["linear"],
-                ["coalesce", ["get", "admin_level"], 1],
+                'interpolate',
+                ['linear'],
+                ['coalesce', ['get', 'admin_level'], 1],
                 1,
                 2.4,
                 2,
@@ -250,9 +250,9 @@
               ],
               13,
               [
-                "interpolate",
-                ["linear"],
-                ["coalesce", ["get", "admin_level"], 1],
+                'interpolate',
+                ['linear'],
+                ['coalesce', ['get', 'admin_level'], 1],
                 1,
                 4,
                 2,
@@ -261,40 +261,40 @@
                 2,
               ],
             ],
-            "line-opacity": 1,
+            'line-opacity': 1,
           },
         });
         map.addLayer({
           id: HOVER,
-          type: "line",
+          type: 'line',
           source: SRC,
-          filter: ["==", ["get", "boundary_id"], "__none__"],
-          paint: { "line-color": COLOR, "line-width": 3.2, "line-opacity": 1 },
+          filter: ['==', ['get', 'boundary_id'], '__none__'],
+          paint: { 'line-color': COLOR, 'line-width': 3.2, 'line-opacity': 1 },
         });
       }
       if (!map.getSource(SEL_SRC)) {
-        map.addSource(SEL_SRC, { type: "geojson", data: empty() });
+        map.addSource(SEL_SRC, { type: 'geojson', data: empty() });
         map.addLayer({
           id: SEL_FILL,
-          type: "fill",
+          type: 'fill',
           source: SEL_SRC,
-          paint: { "fill-color": COLOR, "fill-opacity": 0.3 },
+          paint: { 'fill-color': COLOR, 'fill-opacity': 0.3 },
         });
         map.addLayer({
           id: SEL_LINE,
-          type: "line",
+          type: 'line',
           source: SEL_SRC,
-          paint: { "line-color": COLOR, "line-width": 1.6 },
+          paint: { 'line-color': COLOR, 'line-width': 1.6 },
         });
       }
     }
     function empty() {
-      return { type: "FeatureCollection", features: [] };
+      return { type: 'FeatureCollection', features: [] };
     }
     function setVisible(on) {
       [FILL, FILL_HOVER, LINE, HOVER, SEL_FILL, SEL_LINE].forEach((id) => {
         if (map.getLayer(id))
-          map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+          map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       });
     }
     function teardown() {
@@ -308,7 +308,7 @@
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
         .map((n) => n.toFixed(5))
-        .join(",");
+        .join(',');
       const params = new URLSearchParams({
         bbox,
         zoom: map.getZoom().toFixed(1),
@@ -322,17 +322,17 @@
       // a *detected* country: it's inferred from a wide first view and can be a
       // neighbour, which then wrongly empties the map when you zoom into the
       // program's real country (the bbox already scopes labs geographically).
-      if (iso && (hostIso || source !== "labs")) params.set("iso", iso);
-      if (source) params.set("source", source);
+      if (iso && (hostIso || source !== 'labs')) params.set('iso', iso);
+      if (source) params.set('source', source);
       if (fetchCtrl) fetchCtrl.abort();
       fetchCtrl = new AbortController();
-      setStatus("Loading boundaries…");
+      setStatus('Loading boundaries…');
       try {
-        const data = await M.apiGet(urls.viewport + "?" + params.toString(), {
+        const data = await M.apiGet(urls.viewport + '?' + params.toString(), {
           signal: fetchCtrl.signal,
         });
-        if (data.status !== "ok") {
-          setStatus(data.detail || "Could not load boundaries");
+        if (data.status !== 'ok') {
+          setStatus(data.detail || 'Could not load boundaries');
           return;
         }
         features = data.features || [];
@@ -353,17 +353,17 @@
         sourceLabels = data.source_labels || {};
         source = data.source || source;
         ensureLayers();
-        map.getSource(SRC).setData({ type: "FeatureCollection", features });
+        map.getSource(SRC).setData({ type: 'FeatureCollection', features });
         renderSourceOptions();
         // search is country-wide + user-driven, so it doesn't re-run on viewport refresh
         setStatus(
           `${features.length.toLocaleString()} boundaries from ${
-            sourceLabels[source] || source || "default"
-          }${truncated ? " · zoom in to see all" : ""}`,
+            sourceLabels[source] || source || 'default'
+          }${truncated ? ' · zoom in to see all' : ''}`,
         );
       } catch (e) {
-        if (e && e.name === "AbortError") return;
-        setStatus("Failed: " + e);
+        if (e && e.name === 'AbortError') return;
+        setStatus('Failed: ' + e);
       }
     }
     const refreshDebounced = M.debounce(refresh, 350);
@@ -396,23 +396,23 @@
     function inspectHTML(f, point) {
       const p = f.properties || {};
       const rows = [];
-      if (p.parent_name) rows.push(["Parent", p.parent_name]);
+      if (p.parent_name) rows.push(['Parent', p.parent_name]);
       rows.push([
-        "Admin level",
-        "ADM" + (p.admin_level != null ? p.admin_level : "?"),
+        'Admin level',
+        'ADM' + (p.admin_level != null ? p.admin_level : '?'),
       ]);
-      if (p.iso_code) rows.push(["Country", p.iso_code]);
+      if (p.iso_code) rows.push(['Country', p.iso_code]);
       if (p.area_km2 != null)
-        rows.push(["Area", Math.round(p.area_km2).toLocaleString() + " km²"]);
+        rows.push(['Area', Math.round(p.area_km2).toLocaleString() + ' km²']);
       if (p.population != null)
-        rows.push(["Population", Math.round(p.population).toLocaleString()]);
+        rows.push(['Population', Math.round(p.population).toLocaleString()]);
       const isSel = selected.has(p.boundary_id);
       const body = [
         `<div style="font-weight:700;margin-bottom:.25rem">${esc(
-          p.name || "Boundary",
+          p.name || 'Boundary',
         )}</div>`,
         `<div style="font-size:.62rem;color:#6b7280">via ${esc(
-          sourceLabels[p.source] || p.source || "",
+          sourceLabels[p.source] || p.source || '',
         )}</div>`,
         '<table style="margin-top:.35rem;font-size:.66rem;color:#374151">' +
           rows
@@ -422,15 +422,15 @@
                   k,
                 )}</td><td>${esc(v)}</td></tr>`,
             )
-            .join("") +
-          "</table>",
+            .join('') +
+          '</table>',
       ];
       if (isAreaPhase()) {
         body.push(
           `<button type="button" class="mp-ab-act button button-sm ${
-            isSel ? "outline-style" : "primary-dark"
+            isSel ? 'outline-style' : 'primary-dark'
           } text-xs mt-2 w-full">` +
-            `${isSel ? "Remove from area" : "Add to area"}</button>`,
+            `${isSel ? 'Remove from area' : 'Add to area'}</button>`,
         );
         const par = point ? parentOf(point, p.admin_level || 0) : null;
         if (par) {
@@ -441,13 +441,13 @@
           );
         }
       }
-      const node = document.createElement("div");
-      node.innerHTML = body.join("");
-      const act = node.querySelector(".mp-ab-act");
-      if (act) act.addEventListener("click", () => toggleSelect(featToDesc(f)));
-      const par = node.querySelector(".mp-ab-parent");
+      const node = document.createElement('div');
+      node.innerHTML = body.join('');
+      const act = node.querySelector('.mp-ab-act');
+      if (act) act.addEventListener('click', () => toggleSelect(featToDesc(f)));
+      const par = node.querySelector('.mp-ab-parent');
       if (par && point) {
-        par.addEventListener("click", () => {
+        par.addEventListener('click', () => {
           const pf = parentOf(point, p.admin_level || 0);
           if (pf) pinInspect(pf, point);
         });
@@ -456,13 +456,13 @@
     }
 
     function showHover(f, point) {
-      const filt = ["==", ["get", "boundary_id"], f.properties.boundary_id];
+      const filt = ['==', ['get', 'boundary_id'], f.properties.boundary_id];
       if (map.getLayer(HOVER)) map.setFilter(HOVER, filt);
       if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, filt);
       panel.setInspect(inspectHTML(f, point), false);
     }
     function clearHover() {
-      const none = ["==", ["get", "boundary_id"], "__none__"];
+      const none = ['==', ['get', 'boundary_id'], '__none__'];
       if (map.getLayer(HOVER)) map.setFilter(HOVER, none);
       if (map.getLayer(FILL_HOVER)) map.setFilter(FILL_HOVER, none);
       if (pinned) panel.setInspect(pinned, false);
@@ -472,8 +472,8 @@
       const node = inspectHTML(f, point);
       pinned = node.cloneNode(true);
       // re-bind handlers on the pinned clone
-      const act = pinned.querySelector(".mp-ab-act");
-      if (act) act.addEventListener("click", () => toggleSelect(featToDesc(f)));
+      const act = pinned.querySelector('.mp-ab-act');
+      if (act) act.addEventListener('click', () => toggleSelect(featToDesc(f)));
       panel.setInspect(node, true);
     }
 
@@ -486,7 +486,7 @@
       // so `ref` (a dict) comes back as a string from queryRenderedFeatures.
       // Parse it back, else the geometry lookup 404s ("Area not found").
       let ref = p.ref || {};
-      if (typeof ref === "string") {
+      if (typeof ref === 'string') {
         try {
           ref = JSON.parse(ref);
         } catch (e) {
@@ -497,7 +497,7 @@
         key: p.boundary_id,
         name: p.name,
         level: p.admin_level,
-        parent_name: p.parent_name || "",
+        parent_name: p.parent_name || '',
         source: p.source,
         country: p.iso_code,
         ref: ref,
@@ -507,12 +507,12 @@
     }
     function rowToDesc(a) {
       const ref = a.ref || {};
-      const key = ref.boundary_id || `${a.source}:${a.region || ""}:${a.name}`;
+      const key = ref.boundary_id || `${a.source}:${a.region || ''}:${a.name}`;
       return {
         key,
         name: a.name,
         level: a.level,
-        parent_name: a.parent_name || ref.parent_name || "",
+        parent_name: a.parent_name || ref.parent_name || '',
         source: a.source,
         country: a.country,
         ref,
@@ -529,7 +529,7 @@
         renderSummary();
         return;
       }
-      setStatus("Fetching geometry…");
+      setStatus('Fetching geometry…');
       try {
         const area = {
           name: desc.name,
@@ -540,29 +540,29 @@
         };
         const resp = await post(urls.geometry, { area });
         const d = await resp.json();
-        if (!resp.ok || d.status !== "ok" || !d.geometry) {
-          setStatus(d.detail || "Geometry lookup failed");
+        if (!resp.ok || d.status !== 'ok' || !d.geometry) {
+          setStatus(d.detail || 'Geometry lookup failed');
           return;
         }
         // New picks default to the intervention arm; the per-row pill changes it.
-        selected.set(id, { desc, geometry: d.geometry, arm: "intervention" });
-        onAreaAdd(id, d.geometry, desc, "intervention");
+        selected.set(id, { desc, geometry: d.geometry, arm: 'intervention' });
+        onAreaAdd(id, d.geometry, desc, 'intervention');
         syncSelectedSource();
         renderSummary();
-        setStatus("");
+        setStatus('');
       } catch (e) {
-        setStatus("Failed: " + e);
+        setStatus('Failed: ' + e);
       }
     }
     function syncSelectedSource() {
       ensureLayers();
       const feats = [];
       selected.forEach((v) =>
-        feats.push({ type: "Feature", geometry: v.geometry, properties: {} }),
+        feats.push({ type: 'Feature', geometry: v.geometry, properties: {} }),
       );
       map
         .getSource(SEL_SRC)
-        .setData({ type: "FeatureCollection", features: feats });
+        .setData({ type: 'FeatureCollection', features: feats });
     }
 
     // ---- search ----
@@ -572,30 +572,30 @@
     // the country (e.g. before the first viewport load) or the endpoint is absent.
     let searchCtrl = null;
     function renderResults(items) {
-      resultsEl.innerHTML = "";
+      resultsEl.innerHTML = '';
       items.slice(0, 40).forEach(({ desc, label }) => {
-        const b = document.createElement("button");
-        b.type = "button";
+        const b = document.createElement('button');
+        b.type = 'button';
         b.className =
-          "block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50";
+          'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
         b.textContent = label;
-        b.addEventListener("click", () => {
+        b.addEventListener('click', () => {
           if (isAreaPhase()) toggleSelect(desc);
-          else setStatus("Switch to the area phase to add boundaries.");
+          else setStatus('Switch to the area phase to add boundaries.');
         });
         resultsEl.appendChild(b);
       });
     }
     function clientFilter(q) {
       return features
-        .filter((f) => (f.properties.name || "").toLowerCase().includes(q))
+        .filter((f) => (f.properties.name || '').toLowerCase().includes(q))
         .map((f) => {
           const p = f.properties;
           return {
             desc: featToDesc(f),
             label:
               `${p.name} · ADM${p.admin_level}` +
-              (p.area_km2 ? ` · ${Math.round(p.area_km2)} km²` : ""),
+              (p.area_km2 ? ` · ${Math.round(p.area_km2)} km²` : ''),
           };
         });
     }
@@ -605,66 +605,66 @@
     // works from a blank new-plan page.
     let geocodeCtrl = null;
     async function geocodeAndFly(q) {
-      const token = (window.mapboxgl && mapboxgl.accessToken) || "";
+      const token = (window.mapboxgl && mapboxgl.accessToken) || '';
       if (!token) {
         renderResults(clientFilter(q.toLowerCase()));
         return;
       }
       if (geocodeCtrl) geocodeCtrl.abort();
       geocodeCtrl = new AbortController();
-      setStatus("Searching places…");
+      setStatus('Searching places…');
       try {
         const url =
-          "https://api.mapbox.com/geocoding/v5/mapbox.places/" +
+          'https://api.mapbox.com/geocoding/v5/mapbox.places/' +
           encodeURIComponent(q) +
-          ".json?limit=6&types=region,district,place,locality&access_token=" +
+          '.json?limit=6&types=region,district,place,locality&access_token=' +
           encodeURIComponent(token);
         const r = await fetch(url, { signal: geocodeCtrl.signal });
         const d = await r.json();
         const feats = (d && d.features) || [];
-        resultsEl.innerHTML = "";
+        resultsEl.innerHTML = '';
         if (!feats.length) {
-          setStatus("No places found");
+          setStatus('No places found');
           return;
         }
         feats.forEach((f) => {
-          const b = document.createElement("button");
-          b.type = "button";
+          const b = document.createElement('button');
+          b.type = 'button';
           b.className =
-            "block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50";
+            'block w-full text-left truncate text-purple-700 text-xs px-1 py-0.5 hover:bg-purple-50';
           b.textContent = f.place_name || f.text;
-          b.addEventListener("click", () => {
+          b.addEventListener('click', () => {
             // Seed the country from the geocode result so the boundary layer can
             // load on arrival — the global Overture source needs an iso, and it's
             // otherwise only inferred from boundaries that haven't loaded yet. The
             // viewport endpoint normalizes alpha-2 (Mapbox) → alpha-3 (resolver).
             const ctry = (f.context || []).find((c) =>
-              (c.id || "").startsWith("country"),
+              (c.id || '').startsWith('country'),
             );
             const code =
               (ctry && ctry.short_code) ||
               (f.properties && f.properties.short_code) ||
-              "";
+              '';
             if (code && !detectedIso) detectedIso = code.toUpperCase();
             map.flyTo({ center: f.center, zoom: 9 });
-            searchEl.value = "";
-            resultsEl.innerHTML = "";
-            setStatus("Moved — click a boundary on the map to add it.");
+            searchEl.value = '';
+            resultsEl.innerHTML = '';
+            setStatus('Moved — click a boundary on the map to add it.');
           });
           resultsEl.appendChild(b);
         });
-        setStatus(feats.length + " place(s) — click to go there");
+        setStatus(feats.length + ' place(s) — click to go there');
       } catch (e) {
-        if (e && e.name === "AbortError") return;
+        if (e && e.name === 'AbortError') return;
         renderResults(clientFilter(q.toLowerCase()));
       }
     }
 
     async function runSearch() {
-      const q = (searchEl.value || "").trim();
-      resultsEl.innerHTML = "";
+      const q = (searchEl.value || '').trim();
+      resultsEl.innerHTML = '';
       if (!q) {
-        setStatus("");
+        setStatus('');
         return;
       }
       const country = getCountryIso() || detectedIso;
@@ -679,7 +679,7 @@
       }
       if (searchCtrl) searchCtrl.abort();
       searchCtrl = new AbortController();
-      setStatus("Searching…");
+      setStatus('Searching…');
       try {
         const perLevel = await Promise.all(
           [1, 2, 3].map((level) =>
@@ -694,7 +694,7 @@
         );
         const items = [];
         perLevel.forEach((d) => {
-          if (d && d.status === "ok")
+          if (d && d.status === 'ok')
             (d.areas || []).forEach((a) =>
               items.push({
                 desc: rowToDesc(a),
@@ -702,22 +702,22 @@
                 // LGAs/states are distinguishable.
                 label:
                   `${a.name}` +
-                  (a.parent_name ? ` — ${a.parent_name}` : "") +
-                  ` · ${a.level_label || "ADM" + a.level}` +
-                  (a.area_km2 ? ` · ${Math.round(a.area_km2)} km²` : ""),
+                  (a.parent_name ? ` — ${a.parent_name}` : '') +
+                  ` · ${a.level_label || 'ADM' + a.level}` +
+                  (a.area_km2 ? ` · ${Math.round(a.area_km2)} km²` : ''),
               }),
             );
         });
         renderResults(items);
-        setStatus(items.length ? `${items.length} match(es)` : "No matches");
+        setStatus(items.length ? `${items.length} match(es)` : 'No matches');
       } catch (e) {
-        if (e && e.name === "AbortError") return;
+        if (e && e.name === 'AbortError') return;
         renderResults(clientFilter(q.toLowerCase())); // network error → best-effort
       }
     }
-    searchEl.addEventListener("input", M.debounce(runSearch, 250));
+    searchEl.addEventListener('input', M.debounce(runSearch, 250));
 
-    sourceSel.addEventListener("change", () => {
+    sourceSel.addEventListener('change', () => {
       source = sourceSel.value || null;
       refresh();
     });
@@ -727,18 +727,18 @@
     function wireMap() {
       if (wired) return;
       wired = true;
-      map.on("mousemove", FILL, (e) => {
+      map.on('mousemove', FILL, (e) => {
         if (!layer.on || !e.features.length) return;
-        map.getCanvas().style.cursor = "pointer";
+        map.getCanvas().style.cursor = 'pointer';
         const f = smallestAt(e.point) || e.features[0];
         showHover(f, e.point);
       });
-      map.on("mouseleave", FILL, () => {
+      map.on('mouseleave', FILL, () => {
         if (!layer.on) return;
-        map.getCanvas().style.cursor = "";
+        map.getCanvas().style.cursor = '';
         clearHover();
       });
-      map.on("click", FILL, (e) => {
+      map.on('click', FILL, (e) => {
         if (!layer.on) return;
         const f = smallestAt(e.point);
         if (!f) return;
@@ -750,14 +750,14 @@
         }
         pinInspect(f, e.point);
       });
-      map.on("moveend", () => {
+      map.on('moveend', () => {
         if (layer.on) refreshDebounced();
       });
     }
 
     const layer = panel.registerLayer({
-      id: "admin",
-      label: "Boundaries",
+      id: 'admin',
+      label: 'Boundaries',
       color: COLOR,
       onToggle: (on) => {
         if (on) {
