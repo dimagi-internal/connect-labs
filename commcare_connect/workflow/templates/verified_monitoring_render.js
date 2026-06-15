@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V66
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V67
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -159,11 +159,22 @@ function WorkflowUI(props) {
           });
         }
         if (pinsOn && overlay.survey_pins) {
+          // When a scorecard row is selected, filter the pins to THAT surveyor's
+          // surveys (each pin carries its surveyor). null selSurv = show all.
+          var pinsData = overlay.survey_pins;
+          if (selSurv) {
+            pinsData = {
+              type: 'FeatureCollection',
+              features: (pinsData.features || []).filter(function (f) {
+                return (f.properties || {}).surveyor === selSurv;
+              }),
+            };
+          }
           // Survey pins stay SUBORDINATE to the solid green delivery layer, but
           // need a crisp outline so 'the survey covered both wards' reads — in
           // the control ward (no delivery) the pins are the only marks, so if
           // they're too faint the gap looks like 'nobody surveyed control'.
-          CM.pins(map, 'vm-pins', overlay.survey_pins, {
+          CM.pins(map, 'vm-pins', pinsData, {
             confirmedColor: INDIGO,
             // Three clearly distinct hues so the survey reads apart from the
             // program's green delivery: confirmed = indigo, surveyed-but-not-
@@ -183,33 +194,34 @@ function WorkflowUI(props) {
             // visible on the map without a third colour. Ungrounded rounds carry no
             // sample_type, so they default to solid (treated as primary).
             var isAlt = ['==', ['get', 'sample_type'], 'alternate'];
-            // Alternate (substituted) pins render as a clearly HOLLOW ring: a
-            // larger radius, a near-empty fill, and a thick DARK ring, so the
-            // substitution mix reads even at ward zoom where pins are tiny — an
-            // unmistakable open ring against the solid primary dots, legible on
-            // the light basemap.
+            // PRIMARY (first-choice) is the dominant mark — the data is mostly
+            // primaries, so they must read as the larger SOLID dots. ALTERNATE
+            // (substituted) reads as a SMALLER hollow ring in the SAME hue
+            // (confirmed = indigo, not-reached = rose) — clearly a substituted
+            // variant of that survey, subordinate to the primaries, never bigger.
+            // Ungrounded rounds carry no sample_type → default to the solid primary.
             map.setPaintProperty('vm-pins', 'circle-radius', [
               'case',
               isAlt,
-              4.2,
-              3.4,
+              2.8,
+              4.0,
             ]);
             map.setPaintProperty('vm-pins', 'circle-opacity', [
               'case',
               isAlt,
-              0.06,
+              0.12,
               0.95,
             ]);
             map.setPaintProperty('vm-pins', 'circle-stroke-width', [
               'case',
               isAlt,
-              1.8,
-              1.2,
+              1.3,
+              1.0,
             ]);
             map.setPaintProperty('vm-pins', 'circle-stroke-color', [
               'case',
               isAlt,
-              '#0f172a',
+              ['case', ['get', 'confirmed'], INDIGO, ROSE],
               'rgba(255,255,255,0.95)',
             ]);
           } catch (e) {}
@@ -307,6 +319,7 @@ function WorkflowUI(props) {
         // drawn ABOVE all-buildings but UNDER the monitoring marks.
         var WA_IDS = ['vm-wa-fill', 'vm-wa-altline', 'vm-wa-dots'];
         if (waOn && window.PlanLayers && planUrl) {
+          var csMap = overlay.cluster_surveyor || {};
           var waFc = loadFc(
             planUrl,
             function (d) {
@@ -317,12 +330,16 @@ function WorkflowUI(props) {
                     return w.geometry;
                   })
                   .map(function (w) {
+                    var cl = (w.properties || {}).cluster;
                     return {
                       type: 'Feature',
                       geometry: w.geometry,
                       properties: {
                         arm: w.arm,
                         sample_type: (w.properties || {}).sample_type,
+                        // owning surveyor (via the round's cluster->surveyor map),
+                        // so a scorecard click can filter to one surveyor's PSUs.
+                        surveyor: csMap[w.arm + ':' + cl],
                       },
                     };
                   }),
@@ -331,8 +348,17 @@ function WorkflowUI(props) {
             waLayerRef,
           );
           if (waFc) {
+            // Filter to the selected surveyor's work areas when a row is clicked.
+            var waShown = selSurv
+              ? {
+                  type: 'FeatureCollection',
+                  features: (waFc.features || []).filter(function (f) {
+                    return f.properties.surveyor === selSurv;
+                  }),
+                }
+              : waFc;
             window.PlanLayers.footprints(map, {
-              data: waFc,
+              data: waShown,
               src: 'vm-wa',
               fillId: WA_IDS[0],
               altLineId: WA_IDS[1],
@@ -344,7 +370,9 @@ function WorkflowUI(props) {
             });
             if (waLayerRef.current)
               waLayerRef.current.setMeta(
-                (waFc.features || []).length.toLocaleString() + ' work areas',
+                (waShown.features || []).length.toLocaleString() +
+                  ' work areas' +
+                  (selSurv ? ' · ' + selSurv : ''),
               );
           }
         } else if (window.PlanLayers) {
@@ -384,7 +412,7 @@ function WorkflowUI(props) {
         });
       return undefined;
     },
-    [mapLibReady, sel, sdOn, pinsOn, planOn, waOn, bfOn],
+    [mapLibReady, sel, sdOn, pinsOn, planOn, waOn, bfOn, selSurv],
   );
 
   // Build the map's Layers panel ONCE the map exists — reuses the plan editor's
@@ -2487,6 +2515,53 @@ function WorkflowUI(props) {
                 border: '1px solid ' + LINE,
               }}
             />
+            {/* When a scorecard row is selected, the map shows only that surveyor's
+                surveys + work areas — this chip says so and clears the filter. */}
+            {selSurv ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  zIndex: 7,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'rgba(255,255,255,0.97)',
+                  border: '1px solid ' + INDIGO,
+                  borderRadius: 999,
+                  padding: '4px 6px 4px 12px',
+                  fontSize: 11.5,
+                  fontFamily: mono,
+                  color: SUBINK,
+                  boxShadow: '0 2px 8px rgba(16,24,40,0.14)',
+                }}
+              >
+                <span>
+                  Surveyor <b style={{ color: INDIGO }}>{selSurv}</b> only
+                </span>
+                <button
+                  onClick={function () {
+                    setSelSurv(null);
+                  }}
+                  title="Show all surveyors"
+                  style={{
+                    cursor: 'pointer',
+                    border: '1px solid ' + LINE,
+                    background: '#fff',
+                    color: MUT,
+                    borderRadius: 999,
+                    fontSize: 11,
+                    lineHeight: 1,
+                    padding: '3px 8px',
+                    fontFamily: sans,
+                  }}
+                >
+                  show all ✕
+                </button>
+              </div>
+            ) : null}
             <div
               style={{
                 position: 'absolute',
