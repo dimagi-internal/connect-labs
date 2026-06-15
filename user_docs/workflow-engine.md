@@ -208,11 +208,16 @@ The Trend panel shows the self-reported and independently-verified coverage line
 
 **Map panel**
 
-The map panel has three toggles — **delivery**, **survey**, and **plan** — so you can control what is drawn on the map at any time.
+The map panel has a docked **Layers** panel — the same chrome used in the sampling-plan editor — so the controls look and behave consistently whether you are reviewing monitoring data or editing a plan. The Layers panel contains the following toggles:
 
 - **Delivery** — shows implementer-reported visit pins
 - **Survey** — shows independent surveyor visit pins
-- **Plan** — shows the designed study plan: the study wards and sampled work areas drawn exactly as they appear in the plan editor, so the plan you designed and the monitoring of it look like one coherent picture
+- **Plan** — shows the designed study plan: the selected cluster areas (PSUs) from the sampling plan, drawn in the same arm colours used in the plan editor — intervention areas in green and comparison areas in blue — so the plan you designed and the monitoring of it look like one coherent picture
+- **Building footprints** — shows the actual sampled building outlines coloured by study arm (intervention green / comparison blue); **primary** buildings are drawn as solid shapes and **alternate (substituted)** buildings are drawn as dashed outlines, so you can immediately see which buildings the plan originally selected and which were substitutes
+
+When you turn on the **Building footprints** layer, the ward and cluster area fills fade back so the individual buildings stand out against the map — the ward and cluster outlines remain visible for context, but the colour fills no longer compete with the building shapes. Buildings themselves render with a crisp dark edge so they are clearly legible when you zoom in, whether they are solid (primary) or dashed (alternate).
+
+Previously the map could only show survey and delivery dots alongside cluster outlines. The building footprints layer now lets you see the real buildings the sampling plan selected, making "what we planned to visit" and "what we monitored" directly comparable on the same map.
 
 Survey pins on the map use two distinct visual styles to distinguish visit types:
 
@@ -229,18 +234,4 @@ The GPS-location section of the back-check is labelled **"% within 25 m · cells
 
 The GPS drill-down also shows a count chip summarising the full picture at a glance — for example, *"12 flagged · 34 ok · 46 total"* — alongside a full-census caption so you always know how many visits the percentage is based on.
 
-Back-check data reflects real discordance across identity, location, and outcome dimensions. When a surveyor is flagged, the re-survey results will show genuine disagreement in all three areas if the evidence supports it, giving you a complete and consistent picture of where the back-check found problems.
-
-**Distributions card**
-
-The Distributions card runs a **statistical fabrication screen** — a way to spot a problematic surveyor using only the data already collected, without needing a second field visit.
-
-For each surveyor, the screen compares three signals against the rest of the team:
-
-| Signal | What it detects |
-| ------ | --------------- |
-| **Dose yes-rate** | Is this surveyor reporting "received" far more or less often than peers? |
-| **Interview speed** | Are their interviews implausibly short — a sign of curbstoning (recording answers without actually conducting the interview)? |
-| **Answer uniformity** | Are their answers suspiciously consistent — too little natural variation in responses like roof type or household composition to reflect real fieldwork? |
-
-Each surveyor receives a **red / amber / green** verdict based on how their figures compare to the team as a whole. Each cell in the table shows two
+Back-check data reflects real discordance across identity, location, and outcome dimensions. When a

@@ -465,7 +465,7 @@ function WorkflowUI({ definition, instance, workers, pipelines, links, actions, 
 - Use `var` for all variable declarations (`const` and `let` work in modern browsers but `var` is the safest choice for Babel standalone + eval)
 - No imports -- only `React` is available as a global
 - CDN libraries available via `window`: Chart.js 4.4.0 (`window.Chart`), chartjs-adapter-date-fns 3.0.0, Leaflet 1.9.4 (`window.L`), Mapbox GL 3.13.0 (`window.mapboxgl`)
-- **Shared map components** for drawing CommCare / microplan data on a Mapbox map: `window.ConnectMap` (boundaries, points, survey pins) and `window.PlanLayers` (the canonical microplan plan layers — work areas, PSU hulls, sample pins, footprints). **Use these instead of hand-rolling layer paint** — they are the same definitions the plan editor uses, so a render draws a plan identically. See [§4a Shared map components](#4a-shared-map-components-connectmap--planlayers).
+- **Shared map components** for drawing CommCare / microplan data on a Mapbox map: `window.ConnectMap` (boundaries, points, survey pins), `window.PlanLayers` (the canonical microplan plan layers — work areas, PSU hulls, sample pins, footprints), and `window.MicroplansMapPanel` (the docked Layers toggle panel). **Use these instead of hand-rolling layer paint or toggles** — they are the same definitions the plan editor uses, so a render draws a plan identically. See [§4a Shared map components](#4a-shared-map-components-connectmap--planlayers).
 - Tailwind CSS classes are available for styling
 - All React hooks are accessed via `React.useState`, `React.useEffect`, `React.useMemo`, `React.useRef`, `React.useCallback`
 
@@ -518,6 +518,18 @@ returns its layer ids; interactivity is the caller's job.
 
 Common `opts`: `data` (FeatureCollection), `src` (source id), and overrides like
 `armProp` / `colors` / `typeProp` so the same paint can run over differently-tagged data.
+`footprints` additionally takes `armProp` (arm-colour instead of amber) and
+`splitByType: true` (encode `typeProp`, default `sample_type`: **primary → solid fill,
+alternate → dashed outline** — the polygon analogue of the pins' solid/hollow split),
+plus `fillId` / `altLineId` / `dotsId` to namespace its layers.
+
+**`window.MicroplansMapPanel`** — the docked **Layers panel** the plan editor uses
+(`static/microplans/map_panel.js`): `create({ map, mount, tabs })` → `registerLayer({ id,
+label, color, badge, meta, onToggle })`. Reuse it instead of hand-rolling layer toggles so
+the selector chrome matches the plan UI. Pass `tabs: ['layers']` to drop the Inspect tab
+when there's nothing to inspect. Each layer's `onToggle(on, handle)` drives your draw;
+`handle.setMeta(text)` updates the row (e.g. a lazy-loaded count); `setEnabled(true, false)`
+sets a default-on layer without firing the callback.
 
 **Drawing a saved plan** (work areas + arm wards) from its JSON — fetch the plan API
 (`/microplans/program/<program_id>/plan/<plan_id>/`, which returns `work_areas`,

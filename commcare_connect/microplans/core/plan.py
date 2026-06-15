@@ -564,12 +564,16 @@ def plan_sample_areas(input_areas: list, arm, resolve_boundary) -> list[dict]:
     skipped."""
     out = []
     for a in input_areas or []:
+        # A two-arm SINGLE plan tags each input_area with its own ``arm`` — honour
+        # that when present, else fall back to the plan-level ``arm`` (legacy
+        # single-arm plan whose arm lived on the study group).
+        a_arm = a.get("arm") or arm
         if a.get("geometry"):
-            out.append({"arm": arm, "geometry": a["geometry"]})
+            out.append({"arm": a_arm, "geometry": a["geometry"]})
         elif a.get("boundary_id"):
             geom = resolve_boundary(a["boundary_id"])
             if geom:
-                out.append({"arm": arm, "geometry": geom})
+                out.append({"arm": a_arm, "geometry": geom})
     return out
 
 

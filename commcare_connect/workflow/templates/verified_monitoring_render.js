@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V63
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V65
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -53,15 +53,32 @@ function WorkflowUI(props) {
   var [sdOn, setSdOn] = React.useState(true);
   var [pinsOn, setPinsOn] = React.useState(true);
   var [planOn, setPlanOn] = React.useState(true);
+  // Building footprints default OFF — a drill-down layer, lazy-fetched on toggle.
+  var [fpOn, setFpOn] = React.useState(false);
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   var mapLoadedRef = React.useRef(false);
-  // The DESIGNED plan (study wards + sampled work areas), pulled from the plan
-  // infrastructure and drawn via the shared PlanLayers component so this monitoring
-  // map matches the plan editor. Hardcoded plan for now. See WORKFLOW_REFERENCE.md §4a.
-  var PLAN_URL = '/microplans/program/10008/plan/4274/';
-  var planRef = React.useRef(null);
-  var planFetchedRef = React.useRef(false);
+  // The map's Layers panel (the SAME component the plan editor docks on its map:
+  // static/microplans/map_panel.js) + its mount node; created once the map exists.
+  var panelMountRef = React.useRef(null);
+  var panelRef = React.useRef(null);
+  var fpLayerRef = React.useRef(null);
+  // Arm → colour, shared with the plan editor (PlanLayers.ARM_COLOR).
+  var ARM = (window.PlanLayers && window.PlanLayers.ARM_COLOR) || {
+    intervention: '#10b981',
+    comparison: '#3b82f6',
+  };
+  // The DESIGNED plan's selected-PSU hulls ride on the round's seeded state
+  // (overlay.plan_hulls — baked by regenerate.py from the real two-arm plan) and are
+  // drawn via the shared PlanLayers, so the monitoring map matches the plan editor.
+  // Show-don't-tell: read from state, never fetch. See WORKFLOW_REFERENCE.md §4a.
+  //
+  // EXCEPTION — building footprints (opt-in 'footprints' layer): the work-area
+  // polygons ARE the sampled building footprints, served by the plan endpoint the
+  // editor itself fetches (overlay.plan_url). Too heavy to bake into every round's
+  // state, so this one drill-down lazy-fetches on toggle and caches per plan_url.
+  var fpCacheRef = React.useRef({});
+  var fpLoadingRef = React.useRef({});
 
   React.useEffect(
     function () {
@@ -94,19 +111,6 @@ function WorkflowUI(props) {
         });
       }
       var map = mapRef.current;
-      // Fetch the designed plan once; redraw when it lands (draw() is hoisted).
-      if (!planFetchedRef.current && window.PlanLayers) {
-        planFetchedRef.current = true;
-        fetch(PLAN_URL)
-          .then(function (r) {
-            return r.json();
-          })
-          .then(function (plan) {
-            planRef.current = plan;
-            if (mapLoadedRef.current && map.isStyleLoaded()) draw();
-          })
-          .catch(function () {});
-      }
       function draw() {
         CM.remove(map, ['vm-sd', 'vm-pins', 'vm-wards']);
         CM.boundary(map, 'vm-wards', overlay.ward_boundaries, {
@@ -201,56 +205,115 @@ function WorkflowUI(props) {
             ]);
           } catch (e) {}
         }
-        // The DESIGNED plan, drawn with the SAME PlanLayers the editor uses (§4a):
-        // arm-coloured study wards (from input_areas) + the sampled work-area
-        // footprints, namespaced (vm-plan-*) so they sit under the monitoring marks.
-        if (planOn && window.PlanLayers && planRef.current) {
-          var plan = planRef.current;
-          var wards = {
-            type: 'FeatureCollection',
-            features: (plan.input_areas || []).map(function (a) {
-              return {
-                type: 'Feature',
-                geometry: a.geometry,
-                properties: { arm: a.arm || 'intervention' },
-              };
-            }),
-          };
+        // The DESIGNED plan's selected-PSU hulls, drawn with the SAME PlanLayers the
+        // editor uses (§4a) — arm-coloured, namespaced vm-plan-psu-* so they sit under
+        // the monitoring marks. Read from the round's seeded state (overlay.plan_hulls);
+        // never fetched.
+        var planHulls = overlay.plan_hulls;
+        if (
+          planOn &&
+          window.PlanLayers &&
+          planHulls &&
+          (planHulls.features || []).length
+        ) {
           window.PlanLayers.hulls(map, {
-            data: wards,
-            src: 'vm-plan-wards',
-            fillId: 'vm-plan-wards-fill',
-            lineId: 'vm-plan-wards-line',
+            data: planHulls,
+            src: 'vm-plan-psu',
+            fillId: 'vm-plan-psu-fill',
+            lineId: 'vm-plan-psu-line',
           });
-          var was = {
-            type: 'FeatureCollection',
-            features: (plan.work_areas || []).map(function (w) {
-              return {
-                type: 'Feature',
-                geometry: w.geometry,
-                properties: {
-                  id: w.id,
-                  status: 'ACTIVE',
-                  fill: '#6366f1',
-                  outline: '#4338ca',
-                },
-              };
-            }),
-          };
-          window.PlanLayers.workAreas(map, {
-            data: was,
-            src: 'vm-plan-wa',
-            fillId: 'vm-plan-wa-fill',
-            lineId: 'vm-plan-wa-line',
-          });
-        } else if (!planOn && window.PlanLayers) {
+        } else if (window.PlanLayers) {
           window.PlanLayers.remove(map, [
-            'vm-plan-wa-fill',
-            'vm-plan-wa-line',
-            'vm-plan-wards-fill',
-            'vm-plan-wards-line',
+            'vm-plan-psu-fill',
+            'vm-plan-psu-line',
           ]);
         }
+        // Building footprints (opt-in): the sampled work-area polygons, arm-coloured
+        // with a primary-solid / alternate-dashed split via the shared PlanLayers —
+        // the polygon analogue of the pins. Lazy-fetched from overlay.plan_url (the
+        // editor's own plan endpoint) and cached per plan; drawn UNDER the monitoring
+        // marks. The fetch redraws on resolve.
+        var FP_IDS = [
+          'vm-plan-fp-fill',
+          'vm-plan-fp-altline',
+          'vm-plan-fp-dots',
+        ];
+        var planUrl = overlay.plan_url;
+        if (fpOn && window.PlanLayers && planUrl) {
+          var fc = fpCacheRef.current[planUrl];
+          if (fc) {
+            var under = ['vm-sd', 'vm-pins'].filter(function (id) {
+              return map.getLayer(id);
+            })[0];
+            window.PlanLayers.footprints(map, {
+              data: fc,
+              src: 'vm-plan-fp',
+              fillId: FP_IDS[0],
+              altLineId: FP_IDS[1],
+              dotsId: FP_IDS[2],
+              armProp: 'arm',
+              splitByType: true,
+              colors: ARM,
+              before: under,
+            });
+            if (fpLayerRef.current)
+              fpLayerRef.current.setMeta(
+                (fc.features || []).length.toLocaleString() + ' buildings',
+              );
+          } else if (!fpLoadingRef.current[planUrl]) {
+            fpLoadingRef.current[planUrl] = true;
+            if (fpLayerRef.current) fpLayerRef.current.setMeta('Loading…');
+            fetch(planUrl, { headers: { Accept: 'application/json' } })
+              .then(function (r) {
+                return r.json();
+              })
+              .then(function (d) {
+                fpCacheRef.current[planUrl] = {
+                  type: 'FeatureCollection',
+                  features: (d.work_areas || [])
+                    .filter(function (w) {
+                      return w.geometry;
+                    })
+                    .map(function (w) {
+                      return {
+                        type: 'Feature',
+                        geometry: w.geometry,
+                        properties: {
+                          arm: w.arm,
+                          sample_type: (w.properties || {}).sample_type,
+                        },
+                      };
+                    }),
+                };
+                fpLoadingRef.current[planUrl] = false;
+                if (mapRef.current && mapRef.current.isStyleLoaded()) draw();
+              })
+              .catch(function () {
+                fpLoadingRef.current[planUrl] = false;
+                if (fpLayerRef.current)
+                  fpLayerRef.current.setMeta('Failed — toggle to retry');
+              });
+          }
+        } else if (window.PlanLayers) {
+          window.PlanLayers.remove(map, FP_IDS);
+        }
+        // When the footprints drill-down is on, fade the AREA fills (ward + PSU
+        // hull) so the individual buildings read against a clean background; the
+        // hull/ward OUTLINES stay for cluster + ward context. Restored when off.
+        try {
+          if (map.getLayer('vm-wards-fill'))
+            map.setPaintProperty(
+              'vm-wards-fill',
+              'fill-opacity',
+              fpOn ? 0.05 : 0.14,
+            );
+          if (map.getLayer('vm-plan-psu-fill'))
+            map.setPaintProperty(
+              'vm-plan-psu-fill',
+              'fill-opacity',
+              fpOn ? 0.03 : 0.12,
+            );
+        } catch (e) {}
         CM.fit(map, overlay.ward_boundaries, 64);
       }
       if (mapLoadedRef.current && map.isStyleLoaded()) draw();
@@ -261,7 +324,72 @@ function WorkflowUI(props) {
         });
       return undefined;
     },
-    [mapLibReady, sel, sdOn, pinsOn, planOn],
+    [mapLibReady, sel, sdOn, pinsOn, planOn, fpOn],
+  );
+
+  // Build the map's Layers panel ONCE the map exists — reuses the plan editor's
+  // MicroplansMapPanel so the selector chrome matches the plan UI exactly. Each
+  // layer's onToggle drives the existing React draw state; footprints carries a
+  // 'buildings' meta the draw fills in after the lazy fetch. Inspect tab dropped
+  // (monitoring has nothing to inspect).
+  React.useEffect(
+    function () {
+      if (
+        panelRef.current ||
+        !mapLibReady ||
+        !window.MicroplansMapPanel ||
+        !panelMountRef.current ||
+        !mapRef.current
+      )
+        return undefined;
+      var panel = window.MicroplansMapPanel.create({
+        map: mapRef.current,
+        mount: panelMountRef.current,
+        tabs: ['layers'],
+      });
+      panelRef.current = panel;
+      panel
+        .registerLayer({
+          id: 'delivery',
+          label: 'Service delivery',
+          color: '#16a34a',
+          onToggle: function (on) {
+            setSdOn(on);
+          },
+        })
+        .setEnabled(true, false);
+      panel
+        .registerLayer({
+          id: 'survey',
+          label: 'Independent survey',
+          color: INDIGO,
+          onToggle: function (on) {
+            setPinsOn(on);
+          },
+        })
+        .setEnabled(true, false);
+      panel
+        .registerLayer({
+          id: 'plan',
+          label: 'Plan · sampled PSUs',
+          color: GREEN,
+          onToggle: function (on) {
+            setPlanOn(on);
+          },
+        })
+        .setEnabled(true, false);
+      fpLayerRef.current = panel.registerLayer({
+        id: 'footprints',
+        label: 'Building footprints',
+        color: AMBER,
+        meta: 'Toggle to load',
+        onToggle: function (on) {
+          setFpOn(on);
+        },
+      });
+      return undefined;
+    },
+    [mapLibReady],
   );
 
   if (!rd) {
@@ -2273,47 +2401,10 @@ function WorkflowUI(props) {
             >
               Map · {tWard} (intervention) vs {cWard} (control)
             </div>
-            <div
-              style={{
-                display: 'flex',
-                gap: 12,
-                fontSize: 11,
-                fontFamily: mono,
-              }}
-            >
-              <label style={{ color: '#16a34a', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={sdOn}
-                  onChange={function (e) {
-                    setSdOn(e.target.checked);
-                  }}
-                />{' '}
-                delivery
-              </label>
-              <label style={{ color: INDIGO, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={pinsOn}
-                  onChange={function (e) {
-                    setPinsOn(e.target.checked);
-                  }}
-                />{' '}
-                survey
-              </label>
-              <label style={{ color: '#6366f1', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={planOn}
-                  onChange={function (e) {
-                    setPlanOn(e.target.checked);
-                  }}
-                />{' '}
-                plan
-              </label>
-            </div>
+            {/* Layer toggles live in the docked Layers panel (top-right of the
+                map) — the SAME MicroplansMapPanel the plan editor uses. */}
           </div>
-          <div style={{ position: 'relative' }}>
+          <div ref={panelMountRef} style={{ position: 'relative' }}>
             <div
               ref={mapDivRef}
               style={{

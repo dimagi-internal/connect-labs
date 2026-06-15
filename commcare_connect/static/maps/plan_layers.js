@@ -160,36 +160,78 @@
 
   // Building footprints: polygon fill where the cache stored geometry, centroid-dot
   // fallback otherwise. `before` keeps them under the work-area lines.
+  //
+  // Two opt-in modes (default = the editor's plain amber fill, unchanged):
+  //   • opts.armProp — colour by arm ('intervention'/'comparison') instead of amber.
+  //   • opts.splitByType — encode the sample channel (opts.typeProp, default
+  //     'sample_type'): PRIMARY footprints read as a SOLID fill, ALTERNATE
+  //     (substituted) ones as a DASHED outline with no fill — the polygon analogue
+  //     of the pins' solid-dot / hollow-ring split. Set together for the monitoring
+  //     overlay so the designed buildings match the editor's arms + sampling read.
   function footprints(map, opts) {
     opts = opts || {};
     const src = opts.src || 'plan-fp';
+    const fillId = opts.fillId || 'plan-fp-fill';
+    const altLineId = opts.altLineId || 'plan-fp-alt-line';
+    const dotsId = opts.dotsId || 'plan-fp-dots';
+    const typeProp = opts.typeProp || 'sample_type';
+    const fillColor = opts.armProp
+      ? _armColor(opts.armProp, opts.colors)
+      : '#f59e0b';
+    const lineColor = opts.armProp
+      ? _armColor(opts.armProp, opts.colors)
+      : '#b45309';
     _setSource(map, src, opts.data);
     const before =
       opts.before || (map.getLayer('wa-line') ? 'wa-line' : undefined);
-    if (!map.getLayer('plan-fp-fill')) {
+    const isPolygon = ['==', ['geometry-type'], 'Polygon'];
+    const isPrimary = ['!=', ['get', typeProp], 'alternate'];
+    if (!map.getLayer(fillId)) {
       map.addLayer(
         {
-          id: 'plan-fp-fill',
+          id: fillId,
           type: 'fill',
           source: src,
-          filter: ['==', ['geometry-type'], 'Polygon'],
+          // When splitting by type, only PRIMARY polygons get the solid fill;
+          // alternates render as the dashed outline below.
+          filter: opts.splitByType ? ['all', isPolygon, isPrimary] : isPolygon,
           paint: {
-            'fill-color': '#f59e0b',
-            'fill-opacity': 0.55,
-            'fill-outline-color': '#b45309',
+            'fill-color': fillColor,
+            // In split mode (monitoring) the buildings are the focus and small, so
+            // they read more solid with a crisp DARK edge; the editor keeps its
+            // lighter amber fill + amber edge.
+            'fill-opacity': opts.splitByType ? 0.7 : 0.55,
+            'fill-outline-color': opts.splitByType ? '#1f2937' : lineColor,
           },
         },
         before,
       );
+      if (opts.splitByType) {
+        map.addLayer(
+          {
+            id: altLineId,
+            type: 'line',
+            source: src,
+            filter: ['all', isPolygon, ['==', ['get', typeProp], 'alternate']],
+            paint: {
+              'line-color': lineColor,
+              'line-width': 1.4,
+              'line-opacity': 0.95,
+              'line-dasharray': [2, 1.4],
+            },
+          },
+          before,
+        );
+      }
       map.addLayer(
         {
-          id: 'plan-fp-dots',
+          id: dotsId,
           type: 'circle',
           source: src,
           filter: ['==', ['geometry-type'], 'Point'],
           paint: {
             'circle-radius': 1.6,
-            'circle-color': '#f59e0b',
+            'circle-color': fillColor,
             'circle-stroke-color': '#fff',
             'circle-stroke-width': 0.4,
           },
@@ -197,7 +239,7 @@
         before,
       );
     }
-    return ['plan-fp-fill', 'plan-fp-dots'];
+    return opts.splitByType ? [fillId, altLineId, dotsId] : [fillId, dotsId];
   }
 
   function remove(map, ids) {
