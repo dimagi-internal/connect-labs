@@ -69,6 +69,15 @@ _LABS_ONLY_TOKEN = "labs-only"  # noqa: S105 (not a secret)
 # manager-flow demo uses (manager_flow_views.py).
 _COMPLETABLE_AUDIT_ARCHETYPE = "pending_all_clean"
 
+# The RESOLVED archetype: status completed, 5/5 pass, overall_result="pass". Used
+# for a flw whose coaching arc CLOSED (``follow_up_outcome_week`` set) — the same
+# signal the ``tasks`` ensurer reads to close the task. The PAR grid only renders a
+# week "All resolved" when every audit is completed AND every task closed (openCount
+# == 0), so the "good" drill week's audits MUST be completed, not left in_progress.
+# Without this the ensure never seeds a genuinely-resolved week (a fresh env shows
+# every week "N open"); the rollup's drill-target selection then finds no good week.
+_RESOLVED_AUDIT_ARCHETYPE = "completed_pass_clean"
+
 # Marker in an anomaly's ``reviewer_visible_in`` that means "this flag gets an
 # audit". Anomalies without it still drive pipeline-row flags (weekly_runs) but no
 # audit record.
@@ -148,6 +157,12 @@ def ensure_run_audits(resource, ctx) -> dict:
         audited = _audited_flw_weeks(manifest)
         if not audited:
             continue
+        # FLWs whose coaching loop CLOSED (a follow-up outcome resolved the flag) —
+        # their audit is COMPLETED (the grid's "All resolved" requires it), mirroring
+        # how the tasks ensurer closes the same arc's task.
+        resolved_flws = {
+            arc.flw_id for arc in (manifest.coaching_arcs or []) if arc.follow_up_outcome_week is not None
+        }
 
         ada = AuditDataAccess(opportunity_id=opp_id, access_token=_LABS_ONLY_TOKEN)
         try:
@@ -190,7 +205,9 @@ def ensure_run_audits(resource, ctx) -> dict:
                             workflow_run_id=run_id,
                             flw_id=flw_id,
                             monday_iso=monday_iso,
-                            audit_archetype=_COMPLETABLE_AUDIT_ARCHETYPE,
+                            audit_archetype=(
+                                _RESOLVED_AUDIT_ARCHETYPE if flw_id in resolved_flws else _COMPLETABLE_AUDIT_ARCHETYPE
+                            ),
                             visit_id=_seeded_visit_id_base(manifest.random_seed, run_id, flw_id),
                             flw_name=flw_name,
                         )
