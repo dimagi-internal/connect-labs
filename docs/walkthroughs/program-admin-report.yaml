@@ -205,18 +205,23 @@ scenes:
     target: css:.assessment-widget:nth-of-type(5) button:has-text("Pass")
   - kind: hold
     seconds: 0.6
-  - kind: click
-    must_succeed: true
-    note: exact label - the button reads 'Save Progress' until every photo is decided
-    target: text:Complete Image Review
   - kind: wait_for
     must_succeed: true
-    note: commit signal - on success the page redirects to the workflow list; waiting
-      for the URL change guarantees the completion POST landed, so the scene can't
-      end on a mid-save frame ('Saving...' spinner / 'Unsaved changes' badge)
-    seconds: 20
-    target: url:**/labs/workflow/**
+    note: 'gate on the BUTTON flip, scoped to button: the page also has a static
+      <h2>Complete Image Review</h2> section header that is always present, so an
+      unscoped text:Complete Image Review matches that heading instantly and never
+      waits for anything. The submit button''s label is computed from stats.pending
+      (optimistic) - it reads ''Save Progress'' until all five Pass clicks register,
+      then flips to ''Complete Image Review''. Scoping to button:has-text makes this
+      a real gate on the flip. This is also the scene''s end-frame: all five photos
+      decided and the Complete button now lit, i.e. the review itself - NOT the
+      post-completion redirect (that is scene 3b, so this scene shows the beat it
+      narrates).'
+    seconds: 15
+    target: css:button:has-text("Complete Image Review")
   - kind: hold
+    note: settle on the reviewed grid (5 passed badges + Complete button enabled)
+      so the snapshot captures the photo review, not a later state
     seconds: 1.5
   concept_claim: An auditor can review each assessment photo individually with a pass/fail
     decision per photo, and the audit only offers "Complete Image Review" once every
@@ -236,14 +241,64 @@ scenes:
     verify: 'Playwright: after passing all photos, assert button text ''Complete Image
       Review'' is present and clicking it persists the completed state'
   narrative: Amani scrolls through the audit one assessment at a time, looks at each
-    MUAC photo as it loads, and passes each one — then completes the image review,
-    recording his verdict on the evidence.
+    MUAC photo as it loads, and passes each one — by the last photo every assessment
+    carries a green Pass badge and the "Complete Image Review" button has lit up,
+    ready for his verdict.
   persona: amani
   provenance: S3
   show: 'The bulk assessment view: one widget per photo. Amani scrolls to each widget,
-    waits for its image, clicks Pass, and after the last one clicks "Complete Image
-    Review" to close out the photo review.'
+    waits for its image, and clicks Pass; the scene ends on the fully-reviewed grid
+    with all five Pass badges and the Complete button now enabled.'
   title: Amani reviews the evidence photo by photo
+- actions:
+  - kind: wait_for
+    must_succeed: true
+    note: continue-scene on the same audit page (no goto) - re-assert the lit Complete
+      button before committing.
+    seconds: 15
+    target: css:button:has-text("Complete Image Review")
+  - kind: click
+    must_succeed: true
+    note: 'click the BUTTON, not the static <h2> header. An unscoped
+      text:Complete Image Review resolves to the always-present section heading (a
+      non-interactive <h2>), so completeAudit() never fires and the page never
+      redirects. Scope to the button so the completion POST + workflow redirect run.'
+    target: css:button:has-text("Complete Image Review")
+  - kind: wait_for
+    must_succeed: true
+    note: 'commit signal - on success completeAudit() redirects to the workflow list
+      (/labs/workflow/). The recorder has NO url: target prefix (supported prefixes
+      are css/text/testid/aria/role), so an old url:**/labs/workflow/** target was
+      parsed as an auto/text match for a DOM element literally containing that string
+      - which never exists, so it ALWAYS timed out regardless of whether the redirect
+      fired. Wait instead for ''Workflows'', the visible heading on the workflow-list
+      page (absent from the audit page, which only has a singular ''Back to
+      Workflow'' link). This confirms the completion POST landed AND the redirect
+      navigated. Generous timeout: completeAudit awaits a synchronous S3 upsert +
+      run-state POST, then the heavy workflow-list page renders (~5-8s).'
+    seconds: 60
+    target: text:Workflows
+  - kind: hold
+    seconds: 1.5
+  concept_claim: Completing the image review records the auditor's verdict and returns
+    them to the program's workflow list, closing the loop from "flag spotted" to
+    "evidence reviewed" in one sitting.
+  design_intent: The complete action is a deliberate commit - it only unlocks once
+    every photo is decided, then finalizes the audit and hands the auditor back to
+    the workflow overview so the next flagged worker is one glance away.
+  features:
+  - description: Clicking 'Complete Image Review' finalizes the audit and redirects
+      to the workflow list
+    id: complete-redirects-to-workflow
+    verify: 'Playwright: click the Complete Image Review button, assert navigation
+      to /labs/workflow/ and the audit persists as completed'
+  narrative: Amani clicks "Complete Image Review" to record his verdict; the audit
+    finalizes and he lands back on the workflow list, the flagged week now closed out.
+  persona: amani
+  provenance: S3
+  show: Amani clicks the lit "Complete Image Review" button; the audit saves and the
+    page returns to the workflow list.
+  title: Amani records his verdict and closes out the review
 - actions:
   - kind: goto
     note: return to the review - the audit lives on its own page

@@ -140,11 +140,15 @@ def main() -> int:
 
     # ---------------- 3. Emit the realized vars JSON --------------------- #
     # The ensure engine's realized map IS the flat ${...} vars file the
-    # walkthrough spec interpolates — write it verbatim (no generated_at
-    # wrapper; the spec reads these keys directly).
-    REALIZED_PATH.write_text(json.dumps(result, indent=2) + "\n")
-    print(f"\nWrote {REALIZED_PATH}:")
-    for k, v in result.items():
+    # walkthrough spec interpolates — but the recorder's setup-outputs
+    # contract only accepts string/number values (it rejects bools). The
+    # engine includes non-substitution markers like ``opp_<id>_ready: true``;
+    # drop anything that isn't a str/number (bool is an int subclass, so
+    # exclude it explicitly) before writing the substitution file.
+    subst = {k: v for k, v in result.items() if isinstance(v, (str, int, float)) and not isinstance(v, bool)}
+    REALIZED_PATH.write_text(json.dumps(subst, indent=2) + "\n")
+    print(f"\nWrote {REALIZED_PATH} ({len(subst)} substitution vars):")
+    for k, v in subst.items():
         print(f"  {k}={v}")
     return 0
 
