@@ -224,13 +224,7 @@ When you turn on the **Work areas** layer, the ward and cluster area fills fade 
 
 Survey pins on the map sit directly on their assigned buildings. The CommCare app prevents a survey submission from being recorded more than 15 metres from the assigned household, so all survey points you see on the map fall within that 15-metre gate. Survey pins use two distinct visual styles to distinguish visit types:
 
-- **Solid dots** — primary (first-choice) households
-- **Hollow rings** — substitute households where the surveyor visited an alternate instead of the originally selected household
+- **Solid dots (larger)** — primary (first-choice) households; the larger size makes them visually dominant, reflecting that primary visits make up the majority of surveys
+- **Hollow rings (smaller, same colour)** — substitute households where the surveyor visited an alternate instead of the originally selected household; the smaller size keeps substitutions clearly subordinate so the handful of alternates does not visually overwhelm the many primaries
 
-Substitute pins are intentionally lighter so they do not dominate the map, but remain legible when you need to identify them.
-
-**Quality card**
-
-The Quality card is the per-surveyor review tool. Select a surveyor to see their scorecard row marked with a high-contrast **REVIEW** badge so they are immediately identifiable. The back-check detail panel — results from an independent re-survey conducted to validate a flagged surveyor's work — lives inside this card.
-
-The GPS-location section of the back-check is labelled **"% within 25 m · cells = distance"** so it is clear that the percentage shown is the share of visits whose GPS coordinates fall within 25 metres of the original recorded location, and
+**Clicking a surveyor row focuses the map.** In the per-surveyor scorecard, clicking any row filters the map to show **only that surveyor's surveys and work areas**. A chip appears above the map — for example, "Surveyor T6 only · show all ✕" — so it is always clear the map is filtered. Click the ✕ on the chip to return to the full view. This is useful for checking, for example, whether a cluster
