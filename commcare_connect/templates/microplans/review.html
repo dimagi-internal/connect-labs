@@ -251,7 +251,8 @@
             </div>
 
             <div class="border-t border-gray-100 pt-2 mt-2">
-              <div class="text-gray-600 mb-1 cursor-help underline decoration-dotted underline-offset-2" title="Drop work areas that are likely noise rather than real settlement, so FLWs aren't sent to empty squares. Building data isn't perfect — these two filters remove the common false positives.">Exclude noise work areas &#9432;</div>
+              <div class="text-gray-600 mb-1 font-medium">Exclude noise work areas</div>
+              <p class="text-[10px] text-gray-500 mb-1 leading-snug">Building data isn't perfect. These drop work areas that are likely false detections — so FLWs aren't sent to empty squares.</p>
               <label class="block"><span class="text-[10px] text-gray-500">Min total rooftop area per work area (m²) — 0 keeps all</span>
                 <input id="cfg-min-cell-roof" type="number" value="0" min="0" step="5" class="base-input mt-0.5 text-xs"></label>
               <label class="flex items-center gap-1 mt-1.5 text-[11px] text-gray-700">
@@ -262,7 +263,8 @@
             </div>
 
             <div class="border-t border-gray-100 pt-2 mt-2">
-              <div class="text-gray-600 mb-1 cursor-help underline decoration-dotted underline-offset-2" title="Expected Visit Count per work area = ceil(buildings × population ÷ retained buildings), where retained buildings is the total left after the exclusion filters above. Leave blank to fall back to 1 expected visit per building.">Population for visit calc &#9432;</div>
+              <div class="text-gray-600 mb-1 font-medium">Population for visit calc</div>
+              <p class="text-[10px] text-gray-500 mb-1 leading-snug">Sets each work area's Expected Visit Count. The population you enter is spread over the retained buildings (people ÷ buildings), so each area gets visits ∝ its building count. Blank = 1 visit per building.</p>
               <input id="cfg-population" type="number" min="0" step="1" class="base-input text-xs w-full" placeholder="blank = 1 visit / building">
               <button type="button" id="cfg-pop-suggest" class="hidden text-[10px] text-indigo-600 underline decoration-dotted underline-offset-2 mt-0.5 text-left"></button>
               <p class="text-[10px] text-gray-500 mt-0.5" id="coverage-visit-readout"></p>
