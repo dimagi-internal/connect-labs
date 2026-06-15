@@ -124,66 +124,31 @@
         .join('');
     }
 
-    // Comparability — is the control a fair counterfactual? Server computes area +
-    // density from the arm geometries + the sample's building counts; we show the
-    // two arms side by side with a matched / not-matched flag.
-    async function updateComparability(areas, stats) {
+    // Comparability — is the control a fair counterfactual? When this plan carries
+    // two arms, POST their per-arm sampling stats to the shared ArmComparabilityView,
+    // which runs the same PSU/SMD engine the study-group page uses and returns the
+    // rendered _arm_comparability.html partial. We just inject it — ONE comparison
+    // engine + ONE panel markup across both surfaces (DRY).
+    async function updateComparability(stats) {
       const wrap = $('sampling-comparability'),
         body = $('comparability-body');
       if (!wrap || !body) return;
-      const armSet = new Set(areas.map((a) => a.arm));
-      if (armSet.size < 2 || !COMPARABILITY_URL) {
+      const arms = new Set((stats || []).map((s) => s.arm));
+      if (arms.size < 2 || !COMPARABILITY_URL) {
         wrap.classList.add('hidden');
         return;
       }
-      const counts = {};
-      (stats || []).forEach((s) => {
-        counts[s.arm] = s.after_filters || 0;
-      });
       try {
         const r = await Microplans.post(
           COMPARABILITY_URL,
-          { areas, building_counts: counts },
+          { stats },
           { csrf: CSRF },
         );
-        if (!r || r.status !== 'ok' || !(r.arms || []).length) {
+        if (!r || r.status !== 'ok' || !r.html) {
           wrap.classList.add('hidden');
           return;
         }
-        const byArm = {};
-        r.arms.forEach((a) => {
-          byArm[a.arm] = a;
-        });
-        const iv = byArm.intervention || r.arms[0],
-          cm = byArm.comparison || r.arms[1] || r.arms[0];
-        const cell = (v) =>
-          `<td class="text-right tabular-nums px-1">${esc(String(v))}</td>`;
-        const badge = r.matched
-          ? `<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">matched</span>`
-          : `<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">not matched</span>`;
-        const why =
-          r.matched === false && (r.reasons || []).length
-            ? ` <span class="text-gray-500">${esc(r.reasons.join('; '))}</span>`
-            : '';
-        body.innerHTML = `
-        <table class="w-full"><thead><tr class="text-gray-500">
-          <th class="text-left"></th>
-          <th class="text-right px-1"><span style="color:${
-            ARM_COLOR.intervention
-          }">●</span> Interv.</th>
-          <th class="text-right px-1"><span style="color:${
-            ARM_COLOR.comparison
-          }">●</span> Control</th></tr></thead>
-          <tbody class="text-gray-700">
-            <tr><td>Buildings</td>${cell(iv.building_count)}${cell(
-              cm.building_count,
-            )}</tr>
-            <tr><td>Area (km²)</td>${cell(iv.area_km2)}${cell(cm.area_km2)}</tr>
-            <tr><td>Density /km²</td>${cell(iv.density_per_km2)}${cell(
-              cm.density_per_km2,
-            )}</tr>
-          </tbody></table>
-        <div class="mt-1">${badge}${why}</div>`;
+        body.innerHTML = r.html;
         wrap.classList.remove('hidden');
       } catch (e) {
         wrap.classList.add('hidden');

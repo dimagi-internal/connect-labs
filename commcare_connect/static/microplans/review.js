@@ -1891,6 +1891,9 @@
     renderArmStats(result.stats || []);
     renderRationale(result.stats || []);
     renderSourceCounts(result.stats || []);
+    // Two-arm plan → render the shared comparability panel. One call site here means
+    // it shows on page load, after Generate, and after Regenerate alike.
+    updateComparability(result.stats || []);
   }
 
   // One action: draw a fresh random sample AND commit it in a single click — no
@@ -1924,7 +1927,6 @@
         { csrf: CSRF },
       );
       renderSample(result);
-      updateComparability(areas, result.stats || []);
       if (!lastSample || !(lastSample.pins.features || []).length) {
         if (statusEl)
           statusEl.textContent =
