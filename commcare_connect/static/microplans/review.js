@@ -2024,6 +2024,12 @@
         $('cfg-alternate')?.value || SD.alternates_per_psu,
         10,
       ),
+      // Size-stratified PPS bands (0/1 = plain PPS). Sent explicitly now that the UI
+      // exposes it; ?? not || so an explicit 0 (plain PPS) isn't overridden.
+      size_balance_bands: parseInt(
+        $('cfg-bands')?.value ?? SD.size_balance_bands,
+        10,
+      ),
       sources: sources,
       min_confidence: isNaN(conf) ? null : conf,
       // Footprint-size filter (m²); from_payload clamps to sane bounds.

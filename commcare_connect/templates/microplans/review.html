@@ -282,6 +282,8 @@
               <label class="block cursor-help" title="Ranked backup buildings per cluster. Used in order when a primary building is vacant, locked, refused, or inaccessible — so you reach the target sample size without biasing toward easy-to-reach buildings. Default 5 ≈ a 50% non-response reserve."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Alternate</span>
                 <input id="cfg-alternate" type="number" value="{% sampling_default 'alternates_per_psu' %}" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
             </div>
+            <label class="block cursor-help mt-1" title="Size-stratified PPS: split the PSUs into this many building-count bands and draw evenly across them — the DHS/MICS standard, so two arms are comparable on cluster size by construction. 0 or 1 = plain PPS (proportional to size, no banding)."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Size bands</span>
+              <input id="cfg-bands" type="number" value="{% sampling_default 'size_balance_bands' %}" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
             <div class="border-t border-gray-100 pt-2">
               <div class="text-gray-600 mb-1">Building source</div>
               <div id="source-picker" class="space-y-0.5 text-[11px]">

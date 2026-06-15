@@ -69,6 +69,10 @@
             <input id="cfg-alternate" type="number" value="{% sampling_default 'alternates_per_psu' %}" min="0" class="mt-1 w-full rounded border-gray-300">
           </label>
         </div>
+        <label class="block" title="Size-stratified PPS: split PSUs into this many building-count bands and draw evenly (DHS/MICS standard) so arms are comparable on cluster size. 0/1 = plain PPS.">
+          <span class="text-gray-600">Size bands</span>
+          <input id="cfg-bands" type="number" value="{% sampling_default 'size_balance_bands' %}" min="0" class="mt-1 w-full rounded border-gray-300">
+        </label>
         <label class="block">
           <span class="text-gray-600">Min roof confidence</span>
           <input id="cfg-confidence" type="number" value="{% sampling_default 'min_confidence' %}" step="0.05" min="0" max="1" class="mt-1 w-full rounded border-gray-300">
@@ -258,6 +262,7 @@
         target_clusters: +document.getElementById("cfg-clusters").value,
         primary_per_psu: +document.getElementById("cfg-primary").value,
         alternates_per_psu: +document.getElementById("cfg-alternate").value,
+        size_balance_bands: +document.getElementById("cfg-bands").value,
         min_confidence: +document.getElementById("cfg-confidence").value,
         area_min_m2: +document.getElementById("cfg-area-min").value,
         area_max_m2: +document.getElementById("cfg-area-max").value,
