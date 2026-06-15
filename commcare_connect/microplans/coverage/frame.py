@@ -13,13 +13,19 @@ don't match how an FLW thinks about their territory ("this square is mine").
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from shapely.ops import unary_union
 
 from commcare_connect.microplans.core import clustering
 from commcare_connect.microplans.core.area_input import resolve_area
-from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
+from commcare_connect.microplans.core.filters import (
+    CellFilterConfig,
+    FilterConfig,
+    apply_cell_filters,
+    apply_frame_filters,
+)
 from commcare_connect.microplans.core.footprints import fetch_buildings
 
 # Upper bound on work areas a single coverage plan may produce. Far above real
@@ -47,17 +53,30 @@ class CoverageConfig:
     area_max_m2: float = 10000.0
     # coverage wants completeness → all providers by default (None = every source).
     sources: list[str] | None = None
+    # cell-level exclusion filters (post-gridding). Defaults = off → unchanged behaviour.
+    min_cell_roof_area_m2: float = 0.0
+    exclude_isolated_singletons: bool = False
+    isolation_dist_m: float = 150.0
+    # population-weighted expected-visit calc. None → expected_visit_count = building_count (legacy).
+    # When set, expected_visit_count = ceil(cell_buildings * population / retained_buildings), min 1,
+    # where retained_buildings is the total over cells surviving the exclusion filters.
+    population: float | None = None
 
     @classmethod
     def from_payload(cls, d: dict) -> CoverageConfig:
         conf = d.get("min_confidence")
         src = d.get("sources")
+        pop = d.get("population")
         return cls(
             cell_size_m=_clamp(float(d.get("cell_size_m", 100)), 10.0, 100000.0),
             min_confidence=(None if conf in (None, "", 0) else _clamp(float(conf), 0.0, 1.0)),
             area_min_m2=_clamp(float(d.get("area_min_m2", 1)), 0.0, 1e6),
             area_max_m2=_clamp(float(d.get("area_max_m2", 10000)), 1.0, 1e7),
             sources=([str(s) for s in src] if isinstance(src, list) and src else None),
+            min_cell_roof_area_m2=_clamp(float(d.get("min_cell_roof_area_m2", 0) or 0), 0.0, 1e7),
+            exclude_isolated_singletons=bool(d.get("exclude_isolated_singletons", False)),
+            isolation_dist_m=_clamp(float(d.get("isolation_dist_m", 150) or 150), 0.0, 1e6),
+            population=(None if pop in (None, "", 0) else float(pop)),
         )
 
 
@@ -89,27 +108,59 @@ def generate_coverage_frame(areas: list[dict], config: CoverageConfig) -> Covera
             f"(limit {MAX_WORK_AREAS:,}). Increase the work-area size, or split the area into separate plans."
         )
 
+    # Cell-level exclusion filters (drop noise cells), then population-weighted visits.
+    cell_result = apply_cell_filters(
+        out.buildings,
+        out.psu_frame,
+        CellFilterConfig(
+            min_cell_roof_area_m2=config.min_cell_roof_area_m2,
+            exclude_isolated_singletons=config.exclude_isolated_singletons,
+            isolation_dist_m=config.isolation_dist_m,
+        ),
+    )
+    frame = cell_result.psu_frame
+
+    retained_buildings = int(frame["n_buildings"].sum()) if len(frame) else 0
+    # people-per-building over the RETAINED set; None → legacy EVC = building_count
+    ppb = (config.population / retained_buildings) if (config.population and retained_buildings) else None
+
     features: list[dict] = []
-    for _, row in out.psu_frame.iterrows():
+    for _, row in frame.iterrows():
         cell_polygon = row["cell_polygon"]  # [[lon, lat], ...] closed ring
+        n_b = int(row["n_buildings"])
+        if ppb is not None:
+            expected_visits = max(1, math.ceil(n_b * ppb))
+            target_population = round(n_b * ppb)
+        else:
+            expected_visits = n_b
+            target_population = None
         features.append(
             {
                 "type": "Feature",
                 "geometry": {"type": "Polygon", "coordinates": [cell_polygon]},
                 "properties": {
                     "cluster": row["cluster"],
-                    "building_count": int(row["n_buildings"]),
-                    "expected_visit_count": int(row["n_buildings"]),
+                    "building_count": n_b,
+                    "expected_visit_count": expected_visits,
+                    "target_population": target_population,
+                    "roof_area_m2": round(float(row["roof_area_m2"]), 1),
+                    "dist_to_multi_m": round(float(row["dist_to_multi_m"]), 1),
                     "cell_size_m": float(config.cell_size_m),
                 },
             }
         )
-    sizes = out.psu_frame["n_buildings"].to_numpy() if len(out.psu_frame) else np.array([0])
+    sizes = frame["n_buildings"].to_numpy() if len(frame) else np.array([0])
     stats = [
         {
             "fetched": filtered.n_in,
             "after_filters": filtered.n_out,
-            "work_areas": len(out.psu_frame),
+            "work_areas": len(frame),
+            "cells_before_exclusions": cell_result.n_in,
+            "removed_small_area": cell_result.removed_small_area,
+            "removed_isolated": cell_result.removed_isolated,
+            "retained_buildings": retained_buildings,
+            "population": config.population,
+            "people_per_building": round(ppb, 4) if ppb is not None else None,
             "cell_size_m": float(config.cell_size_m),
             "min_buildings": int(sizes.min()),
             "median_buildings": int(np.median(sizes)),
