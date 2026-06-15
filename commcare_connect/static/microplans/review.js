@@ -2236,6 +2236,13 @@
     get panel() {
       return mapPanel;
     },
+    // Diagnostic handles for the boundary-rail rehydration path.
+    get adminBoundaries() {
+      return adminBoundaries;
+    },
+    get pendingBoundaryRestore() {
+      return pendingBoundaryRestore;
+    },
     get mode() {
       return mpMode;
     },
