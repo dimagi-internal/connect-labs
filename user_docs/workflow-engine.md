@@ -198,6 +198,17 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **LLO Weekly FLW Review**             | Weekly per-FLW KPI scorecard for LLO programs                                                                               |
 | **Connect Interviews Reporting V2**   | Live funnel dashboard showing Triggered / Started / Completed counts per interview for any cohort                           |
 
+### Program Admin Report dashboard
+
+The **Program Admin Report** gives program administrators a cross-opportunity compliance view. The demo walkthrough illustrates the following real-world scenarios, which the sample data is built to match:
+
+- **Missed week (no-run cell)** — one region has a week with no run recorded at all, shown as an empty cell in the compliance grid. This represents a week where the review was not completed, not a week with zero visits.
+- **SOP-meeting and below-SOP regions side by side** — the demo includes a region that is healthy and meets the standard of procedure alongside a region that falls below it, so you can see how the compliance colouring distinguishes the two at a glance.
+- **Audit part-way through review** — one audit in the demo is genuinely mid-review: some photos have passed, some have failed, and some are still pending. This reflects the normal state of an audit that a supervisor has started but not yet finished.
+- **Coaching task with a matching summary** — the coaching task shown in the demo has a conversation summary that corresponds directly to the task's stated coaching topic, so the record is internally consistent.
+
+These scenarios are intentional reference points. When you use the demo to train new staff or walk through the report's features, the data you see on screen matches what the narration describes.
+
 ### Verified Monitoring dashboard
 
 The **Verified Monitoring** dashboard contrasts what the program self-reported with what an independent survey verified. It is organized into panels:
@@ -220,11 +231,4 @@ You can toggle Work areas and Building footprints independently of each other �
 
 When you turn on the **Work areas** layer, the ward and cluster area fills fade back so the individual buildings stand out against the map — the ward and cluster outlines remain visible for context, but the colour fills no longer compete with the building shapes. Buildings themselves render with a crisp dark edge so they are clearly legible when you zoom in, whether they are solid (primary) or dashed (alternate).
 
-**Toggling any layer on or off keeps your current pan and zoom position.** The map only re-centers when you switch cycles. This means you can turn layers on and off while inspecting a specific area without losing your place.
-
-Survey pins on the map sit directly on their assigned buildings. The CommCare app prevents a survey submission from being recorded more than 15 metres from the assigned household, so all survey points you see on the map fall within that 15-metre gate. Survey pins use two distinct visual styles to distinguish visit types:
-
-- **Solid dots (larger)** — primary (first-choice) households; the larger size makes them visually dominant, reflecting that primary visits make up the majority of surveys
-- **Hollow rings (smaller, same colour)** — substitute households where the surveyor visited an alternate instead of the originally selected household; the smaller size keeps substitutions clearly subordinate so the handful of alternates does not visually overwhelm the many primaries
-
-**Clicking a surveyor row focuses the map.** In the per-surveyor scorecard, clicking any row filters the map to show **only that surveyor's surveys and work areas**. A chip appears above the map — for example, "Surveyor T6 only · show all ✕" — so it is always clear the map is filtered. Click the ✕ on the chip to return to the full view. This is useful for checking, for example, whether a cluster
+**Toggling any layer on or off keeps your current pan and zoom position.** The
