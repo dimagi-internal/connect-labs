@@ -1,435 +1,1246 @@
-{% extends "base.html" %}
-{% load static %}
-
-{% block title %}Microplan review{% endblock %}
-
-{% block css %}
-{{ block.super }}
-<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css" rel="stylesheet">
-<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" type="text/css">
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&display=swap" rel="stylesheet">
+{% extends "base.html" %} {% load static %} {% block title %}Microplan review{%
+endblock %} {% block css %} {{ block.super }}
+<link
+  href="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.css"
+  rel="stylesheet"
+/>
+<link
+  rel="stylesheet"
+  href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css"
+  type="text/css"
+/>
+<link
+  href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&display=swap"
+  rel="stylesheet"
+/>
 <style>
-  #review-map { position: absolute; inset: 0; }
-  .hidden { display: none !important; }
+  #review-map {
+    position: absolute;
+    inset: 0;
+  }
+  .hidden {
+    display: none !important;
+  }
 
   /* Area-definition controls — copied from setup.html so the look matches. */
-  .seg-row { display: grid; gap: 0.25rem; }
-  .chip-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.25rem; }
-  .chip { padding: 0.3rem 0.6rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.7rem;
-          color: #4b5563; cursor: pointer; background: #fff; text-align: center; transition: all .12s; }
-  .chip:hover { border-color: #9ca3af; }
-  .chip.is-on { border-color: #3843d0; color: #3843d0; background: #eef0ff; font-weight: 600; }
-  details.area-def[open] > summary .chev { transform: rotate(90deg); }
-  details.area-def > summary { cursor: pointer; user-select: none; list-style: none; }
-  details.area-def > summary::-webkit-details-marker { display: none; }
-  details.area-def > summary .chev { display: inline-block; transition: transform 0.15s; color: #6b7280; margin-right: 0.25rem; }
+  .seg-row {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .chip-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.25rem;
+  }
+  .chip {
+    padding: 0.3rem 0.6rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.7rem;
+    color: #4b5563;
+    cursor: pointer;
+    background: #fff;
+    text-align: center;
+    transition: all 0.12s;
+  }
+  .chip:hover {
+    border-color: #9ca3af;
+  }
+  .chip.is-on {
+    border-color: #3843d0;
+    color: #3843d0;
+    background: #eef0ff;
+    font-weight: 600;
+  }
+  details.area-def[open] > summary .chev {
+    transform: rotate(90deg);
+  }
+  details.area-def > summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  details.area-def > summary::-webkit-details-marker {
+    display: none;
+  }
+  details.area-def > summary .chev {
+    display: inline-block;
+    transition: transform 0.15s;
+    color: #6b7280;
+    margin-right: 0.25rem;
+  }
   /* Generic rail accordion (Map colors / Group / Assign / Bulk) — same chevron
      affordance as the Area accordion so the whole rail collapses consistently. */
-  details.mp-acc > summary { cursor: pointer; user-select: none; list-style: none; display: block; }
-  details.mp-acc > summary::-webkit-details-marker { display: none; }
-  details.mp-acc > summary .chev { display: inline-block; transition: transform 0.15s; color: #6b7280; margin-right: 0.25rem; }
-  details.mp-acc[open] > summary .chev { transform: rotate(90deg); }
-  details.mp-acc > :not(summary) { margin-top: 0.5rem; }
-  .seg-on { box-shadow: inset 0 0 0 2px #3843d0; background: #eef0ff; color: #3a42c7; }
-  .wa-row.excluded { opacity: 0.45; text-decoration: line-through; }
-  .wa-row.sel { background: #ecfdf5; }
-  .wa-row.hl-worker { background: #fef9c3; }
-  .cell-input { width: 5.5rem; }
-  .worker-row { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0.4rem; border-radius: 0.25rem; cursor: pointer; align-items: center; }
-  .worker-row:hover { background: #f9fafb; }
-  .worker-row.is-active { background: #eef0ff; box-shadow: inset 0 0 0 1px #3843d0; }
-  .worker-row .sw { width: 0.6rem; height: 0.6rem; border-radius: 9999px; flex-shrink: 0; }
-  .worker-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .worker-row .ct { color: #6b7280; font-variant-numeric: tabular-nums; font-size: 0.7rem; }
+  details.mp-acc > summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: block;
+  }
+  details.mp-acc > summary::-webkit-details-marker {
+    display: none;
+  }
+  details.mp-acc > summary .chev {
+    display: inline-block;
+    transition: transform 0.15s;
+    color: #6b7280;
+    margin-right: 0.25rem;
+  }
+  details.mp-acc[open] > summary .chev {
+    transform: rotate(90deg);
+  }
+  details.mp-acc > :not(summary) {
+    margin-top: 0.5rem;
+  }
+  .seg-on {
+    box-shadow: inset 0 0 0 2px #3843d0;
+    background: #eef0ff;
+    color: #3a42c7;
+  }
+  .wa-row.excluded {
+    opacity: 0.45;
+    text-decoration: line-through;
+  }
+  .wa-row.sel {
+    background: #ecfdf5;
+  }
+  .wa-row.hl-worker {
+    background: #fef9c3;
+  }
+  .cell-input {
+    width: 5.5rem;
+  }
+  .worker-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    align-items: center;
+  }
+  .worker-row:hover {
+    background: #f9fafb;
+  }
+  .worker-row.is-active {
+    background: #eef0ff;
+    box-shadow: inset 0 0 0 1px #3843d0;
+  }
+  .worker-row .sw {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 9999px;
+    flex-shrink: 0;
+  }
+  .worker-row .nm {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .worker-row .ct {
+    color: #6b7280;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.7rem;
+  }
   /* Segmented tab (mirror of setup.html — Color-by control) */
-  .seg-tab { padding: 0.4rem 0.25rem; font-size: 0.7rem; font-weight: 500; text-align: center;
-             border: 1px solid #d1d5db; border-radius: 0.375rem; background: #fff; color: #4b5563;
-             cursor: pointer; transition: all .12s; }
-  .seg-tab:hover { border-color: #9ca3af; }
-  .seg-tab.is-on { border-color: #3843d0; background: #3843d0; color: #fff; }
+  .seg-tab {
+    padding: 0.4rem 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-align: center;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    background: #fff;
+    color: #4b5563;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .seg-tab:hover {
+    border-color: #9ca3af;
+  }
+  .seg-tab.is-on {
+    border-color: #3843d0;
+    background: #3843d0;
+    color: #fff;
+  }
 
   /* Resizable map pane: drag the bottom edge to taste */
-  .map-pane { position: relative; flex-shrink: 0; min-height: 200px; }
-  .map-resizer { position: absolute; left: 0; right: 0; bottom: -4px; height: 8px; cursor: row-resize; z-index: 6;
-                 background: transparent; }
-  .map-resizer::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); bottom: 1px;
-                        width: 40px; height: 4px; border-radius: 2px; background: #d1d5db; }
-  .map-resizer:hover::after { background: #6b7280; }
+  .map-pane {
+    position: relative;
+    flex-shrink: 0;
+    min-height: 200px;
+  }
+  .map-resizer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -4px;
+    height: 8px;
+    cursor: row-resize;
+    z-index: 6;
+    background: transparent;
+  }
+  .map-resizer::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 1px;
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: #d1d5db;
+  }
+  .map-resizer:hover::after {
+    background: #6b7280;
+  }
 
-  .map-overlay { position: absolute; z-index: 5; background: rgba(255,255,255,0.95); border: 1px solid #e5e7eb; border-radius: 0.375rem; padding: 0.4rem 0.6rem; font-size: 0.7rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  .map-overlay label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
-  .map-legend { display: flex; flex-direction: column; gap: 0.2rem; min-width: 7rem; }
-  .legend-row { display: flex; align-items: center; gap: 0.4rem; }
-  .legend-row .sw { width: 0.8rem; height: 0.5rem; border-radius: 0.15rem; flex-shrink: 0; }
-  .legend-row .lbl { color: #4b5563; }
+  .map-overlay {
+    position: absolute;
+    z-index: 5;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.7rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  .map-overlay label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+  }
+  .map-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 7rem;
+  }
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .legend-row .sw {
+    width: 0.8rem;
+    height: 0.5rem;
+    border-radius: 0.15rem;
+    flex-shrink: 0;
+  }
+  .legend-row .lbl {
+    color: #4b5563;
+  }
 
   /* Sortable column headers — click to sort, click again to flip direction */
-  .wa-th { cursor: pointer; user-select: none; transition: background-color .12s; }
-  .wa-th:hover { background: #e5e7eb; }
-  .wa-th.is-sorted { color: #111827; font-weight: 600; }
-  .sort-ind { color: #6b7280; font-size: 0.7rem; margin-left: 0.15rem; opacity: 0; }
-  .wa-th.is-sorted .sort-ind { opacity: 1; }
+  .wa-th {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.12s;
+  }
+  .wa-th:hover {
+    background: #e5e7eb;
+  }
+  .wa-th.is-sorted {
+    color: #111827;
+    font-weight: 600;
+  }
+  .sort-ind {
+    color: #6b7280;
+    font-size: 0.7rem;
+    margin-left: 0.15rem;
+    opacity: 0;
+  }
+  .wa-th.is-sorted .sort-ind {
+    opacity: 1;
+  }
 
   /* Group header rows: chevron + summary row that toggles its child work areas */
-  .wa-group-hdr td { background: #f8fafc; font-weight: 500; color: #111827; padding: 0.4rem 0.5rem; border-top: 1px solid #e5e7eb; cursor: pointer; user-select: none; }
-  .wa-group-hdr:hover td { background: #eef2f6; }
-  .wa-group-hdr .chev { display: inline-block; width: 0.8rem; color: #6b7280; }
-  .wa-group-hdr.is-collapsed .chev { color: #9ca3af; }
-  .wa-group-hdr .gn { font-family: ui-monospace, monospace; color: #3843d0; margin-right: 0.5rem; }
-  .wa-group-hdr .meta { color: #6b7280; font-weight: 400; font-size: 0.75rem; }
-  .wa-group-hdr .gn-sw { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 0.15rem; vertical-align: middle; margin-right: 0.4rem; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
-  .wa-group-hdr .ghdr-check { display: inline-block; margin-right: 0.35rem; cursor: pointer; }
-  .wa-group-hdr .ghdr-check input { vertical-align: middle; }
+  .wa-group-hdr td {
+    background: #f8fafc;
+    font-weight: 500;
+    color: #111827;
+    padding: 0.4rem 0.5rem;
+    border-top: 1px solid #e5e7eb;
+    cursor: pointer;
+    user-select: none;
+  }
+  .wa-group-hdr:hover td {
+    background: #eef2f6;
+  }
+  .wa-group-hdr .chev {
+    display: inline-block;
+    width: 0.8rem;
+    color: #6b7280;
+  }
+  .wa-group-hdr.is-collapsed .chev {
+    color: #9ca3af;
+  }
+  .wa-group-hdr .gn {
+    font-family: ui-monospace, monospace;
+    color: #3843d0;
+    margin-right: 0.5rem;
+  }
+  .wa-group-hdr .meta {
+    color: #6b7280;
+    font-weight: 400;
+    font-size: 0.75rem;
+  }
+  .wa-group-hdr .gn-sw {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 0.15rem;
+    vertical-align: middle;
+    margin-right: 0.4rem;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
+  .wa-group-hdr .ghdr-check {
+    display: inline-block;
+    margin-right: 0.35rem;
+    cursor: pointer;
+  }
+  .wa-group-hdr .ghdr-check input {
+    vertical-align: middle;
+  }
 
   /* ===== v3 left-rail design language (ported from the approved /tmp/microplans-leftrail/v3.html mockup) =====
      Scoped to .mp-rail so it can't leak into the center column or table. Keeps every
      existing id / Alpine hook; this is presentation only. */
   .mp-rail {
-    --brand:#3843d0; --brand-ink:#2d36b3; --brand-tint:#eef0ff;
-    --ink:#0f1222; --muted:#6b7280; --faint:#9ca3af; --line:#e5e7eb; --line2:#eceef1;
-    --display:"Bricolage Grotesque","Work Sans",ui-sans-serif,system-ui,sans-serif;
-    display:flex; flex-direction:column; padding:0; gap:0;
+    --brand: #3843d0;
+    --brand-ink: #2d36b3;
+    --brand-tint: #eef0ff;
+    --ink: #0f1222;
+    --muted: #6b7280;
+    --faint: #9ca3af;
+    --line: #e5e7eb;
+    --line2: #eceef1;
+    --display:
+      "Bricolage Grotesque", "Work Sans", ui-sans-serif, system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    gap: 0;
   }
-  .mp-rail .railhead { flex:0 0 auto; padding:14px 16px 12px; border-bottom:1px solid var(--line2); }
-  .mp-rail .railhead h1 { font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:-.01em; color:var(--ink); margin:0; }
-  .mp-rail .railhead .sub { font-size:11px; color:var(--faint); margin-top:2px; }
+  .mp-rail .railhead {
+    flex: 0 0 auto;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--line2);
+  }
+  .mp-rail .railhead h1 {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0;
+  }
+  .mp-rail .railhead .sub {
+    font-size: 11px;
+    color: var(--faint);
+    margin-top: 2px;
+  }
   /* Click-to-edit plan-name title: looks like the h1 until hovered/focused. */
-  .mp-rail .railhead .title-edit { display:block; width:100%; box-sizing:border-box; font-family:var(--display); font-weight:800; font-size:16px; letter-spacing:-.01em; color:var(--ink); background:transparent; border:1px solid transparent; border-radius:6px; padding:2px 6px; margin:-2px -6px; transition:background .12s,border-color .12s; }
-  .mp-rail .railhead .title-edit::placeholder { color:var(--faint); font-weight:700; }
-  .mp-rail .railhead .title-edit:hover { background:var(--line2); }
-  .mp-rail .railhead .title-edit:focus { outline:none; background:#fff; border-color:var(--brand-cornflower-blue,#6f8fff); }
-  .mp-rail .railscroll { flex:1 1 auto; overflow-y:auto; padding:13px; display:flex; flex-direction:column; gap:9px; }
-  .mp-rail .railscroll > * { flex-shrink:0; }
-  .mp-rail .railscroll::-webkit-scrollbar { width:8px; }
-  .mp-rail .railscroll::-webkit-scrollbar-thumb { background:#e3e6eb; border-radius:8px; }
-  .mp-rail .railfoot { flex:0 0 auto; border-top:1px solid var(--line2); background:#fff; padding:11px 13px; }
-  .mp-rail > section { margin:0; }
+  .mp-rail .railhead .title-edit {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 2px 6px;
+    margin: -2px -6px;
+    transition:
+      background 0.12s,
+      border-color 0.12s;
+  }
+  .mp-rail .railhead .title-edit::placeholder {
+    color: var(--faint);
+    font-weight: 700;
+  }
+  .mp-rail .railhead .title-edit:hover {
+    background: var(--line2);
+  }
+  .mp-rail .railhead .title-edit:focus {
+    outline: none;
+    background: #fff;
+    border-color: var(--brand-cornflower-blue, #6f8fff);
+  }
+  .mp-rail .railscroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .mp-rail .railscroll > * {
+    flex-shrink: 0;
+  }
+  .mp-rail .railscroll::-webkit-scrollbar {
+    width: 8px;
+  }
+  .mp-rail .railscroll::-webkit-scrollbar-thumb {
+    background: #e3e6eb;
+    border-radius: 8px;
+  }
+  .mp-rail .railfoot {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line2);
+    background: #fff;
+    padding: 11px 13px;
+  }
+  .mp-rail > section {
+    margin: 0;
+  }
 
   /* accordion steps as bordered cards with an icon chip + display-font title + rotating chevron */
-  .mp-rail details.mp-card { border:1px solid var(--line); border-radius:11px; background:#fff; overflow:hidden; margin:0; }
-  .mp-rail details.mp-card[open] { box-shadow:0 6px 18px -13px rgba(16,18,34,.32); }
+  .mp-rail details.mp-card {
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: #fff;
+    overflow: hidden;
+    margin: 0;
+  }
+  .mp-rail details.mp-card[open] {
+    box-shadow: 0 6px 18px -13px rgba(16, 18, 34, 0.32);
+  }
   .mp-rail details.mp-card > summary {
-    list-style:none; cursor:pointer; user-select:none; display:flex; align-items:center; gap:9px;
-    padding:11px 12px; font-family:var(--display); font-weight:700; font-size:13px; color:var(--ink);
-    text-transform:none; letter-spacing:0; margin:0;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 12px;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--ink);
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0;
   }
-  .mp-rail details.mp-card > summary::-webkit-details-marker { display:none; }
+  .mp-rail details.mp-card > summary::-webkit-details-marker {
+    display: none;
+  }
   .mp-rail details.mp-card > summary .ic {
-    flex:0 0 auto; width:22px; height:22px; border-radius:6px; background:var(--brand-tint);
-    color:var(--brand); display:grid; place-items:center; font-size:12px; font-weight:700; line-height:1;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--brand-tint);
+    color: var(--brand);
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
   }
-  .mp-rail details.mp-card > summary .lbl { flex:1 1 auto; min-width:0; }
-  .mp-rail details.mp-card > summary .acc-sum { font-family:"Work Sans",sans-serif; font-weight:500; font-size:11px; color:var(--faint); }
+  .mp-rail details.mp-card > summary .lbl {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .mp-rail details.mp-card > summary .acc-sum {
+    font-family: "Work Sans", sans-serif;
+    font-weight: 500;
+    font-size: 11px;
+    color: var(--faint);
+  }
   .mp-rail details.mp-card > summary .chev {
-    display:inline-block; color:var(--faint); font-size:14px; line-height:1; margin:0;
-    transition:transform .15s; transform:rotate(0);
+    display: inline-block;
+    color: var(--faint);
+    font-size: 14px;
+    line-height: 1;
+    margin: 0;
+    transition: transform 0.15s;
+    transform: rotate(0);
   }
-  .mp-rail details.mp-card[open] > summary .chev { transform:rotate(90deg); }
-  .mp-rail details.mp-card[open] > summary { border-bottom:1px solid var(--line2); }
-  .mp-rail details.mp-card > *:not(summary) { padding-left:12px; padding-right:12px; }
-  .mp-rail details.mp-card > summary + * { padding-top:11px; margin-top:0; }
-  .mp-rail details.mp-card > *:not(summary):last-child { padding-bottom:13px; }
+  .mp-rail details.mp-card[open] > summary .chev {
+    transform: rotate(90deg);
+  }
+  .mp-rail details.mp-card[open] > summary {
+    border-bottom: 1px solid var(--line2);
+  }
+  .mp-rail details.mp-card > *:not(summary) {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .mp-rail details.mp-card > summary + * {
+    padding-top: 11px;
+    margin-top: 0;
+  }
+  .mp-rail details.mp-card > *:not(summary):last-child {
+    padding-bottom: 13px;
+  }
 </style>
-{% endblock %}
-
-{% block content %}
+{% endblock %} {% block content %}
 <div class="flex" x-data>
   <!-- Left: sticky sidebar that stays visible while the center column scrolls -->
-  <aside class="mp-rail w-72 flex-shrink-0 border-r border-gray-200 bg-white text-sm sticky top-0 self-start h-screen max-h-screen">
+  <aside
+    class="mp-rail w-72 flex-shrink-0 border-r border-gray-200 bg-white text-sm sticky top-0 self-start h-screen max-h-screen"
+  >
     <div class="railhead">
       {% if plan_id %}
       <h1>Microplan review</h1>
       <div class="sub">Plan #{{ plan_id }} · planning phase</div>
       {% else %}
-      <input id="inp-plan-name" class="title-edit" type="text" placeholder="Untitled microplan"
-             aria-label="Plan name" autocomplete="off" title="Click to name this plan (auto-fills from the area you pick)">
-      <div class="sub">Program #{{ program_id }} · define area + work area size</div>
-      {% endif %}
-      {% if back_url %}<a href="{{ back_url }}" class="text-xs text-brand-cornflower-blue" style="display:inline-block;margin-top:6px;">← Back to program</a>{% endif %}
+      <input
+        id="inp-plan-name"
+        class="title-edit"
+        type="text"
+        placeholder="Untitled microplan"
+        aria-label="Plan name"
+        autocomplete="off"
+        title="Click to name this plan (auto-fills from the area you pick)"
+      />
+      <div class="sub">
+        Program #{{ program_id }} · define area + work area size
+      </div>
+      {% endif %} {% if back_url %}<a
+        href="{{ back_url }}"
+        class="text-xs text-brand-cornflower-blue"
+        style="display: inline-block; margin-top: 6px"
+        >← Back to program</a
+      >{% endif %}
     </div>
     <div class="railscroll">
-
-
-    <!-- AREA DEFINITION — collapsible on existing plans (Apply = destructive
+      <!-- AREA DEFINITION — collapsible on existing plans (Apply = destructive
          regenerate); open by default on a no-plan page (Apply = create). -->
-    <section>
-      <details class="mp-acc mp-card" open>
-        <summary>
-          <span class="ic">◐</span>
-          <span class="lbl">Plan type</span>
-          <span class="chev">›</span>
-        </summary>
-        <div class="space-y-3 mt-2 text-xs">
-          <div class="seg-row" style="grid-template-columns: repeat(2, 1fr);">
-            <button type="button" id="btn-mode-coverage" class="seg-tab is-on">Coverage</button>
-            <button type="button" id="btn-mode-sampling" class="seg-tab">Sampling</button>
-          </div>
-          <p class="text-[10px] text-gray-500 mt-1" id="mode-help">Coverage visits every household; Sampling draws a statistical rooftop subset across one or two study arms.</p>
-        </div>
-      </details>
-    </section>
-
-    <section>
-      <details class="area-def mp-card"{% if not plan_id %} open{% endif %}>
-        <summary>
-          <span class="ic">◧</span>
-          <span class="lbl">{% if plan_id %}Edit boundaries{% else %}Define boundaries{% endif %}</span>
-          <span class="chev">›</span>
-        </summary>
-        <div class="space-y-3 mt-2 text-xs">
-          <p class="text-[10px] text-gray-500 leading-snug" id="area-def-help">
-            {% if plan_id %}Regenerates every work area. CHW assignments and per-area edits are reset.
-            {% else %}Pick the area, choose a work area size, then Apply. The plan is created on Apply.{% endif %}
-          </p>
-
-          <div>
-            <div class="text-gray-600 mb-1">Area input</div>
-            <div class="seg-row" style="grid-template-columns: repeat(3, 1fr);">
-              <button type="button" id="btn-area-admin" class="seg-tab is-on">Boundaries</button>
-              <button type="button" id="btn-area-draw" class="seg-tab">Draw</button>
-              <button type="button" id="btn-area-pin" class="seg-tab">Pin</button>
+      <section>
+        <details class="mp-acc mp-card" open>
+          <summary>
+            <span class="ic">◐</span>
+            <span class="lbl">Plan type</span>
+            <span class="chev">›</span>
+          </summary>
+          <div class="space-y-3 mt-2 text-xs">
+            <div class="seg-row" style="grid-template-columns: repeat(2, 1fr)">
+              <button
+                type="button"
+                id="btn-mode-coverage"
+                class="seg-tab is-on"
+              >
+                Coverage
+              </button>
+              <button type="button" id="btn-mode-sampling" class="seg-tab">
+                Sampling
+              </button>
             </div>
-          </div>
-
-          <div id="area-draw" class="hidden space-y-2">
-            <p class="text-[10px] text-gray-500">Use the polygon tool at the top-right of the map to draw the area.</p>
-            <div class="border-t border-gray-100 pt-1.5">
-              <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Or: trace service-delivery points</div>
-              <p class="text-[10px] text-gray-400 mb-1">Turn on the <b>Service delivery</b> layer (map, top-right) and Show points first; this traces their footprint into the plan area.</p>
-              <div class="flex items-center gap-3 text-[11px] mb-1">
-                <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="concave" checked> Concave</label>
-                <label class="flex items-center gap-1"><input type="radio" name="sd-method" value="convex"> Convex</label>
-              </div>
-              <label class="block text-[11px]">Tightness <input type="range" class="sd-tightness w-full" min="0.05" max="1" step="0.05" value="0.3"></label>
-              <label class="block text-[11px]">Buffer (m) <input type="number" class="sd-buffer w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 mt-0.5" value="25" min="0" step="5"></label>
-              <button type="button" class="sd-derive-btn w-full text-[11px] font-semibold border border-blue-300 text-blue-700 rounded py-1.5 mt-1">Add boundary as planning area</button>
-            </div>
-          </div>
-
-          <div id="area-admin" class="space-y-2">
-            <p class="text-[10px] text-gray-500 leading-snug">
-              <b>Click a boundary on the map</b> to add it to the plan area — your selection appears below.
-              (Search a place + switch the source in the map’s <b>Boundaries</b> layer.)
+            <p class="text-[10px] text-gray-500 mt-1" id="mode-help">
+              Coverage visits every household; Sampling draws a statistical
+              rooftop subset across one or two study arms.
             </p>
-            <!-- admin_boundaries_layer.js mounts the selected list here; search/source live on the map layer -->
           </div>
+        </details>
+      </section>
 
-          <div id="area-pin" class="hidden space-y-2">
-            <p class="text-[10px] text-gray-500">Click "Drop pin", then click the map.</p>
-            <div class="grid grid-cols-2 gap-1">
-              <button type="button" id="btn-drop-pin" class="button button-sm outline-style text-xs">Drop pin</button>
-              <label class="block"><span class="text-gray-600">Radius (m)</span>
-                <input id="inp-pin-radius" type="number" value="500" min="20" step="50" class="base-input mt-0.5 text-xs"></label>
-            </div>
-            <div id="pin-status" class="text-[10px] text-gray-500"></div>
-          </div>
-        </div>
-      </details>
-    </section>
+      <section>
+        <details class="area-def mp-card" {% if not plan_id %} open{% endif %}>
+          <summary>
+            <span class="ic">◧</span>
+            <span class="lbl"
+              >{% if plan_id %}Edit boundaries{% else %}Define boundaries{%
+              endif %}</span
+            >
+            <span class="chev">›</span>
+          </summary>
+          <div class="space-y-3 mt-2 text-xs">
+            <p
+              class="text-[10px] text-gray-500 leading-snug"
+              id="area-def-help"
+            >
+              {% if plan_id %}Regenerates every work area. CHW assignments and
+              per-area edits are reset. {% else %}Pick the area, choose a work
+              area size, then Apply. The plan is created on Apply.{% endif %}
+            </p>
 
-    <section>
-      <details class="mp-acc mp-card"{% if not plan_id %} open{% endif %}>
-        <summary>
-          <span class="ic">▦</span>
-          <span class="lbl">Create work areas</span>
-          <span class="chev">›</span>
-        </summary>
-        <div class="space-y-3 mt-2 text-xs">
-
-          <div id="coverage-config">
-            <div class="text-gray-600 mb-1">Work-area size (cell edge)</div>
-            <div class="flex items-center gap-2 flex-wrap">
-              <div class="flex gap-1" id="cellsize-chips">
-                <button type="button" class="chip" data-cellsize="50">50 m</button>
-                <button type="button" class="chip is-on" data-cellsize="100">100 m</button>
+            <div>
+              <div class="text-gray-600 mb-1">Area input</div>
+              <div
+                class="seg-row"
+                style="grid-template-columns: repeat(3, 1fr)"
+              >
+                <button type="button" id="btn-area-admin" class="seg-tab is-on">
+                  Boundaries
+                </button>
+                <button type="button" id="btn-area-draw" class="seg-tab">
+                  Draw
+                </button>
+                <button type="button" id="btn-area-pin" class="seg-tab">
+                  Pin
+                </button>
               </div>
-              <label class="flex items-center gap-1 text-gray-500">
-                <span class="text-[10px]">or</span>
-                <input id="cfg-cellsize" type="number" value="100" min="10" step="10" class="base-input text-xs" style="width:3.5rem" placeholder="—">
-                <span class="text-[10px]">m</span>
-              </label>
+            </div>
+
+            <div id="area-draw" class="hidden space-y-2">
+              <p class="text-[10px] text-gray-500">
+                Use the polygon tool at the top-right of the map to draw the
+                area.
+              </p>
+              <div class="border-t border-gray-100 pt-1.5">
+                <div
+                  class="text-[10px] uppercase tracking-wide text-gray-400 mb-1"
+                >
+                  Or: trace service-delivery points
+                </div>
+                <p class="text-[10px] text-gray-400 mb-1">
+                  Turn on the <b>Service delivery</b> layer (map, top-right) and
+                  Show points first; this traces their footprint into the plan
+                  area.
+                </p>
+                <div class="flex items-center gap-3 text-[11px] mb-1">
+                  <label class="flex items-center gap-1"
+                    ><input
+                      type="radio"
+                      name="sd-method"
+                      value="concave"
+                      checked
+                    />
+                    Concave</label
+                  >
+                  <label class="flex items-center gap-1"
+                    ><input type="radio" name="sd-method" value="convex" />
+                    Convex</label
+                  >
+                </div>
+                <label class="block text-[11px]"
+                  >Tightness
+                  <input
+                    type="range"
+                    class="sd-tightness w-full"
+                    min="0.05"
+                    max="1"
+                    step="0.05"
+                    value="0.3"
+                /></label>
+                <label class="block text-[11px]"
+                  >Buffer (m)
+                  <input
+                    type="number"
+                    class="sd-buffer w-full text-[11px] border border-gray-300 rounded px-1 py-0.5 mt-0.5"
+                    value="25"
+                    min="0"
+                    step="5"
+                /></label>
+                <button
+                  type="button"
+                  class="sd-derive-btn w-full text-[11px] font-semibold border border-blue-300 text-blue-700 rounded py-1.5 mt-1"
+                >
+                  Add boundary as planning area
+                </button>
+              </div>
+            </div>
+
+            <div id="area-admin" class="space-y-2">
+              <p class="text-[10px] text-gray-500 leading-snug">
+                <b>Click a boundary on the map</b> to add it to the plan area —
+                your selection appears below. (Search a place + switch the
+                source in the map’s <b>Boundaries</b> layer.)
+              </p>
+              <!-- admin_boundaries_layer.js mounts the selected list here; search/source live on the map layer -->
+            </div>
+
+            <div id="area-pin" class="hidden space-y-2">
+              <p class="text-[10px] text-gray-500">
+                Click "Drop pin", then click the map.
+              </p>
+              <div class="grid grid-cols-2 gap-1">
+                <button
+                  type="button"
+                  id="btn-drop-pin"
+                  class="button button-sm outline-style text-xs"
+                >
+                  Drop pin
+                </button>
+                <label class="block"
+                  ><span class="text-gray-600">Radius (m)</span>
+                  <input
+                    id="inp-pin-radius"
+                    type="number"
+                    value="500"
+                    min="20"
+                    step="50"
+                    class="base-input mt-0.5 text-xs"
+                /></label>
+              </div>
+              <div id="pin-status" class="text-[10px] text-gray-500"></div>
             </div>
           </div>
+        </details>
+      </section>
 
-          <div id="sampling-config" class="hidden space-y-2">
-            <div class="text-[10px] text-gray-400 mb-1 cursor-help underline decoration-dotted underline-offset-2" title="How the sample is drawn: every building in the area is grouped into clusters (PSUs); clusters are selected with probability proportional to their building count — bigger clusters are likelier, so every building has a roughly equal chance and the sample stays representative. Within each selected cluster the tool picks the primary buildings to survey plus ranked alternates as backups, so surveyors work a few tight pockets instead of scattered random buildings.">How the sample is drawn &#9432;</div>
-            <div class="grid grid-cols-3 gap-1">
-              <label class="block cursor-help" title="Primary Sampling Units — how many building clusters to select. The area's buildings are grouped into clusters; this many are chosen, with bigger clusters more likely (probability proportional to size)."><span class="text-gray-600 underline decoration-dotted underline-offset-2">PSUs</span>
-                <input id="cfg-target-clusters" type="number" value="25" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
-              <label class="block cursor-help" title="Buildings actually surveyed in each selected cluster — e.g. 8 primary x 25 PSUs = 200 planned surveys."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Primary</span>
-                <input id="cfg-primary" type="number" value="8" min="1" step="1" class="base-input mt-0.5 text-xs"></label>
-              <label class="block cursor-help" title="Ranked backup buildings per cluster. Used in order when a primary building is vacant, locked, refused, or inaccessible — so you reach the target sample size without biasing toward easy-to-reach buildings."><span class="text-gray-600 underline decoration-dotted underline-offset-2">Alternate</span>
-                <input id="cfg-alternate" type="number" value="8" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
-            </div>
-            <div class="border-t border-gray-100 pt-2">
-              <div class="text-gray-600 mb-1">Building source</div>
-              <div id="source-picker" class="space-y-0.5 text-[11px]">
-                <label class="flex items-center justify-between gap-2">
-                  <span class="flex items-center gap-1"><input type="checkbox" class="src-cb" value="Google Open Buildings" checked> Google Open Buildings</span>
-                  <span class="src-count text-gray-400 tabular-nums" data-src="Google Open Buildings"></span>
-                </label>
-                <label class="flex items-center justify-between gap-2">
-                  <span class="flex items-center gap-1"><input type="checkbox" class="src-cb" value="OpenStreetMap"> OpenStreetMap</span>
-                  <span class="src-count text-gray-400 tabular-nums" data-src="OpenStreetMap"></span>
-                </label>
-                <label class="flex items-center justify-between gap-2">
-                  <span class="flex items-center gap-1"><input type="checkbox" class="src-cb" value="Microsoft ML Buildings"> Microsoft ML Buildings</span>
-                  <span class="src-count text-gray-400 tabular-nums" data-src="Microsoft ML Buildings"></span>
+      <section>
+        <details class="mp-acc mp-card" {% if not plan_id %} open{% endif %}>
+          <summary>
+            <span class="ic">▦</span>
+            <span class="lbl">Create work areas</span>
+            <span class="chev">›</span>
+          </summary>
+          <div class="space-y-3 mt-2 text-xs">
+            <div id="coverage-config">
+              <div class="text-gray-600 mb-1">Work-area size (cell edge)</div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <div class="flex gap-1" id="cellsize-chips">
+                  <button type="button" class="chip" data-cellsize="50">
+                    50 m
+                  </button>
+                  <button type="button" class="chip is-on" data-cellsize="100">
+                    100 m
+                  </button>
+                </div>
+                <label class="flex items-center gap-1 text-gray-500">
+                  <span class="text-[10px]">or</span>
+                  <input
+                    id="cfg-cellsize"
+                    type="number"
+                    value="100"
+                    min="10"
+                    step="10"
+                    class="base-input text-xs"
+                    style="width: 3.5rem"
+                    placeholder="—"
+                  />
+                  <span class="text-[10px]">m</span>
                 </label>
               </div>
-              <label class="block mt-1"><span class="text-gray-600">Min Google confidence</span>
-                <input id="cfg-min-confidence" type="number" value="0.7" min="0" max="1" step="0.05" class="base-input mt-0.5 text-xs"></label>
-              <p class="text-[10px] text-gray-500 mt-0.5">Google carries a per-building confidence; OSM/Microsoft don't. Counts appear after you generate.</p>
-              <div class="mt-2 cursor-help" title="Keeps only building footprints whose ground area falls in this range. The minimum drops tiny specks — sheds, market stalls, digitizing noise; the maximum drops oversized non-dwellings — warehouses, schools, walled compounds. So the sample targets real households.">
-                <span class="text-gray-600 underline decoration-dotted underline-offset-2">Building footprint size (m²) &#9432;</span>
-                <div class="grid grid-cols-2 gap-1 mt-0.5">
-                  <label class="block"><span class="text-[10px] text-gray-500">Min</span>
-                    <input id="cfg-area-min" type="number" value="9" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
-                  <label class="block"><span class="text-[10px] text-gray-500">Max</span>
-                    <input id="cfg-area-max" type="number" value="330" min="0" step="1" class="base-input mt-0.5 text-xs"></label>
+
+              <div class="border-t border-gray-100 pt-2 mt-2">
+                <div
+                  class="text-gray-600 mb-1 cursor-help underline decoration-dotted underline-offset-2"
+                  title="Drop work areas that are likely noise rather than real settlement, so FLWs aren't sent to empty squares. Building data isn't perfect — these two filters remove the common false positives."
+                >
+                  Exclude noise work areas &#9432;
+                </div>
+                <label class="block"
+                  ><span class="text-[10px] text-gray-500"
+                    >Min total rooftop area per work area (m²) — 0 keeps
+                    all</span
+                  >
+                  <input
+                    id="cfg-min-cell-roof"
+                    type="number"
+                    value="0"
+                    min="0"
+                    step="5"
+                    class="base-input mt-0.5 text-xs"
+                /></label>
+                <label
+                  class="flex items-center gap-1 mt-1.5 text-[11px] text-gray-700"
+                >
+                  <input id="cfg-exclude-isolated" type="checkbox" /> Exclude
+                  isolated single-building work areas
+                </label>
+                <label class="block mt-0.5"
+                  ><span class="text-[10px] text-gray-500"
+                    >…farther than (m) from a work area with ≥2 buildings</span
+                  >
+                  <input
+                    id="cfg-isolation-dist"
+                    type="number"
+                    value="150"
+                    min="0"
+                    step="25"
+                    class="base-input mt-0.5 text-xs"
+                /></label>
+              </div>
+
+              <div class="border-t border-gray-100 pt-2 mt-2">
+                <div
+                  class="text-gray-600 mb-1 cursor-help underline decoration-dotted underline-offset-2"
+                  title="Expected Visit Count per work area = ceil(buildings × population ÷ retained buildings), where retained buildings is the total left after the exclusion filters above. Leave blank to fall back to 1 expected visit per building."
+                >
+                  Population for visit calc &#9432;
+                </div>
+                <input
+                  id="cfg-population"
+                  type="number"
+                  min="0"
+                  step="1"
+                  class="base-input text-xs w-full"
+                  placeholder="blank = 1 visit / building"
+                />
+                <p
+                  class="text-[10px] text-gray-500 mt-0.5"
+                  id="coverage-visit-readout"
+                ></p>
+              </div>
+            </div>
+
+            <div id="sampling-config" class="hidden space-y-2">
+              <div
+                class="text-[10px] text-gray-400 mb-1 cursor-help underline decoration-dotted underline-offset-2"
+                title="How the sample is drawn: every building in the area is grouped into clusters (PSUs); clusters are selected with probability proportional to their building count — bigger clusters are likelier, so every building has a roughly equal chance and the sample stays representative. Within each selected cluster the tool picks the primary buildings to survey plus ranked alternates as backups, so surveyors work a few tight pockets instead of scattered random buildings."
+              >
+                How the sample is drawn &#9432;
+              </div>
+              <div class="grid grid-cols-3 gap-1">
+                <label
+                  class="block cursor-help"
+                  title="Primary Sampling Units — how many building clusters to select. The area's buildings are grouped into clusters; this many are chosen, with bigger clusters more likely (probability proportional to size)."
+                  ><span
+                    class="text-gray-600 underline decoration-dotted underline-offset-2"
+                    >PSUs</span
+                  >
+                  <input
+                    id="cfg-target-clusters"
+                    type="number"
+                    value="25"
+                    min="1"
+                    step="1"
+                    class="base-input mt-0.5 text-xs"
+                /></label>
+                <label
+                  class="block cursor-help"
+                  title="Buildings actually surveyed in each selected cluster — e.g. 8 primary x 25 PSUs = 200 planned surveys."
+                  ><span
+                    class="text-gray-600 underline decoration-dotted underline-offset-2"
+                    >Primary</span
+                  >
+                  <input
+                    id="cfg-primary"
+                    type="number"
+                    value="8"
+                    min="1"
+                    step="1"
+                    class="base-input mt-0.5 text-xs"
+                /></label>
+                <label
+                  class="block cursor-help"
+                  title="Ranked backup buildings per cluster. Used in order when a primary building is vacant, locked, refused, or inaccessible — so you reach the target sample size without biasing toward easy-to-reach buildings."
+                  ><span
+                    class="text-gray-600 underline decoration-dotted underline-offset-2"
+                    >Alternate</span
+                  >
+                  <input
+                    id="cfg-alternate"
+                    type="number"
+                    value="8"
+                    min="0"
+                    step="1"
+                    class="base-input mt-0.5 text-xs"
+                /></label>
+              </div>
+              <div class="border-t border-gray-100 pt-2">
+                <div class="text-gray-600 mb-1">Building source</div>
+                <div id="source-picker" class="space-y-0.5 text-[11px]">
+                  <label class="flex items-center justify-between gap-2">
+                    <span class="flex items-center gap-1"
+                      ><input
+                        type="checkbox"
+                        class="src-cb"
+                        value="Google Open Buildings"
+                        checked
+                      />
+                      Google Open Buildings</span
+                    >
+                    <span
+                      class="src-count text-gray-400 tabular-nums"
+                      data-src="Google Open Buildings"
+                    ></span>
+                  </label>
+                  <label class="flex items-center justify-between gap-2">
+                    <span class="flex items-center gap-1"
+                      ><input
+                        type="checkbox"
+                        class="src-cb"
+                        value="OpenStreetMap"
+                      />
+                      OpenStreetMap</span
+                    >
+                    <span
+                      class="src-count text-gray-400 tabular-nums"
+                      data-src="OpenStreetMap"
+                    ></span>
+                  </label>
+                  <label class="flex items-center justify-between gap-2">
+                    <span class="flex items-center gap-1"
+                      ><input
+                        type="checkbox"
+                        class="src-cb"
+                        value="Microsoft ML Buildings"
+                      />
+                      Microsoft ML Buildings</span
+                    >
+                    <span
+                      class="src-count text-gray-400 tabular-nums"
+                      data-src="Microsoft ML Buildings"
+                    ></span>
+                  </label>
+                </div>
+                <label class="block mt-1"
+                  ><span class="text-gray-600">Min Google confidence</span>
+                  <input
+                    id="cfg-min-confidence"
+                    type="number"
+                    value="0.7"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    class="base-input mt-0.5 text-xs"
+                /></label>
+                <p class="text-[10px] text-gray-500 mt-0.5">
+                  Google carries a per-building confidence; OSM/Microsoft don't.
+                  Counts appear after you generate.
+                </p>
+                <div
+                  class="mt-2 cursor-help"
+                  title="Keeps only building footprints whose ground area falls in this range. The minimum drops tiny specks — sheds, market stalls, digitizing noise; the maximum drops oversized non-dwellings — warehouses, schools, walled compounds. So the sample targets real households."
+                >
+                  <span
+                    class="text-gray-600 underline decoration-dotted underline-offset-2"
+                    >Building footprint size (m²) &#9432;</span
+                  >
+                  <div class="grid grid-cols-2 gap-1 mt-0.5">
+                    <label class="block"
+                      ><span class="text-[10px] text-gray-500">Min</span>
+                      <input
+                        id="cfg-area-min"
+                        type="number"
+                        value="9"
+                        min="0"
+                        step="1"
+                        class="base-input mt-0.5 text-xs"
+                    /></label>
+                    <label class="block"
+                      ><span class="text-[10px] text-gray-500">Max</span>
+                      <input
+                        id="cfg-area-max"
+                        type="number"
+                        value="330"
+                        min="0"
+                        step="1"
+                        class="base-input mt-0.5 text-xs"
+                    /></label>
+                  </div>
                 </div>
               </div>
+              <button
+                type="button"
+                id="btn-generate-sample"
+                class="button button-sm primary-dark w-full"
+              >
+                {% if plan_id %}Regenerate plan{% else %}Generate plan{% endif
+                %}
+              </button>
+              <p class="text-[10px] text-gray-500" id="generate-plan-hint">
+                {% if plan_id %}Re-rolls a fresh random sample and rebuilds this
+                plan's work areas.{% else %}Draws the PSUs + households and
+                saves them as this plan in one step.{% endif %}
+              </p>
+              <p
+                class="text-[10px] text-gray-500"
+                id="generate-sample-status"
+              ></p>
+              <details
+                id="sampling-rationale"
+                class="hidden mt-1 border-t border-gray-100 pt-2"
+              >
+                <summary
+                  class="text-[11px] font-semibold text-gray-700 cursor-pointer"
+                >
+                  Sample details
+                </summary>
+                <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
+              </details>
             </div>
-            <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">{% if plan_id %}Regenerate plan{% else %}Generate plan{% endif %}</button>
-            <p class="text-[10px] text-gray-500" id="generate-plan-hint">{% if plan_id %}Re-rolls a fresh random sample and rebuilds this plan's work areas.{% else %}Draws the PSUs + households and saves them as this plan in one step.{% endif %}</p>
-            <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
-            <details id="sampling-rationale" class="hidden mt-1 border-t border-gray-100 pt-2">
-              <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Sample details</summary>
-              <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
-            </details>
+
+            <dl class="space-y-0.5 pt-2 border-t border-gray-100">
+              <div class="flex justify-between">
+                <dt class="text-gray-500">Areas drawn</dt>
+                <dd id="stat-areas-drawn" class="text-gray-700 font-medium">
+                  0
+                </dd>
+              </div>
+              <div class="flex justify-between">
+                <dt class="text-gray-500">Approx. area</dt>
+                <dd id="stat-area-km2" class="text-gray-700 font-medium">—</dd>
+              </div>
+            </dl>
+
+            <button
+              type="button"
+              id="btn-apply-area"
+              class="button button-sm primary-dark w-full"
+            >
+              {% if plan_id %}Apply geographic frame{% else %}Create work
+              areas{% endif %}
+            </button>
+            <p class="text-[10px] text-gray-500" id="apply-area-status"></p>
           </div>
+        </details>
+      </section>
 
-          <dl class="space-y-0.5 pt-2 border-t border-gray-100">
-            <div class="flex justify-between"><dt class="text-gray-500">Areas drawn</dt><dd id="stat-areas-drawn" class="text-gray-700 font-medium">0</dd></div>
-            <div class="flex justify-between"><dt class="text-gray-500">Approx. area</dt><dd id="stat-area-km2" class="text-gray-700 font-medium">—</dd></div>
-          </dl>
-
-          <button type="button" id="btn-apply-area" class="button button-sm primary-dark w-full">
-            {% if plan_id %}Apply geographic frame{% else %}Create work areas{% endif %}
+      {% if plan_id %}
+      <details class="mp-acc mp-card" open>
+        <summary>
+          <span class="ic">◑</span><span class="lbl">Map colors</span
+          ><span class="chev">›</span>
+        </summary>
+        <div
+          class="seg-row"
+          style="
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.25rem;
+          "
+        >
+          <button type="button" id="dim-worker" class="seg-tab is-on">
+            By worker
           </button>
-          <p class="text-[10px] text-gray-500" id="apply-area-status"></p>
+          <button type="button" id="dim-group" class="seg-tab">By group</button>
         </div>
+        <p class="text-[10px] text-gray-400 mt-1">
+          Fill colors the chosen dimension; outline always carries the other.
+        </p>
       </details>
-    </section>
+      {% endif %}
 
-
-    {% if plan_id %}
-    <details class="mp-acc mp-card" open>
-      <summary><span class="ic">◑</span><span class="lbl">Map colors</span><span class="chev">›</span></summary>
-      <div class="seg-row" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.25rem;">
-        <button type="button" id="dim-worker" class="seg-tab is-on">By worker</button>
-        <button type="button" id="dim-group" class="seg-tab">By group</button>
-      </div>
-      <p class="text-[10px] text-gray-400 mt-1">Fill colors the chosen dimension; outline always carries the other.</p>
-    </details>
-    {% endif %}
-
-    <!-- Grouping / assignment / bulk / export act on a plan's work areas. They're
+      <!-- Grouping / assignment / bulk / export act on a plan's work areas. They're
          always shown but stay disabled (greyed) until work areas exist — i.e. until
          Generate plan runs — then syncPlanTools() enables them and hides this hint. -->
-    <p id="plan-tools-hint" class="px-1 pt-1 text-[10px] text-gray-400 italic leading-snug">Grouping, assignment, and export act on the plan's work areas — available once you <b>Generate the plan</b> above.</p>
+      <p
+        id="plan-tools-hint"
+        class="px-1 pt-1 text-[10px] text-gray-400 italic leading-snug"
+      >
+        Grouping, assignment, and export act on the plan's work areas —
+        available once you <b>Generate the plan</b> above.
+      </p>
 
-    <!-- Sampling note: groups are the PSUs from generation; geometric auto-grouping
+      <!-- Sampling note: groups are the PSUs from generation; geometric auto-grouping
          is a coverage concept and is hidden in sampling mode (toggled by setMode). -->
-    <div class="mp-card hidden" id="sampling-group-note">
-      <div class="text-xs font-semibold text-gray-700 mb-1">Work area groups</div>
-      <p class="text-[11px] text-gray-500 leading-snug">Each sampled cluster is already its own group — <b>PSU 1…N</b>. Assign workers to those PSUs below, or merge/rename a few via <b>Bulk (selected)</b>. (Geometric re-grouping is for coverage plans, so it's hidden here.)</p>
-    </div>
+      <div class="mp-card hidden" id="sampling-group-note">
+        <div class="text-xs font-semibold text-gray-700 mb-1">
+          Work area groups
+        </div>
+        <p class="text-[11px] text-gray-500 leading-snug">
+          Each sampled cluster is already its own group — <b>PSU 1…N</b>. Assign
+          workers to those PSUs below, or merge/rename a few via
+          <b>Bulk (selected)</b>. (Geometric re-grouping is for coverage plans,
+          so it's hidden here.)
+        </p>
+      </div>
 
-    <details class="mp-acc mp-card" open id="group-strategy-card">
-      <summary><span class="ic">⬡</span><span class="lbl">Create work area groups</span><span class="chev">›</span></summary>
-      <div class="flex flex-col gap-2 text-xs">
-        <label class="block">
-          <span class="text-gray-600">How to group</span>
-          <select id="grp-strategy" class="base-input mt-0.5 text-xs">
-            <option value="bfs_adjacency" selected>Walkable clusters (recommended)</option>
-            <option value="bbox">Uniform grid (fast)</option>
-          </select>
-        </label>
-        <div id="grp-bfs-params" class="grid grid-cols-2 gap-1">
+      <details class="mp-acc mp-card" open id="group-strategy-card">
+        <summary>
+          <span class="ic">⬡</span
+          ><span class="lbl">Create work area groups</span
+          ><span class="chev">›</span>
+        </summary>
+        <div class="flex flex-col gap-2 text-xs">
           <label class="block">
-            <span class="text-gray-600">Max buildings per group</span>
-            <input id="grp-max-buildings" type="number" value="200" min="1" class="base-input mt-0.5 text-xs">
+            <span class="text-gray-600">How to group</span>
+            <select id="grp-strategy" class="base-input mt-0.5 text-xs">
+              <option value="bfs_adjacency" selected>
+                Walkable clusters (recommended)
+              </option>
+              <option value="bbox">Uniform grid (fast)</option>
+            </select>
+          </label>
+          <div id="grp-bfs-params" class="grid grid-cols-2 gap-1">
+            <label class="block">
+              <span class="text-gray-600">Max buildings per group</span>
+              <input
+                id="grp-max-buildings"
+                type="number"
+                value="200"
+                min="1"
+                class="base-input mt-0.5 text-xs"
+              />
+            </label>
+            <label class="block">
+              <span class="text-gray-600">Adjacency buffer (m)</span>
+              <input
+                id="grp-buffer-m"
+                type="number"
+                value="100"
+                min="0"
+                step="10"
+                class="base-input mt-0.5 text-xs"
+              />
+            </label>
+          </div>
+          <label class="block hidden" id="grp-bbox-params">
+            <span class="text-gray-600">Target work areas per group</span>
+            <input
+              id="grp-target-size"
+              type="number"
+              value="30"
+              min="1"
+              class="base-input mt-0.5 text-xs"
+            />
+          </label>
+          <button
+            type="button"
+            id="btn-regroup"
+            class="button button-sm primary-dark"
+            disabled
+          >
+            Apply grouping
+          </button>
+          <p class="text-[10px] text-gray-400">
+            Re-groups every active work area. Audited per work area.
+          </p>
+        </div>
+      </details>
+
+      <details class="mp-acc mp-card" id="assign-workers-card">
+        <summary>
+          <span class="ic">◎</span><span class="lbl">Assign workers</span
+          ><span class="chev">›</span>
+        </summary>
+        <div class="flex flex-col gap-2 text-xs">
+          <label class="block">
+            <span class="text-gray-600">How to assign</span>
+            <select id="asg-strategy" class="base-input mt-0.5 text-xs">
+              <option value="minimax_spread" selected>
+                Minimize travel (recommended)
+              </option>
+              <option value="round_robin">Equal workload</option>
+            </select>
           </label>
           <label class="block">
-            <span class="text-gray-600">Adjacency buffer (m)</span>
-            <input id="grp-buffer-m" type="number" value="100" min="0" step="10" class="base-input mt-0.5 text-xs">
+            <span class="text-gray-600">Workers (one per line)</span>
+            <textarea
+              id="asg-workers"
+              rows="4"
+              class="base-input mt-0.5 text-xs font-mono"
+              placeholder="chw-1&#10;chw-2&#10;chw-3"
+            ></textarea>
           </label>
+          <label class="block" id="asg-restarts-wrap">
+            <span class="text-gray-600">Optimization passes</span>
+            <input
+              id="asg-restarts"
+              type="number"
+              value="20"
+              min="1"
+              max="200"
+              class="base-input mt-0.5 text-xs"
+            />
+          </label>
+          <button
+            type="button"
+            id="btn-reassign"
+            class="button button-sm primary-dark"
+            disabled
+          >
+            Apply assignment
+          </button>
+          <p class="text-[10px] text-gray-400">
+            Assigns every group to a worker. Audited per work area whose worker
+            changes.
+          </p>
         </div>
-        <label class="block hidden" id="grp-bbox-params">
-          <span class="text-gray-600">Target work areas per group</span>
-          <input id="grp-target-size" type="number" value="30" min="1" class="base-input mt-0.5 text-xs">
-        </label>
-        <button type="button" id="btn-regroup" class="button button-sm primary-dark" disabled>Apply grouping</button>
-        <p class="text-[10px] text-gray-400">Re-groups every active work area. Audited per work area.</p>
-      </div>
-    </details>
+      </details>
 
-    <details class="mp-acc mp-card" id="assign-workers-card">
-      <summary><span class="ic">◎</span><span class="lbl">Assign workers</span><span class="chev">›</span></summary>
-      <div class="flex flex-col gap-2 text-xs">
-        <label class="block">
-          <span class="text-gray-600">How to assign</span>
-          <select id="asg-strategy" class="base-input mt-0.5 text-xs">
-            <option value="minimax_spread" selected>Minimize travel (recommended)</option>
-            <option value="round_robin">Equal workload</option>
-          </select>
-        </label>
-        <label class="block">
-          <span class="text-gray-600">Workers (one per line)</span>
-          <textarea id="asg-workers" rows="4" class="base-input mt-0.5 text-xs font-mono"
-                    placeholder="chw-1&#10;chw-2&#10;chw-3"></textarea>
-        </label>
-        <label class="block" id="asg-restarts-wrap">
-          <span class="text-gray-600">Optimization passes</span>
-          <input id="asg-restarts" type="number" value="20" min="1" max="200" class="base-input mt-0.5 text-xs">
-        </label>
-        <button type="button" id="btn-reassign" class="button button-sm primary-dark" disabled>Apply assignment</button>
-        <p class="text-[10px] text-gray-400">Assigns every group to a worker. Audited per work area whose worker changes.</p>
-      </div>
-    </details>
-
-    <details class="mp-acc mp-card" id="bulk-card">
-      <summary><span class="ic">☰</span><span class="lbl">Bulk (selected)</span><span class="chev">›</span></summary>
-      <div class="flex flex-col gap-2">
-        <button type="button" id="bulk-exclude" class="button button-sm primary-dark" disabled>Exclude selected…</button>
-        <div class="grid grid-cols-2 gap-1">
-          <input id="bulk-group" placeholder="group" class="base-input text-xs">
-          <button type="button" id="bulk-regroup" class="button button-sm outline-style" disabled>Set group</button>
-          <input id="bulk-worker" placeholder="worker" class="base-input text-xs">
-          <button type="button" id="bulk-reassign" class="button button-sm outline-style" disabled>Assign</button>
+      <details class="mp-acc mp-card" id="bulk-card">
+        <summary>
+          <span class="ic">☰</span><span class="lbl">Bulk (selected)</span
+          ><span class="chev">›</span>
+        </summary>
+        <div class="flex flex-col gap-2">
+          <button
+            type="button"
+            id="bulk-exclude"
+            class="button button-sm primary-dark"
+            disabled
+          >
+            Exclude selected…
+          </button>
+          <div class="grid grid-cols-2 gap-1">
+            <input
+              id="bulk-group"
+              placeholder="group"
+              class="base-input text-xs"
+            />
+            <button
+              type="button"
+              id="bulk-regroup"
+              class="button button-sm outline-style"
+              disabled
+            >
+              Set group
+            </button>
+            <input
+              id="bulk-worker"
+              placeholder="worker"
+              class="base-input text-xs"
+            />
+            <button
+              type="button"
+              id="bulk-reassign"
+              class="button button-sm outline-style"
+              disabled
+            >
+              Assign
+            </button>
+          </div>
+          <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
         </div>
-        <span id="sel-count" class="text-xs text-gray-400">0 selected</span>
-      </div>
-    </details>
+      </details>
 
-    {% if not plan_id %}
-    <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
+      {% if not plan_id %}
+      <!-- Connect-import labels (LGA / State). Auto-filled from the picked admin
          boundary; only surfaced for manual edit because Connect's work-area
          importer requires both non-empty (see CONNECT_IMPORT_CONTRACT.md).
          NIGERIA-HARDCODED vocabulary — generalize once Connect generalizes. -->
-    <section>
-      <details class="mp-acc mp-card" id="connect-import-card">
-        <summary class="flex items-center gap-2 text-xs text-gray-600">
-          <span class="chev">›</span>
-          <span class="font-medium">Connect import labels</span>
-          <span class="text-gray-400 truncate ml-auto" id="ci-summary">auto-filled from area</span>
-        </summary>
-        <div class="space-y-1.5 text-xs mt-2">
-          <p class="text-[10px] text-gray-500 leading-snug">Connect's work-area importer needs an <b>LGA</b> and <b>State</b> on every row.
-            Picking a boundary fills these automatically — edit only if you drew a freehand area.</p>
-          <label class="block"><span class="text-gray-600">LGA / region</span>
-            <input id="inp-plan-region" type="text" placeholder="e.g. Madobi" class="base-input mt-0.5 text-xs"></label>
-          <label class="block"><span class="text-gray-600">State <span class="text-gray-400">(ADM1)</span></span>
-            <input id="inp-plan-state" type="text" placeholder="e.g. Kano" class="base-input mt-0.5 text-xs"></label>
-        </div>
-      </details>
-    </section>
-    {% endif %}
-
-    </div><!-- /railscroll -->
+      <section>
+        <details class="mp-acc mp-card" id="connect-import-card">
+          <summary class="flex items-center gap-2 text-xs text-gray-600">
+            <span class="chev">›</span>
+            <span class="font-medium">Connect import labels</span>
+            <span class="text-gray-400 truncate ml-auto" id="ci-summary"
+              >auto-filled from area</span
+            >
+          </summary>
+          <div class="space-y-1.5 text-xs mt-2">
+            <p class="text-[10px] text-gray-500 leading-snug">
+              Connect's work-area importer needs an <b>LGA</b> and
+              <b>State</b> on every row. Picking a boundary fills these
+              automatically — edit only if you drew a freehand area.
+            </p>
+            <label class="block"
+              ><span class="text-gray-600">LGA / region</span>
+              <input
+                id="inp-plan-region"
+                type="text"
+                placeholder="e.g. Madobi"
+                class="base-input mt-0.5 text-xs"
+            /></label>
+            <label class="block"
+              ><span class="text-gray-600"
+                >State <span class="text-gray-400">(ADM1)</span></span
+              >
+              <input
+                id="inp-plan-state"
+                type="text"
+                placeholder="e.g. Kano"
+                class="base-input mt-0.5 text-xs"
+            /></label>
+          </div>
+        </details>
+      </section>
+      {% endif %}
+    </div>
+    <!-- /railscroll -->
     <div class="railfoot">
-      <button type="button" id="btn-export" class="button button-sm outline-style w-full" disabled>Download Connect import CSV</button>
+      <button
+        type="button"
+        id="btn-export"
+        class="button button-sm outline-style w-full"
+        disabled
+      >
+        Download Connect import CSV
+      </button>
       <div id="status" class="text-xs text-gray-500 mt-2"></div>
     </div>
   </aside>
@@ -448,121 +1259,276 @@
            "Service delivery" layer body by service_delivery_layer.js. Uses the
            shared labsContextPicker core over its own opportunity data (self-
            contained — does not rely on the navbar being present). -->
-      {{ user_organizations|json_script:"sd-org-data" }}
-      {{ user_programs|json_script:"sd-program-data" }}
-      {{ user_opportunities|json_script:"sd-opportunity-data" }}
-      <div id="sd-picker" class="hidden" data-sd
-           x-data="labsContextPicker({mode:'multi', scope:['org','program','opp'], sourceIds:{org:'sd-org-data', program:'sd-program-data', opp:'sd-opportunity-data'}})">
+      {{ user_organizations|json_script:"sd-org-data" }} {{
+      user_programs|json_script:"sd-program-data" }} {{
+      user_opportunities|json_script:"sd-opportunity-data" }}
+      <div
+        id="sd-picker"
+        class="hidden"
+        data-sd
+        x-data="labsContextPicker({mode:'multi', scope:['org','program','opp'], sourceIds:{org:'sd-org-data', program:'sd-program-data', opp:'sd-opportunity-data'}})"
+      >
         {# compact layer-panel controls #}
-        <button type="button" @click="open=true"
-                class="w-full text-[11px] font-medium border border-gray-300 rounded px-2 py-1.5 mb-2 hover:bg-gray-50 flex items-center justify-between">
+        <button
+          type="button"
+          @click="open=true"
+          class="w-full text-[11px] font-medium border border-gray-300 rounded px-2 py-1.5 mb-2 hover:bg-gray-50 flex items-center justify-between"
+        >
           <span>Pick opportunities</span>
-          <span class="text-gray-500" x-text="selectedOpps.length ? '(' + selectedOpps.length + ' selected)' : 'none yet'"></span>
+          <span
+            class="text-gray-500"
+            x-text="selectedOpps.length ? '(' + selectedOpps.length + ' selected)' : 'none yet'"
+          ></span>
         </button>
         <div class="flex flex-wrap gap-1 mb-1">
           <template x-for="(opp, i) in selectedOpps" :key="opp.id">
-            <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 border">
-              <span class="w-2 h-2 rounded-full" :style="`background:${oppColor(i)}`"></span>
-              <span class="truncate" style="max-width:7rem" x-text="opp.name"></span>
-              <button type="button" @click="removeOpp(opp.id)" class="text-gray-400 hover:text-red-600 leading-none">&times;</button>
+            <span
+              class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 border"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                :style="`background:${oppColor(i)}`"
+              ></span>
+              <span
+                class="truncate"
+                style="max-width: 7rem"
+                x-text="opp.name"
+              ></span>
+              <button
+                type="button"
+                @click="removeOpp(opp.id)"
+                class="text-gray-400 hover:text-red-600 leading-none"
+              >
+                &times;
+              </button>
             </span>
           </template>
-          <span x-show="!selectedOpps.length" class="text-[10px] text-gray-400">No opportunities selected.</span>
+          <span x-show="!selectedOpps.length" class="text-[10px] text-gray-400"
+            >No opportunities selected.</span
+          >
         </div>
-        <select class="sd-pipeline w-full text-[11px] border border-gray-300 rounded px-1 py-1 mb-1">
+        <select
+          class="sd-pipeline w-full text-[11px] border border-gray-300 rounded px-1 py-1 mb-1"
+        >
           <option value="default">Default — device GPS (any app)</option>
         </select>
-        <button type="button" data-testid="sd-show" class="sd-show w-full text-[11px] font-semibold bg-brand-cornflower-blue text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
+        <button
+          type="button"
+          data-testid="sd-show"
+          class="sd-show w-full text-[11px] font-semibold bg-brand-cornflower-blue text-white rounded py-1.5 mb-2"
+          style="background: #2563eb"
+        >
+          Show service delivery points
+        </button>
 
         {# wide 3-column picker overlay — fixed, escapes the narrow panel #}
-        <div x-show="open" x-cloak @click.self="open=false" @keydown.escape.window="open=false"
-             class="fixed inset-0 z-[60] bg-black/30 flex items-start justify-center pt-20 px-4">
-          <div class="bg-white rounded-xl shadow-2xl w-[960px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto p-4">
+        <div
+          x-show="open"
+          x-cloak
+          @click.self="open=false"
+          @keydown.escape.window="open=false"
+          class="fixed inset-0 z-[60] bg-black/30 flex items-start justify-center pt-20 px-4"
+        >
+          <div
+            class="bg-white rounded-xl shadow-2xl w-[960px] max-w-[calc(100vw-2rem)] max-h-[80vh] overflow-y-auto p-4"
+          >
             <div class="flex items-center justify-between mb-3">
-              <h2 class="text-sm font-semibold text-gray-700">Pick opportunities to overlay their delivery points</h2>
-              <button type="button" @click="open=false" class="text-gray-400 hover:text-gray-700 text-xl leading-none">&times;</button>
+              <h2 class="text-sm font-semibold text-gray-700">
+                Pick opportunities to overlay their delivery points
+              </h2>
+              <button
+                type="button"
+                @click="open=false"
+                class="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              >
+                &times;
+              </button>
             </div>
             {% include "labs/_picker_columns.html" %}
-            <div class="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between gap-3">
+            <div
+              class="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between gap-3"
+            >
               <div class="flex flex-wrap gap-1">
                 <template x-for="(opp, i) in selectedOpps" :key="opp.id">
-                  <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 border">
-                    <span class="w-2 h-2 rounded-full" :style="`background:${oppColor(i)}`"></span>
+                  <span
+                    class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 border"
+                  >
+                    <span
+                      class="w-2 h-2 rounded-full"
+                      :style="`background:${oppColor(i)}`"
+                    ></span>
                     <span x-text="opp.name"></span>
-                    <button type="button" @click="removeOpp(opp.id)" class="text-gray-400 hover:text-red-600 leading-none">&times;</button>
+                    <button
+                      type="button"
+                      @click="removeOpp(opp.id)"
+                      class="text-gray-400 hover:text-red-600 leading-none"
+                    >
+                      &times;
+                    </button>
                   </span>
                 </template>
-                <span x-show="!selectedOpps.length" class="text-[11px] text-gray-400 italic">No opportunities selected yet.</span>
+                <span
+                  x-show="!selectedOpps.length"
+                  class="text-[11px] text-gray-400 italic"
+                  >No opportunities selected yet.</span
+                >
               </div>
-              <button type="button" @click="open=false" class="shrink-0 px-4 py-2 text-sm rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white">Done</button>
+              <button
+                type="button"
+                @click="open=false"
+                class="shrink-0 px-4 py-2 text-sm rounded-lg font-medium bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
       </div>
-      <div class="map-overlay map-legend" style="bottom: 0.5rem; left: 0.5rem;">
-        <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">Encoding</div>
-        <div class="legend-row" id="legend-fill"><span class="sw" style="background:#06b6d4;opacity:0.55"></span><span class="lbl">Fill: <span id="legend-fill-dim">worker</span></span></div>
-        <div class="legend-row" id="legend-outline"><span class="sw" style="background:transparent;border:1.5px solid #a855f7;height:0.7rem"></span><span class="lbl">Outline: <span id="legend-outline-dim">group</span></span></div>
-        <div class="legend-row mt-0.5"><span class="sw" style="background:#9ca3af;opacity:0.25"></span><span class="lbl">Excluded</span></div>
+      <div class="map-overlay map-legend" style="bottom: 0.5rem; left: 0.5rem">
+        <div class="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">
+          Encoding
+        </div>
+        <div class="legend-row" id="legend-fill">
+          <span class="sw" style="background: #06b6d4; opacity: 0.55"></span
+          ><span class="lbl"
+            >Fill: <span id="legend-fill-dim">worker</span></span
+          >
+        </div>
+        <div class="legend-row" id="legend-outline">
+          <span
+            class="sw"
+            style="
+              background: transparent;
+              border: 1.5px solid #a855f7;
+              height: 0.7rem;
+            "
+          ></span
+          ><span class="lbl"
+            >Outline: <span id="legend-outline-dim">group</span></span
+          >
+        </div>
+        <div class="legend-row mt-0.5">
+          <span class="sw" style="background: #9ca3af; opacity: 0.25"></span
+          ><span class="lbl">Excluded</span>
+        </div>
       </div>
       <!-- Drag handle on the bottom edge -->
-      <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
+      <div
+        class="map-resizer"
+        id="map-resizer"
+        title="Drag to resize map"
+      ></div>
     </div>
 
     {% if plan_id %}
     <!-- What the map is showing: summary + the dim-keyed list (Workers / Groups).
          Moved below the map so the sidebar stays "actions you take" only. -->
-    <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm grid grid-cols-3 gap-3">
+    <section
+      class="border-t border-gray-200 bg-white px-3 py-2 text-sm grid grid-cols-3 gap-3"
+    >
       <div>
-        <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">Summary</h3>
+        <h3
+          class="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1"
+        >
+          Summary
+        </h3>
         <dl id="summary" class="space-y-1 text-sm"></dl>
       </div>
       <div class="col-span-2">
         <div class="flex items-center justify-between mb-1">
-          <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+          <h3
+            class="text-xs font-semibold text-gray-700 uppercase tracking-wide"
+          >
             <span id="dim-label">Workers</span>
           </h3>
-          <button type="button" id="dim-clear" class="text-[10px] text-gray-400 hover:text-gray-700 hidden">clear filter</button>
+          <button
+            type="button"
+            id="dim-clear"
+            class="text-[10px] text-gray-400 hover:text-gray-700 hidden"
+          >
+            clear filter
+          </button>
         </div>
-        <p class="text-[10px] text-gray-400 mb-0.5 tracking-wide">each row: <span class="font-medium">areas · buildings</span></p>
-        <div id="by-dim" class="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-auto"></div>
-        <p class="text-[10px] text-gray-400 mt-1">Click a <span id="dim-label2">worker</span> to filter the map &amp; table.</p>
+        <p class="text-[10px] text-gray-400 mb-0.5 tracking-wide">
+          each row: <span class="font-medium">areas · buildings</span>
+        </p>
+        <div
+          id="by-dim"
+          class="grid grid-cols-2 gap-x-3 gap-y-0.5 max-h-32 overflow-auto"
+        ></div>
+        <p class="text-[10px] text-gray-400 mt-1">
+          Click a <span id="dim-label2">worker</span> to filter the map &amp;
+          table.
+        </p>
       </div>
     </section>
 
     <!-- Plan metrics (kpi strip + per-FLW table) -->
     <section class="border-t border-gray-200 bg-white px-3 py-2 text-sm">
       <div class="flex items-center justify-between mb-1">
-        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Plan metrics</h2>
-        <a id="compare-link" class="text-xs text-brand-cornflower-blue" href="#">Compare plans…</a>
+        <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+          Plan metrics
+        </h2>
+        <a id="compare-link" class="text-xs text-brand-cornflower-blue" href="#"
+          >Compare plans…</a
+        >
       </div>
       <div id="kpi-strip" class="flex flex-wrap gap-3 mb-2"></div>
       <div class="max-h-40 overflow-auto border border-gray-100 rounded">
         <table class="min-w-full text-xs">
-          <thead class="bg-gray-50 sticky top-0"><tr class="text-left text-gray-500">
-            <th class="p-1.5" id="flw-dim">Worker</th><th class="p-1.5">Areas</th><th class="p-1.5">Buildings</th>
-            <th class="p-1.5" id="flw-pop-col">Population</th><th class="p-1.5">Expected visits</th><th class="p-1.5">Spread (km)</th>
-          </tr></thead>
+          <thead class="bg-gray-50 sticky top-0">
+            <tr class="text-left text-gray-500">
+              <th class="p-1.5" id="flw-dim">Worker</th>
+              <th class="p-1.5">Areas</th>
+              <th class="p-1.5">Buildings</th>
+              <th class="p-1.5" id="flw-pop-col">Population</th>
+              <th class="p-1.5">Expected visits</th>
+              <th class="p-1.5">Spread (km)</th>
+            </tr>
+          </thead>
           <tbody id="flw-body"></tbody>
         </table>
       </div>
     </section>
 
     <div class="border-t border-gray-200">
-      <div class="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
-        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wide">Work areas</span>
-        <button type="button" id="toggle-collapse-all" class="text-xs text-brand-cornflower-blue">Collapse all groups</button>
+      <div
+        class="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100"
+      >
+        <span
+          class="text-xs font-semibold text-gray-600 uppercase tracking-wide"
+          >Work areas</span
+        >
+        <button
+          type="button"
+          id="toggle-collapse-all"
+          class="text-xs text-brand-cornflower-blue"
+        >
+          Collapse all groups
+        </button>
       </div>
       <table class="min-w-full text-sm">
         <thead class="bg-gray-50 sticky top-0">
           <tr class="text-left text-gray-500">
-            <th class="p-2"><input type="checkbox" id="sel-all"></th>
-            <th class="p-2 wa-th" data-sort="work_area_group">Work Area Group <span class="sort-ind"></span></th>
-            <th class="p-2 wa-th" data-sort="id">Work area <span class="sort-ind"></span></th>
-            <th class="p-2 wa-th" data-sort="opportunity_access">Worker <span class="sort-ind"></span></th>
-            <th class="p-2 wa-th" data-sort="building_count">Buildings <span class="sort-ind"></span></th>
-            <th class="p-2 wa-th" data-sort="expected_visit_count">Expected visits <span class="sort-ind"></span></th>
-            <th class="p-2 wa-th" data-sort="status">Status <span class="sort-ind"></span></th>
+            <th class="p-2"><input type="checkbox" id="sel-all" /></th>
+            <th class="p-2 wa-th" data-sort="work_area_group">
+              Work Area Group <span class="sort-ind"></span>
+            </th>
+            <th class="p-2 wa-th" data-sort="id">
+              Work area <span class="sort-ind"></span>
+            </th>
+            <th class="p-2 wa-th" data-sort="opportunity_access">
+              Worker <span class="sort-ind"></span>
+            </th>
+            <th class="p-2 wa-th" data-sort="building_count">
+              Buildings <span class="sort-ind"></span>
+            </th>
+            <th class="p-2 wa-th" data-sort="expected_visit_count">
+              Expected visits <span class="sort-ind"></span>
+            </th>
+            <th class="p-2 wa-th" data-sort="status">
+              Status <span class="sort-ind"></span>
+            </th>
             <th class="p-2"></th>
           </tr>
         </thead>
@@ -572,10 +1538,7 @@
     {% endif %}
   </div>
 </div>
-{% endblock %}
-
-{% block inline_javascript %}
-{{ block.super }}
+{% endblock %} {% block inline_javascript %} {{ block.super }}
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.0/mapbox-gl.js"></script>
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
 <script src="{% static 'microplans/shared.js' %}"></script>
