@@ -372,10 +372,34 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
     }
 
     function computeAggregate(source) {
-        var runs = source.runs || [];
+        // Aggregate over ONE run per expected week (dedup), mirroring the grid's
+        // runForWeek. source.runs can carry >1 completed run for the same week
+        // (a re-seed/refresh), and iterating it raw double-counts KPIs and prints
+        // "12/4 runs". We roll up the SAME run the grid cell shows per week so the
+        // window aggregate agrees with the cells above it.
+        var missedSet = {};
+        (source.missed_week_idxs || []).forEach(function(idx) { missedSet[idx] = true; });
+        var weekCols = (typeof weekColumns !== 'undefined' && weekColumns.length)
+            ? weekColumns
+            : (expectedWeeks.length ? expectedWeeks : []);
+
+        // Resolve the runs to aggregate: one per week column (deduped). When no
+        // week columns are known, fall back to the raw run list.
+        var aggRuns;
+        if (weekCols.length) {
+            aggRuns = [];
+            weekCols.forEach(function(w, i) {
+                if (missedSet[i]) return;        // declared-missed week: no run
+                var run = runForWeek(source, w);  // the SAME run the grid shows
+                if (run) aggRuns.push(run);
+            });
+        } else {
+            aggRuns = source.runs || [];
+        }
+
         var totalDec = 0, totalRoster = 0, totalAuditDone = 0, totalAudit = 0, totalTaskDone = 0, totalTask = 0;
         var outcomes = {satisfactory: 0, warned: 0, suspended: 0, none: 0, open: 0};
-        runs.forEach(function(r) {
+        aggRuns.forEach(function(r) {
             var k = computeRunKpis(r);
             totalDec += k.flwDec.num; totalRoster += k.flwDec.denom;
             totalAuditDone += k.audits.num; totalAudit += k.audits.denom;
@@ -392,9 +416,12 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
                 });
             });
         });
+        // Expected = the SOP threshold (one run per expected week). Actual = the
+        // number of expected weeks that actually ran (deduped), never > expected.
+        var runsExpected = weekCols.length || expectedWeeks.length || aggRuns.length;
         return {
-            runsExpected: expectedWeeks.length || runs.length,
-            runsActual: runs.length,
+            runsExpected: runsExpected,
+            runsActual: aggRuns.length,
             flwDec: {num: totalDec, denom: totalRoster},
             audits: {num: totalAuditDone, denom: totalAudit},
             tasks: {num: totalTaskDone, denom: totalTask},
@@ -496,7 +523,13 @@ RENDER_CODE = r"""function WorkflowUI({ definition, instance, view, actions }) {
                     (agg.tasks.denom > 0 && agg.tasks.num < agg.tasks.denom);
         var bg = below ? '#fffbeb' : '#f9fafb';
         var border = below ? '2px solid #f59e0b' : '1px solid #e5e7eb';
-        var sopPill = below ? pill('⚠ BELOW', 'yellow') : pill('✓ SOP MET', 'green');
+        // Surface the SOP threshold (runs done / runs expected) on the pill so
+        // "BELOW" / "SOP MET" is legible — the SOP is "run the weekly review every
+        // expected week", and this is the ratio against it.
+        var sopRatio = agg.runsActual + '/' + agg.runsExpected;
+        var sopPill = below
+            ? pill('⚠ BELOW SOP · ' + sopRatio, 'yellow')
+            : pill('✓ SOP MET · ' + sopRatio, 'green');
 
         var outcomes = agg.outcomes;
         var totalClosed = (outcomes.satisfactory||0) + (outcomes.warned||0) + (outcomes.suspended||0) + (outcomes.none||0);
