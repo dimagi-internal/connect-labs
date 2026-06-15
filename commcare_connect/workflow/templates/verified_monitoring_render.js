@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V65
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V66
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -53,16 +53,24 @@ function WorkflowUI(props) {
   var [sdOn, setSdOn] = React.useState(true);
   var [pinsOn, setPinsOn] = React.useState(true);
   var [planOn, setPlanOn] = React.useState(true);
-  // Building footprints default OFF — a drill-down layer, lazy-fetched on toggle.
-  var [fpOn, setFpOn] = React.useState(false);
+  // Two opt-in drill-down layers, both default OFF, both lazy-fetched on toggle:
+  //   • Work Areas (waOn) — the sampled work-area polygons (= the sampled building
+  //     footprints), arm-coloured with the primary-solid / alternate-dashed split.
+  //   • Building Footprints (bfOn) — ALL buildings in the area, neutral amber.
+  var [waOn, setWaOn] = React.useState(false);
+  var [bfOn, setBfOn] = React.useState(false);
   var mapDivRef = React.useRef(null);
   var mapRef = React.useRef(null);
   var mapLoadedRef = React.useRef(false);
+  // Only re-fit the map when the ROUND changes — not on every layer toggle, so a
+  // toggle never yanks the user's pan/zoom back to the ward extent.
+  var fittedSelRef = React.useRef(null);
   // The map's Layers panel (the SAME component the plan editor docks on its map:
   // static/microplans/map_panel.js) + its mount node; created once the map exists.
   var panelMountRef = React.useRef(null);
   var panelRef = React.useRef(null);
-  var fpLayerRef = React.useRef(null);
+  var waLayerRef = React.useRef(null);
+  var bfLayerRef = React.useRef(null);
   // Arm → colour, shared with the plan editor (PlanLayers.ARM_COLOR).
   var ARM = (window.PlanLayers && window.PlanLayers.ARM_COLOR) || {
     intervention: '#10b981',
@@ -73,12 +81,13 @@ function WorkflowUI(props) {
   // drawn via the shared PlanLayers, so the monitoring map matches the plan editor.
   // Show-don't-tell: read from state, never fetch. See WORKFLOW_REFERENCE.md §4a.
   //
-  // EXCEPTION — building footprints (opt-in 'footprints' layer): the work-area
-  // polygons ARE the sampled building footprints, served by the plan endpoint the
-  // editor itself fetches (overlay.plan_url). Too heavy to bake into every round's
-  // state, so this one drill-down lazy-fetches on toggle and caches per plan_url.
-  var fpCacheRef = React.useRef({});
-  var fpLoadingRef = React.useRef({});
+  // EXCEPTION — the two building layers (opt-in): Work Areas come from the plan
+  // endpoint (overlay.plan_url → work_areas, the sampled footprints); Building
+  // Footprints come from that plan's footprints endpoint (all buildings in the
+  // area). Both too heavy to bake into every round's state, so they lazy-fetch on
+  // toggle and cache per URL.
+  var fetchCacheRef = React.useRef({});
+  var fetchLoadingRef = React.useRef({});
 
   React.useEffect(
     function () {
@@ -228,93 +237,144 @@ function WorkflowUI(props) {
             'vm-plan-psu-line',
           ]);
         }
-        // Building footprints (opt-in): the sampled work-area polygons, arm-coloured
-        // with a primary-solid / alternate-dashed split via the shared PlanLayers —
-        // the polygon analogue of the pins. Lazy-fetched from overlay.plan_url (the
-        // editor's own plan endpoint) and cached per plan; drawn UNDER the monitoring
-        // marks. The fetch redraws on resolve.
-        var FP_IDS = [
-          'vm-plan-fp-fill',
-          'vm-plan-fp-altline',
-          'vm-plan-fp-dots',
-        ];
+        // Two opt-in building layers (Work Areas + Building Footprints), both drawn
+        // via the shared PlanLayers, lazy-fetched + cached, UNDER the monitoring marks.
+        // Lazy-load a FeatureCollection from `url` (cache per URL); kick a redraw
+        // when it resolves. `mapper(json)` shapes the response into an FC.
         var planUrl = overlay.plan_url;
-        if (fpOn && window.PlanLayers && planUrl) {
-          var fc = fpCacheRef.current[planUrl];
-          if (fc) {
-            var under = ['vm-sd', 'vm-pins'].filter(function (id) {
-              return map.getLayer(id);
-            })[0];
-            window.PlanLayers.footprints(map, {
-              data: fc,
-              src: 'vm-plan-fp',
-              fillId: FP_IDS[0],
-              altLineId: FP_IDS[1],
-              dotsId: FP_IDS[2],
-              armProp: 'arm',
-              splitByType: true,
-              colors: ARM,
-              before: under,
-            });
-            if (fpLayerRef.current)
-              fpLayerRef.current.setMeta(
-                (fc.features || []).length.toLocaleString() + ' buildings',
-              );
-          } else if (!fpLoadingRef.current[planUrl]) {
-            fpLoadingRef.current[planUrl] = true;
-            if (fpLayerRef.current) fpLayerRef.current.setMeta('Loading…');
-            fetch(planUrl, { headers: { Accept: 'application/json' } })
+        function loadFc(url, mapper, layerRef) {
+          var got = fetchCacheRef.current[url];
+          if (got) return got;
+          if (!fetchLoadingRef.current[url]) {
+            fetchLoadingRef.current[url] = true;
+            if (layerRef.current) layerRef.current.setMeta('Loading…');
+            fetch(url, { headers: { Accept: 'application/json' } })
               .then(function (r) {
                 return r.json();
               })
               .then(function (d) {
-                fpCacheRef.current[planUrl] = {
-                  type: 'FeatureCollection',
-                  features: (d.work_areas || [])
-                    .filter(function (w) {
-                      return w.geometry;
-                    })
-                    .map(function (w) {
-                      return {
-                        type: 'Feature',
-                        geometry: w.geometry,
-                        properties: {
-                          arm: w.arm,
-                          sample_type: (w.properties || {}).sample_type,
-                        },
-                      };
-                    }),
-                };
-                fpLoadingRef.current[planUrl] = false;
+                fetchCacheRef.current[url] = mapper(d);
+                fetchLoadingRef.current[url] = false;
                 if (mapRef.current && mapRef.current.isStyleLoaded()) draw();
               })
               .catch(function () {
-                fpLoadingRef.current[planUrl] = false;
-                if (fpLayerRef.current)
-                  fpLayerRef.current.setMeta('Failed — toggle to retry');
+                fetchLoadingRef.current[url] = false;
+                if (layerRef.current)
+                  layerRef.current.setMeta('Failed — toggle to retry');
               });
           }
-        } else if (window.PlanLayers) {
-          window.PlanLayers.remove(map, FP_IDS);
+          return null;
         }
-        // When the footprints drill-down is on, fade the AREA fills (ward + PSU
-        // hull) so the individual buildings read against a clean background; the
-        // hull/ward OUTLINES stay for cluster + ward context. Restored when off.
+        function firstLayer(ids) {
+          return ids.filter(function (id) {
+            return map.getLayer(id);
+          })[0];
+        }
+
+        // Building Footprints — ALL buildings in the round's area (the editor's own
+        // footprints endpoint), neutral amber, drawn UNDER the sampled work areas.
+        var BF_IDS = ['vm-bf-fill', 'vm-bf-dots'];
+        var fpUrl = planUrl ? planUrl + 'footprints/' : null;
+        if (bfOn && window.PlanLayers && fpUrl) {
+          var bfFc = loadFc(
+            fpUrl,
+            function (d) {
+              return (
+                d.footprints || { type: 'FeatureCollection', features: [] }
+              );
+            },
+            bfLayerRef,
+          );
+          if (bfFc) {
+            window.PlanLayers.footprints(map, {
+              data: bfFc,
+              src: 'vm-bf',
+              fillId: BF_IDS[0],
+              dotsId: BF_IDS[1],
+              before: firstLayer(['vm-wa-fill', 'vm-sd', 'vm-pins']),
+            });
+            if (bfLayerRef.current)
+              bfLayerRef.current.setMeta(
+                (bfFc.features || []).length.toLocaleString() + ' buildings',
+              );
+          }
+        } else if (window.PlanLayers) {
+          window.PlanLayers.remove(map, BF_IDS);
+        }
+
+        // Work Areas — the SAMPLED work-area polygons (= the sampled building
+        // footprints), arm-coloured with the primary-solid / alternate-dashed split,
+        // drawn ABOVE all-buildings but UNDER the monitoring marks.
+        var WA_IDS = ['vm-wa-fill', 'vm-wa-altline', 'vm-wa-dots'];
+        if (waOn && window.PlanLayers && planUrl) {
+          var waFc = loadFc(
+            planUrl,
+            function (d) {
+              return {
+                type: 'FeatureCollection',
+                features: (d.work_areas || [])
+                  .filter(function (w) {
+                    return w.geometry;
+                  })
+                  .map(function (w) {
+                    return {
+                      type: 'Feature',
+                      geometry: w.geometry,
+                      properties: {
+                        arm: w.arm,
+                        sample_type: (w.properties || {}).sample_type,
+                      },
+                    };
+                  }),
+              };
+            },
+            waLayerRef,
+          );
+          if (waFc) {
+            window.PlanLayers.footprints(map, {
+              data: waFc,
+              src: 'vm-wa',
+              fillId: WA_IDS[0],
+              altLineId: WA_IDS[1],
+              dotsId: WA_IDS[2],
+              armProp: 'arm',
+              splitByType: true,
+              colors: ARM,
+              before: firstLayer(['vm-sd', 'vm-pins']),
+            });
+            if (waLayerRef.current)
+              waLayerRef.current.setMeta(
+                (waFc.features || []).length.toLocaleString() + ' work areas',
+              );
+          }
+        } else if (window.PlanLayers) {
+          window.PlanLayers.remove(map, WA_IDS);
+        }
+
+        // When EITHER building layer is on, fade the AREA fills (ward + PSU hull) so
+        // the individual buildings read against a clean background; the hull/ward
+        // OUTLINES stay for cluster + ward context. Restored when both are off.
+        var buildingsOn = waOn || bfOn;
         try {
           if (map.getLayer('vm-wards-fill'))
             map.setPaintProperty(
               'vm-wards-fill',
               'fill-opacity',
-              fpOn ? 0.05 : 0.14,
+              buildingsOn ? 0.05 : 0.14,
             );
           if (map.getLayer('vm-plan-psu-fill'))
             map.setPaintProperty(
               'vm-plan-psu-fill',
               'fill-opacity',
-              fpOn ? 0.03 : 0.12,
+              buildingsOn ? 0.03 : 0.12,
             );
         } catch (e) {}
-        CM.fit(map, overlay.ward_boundaries, 64);
+        // Re-fit ONLY when the round changed (or first draw) — never on a layer
+        // toggle, so toggling a layer keeps the user's current pan/zoom.
+        if (fittedSelRef.current !== sel) {
+          CM.fit(map, overlay.ward_boundaries, 64);
+          fittedSelRef.current = sel;
+        }
       }
       if (mapLoadedRef.current && map.isStyleLoaded()) draw();
       else
@@ -324,7 +384,7 @@ function WorkflowUI(props) {
         });
       return undefined;
     },
-    [mapLibReady, sel, sdOn, pinsOn, planOn, fpOn],
+    [mapLibReady, sel, sdOn, pinsOn, planOn, waOn, bfOn],
   );
 
   // Build the map's Layers panel ONCE the map exists — reuses the plan editor's
@@ -378,13 +438,25 @@ function WorkflowUI(props) {
           },
         })
         .setEnabled(true, false);
-      fpLayerRef.current = panel.registerLayer({
+      // Work Areas = the SAMPLED work-area polygons (the sampled building
+      // footprints, arm-coloured). Distinct from Building Footprints (all buildings).
+      waLayerRef.current = panel.registerLayer({
+        id: 'work-areas',
+        label: 'Work areas',
+        color: ARM.intervention,
+        meta: 'Toggle to load',
+        onToggle: function (on) {
+          setWaOn(on);
+        },
+      });
+      // Building Footprints = ALL buildings in the area (neutral amber).
+      bfLayerRef.current = panel.registerLayer({
         id: 'footprints',
         label: 'Building footprints',
         color: AMBER,
         meta: 'Toggle to load',
         onToggle: function (on) {
-          setFpOn(on);
+          setBfOn(on);
         },
       });
       return undefined;
