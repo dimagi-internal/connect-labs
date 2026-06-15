@@ -197,8 +197,11 @@
           filter: opts.splitByType ? ['all', isPolygon, isPrimary] : isPolygon,
           paint: {
             'fill-color': fillColor,
-            'fill-opacity': 0.55,
-            'fill-outline-color': lineColor,
+            // In split mode (monitoring) the buildings are the focus and small, so
+            // they read more solid with a crisp DARK edge; the editor keeps its
+            // lighter amber fill + amber edge.
+            'fill-opacity': opts.splitByType ? 0.7 : 0.55,
+            'fill-outline-color': opts.splitByType ? '#1f2937' : lineColor,
           },
         },
         before,
@@ -212,8 +215,8 @@
             filter: ['all', isPolygon, ['==', ['get', typeProp], 'alternate']],
             paint: {
               'line-color': lineColor,
-              'line-width': 1.1,
-              'line-opacity': 0.9,
+              'line-width': 1.4,
+              'line-opacity': 0.95,
               'line-dasharray': [2, 1.4],
             },
           },
