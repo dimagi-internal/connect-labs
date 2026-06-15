@@ -109,6 +109,84 @@ class TestCoverageFrame:
         assert sum(f["properties"]["building_count"] for f in res.areas_geojson["features"]) == 40
 
 
+def _cluster_plus_lone(seed=3):
+    """12 buildings tightly clustered at the origin + one lone tiny building ~500m east.
+    The cluster cell has >=2 buildings; the lone cell is a single far-away building."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for _ in range(12):
+        dlat = rng.uniform(-20, 20) / M_PER_DEG
+        dlon = rng.uniform(-20, 20) / (M_PER_DEG * np.cos(np.radians(LAT0)))
+        rows.append({"lon": LON0 + dlon, "lat": LAT0 + dlat, "area_m2": 60.0, "confidence": 0.8})
+    rows.append(  # lone, far (~500m east), tiny roof
+        {"lon": LON0 + 500 / (M_PER_DEG * np.cos(np.radians(LAT0))), "lat": LAT0, "area_m2": 5.0, "confidence": 0.8}
+    )
+    return pd.DataFrame(rows)
+
+
+class TestCoverageExclusionFilters:
+    def _gen(self, monkeypatch, **cfg):
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _cluster_plus_lone()
+        )
+        return generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=100, **cfg))
+
+    def test_defaults_keep_everything(self, monkeypatch):
+        res = self._gen(monkeypatch)
+        assert sum(f["properties"]["building_count"] for f in res.areas_geojson["features"]) == 13
+        assert res.stats[0]["removed_small_area"] == 0
+        assert res.stats[0]["removed_isolated"] == 0
+        # metrics are still annotated even with filters off
+        assert all("roof_area_m2" in f["properties"] for f in res.areas_geojson["features"])
+
+    def test_min_roof_area_drops_small_cell(self, monkeypatch):
+        # lone cell roof = 5 m²; cluster cell roof = 12*60 = 720 m²
+        res = self._gen(monkeypatch, min_cell_roof_area_m2=50)
+        assert res.stats[0]["removed_small_area"] == 1
+        assert sum(f["properties"]["building_count"] for f in res.areas_geojson["features"]) == 12
+
+    def test_isolation_filter_drops_lone_far_cell(self, monkeypatch):
+        res = self._gen(monkeypatch, exclude_isolated_singletons=True, isolation_dist_m=150)
+        assert res.stats[0]["removed_isolated"] == 1
+        # the surviving cells are the clustered ones (>=2 buildings)
+        assert all(f["properties"]["building_count"] >= 2 for f in res.areas_geojson["features"])
+
+    def test_isolation_keeps_lone_when_within_distance(self, monkeypatch):
+        # generous distance threshold → the lone cell is "near enough", kept
+        res = self._gen(monkeypatch, exclude_isolated_singletons=True, isolation_dist_m=1000)
+        assert res.stats[0]["removed_isolated"] == 0
+
+
+class TestCoverageExpectedVisits:
+    def _gen(self, monkeypatch, **cfg):
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _scatter(120, seed=7)
+        )
+        return generate_coverage_frame(_AREA, CoverageConfig(cell_size_m=150, **cfg))
+
+    def test_legacy_evc_equals_building_count(self, monkeypatch):
+        res = self._gen(monkeypatch)  # population unset
+        assert res.stats[0]["people_per_building"] is None
+        for f in res.areas_geojson["features"]:
+            assert f["properties"]["expected_visit_count"] == f["properties"]["building_count"]
+            assert f["properties"]["target_population"] is None
+
+    def test_population_weighted_evc(self, monkeypatch):
+        import math
+
+        res = self._gen(monkeypatch, population=4000)
+        st = res.stats[0]
+        assert st["population"] == 4000
+        # ppb = population / retained buildings (all 120 retained here)
+        assert st["retained_buildings"] == 120
+        assert st["people_per_building"] == pytest.approx(4000 / 120, rel=1e-3)
+        ppb = 4000 / 120
+        for f in res.areas_geojson["features"]:
+            n = f["properties"]["building_count"]
+            assert f["properties"]["expected_visit_count"] == max(1, math.ceil(n * ppb))
+            assert f["properties"]["target_population"] == round(n * ppb)
+
+
 class TestCoverageWorkAreas:
     def test_cluster_as_workarea(self):
         fc = {
