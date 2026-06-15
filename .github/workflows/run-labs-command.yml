@@ -83,7 +83,17 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} --tasks "$TASK_ARN" \
             --query 'tasks[0].stoppedReason' --output text)
           echo "Exit code: $EXIT_CODE | stoppedReason: $REASON"
-          echo "Logs: https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#logsV2:log-groups/log-group/%2Fecs%2F${{ env.ECS_WEB_SERVICE }}"
+
+          # Tail the task's stdout/stderr into the Actions log so command OUTPUT is
+          # visible here (awslogs stream name = "<prefix>/<container>/<task-id>").
+          TASK_ID=$(echo "$TASK_ARN" | awk -F/ '{print $NF}')
+          echo "----- command output (/ecs/${{ env.ECS_WEB_SERVICE }} : web/web/$TASK_ID) -----"
+          aws logs get-log-events \
+            --log-group-name "/ecs/${{ env.ECS_WEB_SERVICE }}" \
+            --log-stream-name "web/web/$TASK_ID" \
+            --limit 300 --start-from-head \
+            --query 'events[*].message' --output text 2>/dev/null || echo "(no log events found)"
+          echo "-------------------------------------------------------------------"
 
           if [ "$EXIT_CODE" != "0" ]; then
             echo "::error::Command failed with exit code $EXIT_CODE"
