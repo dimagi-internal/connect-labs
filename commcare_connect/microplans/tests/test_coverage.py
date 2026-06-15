@@ -213,3 +213,30 @@ class TestCoverageWorkAreas:
         api = to_api_payload(was)[0]
         assert api["case_properties"]["mode"] == "coverage"
         assert 13.15 <= api["centroid"]["coordinates"][0] <= 13.16
+
+    def test_population_weighted_props_flow_to_workarea(self):
+        # a population-weighted frame supplies expected_visit_count + target_population
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [[13.15, 11.82], [13.16, 11.82], [13.16, 11.83], [13.15, 11.83], [13.15, 11.82]]
+                        ],
+                    },
+                    "properties": {
+                        "cluster": "C1",
+                        "building_count": 10,
+                        "expected_visit_count": 7,
+                        "target_population": 7,
+                    },
+                }
+            ],
+        }
+        w = build_coverage_work_areas(fc, lga="Maiduguri", state="Borno")[0]
+        assert w.building_count == 10
+        assert w.expected_visit_count == 7  # honoured from props, not = building_count
+        assert w.target_population == 7
