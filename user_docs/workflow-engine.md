@@ -213,13 +213,16 @@ The map panel has a docked **Layers** panel — the same chrome used in the samp
 - **Delivery** — shows implementer-reported visit pins
 - **Survey** — shows independent surveyor visit pins
 - **Plan** — shows the designed study plan: the selected cluster areas (PSUs) from the sampling plan, drawn in the same arm colours used in the plan editor — intervention areas in green and comparison areas in blue — so the plan you designed and the monitoring of it look like one coherent picture
-- **Building footprints** — shows the actual sampled building outlines coloured by study arm (intervention green / comparison blue); **primary** buildings are drawn as solid shapes and **alternate (substituted)** buildings are drawn as dashed outlines, so you can immediately see which buildings the plan originally selected and which were substitutes
+- **Work areas** — shows the *sampled* buildings coloured by study arm (intervention green / comparison blue); **primary** buildings are drawn as solid shapes and **alternate (substituted)** buildings are drawn as dashed outlines, so you can immediately see which buildings the plan originally selected and which were substitutes
+- **Building footprints** — shows *all* buildings in the area, giving you a complete picture of the built environment regardless of which ones were selected for the study
 
-When you turn on the **Building footprints** layer, the ward and cluster area fills fade back so the individual buildings stand out against the map — the ward and cluster outlines remain visible for context, but the colour fills no longer compete with the building shapes. Buildings themselves render with a crisp dark edge so they are clearly legible when you zoom in, whether they are solid (primary) or dashed (alternate).
+You can toggle Work areas and Building footprints independently of each other — turning one on or off does not affect the other.
 
-Previously the map could only show survey and delivery dots alongside cluster outlines. The building footprints layer now lets you see the real buildings the sampling plan selected, making "what we planned to visit" and "what we monitored" directly comparable on the same map.
+When you turn on the **Work areas** layer, the ward and cluster area fills fade back so the individual buildings stand out against the map — the ward and cluster outlines remain visible for context, but the colour fills no longer compete with the building shapes. Buildings themselves render with a crisp dark edge so they are clearly legible when you zoom in, whether they are solid (primary) or dashed (alternate).
 
-Survey pins on the map use two distinct visual styles to distinguish visit types:
+**Toggling any layer on or off keeps your current pan and zoom position.** The map only re-centers when you switch cycles. This means you can turn layers on and off while inspecting a specific area without losing your place.
+
+Survey pins on the map sit directly on their assigned buildings. The CommCare app prevents a survey submission from being recorded more than 15 metres from the assigned household, so all survey points you see on the map fall within that 15-metre gate. Survey pins use two distinct visual styles to distinguish visit types:
 
 - **Solid dots** — primary (first-choice) households
 - **Hollow rings** — substitute households where the surveyor visited an alternate instead of the originally selected household
@@ -230,8 +233,4 @@ Substitute pins are intentionally lighter so they do not dominate the map, but r
 
 The Quality card is the per-surveyor review tool. Select a surveyor to see their scorecard row marked with a high-contrast **REVIEW** badge so they are immediately identifiable. The back-check detail panel — results from an independent re-survey conducted to validate a flagged surveyor's work — lives inside this card.
 
-The GPS-location section of the back-check is labelled **"% within 25 m · cells = distance"** so it is clear that the percentage shown is the share of visits whose GPS coordinates fall within 25 metres of the original recorded location, and that each cell in the table represents a distance measurement — not an error or a missing value.
-
-The GPS drill-down also shows a count chip summarising the full picture at a glance — for example, *"12 flagged · 34 ok · 46 total"* — alongside a full-census caption so you always know how many visits the percentage is based on.
-
-Back-check data reflects real discordance across identity, location, and outcome dimensions. When a
+The GPS-location section of the back-check is labelled **"% within 25 m · cells = distance"** so it is clear that the percentage shown is the share of visits whose GPS coordinates fall within 25 metres of the original recorded location, and
