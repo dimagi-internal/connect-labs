@@ -23,6 +23,9 @@
      render can draw a plan identically to the plan editor. See WORKFLOW_REFERENCE.md
      §4a "Shared map components". -->
 <script src="{% static 'maps/plan_layers.js' %}"></script>
+<!-- Shared microplan map Layers panel (the same toggle UI the plan editor docks on
+     its map) so a render can offer a consistent layer selector. -->
+<script src="{% static 'microplans/map_panel.js' %}"></script>
 {% endif %}
 {% endblock javascript %}
 

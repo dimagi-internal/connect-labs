@@ -374,6 +374,17 @@ def _pt(lat, lon, props):
     return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": props}
 
 
+def _round_plan_url(cfg: dict, rp: dict) -> str | None:
+    """The plan endpoint for a round's two-arm plan (the editor's own URL), or None
+    when the round isn't plan-grounded. The render lazy-fetches it for the building-
+    footprints layer (work_areas = sampled footprint polygons). program_id == the
+    labs-only opportunity_id."""
+    pid = (rp.get("treatment") or rp.get("comparison") or {}).get("plan_id")
+    if not pid:
+        return None
+    return f"/microplans/program/{cfg['opportunity_id']}/plan/{pid}/"
+
+
 def _pins_sample(rng, records, cap_per_ward):
     """A legible per-ward sample of survey-pin features from the primary records."""
     by_ward = {}
@@ -461,6 +472,12 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
             # render can draw the plan via the shared PlanLayers — same as the editor.
             # Baked into state (never fetched); empty when the round isn't plan-grounded.
             "plan_hulls": (rp.get("psu_hulls") or {"type": "FeatureCollection", "features": []}),
+            # The round's plan endpoint (the editor's own URL). The render lazy-fetches
+            # it for the opt-in 'Building footprints' layer — the work-area polygons ARE
+            # the sampled footprints (arm + sample_type). Too heavy to bake every round's
+            # polygons into state, so this one drill-down fetches on toggle. None when
+            # the round isn't plan-grounded (footprints layer then no-ops).
+            "plan_url": _round_plan_url(cfg, rp),
         }
         summary["service_delivery_counts"] = {tw: sd_cfg.get("treatment", 0), cw: sd_cfg.get("comparison", 0)}
         rounds.append(summary)
