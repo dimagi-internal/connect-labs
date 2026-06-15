@@ -15,11 +15,12 @@ back-check/scorecard assembly consume, plus ``sample_type`` / ``cluster`` /
 
 from .backcheck import simulate_backchecks
 from .params import PrimaryRate, SimParams
-from .plan import simulate_plan
+from .plan import cluster_surveyors, simulate_plan
 from .scatter import scatter_primaries
 
 __all__ = [
     "simulate_plan",
+    "cluster_surveyors",
     "scatter_primaries",
     "simulate_backchecks",
     "SimParams",
