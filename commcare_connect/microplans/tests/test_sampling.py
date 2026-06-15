@@ -209,8 +209,12 @@ class TestConfigAndGuards:
         assert FrameConfig.from_payload({"size_strata": 4}).size_balance_bands == 4
         # New key wins when both are present.
         assert FrameConfig.from_payload({"size_balance_bands": 2, "size_strata": 9}).size_balance_bands == 2
-        # Absent → plain PPS (0).
-        assert FrameConfig.from_payload({}).size_balance_bands == 0
+        # Absent → the canonical default (size-stratified, the DHS/MICS standard).
+        from commcare_connect.microplans.sampling.defaults import SAMPLING_DEFAULTS
+
+        assert FrameConfig.from_payload({}).size_balance_bands == SAMPLING_DEFAULTS["size_balance_bands"] == 3
+        # Explicit 0 still opts into plain PPS (the default is not forced on).
+        assert FrameConfig.from_payload({"size_balance_bands": 0}).size_balance_bands == 0
 
     def test_fetch_buildings_rejects_oversized_area(self):
         import pytest
