@@ -193,6 +193,29 @@ def _build_snapshot(
 # ---------------------------------------------------------------------- #
 
 
+# Month abbreviations matching the PAR template RENDER_CODE's ``fmtDate`` so a
+# drill-target's week label is the SAME string the grid cell prints
+# (``months[d.getUTCMonth()] + ' ' + d.getUTCDate()`` -> e.g. "Jun 1").
+_RENDER_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _fmt_week_label(monday_iso: str | None) -> str | None:
+    """Format a week's Monday ISO date as the grid cell prints it ("Jun 1").
+
+    Mirrors the template RENDER_CODE's ``fmtDate`` (UTC month abbrev + day, no
+    leading zero) so a scene can target the EXACT incomplete-week cell by its
+    printed date, instead of the fragile "first cell that says 'open'" — which
+    breaks the moment an opp has open work on more than one week.
+    """
+    if not monday_iso:
+        return None
+    try:
+        y, m, d = (int(part) for part in str(monday_iso)[:10].split("-"))
+        return f"{_RENDER_MONTHS[m - 1]} {d}"
+    except (ValueError, IndexError):
+        return None
+
+
 def _run_coords(ctx) -> dict[int, tuple[int, int, str]]:
     """Map ``run_id`` -> ``(opp_id, week_idx, monday_iso)`` from ``ctx.ids``.
 
@@ -261,6 +284,7 @@ def _select_drill_targets(ctx, snapshot) -> tuple[dict | None, dict | None]:
             "opp_id": opp_id,
             "opp_label": _opp_label(opp_id),
             "week_idx": coord[1] if coord else None,
+            "monday": coord[2] if coord else None,
             "run_id": run_id,
             "audit_id": audits[0]["id"],
             "task_id": tasks[0]["id"],
@@ -449,6 +473,7 @@ def ensure_rollup(resource, ctx) -> dict:
                 "good_opp_id": good["opp_id"],
                 "good_opp_label": good["opp_label"],
                 "good_week_idx": good["week_idx"],
+                "good_week_label": _fmt_week_label(good.get("monday")),
                 "good_run_id": good["run_id"],
                 "good_audit_id": good["audit_id"],
                 "good_task_id": good["task_id"],
@@ -470,6 +495,7 @@ def ensure_rollup(resource, ctx) -> dict:
                 "incomplete_opp_id": incomplete["opp_id"],
                 "incomplete_opp_label": incomplete["opp_label"],
                 "incomplete_week_idx": incomplete["week_idx"],
+                "incomplete_week_label": _fmt_week_label(incomplete.get("monday")),
                 "incomplete_run_id": incomplete["run_id"],
                 "incomplete_audit_id": incomplete["audit_id"],
                 "incomplete_task_id": incomplete["task_id"],

@@ -320,3 +320,11 @@ def test_select_drill_targets_uses_snapshot_audit_and_task_status(monkeypatch):
     assert good["opp_id"] == 10000 and good["audit_id"] == 4237 and good["task_id"] == 4278
     assert incomplete is not None and incomplete["run_id"] == 4269, "incomplete = the other opp's open week"
     assert incomplete["opp_id"] == 10001
+
+    # Each cluster carries its week's Monday + the grid-formatted date label, so a
+    # scene can click the EXACT incomplete-week cell ("May 18") rather than the
+    # fragile "first cell that says open".
+    assert incomplete["monday"] == "2026-05-18"
+    assert R._fmt_week_label(incomplete["monday"]) == "May 18"
+    assert R._fmt_week_label(good["monday"]) == "May 18"
+    assert R._fmt_week_label("2026-06-01") == "Jun 1"  # no leading zero, matches fmtDate

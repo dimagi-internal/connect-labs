@@ -648,9 +648,12 @@ scenes:
     target: Window aggregate
   - kind: click
     must_succeed: true
-    note: the amber open-work card in the other cluster's row
+    note: the incomplete week's cell in the other cluster's row, targeted by its
+      printed date (e.g. "Jun 1") so we land on the exact open-work week the drill
+      scenes need — not merely the first cell that happens to say "open" (the
+      incomplete opp can carry open work on several weeks).
     target: 'css:div[style*="grid-template-columns"]:has-text("${incomplete_opp_label}")
-      div[style*="cursor: pointer"]:has-text("open")'
+      div[style*="cursor: pointer"]:has-text("${incomplete_week_label}")'
   - kind: wait_for
     must_succeed: true
     seconds: 10
