@@ -18,6 +18,7 @@ from commcare_connect.microplans.core.area_input import resolve_area
 from commcare_connect.microplans.core.filters import FilterConfig, apply_frame_filters
 from commcare_connect.microplans.core.footprints import DEFAULT_SOURCES, fetch_buildings, source_counts
 from commcare_connect.microplans.sampling.cluster import ClusterConfig, cluster_buildings
+from commcare_connect.microplans.sampling.defaults import SAMPLING_DEFAULTS as _D
 from commcare_connect.microplans.sampling.sample import PinConfig, sample_pins, select_psus
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,13 @@ def _clampf(v: float, lo: float, hi: float) -> float:
 
 @dataclass
 class FrameConfig:
-    target_clusters: int = 25
-    primary_per_psu: int = 8
-    alternates_per_psu: int = 8
-    min_confidence: float | None = 0.7
-    area_min_m2: float = 9.0
-    area_max_m2: float = 330.0
+    # All defaults come from the single source of truth: sampling/defaults.py.
+    target_clusters: int = _D["target_clusters"]
+    primary_per_psu: int = _D["primary_per_psu"]
+    alternates_per_psu: int = _D["alternates_per_psu"]
+    min_confidence: float | None = _D["min_confidence"]
+    area_min_m2: float = _D["area_min_m2"]
+    area_max_m2: float = _D["area_max_m2"]
     # Building providers to sample from (Overture `dataset` names). Defaults to
     # Google Open Buildings, matching the rooftop pilot.
     sources: list[str] = field(default_factory=lambda: list(DEFAULT_SOURCES))
@@ -47,8 +49,9 @@ class FrameConfig:
     reference_point: tuple[float, float] | None = None
     # Number of building-count bands for size-stratified systematic PPS (0/1 = plain
     # PPS). Banding draws a matched size-mix across arms so they're comparable on
-    # cluster size by construction. See sample.select_psus.
-    size_balance_bands: int = 0
+    # cluster size by construction. See sample.select_psus. Default (3) = size-stratified
+    # (the DHS/MICS standard) — good practice for a single plan, essential for two-arm.
+    size_balance_bands: int = _D["size_balance_bands"]
     # PPS-draw + pin-placement seed. None → a fresh random draw each call, so
     # "Regenerate plan" re-rolls different PSUs + households every click. Pass an
     # int to pin a reproducible sample (tests, deterministic walkthrough capture).
@@ -62,16 +65,19 @@ class FrameConfig:
         src = d.get("sources")
         # Accept the legacy `size_strata` key so studies persisted before the rename
         # keep their banded draw; new payloads use `size_balance_bands`.
-        bands = d.get("size_balance_bands", d.get("size_strata", 0))
+        # Fallbacks all come from the single source (sampling/defaults.py) — a payload
+        # that omits a key (e.g. the UI never sends size_balance_bands) gets the
+        # canonical default, so the UI and the synthetic study draw the same way.
+        bands = d.get("size_balance_bands", d.get("size_strata", _D["size_balance_bands"]))
         return cls(
-            size_balance_bands=_clamp(int(bands or 0), 0, 20),
+            size_balance_bands=_clamp(int(bands if bands is not None else _D["size_balance_bands"]), 0, 20),
             # clamp to sane bounds so a malformed payload can't crash or stall sampling
-            target_clusters=_clamp(int(d.get("target_clusters", 25)), 1, 500),
-            primary_per_psu=_clamp(int(d.get("primary_per_psu", 8)), 1, 100),
-            alternates_per_psu=_clamp(int(d.get("alternates_per_psu", 8)), 0, 100),
+            target_clusters=_clamp(int(d.get("target_clusters", _D["target_clusters"])), 1, 500),
+            primary_per_psu=_clamp(int(d.get("primary_per_psu", _D["primary_per_psu"])), 1, 100),
+            alternates_per_psu=_clamp(int(d.get("alternates_per_psu", _D["alternates_per_psu"])), 0, 100),
             min_confidence=(None if conf in (None, "", 0) else _clampf(float(conf), 0.0, 1.0)),
-            area_min_m2=_clampf(float(d.get("area_min_m2", 9)), 0.0, 1e6),
-            area_max_m2=_clampf(float(d.get("area_max_m2", 330)), 1.0, 1e7),
+            area_min_m2=_clampf(float(d.get("area_min_m2", _D["area_min_m2"])), 0.0, 1e6),
+            area_max_m2=_clampf(float(d.get("area_max_m2", _D["area_max_m2"])), 1.0, 1e7),
             # A non-empty list selects those providers; missing/empty falls back to
             # the pilot default so a sample is never silently empty.
             sources=([str(s) for s in src] if isinstance(src, list) and src else list(DEFAULT_SOURCES)),
