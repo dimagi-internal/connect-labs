@@ -89,7 +89,10 @@ Follow the prompts. When asked, choose **Production labs environment**. Claude w
 
 ## Editing Workflows
 
-Once inside a Claude Code session (see [Safe Mode](connect-safe-mode.md) for the recommended secure launch), use the MCP-powered workflow skill:
+!!! tip "Working with real program data?"
+    Launch Claude via [Safe Mode](connect-safe-mode.md) before running `/workflow-author` — it blocks data-exfiltration channels while keeping workflow edits available.
+
+Use the MCP-powered workflow skill:
 
 ```
 /workflow-author
