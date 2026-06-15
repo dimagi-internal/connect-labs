@@ -774,12 +774,39 @@
       },
     });
 
+    // Rehydrate the selected-boundary rail when a saved plan reopens, so the left
+    // panel shows its picked wards (name + arm pill + remove) exactly like during
+    // creation. Rail-only: the host (review.js) already re-adds the geometries to
+    // the draw surface for the map + collection, so we don't re-add to draw here.
+    function restore(items) {
+      let added = 0;
+      (items || []).forEach((a) => {
+        if (!a || a.boundary_id == null || selected.has(a.boundary_id)) return;
+        selected.set(a.boundary_id, {
+          desc: {
+            name: a.name,
+            boundary_id: a.boundary_id,
+            level: a.level,
+            source: a.source,
+            country: a.country,
+            ref: a.ref || {},
+          },
+          geometry: a.geometry,
+          arm: a.arm || 'intervention',
+        });
+        added++;
+      });
+      if (added) renderSummary();
+    }
+
     return {
       layer,
       refresh,
       // Re-render the selected-boundary list (e.g. when the host toggles sampling
       // mode on/off, so the per-boundary arm pills appear/disappear).
       renderSelected: renderSummary,
+      // Repopulate the selected list from a saved plan's input_areas on load.
+      restore,
       enable() {
         layer.setEnabled(true);
       },
