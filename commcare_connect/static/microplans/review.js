@@ -1471,6 +1471,22 @@
   let dropPinArmed = false;
   let cellSizeM = 100;
 
+  // Read-only display mode: renders draw features (picked admin boundaries,
+  // SD-derived + freehand polygons) but wires NO click/drag handlers, so a ward
+  // boundary can't be accidentally reshaped or translated. We park the control in
+  // this mode by default and only enter draw_polygon while the LLO is actively
+  // drawing a freehand area (returning to 'static' on draw.create). Collection
+  // (draw.getAll) and rail x-delete (draw.delete) work in any mode.
+  const StaticDrawMode = {
+    onSetup() {
+      this.setActionableState();
+      return {};
+    },
+    toDisplayFeatures(state, geojson, display) {
+      display(geojson);
+    },
+  };
+
   function setupAreaDef() {
     if (!map) return;
     // MapboxDraw is added top-right; works alongside the existing wa-fill /
@@ -1479,6 +1495,10 @@
       draw = new MapboxDraw({
         displayControlsDefault: false,
         controls: { polygon: true, trash: true },
+        // Default to the read-only mode so picked boundaries aren't editable; the
+        // polygon control still switches into draw_polygon on demand.
+        defaultMode: 'static',
+        modes: Object.assign({}, MapboxDraw.modes, { static: StaticDrawMode }),
         styles: [
           {
             id: 'gl-draw-polygon-fill',
@@ -1509,6 +1529,11 @@
       map.on('draw.create', refreshAreaStats);
       map.on('draw.update', refreshAreaStats);
       map.on('draw.delete', refreshAreaStats);
+      // Once a freehand polygon is finished, drop back to the read-only mode so it
+      // (and every picked boundary) can't be dragged/reshaped by a stray click.
+      map.on('draw.create', () => {
+        if (draw) draw.changeMode('static');
+      });
     } catch (e) {
       /* draw plugin unavailable — fall back gracefully */
     }
