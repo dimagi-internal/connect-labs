@@ -317,10 +317,12 @@
               <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Sample details</summary>
               <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
             </details>
-            {# Arm comparability — when this plan carries two arms, the shared
-               _arm_comparability.html partial is rendered server-side by
-               ArmComparabilityView and injected here (same panel the study-group
-               page includes). Hidden until a two-arm sample exists. #}
+            {% comment %}
+              Arm comparability — when this plan carries two arms, the shared
+              _arm_comparability.html partial is rendered by ArmComparabilityView
+              and injected here (same panel the study-group page includes). Hidden
+              until a two-arm sample exists.
+            {% endcomment %}
             <div id="sampling-comparability" class="hidden mt-1 border-t border-gray-100 pt-2">
               <div id="comparability-body"></div>
             </div>
