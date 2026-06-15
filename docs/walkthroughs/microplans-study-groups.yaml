@@ -1,25 +1,22 @@
 name: microplans-study-groups
-narrative: >-
-  Maya is designing a controlled rooftop-survey impact study for the Vitamin-A
+narrative: Maya is designing a controlled rooftop-survey impact study for the Vitamin-A
   programme in Kaura, and she doesn't start from ward names — she starts from where
-  the programme actually delivered. On a fresh, empty study she opens "add wards from
-  map", turns on the service-delivery layer, and the Kaura CHC delivery project lights
-  up: hundreds of visit points blanket the WHOLE of Attakar ward. That saturation is
-  the point — because the programme worked across all of Attakar, surveying the entire
-  ward is the honest unit, so Attakar is her intervention ward. She clicks it and an
-  adjacent, un-served neighbour, Gura, as the comparison — two boundaries straight off
-  the map, one action creating a plan for each. Back on the study she marks Attakar the
-  intervention and Gura the control — an arm assignment that lives only on the study,
-  never on the wards' own plans, so the field file stays blind. Then one bulk action
-  samples both wards on a single shared configuration — size-balanced PSU bands and a
-  building-footprint-size filter so the only difference between the arms is the ward,
-  not the method — and the study fills with sampling sites and work areas. She opens
-  each ward on its own map, pulls both arms onto one map coloured by arm, and reads the
-  comparability panel as objective data: the structural axis she can't fix after the
-  fact comes back within tolerance, the adjustable covariates are flagged to correct
-  for at analysis, and she — not the panel — makes the call. Satisfied, she completes a
-  blind, balanced two-arm design, each ward ready to export arm-free to its own
-  opportunity.
+  the programme actually delivered. On a fresh, empty study she opens the plan editor
+  and turns on the Kaura CHC opportunity's service-delivery layer; hundreds of visit
+  points blanket the WHOLE of Attakar ward. That saturation is the point — because
+  the programme worked across all of Attakar, surveying the entire ward is the honest
+  unit, so she selects Attakar off the boundaries as her intervention arm and the
+  adjacent, un-served neighbour Gura as her control — both wards in the SAME plan,
+  each tagged with its arm right in the left rail. One click of Generate samples both
+  arms on identical size-balanced PSU bands and a building-footprint-size filter,
+  and the single two-arm plan lands in the study fully drawn. On its review page the
+  comparability panel puts the two arms side by side — buildings, area, settlement
+  density — and flags whether the control is a fair counterfactual; Maya reads it,
+  satisfies herself, and completes the study by approving the plan. The whole study
+  is one balanced two-arm plan. Each work area carries its arm labs-side so future
+  analysis can tell intervention from control, but the arm is never shown to the LLO
+  or field — kept out of the Connect-facing work-area properties — so the people running
+  the survey stay blind while the design keeps its arms.
 base_url: https://labs.connect.dimagi.com
 auth:
   type: session
@@ -30,24 +27,35 @@ personas:
     name: Maya
     role: Program study planner
     color: '#7C3AED'
-    intro: Maya designs a controlled rooftop-survey impact study for the Kaura Vitamin-A programme and needs two comparable arms that field surveyors execute completely blind.
+    intro: Maya designs a controlled rooftop-survey impact study for the Kaura Vitamin-A
+      programme and needs two comparable arms that field surveyors execute completely
+      blind.
 scenes:
 - persona: maya
   title: Maya starts a study from scratch
+  narrative: Maya wants to start a brand-new two-arm study, so she creates a new study
+    on her existing Kaura programme.
   url: /microplans/program/10008/
-  show: From the Vitamin-A Kaura programme portfolio — already holding five earlier study rounds — Maya starts a brand-new two-arm study with one click and lands on its empty study page, with no wards in it yet, ready to be named and filled.
-  concept_claim: Maya creates an empty two-arm study from scratch on the labs-only Kaura programme with one click and lands on its manage page, ready to add wards, before any ward names are committed.
+  show: From the Vitamin-A Kaura programme portfolio — already holding earlier study
+    rounds — Maya starts a brand-new two-arm study with one click and lands on its
+    empty study page, ready to add a plan.
+  concept_claim: Maya creates an empty two-arm study from scratch on the labs-only
+    Kaura programme with one click and lands on its manage page, ready to add a plan,
+    before any wards are committed.
   provenance: S12
-  design_intent: 'Bet: a study should start as an empty container the planner fills from the map, not a list of names committed up front — so "+ New study" creates it in one click (an Untitled study renamed later), no name-first form.'
+  design_intent: 'Bet: a study should start as an empty container the planner fills
+    from the map, not a list of names committed up front — so “+ New study” creates
+    it in one click, no name-first form.'
   actions:
   - kind: wait_for
     target: Plan groups & studies
   - kind: scroll_to
-    target: 'css:#new-study'
+    target: css:#new-study
   - kind: click
-    target: 'css:#new-study'
-    note: one click creates an "Untitled study" and routes to its empty manage page (/group/<new_id>/manage/) — no name dialog
+    target: css:#new-study
     must_succeed: true
+    note: one click creates an "Untitled study" and routes to its empty manage page
+      — no name dialog
   - kind: wait_for
     target: No plans in this group yet
     seconds: 20
@@ -57,288 +65,353 @@ scenes:
     seconds: 1.5
   features:
   - id: new-study-create
-    description: '''+ New study'' names and creates an empty study (DEFINING, 0 plans) on program 10008 and routes to its manage page'
-    verify: 'Playwright: click ''+ New study'', fill name, submit; assert URL is /program/10008/group/<id>/manage/ and the page shows ''No plans in this group yet'''
+    description: '''+ New study'' creates an empty study (DEFINING, 0 plans) on program
+      10008 and routes to its manage page'
+    verify: 'Playwright: click ''+ New study''; assert URL is /program/10008/group/<id>/manage/
+      and the page shows ''No plans in this group yet'''
 - persona: maya
-  title: Maya sees the programme covered all of Attakar
+  title: Maya opens the plan editor on the empty study
+  narrative: On the empty study Maya clicks “+ Add a plan in the editor”, and in the
+    plan UI she turns on the service-delivery data for the opportunity she's building
+    the study around — the existing Kaura CHC opp.
   full_page: false
-  show: On the empty study Maya opens "Add wards from map" and turns on the Kaura CHC service-delivery layer — hundreds of delivery visits blanket the entire Attakar ward, showing the programme worked the whole ward, not a corner of it.
-  concept_claim: Maya turns on the Kaura CHC service-delivery opp and its visits saturate the WHOLE of Attakar, showing ward-wide delivery — the reason the entire ward is the honest survey unit.
+  show: From the empty study Maya opens the single-plan editor via “+ Add a plan in
+    the editor”; it loads scoped to the study (?group=…) and she switches on the Kaura
+    CHC opportunity's service-delivery layer.
+  concept_claim: From the empty study, “+ Add a plan in the editor” opens the polished
+    single-plan editor scoped to the study (?group=<id>), where Maya turns on the
+    Kaura CHC opportunity's service-delivery data — one plan, built in the unified
+    plan UI.
   provenance: S13
-  design_intent: 'Bet: the planner chooses the intervention ward from where the programme actually delivered, and ward-wide saturation is what justifies surveying the whole ward — so the delivery map, not a name list, is where she starts.'
+  design_intent: 'Bet: a controlled study is designed in one real plan editor — the
+    planner opens it on the study and grounds it in the opportunity''s own delivery
+    data, rather than starting from a name list; scoping the editor to the study (?group=)
+    files the finished plan back automatically.'
   actions:
   - kind: wait_for
     target: No plans in this group yet
   - kind: click
-    target: + Add wards from map
-    note: open the study-scoped map bulk-picker
+    target: + Add a plan in the editor
     must_succeed: true
+    note: opens the single-plan editor at /program/10008/new/?group=<id>
   - kind: wait_for
-    target: Back to study
+    target: Define boundaries
     seconds: 20
     must_succeed: true
-  - kind: hold
-    seconds: 5
-    note: map + Boundaries layer auto-load over the programme footprint; country auto-detects
+    note: the single-plan editor, area-definition section open by default
   - kind: click
     target: aria:toggle Service delivery
-    note: open the delivery-points picker
     must_succeed: false
+    note: turn on the Service-delivery layer in the editor's LAYERS panel
   - kind: hold
-    seconds: 1
+    seconds: 3
+    note: the plan UI, scoped to this study
+  features:
+  - id: editor-from-study
+    description: “+ Add a plan in the editor” on a study opens the polished single-plan
+      editor (review.html) scoped to that study via ?group=<id>
+    verify: 'Playwright: from /group/<id>/manage/ click ''+ Add a plan in the editor'';
+      assert URL is /program/10008/new/?group=<id> and the ''Define boundaries'' section
+      renders open'
+  - id: editor-files-into-study
+    description: A plan created in the study-scoped editor is filed into the study
+      automatically (group_id sent on create)
+    verify: 'pytest: POST plan/create with group_id=<id> creates the plan and adds
+      it to PlanGroupRecord.plan_ids'
+- persona: maya
+  title: Maya sees the programme covered all of Attakar
+  narrative: In the editor she opens the map's LAYERS, switches on the Service delivery
+    layer and points it at the Kaura CHC opportunity — hundreds of delivery visits
+    blanket the whole of Attakar, showing the programme worked the entire ward, not
+    a corner of it. That saturation is why the whole ward is the honest survey unit.
+  full_page: false
+  show: In the single-plan editor Maya picks the Kaura CHC opportunity for the Service
+    delivery layer; its visits saturate the entire Attakar ward on the map.
+  concept_claim: Inside the plan editor, the Kaura CHC opp's service-delivery visits
+    saturate the WHOLE of Attakar — ward-wide delivery is why the entire ward is the
+    honest survey unit.
+  provenance: S13
+  design_intent: 'Bet: the planner chooses the intervention ward from where the programme
+    actually delivered, and ward-wide saturation is what justifies surveying the whole
+    ward — so the delivery map, opened right inside the plan editor, is where she
+    starts.'
+  actions:
+  - kind: wait_for
+    target: Define boundaries
   - kind: click
     target: Pick opportunities
-    note: open the opportunity picker overlay
     must_succeed: false
+    note: open the opportunity picker
   - kind: hold
     seconds: 1
   - kind: click
     target: css:[data-testid=sd-opp-10010]
-    note: select the Kaura CHC service-delivery opp (opp 10010, under this same programme)
-    must_succeed: true
+    must_succeed: false
+    note: select the Kaura CHC service-delivery opp (10010, same programme)
   - kind: click
     target: Done
-    note: close the opportunity picker overlay
     must_succeed: false
+    note: close the opportunity picker
   - kind: click
-    target: css:#sd-picker .sd-show
-    note: show its service-delivery points; the map flies to Attakar where the programme worked
+    target: css:#sd-show
     must_succeed: false
+    note: Show service delivery points; the map flies to Attakar where the programme
+      worked
   - kind: hold
     seconds: 6
     note: the delivery cloud saturates the whole Attakar ward
   features:
-  - id: add-from-map-entry
-    description: '''+ Add wards from map'' opens a study-scoped full-page map (service-delivery overlay + admin-boundaries multi-select)'
-    verify: 'Playwright: from /group/<id>/manage/ click ''+ Add wards from map''; assert URL is /group/<id>/add-from-map/ and a mapboxgl canvas + Layers panel render'
+  - id: service-delivery-layer-in-editor
+    description: The single-plan editor's map exposes a Service-delivery layer that
+      renders a chosen opportunity's delivery visits
+    verify: 'Playwright: in /new/ open LAYERS, toggle ''Service delivery'', pick the
+      Kaura CHC opp, click ''Show service delivery points''; assert delivery points
+      render on the map'
   - id: service-delivery-ward-wide
-    description: The Kaura CHC opp (10010, same programme) renders its delivery visits, which cover the whole Attakar ward
-    verify: 'pytest/HTTP: POST preview_service_delivery {opp_ids:[10010]} returns status ok with ~435 points whose bbox falls inside the Attakar polygon'
+    description: The Kaura CHC opp (10010, same programme) renders delivery visits
+      that cover the whole Attakar ward
+    verify: 'pytest/HTTP: POST preview_service_delivery {opp_ids:[10010]} returns
+      status ok with ~435 points whose bbox falls inside the Attakar polygon'
 - persona: maya
-  title: Maya picks the covered ward and a fair neighbour
+  title: Maya picks both wards into the one plan
+  narrative: With the delivery points visible on the map, Maya picks “Boundaries”
+    as the way to choose the study's geographies. Since the delivery is all in Attakar,
+    she selects that ward and it appears in the left rail as a selected area, tagged
+    the intervention arm. She then selects Gura as well — the adjacent, un-served
+    neighbour — and tags it the control. Both wards now sit in the same plan, each
+    carrying its arm.
   full_page: false
-  show: With the delivery footprint in view, Maya clicks Attakar — the ward the programme covered — and Gura, an adjacent ward it did not, as the study's two wards, each softly highlighting on the map.
-  concept_claim: Maya selects two admin boundaries straight off the map — Attakar (covered) and the neighbouring Gura (not covered) — as the study's intervention and comparison wards.
-  provenance: S13
-  design_intent: 'Bet: the comparison ward should be a real adjacent neighbour chosen on the same map, so the two arms differ by exposure, not by being miles apart.'
+  show: Maya picks the Boundaries tab and clicks Attakar (intervention) then Gura
+    (control) on the map; both appear in the left rail, each with an Interv / Control
+    arm pill — two wards in one plan.
+  concept_claim: In the Boundaries tab Maya selects two admin boundaries into the
+    SAME plan — Attakar (where the delivery saturates) tagged intervention and the
+    adjacent Gura tagged control — each shown in the left rail with its Interv / Control
+    pill. One plan now carries both study arms.
+  provenance: S3
+  design_intent: 'Bet: the unified plan UI lets a two-arm study live in a single plan
+    — each selected boundary carries its own intervention/comparison arm pill — instead
+    of forcing a separate plan per ward.'
   actions:
+  - kind: click
+    target: css:#btn-area-admin
+    must_succeed: false
+    note: Boundaries tab
   - kind: fill
     target: css:.mp-ab-search
     value: Attakar
-    note: find the covered ward
-    must_succeed: true
-  - kind: wait_for
-    target: Attakar · Locality / Ward
-    seconds: 20
-    must_succeed: true
+    must_succeed: false
+    note: the covered ward
   - kind: click
-    target: Attakar · Locality / Ward
-    note: select the covered (intervention) ward
-    must_succeed: true
-  - kind: wait_for
-    target: 1 ward selected
-    seconds: 10
-    must_succeed: true
+    target: Attakar
+    must_succeed: false
+    note: select Attakar — appears in the left rail, tag it Interv
+  - kind: hold
+    seconds: 1
   - kind: fill
     target: css:.mp-ab-search
     value: Gura
-    note: find the adjacent comparison ward
-    must_succeed: true
-  - kind: wait_for
-    target: Gura · Locality / Ward
-    seconds: 20
-    must_succeed: true
-  - kind: click
-    target: Gura · Locality / Ward
-    note: select the comparison ward
-    must_succeed: true
-  - kind: wait_for
-    target: 2 wards selected
-    seconds: 10
-    must_succeed: true
-  - kind: hold
-    seconds: 4
-    note: two wards selected on the delivery map; 'Create 2 plans' enabled
-  features:
-  - id: multi-boundary-select
-    description: The map lets the planner select more than one admin boundary; the footer counts 'N wards selected'
-    verify: 'Playwright: select two boundaries; assert the footer reads ''2 wards selected'' and the Create button enables'
-  - id: enriched-boundaries-source
-    description: The admin-boundary picker labels the curated source "Enriched Boundaries" (the corrected per-country set), with Overture as the fallback
-    verify: 'Playwright: open the boundary source picker; assert it shows "Enriched Boundaries" (not "Other 3rd Party Sources")'
-- persona: maya
-  title: Maya creates the plans and lands back on the study
-  show: Maya clicks "Create plans" and one action files a plan for each selected ward into the study, dropping her back on the study page with both wards listed — one plan, one opportunity per ward — still awaiting samples.
-  concept_claim: One action creates a boundary-only plan per selected ward and returns Maya to the study, now listing Attakar and Gura as members, one plan per ward, still awaiting samples.
-  provenance: S3
-  design_intent: 'Bet: the executable unit is one ward = one plan = one opportunity, so the map''s multi-selection fans out into one plan per ward, assembled into the study.'
-  actions:
-  - kind: wait_for
-    target: Attakar
-    seconds: 20
-    must_succeed: true
-    note: the study now lists both wards as members
-  - kind: scroll_to
-    target: Gura
-  - kind: hold
-    seconds: 1.5
-    note: one plan + one opportunity per ward, both still 'boundary' (awaiting samples)
-  features:
-  - id: bulk-create-into-study
-    description: Create plans files one boundary-only plan per selected boundary into the study and returns to the study manage page
-    verify: 'pytest: POST group/<id>/bulk_create_from_boundaries with N boundaries creates N boundary-only plans (phase ''boundary'', no work areas, no arm) all in group.plan_ids'
-- persona: maya
-  title: Maya marks Attakar the intervention
-  show: Back on the study, Maya marks Attakar the intervention — the ward she just watched the delivery cloud cover — and Gura the control, using the per-ward arm picker; an assignment she sets by hand that lives only on the study, never on the wards' plans.
-  concept_claim: Maya assigns Attakar=intervention and Gura=control by hand on the study, justified by the delivery she saw, and the arm lives only on the study group, never on the ward's plan or work areas.
-  provenance: S11
-  design_intent: 'Bet: keeping the arm a deliberate planner choice stored only on the group keeps the executable plan blind by construction — there is nothing to strip at export.'
-  actions:
-  - kind: wait_for
-    target: Two-arm controlled study
-    seconds: 20
-  - kind: scroll_to
-    target: Arm
-  - kind: select
-    target: css:select
-    value: intervention
-    note: Attakar's arm picker — mark it the intervention (the ward the programme delivered across)
-  - kind: hold
-    seconds: 1.5
-    note: hold on the arm column so the manual assignment reads
-  features:
-  - id: arm-select-manual
-    description: Per-plan arm picker on the study page sets intervention/control, persisted on the group's arms map (labs-side only)
-    verify: 'pytest: POST group update with arms={plan_id: ''intervention''} persists on PlanGroupRecord.arms; PlanRecord carries no arm'
-  - id: arm-on-group-only
-    description: Arm assignment is stored on the group, not on the plan or its work areas
-    verify: 'pytest: after assignment, assert PlanRecord and each WorkArea expose no arm field'
-- persona: maya
-  title: Maya samples both wards on one shared configuration
-  show: With both wards in the study, Maya runs one Generate samples action — size-balanced PSU bands and a building-footprint-size filter shared across both arms — and the empty study fills, each ward flipping to sampled with its sampling sites and work areas.
-  concept_claim: Maya samples both wards with one action on a single shared configuration (size-balance bands + footprint-size filter), and each ward flips to sampled with its work-area count.
-  provenance: S7
-  design_intent: 'Bet: comparability starts at sampling — one shared configuration, size-balanced so both arms get a matched cluster-size mix, means differences between the arms reflect the wards, not the method.'
-  actions:
-  - kind: wait_for
-    target: Re-generate samples
-    seconds: 20
     must_succeed: false
-  - kind: scroll_to
-    target: Re-generate samples
-  - kind: hover
-    target: Re-generate samples
-    note: the single action that samples every member ward identically on one shared config
-  - kind: scroll_to
-    target: Work areas
+    note: the un-served neighbour
+  - kind: click
+    target: Gura
+    must_succeed: false
+    note: select Gura — tag it Control
   - kind: hold
-    seconds: 2
-    note: both wards read sampled with their work-area counts
+    seconds: 3
+    note: two boundaries in one plan, each with its arm pill; 'Areas drawn' reads
+      2
   features:
-  - id: group-generate-samples
-    description: A single 'Generate samples' action samples every boundary-phase member plan using the study's one shared sampling_config
-    verify: 'pytest: POST group/<id>/generate flips every boundary-phase member plan to phase ''sampled'' using group.sampling_config'
-  - id: shared-size-balanced-config
-    description: Both arms sample from one shared sampling_config carrying size_balance_bands and the footprint-size (area_min_m2/area_max_m2) filter
-    verify: 'pytest: assert the study sampling_config has size_balance_bands>=2 and area_min_m2/area_max_m2, and both plans were drawn from it'
+  - id: two-arm-boundaries-one-plan
+    description: Boundaries mode lets the planner select multiple admin boundaries
+      into ONE plan and tag each with its study arm via an Interv / Control pill in
+      the left rail
+    verify: 'Playwright: in /new/ Boundaries tab, select Attakar then Gura; assert
+      both appear in the left-rail selected list each with an Interv/Control arm pill
+      and #stat-areas-drawn reads 2'
+  - id: arm-tag-per-boundary
+    description: Each selected boundary carries its own arm (intervention/comparison)
+      set via the left-rail pill; the arm flows onto that ward's work areas labs-side
+      so future analysis can tell the arms apart, but is kept out of the FLW-facing
+      case properties so the LLO/field never see it
+    verify: 'pytest: collectArmAreas tags Attakar=intervention, Gura=comparison on
+      one plan; each work area stores its arm labs-side while case_properties (and
+      the displayed CSV) carry no arm column'
 - persona: maya
-  title: Maya studies each ward on its own map
-  full_page: false
-  show: Maya opens the intervention ward on its own review map to understand its sampled sites and work areas before judging it against the other arm.
-  concept_claim: Maya opens a single ward on its own review map to see its sampled sites and work areas in detail.
-  provenance: S6
-  design_intent: 'Bet: a planner needs to understand each arm on its own before comparing them, so each ward has its own full review map.'
+  title: Maya generates the two-arm plan in place
+  narrative: 'She sets the sampling methodology — size-balanced PSU bands and a building-footprint-size
+    filter — and clicks Generate plan. In one action the editor draws the sample for
+    both arms and creates the plan in place: no reload, the page becomes the plan''s
+    own review map, work areas and KPIs and all, already filed into the study.'
+  show: In Sampling mode Maya clicks ‘Generate plan’; the editor samples both arms
+    and creates the single plan in place — the page becomes the plan's review map
+    with work areas and KPIs, filed into the study.
+  concept_claim: With the methodology set (size-balance bands + footprint-size filter),
+    ‘Generate plan’ samples both arms in one action and creates the single two-arm
+    plan in place (no reload) — the editor becomes the plan's review map, work areas
+    and KPIs shown, the plan already in the study.
+  provenance: S7
+  design_intent: 'Bet: a two-arm plan should be selected, sampled, and reviewed in
+    one continuous editor — ‘Generate plan’ draws both arms from one shared methodology
+    and creates the plan in place (create-in-place) so the planner never loses context
+    and the arms are comparable by construction.'
+  actions:
+  - kind: click
+    target: css:#btn-mode-sampling
+    must_succeed: false
+    note: a sampling study, not coverage
+  - kind: scroll_to
+    target: css:#sampling-config
+  - kind: hold
+    seconds: 1
+    note: PSUs + building-footprint-size filter — one methodology for both arms
+  - kind: click
+    target: css:#btn-generate-sample
+    must_succeed: true
+    note: ‘Generate plan’ — samples both arms and creates the plan in place
+  - kind: wait_for
+    target: Microplan review
+    seconds: 60
+    must_succeed: true
+    note: 'create-in-place: the editor becomes the plan''s review page (URL → /plan/<id>/review/)'
+  - kind: wait_for
+    target: Work areas
+    seconds: 20
+  - kind: hold
+    seconds: 6
+    note: both arms' sampled work areas + KPIs on one map, filed into the study
+  features:
+  - id: generate-plan-in-place
+    description: '''Generate plan'' samples both arms and creates the single plan
+      via POST /plan/create/ with group_id, hydrating the plan''s review page in place
+      (create-in-place, no reload)'
+    verify: 'Playwright: click ''#btn-generate-sample''; assert one plan is created
+      with both arms, the URL becomes /plan/<id>/review/, work areas render, and the
+      button flips to ''Regenerate plan'''
+  - id: sampling-methodology
+    description: Both arms sample from one methodology — size-balance bands + a building-footprint-size
+      (area_min_m2/area_max_m2) filter — applied in the same Generate
+    verify: 'pytest: the created plan''s sampling_config carries size_balance_bands>=2
+      and area_min_m2/area_max_m2, and per-arm sampling_stats are stored for both
+      arms on the one plan'
+- persona: maya
+  title: Maya validates the two arms on the one plan
+  narrative: On the plan's review page the comparability panel now shows both arms
+    side by side — Interv. vs Control on buildings, area, and settlement density —
+    with a matched / not-matched flag and the reason if they diverge. Both arms sit
+    on one map coloured by arm. Maya reads it and satisfies herself the control is
+    a fair counterfactual, all within the single plan.
+  viewport:
+    width: 1440
+    height: 900
+  show: 'On the single plan''s review page Maya opens Sample details: a comparability
+    table compares the intervention and control arms on buildings, area, and density
+    with a matched / not-matched badge, both arms painted on one map by their arm
+    colour.'
+  concept_claim: Because the plan holds two arms, its review page renders a comparability
+    panel comparing intervention vs control on buildings, area, and settlement density
+    with a matched / not-matched flag — so Maya validates the control is a fair counterfactual
+    without leaving the plan.
+  provenance: S8
+  design_intent: 'Bet: validation belongs on the plan that holds both arms — one comparability
+    panel over the two arms'' sampled settlements lets the planner judge the counterfactual
+    in place; the flag informs the call, the planner makes it.'
   actions:
   - kind: wait_for
     target: Microplan review
     seconds: 20
     must_succeed: true
-  - kind: hold
-    seconds: 12
-    note: high-zoom satellite tiles are slow to load in headless — give them time before the viewport capture
-  features:
-  - id: per-plan-review-map
-    description: Each ward has its own review page with a map of its sampled work areas plus grouping and worker-assignment controls
-    verify: 'Playwright: open a ward''s /plan/<id>/review/; assert a mapboxgl canvas renders and the page reads ''Microplan review'''
-- persona: maya
-  title: Maya sees both arms together
-  full_page: false
-  show: Maya pulls both wards onto one read-only map, each coloured by its arm, and opens the Inspect panel to confirm which plan and arm each area belongs to.
-  concept_claim: Maya sees both study arms overlaid on one read-only map coloured by arm, and opens an inspector that names each ward's plan and arm.
-  provenance: S6
-  design_intent: 'Bet: seeing intervention and control side by side in real geography lets a planner sanity-check comparability before completing.'
-  actions:
-  - kind: wait_for
-    target: View-only
-    seconds: 20
-    must_succeed: true
-  - kind: wait_for
-    target: intervention
-    note: arm legend rendered
-  - kind: hold
-    seconds: 12
-    note: high-zoom satellite tiles + arm layers are slow in headless — give them time before the viewport capture
   - kind: click
-    target: INSPECT
-    note: open the inspector that names each area's plan and arm
+    target: Sample details
     must_succeed: false
-  - kind: hold
-    seconds: 2
-  features:
-  - id: multi-plan-overlay-map
-    description: View-only group map overlays every member plan's boundary and work areas on one Mapbox map, coloured by arm
-    verify: 'Playwright: open /group/<id>/map/; assert a mapboxgl canvas renders and the legend shows each ward with its arm'
-- persona: maya
-  title: Maya reads the comparability as objective data
-  viewport:
-    width: 1440
-    height: 900
-  show: Back on the study, Maya reads the comparability panel as objective data, not a recommendation — the structural axis she can't fix after the fact comes back within tolerance, the adjustable covariates are flagged to correct for at analysis, and she makes the call.
-  concept_claim: Maya's comparability panel reports the arms as objective data — the structural axis within tolerance, the adjustable covariates flagged to correct for at analysis — and leaves the judgement to her, not the panel.
-  provenance: S8
-  design_intent: 'Bet: classifying each axis by an objective property — structural (can''t adjust) vs adjustable covariate (a DiD corrects for it) — and never issuing a verdict keeps the planner making the call.'
-  actions:
+    note: open the sample-details panel
   - kind: wait_for
-    target: ARM COMPARABILITY
-    seconds: 20
-    must_succeed: true
-  - kind: scroll_to
-    target: ARM COMPARABILITY
+    target: Control
+    seconds: 10
+    must_succeed: false
+    note: the comparability table renders Interv./Control columns
   - kind: hold
-    seconds: 2
-    note: structural axis vs adjustable covariates, each labelled by its objective property
+    seconds: 3
+    note: buildings, area, density per arm + a matched / not-matched badge
   - kind: hold
-    seconds: 2
-    note: marginal SMDs read amber 'acceptable, marginal', not green — the planner decides
+    seconds: 4
+    note: both arms painted on one map by arm colour — intervention green, control
+      blue
   features:
-  - id: arm-comparability-objective
-    description: Comparability panel computes standardized mean differences per axis and classifies each by objective property (structural vs adjustable baseline covariate), without issuing a recommendation
-    verify: 'pytest: arm_comparability_psu returns per-metric SMD + an objective classification band; no field asserts a use/don''t-use recommendation'
-  - id: comparability-not-a-recommendation
-    description: The panel presents data + classification, not advice — marginal SMDs (0.1–0.25) show amber 'acceptable, marginal', and sections are labelled by objective property
-    verify: 'Playwright: assert the panel labels axes structural vs adjustable and shows no ''matched''/''use this'' verdict language'
+  - id: in-plan-arm-comparability
+    description: 'When a plan has two arms, the review page''s Sample details renders
+      a comparability table (Interv vs Control: buildings, area km², density /km²)
+      with a matched / not-matched badge and a reason when they diverge'
+    verify: 'Playwright: open a two-arm plan''s review page, open ''Sample details'';
+      assert a comparability table shows Interv./Control columns and a ''matched''
+      or ''not matched'' badge'
+  - id: both-arms-one-map
+    description: The single plan's map paints both arms by colour (intervention green,
+      comparison blue) so the two arms are seen together in real geography
+    verify: 'Playwright: assert the plan review map paints work areas in both the
+      intervention and comparison arm colours'
 - persona: maya
   title: Maya completes the study
-  show: Satisfied the two arms are close enough, Maya completes the study — a blind, balanced two-arm design, each ward ready to export arm-free to its own opportunity, with no arm column for the field to bias on.
-  concept_claim: Maya completes the comparable study, leaving a blind two-arm design where each ward exports to its own Connect CSV with no arm column.
+  narrative: Satisfied, Maya advances the plan through its lifecycle from the program
+    workspace — Submit for review, then Approve. The study is one balanced two-arm
+    plan. Each work area carries its arm labs-side so future analysis can tell intervention
+    from control — but the arm is never shown to the LLO or field and is kept out
+    of the Connect-facing work-area properties, so the people running the survey stay
+    blind while the design keeps its arms.
+  show: 'From the program workspace Maya advances the two-arm plan: Submit for review,
+    then Approve. Each work area keeps its arm labs-side for analysis, but neither
+    the UI nor the Connect-facing export shows it — so the field never sees which
+    ward is which arm.'
+  concept_claim: Maya advances the single two-arm plan draft → in_review → approved
+    from the workspace, completing a balanced study. Each work area stores its arm
+    labs-side so future analysis can distinguish the arms, while the arm is kept off
+    the LLO/field-facing surfaces (UI + Connect case properties) — so the study stays
+    blind to the field yet carries its arms forward.
   provenance: S14
-  design_intent: 'Bet: completing the study is the planner''s sign-off, and the export is blind by construction — the arm is shown for planning but never written to the field file.'
+  design_intent: 'Bet: completing the study is approving the one plan that holds both
+    arms; blinding is a display choice, not data loss — each work area keeps its arm
+    labs-side for analysis, while the LLO/field-facing surfaces never show it.'
   actions:
-  - kind: scroll_to
-    target: Connect CSV is blind
   - kind: wait_for
-    target: arm-free work-area file
-  - kind: hover
-    target: Connect CSV
-    note: 'tooltip: ''one opportunity per plan; arm never included'''
+    target: Planning
+    seconds: 20
     must_succeed: false
+    note: the program workspace lifecycle columns
+  - kind: click
+    target: Submit for review
+    must_succeed: false
+    note: draft → in_review
+  - kind: hold
+    seconds: 1
+  - kind: click
+    target: Approve
+    must_succeed: false
+    note: in_review → approved
   - kind: hold
     seconds: 2
-    note: the planning page shows the arm, but the export is arm-free — blind by construction
+    note: the two-arm plan is approved — the study is complete
+  - kind: hover
+    target: Connect CSV
+    must_succeed: false
+    note: 'tooltip: arm kept off the field-facing export — blind to the LLO/field'
+  - kind: hold
+    seconds: 2
+    note: the field-facing file hides the arm; the work-area record keeps it labs-side
+      for analysis
   features:
-  - id: complete-study-lifecycle
-    description: The planner advances the study's plans past draft (draft -> in_review -> approved) once comparability is confirmed
-    verify: 'pytest: program_plan_transition moves a plan draft -> in_review -> approved; the study reflects the advanced state'
-  - id: blind-claim-observable
-    description: The study page states the export is blind and labels each Connect CSV as arm-free
-    verify: 'Playwright: assert the page shows ''Connect CSV is blind'' and each ''Connect CSV'' link title contains ''arm never included'''
+  - id: plan-lifecycle-complete
+    description: From the program workspace the planner advances the two-arm plan
+      draft → in_review ('Submit for review') → approved ('Approve')
+    verify: 'pytest: program_plan_transition moves the plan draft -> in_review ->
+      approved; the workspace reflects the approved state'
+  - id: arm-carried-blind-to-field
+    description: Each work area stores its study arm labs-side (WorkAreaPayload.arm)
+      so future analysis can tell intervention from control; the arm is deliberately
+      kept out of the FLW-facing case_properties and the displayed export, so the
+      LLO/field never see it
+    verify: 'pytest: each sampling WorkArea stores arm (intervention/comparison) labs-side;
+      WorkAreaPayload.arm is NOT in case_properties and the Connect CSV headers carry
+      no Arm column'
+narrative_synced_version: 7
+narrative_synced_hash: 9ff78c2403483e34e5b626f8e3a254608a1b917db6122f941fc9db89b5043c58
+narrative_synced_at: '2026-06-14T13:31:52.235454+00:00'

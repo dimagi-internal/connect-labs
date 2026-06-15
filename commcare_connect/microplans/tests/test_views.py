@@ -1470,17 +1470,31 @@ def _square(lon, lat, d=0.02):
     }
 
 
-def test_arm_comparability_matched_when_similar(client, django_user_model):
+def test_arm_comparability_renders_shared_smd_panel(client, django_user_model):
+    # Single-plan path reuses the SAME PSU/SMD engine + panel markup as the group
+    # page: POST the plan's per-arm sampling_stats, get back the rendered partial.
     _login(client, django_user_model)
     resp = client.post(
         reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
         data=json.dumps(
             {
-                "areas": [
-                    {"arm": "intervention", "geometry": _square(8.30, 11.78)},
-                    {"arm": "comparison", "geometry": _square(8.40, 11.78)},
+                "stats": [
+                    {
+                        "arm": "intervention",
+                        "psu_size": [53, 20],
+                        "psu_density": [8000, 2500],
+                        "bldg_area": [120, 40],
+                        "n_psus": 8,
+                    },
+                    {
+                        "arm": "comparison",
+                        "psu_size": [55, 21],
+                        "psu_density": [8200, 2600],
+                        "bldg_area": [123, 41],
+                        "n_psus": 8,
+                    },
                 ],
-                "building_counts": {"intervention": 100, "comparison": 110},
+                "names": {"intervention": "Attakar", "comparison": "Gura"},
             }
         ),
         content_type="application/json",
@@ -1488,22 +1502,24 @@ def test_arm_comparability_matched_when_similar(client, django_user_model):
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["status"] == "ok"
-    assert {a["arm"] for a in body["arms"]} == {"intervention", "comparison"}
-    assert all("area_km2" in a and "density_per_km2" in a for a in body["arms"])
     assert body["matched"] is True
+    # the rendered, shared comparability partial (same one the group page includes)
+    assert "Arm comparability" in body["html"]
+    assert "settlement density" in body["html"]
+    assert "SMD" in body["html"]
+    assert "Attakar" in body["html"] and "Gura" in body["html"]
 
 
-def test_arm_comparability_not_matched_when_counts_diverge(client, django_user_model):
+def test_arm_comparability_density_mismatch_not_matched(client, django_user_model):
     _login(client, django_user_model)
     resp = client.post(
         reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
         data=json.dumps(
             {
-                "areas": [
-                    {"arm": "intervention", "geometry": _square(8.30, 11.78)},
-                    {"arm": "comparison", "geometry": _square(8.40, 11.78)},
-                ],
-                "building_counts": {"intervention": 100, "comparison": 300},
+                "stats": [
+                    {"arm": "intervention", "psu_size": [53, 20], "psu_density": [8000, 2500], "bldg_area": [120, 40]},
+                    {"arm": "comparison", "psu_size": [60, 30], "psu_density": [2500, 1500], "bldg_area": [130, 45]},
+                ]
             }
         ),
         content_type="application/json",
@@ -1511,7 +1527,27 @@ def test_arm_comparability_not_matched_when_counts_diverge(client, django_user_m
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["matched"] is False
-    assert body["reasons"]
+    assert "out of tolerance" in body["html"]
+
+
+def test_arm_comparability_one_arm_returns_empty_panel(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:arm_comparability", kwargs={"opp_id": 123}),
+        data=json.dumps(
+            {
+                "stats": [
+                    {"arm": "intervention", "psu_size": [53, 20], "psu_density": [8000, 2500], "bldg_area": [120, 40]}
+                ]
+            }
+        ),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["matched"] is None
+    assert body["html"] == ""
 
 
 def test_boundary_viewport_bbox_snaps_to_grid():

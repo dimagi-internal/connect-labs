@@ -1088,7 +1088,7 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
             # geography, which the PPS survey never visits. Whole-ward density is kept
             # only as a context line so the old (wrong) signal is visible, not used.
             if group.kind == "study":
-                from commcare_connect.microplans.core.comparability import arm_comparability_psu
+                from commcare_connect.microplans.core.comparability import arm_comparability_psu, psu_arms_from_stats
                 from commcare_connect.microplans.core.plan import plan_sample_areas
 
                 def _resolve_boundary(bid):
@@ -1117,26 +1117,22 @@ class ProgramGroupPageView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateVi
                     except Exception:  # noqa: BLE001
                         return 0.0
 
-                arms_data = []
+                # Assemble one stats entry per member plan (tagged with its arm), plus
+                # the per-arm display name + whole-ward context density, then hand to the
+                # SHARED builder + engine — the same path the single-plan endpoint uses.
+                stat_entries, names, ward_density = [], {}, {}
                 for pid in group.plan_ids:
                     pl = plans_by_id.get(pid)
                     arm = group.arm_for(pid)
                     if pl is None or not arm or not pl.work_areas:
                         continue
-                    st = (pl.data.get("sampling_stats") or [{}])[0]
-                    arms_data.append(
-                        {
-                            "arm": arm,
-                            "psu_size": st.get("psu_size") or (0, 0),
-                            "psu_density": st.get("psu_density") or (0, 0),
-                            "bldg_area": st.get("bldg_area") or (0, 0),
-                            "ward_density": _ward_density(pl, arm),
-                            # carry n selected PSUs so the panel can state its own sample
-                            # size (the SMD denominator); 0 for legacy stats → line hidden.
-                            "n_psus": st.get("n_psus") or 0,
-                        }
-                    )
-                if len({a["arm"] for a in arms_data}) >= 2:
+                    st = dict((pl.data.get("sampling_stats") or [{}])[0])
+                    st["arm"] = arm
+                    stat_entries.append(st)
+                    names[arm] = pl.name or f"Plan {pl.id}"
+                    ward_density[arm] = _ward_density(pl, arm)
+                if len({s["arm"] for s in stat_entries}) >= 2:
+                    arms_data = psu_arms_from_stats(stat_entries, names=names, ward_density=ward_density)
                     context["comparability"] = arm_comparability_psu(arms_data)
             # Action URLs (reuse existing surfaces; map/generate land in later steps)
             ids_csv = ",".join(str(e["plan_id"]) for e in entries)
@@ -1751,71 +1747,39 @@ class DeriveBoundaryView(LoginRequiredMixin, View):
 
 
 class ArmComparabilityView(LoginRequiredMixin, View):
-    """Compare two study arms so the control reads as a fair counterfactual.
+    """Comparability for a SINGLE two-arm plan — the same PSU/SMD engine + panel the
+    study-group page uses, so both surfaces render one identical comparison.
 
-    POST {areas: [{arm, geometry}, ...], building_counts: {arm: int}}. Unions the
-    geometries per arm, computes accurate area (UTM) + building density from the
-    counts the sample already produced (no second Overture fetch), and returns a
-    matched flag when the arms are within tolerance on building count and density.
+    POST {stats: [<per-arm sampling_stats>, ...], names?: {arm: label}}. Each entry is
+    a sampled arm's summary (``psu_size``/``psu_density``/``bldg_area`` as (mean, sd),
+    ``n_psus``, ``arm``) — exactly what ``frame.py`` produced and the client already
+    holds. Delegates to the shared ``psu_arms_from_stats`` + ``arm_comparability_psu``
+    and returns the rendered ``_arm_comparability.html`` partial so the plan review page
+    injects the same markup the group page includes server-side.
     """
 
-    RATIO_TOLERANCE = 1.5
-
     def post(self, request, opp_id):
-        from shapely.geometry import shape
-        from shapely.ops import transform, unary_union
+        from django.template.loader import render_to_string
 
-        from commcare_connect.microplans.core.geo import utm_epsg_for
+        from commcare_connect.microplans.core.comparability import arm_comparability_psu, psu_arms_from_stats
 
         try:
             payload = json.loads(request.body)
-            areas = payload["areas"]
-            counts = payload.get("building_counts", {}) or {}
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            stats = payload.get("stats") or []
+            names = payload.get("names") or {}
+        except (json.JSONDecodeError, TypeError) as e:
             return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
 
-        by_arm: dict[str, list] = {}
-        for a in areas:
-            try:
-                by_arm.setdefault(a.get("arm", "intervention"), []).append(shape(a["geometry"]))
-            except (KeyError, TypeError, ValueError):
-                continue
-
-        out = []
-        for arm, geoms in by_arm.items():
-            try:
-                from pyproj import Transformer
-
-                geom = unary_union(geoms)
-                c = geom.centroid
-                tf = Transformer.from_crs(4326, utm_epsg_for(c.x, c.y), always_xy=True).transform
-                area_km2 = transform(tf, geom).area / 1e6
-            except Exception:  # noqa: BLE001
-                logger.exception("arm_comparability area failed (opp=%s arm=%s)", opp_id, arm)
-                area_km2 = 0.0
-            bc = int(counts.get(arm) or 0)
-            density = round(bc / area_km2, 1) if area_km2 > 0 else 0.0
-            out.append({"arm": arm, "building_count": bc, "area_km2": round(area_km2, 3), "density_per_km2": density})
-
-        matched = None
-        reasons: list[str] = []
-        if len(out) >= 2:
-
-            def _ratio(x: float, y: float) -> float:
-                lo, hi = sorted((float(x), float(y)))
-                return (hi / lo) if lo > 0 else float("inf")
-
-            interv = next((x for x in out if x["arm"] == "intervention"), out[0])
-            comp = next((x for x in out if x["arm"] == "comparison"), out[1])
-            bc_r = _ratio(interv["building_count"], comp["building_count"])
-            d_r = _ratio(interv["density_per_km2"], comp["density_per_km2"])
-            matched = bc_r <= self.RATIO_TOLERANCE and d_r <= self.RATIO_TOLERANCE
-            if bc_r > self.RATIO_TOLERANCE:
-                reasons.append(f"building counts differ {bc_r:.1f}×")
-            if d_r > self.RATIO_TOLERANCE:
-                reasons.append(f"densities differ {d_r:.1f}×")
-
-        return JsonResponse({"status": "ok", "arms": out, "matched": matched, "reasons": reasons})
+        arms = psu_arms_from_stats(stats, names=names)
+        comparability = arm_comparability_psu(arms)
+        # Only render the panel when there are two arms to compare; otherwise hand back
+        # empty HTML so the client hides the (otherwise stale) panel.
+        html = (
+            render_to_string("microplans/_arm_comparability.html", {"comparability": comparability})
+            if comparability.get("metrics")
+            else ""
+        )
+        return JsonResponse({"status": "ok", "matched": comparability.get("matched"), "html": html})
 
 
 # Bulk-create flow — the "paste a ward list" form + the server-side

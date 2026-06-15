@@ -148,3 +148,41 @@ def test_psu_comparability_none_with_one_arm():
 
     out = arm_comparability_psu([_arm("intervention", size=(53, 20), density=(8000, 2500), bldg_area=(120, 40))])
     assert out["matched"] is None
+
+
+def test_psu_comparability_passes_name_through():
+    # The shared panel renders each arm's display name (plan name on the group page,
+    # ward name on the single-plan page), so the engine must echo it.
+    from commcare_connect.microplans.core.comparability import arm_comparability_psu
+
+    out = arm_comparability_psu(
+        [
+            _arm("intervention", size=(53, 20), density=(8000, 2500), bldg_area=(120, 40)) | {"name": "Attakar"},
+            _arm("control", size=(55, 21), density=(8200, 2600), bldg_area=(123, 41)) | {"name": "Gura"},
+        ]
+    )
+    names = {a["arm"]: a["name"] for a in out["arms"]}
+    assert names["intervention"] == "Attakar" and names["control"] == "Gura"
+
+
+def test_psu_arms_from_stats_builds_comparison_input():
+    # Shared assembly: a list of per-arm sampling_stats dicts → the arms input
+    # arm_comparability_psu consumes. Reused by the single-plan endpoint + group page.
+    from commcare_connect.microplans.core.comparability import arm_comparability_psu, psu_arms_from_stats
+
+    stats = [
+        {
+            "arm": "intervention",
+            "psu_size": (53, 20),
+            "psu_density": (8000, 2500),
+            "bldg_area": (120, 40),
+            "n_psus": 8,
+        },
+        {"arm": "comparison", "psu_size": (55, 21), "psu_density": (8200, 2600), "bldg_area": (123, 41), "n_psus": 8},
+    ]
+    arms = psu_arms_from_stats(stats, names={"intervention": "Attakar", "comparison": "Gura"})
+    assert {a["arm"] for a in arms} == {"intervention", "comparison"}
+    out = arm_comparability_psu(arms)
+    assert out["matched"] is True
+    assert out["n_intervention"] == 8
+    assert any(a["name"] == "Attakar" for a in out["arms"])
