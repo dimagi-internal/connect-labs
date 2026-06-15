@@ -32,6 +32,50 @@
     return id;
   }
 
+  // Representative point for a (Multi)Polygon — the mean of the outer ring's
+  // vertices. Good enough to anchor a low-zoom dot on a small footprint/cell.
+  function _centroid(geom) {
+    if (!geom) return null;
+    if (geom.type === 'Point') return geom.coordinates;
+    let ring = null;
+    if (geom.type === 'Polygon') ring = geom.coordinates && geom.coordinates[0];
+    else if (geom.type === 'MultiPolygon')
+      ring = geom.coordinates && geom.coordinates[0] && geom.coordinates[0][0];
+    if (!ring || !ring.length) return null;
+    // Drop the closing vertex (== first) so it isn't double-counted.
+    const closed =
+      ring.length > 1 &&
+      ring[0][0] === ring[ring.length - 1][0] &&
+      ring[0][1] === ring[ring.length - 1][1];
+    const n = closed ? ring.length - 1 : ring.length;
+    let x = 0,
+      y = 0;
+    for (let i = 0; i < n; i++) {
+      x += ring[i][0];
+      y += ring[i][1];
+    }
+    return n ? [x / n, y / n] : null;
+  }
+
+  // A centroid Point FeatureCollection mirroring a polygon FC's per-feature id +
+  // properties, so a circle layer can show one dot per work area.
+  function _centroidPoints(data) {
+    const feats = ((data && data.features) || [])
+      .map((f) => {
+        const c = _centroid(f.geometry);
+        return c
+          ? {
+              type: 'Feature',
+              id: f.id,
+              properties: f.properties || {},
+              geometry: { type: 'Point', coordinates: c },
+            }
+          : null;
+      })
+      .filter(Boolean);
+    return { type: 'FeatureCollection', features: feats };
+  }
+
   // arm → colour "match" paint expression (intervention is the default; the named
   // comparison value overrides).
   function _armColor(prop, colors) {
@@ -94,6 +138,65 @@
           'line-opacity': 0.55,
         },
       });
+    }
+    // Zoom-responsive dot: a building-footprint work area is sub-pixel at ward
+    // zoom, so the fill/line read as "nothing there". Show a centroid dot at low
+    // zoom (coloured like the work area) and fade it out as the real footprint
+    // becomes legible (~z14→16), so the plan is visible at every zoom. The dot
+    // upserts on every call so it tracks regenerate/recolor. Opt out: opts.dots
+    // === false.
+    if (opts.dots !== false) {
+      const dotSrc = opts.dotSrc || src + '-dot';
+      const dotId = opts.dotId || fillId + '-dot';
+      _setSource(map, dotSrc, _centroidPoints(opts.data), {
+        promoteId: opts.promoteId || 'id',
+      });
+      if (!map.getLayer(dotId)) {
+        map.addLayer({
+          id: dotId,
+          type: 'circle',
+          source: dotSrc,
+          paint: {
+            'circle-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10,
+              2,
+              14,
+              3.5,
+            ],
+            'circle-color': [
+              'case',
+              ['==', ['get', 'status'], 'EXCLUDED'],
+              '#9ca3af',
+              ['get', 'fill'],
+            ],
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 0.6,
+            // Fade out as the footprint polygon becomes legible.
+            'circle-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              14,
+              0.9,
+              16,
+              0,
+            ],
+            'circle-stroke-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              14,
+              0.9,
+              16,
+              0,
+            ],
+          },
+        });
+      }
+      return [fillId, lineId, dotId];
     }
     return [fillId, lineId];
   }
