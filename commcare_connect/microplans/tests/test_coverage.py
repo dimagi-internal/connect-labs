@@ -8,7 +8,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from commcare_connect.microplans.core.workarea import build_coverage_work_areas, to_api_payload
+from commcare_connect.microplans.core.workarea import (
+    CSV_HEADERS,
+    build_coverage_work_areas,
+    to_api_payload,
+    to_csv_rows,
+)
 from commcare_connect.microplans.coverage import frame as coverage_frame
 from commcare_connect.microplans.coverage.frame import CoverageConfig, generate_coverage_frame
 
@@ -185,6 +190,37 @@ class TestCoverageExpectedVisits:
             n = f["properties"]["building_count"]
             assert f["properties"]["expected_visit_count"] == max(1, math.ceil(n * ppb))
             assert f["properties"]["target_population"] == round(n * ppb)
+
+
+class TestCoverageEndToEndCSV:
+    """Frame → work areas → Connect CSV, with exclusion filters + population set.
+    Verifies the actual deliverable (the importable CSV), not just the frame."""
+
+    def test_pipeline_to_connect_csv(self, monkeypatch):
+        import math
+
+        monkeypatch.setattr(
+            coverage_frame, "fetch_buildings", lambda area, min_confidence=None, sources=None: _cluster_plus_lone()
+        )
+        res = generate_coverage_frame(
+            _AREA, CoverageConfig(cell_size_m=100, min_cell_roof_area_m2=50, population=1000)
+        )
+        was = build_coverage_work_areas(res.areas_geojson, lga="Madobi", state="Kano")
+        rows = to_csv_rows(was)
+
+        # exact Connect importer schema (no dummyField — it isn't in Connect's HEADERS)
+        assert set(rows[0].keys()) == set(CSV_HEADERS.values())
+        # the small lone cell (5 m² roof) was excluded before export
+        assert sum(int(r["Building Count"]) for r in rows) == 12
+        retained = res.stats[0]["retained_buildings"]
+        ppb = 1000 / retained
+        for r in rows:
+            assert r["LGA"] == "Madobi" and r["State"] == "Kano"  # Connect rejects blank
+            assert r["Boundary"].startswith("POLYGON")
+            assert len(r["Centroid"].split()) == 2  # "lon lat"
+            n = int(r["Building Count"])
+            assert int(r["Expected Visit Count"]) == max(1, math.ceil(n * ppb))
+            assert int(r["Target Population"]) == round(n * ppb)
 
 
 class TestCoverageWorkAreas:
