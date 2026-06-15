@@ -125,6 +125,27 @@ def _fill_flw_name(text: str, flw_name: str) -> str:
         return text.replace("{flw_name}", flw_name)
 
 
+def _apply_arc_overlay(task, arc, flw_name: str, archetype: str) -> None:
+    """Overlay the arc's authored content onto a task's ``data`` in place.
+
+    The kit builds a task from the named archetype (status + a templated OCS
+    conversation + a generic archetype description). We then overlay the arc's
+    OWN authored content so every surface tells ONE coherent story:
+
+    - ``ocs_conversation`` <- the arc's verbatim transcript (the panel shows the
+      exact exchange the manifest authored, not a re-templated one),
+    - ``description`` <- the arc's ``target_behavior`` (so the task description
+      matches its title + transcript — the generic archetype description, e.g.
+      "still investigating the photo issues", would otherwise contradict an
+      arc about, say, screening coverage),
+    - ``synthetic_archetype`` <- the archetype tag the reuse/idempotency path
+      reads.
+    """
+    task.data["ocs_conversation"] = _transcript_from_arc(arc, flw_name)
+    task.data["description"] = arc.target_behavior
+    task.data["synthetic_archetype"] = archetype
+
+
 def _transcript_from_arc(arc, flw_name: str) -> list[dict]:
     """The arc's own messages in the ``ocs_conversation`` shape the Tasks UI reads.
 
@@ -151,6 +172,7 @@ def ensure_tasks(resource, ctx) -> dict:
     drill-target selection. Returns an empty realized map — the ``task_good_url`` /
     ``task_incomplete_url`` vars are deferred to the rollup ensurer.
     """
+    from commcare_connect.labs.synthetic.archetypes import build_task_data
     from commcare_connect.labs.synthetic.walkthrough_kit import compose_task_title, generate_task_from_archetype
     from commcare_connect.tasks.data_access import TaskDataAccess
 
@@ -161,6 +183,7 @@ def ensure_tasks(resource, ctx) -> dict:
 
     tasks_ensured = 0
     tasks_reused = 0
+    tasks_reconciled = 0
 
     for key in manifest_keys:
         manifest = ctx.ids[key]
@@ -201,14 +224,38 @@ def ensure_tasks(resource, ctx) -> dict:
                 archetype = _archetype_for_arc(arc)
                 audit_session_id = ctx.ids.get(f"audit:{run_id}:{arc.flw_id}")
 
-                existing = [
-                    t
-                    for t in tda.get_tasks_for_run(run_id)
-                    if t.data.get("username") == arc.flw_id and t.data.get("synthetic_archetype") == archetype
-                ]
+                # Match an existing task by (run, flw) ONLY — NOT by archetype.
+                # Keying reuse on the archetype too would miss a STALE task whose
+                # arc has since resolved (its old ``synthetic_archetype`` no longer
+                # equals the target), minting a duplicate and orphaning the stale
+                # one. Finding it by (run, flw) lets us reconcile it in place.
+                existing = [t for t in tda.get_tasks_for_run(run_id) if t.data.get("username") == arc.flw_id]
                 if existing:
-                    task_id = existing[0].id
-                    tasks_reused += 1
+                    task = existing[0]
+                    task_id = task.id
+                    if task.data.get("synthetic_archetype") != archetype:
+                        # Reconcile a STALE seeded task: rebuild it to the arc's
+                        # CURRENT archetype (e.g. investigating -> closed once a
+                        # follow-up outcome resolved the arc) so the grid reads
+                        # the task closed and the week renders "All resolved".
+                        title = compose_task_title(flw_id=flw_name, reason=arc.target_behavior)
+                        rebuilt = build_task_data(
+                            archetype_name=archetype,
+                            flw_id=arc.flw_id,
+                            monday_iso=monday_iso,
+                            opportunity_id=opp_id,
+                            workflow_run_id=run_id,
+                            audit_session_id=audit_session_id,
+                            title=title,
+                            creator_name=creator_name,
+                            flw_name=flw_name,
+                        )
+                        task.data = rebuilt
+                        _apply_arc_overlay(task, arc, flw_name, archetype)
+                        tda.save_task(task)
+                        tasks_reconciled += 1
+                    else:
+                        tasks_reused += 1
                 else:
                     title = compose_task_title(flw_id=flw_name, reason=arc.target_behavior)
                     task_id = generate_task_from_archetype(
@@ -223,13 +270,13 @@ def ensure_tasks(resource, ctx) -> dict:
                         creator_name=creator_name,
                         flw_name=flw_name,
                     )
-                    # Overlay the arc's OWN transcript onto the task (the kit
-                    # otherwise renders an OCS-template conversation) and tag the
-                    # archetype for idempotency keying. The arc messages ARE the
-                    # conversation the PAR scene scrolls through.
+                    # Overlay the arc's OWN transcript + description onto the task
+                    # (the kit otherwise renders a generic OCS-template
+                    # conversation + archetype description) and tag the archetype
+                    # for idempotency keying. The arc messages ARE the conversation
+                    # the PAR scene scrolls through.
                     task = tda.get_task(task_id)
-                    task.data["ocs_conversation"] = _transcript_from_arc(arc, flw_name)
-                    task.data["synthetic_archetype"] = archetype
+                    _apply_arc_overlay(task, arc, flw_name, archetype)
                     tda.save_task(task)
                     tasks_ensured += 1
 
@@ -238,9 +285,10 @@ def ensure_tasks(resource, ctx) -> dict:
             tda.close()
 
     logger.info(
-        "tasks: ensured %d new + reused %d existing coaching tasks",
+        "tasks: ensured %d new + reused %d existing + reconciled %d stale coaching tasks",
         tasks_ensured,
         tasks_reused,
+        tasks_reconciled,
     )
 
     # PAR task_good_url / task_incomplete_url drill targets are selected by the

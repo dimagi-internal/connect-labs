@@ -143,6 +143,7 @@ def _build_snapshot(
     window_end: str,
     watched_sources: list[dict],
     manifests_by_opp: dict[int, Any],
+    missed_week_idxs: dict[int, list[int]] | None = None,
 ) -> dict:
     """Compute the PAR rollup + wrap it in the runner's snapshot shape.
 
@@ -171,6 +172,7 @@ def _build_snapshot(
     state["display_window_start"] = weeks[0]
     state["display_window_end"] = week_end_iso(weeks[-1])
 
+    missed_week_idxs = missed_week_idxs or {}
     for src in state.get("watched_summary", []):
         opp_id = src.get("opportunity_id")
         manifest = manifests_by_opp.get(opp_id)
@@ -184,7 +186,10 @@ def _build_snapshot(
             src.setdefault("label", f"Opp #{opp_id}")
             src.setdefault("network_manager", "")
             src.setdefault("flw_count", 0)
-        src.setdefault("missed_week_idxs", [])
+        # A missed week has no run, so the render can't infer it from absence —
+        # stamp the declared per-opp missed indices so the grid draws the
+        # explicit NO-RUN ("SOP missed") card and the source reads BELOW.
+        src["missed_week_idxs"] = list(missed_week_idxs.get(opp_id, []))
     return snapshot
 
 
@@ -411,6 +416,7 @@ def ensure_rollup(resource, ctx) -> dict:
             window_end=window_end,
             watched_sources=watched_sources,
             manifests_by_opp=manifests_by_opp,
+            missed_week_idxs=ctx.ids.get("missed_week_idxs", {}),
         )
 
         run_data = {

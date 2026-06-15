@@ -78,6 +78,54 @@ _COMPLETABLE_AUDIT_ARCHETYPE = "pending_all_clean"
 # every week "N open"); the rollup's drill-target selection then finds no good week.
 _RESOLVED_AUDIT_ARCHETYPE = "completed_pass_clean"
 
+# The IN-REVIEW MIX archetype: status in_progress, 2 pass + 1 fail + 2 pending. Used
+# for the flw whose coaching arc is still OPEN (an ``investigating`` arc with no
+# ``follow_up_outcome_week``) — the scene-13 drill audit. It must show a GENUINE
+# decided/undecided mix (some photos cleared, one failed, two still pending), not
+# "5 pending / 0 decided" (``pending_all_clean``), so the reviewer is visibly
+# mid-decision on a real finding.
+_IN_REVIEW_MIXED_ARCHETYPE = "in_review_mixed"
+
+
+def _audit_archetype_for(flw_id: str, resolved_flws: set, investigating_flws: set) -> str:
+    """Pick the audit archetype for a flagged FLW from its coaching-arc state.
+
+    - resolved arc (``follow_up_outcome_week`` set) -> completed/all-pass (the
+      grid's "All resolved" week requires every audit completed),
+    - still-open arc (an ``investigating`` arc) -> the decided/undecided MIX (the
+      scene-13 drill audit),
+    - no coaching arc -> the all-pending completable shape (the live-style audit
+      a reviewer decides on camera).
+    """
+    if flw_id in resolved_flws:
+        return _RESOLVED_AUDIT_ARCHETYPE
+    if flw_id in investigating_flws:
+        return _IN_REVIEW_MIXED_ARCHETYPE
+    return _COMPLETABLE_AUDIT_ARCHETYPE
+
+
+def _audit_matches_archetype(audit, archetype: str) -> bool:
+    """True when an existing audit already matches the target archetype's shape.
+
+    On reuse we only rebuild when the seeded audit is STALE for the arc's current
+    state. We key off the cheap, stable signals the archetype lands:
+
+    - ``completed_pass_clean``: status ``completed`` (the resolved-week contract),
+    - ``in_review_mixed``: in_progress with at least one decided AND one pending
+      photo (the genuine mid-decision mix — distinct from the all-pending shape),
+    - ``pending_all_clean``: in_progress with every photo still pending.
+    """
+    img = audit.data.get("image_results") or {}
+    decided = (img.get("pass") or 0) + (img.get("fail") or 0)
+    pending = img.get("pending") or 0
+    if archetype == _RESOLVED_AUDIT_ARCHETYPE:
+        return audit.status == "completed"
+    if archetype == _IN_REVIEW_MIXED_ARCHETYPE:
+        return audit.status != "completed" and decided > 0 and pending > 0
+    # pending_all_clean: still in review, nothing decided yet.
+    return audit.status != "completed" and decided == 0
+
+
 # Marker in an anomaly's ``reviewer_visible_in`` that means "this flag gets an
 # audit". Anomalies without it still drive pipeline-row flags (weekly_runs) but no
 # audit record.
@@ -140,7 +188,10 @@ def ensure_run_audits(resource, ctx) -> dict:
     the rollup ensurer's cross-opp PAR-snapshot walk.
     """
     from commcare_connect.audit.data_access import AuditDataAccess
-    from commcare_connect.labs.synthetic.walkthrough_kit import generate_audit_from_archetype
+    from commcare_connect.labs.synthetic.walkthrough_kit import (
+        generate_audit_from_archetype,
+        update_audit_from_archetype,
+    )
 
     weeks = ctx.weeks
     current_week = ctx.current_week
@@ -149,6 +200,7 @@ def ensure_run_audits(resource, ctx) -> dict:
 
     audits_ensured = 0
     audits_reused = 0
+    audits_reconciled = 0
 
     for key in manifest_keys:
         manifest = ctx.ids[key]
@@ -162,6 +214,12 @@ def ensure_run_audits(resource, ctx) -> dict:
         # how the tasks ensurer closes the same arc's task.
         resolved_flws = {
             arc.flw_id for arc in (manifest.coaching_arcs or []) if arc.follow_up_outcome_week is not None
+        }
+        # FLWs whose coaching loop is still OPEN (an investigating arc) — their audit
+        # is the scene-13 in-review MIX (decided + undecided photos), not the
+        # all-pending completable shape.
+        investigating_flws = {
+            arc.flw_id for arc in (manifest.coaching_arcs or []) if arc.follow_up_outcome_week is None
         }
 
         ada = AuditDataAccess(opportunity_id=opp_id, access_token=_LABS_ONLY_TOKEN)
@@ -191,12 +249,36 @@ def ensure_run_audits(resource, ctx) -> dict:
                             "(weekly_runs must run before run_audits)"
                         )
 
+                    archetype = _audit_archetype_for(flw_id, resolved_flws, investigating_flws)
+                    visit_id = _seeded_visit_id_base(manifest.random_seed, run_id, flw_id)
+
                     existing = [
                         s for s in ada.get_sessions_by_workflow_run(run_id) if s.data.get("username") == flw_id
                     ]
                     if existing:
-                        audit_id = existing[0].id
-                        audits_reused += 1
+                        audit = existing[0]
+                        audit_id = audit.id
+                        # Reconcile a STALE seeded audit: the arc may have resolved
+                        # (or moved to a different shape) since this record was first
+                        # created, but create-path only sets the archetype ON CREATE.
+                        # Rebuild in place so the record matches the arc's CURRENT
+                        # state (the grid reads status to mark a week "All resolved").
+                        if not _audit_matches_archetype(audit, archetype):
+                            update_audit_from_archetype(
+                                ada=ada,
+                                audit_id=audit_id,
+                                opportunity_id=opp_id,
+                                opportunity_name=manifest.opportunity_name,
+                                workflow_run_id=run_id,
+                                flw_id=flw_id,
+                                monday_iso=monday_iso,
+                                audit_archetype=archetype,
+                                visit_id=visit_id,
+                                flw_name=flw_name,
+                            )
+                            audits_reconciled += 1
+                        else:
+                            audits_reused += 1
                     else:
                         audit_id = generate_audit_from_archetype(
                             ada=ada,
@@ -205,10 +287,8 @@ def ensure_run_audits(resource, ctx) -> dict:
                             workflow_run_id=run_id,
                             flw_id=flw_id,
                             monday_iso=monday_iso,
-                            audit_archetype=(
-                                _RESOLVED_AUDIT_ARCHETYPE if flw_id in resolved_flws else _COMPLETABLE_AUDIT_ARCHETYPE
-                            ),
-                            visit_id=_seeded_visit_id_base(manifest.random_seed, run_id, flw_id),
+                            audit_archetype=archetype,
+                            visit_id=visit_id,
                             flw_name=flw_name,
                         )
                         audits_ensured += 1
@@ -218,9 +298,10 @@ def ensure_run_audits(resource, ctx) -> dict:
             ada.close()
 
     logger.info(
-        "run_audits: ensured %d new + reused %d existing run-linked audits",
+        "run_audits: ensured %d new + reused %d existing + reconciled %d stale run-linked audits",
         audits_ensured,
         audits_reused,
+        audits_reconciled,
     )
 
     # PAR good_*/incomplete_* audit drill targets are selected by the rollup

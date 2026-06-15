@@ -20,6 +20,9 @@ MUAC corpus categories the fail images are drawn from:
   - ``completed_fail_misleading`` — 0/5 pass, overall_result="fail" (misleading/fraud bads)
   - ``completed_mixed_tape_usage``— 3/5 pass + 2 fail (tape_usage) — partial finding
   - ``in_review_partial``         — 2 reviewed + 3 pending; overall_result=None
+  - ``in_review_mixed``           — 2 pass + 1 fail + 2 pending; overall_result=None
+                                    (a genuinely mid-decision audit: some photos
+                                    cleared, one failed, two still awaiting a call)
 
 **Task archetypes** — map to (status, official_action, close timing) so a
 weekly review's coaching task can resolve as satisfactory / warned / suspended
@@ -187,6 +190,21 @@ AUDIT_ARCHETYPES: dict[str, AuditArchetype] = {
         status="in_progress",
         overall_result=None,
         image_spec=AuditImageSpec(good_count=1, bad_count=1, pending_count=3, pending_good_ratio=0.4),
+    ),
+    "in_review_mixed": AuditArchetype(
+        name="in_review_mixed",
+        description=(
+            "Weekly SOP audit — MUAC photo review still in progress. Two photos "
+            "cleared, one failed, two awaiting a reviewer decision."
+        ),
+        status="in_progress",
+        overall_result=None,
+        # 2 pass (good pool) + 1 fail (framing) + 2 pending (one good, one bad).
+        # A genuine mid-decision mix — the scene-13 audit shows decided AND
+        # undecided photos, not "5 pending / 0 decided".
+        image_spec=AuditImageSpec(
+            good_count=2, bad_count=1, bad_category="framing", pending_count=2, pending_good_ratio=0.5
+        ),
     ),
     # NOTE for maintainers (do NOT move this into ``description`` — that field
     # renders in the audit UI): this archetype backs the manager-flow demo.

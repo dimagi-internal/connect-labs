@@ -9,8 +9,9 @@
 # Southern reads BELOW on the PAR aggregate: it MISSED a completed week
 # (missed_week_idxs [1] in the env manifest) AND it carries the heavier
 # enforcement story — a gender-skew formal warning (miriam), an in-progress
-# (still-open) MUAC investigation (ola, the "incomplete" coaching drill target),
-# two suspensions (pinda repeat-offense, rina fraud), and a new hire (tola).
+# (still-open) screening-coverage investigation (ola, the "incomplete" coaching
+# drill target), two suspensions (pinda repeat-offense, rina fraud), and a new
+# hire (tola).
 # It is fully completed (no live current-week run) and drives the 9-scene
 # drill-through.
 #
@@ -81,15 +82,18 @@ flw_personas:
     improvement_arc: { intervention_week: 2, post_intervention_lift: 0.10 }
     notes: Flagged wk0 for gender skew; received a formal warning.
 
-  # --- ola_s: improver_in_progress, bad MUAC flagged week index 2,
-  #     investigation STILL OPEN (the "incomplete" coaching drill target). ---
+  # --- ola_s: improver_in_progress, flagged week index 2 for incomplete
+  #     household screening coverage (only reached the road-side compounds, so
+  #     almost no at-risk children screened). Investigation STILL OPEN (the
+  #     "incomplete" coaching drill target). The transcript, the task title
+  #     (target_behavior), and the task description all describe this ONE case. ---
   - id: ola_s
     display_name: Ola Ibrahim
     archetype: struggling
     accuracy_distribution: { mean: 0.78, stddev: 0.03 }
     completeness_distribution: { mean: 0.87, stddev: 0.02 }
     flag_rate: 0.5
-    notes: Flagged wk2 for bad MUAC distribution; coaching still in progress (open task).
+    notes: Flagged wk2 for incomplete household screening coverage (far compounds unreached); coaching still in progress (open task).
 
   # --- pinda_s: suspended_repeat_offense, bad MUAC flagged wk0 then wk2. ---
   - id: pinda_s
@@ -210,7 +214,7 @@ coaching_arcs:
   - flw_id: ola_s
     week_triggered: 3
     persona: coaching_in_progress__bad_muac_distribution
-    target_behavior: Bad MUAC distribution
+    target_behavior: Incomplete household screening coverage
     transcript:
       - role: bot
         text: "Hi {flw_name}, your supervisor asked me to follow up on this week's review. Your screening numbers came in much lower than expected — almost no children flagged as malnourished, which is unusual for your area. Can you walk me through which households you reached this week?"

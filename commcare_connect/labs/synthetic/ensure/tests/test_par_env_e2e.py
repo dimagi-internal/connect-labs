@@ -143,19 +143,21 @@ def test_par_env_end_to_end_and_idempotent(tmp_path):
     # 3. Audits: the GOOD week's audit is COMPLETED (its coaching arc closed, so
     #    the grid renders "All resolved" — which requires the audit completed, not
     #    just the task closed). The INCOMPLETE week's audit is still in_progress
-    #    (completable, every photo undecided — the "still in review" drill).
+    #    AND shows a genuine MIX — some photos decided (pass/fail), some still
+    #    pending — the scene-13 "still in review" drill (not "5 pending / 0
+    #    decided"). "mix" == at least one decided photo AND at least one pending.
     # ------------------------------------------------------------------ #
     good_audit_id = realized["good_audit_id"]
     incomplete_audit_id = realized["incomplete_audit_id"]
-    for opp_id, run_id, audit_id, flw, expected_status, expect_decided in (
-        (GOOD_OPP, realized["good_run_id"], good_audit_id, realized["flagged_flw_good"], "completed", True),
+    for opp_id, run_id, audit_id, flw, expected_status, expect_mix in (
+        (GOOD_OPP, realized["good_run_id"], good_audit_id, realized["flagged_flw_good"], "completed", False),
         (
             INCOMPLETE_OPP,
             realized["incomplete_run_id"],
             incomplete_audit_id,
             realized["flagged_flw_incomplete"],
             "in_progress",
-            False,
+            True,
         ),
     ):
         ada = AuditDataAccess(opportunity_id=opp_id, access_token=_LABS_ONLY_TOKEN)
@@ -168,10 +170,14 @@ def test_par_env_end_to_end_and_idempotent(tmp_path):
             assert session.data.get("username") == flw
             assert session.status == expected_status, f"audit {audit_id} status {session.status} != {expected_status}"
             decided = [v for v in session.visit_results.values() if v.get("result")]
-            if expect_decided:
+            pending = [v for v in session.visit_results.values() if not v.get("result")]
+            if expected_status == "completed":
                 assert decided, f"completed audit {audit_id} should have decided photos"
-            else:
-                assert not decided, f"in_progress audit {audit_id} has decided photos {decided}"
+            if expect_mix:
+                # The in-review MIX: a reviewer mid-decision — some cleared/failed,
+                # some still pending. Both sides must be non-empty.
+                assert decided, f"in-review audit {audit_id} should have ≥1 decided photo (the mix)"
+                assert pending, f"in-review audit {audit_id} should have ≥1 pending photo (the mix)"
         finally:
             ada.close()
 
