@@ -10,7 +10,7 @@
 // scorecard row to switch) — one row per re-surveyed household, columns grouped
 // under Identity / Location / Outcome sections with info buttons (method +
 // source). Objective copy; the viewer draws the conclusion.
-// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V64
+// Marker string for deploy freshness checks: VERIFIED_MONITORING_RENDER_V65
 function WorkflowUI(props) {
   var instance = props.instance || {};
   var data = instance.state || {};
@@ -297,6 +297,23 @@ function WorkflowUI(props) {
         } else if (window.PlanLayers) {
           window.PlanLayers.remove(map, FP_IDS);
         }
+        // When the footprints drill-down is on, fade the AREA fills (ward + PSU
+        // hull) so the individual buildings read against a clean background; the
+        // hull/ward OUTLINES stay for cluster + ward context. Restored when off.
+        try {
+          if (map.getLayer('vm-wards-fill'))
+            map.setPaintProperty(
+              'vm-wards-fill',
+              'fill-opacity',
+              fpOn ? 0.05 : 0.14,
+            );
+          if (map.getLayer('vm-plan-psu-fill'))
+            map.setPaintProperty(
+              'vm-plan-psu-fill',
+              'fill-opacity',
+              fpOn ? 0.03 : 0.12,
+            );
+        } catch (e) {}
         CM.fit(map, overlay.ward_boundaries, 64);
       }
       if (mapLoadedRef.current && map.isStyleLoaded()) draw();
