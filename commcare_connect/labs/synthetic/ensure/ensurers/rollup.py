@@ -213,29 +213,31 @@ def _run_coords(ctx) -> dict[int, tuple[int, int, str]]:
     return out
 
 
-def _select_drill_targets(ctx) -> tuple[dict | None, dict | None]:
-    """Select the ``good`` + ``incomplete`` drill clusters straight from ``ctx.ids``.
+def _select_drill_targets(ctx, snapshot) -> tuple[dict | None, dict | None]:
+    """Select the ``good`` + ``incomplete`` drill clusters FROM THE SNAPSHOT the
+    report renders, so the realized drill vars always agree with the grid.
 
-    A drill cluster is a (opp, week, flw) that has BOTH a run-linked audit and a
-    coaching task. We classify by the task's status (the same signal
-    ``_lib.discovery`` reads off the snapshot):
+    The PAR grid (the template RENDER_CODE) marks a week "All resolved" only when
+    ``openCount == 0``, where ``openCount = (audits whose status != "completed") +
+    (tasks whose status != "closed")``. Selecting from the same ``watched_summary``
+    guarantees ``good_run_id`` / ``good_audit_id`` point at the week the grid shows
+    resolved — the scene-8 consistency contract.
 
-    - ``good`` — the coaching loop CLOSED (task ``status == "closed"``): the
-      satisfying "image reviewed + flag resolved" drill (PAR's Northern complete
-      week),
-    - ``incomplete`` — the loop is still OPEN (task ``status == "investigating"``):
-      the "manager left it mid-flight" drill (PAR's Southern).
+    (An earlier version classified by TASK status alone, off ``ctx.ids``. It picked
+    a week whose tasks were closed but whose AUDITS were still ``in_progress`` — a
+    week the grid rendered "N open" — so scene 8 waited for a run number the grid
+    never marked resolved.)
 
-    Both are walked in a deterministic (sorted) order so re-runs pick the same
-    targets. Each returned cluster carries the keys the realized map needs:
-    ``opp_id``, ``week_idx``, ``run_id``, ``audit_id``, ``task_id``, ``flw_id``,
-    ``opp_label``. Returns ``(good, incomplete)``; either may be ``None`` if no
-    matching cluster exists.
+      good       = a week with flagged work where EVERY audit is completed AND every
+                   task closed (``openCount == 0``) -> the grid's "All resolved" cell.
+      incomplete = a week with open work (an investigating task) in a DIFFERENT opp,
+                   so the two drills land on the resolved opp + the still-open opp.
+
+    Each returned cluster carries ``opp_id`` / ``opp_label`` / ``week_idx`` /
+    ``run_id`` / ``audit_id`` / ``task_id`` / ``flw_id``. A cluster needs BOTH an
+    audit and a task link (the drill scenes open both records).
     """
-    from commcare_connect.tasks.data_access import TaskDataAccess
-
     coords = _run_coords(ctx)
-
     manifests_by_opp = {
         m.opportunity_id: m for k, m in ctx.ids.items() if isinstance(k, str) and k.startswith("manifest:")
     }
@@ -244,105 +246,72 @@ def _select_drill_targets(ctx) -> tuple[dict | None, dict | None]:
         m = manifests_by_opp.get(opp_id)
         if m is None:
             return f"Opp #{opp_id}"
-        # The grid short-label is the first token of the opp name (e.g.
-        # "Northern" from "Northern Region Nutrition") — matches discovery's
-        # ``opp_label.split()[0]``.
-        name = m.opportunity_name or f"Opp #{opp_id}"
+        # Grid short-label = first token of the opp name ("Northern" from
+        # "Northern Region Nutrition"), matching the render's opp_label.split()[0].
+        name = getattr(m, "opportunity_name", None) or f"Opp #{opp_id}"
         return name.split()[0] if name.split() else name
 
-    # Build (run_id, flw) candidates that have BOTH an audit and a task.
-    candidates: list[tuple[int, str, int, int]] = []  # (run_id, flw, audit_id, task_id)
-    for key, task_id in sorted(ctx.ids.items(), key=lambda kv: str(kv[0])):
-        if not (isinstance(key, str) and key.startswith("task:")):
-            continue
-        _, run_str, flw = key.split(":", 2)
-        run_id = int(run_str)
-        audit_id = ctx.ids.get(f"audit:{run_id}:{flw}")
-        if audit_id is None or run_id not in coords:
-            continue
-        candidates.append((run_id, flw, audit_id, task_id))
+    def _cluster(opp_id: int, run_id: int, row: dict) -> dict | None:
+        audits = row.get("audits") or []
+        tasks = row.get("tasks") or []
+        if not audits or not tasks:
+            return None  # the drill scenes need BOTH an audit and a task link
+        coord = coords.get(run_id)
+        return {
+            "opp_id": opp_id,
+            "opp_label": _opp_label(opp_id),
+            "week_idx": coord[1] if coord else None,
+            "run_id": run_id,
+            "audit_id": audits[0]["id"],
+            "task_id": tasks[0]["id"],
+            "flw_id": row.get("flw_id"),
+        }
 
-    # Cache task status per opp (one DAO per opp, get_tasks_for_run is per-run).
-    status_cache: dict[int, str | None] = {}
-    daos: dict[int, Any] = {}
-    try:
+    summary = (snapshot or {}).get("state", {}).get("watched_summary") or []
+    good: dict | None = None
+    open_runs: list[dict] = []
+    for src in summary:
+        opp_id = src.get("opportunity_id")
+        for run in src.get("runs", []) or []:
+            run_id = run.get("id")
+            rows = run.get("flw_rows") or []
+            if not rows or run_id not in coords:
+                continue
+            open_audits = sum(1 for r in rows for a in (r.get("audits") or []) if a.get("status") != "completed")
+            open_tasks = sum(1 for r in rows for t in (r.get("tasks") or []) if t.get("status") != "closed")
+            if open_audits + open_tasks == 0:
+                # Fully-resolved week -> the grid's "All resolved" cell. Pick the
+                # most-flagged resolved flw (the most interesting cluster), ties by
+                # flw_id, among those with both an audit and a task link.
+                if good is None:
+                    rows_ok = [r for r in rows if (r.get("audits") and r.get("tasks"))]
+                    rows_ok.sort(key=lambda r: (-len(r.get("flags") or []), str(r.get("flw_id"))))
+                    c = _cluster(opp_id, run_id, rows_ok[0]) if rows_ok else None
+                    if c:
+                        good = c
+            else:
+                # Open week: the drill scene wants a genuinely mid-flight cluster —
+                # a flw whose coaching TASK is still investigating (and that has both
+                # links). A week with only an in-progress audit but no open task is
+                # not a usable "still in review + mid-conversation" drill.
+                row = next(
+                    (
+                        r
+                        for r in rows
+                        if (r.get("audits") and r.get("tasks"))
+                        and any(t.get("status") == "investigating" for t in (r.get("tasks") or []))
+                    ),
+                    None,
+                )
+                c = _cluster(opp_id, run_id, row) if row else None
+                if c:
+                    open_runs.append(c)
 
-        def _task_status(opp_id: int, run_id: int, task_id: int) -> str | None:
-            if task_id in status_cache:
-                return status_cache[task_id]
-            tda = daos.get(opp_id)
-            if tda is None:
-                tda = TaskDataAccess(opportunity_id=opp_id, access_token=_LABS_ONLY_TOKEN)
-                daos[opp_id] = tda
-            status = None
-            for t in tda.get_tasks_for_run(run_id):
-                if t.id == task_id:
-                    status = t.status
-                    break
-            status_cache[task_id] = status
-            return status
-
-        # Classify by WEEK (run), not by individual cluster. The PAR report renders
-        # a week's status from ALL its flagged workers: "All resolved" only when
-        # every flag's task is closed, "N open" when any task is still
-        # investigating. The drill targets MUST agree with that rendering, or the
-        # walkthrough waits for a run the grid never marks resolved (the scene-8
-        # bug: an old per-cluster pick grabbed the first week containing ANY closed
-        # task, even a week that also had open work, so good_run_id pointed at a
-        # week the grid showed as "N open").
-        #
-        #   good       = a week where EVERY flagged cluster is resolved (closed
-        #                task) AND none is open -> the grid's "All resolved" week.
-        #   incomplete = a week with open work (>=1 investigating task), in a
-        #                DIFFERENT opp than good, so the two drills land on the
-        #                resolved opp + the still-open opp (Northern + Southern),
-        #                never two cells of the same opp.
-        from collections import defaultdict
-
-        by_run: dict[int, list[dict]] = defaultdict(list)
-        for run_id, flw, audit_id, task_id in candidates:
-            opp_id, week_idx, _monday = coords[run_id]
-            by_run[run_id].append(
-                {
-                    "opp_id": opp_id,
-                    "opp_label": _opp_label(opp_id),
-                    "week_idx": week_idx,
-                    "run_id": run_id,
-                    "audit_id": audit_id,
-                    "task_id": task_id,
-                    "flw_id": flw,
-                    "status": _task_status(opp_id, run_id, task_id),
-                }
-            )
-
-        def _clean(c: dict) -> dict:
-            return {k: v for k, v in c.items() if k != "status"}
-
-        good: dict | None = None
-        open_runs: list[dict] = []  # (one representative open cluster per open week)
-        for run_id in sorted(by_run):
-            clusters = by_run[run_id]
-            resolved = [c for c in clusters if c["status"] == "closed"]
-            still_open = [c for c in clusters if c["status"] == "investigating"]
-            if still_open:
-                open_runs.append(still_open[0])
-            elif resolved and good is None:
-                good = _clean(resolved[0])  # fully-resolved week -> grid "All resolved"
-
-        # incomplete: the first open week in a different opp than good (fall back to
-        # any open week if good is None or no other-opp open week exists).
-        incomplete: dict | None = None
-        good_opp = good["opp_id"] if good else None
-        for c in open_runs:
-            if c["opp_id"] != good_opp:
-                incomplete = _clean(c)
-                break
-        if incomplete is None and open_runs:
-            incomplete = _clean(open_runs[0])
-        return good, incomplete
-    finally:
-        for tda in daos.values():
-            tda.close()
+    good_opp = good["opp_id"] if good else None
+    incomplete = next((c for c in open_runs if c["opp_id"] != good_opp), None)
+    if incomplete is None and open_runs:
+        incomplete = open_runs[0]
+    return good, incomplete
 
 
 # ---------------------------------------------------------------------- #
@@ -472,8 +441,8 @@ def ensure_rollup(resource, ctx) -> dict:
     # by the ``weekly_runs`` ensurer — we do NOT re-emit (and must not clobber)
     # them here. The PAR definition id is exposed as ``par_def_id`` only.
 
-    # ---- drill targets (selected straight from ctx.ids) ----
-    good, incomplete = _select_drill_targets(ctx)
+    # ---- drill targets (selected from the SAME snapshot the report renders) ----
+    good, incomplete = _select_drill_targets(ctx, snapshot)
     if good:
         realized.update(
             {
