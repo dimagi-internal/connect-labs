@@ -1,0 +1,92 @@
+name: Run Labs management command
+
+# Runs a one-off Django management command on the deployed Labs environment as a
+# Fargate task (same mechanism the deploy workflow uses for migrations). Use it for
+# data loads and admin commands that must run with prod's secrets/DB — e.g.
+#   load_geopode_from_drive --iso NGA
+#   clear_cache
+# The task uses the CURRENTLY REGISTERED web task definition, so it runs the code +
+# secrets that are live in prod. Output goes to the web service's CloudWatch log group.
+#
+# AWS auth is the GitHub OIDC role (secrets.AWS_ROLE_ARN); no local creds needed.
+# Gated to main so only reviewed code/commands defined here can run against prod.
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'manage.py command + args (without "python manage.py"), e.g. "load_geopode_from_drive --iso NGA"'
+        type: string
+        required: true
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: labs-jj-cluster
+  ECS_WEB_SERVICE: labs-jj-web
+
+jobs:
+  guard:
+    name: Guard — branch must be main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse runs from non-main refs
+        run: |
+          ref="${GITHUB_REF:-}"
+          echo "triggered on ref=$ref"
+          if [ "$ref" != "refs/heads/main" ]; then
+            echo "::error::Only runnable from main. Got: $ref"
+            exit 1
+          fi
+
+  run-command:
+    name: Run management command
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run command as a one-off Fargate task
+        env:
+          MGMT_CMD: ${{ github.event.inputs.command }}
+        run: |
+          # Build the container command array safely from the input (via env, not
+          # shell interpolation, so args can't break out of the JSON / shell).
+          OVERRIDES=$(python3 -c "import json,os; print(json.dumps({'containerOverrides':[{'name':'web','command':['python','manage.py']+os.environ['MGMT_CMD'].split()}]}))")
+          echo "Overrides: $OVERRIDES"
+
+          TASK_DEF_ARN=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_WEB_SERVICE }} \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[subnet-06646effb09be2f42],securityGroups=[sg-0666a5ed512c97d9d],assignPublicIp=ENABLED}" \
+            --overrides "$OVERRIDES" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster ${{ env.ECS_CLUSTER }} --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          REASON=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} --tasks "$TASK_ARN" \
+            --query 'tasks[0].stoppedReason' --output text)
+          echo "Exit code: $EXIT_CODE | stoppedReason: $REASON"
+          echo "Logs: https://console.aws.amazon.com/cloudwatch/home?region=${{ env.AWS_REGION }}#logsV2:log-groups/log-group/%2Fecs%2F${{ env.ECS_WEB_SERVICE }}"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Command failed with exit code $EXIT_CODE"
+            exit 1
+          fi
+          echo "Command completed successfully"
