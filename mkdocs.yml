@@ -29,7 +29,8 @@ nav:
       - Coverage Maps: coverage-maps.md
       - AI Features: ai-features.md
   - For Power Users:
-      - Connect MCP & Safe Mode: connect-mcp-safe-mode.md
+      - Connect MCP: connect-mcp.md
+      - Connect Safe Mode: connect-safe-mode.md
 
 markdown_extensions:
   - admonition
