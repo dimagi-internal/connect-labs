@@ -19,10 +19,18 @@ def test_load_manifest_from_real_shared_config():
     assert m.opportunity_id == 10008
     assert m.program_id == 10008
     assert len(m.rounds) == 6
-    # The shared sampling config the study UI defaults match (size-balanced two-arm draw).
-    assert m.sampling["size_balance_bands"] == 3
-    assert m.sampling["target_clusters"] == 24
-    assert m.sampling["primary_per_psu"] == 12
+    # The study leaves `sampling` empty and INHERITS the canonical defaults (the single
+    # source of truth) — the same draw the plan-creation UI uses. Assert it resolves to
+    # SAMPLING_DEFAULTS via FrameConfig, so the synthetic plans and the UI stay in sync.
+    from commcare_connect.microplans.sampling.defaults import SAMPLING_DEFAULTS
+    from commcare_connect.microplans.sampling.frame import FrameConfig
+
+    assert m.sampling == {}
+    fc = FrameConfig.from_payload(m.sampling)
+    assert fc.size_balance_bands == SAMPLING_DEFAULTS["size_balance_bands"] == 3
+    assert fc.target_clusters == SAMPLING_DEFAULTS["target_clusters"]
+    assert fc.primary_per_psu == SAMPLING_DEFAULTS["primary_per_psu"]
+    assert fc.alternates_per_psu == SAMPLING_DEFAULTS["alternates_per_psu"]
 
     r6 = m.round_by_key("r6")
     assert r6.live_demo is True
