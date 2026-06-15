@@ -218,6 +218,11 @@ def build_coverage_work_areas(
         arm = props.get("arm", "coverage")
         cluster = props.get("cluster", "C0")
         building_count = int(props.get("building_count", 0))
+        # Population-weighted frames supply expected_visit_count + target_population in
+        # the feature; legacy/whole-household frames omit them → fall back to "visit
+        # every household" (EVC = building_count) and an unset target population.
+        expected_visit_count = int(props.get("expected_visit_count", building_count))
+        target_population = int(props["target_population"]) if props.get("target_population") is not None else 0
         out.append(
             WorkAreaPayload(
                 slug=f"{arm[:3]}-{cluster}".lower(),
@@ -226,8 +231,8 @@ def build_coverage_work_areas(
                 centroid_lat=float(centroid.y),
                 boundary_wkt=geom.wkt,
                 building_count=building_count,
-                expected_visit_count=building_count,  # coverage: visit every household
-                target_population=0,
+                expected_visit_count=expected_visit_count,
+                target_population=target_population,
                 case_properties={
                     "cluster": cluster,
                     "arm": arm,

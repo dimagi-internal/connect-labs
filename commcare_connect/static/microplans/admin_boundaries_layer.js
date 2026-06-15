@@ -497,6 +497,7 @@
         country: p.iso_code,
         ref: ref,
         area_km2: p.area_km2,
+        population: p.population != null ? p.population : null,
       };
     }
     function rowToDesc(a) {
@@ -511,6 +512,7 @@
         country: a.country,
         ref,
         area_km2: a.area_km2,
+        population: a.population != null ? a.population : null,
       };
     }
     async function toggleSelect(desc) {

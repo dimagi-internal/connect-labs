@@ -571,8 +571,12 @@
         onAreaAdd: (boundaryId, geometry, feature, arm) => {
           adminAddGeometry(boundaryId, geometry, arm);
           autofillFromBoundary(feature);
+          recordWardPopulation(boundaryId, feature);
         },
-        onAreaRemove: (boundaryId) => adminRemoveGeometry(boundaryId),
+        onAreaRemove: (boundaryId) => {
+          adminRemoveGeometry(boundaryId);
+          forgetWardPopulation(boundaryId);
+        },
         onArmChange: (boundaryId, arm) => adminSetArm(boundaryId, arm),
         armEnabled: () => mpMode === 'sampling',
       });
@@ -1654,7 +1658,7 @@
       // seconds) — enqueue then poll, surfacing progress on the status line.
       const prev = await Microplans.enqueueAndPoll(
         PREVIEW_COVERAGE_URL,
-        { areas, config: { cell_size_m: cellSizeM } },
+        { areas, config: coverageConfig() },
         {
           csrf: CSRF,
           onProgress: (m) => {
@@ -1666,6 +1670,7 @@
         $('apply-area-status').textContent = prev.detail || 'preview failed';
         return;
       }
+      renderCoverageReadout(prev.stats);
       const n = prev.areas.features.length;
       $('apply-area-status').textContent = `Generating ${n} work areas…`;
       // Grouping fields only exist when there's a plan UI on the page (review
@@ -1814,6 +1819,13 @@
   }
   on('btn-mode-coverage', 'click', () => setMode('coverage'));
   on('btn-mode-sampling', 'click', () => setMode('sampling'));
+  // Clicking the suggestion fills the population field with the picked wards' total,
+  // overriding whatever's there (the user asked for this number explicitly).
+  on('cfg-pop-suggest', 'click', () => {
+    const inp = $('cfg-population');
+    const btn = $('cfg-pop-suggest');
+    if (inp && btn && btn.dataset.pop) inp.value = btn.dataset.pop;
+  });
 
   function setArm(a) {
     currentArm = a;
@@ -1848,6 +1860,89 @@
         arm: (f.properties && f.properties.arm) || 'intervention',
         geometry: f.geometry,
       }));
+  }
+
+  // Picked wards carry a `population` from their boundary source (e.g. GeoPoDe).
+  // We sum it across the selected wards and offer it as a one-click fill for the
+  // coverage population field, so visits are driven by real numbers instead of a
+  // blind guess. The field stays freely editable (manual override always wins).
+  const pickedWardPops = new Map(); // boundaryId -> { pop, source, name }
+
+  function recordWardPopulation(boundaryId, feature) {
+    const f = feature || {};
+    if (f.population != null && !isNaN(+f.population)) {
+      pickedWardPops.set(boundaryId, {
+        pop: +f.population,
+        source: f.source || '',
+        name: f.name || '',
+      });
+    }
+    refreshPopulationSuggestion();
+  }
+
+  function forgetWardPopulation(boundaryId) {
+    pickedWardPops.delete(boundaryId);
+    refreshPopulationSuggestion();
+  }
+
+  function refreshPopulationSuggestion() {
+    const btn = $('cfg-pop-suggest');
+    if (!btn) return;
+    const rows = [...pickedWardPops.values()];
+    if (!rows.length) {
+      btn.classList.add('hidden');
+      return;
+    }
+    const total = Math.round(rows.reduce((s, r) => s + r.pop, 0));
+    const sources = [...new Set(rows.map((r) => r.source).filter(Boolean))];
+    const srcLabel = sources.length === 1 ? sources[0] : 'mixed sources';
+    btn.dataset.pop = String(total);
+    btn.textContent = `Use ${total.toLocaleString()} (${srcLabel}, ${
+      rows.length
+    } ward${rows.length === 1 ? '' : 's'})`;
+    btn.classList.remove('hidden');
+    // Pre-fill only when the user hasn't typed their own number.
+    const inp = $('cfg-population');
+    if (inp && !String(inp.value || '').trim()) inp.value = total;
+  }
+
+  // Coverage config: cell size + the two cell-level exclusion filters + an optional
+  // population for visit-weighting. Sent to the coverage preview; the backend
+  // (CoverageConfig.from_payload) clamps/validates and is the single source of truth
+  // for the filter + expected-visit math.
+  function coverageConfig() {
+    const pop = parseFloat($('cfg-population')?.value);
+    return {
+      cell_size_m: cellSizeM,
+      min_cell_roof_area_m2:
+        parseFloat($('cfg-min-cell-roof')?.value || '0') || 0,
+      exclude_isolated_singletons: !!$('cfg-exclude-isolated')?.checked,
+      isolation_dist_m:
+        parseFloat($('cfg-isolation-dist')?.value || '150') || 150,
+      population: isNaN(pop) || pop <= 0 ? null : pop,
+    };
+  }
+
+  // Summarise the coverage preview's exclusion + visit stats under the controls.
+  function renderCoverageReadout(stats) {
+    const el = $('coverage-visit-readout');
+    if (!el) return;
+    const s = (stats && stats[0]) || null;
+    if (!s) {
+      el.textContent = '';
+      return;
+    }
+    const parts = [`${s.work_areas} work areas`];
+    const excluded = (s.removed_small_area || 0) + (s.removed_isolated || 0);
+    if (excluded)
+      parts.push(
+        `${excluded} excluded (${s.removed_small_area || 0} small, ${
+          s.removed_isolated || 0
+        } isolated)`,
+      );
+    if (s.people_per_building != null)
+      parts.push(`${s.people_per_building} people/building`);
+    el.textContent = parts.join(' · ');
   }
 
   function samplingConfig() {
