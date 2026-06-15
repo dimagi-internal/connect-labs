@@ -145,7 +145,12 @@
           "flex items-center justify-between gap-1.5 text-[11px] px-1.5 py-0.5 rounded bg-gray-50 border border-gray-200";
         const name = document.createElement("span");
         name.className = "truncate flex-1";
-        name.textContent = (v.desc && v.desc.name) || "(area)";
+        // Include the parent (LGA/state) so identically-named wards are distinguishable.
+        name.textContent =
+          ((v.desc && v.desc.name) || "(area)") +
+          (v.desc && v.desc.parent_name ? ` — ${v.desc.parent_name}` : "");
+        if (v.desc && v.desc.parent_name)
+          name.title = `${v.desc.name} — ${v.desc.parent_name}`;
         row.appendChild(name);
         if (showArm) row.appendChild(armPill(id, v));
         const x = document.createElement("button");
@@ -693,8 +698,12 @@
             (d.areas || []).forEach((a) =>
               items.push({
                 desc: rowToDesc(a),
+                // Show the parent (LGA / state) so same-named wards across different
+                // LGAs/states are distinguishable.
                 label:
-                  `${a.name} · ${a.level_label || "ADM" + a.level}` +
+                  `${a.name}` +
+                  (a.parent_name ? ` — ${a.parent_name}` : "") +
+                  ` · ${a.level_label || "ADM" + a.level}` +
                   (a.area_km2 ? ` · ${Math.round(a.area_km2)} km²` : ""),
               }),
             );
