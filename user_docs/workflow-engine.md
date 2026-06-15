@@ -208,13 +208,14 @@ The Trend panel shows the self-reported and independently-verified coverage line
 
 **Map panel**
 
-The map panel has three toggles — **delivery**, **survey**, and **plan** — so you can control what is drawn on the map at any time.
+The map panel has a docked **Layers** panel — the same chrome used in the sampling-plan editor — so the controls look and behave consistently whether you are reviewing monitoring data or editing a plan. The Layers panel contains the following toggles:
 
 - **Delivery** — shows implementer-reported visit pins
 - **Survey** — shows independent surveyor visit pins
 - **Plan** — shows the designed study plan: the selected cluster areas (PSUs) from the sampling plan, drawn in the same arm colours used in the plan editor — intervention areas in green and comparison areas in blue — so the plan you designed and the monitoring of it look like one coherent picture
+- **Building footprints** — shows the actual sampled building outlines coloured by study arm (intervention green / comparison blue); **primary** buildings are drawn as solid shapes and **alternate (substituted)** buildings are drawn as dashed outlines, so you can immediately see which buildings the plan originally selected and which were substitutes
 
-Previously the monitoring map displayed generic ward or work-area shapes. The plan overlay now shows the exact same cluster boundaries that were chosen during sampling, so "what we planned to visit" and "what we monitored" are directly comparable on the same map.
+Previously the map could only show survey and delivery dots alongside cluster outlines. The building footprints layer now lets you see the real buildings the sampling plan selected, making "what we planned to visit" and "what we monitored" directly comparable on the same map.
 
 Survey pins on the map use two distinct visual styles to distinguish visit types:
 
@@ -237,9 +238,4 @@ Back-check data reflects real discordance across identity, location, and outcome
 
 The Distributions card runs a **statistical fabrication screen** — a way to spot a problematic surveyor using only the data already collected, without needing a second field visit.
 
-For each surveyor, the screen compares three signals against the rest of the team:
-
-| Signal | What it detects |
-| ------ | --------------- |
-| **Dose yes-rate** | Is this surveyor reporting "received" far more or less often than peers? |
-| **Interview speed** | Are their interviews implausibly short — a sign of curbstoning (recording answers without actually conducting the interview)? |
+For
