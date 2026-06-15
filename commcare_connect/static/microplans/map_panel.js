@@ -78,16 +78,33 @@
       (window.Microplans && window.Microplans.esc) ||
       ((s) => String(s == null ? '' : s));
 
+    // Which tabs to show. Defaults to both; a consumer that has nothing to
+    // inspect (e.g. the monitoring dashboard) passes tabs:['layers'] to drop the
+    // Inspect tab — the tab strip then hides itself since one tab needs no chrome.
+    const tabs =
+      Array.isArray(opts.tabs) && opts.tabs.length
+        ? opts.tabs
+        : ['layers', 'inspect'];
+    const showInspect = tabs.indexOf('inspect') !== -1;
+
     const root = el('div', 'mp-panel');
     root.innerHTML = `
-      <div class="mp-panel-tabs">
+      <div class="mp-panel-tabs"${tabs.length < 2 ? ' hidden' : ''}>
         <button type="button" data-tab="layers" class="on">Layers</button>
-        <button type="button" data-tab="inspect">Inspect</button>
+        ${
+          showInspect
+            ? '<button type="button" data-tab="inspect">Inspect</button>'
+            : ''
+        }
       </div>
       <div class="mp-panel-sec" data-sec="layers"></div>
-      <div class="mp-panel-sec" data-sec="inspect" hidden>
+      ${
+        showInspect
+          ? `<div class="mp-panel-sec" data-sec="inspect" hidden>
         <div class="mp-inspect-empty">Click a feature on the map to inspect it.</div>
-      </div>`;
+      </div>`
+          : ''
+      }`;
     mount.appendChild(root);
 
     const layersSec = root.querySelector('[data-sec="layers"]');
@@ -97,7 +114,7 @@
     function showTab(name) {
       tabBtns.forEach((b) => b.classList.toggle('on', b.dataset.tab === name));
       layersSec.hidden = name !== 'layers';
-      inspectSec.hidden = name !== 'inspect';
+      if (inspectSec) inspectSec.hidden = name !== 'inspect';
     }
     tabBtns.forEach((b) =>
       b.addEventListener('click', () => showTab(b.dataset.tab)),
@@ -173,10 +190,12 @@
 
     // ---- inspector ----
     function setInspect(htmlOrNode, autoshow) {
+      if (!inspectSec) return;
       setContent(inspectSec, htmlOrNode);
       if (autoshow !== false) showTab('inspect');
     }
     function clearInspect() {
+      if (!inspectSec) return;
       inspectSec.innerHTML =
         '<div class="mp-inspect-empty">Click a feature on the map to inspect it.</div>';
     }
