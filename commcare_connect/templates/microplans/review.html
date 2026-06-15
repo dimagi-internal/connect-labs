@@ -313,19 +313,11 @@
             <button type="button" id="btn-generate-sample" class="button button-sm primary-dark w-full">{% if plan_id %}Regenerate plan{% else %}Generate plan{% endif %}</button>
             <p class="text-[10px] text-gray-500" id="generate-plan-hint">{% if plan_id %}Re-rolls a fresh random sample and rebuilds this plan's work areas.{% else %}Draws the PSUs + households and saves them as this plan in one step.{% endif %}</p>
             <p class="text-[10px] text-gray-500" id="generate-sample-status"></p>
-            <details id="sampling-rationale" class="hidden mt-1 border-t border-gray-100 pt-2">
-              <summary class="text-[11px] font-semibold text-gray-700 cursor-pointer">Sample details</summary>
-              <div id="sampling-rationale-body" class="mt-1 space-y-3"></div>
-            </details>
             {% comment %}
-              Arm comparability — when this plan carries two arms, the shared
-              _arm_comparability.html partial is rendered by ArmComparabilityView
-              and injected here (same panel the study-group page includes). Hidden
-              until a two-arm sample exists.
+              Sample details + ARM comparability render under the MAP (the info-box
+              column), not here — see #sampling-comparability / #sampling-rationale
+              below the map. The left rail stays "actions you take".
             {% endcomment %}
-            <div id="sampling-comparability" class="hidden mt-1 border-t border-gray-100 pt-2">
-              <div id="comparability-body"></div>
-            </div>
           </div>
 
           <dl class="space-y-0.5 pt-2 border-t border-gray-100">
@@ -537,6 +529,22 @@
       <!-- Drag handle on the bottom edge -->
       <div class="map-resizer" id="map-resizer" title="Drag to resize map"></div>
     </div>
+
+    {% comment %}
+      Study / sample read-out — the info box directly under the map. Each block
+      shows itself (JS clears `hidden`) only when it has content: ARM comparability
+      when the plan carries two arms (study mode), Sample details once a sample
+      exists. A coverage plan shows NEITHER, so the Summary below leads — the top
+      read-out is appropriate to the mode. Lives outside the plan_id block so it
+      also works in the create-in-place editor (/new/).
+    {% endcomment %}
+    <section id="sampling-comparability" class="hidden border-t border-gray-200 bg-white px-3 py-2 text-sm">
+      <div id="comparability-body"></div>
+    </section>
+    <details id="sampling-rationale" class="hidden border-t border-gray-200 bg-white px-3 py-2 text-sm">
+      <summary class="text-xs font-semibold text-gray-700 uppercase tracking-wide cursor-pointer">Sample details</summary>
+      <div id="sampling-rationale-body" class="mt-2 space-y-3"></div>
+    </details>
 
     {% if plan_id %}
     <!-- What the map is showing: summary + the dim-keyed list (Workers / Groups).
