@@ -694,6 +694,10 @@
           );
         });
         if (typeof refreshAreaStats === 'function') refreshAreaStats();
+        // Rehydrate the left-rail boundary list so a reopened plan shows its picked
+        // wards (name + arm pill) like during creation. Rail-only — the draw
+        // features added above already render the wards on the map.
+        adminBoundaries?.restore?.(inputs);
       } catch (_) {
         /* draw not ready — map-load will retry */
       }
