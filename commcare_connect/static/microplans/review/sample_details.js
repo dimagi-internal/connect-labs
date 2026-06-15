@@ -139,11 +139,17 @@
         return;
       }
       try {
-        const r = await Microplans.post(
+        // Microplans.post returns the raw fetch Response — parse the JSON body.
+        const resp = await Microplans.post(
           COMPARABILITY_URL,
           { stats },
           { csrf: CSRF },
         );
+        if (!resp || !resp.ok) {
+          wrap.classList.add('hidden');
+          return;
+        }
+        const r = await resp.json();
         if (!r || r.status !== 'ok' || !r.html) {
           wrap.classList.add('hidden');
           return;
