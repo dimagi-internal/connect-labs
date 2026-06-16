@@ -12,6 +12,19 @@
     const COMPARABILITY_URL = deps.COMPARABILITY_URL;
     const CSRF = deps.CSRF;
 
+    // Comparability + Sample details live in one card (#study-readout). Show the card
+    // only while a child has content, so a coverage plan (neither) leaves no empty box.
+    function syncStudyCard() {
+      const card = $('study-readout');
+      if (!card) return;
+      const comp = $('sampling-comparability');
+      const rat = $('sampling-rationale');
+      const any =
+        (comp && !comp.classList.contains('hidden')) ||
+        (rat && !rat.classList.contains('hidden'));
+      card.classList.toggle('hidden', !any);
+    }
+
     function renderSourceCounts(stats) {
       const totals = {};
       (stats || []).forEach((s) => {
@@ -56,9 +69,11 @@
       if (!wrap || !body) return;
       if (!stats || !stats.length) {
         wrap.classList.add('hidden');
+        syncStudyCard();
         return;
       }
       wrap.classList.remove('hidden');
+      syncStudyCard();
       const step = (n, title, txt) =>
         `<li class="text-[10px] text-gray-600"><b>${n}. ${esc(
           title,
@@ -133,12 +148,12 @@
       const wrap = $('sampling-comparability'),
         body = $('comparability-body');
       if (!wrap || !body) return;
-      const arms = new Set((stats || []).map((s) => s.arm));
-      if (arms.size < 2 || !COMPARABILITY_URL) {
-        wrap.classList.add('hidden');
-        return;
-      }
       try {
+        const arms = new Set((stats || []).map((s) => s.arm));
+        if (arms.size < 2 || !COMPARABILITY_URL) {
+          wrap.classList.add('hidden');
+          return;
+        }
         // Microplans.post returns the raw fetch Response — parse the JSON body.
         const resp = await Microplans.post(
           COMPARABILITY_URL,
@@ -158,6 +173,10 @@
         wrap.classList.remove('hidden');
       } catch (e) {
         wrap.classList.add('hidden');
+      } finally {
+        // The comparability + Sample details share one card; reconcile its
+        // visibility whichever branch we took.
+        syncStudyCard();
       }
     }
 
