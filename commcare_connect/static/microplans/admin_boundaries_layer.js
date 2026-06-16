@@ -39,6 +39,12 @@
   const SEL_SRC = 'mp-admin-sel';
   const SEL_FILL = 'mp-admin-sel-fill';
   const SEL_LINE = 'mp-admin-sel-line';
+  // Surrounding-ward compare overlay — per-candidate coloured fills so each row in
+  // the results panel maps to a boundary on the map.
+  const CMP_SRC = 'mp-admin-cmp';
+  const CMP_FILL = 'mp-admin-cmp-fill';
+  const CMP_LINE = 'mp-admin-cmp-line';
+  const CMP_LABEL = 'mp-admin-cmp-label';
 
   function register(opts) {
     const map = opts.map;
@@ -307,6 +313,7 @@
     function teardown() {
       M.removeSourceAndLayers(map, SRC, [FILL, FILL_HOVER, LINE, HOVER]);
       M.removeSourceAndLayers(map, SEL_SRC, [SEL_FILL, SEL_LINE]);
+      M.removeSourceAndLayers(map, CMP_SRC, [CMP_FILL, CMP_LINE, CMP_LABEL]);
     }
 
     // ---- viewport fetch ----
@@ -677,6 +684,107 @@
       )}</span>`;
     }
 
+    // ---- map overlay: one coloured fill per candidate boundary ----
+    function ensureCompareLayers() {
+      if (map.getSource(CMP_SRC)) return;
+      map.addSource(CMP_SRC, { type: 'geojson', data: empty() });
+      map.addLayer({
+        id: CMP_FILL,
+        type: 'fill',
+        source: CMP_SRC,
+        paint: {
+          'fill-color': ['coalesce', ['get', 'color'], '#9ca3af'],
+          // solid once scored, faint while still analysing
+          'fill-opacity': ['case', ['get', 'scored'], 0.32, 0.1],
+        },
+      });
+      map.addLayer({
+        id: CMP_LINE,
+        type: 'line',
+        source: CMP_SRC,
+        paint: {
+          'line-color': ['coalesce', ['get', 'color'], '#9ca3af'],
+          'line-width': 2.2,
+        },
+      });
+      try {
+        map.addLayer({
+          id: CMP_LABEL,
+          type: 'symbol',
+          source: CMP_SRC,
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-size': 11,
+            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          },
+          paint: {
+            'text-color': ['coalesce', ['get', 'color'], '#374151'],
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.4,
+          },
+        });
+      } catch (e) {
+        /* style has no glyphs → skip labels; fills + lines still draw */
+      }
+    }
+    function renderCompareOverlay(results) {
+      try {
+        ensureCompareLayers();
+        const feats = (results || [])
+          .filter((r) => r && r.geometry)
+          .map((r) => ({
+            type: 'Feature',
+            geometry: r.geometry,
+            properties: {
+              color: r.color || '#9ca3af',
+              scored: r.status !== 'error' && r.overlap != null,
+              label:
+                r.overlap != null
+                  ? `${r.name} · ${Math.round(r.overlap * 100)}%`
+                  : r.name || '',
+            },
+          }));
+        const src = map.getSource(CMP_SRC);
+        if (src) src.setData({ type: 'FeatureCollection', features: feats });
+      } catch (e) {
+        /* map/style not ready — the panel still renders */
+      }
+    }
+    function clearCompareOverlay() {
+      const src = map.getSource(CMP_SRC);
+      if (src) src.setData(empty());
+    }
+
+    // Overlaid mini-histogram: reference (grey) behind, this candidate (its colour)
+    // in front, over the SAME bins the overlap score uses — so the picture IS the score.
+    function sparkline(spark, color) {
+      if (!spark || !spark.ref || !spark.cand || !spark.ref.length) return '';
+      const n = spark.ref.length;
+      const w = 124;
+      const h = 26;
+      const bw = w / n;
+      let max = 0;
+      for (let i = 0; i < n; i++)
+        max = Math.max(max, spark.ref[i] || 0, spark.cand[i] || 0);
+      max = max || 1;
+      let bars = '';
+      for (let i = 0; i < n; i++) {
+        const x = i * bw;
+        const rh = ((spark.ref[i] || 0) / max) * (h - 1);
+        const ch = ((spark.cand[i] || 0) / max) * (h - 1);
+        bars +=
+          `<rect x="${x.toFixed(1)}" y="${(h - rh).toFixed(1)}" width="${(
+            bw - 0.6
+          ).toFixed(1)}" height="${rh.toFixed(1)}" fill="#cbd5e1"></rect>` +
+          `<rect x="${(x + bw * 0.22).toFixed(1)}" y="${(h - ch).toFixed(
+            1,
+          )}" width="${(bw * 0.56).toFixed(1)}" height="${ch.toFixed(
+            1,
+          )}" fill="${color}" opacity="0.9"></rect>`;
+      }
+      return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" class="block shrink-0">${bars}</svg>`;
+    }
+
     function renderComparePanel(state) {
       if (!comparePanel) return;
       const st = state || {};
@@ -713,31 +821,24 @@
         '<p class="px-3 pt-2 text-[11px] text-gray-500 leading-snug">' +
         'Ranked by how closely each neighbour’s settlement-density distribution matches the intervention ward' +
         esc(refMedian) +
-        '. A close match is an exchangeable control — pick one before sampling.</p>';
+        '. Each ward is filled on the map in its row colour; in the bars ' +
+        '<span class="text-gray-400">grey = intervention</span>, colour = that ward. ' +
+        'A close match is an exchangeable control — pick one before sampling.</p>';
+
+      const refQ = reference.q || null;
+      const fmtQ = (q) =>
+        q && q.length === 3
+          ? q.map((x) => Math.round(x).toLocaleString()).join('·')
+          : '—';
 
       const rows = results
         .map((r) => {
-          const ok = r.status !== 'error' && r.overlap != null;
+          const isErr = r.status === 'error';
+          const ok = !isErr && r.overlap != null;
+          const isPending = !isErr && !ok;
           const isCtl = selected.has(r.boundary_id);
-          const ovl = ok
-            ? `${Math.round((r.overlap || 0) * 100)}% overlap`
-            : '';
-          const meds =
-            r.median_cand != null && r.median_ref != null
-              ? ` · ${Math.round(
-                  r.median_cand,
-                ).toLocaleString()}/km² vs ${Math.round(
-                  r.median_ref,
-                ).toLocaleString()}`
-              : '';
-          const detail =
-            r.status === 'error'
-              ? `<span class="text-[11px] text-red-500">${esc(
-                  r.detail || 'analysis failed',
-                )}</span>`
-              : `<span class="text-[11px] text-gray-500">${esc(
-                  ovl + meds,
-                )}</span>`;
+          const color = r.color || '#9ca3af';
+          const swatch = `<span class="inline-block w-3 h-3 rounded-sm shrink-0" style="background:${color}"></span>`;
           const action = !ok
             ? ''
             : isCtl
@@ -748,14 +849,41 @@
               `data-pop="${
                 r.population != null ? esc(r.population) : ''
               }">Set as control</button>`;
+
+          let detail = '';
+          if (isErr) {
+            detail = `<div class="mt-1 text-[11px] text-red-500">${esc(
+              r.detail || 'analysis failed',
+            )}</div>`;
+          } else if (isPending) {
+            detail =
+              '<div class="mt-1 text-[11px] text-gray-400">analysing…</div>';
+          } else {
+            const ovl = `${Math.round((r.overlap || 0) * 100)}%`;
+            const q = `${fmtQ(
+              r.q_cand,
+            )} <span class="text-gray-400">vs</span> ${fmtQ(r.q_ref || refQ)}`;
+            detail =
+              '<div class="mt-1 flex items-end gap-2">' +
+              sparkline(r.spark, color) +
+              '<div class="text-[11px] text-gray-500 leading-tight min-w-0">' +
+              `<div><b class="text-gray-700">${ovl}</b> overlap · n=${
+                r.n_cand != null ? r.n_cand : '—'
+              } settlements</div>` +
+              `<div>density p25·50·75 — <span style="color:${color}">${q}</span> /km²</div>` +
+              '</div></div>';
+          }
           return (
-            '<div class="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100">' +
-            `<div class="min-w-0"><div class="text-[13px] text-gray-800 font-medium truncate">${esc(
+            '<div class="px-3 py-2 border-t border-gray-100">' +
+            '<div class="flex items-center justify-between gap-2">' +
+            `<div class="flex items-center gap-2 min-w-0">${swatch}<span class="text-[13px] text-gray-800 font-medium truncate">${esc(
               r.name || '(ward)',
-            )}</div>${detail}</div>` +
+            )}</span></div>` +
             `<div class="flex items-center gap-2 shrink-0">${
               ok ? bandBadge(r.band) : ''
             }${action}</div>` +
+            '</div>' +
+            detail +
             '</div>'
           );
         })
@@ -776,6 +904,9 @@
         rows +
         empty +
         '</div>';
+
+      // Colour-fill each candidate's boundary on the map to match the rows.
+      renderCompareOverlay(results);
 
       comparePanel.querySelectorAll('.mp-ab-setctl').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -812,6 +943,7 @@
       }
       comparing = true;
       compareBtn.disabled = true;
+      clearCompareOverlay();
       renderComparePanel({
         kind: 'running',
         message: 'Finding neighbouring wards…',
