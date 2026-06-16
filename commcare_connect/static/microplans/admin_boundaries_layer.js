@@ -827,19 +827,21 @@
           ? `<span class="text-[11px] text-gray-400">${esc(runMsg)}</span>`
           : '<span class="text-[11px] text-gray-400">best match first</span>') +
         '</div>';
+      const refQ = reference.q || null;
+      const num = (x) => Math.round(x).toLocaleString();
+      const refProfile =
+        refQ && refQ.length === 3
+          ? `The intervention ward’s sampled settlements run a median of <b>${num(
+              refQ[1],
+            )}/km²</b> (middle 50% ${num(refQ[0])}–${num(refQ[2])}). `
+          : '';
       const intro =
         '<p class="px-3 pt-2 text-[11px] text-gray-500 leading-snug">' +
-        'Ranked by how closely each neighbour’s settlement-density distribution matches the intervention ward' +
-        esc(refMedian) +
-        '. Each ward is filled on the map in its row colour; in the bars ' +
-        '<span class="text-gray-400">grey = intervention</span>, colour = that ward. ' +
-        'A close match is an exchangeable control — pick one before sampling.</p>';
-
-      const refQ = reference.q || null;
-      const fmtQ = (q) =>
-        q && q.length === 3
-          ? q.map((x) => Math.round(x).toLocaleString()).join('·')
-          : '—';
+        refProfile +
+        'Each neighbour is ranked by how much its settlement-density spread overlaps the intervention’s, and filled on the map in its row colour. ' +
+        'The bars show that ward’s spread (colour) over the intervention’s ' +
+        '(<span class="text-gray-400">grey — identical in every row</span>); a close match is an exchangeable control. ' +
+        'Pick one before sampling.</p>';
 
       const rows = results
         .map((r) => {
@@ -870,9 +872,13 @@
               '<div class="mt-1 text-[11px] text-gray-400">analysing…</div>';
           } else {
             const ovl = `${Math.round((r.overlap || 0) * 100)}%`;
-            const q = `${fmtQ(
-              r.q_cand,
-            )} <span class="text-gray-400">vs</span> ${fmtQ(r.q_ref || refQ)}`;
+            const cq = r.q_cand;
+            const profile =
+              cq && cq.length === 3
+                ? `median <b style="color:${color}">${num(
+                    cq[1],
+                  )}</b>/km² · middle 50% ${num(cq[0])}–${num(cq[2])}`
+                : '';
             detail =
               '<div class="mt-1 flex items-end gap-2">' +
               sparkline(r.spark, color) +
@@ -880,7 +886,7 @@
               `<div><b class="text-gray-700">${ovl}</b> overlap · n=${
                 r.n_cand != null ? r.n_cand : '—'
               } settlements</div>` +
-              `<div>density p25·50·75 — <span style="color:${color}">${q}</span> /km²</div>` +
+              `<div>${profile}</div>` +
               '</div></div>';
           }
           return (
