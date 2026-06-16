@@ -23,8 +23,6 @@
     { "treatment": "Zankan", "comparison": "Kaura" },
     { "treatment": "Attakar", "comparison": "Gura" }
   ],
-  "_map_pin_cap_comment": "Max survey pins DRAWN per ward (per-ward random subsample for legibility — not a data limit). Set above the full per-ward sample (30 PSUs x 10 primary = ~300) so every PSU shows ALL its surveys when you zoom in to inspect, instead of a thinned ~5/PSU.",
-  "map_pin_cap": 400,
   "_flagged_surveyor_comment": "One deliberately-degraded program-ward surveyor (T6): lower evidence-photo, and — the catch — their originals agree LESS with the independent re-survey (back-check) and carry the Layer-3 fabrication signature (curbstoned duration + collapsed roof-mix). GPS-within-15m is NOT a T6 signal: the app gates submission at 15 m, so T6's accepted captures are within the gate like everyone's — the GPS discrepancy surfaces only in the back-check (Type-2). Makes the per-surveyor scorecard surface a real outlier without an unrealistic GPS-gate violation.",
   "flagged_surveyor": {
     "arm": "treatment",

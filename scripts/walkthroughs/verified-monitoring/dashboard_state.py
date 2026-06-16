@@ -404,33 +404,30 @@ def _round_cluster_surveyors(arm_cfg: dict, tw_was, cw_was) -> dict:
     return out
 
 
-def _pins_sample(rng, records, cap_per_ward):
-    """A legible per-ward sample of survey-pin features from the primary records."""
-    by_ward = {}
+def _pins_sample(records):
+    """One survey-pin feature per primary record — ALL of them, no cap. A pin cap
+    only hid real surveys (a PSU would show fewer pins than it actually got), which
+    is confusing when inspecting per-PSU; the full set draws fine."""
+    feats = []
     for r in records:
         if r["form_type"] != "primary" or r.get("lat") is None:
             continue
-        by_ward.setdefault(r["ward"], []).append(r)
-    feats = []
-    for _ward, rs in by_ward.items():
-        pick = rs if len(rs) <= cap_per_ward else rng.sample(rs, cap_per_ward)
-        for r in pick:
-            feats.append(
-                _pt(
-                    r["lat"],
-                    r["lon"],
-                    {
-                        "confirmed": bool(r["vitamin_a_received"]),
-                        "ward": r["ward"],
-                        # primary (first-choice) vs alternate (substituted backup) —
-                        # the map styles the two so the substitution mix is visible.
-                        "sample_type": r.get("sample_type"),
-                        # the owning surveyor, so clicking a scorecard row can filter
-                        # the map to just that surveyor's surveys.
-                        "surveyor": r.get("enumerator_id"),
-                    },
-                )
+        feats.append(
+            _pt(
+                r["lat"],
+                r["lon"],
+                {
+                    "confirmed": bool(r["vitamin_a_received"]),
+                    "ward": r["ward"],
+                    # primary (first-choice) vs alternate (substituted backup) —
+                    # the map styles the two so the substitution mix is visible.
+                    "sample_type": r.get("sample_type"),
+                    # the owning surveyor, so clicking a scorecard row can filter
+                    # the map to just that surveyor's surveys.
+                    "surveyor": r.get("enumerator_id"),
+                },
             )
+        )
     return _fc(feats)
 
 
@@ -455,7 +452,6 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
     pairs = cfg["rounds_wards"]
     n_rounds = cfg["rounds"]
     sd_cfg = cfg.get("service_delivery", {})
-    map_pin_cap = cfg.get("map_pin_cap", 160)
 
     all_records, rounds = [], []
     for ri in range(n_rounds):
@@ -489,7 +485,7 @@ def build_state(cfg: dict, here: Path, rounds_plans: dict | None = None) -> tupl
                 ]
             ),
             "service_delivery": _fc([_pt(lat, lon, {}) for lat, lon in sd_pts]),
-            "survey_pins": _pins_sample(rng, recs, map_pin_cap),
+            "survey_pins": _pins_sample(recs),
             # The DESIGNED plan's selected-PSU cluster hulls (arm-tagged), so the
             # render can draw the plan via the shared PlanLayers — same as the editor.
             # Baked into state (never fetched); empty when the round isn't plan-grounded.
