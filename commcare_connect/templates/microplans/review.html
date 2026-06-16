@@ -538,6 +538,15 @@
     </div>
 
     {% comment %}
+      Surrounding-ward control finder — the ranked neighbour comparison rendered by
+      admin_boundaries_layer.js when the planner clicks "Compare surrounding
+      boundaries" in the boundary rail. Sits at the top of the info section, directly
+      under the map. Hidden until a comparison runs. Outside the plan_id block so it
+      also works in the create-in-place editor (/new/), where boundaries are picked.
+    {% endcomment %}
+    <div id="surrounding-compare" class="hidden mx-3 my-2"></div>
+
+    {% comment %}
       Study read-out — ONE card directly under the map about the arm comparison:
       the ARM comparability verdict + table + (when out of tolerance) what-to-do,
       with Sample details collapsible inside the same card. syncStudyCard() shows

@@ -22,6 +22,7 @@
   const PREVIEW_COVERAGE_URL = CFG.preview_coverage_url;
   const PREVIEW_FRAME_URL = CFG.preview_frame_url;
   const COMPARABILITY_URL = CFG.arm_comparability_url;
+  const COMPARE_SURROUNDING_URL = CFG.compare_surrounding_url;
   // Sampling-mode state (two-arm rooftop study). Declared early so the
   // service-delivery derive-boundary handler can tag derived polys to the arm.
   let mpMode = 'coverage'; // "coverage" | "sampling"
@@ -575,7 +576,11 @@
           viewport: BOUNDARY_VIEWPORT_URL,
           geometry: ADMIN_AREA_GEOMETRY_URL,
           areas: ADMIN_AREAS_URL,
+          compareSurrounding: COMPARE_SURROUNDING_URL,
         },
+        // Surrounding-ward control finder renders its ranked results below the map.
+        comparePanel: document.getElementById('surrounding-compare'),
+        getSamplingConfig: () => samplingConfig(),
         getCountryIso: () =>
           (typeof OPP_COUNTRY_ISO !== 'undefined' && OPP_COUNTRY_ISO) || null,
         isAreaPhase: () => {
