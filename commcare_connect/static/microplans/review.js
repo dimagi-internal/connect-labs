@@ -448,6 +448,20 @@
   const loadFootprints = _fp.loadFootprints;
   const setFootprintsVisible = _fp.setFootprintsVisible;
   const reloadFootprintsDebounced = Microplans.debounce(loadFootprints, 600);
+  // The picked wards to re-list in the boundary rail on load. Stashed because the
+  // admin-boundary layer and the plan payload arrive in an undefined order — restore
+  // fires from whichever lands last (on plan load; again right after the admin layer
+  // registers), so the rail repopulates regardless of the race. Declared HERE, above
+  // the map-panel block that calls tryRestoreBoundaryRail(), so it isn't in the TDZ.
+  let pendingBoundaryRestore = null;
+  function tryRestoreBoundaryRail() {
+    if (
+      adminBoundaries &&
+      pendingBoundaryRestore &&
+      pendingBoundaryRestore.length
+    )
+      adminBoundaries.restore(pendingBoundaryRestore);
+  }
   if (map && window.MicroplansMapPanel && $('map-panel-mount')) {
     mapPanel = MicroplansMapPanel.create({ map, mount: $('map-panel-mount') });
     fpLayer = mapPanel.registerLayer({
@@ -670,19 +684,6 @@
   // hulls + per-arm stats. Replaying them makes a reopened plan look exactly like
   // the just-created one. Deferred to map-ready (the plan fetch may resolve first).
   let pendingSampling = null;
-  // The picked wards to re-list in the boundary rail on load. Stashed because the
-  // admin-boundary layer and the plan payload arrive in an undefined order — restore
-  // fires from whichever lands last (here on plan load; again right after the admin
-  // layer registers), so the rail repopulates regardless of the race.
-  let pendingBoundaryRestore = null;
-  function tryRestoreBoundaryRail() {
-    if (
-      adminBoundaries &&
-      pendingBoundaryRestore &&
-      pendingBoundaryRestore.length
-    )
-      adminBoundaries.restore(pendingBoundaryRestore);
-  }
   function drawSamplingOverlay() {
     const d = pendingSampling;
     if (!d || !map || !mapReady || !draw) return;
