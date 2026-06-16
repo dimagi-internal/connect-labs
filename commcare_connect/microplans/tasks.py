@@ -88,6 +88,35 @@ def _rank_ward_matches(results: list[dict]) -> list[dict]:
     return sorted(results, key=key, reverse=True)
 
 
+# Distinct temporary fills for the surrounding-ward map overlay — chosen to avoid
+# the intervention green / control blue / boundary purple already on the map, so
+# each candidate's boundary reads as its own colour and matches its panel row.
+_COMPARE_PALETTE = [
+    "#f97316",  # orange
+    "#14b8a6",  # teal
+    "#ec4899",  # pink
+    "#eab308",  # amber
+    "#06b6d4",  # cyan
+    "#f43f5e",  # rose
+    "#92400e",  # brown
+    "#c026d3",  # fuchsia
+    "#0ea5e9",  # sky
+    "#a16207",  # bronze
+]
+
+
+def _simplify_geojson(geom, tol: float = 0.0008):
+    """Lighten a full-resolution boundary polygon for the map overlay (~80 m tol).
+    The analysis still uses the full-res geometry; this only shrinks the payload the
+    panel draws. Best-effort — returns the original on any failure."""
+    try:
+        from shapely.geometry import mapping, shape
+
+        return mapping(shape(geom).simplify(tol, preserve_topology=True))
+    except Exception:  # noqa: BLE001
+        return geom
+
+
 @celery_app.task(bind=True)
 def compare_surrounding_wards_task(self, selected, config_payload):
     """Rank the wards adjacent to the selected (intervention) ward by how well their
@@ -126,35 +155,56 @@ def compare_surrounding_wards_task(self, selected, config_payload):
             "detail": "No neighbouring wards at the same level were found.",
         }
 
+    # Seed every candidate up front with a stable colour + simplified geometry, so the
+    # map fills each neighbour's boundary immediately (outline while pending → solid
+    # once scored) and the panel rows colour-match the map.
+    results: list[dict] = []
+    rows_by_id: dict[str, dict] = {}
+    for index, cand in enumerate(candidates):
+        row = {
+            "boundary_id": cand["boundary_id"],
+            "name": cand["name"],
+            "population": cand.get("population"),
+            "color": _COMPARE_PALETTE[index % len(_COMPARE_PALETTE)],
+            "geometry": _simplify_geojson(cand["geometry"]),
+            "status": "pending",
+        }
+        results.append(row)
+        rows_by_id[cand["boundary_id"]] = row
+
+    def emit(message):
+        set_task_progress(self, message, results=_rank_ward_matches(results), total=total, reference=reference)
+
+    # Announce the scope up front — the seeded pending rows + this message let the UI
+    # show "Processing N surrounding areas" (and draw all N outlines) before the work.
+    emit(f"Processing {total} surrounding area{'' if total == 1 else 's'}…")
+
     # Reference distribution first — its own (possibly cold) fetch.
-    set_task_progress(self, "Analysing the selected ward…", results=[], total=total, reference=reference)
+    emit("Analysing the selected ward…")
     try:
         ref_dist = ward_density_distribution(ref["geometry"], config)
     except Exception:  # noqa: BLE001
         logger.exception("compare_surrounding: reference ward failed (%s)", ref_id)
         return {"status": "error", "detail": "Could not analyse the selected ward."}
-    reference["median_density"] = int(round(ref_dist["psu_density"][0]))
+    # Self-match yields the reference ward's own quartiles/median on the same scale
+    # the per-row numbers use, so the panel header and rows agree.
+    ref_self = density_distribution_match(ref_dist["densities"], ref_dist["densities"])
+    reference["median_density"] = ref_self.get("median_ref")
+    reference["q"] = ref_self.get("q_ref")
     reference["n_clusters"] = ref_dist["n_clusters"]
 
-    results: list[dict] = []
     for index, cand in enumerate(candidates):
-        set_task_progress(
-            self,
-            f"Analysing {cand['name']}… ({index + 1}/{total})",
-            results=_rank_ward_matches(results),
-            total=total,
-            reference=reference,
-        )
-        row = {"boundary_id": cand["boundary_id"], "name": cand["name"], "population": cand.get("population")}
+        emit(f"Analysing {cand['name']}… ({index + 1}/{total})")
+        row = rows_by_id[cand["boundary_id"]]
         try:
             cand_dist = ward_density_distribution(cand["geometry"], config)
+            row.pop("detail", None)
             row.update({"status": "ok", **density_distribution_match(ref_dist["densities"], cand_dist["densities"])})
         except ValueError as e:
             row.update({"status": "error", "detail": str(e)})
         except Exception:  # noqa: BLE001
             logger.exception("compare_surrounding: candidate failed (%s)", cand["boundary_id"])
             row.update({"status": "error", "detail": "analysis failed"})
-        results.append(row)
 
     return {
         "status": "ok",

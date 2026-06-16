@@ -62,24 +62,36 @@ OVL_OK = 0.50
 MIN_DIST_CLUSTERS = 3
 
 
-def _overlap_coefficient(a, b, bins: int = 20) -> float:
-    """Histogram overlap (OVL) of two density samples over shared bins: the area
-    common to both normalised distributions, in [0, 1]."""
+def _shared_hist(a, b, bins: int = 12):
+    """Two density samples binned over a shared range → ``(p_ref, p_cand, lo, hi)``
+    with each series normalised to sum 1 (or None when either side is empty). The
+    single source for both the overlap score and the panel sparkline, so the number
+    and the picture are computed from the exact same bins."""
     import numpy as np
 
     a = np.asarray([x for x in a if x and x > 0], dtype=float)
     b = np.asarray([x for x in b if x and x > 0], dtype=float)
     if len(a) == 0 or len(b) == 0:
-        return 0.0
+        return None
     lo = float(min(a.min(), b.min()))
     hi = float(max(a.max(), b.max()))
     if hi <= lo:
-        return 1.0  # both collapse to a single value → identical
+        hi = lo + 1.0  # both collapse to a single value → one bin holds all
     edges = np.linspace(lo, hi, bins + 1)
     pa = np.histogram(a, bins=edges)[0].astype(float)
     pb = np.histogram(b, bins=edges)[0].astype(float)
-    pa /= pa.sum()
-    pb /= pb.sum()
+    return pa / (pa.sum() or 1.0), pb / (pb.sum() or 1.0), lo, hi
+
+
+def _overlap_coefficient(a, b, bins: int = 20) -> float:
+    """Histogram overlap (OVL) of two density samples over shared bins: the area
+    common to both normalised distributions, in [0, 1]."""
+    import numpy as np
+
+    h = _shared_hist(a, b, bins=bins)
+    if h is None:
+        return 0.0
+    pa, pb, _lo, _hi = h
     return float(np.minimum(pa, pb).sum())
 
 
@@ -95,29 +107,52 @@ def density_distribution_match(ref_densities, cand_densities) -> dict:
     ref = np.asarray([x for x in (ref_densities or []) if x and x > 0], dtype=float)
     cand = np.asarray([x for x in (cand_densities or []) if x and x > 0], dtype=float)
 
-    def _med(arr):
-        return int(round(float(np.median(arr)))) if len(arr) else None
+    def _quartiles(arr):
+        """[p25, p50, p75] as whole numbers — the spread the panel shows so the
+        score is legible (two wards with equal medians but different IQRs read as
+        different here, which is the whole point)."""
+        if len(arr) == 0:
+            return None
+        p = np.percentile(arr, [25, 50, 75])
+        return [int(round(float(p[0]))), int(round(float(p[1]))), int(round(float(p[2])))]
+
+    q_ref, q_cand = _quartiles(ref), _quartiles(cand)
 
     if len(ref) < MIN_DIST_CLUSTERS or len(cand) < MIN_DIST_CLUSTERS:
         return {
             "overlap": None,
             "band": "insufficient",
-            "median_ref": _med(ref),
-            "median_cand": _med(cand),
+            "median_ref": q_ref[1] if q_ref else None,
+            "median_cand": q_cand[1] if q_cand else None,
             "median_gap_pct": None,
             "smd": None,
             "n_ref": int(len(ref)),
             "n_cand": int(len(cand)),
+            "q_ref": q_ref,
+            "q_cand": q_cand,
+            "spark": None,
         }
 
     overlap = _overlap_coefficient(ref, cand)
-    med_ref, med_cand = float(np.median(ref)), float(np.median(cand))
+    med_ref, med_cand = float(q_ref[1]), float(q_cand[1])
     gap = abs(med_ref - med_cand) / med_ref if med_ref > 0 else None
     smd = _smd(
         (float(ref.mean()), float(ref.std(ddof=1)) if len(ref) > 1 else 0.0),
         (float(cand.mean()), float(cand.std(ddof=1)) if len(cand) > 1 else 0.0),
     )
     band = "good" if overlap >= OVL_GOOD else ("ok" if overlap >= OVL_OK else "poor")
+    # Overlaid mini-histogram (reference vs candidate) over the same bins the overlap
+    # is computed on, so the panel can draw the picture the score comes from.
+    h = _shared_hist(ref, cand)
+    spark = None
+    if h is not None:
+        pa, pb, lo, hi = h
+        spark = {
+            "ref": [round(float(x), 3) for x in pa],
+            "cand": [round(float(x), 3) for x in pb],
+            "lo": int(round(lo)),
+            "hi": int(round(hi)),
+        }
     return {
         "overlap": round(overlap, 3),
         "band": band,
@@ -127,6 +162,9 @@ def density_distribution_match(ref_densities, cand_densities) -> dict:
         "smd": round(smd, 2),
         "n_ref": int(len(ref)),
         "n_cand": int(len(cand)),
+        "q_ref": q_ref,
+        "q_cand": q_cand,
+        "spark": spark,
     }
 
 

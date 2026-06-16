@@ -241,3 +241,15 @@ def test_rank_ward_matches_orders_best_first_errors_last():
     ]
     ranked = _rank_ward_matches(rows)
     assert [r["name"] for r in ranked] == ["hi", "lo", "err"]
+
+
+def test_density_match_returns_quartiles_and_sparkline():
+    from commcare_connect.microplans.core.comparability import density_distribution_match
+
+    out = density_distribution_match([100, 200, 300, 400, 500, 600], [150, 250, 350, 450, 550, 650])
+    assert out["q_ref"] and len(out["q_ref"]) == 3 and out["q_ref"][0] <= out["q_ref"][1] <= out["q_ref"][2]
+    assert out["q_cand"] and len(out["q_cand"]) == 3
+    assert out["spark"] is not None
+    assert len(out["spark"]["ref"]) == len(out["spark"]["cand"])  # same shared bins
+    assert abs(sum(out["spark"]["ref"]) - 1.0) < 0.02  # normalised (rounded to 3dp per bin)
+    assert out["spark"]["lo"] <= out["spark"]["hi"]
