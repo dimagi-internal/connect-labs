@@ -1336,6 +1336,24 @@ def test_program_plan_get_and_edit(client, django_user_model, monkeypatch):
     assert wa["status"] == "EXCLUDED" and wa["audit"][-1]["phase"] == "planning"
 
 
+def test_program_plan_get_returns_404_when_plan_missing(client, django_user_model, monkeypatch):
+    # A stale/deleted plan id: the labs-only backend's get_plan returns None (not an
+    # exception) — e.g. after a study re-seed renumbers plans. The view must 404, not
+    # 500 on plan_to_json(None).
+    _login(client, django_user_model)
+
+    class _NoneDA:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_plan(self, pid):
+            return None
+
+    monkeypatch.setattr("commcare_connect.microplans.core.data_access.ProgramPlanDataAccess", _NoneDA)
+    resp = client.get(reverse("microplans:program_plan", kwargs={"program_id": 25, "plan_id": 999}))
+    assert resp.status_code == 404, resp.content
+
+
 # ---------------------------------------------------------------------------
 # Service-delivery GPS overlay views
 # ---------------------------------------------------------------------------
