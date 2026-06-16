@@ -504,5 +504,50 @@ class BoundaryResolver:
         return feats[:limit], truncated
 
 
+def adjacent_boundaries(boundary_id: str, *, limit: int = 10) -> dict:
+    """Same-level labs boundaries that share a border with ``boundary_id``.
+
+    The candidate pool for the "compare surrounding boundaries" control finder:
+    a control ward should be geographically proximate (same district, similar
+    access, low spillover), so candidates are the wards that physically touch the
+    reference at the SAME admin level. Uses the labs PostGIS table's spatial index
+    (``geometry__intersects`` excluding self) — so this is Enriched-Boundaries
+    only; an Overture-sourced selection has no spatial table to intersect against.
+
+    Returns ``{"supported": bool, "reference": {...}|None, "candidates":
+    [{boundary_id, name, population, geometry}], "truncated": bool}`` — geometry is
+    full-resolution GeoJSON (the candidates feed straight into footprint fetches).
+    """
+    from commcare_connect.labs.admin_boundaries.models import AdminBoundary
+
+    ref = AdminBoundary.objects.filter(boundary_id=boundary_id).first() if boundary_id else None
+    if ref is None or ref.geometry is None:
+        return {"supported": False, "reference": None, "candidates": [], "truncated": False}
+
+    def _row(b):
+        return {
+            "boundary_id": b.boundary_id,
+            "name": b.name,
+            "population": int(b.population) if b.population is not None else None,
+            "geometry": json.loads(b.geometry.geojson),
+        }
+
+    qs = (
+        AdminBoundary.objects.filter(
+            iso_code=ref.iso_code, admin_level=ref.admin_level, geometry__intersects=ref.geometry
+        )
+        .exclude(boundary_id=ref.boundary_id)
+        .order_by("name")
+    )
+    rows = list(qs[: int(limit) + 1])
+    truncated = len(rows) > limit
+    return {
+        "supported": True,
+        "reference": _row(ref),
+        "candidates": [_row(b) for b in rows[:limit]],
+        "truncated": truncated,
+    }
+
+
 def get_resolver() -> BoundaryResolver:
     return BoundaryResolver()
