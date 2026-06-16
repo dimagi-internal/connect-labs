@@ -484,9 +484,12 @@ scenes:
 - actions:
   - kind: click
     must_succeed: true
-    note: the resolved-week card in the good cluster's row
+    note: the resolved-week card in the good cluster's row, targeted by its printed
+      date (e.g. "May 25") — once resolved records are reconciled the good cluster can
+      have more than one "All resolved" week, so click the exact drill week, not the
+      first resolved cell (same precision scene 12 uses for the incomplete week).
     target: 'css:div[style*="grid-template-columns"]:has-text("${good_opp_label}")
-      div[style*="cursor: pointer"]:has-text("All resolved")'
+      div[style*="cursor: pointer"]:has-text("${good_week_label}")'
   - kind: wait_for
     must_succeed: true
     note: panel header proves the intended run was selected
