@@ -9,7 +9,7 @@ page). The whole-ward density line renders only when a ward_density is present
 (group page) and is omitted on the single plan, where it is context-only and 0.
 {% endcomment %}
 {% if comparability and comparability.metrics %}
-<section class="mt-5">
+<section class="px-4 pt-4 pb-2">
   <div class="flex items-center gap-2 mb-1.5">
     <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Arm comparability</h2>
     {% if comparability.matched is True %}<span class="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">within tolerance</span>
@@ -20,7 +20,16 @@ page). The whole-ward density line renders only when a ward_density is present
   {% if comparability.matched is True %}
   <p class="text-sm text-gray-700 mb-3">Sampled settlements match — density SMD&nbsp;{{ comparability.gating_smd }}{% if comparability.gating_band == "ok" %} <span class="text-amber-700">(marginal)</span>{% endif %}.</p>
   {% elif comparability.matched is False %}
-  <p class="text-sm text-gray-700 mb-3">Sampled settlements differ — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
+  <p class="text-sm text-gray-700 mb-2">Sampled settlements differ — density SMD&nbsp;{{ comparability.gating_smd }}.</p>
+  {# Out of tolerance on the gating axis → tell the planner what to do. Density is
+     structural; it can't be re-weighted away at analysis, so the remedy is a
+     better-matched control or a fresh draw, not "adjust later". #}
+  <div class="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-3">
+    <span class="text-amber-600 leading-none mt-0.5 shrink-0">⚠</span>
+    <p class="text-[12px] text-amber-900 leading-snug m-0">
+      <b>What to do:</b> this control isn't a fair match on settlement density — the one axis a matched design can't correct at analysis. Pick a different neighbouring <b>control ward</b>, or <b>Regenerate</b> for a fresh draw. If no better control exists, proceed and record density as a study limitation.
+    </p>
+  </div>
   {% endif %}
 
   {# One row per arm; attributes as columns; density decides the verdict, the rest adjusted at analysis. #}
