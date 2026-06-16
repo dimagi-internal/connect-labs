@@ -60,6 +60,13 @@ class SyntheticOpportunity(models.Model):
         help_text="Email-domain allowlist for labs-only opps (e.g. ['@dimagi.com']). "
         "Empty means no domain restriction beyond view_synthetic_opps being on.",
     )
+    visit_count = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Cached count of this opp's synthetic user_visits, shown in the labs-context "
+        "opportunity picker. Null = not yet computed (picker falls back to 0). Set at generation "
+        "and refreshable via the refresh_synthetic_visit_counts management command.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(

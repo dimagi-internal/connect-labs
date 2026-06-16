@@ -345,6 +345,17 @@ def synthetic_generate_from_manifest(
     SQLCacheManager.delete_all_cache(opportunity_id)
     _reg_invalidate()
 
+    # Cache the visit count on the registry row so the labs-context picker shows the
+    # real number instead of 0 (the fixtures we just generated are authoritative).
+    try:
+        from commcare_connect.labs.synthetic.models import SyntheticOpportunity
+
+        SyntheticOpportunity.objects.filter(opportunity_id=opportunity_id).update(
+            visit_count=len(fixtures.get("user_visits") or [])
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("synthetic_generate_from_manifest: visit_count cache failed for opp %s", opportunity_id)
+
     return {
         "folder_id": result.folder_id,
         "folder_url": result.folder_url,
