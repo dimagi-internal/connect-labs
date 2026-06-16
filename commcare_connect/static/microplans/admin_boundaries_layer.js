@@ -801,12 +801,10 @@
       const refName = reference.name || ref.name || 'selected ward';
       const running = st.kind === 'running';
       const results = st.results || [];
-      const refMedian =
-        reference.median_density != null
-          ? ` · its sampled settlements run ~${Math.round(
-              reference.median_density,
-            ).toLocaleString()}/km²`
-          : '';
+      const num = (x) => (x == null ? null : Math.round(x).toLocaleString());
+      const dash = '<span class="text-gray-300">—</span>';
+      const cell = (v) => (v == null ? dash : v);
+
       // Up-front scope: as soon as the neighbours are known, say how many we're
       // processing (and progress through them), instead of a vague "analysing…".
       const total = st.total != null ? st.total : results.length;
@@ -821,36 +819,77 @@
           : st.message || 'Analysing…';
       const head =
         '<div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100">' +
-        '<div class="text-[12px] font-semibold text-gray-700">Surrounding wards vs ' +
-        `<span class="text-gray-900">${esc(refName)}</span></div>` +
+        '<div class="text-[12px] font-semibold text-gray-700 flex items-center gap-1.5">Surrounding wards vs ' +
+        `<span class="text-gray-900">${esc(refName)}</span>` +
+        '<button type="button" class="mp-ab-method-toggle w-4 h-4 rounded-full border border-gray-300 text-gray-400 ' +
+        'text-[10px] leading-none hover:bg-gray-100" title="How this comparison works">?</button></div>' +
         (running
           ? `<span class="text-[11px] text-gray-400">${esc(runMsg)}</span>`
           : '<span class="text-[11px] text-gray-400">best match first</span>') +
         '</div>';
-      const refQ = reference.q || null;
-      const num = (x) => Math.round(x).toLocaleString();
-      const refProfile =
-        refQ && refQ.length === 3
-          ? `The intervention ward’s sampled settlements run a median of <b>${num(
-              refQ[1],
-            )}/km²</b> (middle 50% ${num(refQ[0])}–${num(refQ[2])}). `
-          : '';
-      const intro =
-        '<p class="px-3 pt-2 text-[11px] text-gray-500 leading-snug">' +
-        refProfile +
-        'Each neighbour is ranked by how much its settlement-density spread overlaps the intervention’s, and filled on the map in its row colour. ' +
-        'The bars show that ward’s spread (colour) over the intervention’s ' +
-        '(<span class="text-gray-400">grey — identical in every row</span>); a close match is an exchangeable control. ' +
-        'Pick one before sampling.</p>';
 
-      const rows = results
+      // Methodology popup (toggled by the "?"), hidden by default.
+      const method =
+        '<div class="mp-ab-method hidden px-3 py-2.5 text-[11px] text-gray-600 leading-snug bg-gray-50 border-b border-gray-100">' +
+        '<b>What this measures.</b> We pull every building footprint in each ward and group them into clusters — ' +
+        '“settlements” here means those building clusters across the <b>whole</b> ward (the candidate PSUs), not a sample. ' +
+        'For each ward we take each settlement’s density (buildings ÷ its area) and compare the whole <b>distribution</b> of those ' +
+        'densities — not just the average — between the intervention ward and each neighbour. <b>Overlap</b> is how much the two ' +
+        'distributions coincide (the shared area in the bars); a high overlap means a similar mix of settlement types, so a fairer control.' +
+        '<br><br><b>Settlement = candidate PSU.</b> When you actually sample, a subset of these clusters become the surveyed PSUs; ' +
+        'here we use them all to describe the ward. They’re algorithmic clusters of buildings, not official villages.' +
+        '<br><br><b>Where it’s from.</b> Building-footprint sampling frames + two-stage PPS cluster sampling are standard household-survey ' +
+        'practice (DHS / MICS / LSMS), with building clusters standing in for census enumeration areas. Ranking control wards by ' +
+        'density-distribution overlap is our own heuristic, grounded in matched-design / covariate-balance methods.</div>';
+
+      // Table-row builder shared by the intervention baseline + each candidate.
+      const sparkCell = (spark, color) =>
+        spark
+          ? `<td class="px-2 py-1.5">${sparkline(spark, color)}</td>`
+          : `<td class="px-2 py-1.5">${dash}</td>`;
+      const wardCell = (color, name, suffix) =>
+        '<td class="px-2 py-1.5"><div class="flex items-center gap-1.5">' +
+        `<span class="inline-block w-3 h-3 rounded-sm shrink-0" style="background:${color}"></span>` +
+        `<span class="text-gray-800 font-medium truncate">${esc(
+          name || '(ward)',
+        )}</span>` +
+        (suffix
+          ? `<span class="text-[10px] text-gray-400">${esc(suffix)}</span>`
+          : '') +
+        '</div></td>';
+
+      // Intervention baseline row, so every candidate number has something to read against.
+      const refQ = reference.q || null;
+      const baseRow =
+        '<tr class="bg-emerald-50/50 border-t border-gray-100 align-middle">' +
+        wardCell('#10b981', refName, 'intervention') +
+        `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
+          num(reference.population),
+        )}</td>` +
+        `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
+          num(reference.buildings),
+        )}</td>` +
+        `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
+          reference.n_clusters,
+        )}</td>` +
+        `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
+          refQ ? num(refQ[1]) : null,
+        )}</td>` +
+        `<td class="px-2 py-1.5 text-right tabular-nums">${
+          refQ ? num(refQ[0]) + '–' + num(refQ[2]) : dash
+        }</td>` +
+        sparkCell(reference.spark, '#9ca3af') +
+        '<td class="px-2 py-1.5 text-[11px] text-gray-400">baseline</td>' +
+        '<td class="px-2 py-1.5"></td>' +
+        '</tr>';
+
+      const candRows = results
         .map((r) => {
           const isErr = r.status === 'error';
           const ok = !isErr && r.overlap != null;
-          const isPending = !isErr && !ok;
           const isCtl = selected.has(r.boundary_id);
           const color = r.color || '#9ca3af';
-          const swatch = `<span class="inline-block w-3 h-3 rounded-sm shrink-0" style="background:${color}"></span>`;
+          const cq = r.q_cand;
           const action = !ok
             ? ''
             : isCtl
@@ -861,49 +900,93 @@
               `data-pop="${
                 r.population != null ? esc(r.population) : ''
               }">Set as control</button>`;
-
-          let detail = '';
-          if (isErr) {
-            detail = `<div class="mt-1 text-[11px] text-red-500">${esc(
-              r.detail || 'analysis failed',
-            )}</div>`;
-          } else if (isPending) {
-            detail =
-              '<div class="mt-1 text-[11px] text-gray-400">analysing…</div>';
-          } else {
-            const ovl = `${Math.round((r.overlap || 0) * 100)}%`;
-            const cq = r.q_cand;
-            const profile =
-              cq && cq.length === 3
-                ? `median <b style="color:${color}">${num(
-                    cq[1],
-                  )}</b>/km² · middle 50% ${num(cq[0])}–${num(cq[2])}`
-                : '';
-            detail =
-              '<div class="mt-1 flex items-end gap-2">' +
-              sparkline(r.spark, color) +
-              '<div class="text-[11px] text-gray-500 leading-tight min-w-0">' +
-              `<div><b class="text-gray-700">${ovl}</b> overlap · n=${
-                r.n_cand != null ? r.n_cand : '—'
-              } settlements</div>` +
-              `<div>${profile}</div>` +
-              '</div></div>';
-          }
+          let matchCell;
+          if (isErr)
+            matchCell = `<td class="px-2 py-1.5 text-[11px] text-red-500">${esc(
+              r.detail || 'failed',
+            )}</td>`;
+          else if (!ok)
+            matchCell =
+              '<td class="px-2 py-1.5 text-[11px] text-gray-400">analysing…</td>';
+          else
+            matchCell =
+              '<td class="px-2 py-1.5 whitespace-nowrap">' +
+              `<b class="text-gray-700">${Math.round(
+                (r.overlap || 0) * 100,
+              )}%</b> ${bandBadge(r.band)}</td>`;
           return (
-            '<div class="px-3 py-2 border-t border-gray-100">' +
-            '<div class="flex items-center justify-between gap-2">' +
-            `<div class="flex items-center gap-2 min-w-0">${swatch}<span class="text-[13px] text-gray-800 font-medium truncate">${esc(
-              r.name || '(ward)',
-            )}</span></div>` +
-            `<div class="flex items-center gap-2 shrink-0">${
-              ok ? bandBadge(r.band) : ''
-            }${action}</div>` +
-            '</div>' +
-            detail +
-            '</div>'
+            '<tr class="border-t border-gray-100 align-middle hover:bg-gray-50">' +
+            wardCell(color, r.name) +
+            `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
+              num(r.population),
+            )}</td>` +
+            `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
+              num(r.buildings),
+            )}</td>` +
+            `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
+              r.n_cand,
+            )}</td>` +
+            `<td class="px-2 py-1.5 text-right tabular-nums" style="color:${color}">${
+              cq ? num(cq[1]) : dash
+            }</td>` +
+            `<td class="px-2 py-1.5 text-right tabular-nums">${
+              cq ? num(cq[0]) + '–' + num(cq[2]) : dash
+            }</td>` +
+            sparkCell(r.spark, color) +
+            matchCell +
+            `<td class="px-2 py-1.5 text-right">${action}</td>` +
+            '</tr>'
           );
         })
         .join('');
+
+      const th = (label, title, extra) =>
+        `<th class="px-2 py-1.5 font-semibold text-gray-500 ${
+          extra || 'text-right'
+        }" title="${esc(title)}">${label}</th>`;
+      const table =
+        '<div class="overflow-x-auto"><table class="w-full text-[12px]">' +
+        '<thead class="bg-gray-50 text-[10px] uppercase tracking-wide"><tr>' +
+        th(
+          'Ward',
+          'The candidate control ward (filled in this colour on the map).',
+          'text-left',
+        ) +
+        th(
+          'Pop.',
+          'Estimated population of the ward (from the admin-boundary dataset).',
+        ) +
+        th(
+          'Buildings',
+          'Total building footprints found in the ward — the sampling frame.',
+        ) +
+        th(
+          'Settlements',
+          'Building clusters across the whole ward (candidate PSUs). n = how many.',
+        ) +
+        th(
+          'Typical /km²',
+          "Median settlement density: half the ward's settlements are denser, half sparser.",
+        ) +
+        th(
+          'Middle 50%',
+          'Density range most settlements fall in (25th–75th percentile), buildings/km².',
+        ) +
+        th(
+          'Distribution',
+          'Settlement-density histogram on one shared axis: grey = intervention, colour = this ward.',
+          'text-left',
+        ) +
+        th(
+          'Match',
+          "How much this ward's settlement-density distribution overlaps the intervention's.",
+          'text-left',
+        ) +
+        th('', '', 'text-left') +
+        '</tr></thead><tbody>' +
+        baseRow +
+        candRows +
+        '</tbody></table></div>';
 
       const empty =
         !results.length && !running
@@ -916,13 +999,19 @@
       comparePanel.innerHTML =
         '<div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">' +
         head +
-        intro +
-        rows +
-        empty +
+        method +
+        (results.length ? table : empty) +
         '</div>';
 
       // Colour-fill each candidate's boundary on the map to match the rows.
       renderCompareOverlay(results);
+
+      const methodEl = comparePanel.querySelector('.mp-ab-method');
+      const methodBtn = comparePanel.querySelector('.mp-ab-method-toggle');
+      if (methodEl && methodBtn)
+        methodBtn.addEventListener('click', () =>
+          methodEl.classList.toggle('hidden'),
+        );
 
       comparePanel.querySelectorAll('.mp-ab-setctl').forEach((btn) => {
         btn.addEventListener('click', async () => {

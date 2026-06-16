@@ -194,7 +194,10 @@ def compare_surrounding_wards_task(self, selected, config_payload):
     ref_self = density_distribution_match(ref_dist["densities"], ref_dist["densities"], edges=edges)
     reference["median_density"] = ref_self.get("median_ref")
     reference["q"] = ref_self.get("q_ref")
+    reference["spark"] = ref_self.get("spark")
     reference["n_clusters"] = ref_dist["n_clusters"]
+    reference["buildings"] = ref_dist.get("n_buildings")
+    reference["population"] = ref.get("population")
 
     for index, cand in enumerate(candidates):
         emit(f"Analysing {cand['name']}… ({index + 1}/{total})")
@@ -203,7 +206,7 @@ def compare_surrounding_wards_task(self, selected, config_payload):
             cand_dist = ward_density_distribution(cand["geometry"], config)
             row.pop("detail", None)
             match = density_distribution_match(ref_dist["densities"], cand_dist["densities"], edges=edges)
-            row.update({"status": "ok", **match})
+            row.update({"status": "ok", "buildings": cand_dist.get("n_buildings"), **match})
         except ValueError as e:
             row.update({"status": "error", "detail": str(e)})
         except Exception:  # noqa: BLE001
