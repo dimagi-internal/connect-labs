@@ -163,6 +163,8 @@ def test_get_org_data_merges_visible_labs_only_opp(dimagi_user):
     labs_opp = next(o for o in org_data["opportunities"] if o["id"] == 10_000)
     assert labs_opp["labs_only"] is True
     assert labs_opp["name"] == "CHC demo"
+    # Unset visit_count → picker falls back to 0 (not None).
+    assert labs_opp["visit_count"] == 0
     # `organization` carries the org slug (Connect serializer shape), not the name.
     assert labs_opp["organization"] == "labs-synthetic-acme-health"
 
@@ -171,6 +173,27 @@ def test_get_org_data_merges_visible_labs_only_opp(dimagi_user):
 
     program_names = {p["name"] for p in org_data["programs"]}
     assert "Acme Demo Program" in program_names
+
+
+@pytest.mark.django_db
+def test_get_org_data_surfaces_cached_visit_count(dimagi_user):
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10_010,
+        label="Attakar SD",
+        gdrive_folder_id="folder-att",
+        labs_only=True,
+        allowed_domains=["@dimagi.com"],
+        visit_count=435,
+    )
+    request = _make_request(
+        dimagi_user,
+        oauth_org_data={"opportunities": [], "organizations": [], "programs": []},
+    )
+
+    org_data = get_org_data(request)
+
+    labs_opp = next(o for o in org_data["opportunities"] if o["id"] == 10_010)
+    assert labs_opp["visit_count"] == 435
 
 
 @pytest.mark.django_db

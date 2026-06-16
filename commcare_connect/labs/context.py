@@ -87,7 +87,9 @@ def _merge_labs_only_opps(org_data: dict, user) -> dict:
                 "program_name": program_label,
                 "is_active": True,
                 "end_date": None,
-                "visit_count": 0,
+                # Cached on the registry row (set at generation / refresh command); the
+                # real fixture count lives in GDrive, too costly to fetch per request.
+                "visit_count": opp.visit_count or 0,
                 "labs_only": True,
             }
         )
