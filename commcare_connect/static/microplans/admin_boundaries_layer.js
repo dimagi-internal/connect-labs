@@ -807,14 +807,24 @@
               reference.median_density,
             ).toLocaleString()}/km²`
           : '';
+      // Up-front scope: as soon as the neighbours are known, say how many we're
+      // processing (and progress through them), instead of a vague "analysing…".
+      const total = st.total != null ? st.total : results.length;
+      const doneCount = results.filter(
+        (r) => r.status === 'ok' || r.status === 'error',
+      ).length;
+      const runMsg =
+        total > 0
+          ? `Processing ${total} surrounding area${total === 1 ? '' : 's'}${
+              doneCount ? ` · ${doneCount}/${total} done` : ''
+            }`
+          : st.message || 'Analysing…';
       const head =
         '<div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100">' +
         '<div class="text-[12px] font-semibold text-gray-700">Surrounding wards vs ' +
         `<span class="text-gray-900">${esc(refName)}</span></div>` +
         (running
-          ? `<span class="text-[11px] text-gray-400">${esc(
-              st.message || 'Analysing…',
-            )}</span>`
+          ? `<span class="text-[11px] text-gray-400">${esc(runMsg)}</span>`
           : '<span class="text-[11px] text-gray-400">best match first</span>') +
         '</div>';
       const intro =

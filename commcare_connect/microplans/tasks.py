@@ -175,6 +175,10 @@ def compare_surrounding_wards_task(self, selected, config_payload):
     def emit(message):
         set_task_progress(self, message, results=_rank_ward_matches(results), total=total, reference=reference)
 
+    # Announce the scope up front — the seeded pending rows + this message let the UI
+    # show "Processing N surrounding areas" (and draw all N outlines) before the work.
+    emit(f"Processing {total} surrounding area{'' if total == 1 else 's'}…")
+
     # Reference distribution first — its own (possibly cold) fetch.
     emit("Analysing the selected ward…")
     try:
