@@ -176,6 +176,79 @@ class PreviewStatusView(LoginRequiredMixin, View):
         return JsonResponse({"state": state.lower(), "message": f"Status: {state}"})
 
 
+class CompareSurroundingView(LoginRequiredMixin, View):
+    """Enqueue the surrounding-ward control finder for the selected boundary.
+
+    Given the intervention ward the planner has selected, score every same-level
+    neighbour by how well its settlement-density distribution matches — so a
+    well-matched control can be chosen *before* sampling, not discovered mismatched
+    after. The work is one cold Overture fetch per ward, so (like the previews) it
+    runs on the Celery worker; the client polls ``compare_surrounding_status`` for
+    the ranked list as it fills in. ``opp_id`` is a routing placeholder — the work
+    is keyed entirely on the posted boundary, and building footprints are public.
+    """
+
+    def post(self, request, opp_id):
+        from commcare_connect.microplans.tasks import compare_surrounding_wards_task
+
+        try:
+            payload = json.loads(request.body)
+            selected = payload.get("selected") or {}
+            if not (selected.get("boundary_id") or (selected.get("ref") or {}).get("boundary_id")):
+                raise ValueError("no boundary selected")
+            config_payload = payload.get("config", {})
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            return JsonResponse({"status": "error", "detail": f"Invalid request: {e}"}, status=400)
+
+        from django.urls import reverse
+
+        task = compare_surrounding_wards_task.delay(selected, config_payload)
+        return JsonResponse(
+            {
+                "status": "queued",
+                "task_id": task.id,
+                "poll_url": reverse("microplans:compare_surrounding_status", args=[task.id]),
+            },
+            status=202,
+        )
+
+
+class CompareSurroundingStatusView(LoginRequiredMixin, View):
+    """Poll a queued surrounding-ward comparison.
+
+    Unlike ``PreviewStatusView`` (message only), this forwards the growing ranked
+    ``results`` + ``reference`` from the task meta while it runs, so the panel can
+    render each neighbour's match the moment it's scored — the same incremental
+    pattern as the bulk-create status view."""
+
+    def get(self, request, task_id):
+        from celery.result import AsyncResult
+
+        result = AsyncResult(task_id)
+        state = result.state
+        info = result.info if isinstance(result.info, dict) else {}
+
+        if state == "PENDING":
+            return JsonResponse({"state": "queued", "message": "Waiting to start…"})
+        if state in ("RECEIVED", "STARTED", "PROGRESS"):
+            return JsonResponse(
+                {
+                    "state": "running",
+                    "message": info.get("message", "Working…"),
+                    "results": info.get("results", []),
+                    "reference": info.get("reference"),
+                    "total": info.get("total"),
+                }
+            )
+        if state == "SUCCESS":
+            payload = result.result if isinstance(result.result, dict) else {}
+            return JsonResponse({"state": "completed", "result": payload})
+        if state == "FAILURE":
+            logger.error("microplans compare-surrounding task %s failed: %s", task_id, result.info)
+            return JsonResponse({"state": "failed", "detail": "Comparison failed. Check server logs."})
+        return JsonResponse({"state": state.lower(), "message": f"Status: {state}"})
+
+
 class CountriesView(LoginRequiredMixin, View):
     """List ISO countries for the area picker, flagging those with bespoke data.
 
@@ -1184,6 +1257,7 @@ class ProgramReviewView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView)
         context["preview_footprints_url"] = reverse("microplans:preview_footprints", args=[123])
         context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
         context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
+        context["compare_surrounding_url"] = reverse("microplans:compare_surrounding", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
@@ -1503,6 +1577,7 @@ class ProgramSetupView(_LabsContextSyncMixin, LoginRequiredMixin, TemplateView):
         context["preview_footprints_url"] = reverse("microplans:preview_footprints", args=[123])
         context["preview_frame_url"] = reverse("microplans:preview_frame", args=[123])
         context["arm_comparability_url"] = reverse("microplans:arm_comparability", args=[123])
+        context["compare_surrounding_url"] = reverse("microplans:compare_surrounding", args=[123])
         context["admin_areas_url"] = reverse("microplans:admin_areas", args=[123])
         context["admin_area_geometry_url"] = reverse("microplans:admin_area_geometry", args=[123])
         context["countries_url"] = reverse("microplans:countries")
