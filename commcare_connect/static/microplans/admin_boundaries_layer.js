@@ -62,6 +62,12 @@
     // left as a pure visibility toggle. Keeps every plan-building control in the
     // rail; the map only owns the lines + the click-to-select gesture.
     const controlsHost = opts.controlsHost || null;
+    // Surrounding-ward control finder: the enqueue URL, the panel element (below
+    // the map) the ranked results render into, and a getter for the sampling
+    // config so neighbours are analysed with the same frame settings as the plan.
+    const compareUrl = (opts.urls || {}).compareSurrounding || null;
+    const comparePanel = opts.comparePanel || null;
+    const getSamplingConfig = opts.getSamplingConfig || (() => ({}));
 
     let source = null; // active source; null = let the server pick the country default
     let detectedIso = null; // country inferred from returned features (labs carry iso_code)
@@ -163,6 +169,7 @@
         row.appendChild(x);
         selectedListEl.appendChild(row);
       });
+      updateCompareBtn();
     }
     // Slick per-boundary arm selector: a two-segment Interv / Control pill, the
     // active half filled with its arm colour. Changing it re-tags the boundary's
@@ -520,14 +527,16 @@
         population: a.population != null ? a.population : null,
       };
     }
-    async function toggleSelect(desc) {
+    // Fetch geometry + add a boundary to the selected set under a given arm. The
+    // shared core of a plain click-to-select (intervention) and the surrounding
+    // control finder's "Set as control" (comparison). Already-selected → just
+    // re-tag the arm. Returns true on success.
+    async function addBoundary(desc, arm) {
       const id = desc.key;
+      arm = arm || 'intervention';
       if (selected.has(id)) {
-        selected.delete(id);
-        onAreaRemove(id);
-        syncSelectedSource();
-        renderSummary();
-        return;
+        setArm(id, arm);
+        return true;
       }
       setStatus('Fetching geometry…');
       try {
@@ -542,17 +551,30 @@
         const d = await resp.json();
         if (!resp.ok || d.status !== 'ok' || !d.geometry) {
           setStatus(d.detail || 'Geometry lookup failed');
-          return;
+          return false;
         }
-        // New picks default to the intervention arm; the per-row pill changes it.
-        selected.set(id, { desc, geometry: d.geometry, arm: 'intervention' });
-        onAreaAdd(id, d.geometry, desc, 'intervention');
+        selected.set(id, { desc, geometry: d.geometry, arm });
+        onAreaAdd(id, d.geometry, desc, arm);
         syncSelectedSource();
         renderSummary();
         setStatus('');
+        return true;
       } catch (e) {
         setStatus('Failed: ' + e);
+        return false;
       }
+    }
+    async function toggleSelect(desc) {
+      const id = desc.key;
+      if (selected.has(id)) {
+        selected.delete(id);
+        onAreaRemove(id);
+        syncSelectedSource();
+        renderSummary();
+        return;
+      }
+      // New picks default to the intervention arm; the per-row pill changes it.
+      await addBoundary(desc, 'intervention');
     }
     function syncSelectedSource() {
       ensureLayers();
@@ -563,6 +585,302 @@
       map
         .getSource(SEL_SRC)
         .setData({ type: 'FeatureCollection', features: feats });
+    }
+
+    // ---- surrounding-ward control finder -------------------------------------
+    // The reference (intervention) ward neighbours are compared against: the
+    // intervention-arm selection, or the only selection when there's just one.
+    function referenceForCompare() {
+      let interv = null;
+      let only = null;
+      let count = 0;
+      selected.forEach((v, id) => {
+        count += 1;
+        only = { v, id };
+        if (!interv && (v.arm || 'intervention') === 'intervention')
+          interv = { v, id };
+      });
+      const pick = interv || (count === 1 ? only : null);
+      if (!pick) return null;
+      const d = pick.v.desc || {};
+      const ref = d.ref || {};
+      const bid = ref.boundary_id || d.boundary_id || pick.id;
+      if (!bid) return null;
+      return {
+        boundary_id: bid,
+        name: d.name || '',
+        source: d.source || '',
+        country: d.country || '',
+        level: d.level,
+        ref: ref.boundary_id ? ref : { boundary_id: bid, source: d.source },
+      };
+    }
+    // Add a ranked candidate as the control arm — same level/source as the
+    // reference, so a single boundary_id is enough to fetch its geometry.
+    function selectCandidateAsControl(cand, ref) {
+      return addBoundary(
+        {
+          key: cand.boundary_id,
+          name: cand.name,
+          level: ref.level,
+          parent_name: '',
+          source: ref.source,
+          country: ref.country,
+          ref: { boundary_id: cand.boundary_id, source: ref.source },
+          area_km2: null,
+          population: cand.population != null ? cand.population : null,
+        },
+        'comparison',
+      );
+    }
+
+    const compareBtn = document.createElement('button');
+    compareBtn.type = 'button';
+    compareBtn.className =
+      'mp-ab-compare hidden w-full mt-2 text-[11px] font-medium px-2 py-1.5 rounded border ' +
+      'border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-60';
+    compareBtn.textContent = 'Compare surrounding boundaries';
+    compareBtn.addEventListener('click', runCompare);
+    body.insertBefore(compareBtn, hintEl);
+
+    function updateCompareBtn() {
+      if (!compareBtn) return;
+      const ok = !!compareUrl && armEnabled() && !!referenceForCompare();
+      compareBtn.classList.toggle('hidden', !ok);
+    }
+
+    const BANDS = {
+      good: [
+        'bg-emerald-50',
+        'text-emerald-700',
+        'border-emerald-200',
+        'strong match',
+      ],
+      ok: [
+        'bg-amber-50',
+        'text-amber-700',
+        'border-amber-200',
+        'partial match',
+      ],
+      poor: ['bg-red-50', 'text-red-700', 'border-red-200', 'poor match'],
+      insufficient: [
+        'bg-gray-100',
+        'text-gray-500',
+        'border-gray-200',
+        'too few clusters',
+      ],
+    };
+    function bandBadge(band) {
+      const [bg, tc, bc, label] = BANDS[band] || BANDS.insufficient;
+      return `<span class="text-[10px] px-1.5 py-0.5 rounded border ${bg} ${tc} ${bc}">${esc(
+        label,
+      )}</span>`;
+    }
+
+    function renderComparePanel(state) {
+      if (!comparePanel) return;
+      const st = state || {};
+      comparePanel.classList.remove('hidden');
+      if (st.kind === 'error') {
+        comparePanel.innerHTML =
+          '<div class="px-3 py-2.5 text-[12px] text-red-700 bg-red-50 border border-red-200 rounded-lg">' +
+          esc(st.detail || 'Comparison failed.') +
+          '</div>';
+        return;
+      }
+      const ref = st.ref || {};
+      const reference = st.reference || {};
+      const refName = reference.name || ref.name || 'selected ward';
+      const running = st.kind === 'running';
+      const results = st.results || [];
+      const refMedian =
+        reference.median_density != null
+          ? ` · its sampled settlements run ~${Math.round(
+              reference.median_density,
+            ).toLocaleString()}/km²`
+          : '';
+      const head =
+        '<div class="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100">' +
+        '<div class="text-[12px] font-semibold text-gray-700">Surrounding wards vs ' +
+        `<span class="text-gray-900">${esc(refName)}</span></div>` +
+        (running
+          ? `<span class="text-[11px] text-gray-400">${esc(
+              st.message || 'Analysing…',
+            )}</span>`
+          : '<span class="text-[11px] text-gray-400">best match first</span>') +
+        '</div>';
+      const intro =
+        '<p class="px-3 pt-2 text-[11px] text-gray-500 leading-snug">' +
+        'Ranked by how closely each neighbour’s settlement-density distribution matches the intervention ward' +
+        esc(refMedian) +
+        '. A close match is an exchangeable control — pick one before sampling.</p>';
+
+      const rows = results
+        .map((r) => {
+          const ok = r.status !== 'error' && r.overlap != null;
+          const isCtl = selected.has(r.boundary_id);
+          const ovl = ok
+            ? `${Math.round((r.overlap || 0) * 100)}% overlap`
+            : '';
+          const meds =
+            r.median_cand != null && r.median_ref != null
+              ? ` · ${Math.round(
+                  r.median_cand,
+                ).toLocaleString()}/km² vs ${Math.round(
+                  r.median_ref,
+                ).toLocaleString()}`
+              : '';
+          const detail =
+            r.status === 'error'
+              ? `<span class="text-[11px] text-red-500">${esc(
+                  r.detail || 'analysis failed',
+                )}</span>`
+              : `<span class="text-[11px] text-gray-500">${esc(
+                  ovl + meds,
+                )}</span>`;
+          const action = !ok
+            ? ''
+            : isCtl
+            ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">✓ control</span>'
+            : '<button type="button" class="mp-ab-setctl text-[11px] font-medium px-2 py-0.5 rounded ' +
+              'border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100" ' +
+              `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
+              `data-pop="${
+                r.population != null ? esc(r.population) : ''
+              }">Set as control</button>`;
+          return (
+            '<div class="flex items-center justify-between gap-2 px-3 py-2 border-t border-gray-100">' +
+            `<div class="min-w-0"><div class="text-[13px] text-gray-800 font-medium truncate">${esc(
+              r.name || '(ward)',
+            )}</div>${detail}</div>` +
+            `<div class="flex items-center gap-2 shrink-0">${
+              ok ? bandBadge(r.band) : ''
+            }${action}</div>` +
+            '</div>'
+          );
+        })
+        .join('');
+
+      const empty =
+        !results.length && !running
+          ? `<p class="px-3 py-3 text-[12px] text-gray-500">${esc(
+              st.detail ||
+                'No neighbouring wards at the same level were found.',
+            )}</p>`
+          : '';
+
+      comparePanel.innerHTML =
+        '<div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">' +
+        head +
+        intro +
+        rows +
+        empty +
+        '</div>';
+
+      comparePanel.querySelectorAll('.mp-ab-setctl').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = 'Adding…';
+          const done = await selectCandidateAsControl(
+            {
+              boundary_id: btn.dataset.bid,
+              name: btn.dataset.name,
+              population: btn.dataset.pop ? Number(btn.dataset.pop) : null,
+            },
+            ref,
+          );
+          if (done)
+            renderComparePanel(st); // re-render: the row flips to "✓ control"
+          else {
+            btn.disabled = false;
+            btn.textContent = 'Set as control';
+          }
+        });
+      });
+    }
+
+    let comparing = false;
+    async function runCompare() {
+      if (comparing || !compareUrl) return;
+      const ref = referenceForCompare();
+      if (!ref) {
+        renderComparePanel({
+          kind: 'error',
+          detail: 'Select an intervention ward first.',
+        });
+        return;
+      }
+      comparing = true;
+      compareBtn.disabled = true;
+      renderComparePanel({
+        kind: 'running',
+        message: 'Finding neighbouring wards…',
+        results: [],
+        reference: { name: ref.name },
+        ref,
+      });
+      const deadline = Date.now() + 8 * 60 * 1000;
+      try {
+        const enqResp = await post(compareUrl, {
+          selected: ref,
+          config: getSamplingConfig(),
+        });
+        const enq = await enqResp.json();
+        const pollUrl = enq && enq.poll_url;
+        if (!enqResp.ok || !pollUrl) {
+          renderComparePanel({
+            kind: 'error',
+            detail: (enq && enq.detail) || 'Could not start.',
+            ref,
+          });
+          return;
+        }
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 1200));
+          if (Date.now() > deadline) {
+            renderComparePanel({
+              kind: 'error',
+              detail: 'Timed out analysing wards.',
+              ref,
+            });
+            return;
+          }
+          const stt = await M.apiGet(pollUrl);
+          if (stt.state === 'completed') {
+            const res = stt.result || {};
+            if (res.status === 'error') {
+              renderComparePanel({
+                kind: 'error',
+                detail: res.detail || 'Comparison failed.',
+                ref,
+              });
+            } else {
+              renderComparePanel(Object.assign({ kind: 'done', ref }, res));
+            }
+            return;
+          }
+          if (stt.state === 'failed') {
+            renderComparePanel({
+              kind: 'error',
+              detail: stt.detail || 'Comparison failed.',
+              ref,
+            });
+            return;
+          }
+          renderComparePanel({
+            kind: 'running',
+            message: stt.message,
+            results: stt.results || [],
+            reference: stt.reference || { name: ref.name },
+            ref,
+          });
+        }
+      } catch (e) {
+        renderComparePanel({ kind: 'error', detail: String(e), ref });
+      } finally {
+        comparing = false;
+        compareBtn.disabled = false;
+      }
     }
 
     // ---- search ----

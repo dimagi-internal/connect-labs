@@ -22,6 +22,18 @@ urlpatterns = [
     ),
     path("<int:opp_id>/derive_boundary/", views.DeriveBoundaryView.as_view(), name="derive_boundary"),
     path("<int:opp_id>/arm_comparability/", views.ArmComparabilityView.as_view(), name="arm_comparability"),
+    # Surrounding-ward control finder: rank same-level neighbours of the selected
+    # boundary by settlement-density distribution match (enqueue + poll).
+    path(
+        "<int:opp_id>/compare_surrounding/",
+        views.CompareSurroundingView.as_view(),
+        name="compare_surrounding",
+    ),
+    path(
+        "compare_surrounding_status/<str:task_id>/",
+        views.CompareSurroundingStatusView.as_view(),
+        name="compare_surrounding_status",
+    ),
     path("<int:opp_id>/boundaries/areas/", views.AdminAreasView.as_view(), name="admin_areas"),
     path("<int:opp_id>/boundaries/geometry/", views.AdminAreaGeometryView.as_view(), name="admin_area_geometry"),
     path("boundaries/countries/", views.CountriesView.as_view(), name="countries"),

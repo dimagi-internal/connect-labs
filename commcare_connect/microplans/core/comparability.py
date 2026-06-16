@@ -47,6 +47,89 @@ def _band(smd: float) -> str:
     return "good" if smd < SMD_GOOD else ("ok" if smd < SMD_OK else "imbalanced")
 
 
+# --- Surrounding-ward control finder ---------------------------------------
+# Match bands for the distribution-overlap score the "compare surrounding
+# boundaries" tool ranks candidate control wards by. Overlap coefficient (OVL)
+# of the two settlement-density distributions: 1.0 = identical shape, 0 =
+# disjoint. We score the whole DISTRIBUTION, not the mean, precisely because a
+# uniform ward and a bimodal urban+rural ward can share a mean settlement
+# density yet be entirely different places — equal means don't make an
+# exchangeable control; overlapping distributions do.
+OVL_GOOD = 0.70
+OVL_OK = 0.50
+# Below this many valid clusters a "distribution" is meaningless — report
+# insufficient data rather than a falsely precise overlap.
+MIN_DIST_CLUSTERS = 3
+
+
+def _overlap_coefficient(a, b, bins: int = 20) -> float:
+    """Histogram overlap (OVL) of two density samples over shared bins: the area
+    common to both normalised distributions, in [0, 1]."""
+    import numpy as np
+
+    a = np.asarray([x for x in a if x and x > 0], dtype=float)
+    b = np.asarray([x for x in b if x and x > 0], dtype=float)
+    if len(a) == 0 or len(b) == 0:
+        return 0.0
+    lo = float(min(a.min(), b.min()))
+    hi = float(max(a.max(), b.max()))
+    if hi <= lo:
+        return 1.0  # both collapse to a single value → identical
+    edges = np.linspace(lo, hi, bins + 1)
+    pa = np.histogram(a, bins=edges)[0].astype(float)
+    pb = np.histogram(b, bins=edges)[0].astype(float)
+    pa /= pa.sum()
+    pb /= pb.sum()
+    return float(np.minimum(pa, pb).sum())
+
+
+def density_distribution_match(ref_densities, cand_densities) -> dict:
+    """Compare a candidate control ward's settlement-density distribution to the
+    reference (intervention) ward's. Returns the overlap coefficient (the ranking
+    key), the median density of each, their median gap %, the mean SMD (for
+    continuity with the pairwise panel), and a band: ``good`` / ``ok`` / ``poor``
+    (or ``insufficient`` when either ward has too few clusters to form a
+    distribution)."""
+    import numpy as np
+
+    ref = np.asarray([x for x in (ref_densities or []) if x and x > 0], dtype=float)
+    cand = np.asarray([x for x in (cand_densities or []) if x and x > 0], dtype=float)
+
+    def _med(arr):
+        return int(round(float(np.median(arr)))) if len(arr) else None
+
+    if len(ref) < MIN_DIST_CLUSTERS or len(cand) < MIN_DIST_CLUSTERS:
+        return {
+            "overlap": None,
+            "band": "insufficient",
+            "median_ref": _med(ref),
+            "median_cand": _med(cand),
+            "median_gap_pct": None,
+            "smd": None,
+            "n_ref": int(len(ref)),
+            "n_cand": int(len(cand)),
+        }
+
+    overlap = _overlap_coefficient(ref, cand)
+    med_ref, med_cand = float(np.median(ref)), float(np.median(cand))
+    gap = abs(med_ref - med_cand) / med_ref if med_ref > 0 else None
+    smd = _smd(
+        (float(ref.mean()), float(ref.std(ddof=1)) if len(ref) > 1 else 0.0),
+        (float(cand.mean()), float(cand.std(ddof=1)) if len(cand) > 1 else 0.0),
+    )
+    band = "good" if overlap >= OVL_GOOD else ("ok" if overlap >= OVL_OK else "poor")
+    return {
+        "overlap": round(overlap, 3),
+        "band": band,
+        "median_ref": int(round(med_ref)),
+        "median_cand": int(round(med_cand)),
+        "median_gap_pct": round(gap * 100, 1) if gap is not None else None,
+        "smd": round(smd, 2),
+        "n_ref": int(len(ref)),
+        "n_cand": int(len(cand)),
+    }
+
+
 def psu_arms_from_stats(
     stats: list[dict],
     *,

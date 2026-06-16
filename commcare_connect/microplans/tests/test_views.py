@@ -123,6 +123,33 @@ def test_preview_frame_enqueues(client, django_user_model, monkeypatch):
     assert "frame-task-1" in body["poll_url"]
 
 
+def test_compare_surrounding_enqueues(client, django_user_model, monkeypatch):
+    _login(client, django_user_model)
+    from commcare_connect.microplans.tasks import compare_surrounding_wards_task
+
+    monkeypatch.setattr(compare_surrounding_wards_task, "delay", _fake_delay("compare-task-1"))
+    resp = client.post(
+        reverse("microplans:compare_surrounding", kwargs={"opp_id": 123}),
+        data=json.dumps({"selected": {"boundary_id": "NGA-ward-1", "name": "Attakar"}, "config": {}}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 202
+    body = resp.json()
+    assert body["status"] == "queued"
+    assert body["task_id"] == "compare-task-1"
+    assert reverse("microplans:compare_surrounding_status", kwargs={"task_id": "compare-task-1"}) == body["poll_url"]
+
+
+def test_compare_surrounding_rejects_missing_boundary(client, django_user_model):
+    _login(client, django_user_model)
+    resp = client.post(
+        reverse("microplans:compare_surrounding", kwargs={"opp_id": 123}),
+        data=json.dumps({"selected": {}, "config": {}}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
 def test_preview_coverage_enqueues(client, django_user_model, monkeypatch):
     _login(client, django_user_model)
     from commcare_connect.microplans.tasks import generate_coverage_task

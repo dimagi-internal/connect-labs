@@ -77,6 +77,94 @@ def generate_coverage_task(self, areas, config_payload):
     return {"status": "ok", "areas": result.areas_geojson, "stats": result.stats}
 
 
+def _rank_ward_matches(results: list[dict]) -> list[dict]:
+    """Best-match-first: highest distribution overlap leads; rows with no overlap
+    (insufficient data / errored) sink to the bottom."""
+
+    def key(r):
+        ov = r.get("overlap")
+        return (1 if ov is not None else 0, ov if ov is not None else -1.0)
+
+    return sorted(results, key=key, reverse=True)
+
+
+@celery_app.task(bind=True)
+def compare_surrounding_wards_task(self, selected, config_payload):
+    """Rank the wards adjacent to the selected (intervention) ward by how well their
+    settlement-density DISTRIBUTION matches it — the macro control-finder.
+
+    For the reference ward and each same-level neighbour, build the candidate-PSU
+    density distribution (``ward_density_distribution`` — the cheap fetch+cluster
+    path, no PPS draw) and score the overlap. Reports per-ward progress as a growing
+    ranked ``results`` list so the panel fills in live (``CompareSurroundingStatusView``).
+    Each ward is its own cold Overture fetch, which is why this runs on the worker."""
+    from commcare_connect.microplans.core.admin_boundaries import adjacent_boundaries
+    from commcare_connect.microplans.core.comparability import density_distribution_match
+    from commcare_connect.microplans.sampling.frame import FrameConfig, ward_density_distribution
+
+    config = FrameConfig.from_payload(config_payload or {})
+    selected = selected or {}
+    ref_id = selected.get("boundary_id") or (selected.get("ref") or {}).get("boundary_id")
+
+    set_task_progress(self, "Finding neighbouring wards…")
+    adj = adjacent_boundaries(ref_id) if ref_id else {"supported": False}
+    if not adj.get("supported"):
+        return {
+            "status": "error",
+            "detail": "Surrounding-ward comparison is available for Enriched Boundaries only.",
+        }
+
+    ref, candidates = adj["reference"], adj["candidates"]
+    reference = {"boundary_id": ref["boundary_id"], "name": selected.get("name") or ref["name"]}
+    total = len(candidates)
+    if total == 0:
+        return {
+            "status": "ok",
+            "reference": reference,
+            "results": [],
+            "total": 0,
+            "detail": "No neighbouring wards at the same level were found.",
+        }
+
+    # Reference distribution first — its own (possibly cold) fetch.
+    set_task_progress(self, "Analysing the selected ward…", results=[], total=total, reference=reference)
+    try:
+        ref_dist = ward_density_distribution(ref["geometry"], config)
+    except Exception:  # noqa: BLE001
+        logger.exception("compare_surrounding: reference ward failed (%s)", ref_id)
+        return {"status": "error", "detail": "Could not analyse the selected ward."}
+    reference["median_density"] = int(round(ref_dist["psu_density"][0]))
+    reference["n_clusters"] = ref_dist["n_clusters"]
+
+    results: list[dict] = []
+    for index, cand in enumerate(candidates):
+        set_task_progress(
+            self,
+            f"Analysing {cand['name']}… ({index + 1}/{total})",
+            results=_rank_ward_matches(results),
+            total=total,
+            reference=reference,
+        )
+        row = {"boundary_id": cand["boundary_id"], "name": cand["name"], "population": cand.get("population")}
+        try:
+            cand_dist = ward_density_distribution(cand["geometry"], config)
+            row.update({"status": "ok", **density_distribution_match(ref_dist["densities"], cand_dist["densities"])})
+        except ValueError as e:
+            row.update({"status": "error", "detail": str(e)})
+        except Exception:  # noqa: BLE001
+            logger.exception("compare_surrounding: candidate failed (%s)", cand["boundary_id"])
+            row.update({"status": "error", "detail": "analysis failed"})
+        results.append(row)
+
+    return {
+        "status": "ok",
+        "reference": reference,
+        "results": _rank_ward_matches(results),
+        "total": total,
+        "truncated": adj.get("truncated", False),
+    }
+
+
 @celery_app.task(bind=True)
 def fetch_footprints_task(self, areas):
     """Building footprints (polygons, centroid-Point fallback) inside the drawn area(s)."""

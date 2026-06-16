@@ -102,6 +102,38 @@ def _mean_sd(values) -> tuple[float, float]:
     return (float(a.mean()), float(a.std(ddof=1)) if len(a) >= 2 else 0.0)
 
 
+def cluster_density_list(buildings: pd.DataFrame, cluster_ids=None) -> list[float]:
+    """Per-cluster settlement density (buildings per km² of the cluster's convex
+    hull) — the same metric ``psu_summary`` averages, returned *per cluster* so a
+    whole distribution can be compared, not just its mean.
+
+    ``cluster_ids=None`` → every cluster present in ``buildings`` (the candidate
+    frame for a ward); pass the selected clusters to restrict to the drawn sample.
+    Clusters with < 3 buildings (no meaningful hull) are skipped.
+    """
+    if buildings is None or buildings.empty or "cluster" not in buildings.columns:
+        return []
+
+    from pyproj import Transformer
+    from shapely.geometry import MultiPoint
+    from shapely.ops import transform
+
+    from commcare_connect.microplans.core.geo import utm_epsg_for
+
+    epsg = utm_epsg_for(float(buildings["lon"].mean()), float(buildings["lat"].mean()))
+    tf = Transformer.from_crs(4326, epsg, always_xy=True).transform
+    ids = buildings["cluster"].unique().tolist() if cluster_ids is None else cluster_ids
+    out: list[float] = []
+    for cluster in ids:
+        sub = buildings[buildings["cluster"] == cluster]
+        n = len(sub)
+        if n >= 3:
+            hull_km2 = transform(tf, MultiPoint(list(zip(sub["lon"], sub["lat"]))).convex_hull).area / 1e6
+            if hull_km2 > 0:
+                out.append(n / hull_km2)
+    return out
+
+
 def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
     """Per-arm balance summary over the SELECTED PSUs, as (mean, sd) tuples.
 
@@ -118,18 +150,10 @@ def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
     if selected is None or selected.empty or buildings is None or buildings.empty:
         return empty
 
-    from pyproj import Transformer
-    from shapely.geometry import MultiPoint
-    from shapely.ops import transform
-
-    from commcare_connect.microplans.core.geo import utm_epsg_for
-
-    epsg = utm_epsg_for(float(buildings["lon"].mean()), float(buildings["lat"].mean()))
-    tf = Transformer.from_crs(4326, epsg, always_xy=True).transform
+    selected_clusters = selected["cluster"].tolist()
     sizes: list[int] = []
-    densities: list[float] = []
     areas: list[float] = []
-    for cluster in selected["cluster"].tolist():
+    for cluster in selected_clusters:
         sub = buildings[buildings["cluster"] == cluster]
         n = len(sub)
         if n == 0:
@@ -137,10 +161,9 @@ def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
         sizes.append(n)
         if "area_m2" in sub.columns:
             areas.extend(float(a) for a in sub["area_m2"].tolist() if a and a > 0)
-        if n >= 3:
-            hull_km2 = transform(tf, MultiPoint(list(zip(sub["lon"], sub["lat"]))).convex_hull).area / 1e6
-            if hull_km2 > 0:
-                densities.append(n / hull_km2)
+    # Per-PSU density over the SELECTED clusters — shares one hull-density helper
+    # with the ward-distribution path so both measure density identically.
+    densities = cluster_density_list(buildings, selected_clusters)
     return {
         "psu_size": _mean_sd(sizes),
         "psu_density": _mean_sd(densities),
@@ -149,6 +172,40 @@ def psu_summary(buildings: pd.DataFrame, selected: pd.DataFrame) -> dict:
         # surfaced so the balance panel can state its own sample size, not assert
         # a standardized difference whose denominator is invisible.
         "n_psus": len(sizes),
+    }
+
+
+def ward_density_distribution(geometry: dict, config: FrameConfig) -> dict:
+    """Settlement-density distribution for ONE ward, WITHOUT the PPS draw.
+
+    Fetch footprints → filter → cluster, then take the per-cluster density of
+    *every* candidate cluster (not a sampled subset). This is the structural
+    fingerprint the surrounding-ward control finder compares: two wards are
+    exchangeable controls when these distributions overlap, regardless of equal
+    means. Skips ``select_psus``/``sample_pins`` — only the Overture fetch +
+    clustering — so it's the cheap path used to score several neighbours at once.
+
+    Returns ``{"densities": [per-cluster…], "n_clusters", "n_buildings",
+    "psu_density": (mean, sd)}``.
+    """
+    area = resolve_area({"geometry": geometry})
+    all_buildings = fetch_buildings(area, min_confidence=config.min_confidence, with_geom=False)
+    buildings = (
+        all_buildings
+        if not config.sources
+        else all_buildings[all_buildings["dataset"].isin(config.sources)].reset_index(drop=True)
+    )
+    filtered = apply_frame_filters(
+        buildings,
+        FilterConfig(area_min_m2=config.area_min_m2, area_max_m2=config.area_max_m2),
+    )
+    clustered = cluster_buildings(filtered.buildings, ClusterConfig(target_psus=config.target_clusters))
+    densities = cluster_density_list(clustered.buildings)
+    return {
+        "densities": densities,
+        "n_clusters": len(clustered.psu_frame),
+        "n_buildings": int(filtered.n_out),
+        "psu_density": _mean_sd(densities),
     }
 
 

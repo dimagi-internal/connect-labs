@@ -186,3 +186,58 @@ def test_psu_arms_from_stats_builds_comparison_input():
     assert out["matched"] is True
     assert out["n_intervention"] == 8
     assert any(a["name"] == "Attakar" for a in out["arms"])
+
+
+# --- Surrounding-ward control finder: distribution-overlap scoring -----------
+
+
+def test_density_match_identical_distributions_high_overlap():
+    from commcare_connect.microplans.core.comparability import density_distribution_match
+
+    d = [100, 200, 300, 400, 500, 600, 700, 800]
+    out = density_distribution_match(d, list(d))
+    assert out["band"] == "good"
+    assert out["overlap"] == 1.0
+    assert out["median_gap_pct"] == 0.0
+    assert out["n_ref"] == out["n_cand"] == len(d)
+
+
+def test_density_match_same_mean_different_shape_is_not_good():
+    """A uniform ward and a bimodal urban+rural ward can share a mean yet not
+    overlap — the whole point of scoring the distribution, not the mean."""
+    from commcare_connect.microplans.core.comparability import density_distribution_match
+
+    uniform = [440, 450, 460, 455, 445, 448, 452, 458]  # tight around ~450
+    bimodal = [100, 110, 90, 105, 800, 810, 790, 805]  # low + high, mean ~450
+    out = density_distribution_match(uniform, bimodal)
+    assert out["band"] in ("ok", "poor")
+    assert out["overlap"] < 0.5
+
+
+def test_density_match_disjoint_ranges_poor():
+    from commcare_connect.microplans.core.comparability import density_distribution_match
+
+    out = density_distribution_match([100, 120, 140, 160], [900, 950, 1000, 1050])
+    assert out["band"] == "poor"
+    assert out["overlap"] == 0.0
+
+
+def test_density_match_insufficient_clusters():
+    from commcare_connect.microplans.core.comparability import density_distribution_match
+
+    out = density_distribution_match([100, 200], [300, 400, 500, 600])
+    assert out["band"] == "insufficient"
+    assert out["overlap"] is None
+    assert out["smd"] is None
+
+
+def test_rank_ward_matches_orders_best_first_errors_last():
+    from commcare_connect.microplans.tasks import _rank_ward_matches
+
+    rows = [
+        {"name": "lo", "overlap": 0.3},
+        {"name": "err", "overlap": None, "status": "error"},
+        {"name": "hi", "overlap": 0.9},
+    ]
+    ranked = _rank_ward_matches(rows)
+    assert [r["name"] for r in ranked] == ["hi", "lo", "err"]
