@@ -2017,8 +2017,9 @@ function WorkflowUI({
 
   var handleMarkTaskResolved = function (username) {
     if (isCompleted) return;
+    var ts = taskStates[username] || {};
     var updated = Object.assign({}, taskStates);
-    updated[username] = Object.assign({}, updated[username], {
+    updated[username] = Object.assign({}, ts, {
       status: 'closed',
     });
     setTaskStates(updated);
@@ -2028,6 +2029,13 @@ function WorkflowUI({
     onUpdateState({ task_states: updated }).catch(function (e) {
       console.warn('task state save failed:', e);
     });
+    // Close the actual task record in the backend so open_tasks_api won't
+    // surface it again when a new run is created for the same FLWs.
+    if (ts.task_id && actions && actions.updateTask) {
+      actions.updateTask(ts.task_id, { status: 'closed' }).catch(function (e) {
+        console.warn('task backend close failed:', e);
+      });
+    }
   };
 
   var toggleTaskExpand = function (username) {
@@ -2197,29 +2205,14 @@ function WorkflowUI({
         if (
           !enrichedData
             .filter(function (f) {
-              return f.flags.type === 'red';
-            })
-            .every(function (f) {
-              return (
-                taskStates[f.username] && taskStates[f.username].triggered_at
-              );
-            })
-        )
-          return false;
-        if (
-          !enrichedData
-            .filter(function (f) {
               return f.flags.type === 'yellow';
             })
             .every(function (f) {
               var as = auditStatuses[f.username] || {};
-              if (!as.status) return false;
-              if (as.status === 'audit_not_required') return !!as.reason;
-              if (as.status === 'audit_required')
-                return !!(
-                  taskStates[f.username] && taskStates[f.username].triggered_at
-                );
-              return false;
+              return (
+                as.status === 'audit_required' ||
+                as.status === 'audit_not_required'
+              );
             })
         )
           return false;
@@ -4407,7 +4400,7 @@ function WorkflowUI({
           disabled: !canConclude,
           title: canConclude
             ? 'Conclude this audit run'
-            : 'All tasks must be resolved, all red FLWs must have tasks, and all yellow FLWs must be triaged before concluding',
+            : 'All triggered tasks must be resolved and all yellow-flagged FLWs must be triaged before concluding',
         },
         React.createElement('i', {
           className: 'fa-solid fa-flag-checkered mr-2',
