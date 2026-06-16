@@ -128,7 +128,7 @@ def compare_surrounding_wards_task(self, selected, config_payload):
     ranked ``results`` list so the panel fills in live (``CompareSurroundingStatusView``).
     Each ward is its own cold Overture fetch, which is why this runs on the worker."""
     from commcare_connect.microplans.core.admin_boundaries import adjacent_boundaries
-    from commcare_connect.microplans.core.comparability import density_distribution_match
+    from commcare_connect.microplans.core.comparability import density_bin_edges, density_distribution_match
     from commcare_connect.microplans.sampling.frame import FrameConfig, ward_density_distribution
 
     config = FrameConfig.from_payload(config_payload or {})
@@ -186,9 +186,12 @@ def compare_surrounding_wards_task(self, selected, config_payload):
     except Exception:  # noqa: BLE001
         logger.exception("compare_surrounding: reference ward failed (%s)", ref_id)
         return {"status": "error", "detail": "Could not analyse the selected ward."}
+    # Fixed bins anchored on the intervention ward, so every candidate's histogram
+    # shares one axis (identical grey bars) and the overlaps are comparable.
+    edges = density_bin_edges(ref_dist["densities"])
     # Self-match yields the reference ward's own quartiles/median on the same scale
     # the per-row numbers use, so the panel header and rows agree.
-    ref_self = density_distribution_match(ref_dist["densities"], ref_dist["densities"])
+    ref_self = density_distribution_match(ref_dist["densities"], ref_dist["densities"], edges=edges)
     reference["median_density"] = ref_self.get("median_ref")
     reference["q"] = ref_self.get("q_ref")
     reference["n_clusters"] = ref_dist["n_clusters"]
@@ -199,7 +202,8 @@ def compare_surrounding_wards_task(self, selected, config_payload):
         try:
             cand_dist = ward_density_distribution(cand["geometry"], config)
             row.pop("detail", None)
-            row.update({"status": "ok", **density_distribution_match(ref_dist["densities"], cand_dist["densities"])})
+            match = density_distribution_match(ref_dist["densities"], cand_dist["densities"], edges=edges)
+            row.update({"status": "ok", **match})
         except ValueError as e:
             row.update({"status": "error", "detail": str(e)})
         except Exception:  # noqa: BLE001

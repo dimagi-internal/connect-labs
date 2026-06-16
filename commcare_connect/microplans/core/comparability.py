@@ -62,46 +62,75 @@ OVL_OK = 0.50
 MIN_DIST_CLUSTERS = 3
 
 
-def _shared_hist(a, b, bins: int = 12):
-    """Two density samples binned over a shared range → ``(p_ref, p_cand, lo, hi)``
-    with each series normalised to sum 1 (or None when either side is empty). The
-    single source for both the overlap score and the panel sparkline, so the number
-    and the picture are computed from the exact same bins."""
+def density_bin_edges(densities, bins: int = 12):
+    """Fixed histogram bin edges anchored on the REFERENCE ward's density range.
+
+    Passing these to every candidate's ``density_distribution_match`` puts all rows
+    on one shared axis, so the reference (grey) bars are identical in every row and
+    the candidate bars are directly comparable — and so the overlap a far-denser
+    ward shows is honest. Returns None when the reference has too few clusters."""
+    vals = [x for x in (densities or []) if x and x > 0]
+    if len(vals) < MIN_DIST_CLUSTERS:
+        return None
+    lo, hi = float(min(vals)), float(max(vals))
+    if hi <= lo:
+        hi = lo + 1.0
+    step = (hi - lo) / bins
+    return [lo + step * i for i in range(bins + 1)]
+
+
+def _shared_hist(a, b, bins: int = 12, edges=None):
+    """Two density samples binned → ``(p_ref, p_cand, lo, hi)``, each normalised to
+    sum 1 (or None when either side is empty). The single source for both the overlap
+    score and the panel sparkline, so the number and the picture use the exact same
+    bins. With ``edges`` given (reference-anchored), both arms are CLIPPED into that
+    range — so the reference histogram is identical across rows and a candidate's
+    out-of-range settlements pile at the nearest edge instead of vanishing."""
     import numpy as np
 
     a = np.asarray([x for x in a if x and x > 0], dtype=float)
     b = np.asarray([x for x in b if x and x > 0], dtype=float)
     if len(a) == 0 or len(b) == 0:
         return None
-    lo = float(min(a.min(), b.min()))
-    hi = float(max(a.max(), b.max()))
-    if hi <= lo:
-        hi = lo + 1.0  # both collapse to a single value → one bin holds all
-    edges = np.linspace(lo, hi, bins + 1)
-    pa = np.histogram(a, bins=edges)[0].astype(float)
-    pb = np.histogram(b, bins=edges)[0].astype(float)
+    if edges is not None:
+        e = np.asarray(edges, dtype=float)
+        lo, hi = float(e[0]), float(e[-1])
+        a = np.clip(a, lo, hi)
+        b = np.clip(b, lo, hi)
+    else:
+        lo = float(min(a.min(), b.min()))
+        hi = float(max(a.max(), b.max()))
+        if hi <= lo:
+            hi = lo + 1.0  # both collapse to a single value → one bin holds all
+        e = np.linspace(lo, hi, bins + 1)
+    pa = np.histogram(a, bins=e)[0].astype(float)
+    pb = np.histogram(b, bins=e)[0].astype(float)
     return pa / (pa.sum() or 1.0), pb / (pb.sum() or 1.0), lo, hi
 
 
-def _overlap_coefficient(a, b, bins: int = 20) -> float:
-    """Histogram overlap (OVL) of two density samples over shared bins: the area
-    common to both normalised distributions, in [0, 1]."""
+def _overlap_coefficient(a, b, bins: int = 12, edges=None) -> float:
+    """Histogram overlap (OVL) of two density samples: the area common to both
+    normalised distributions, in [0, 1]."""
     import numpy as np
 
-    h = _shared_hist(a, b, bins=bins)
+    h = _shared_hist(a, b, bins=bins, edges=edges)
     if h is None:
         return 0.0
     pa, pb, _lo, _hi = h
     return float(np.minimum(pa, pb).sum())
 
 
-def density_distribution_match(ref_densities, cand_densities) -> dict:
+def density_distribution_match(ref_densities, cand_densities, *, edges=None) -> dict:
     """Compare a candidate control ward's settlement-density distribution to the
     reference (intervention) ward's. Returns the overlap coefficient (the ranking
     key), the median density of each, their median gap %, the mean SMD (for
     continuity with the pairwise panel), and a band: ``good`` / ``ok`` / ``poor``
     (or ``insufficient`` when either ward has too few clusters to form a
-    distribution)."""
+    distribution).
+
+    ``edges`` (from :func:`density_bin_edges` on the reference) anchors every
+    candidate's histogram to the same axis, so the reference (grey) bars are
+    identical across rows and the overlap/sparkline are directly comparable."""
     import numpy as np
 
     ref = np.asarray([x for x in (ref_densities or []) if x and x > 0], dtype=float)
@@ -133,26 +162,27 @@ def density_distribution_match(ref_densities, cand_densities) -> dict:
             "spark": None,
         }
 
-    overlap = _overlap_coefficient(ref, cand)
     med_ref, med_cand = float(q_ref[1]), float(q_cand[1])
     gap = abs(med_ref - med_cand) / med_ref if med_ref > 0 else None
     smd = _smd(
         (float(ref.mean()), float(ref.std(ddof=1)) if len(ref) > 1 else 0.0),
         (float(cand.mean()), float(cand.std(ddof=1)) if len(cand) > 1 else 0.0),
     )
-    band = "good" if overlap >= OVL_GOOD else ("ok" if overlap >= OVL_OK else "poor")
-    # Overlaid mini-histogram (reference vs candidate) over the same bins the overlap
-    # is computed on, so the panel can draw the picture the score comes from.
-    h = _shared_hist(ref, cand)
+    # Overlap AND sparkline from ONE histogram over the (reference-anchored) bins, so
+    # the number is exactly the shared area the picture shows.
+    h = _shared_hist(ref, cand, edges=edges)
+    overlap = 0.0
     spark = None
     if h is not None:
         pa, pb, lo, hi = h
+        overlap = float(np.minimum(pa, pb).sum())
         spark = {
             "ref": [round(float(x), 3) for x in pa],
             "cand": [round(float(x), 3) for x in pb],
             "lo": int(round(lo)),
             "hi": int(round(hi)),
         }
+    band = "good" if overlap >= OVL_GOOD else ("ok" if overlap >= OVL_OK else "poor")
     return {
         "overlap": round(overlap, 3),
         "band": band,
