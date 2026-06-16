@@ -743,14 +743,17 @@
     drawSamplingOverlay();
   }
   function chip(label, value, hint) {
-    // value/hint may carry plan/territory data — escape before innerHTML.
-    return `<div class="px-2 py-1 rounded bg-gray-50 border" title="${esc(
+    // A KPI tile: small uppercase label over a large display-font figure. value/hint
+    // may carry plan/territory data — escape before innerHTML.
+    return `<div class="border border-gray-200 rounded-lg px-3 py-2 bg-white" title="${esc(
       hint || '',
     )}">
-      <div class="text-[10px] uppercase tracking-wide text-gray-400">${esc(
+      <div class="text-[9.5px] uppercase tracking-wide text-gray-400 font-semibold">${esc(
         label,
       )}</div>
-      <div class="font-semibold text-gray-800">${esc(value)}</div></div>`;
+      <div class="text-[18px] font-extrabold tracking-tight text-gray-900 tabular-nums" style="font-family:'Bricolage Grotesque','Work Sans',sans-serif">${esc(
+        value,
+      )}</div></div>`;
   }
   function renderKpis(k) {
     const p = k.plan || {};
