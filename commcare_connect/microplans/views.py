@@ -1208,6 +1208,12 @@ class ProgramPlanView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             logger.exception("microplans program plan get failed (%s/%s)", program_id, plan_id)
             return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
+        # get_plan returns None (not an exception) for an id that isn't in this
+        # program — e.g. a stale/deleted plan id (a study re-seed renumbers plans).
+        # Guard so the review page gets a clean 404 instead of plan_to_json(None)
+        # raising AttributeError → 500.
+        if plan is None:
+            return JsonResponse({"status": "error", "detail": "Plan not found."}, status=404)
         return JsonResponse(serialization.plan_to_json(plan))
 
     def delete(self, request, program_id, plan_id):
