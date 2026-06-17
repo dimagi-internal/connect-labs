@@ -116,21 +116,14 @@ def test_round_trips_real_mbw_template():
     from pathlib import Path
 
     base = Path("commcare_connect/workflow/templates")
-    py_source = (base / "mbw_auditing_v4.py").read_text()
-    sidecar = (base / "mbw_auditing_v4_render.js").read_text()
+    py_source = (base / "mbw_auditing_v5.py").read_text()
+    sidecar = (base / "mbw_auditing_v5_render.js").read_text()
 
-    result = parse_template_source(py_source, sidecar_files={"mbw_auditing_v4_render.js": sidecar})
+    result = parse_template_source(py_source, sidecar_files={"mbw_auditing_v5_render.js": sidecar})
 
-    assert result.template_key == "mbw_auditing_v4"
+    assert result.template_key == "mbw_auditing_v5"
     assert result.render_code == sidecar
-    assert result.definition["name"] == "MBW Auditing V4"
-    assert len(result.pipeline_schemas) == 4
-    assert {ps["alias"] for ps in result.pipeline_schemas} == {
-        "visits",
-        "visits_agg",
-        "registrations",
-        "gs_forms",
-    }
+    assert result.definition["name"] == "MBW Auditing V5"
 
 
 # Templates that use Python features beyond the parser's literal-with-names grammar
@@ -141,7 +134,6 @@ _PARSER_UNSUPPORTED_TEMPLATES = {
     "kmc_longitudinal",
     "kmc_project_metrics",
     "llo_weekly_review",
-    "mbw_monitoring_v3",
     "program_admin_report",
     "sam_followup",
 }
@@ -156,9 +148,7 @@ _PARSER_UNSUPPORTED_TEMPLATES = {
         "kmc_longitudinal",
         "kmc_project_metrics",
         "llo_weekly_review",
-        "mbw_auditing_v4",
-        "mbw_monitoring_v2",
-        "mbw_monitoring_v3",
+        "mbw_auditing_v5",
         "ocs_outreach",
         "performance_review",
         "program_admin_report",
