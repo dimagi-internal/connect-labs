@@ -518,13 +518,17 @@
         const data = await (await fetch(urls.pipelines)).json();
         if (data.status === 'ok' && data.pipelines) {
           const sel = ctl('.sd-pipeline');
-          if (sel)
+          if (sel) {
             sel.innerHTML = data.pipelines
               .map((p) => `<option value="${p.id}">${p.name}</option>`)
               .join('');
+            // Only surface the chooser when there's a real choice — a lone
+            // "device GPS" default is noise, so it stays hidden in that case.
+            sel.classList.toggle('hidden', data.pipelines.length <= 1);
+          }
         }
       } catch (e) {
-        /* keep default option */
+        /* keep default option (chooser stays hidden) */
       }
     }
     async function showPoints() {
@@ -601,13 +605,15 @@
       id: 'service-delivery',
       label: 'Service delivery',
       color: '#2563eb',
-      badge: 'sampling',
       onToggle: (on) => {
         if (on) {
           layer.setBody(pickerEl);
           pickerEl.classList.remove('hidden');
           ensureLayer();
           setVisible(true);
+          // Resolve the GPS-source chooser's visibility up front: it only shows
+          // when the opp actually has >1 source (a visit-level pipeline).
+          loadPipelines();
         } else setVisible(false);
       },
     });
