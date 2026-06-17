@@ -145,8 +145,11 @@ scenes:
     target: Pick opportunities
     must_succeed: false
     note: open the opportunity picker
-  - kind: hold
-    seconds: 1
+  - kind: wait_for
+    target: css:[data-testid=sd-opp-10010]
+    seconds: 10
+    must_succeed: false
+    note: wait for the Alpine opp list to render before clicking the row
   - kind: click
     target: css:[data-testid=sd-opp-10010]
     must_succeed: false
@@ -156,7 +159,7 @@ scenes:
     must_succeed: false
     note: close the opportunity picker
   - kind: click
-    target: css:#sd-show
+    target: testid:sd-show
     must_succeed: false
     note: Show service delivery points; the map flies to Attakar where the programme
       worked
@@ -205,23 +208,35 @@ scenes:
     value: Attakar
     must_succeed: false
     note: the covered ward
+  - kind: wait_for
+    target: css:.mp-ab-results button
+    seconds: 10
+    must_succeed: false
+    note: the debounced ward search returns a result button before we can click it
   - kind: click
-    target: Attakar
+    target: css:.mp-ab-results button
     must_succeed: false
     note: select Attakar - appears in the left rail tagged intervention
   - kind: click
     target: css:#btn-mode-sampling
     must_succeed: false
     note: sampling mode - arm pills and the Compare button appear
+  - kind: wait_for
+    target: css:.mp-ab-compare
+    seconds: 8
+    must_succeed: false
+    note: the Compare button only un-hides once an intervention ward is selected in
+      sampling mode
   - kind: click
     target: css:.mp-ab-compare
     must_succeed: false
     note: Compare surrounding boundaries - rank the neighbours by density overlap
   - kind: wait_for
-    target: Surrounding wards
-    seconds: 90
+    target: best match first
+    seconds: 150
     must_succeed: false
-    note: the ranked comparison table fills in below the map as each ward is analysed
+    note: wait for the ranking to finish — the header flips from "Processing N…" to
+      "best match first" only when every neighbour has been scored
   - kind: hold
     seconds: 4
     note: neighbours ranked best-match-first, each coloured on the map
@@ -257,6 +272,11 @@ scenes:
   - kind: hold
     seconds: 2
     note: Zankan tops the table but it was last cycle's intervention ward - not a clean control
+  - kind: wait_for
+    target: 'css:.mp-ab-addbnd[data-name="Gura"]'
+    seconds: 8
+    must_succeed: false
+    note: Gura's row carries an Add-boundary button once the ranking is scored
   - kind: click
     target: 'css:.mp-ab-addbnd[data-name="Gura"]'
     must_succeed: false
@@ -319,10 +339,12 @@ scenes:
     must_succeed: true
     note: ‘Generate plan’ — samples both arms and creates the plan in place
   - kind: wait_for
-    target: Microplan review
-    seconds: 60
+    target: Regenerate plan
+    seconds: 150
     must_succeed: true
-    note: 'create-in-place: the editor becomes the plan''s review page (URL → /plan/<id>/review/)'
+    note: 'create-in-place: sampling BOTH arms (two Overture fetches + PPS) creates the
+      plan and flips the button Generate → Regenerate; that label is the visible
+      terminal signal (the page <title> "Microplan review" is not body text)'
   - kind: wait_for
     target: Work areas
     seconds: 20
@@ -367,9 +389,11 @@ scenes:
     in place; the flag informs the call, the planner makes it.'
   actions:
   - kind: wait_for
-    target: Microplan review
+    target: Regenerate plan
     seconds: 20
     must_succeed: true
+    note: still on the create-in-place review page (carry-through) — the Regenerate
+      button is the visible marker it loaded
   - kind: click
     target: Sample details
     must_succeed: false
