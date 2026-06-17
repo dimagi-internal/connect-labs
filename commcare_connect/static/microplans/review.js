@@ -766,7 +766,13 @@
     const balVal = p.has_population
       ? p.pop_imbalance_pct
       : p.building_imbalance_pct;
-    $('kpi-strip').innerHTML = [
+    // The KPI strip only exists once the plan-review DOM is present. During
+    // create-in-place (Generate plan on a fresh /new/ page) renderKpis can fire
+    // before that DOM is adopted — no-op rather than throw (which would surface a
+    // spurious "Failed" even though the plan was created fine).
+    const strip = $('kpi-strip');
+    if (!strip) return;
+    strip.innerHTML = [
       chip(
         'Worst travel',
         (p.max_spread_km ?? 0) + ' km',
