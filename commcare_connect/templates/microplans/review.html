@@ -497,7 +497,9 @@
           </template>
           <span x-show="!selectedOpps.length" class="text-[10px] text-gray-400">No opportunities selected.</span>
         </div>
-        <select class="sd-pipeline w-full text-[11px] border border-gray-300 rounded px-1 py-1 mb-1">
+        {% comment %}GPS-source chooser — hidden until loadPipelines finds >1 source (a
+           visit-level pipeline). With only the device-GPS default it stays hidden.{% endcomment %}
+        <select class="sd-pipeline hidden w-full text-[11px] border border-gray-300 rounded px-1 py-1 mb-1">
           <option value="default">Default — device GPS (any app)</option>
         </select>
         <button type="button" data-testid="sd-show" class="sd-show w-full text-[11px] font-semibold bg-brand-cornflower-blue text-white rounded py-1.5 mb-2" style="background:#2563eb">Show service delivery points</button>
