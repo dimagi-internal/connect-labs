@@ -1210,8 +1210,16 @@ def complete_run_api(request, run_id):
         if not opportunity_id:
             return JsonResponse({"error": "Run has no opportunity_id"}, status=400)
 
-        # Single source of truth: same pipeline+worker fetch the runner uses.
-        pipelines = data_access.get_pipeline_data(definition_id, opportunity_id)
+        # Only fetch pipeline data if the snapshot actually needs it. Templates
+        # with snapshot_inputs.pipelines=[] (e.g. mbw_auditing_v5) capture no
+        # raw rows — fetching 100k+ visits just to discard them adds minutes of
+        # latency and can time out the complete request.
+        snapshot_inputs = template.get("snapshot_inputs") or {}
+        pipelines_needed = snapshot_inputs.get("pipelines")
+        if pipelines_needed is None or len(pipelines_needed) > 0:
+            pipelines = data_access.get_pipeline_data(definition_id, opportunity_id)
+        else:
+            pipelines = {}
 
         effective_opp_ids = definition.opportunity_ids or [opportunity_id]
         workers: list[dict] = []
