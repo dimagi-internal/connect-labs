@@ -107,7 +107,6 @@ scenes:
     the independent intervention-arm survey at every bi-monthly round, the control-arm
     survey far below — earliest round at left, most recent at right.'
   title: Six bi-monthly rounds over time — the gap holds
-  vo: "The program's self-reported delivery sits above what the independent survey confirms each round, while the never-visited control arm stays low — the gap holds over time."
 - actions:
   - kind: scroll_to
     target: Map ·
@@ -169,7 +168,6 @@ scenes:
     clusters toggled on from the shared Layers panel — flying to each cycle's two
     real wards.
   title: Where delivery happened vs where the survey checked (the map moves)
-  vo: "Delivery is concentrated in the intervention ward and absent in the adjacent control ward, while the independent survey covered both — so the coverage gap tracks where the program went, not where the survey looked."
 - actions:
   - kind: scroll_to
     target: Survey-quality scorecard
@@ -221,7 +219,6 @@ scenes:
     back-check, each computed from that surveyor's own records — with one surveyor
     flagged REVIEW on the non-GPS signals.
   title: The per-surveyor quality scorecard catches a surveyor
-  vo: "Quality is computed per surveyor from each surveyor's own records, so one under-performing surveyor is flagged for review rather than averaged away."
 - actions:
   - kind: scroll_to
     target: Answer uniformity
@@ -271,7 +268,6 @@ scenes:
     a red composite band, every other surveyor green — fabrication caught from the
     data's shape with no re-visit.
   title: GPS is clean — the Distributions screen catches the fabrication
-  vo: "GPS is clean for everyone, but a fabricator can't fake the shape of their data — the flagged surveyor's interviews run impossibly fast and their answers collapse onto one value."
 - actions:
   - kind: wait_for
     target: Identity match
@@ -314,7 +310,6 @@ scenes:
   show: The independent back-check for the flagged surveyor — Identity (incl. roof)
     / Location / Outcome, original over re-survey, the method behind an info button.
   title: The independent back-check confirms it
-  vo: "An independent re-survey by a different enumerator disagrees on identity, location, and outcome — the strongest evidence yet that this surveyor's data needs review."
 setup:
   command: python scripts/walkthroughs/verified-monitoring/regenerate.py
   outputs: scripts/walkthroughs/verified-monitoring/.run_ids.json
