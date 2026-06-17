@@ -831,16 +831,18 @@
       // Methodology popup (toggled by the "?"), hidden by default.
       const method =
         '<div class="mp-ab-method hidden px-3 py-2.5 text-[11px] text-gray-600 leading-snug bg-gray-50 border-b border-gray-100">' +
-        '<b>What this measures.</b> We pull every building footprint in each ward and group nearby ones into <b>clusters</b> ' +
-        '(the candidate PSUs) across the <b>whole</b> ward — not a sample. ' +
-        'For each ward we take each cluster’s density (buildings ÷ its footprint area) and compare the whole <b>distribution</b> of those ' +
-        'densities — not just the average — between the intervention ward and each neighbour. <b>Overlap</b> is how much the two ' +
-        'distributions coincide (the shared area in the bars); a high overlap means a similar mix of cluster densities, so a fairer control.' +
-        '<br><br><b>Cluster = candidate PSU.</b> When you actually sample, a subset of these clusters become the surveyed PSUs; ' +
-        'here we use them all to describe the ward. They’re algorithmic clusters of buildings, not official settlements.' +
-        '<br><br><b>Where it’s from.</b> Building-footprint sampling frames + two-stage PPS cluster sampling are standard household-survey ' +
-        'practice (DHS / MICS / LSMS), with building clusters standing in for census enumeration areas. Ranking control wards by ' +
-        'density-distribution overlap is our own heuristic, grounded in matched-design / covariate-balance methods.</div>';
+        '<b>What this measures.</b> We pull every building footprint in each ward and, for <b>each building</b>, estimate the local ' +
+        'building density around it — from the distance to its nearest neighbours (a k-nearest-neighbour intensity, k = 8). ' +
+        'We then compare the whole <b>distribution</b> of those local densities — not just the average — between the intervention ward ' +
+        'and each neighbour. <b>Overlap</b> is how much the two distributions coincide (the shared area in the bars); a high overlap ' +
+        'means a similar built-up texture, so a fairer control. Measuring per building (not per cluster) keeps it robust to settlement ' +
+        'shape and stray edge buildings.' +
+        '<br><br><b>Clusters / PSUs.</b> Separately, we group nearby buildings into <b>clusters</b> — the candidate PSUs you’d actually ' +
+        'sample (the “Clusters” column counts them). The density above is measured per building, independent of this grouping. They’re ' +
+        'algorithmic clusters, not official settlements.' +
+        '<br><br><b>Where it’s from.</b> Building-footprint frames + two-stage PPS cluster sampling are standard household-survey ' +
+        'practice (DHS / MICS / LSMS); k-NN intensity is the standard nonparametric density estimator for point patterns. Ranking ' +
+        'control wards by density-distribution overlap is our own heuristic, grounded in matched-design / covariate-balance methods.</div>';
 
       // Table-row builder shared by the intervention baseline + each candidate.
       const sparkCell = (spark, color) =>
@@ -921,7 +923,7 @@
               num(r.buildings),
             )}</td>` +
             `<td class="px-2 py-1.5 text-right tabular-nums">${cell(
-              r.n_cand,
+              r.n_clusters,
             )}</td>` +
             `<td class="px-2 py-1.5 text-right tabular-nums" style="color:${color}">${
               cq ? num(cq[1]) : dash
@@ -960,16 +962,16 @@
         ) +
         th(
           'Median density',
-          "The middle cluster's density (buildings per km² of its footprint) — half the ward's clusters are denser, half sparser.",
+          "The median building's local density (buildings per km², from its nearest neighbours) — half the ward's buildings sit somewhere denser, half sparser.",
         ) +
         th(
           'Distribution',
-          'Cluster-density histogram on one shared axis: grey = intervention, colour = this ward. Its spread shows how mixed the ward is.',
+          'Local building-density histogram on one shared axis: grey = intervention, colour = this ward. Its spread shows how mixed the ward is.',
           'text-left',
         ) +
         th(
           'Match',
-          "How much this ward's cluster-density distribution overlaps the intervention's.",
+          "How much this ward's local building-density distribution overlaps the intervention's.",
           'text-left',
         ) +
         th('', '', 'text-left') +

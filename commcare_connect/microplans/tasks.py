@@ -206,7 +206,14 @@ def compare_surrounding_wards_task(self, selected, config_payload):
             cand_dist = ward_density_distribution(cand["geometry"], config)
             row.pop("detail", None)
             match = density_distribution_match(ref_dist["densities"], cand_dist["densities"], edges=edges)
-            row.update({"status": "ok", "buildings": cand_dist.get("n_buildings"), **match})
+            row.update(
+                {
+                    "status": "ok",
+                    "buildings": cand_dist.get("n_buildings"),
+                    "n_clusters": cand_dist.get("n_clusters"),
+                    **match,
+                }
+            )
         except ValueError as e:
             row.update({"status": "error", "detail": str(e)})
         except Exception:  # noqa: BLE001

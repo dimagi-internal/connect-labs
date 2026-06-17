@@ -301,3 +301,26 @@ def test_select_psus_size_stratified_spreads_across_size_range():
     assert strat["n_buildings"].min() < 26 and strat["n_buildings"].max() > 35
     # Inclusion probabilities are still present and in (0, 1].
     assert (strat["P_psu"] > 0).all() and (strat["P_psu"] <= 1).all()
+
+
+def test_building_knn_density_is_higher_for_denser_patterns():
+    """k-NN local density rises as buildings pack tighter (same count, smaller area)."""
+    import statistics
+
+    from commcare_connect.microplans.sampling.frame import building_knn_densities
+
+    dense = building_knn_densities(_scatter(200, spread_m=100, seed=1))
+    sparse = building_knn_densities(_scatter(200, spread_m=1000, seed=2))
+    assert dense and sparse
+    assert all(v > 0 for v in dense + sparse)
+    # 10x tighter spread → ~100x the areal density; assert a clear, robust gap.
+    assert statistics.median(dense) > statistics.median(sparse) * 10
+
+
+def test_building_knn_density_empty_and_singleton_safe():
+    import pandas as pd
+
+    from commcare_connect.microplans.sampling.frame import building_knn_densities
+
+    assert building_knn_densities(pd.DataFrame(columns=["lon", "lat"])) == []
+    assert building_knn_densities(pd.DataFrame({"lon": [8.0], "lat": [9.0]})) == []
