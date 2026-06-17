@@ -1,6 +1,9 @@
 auth:
   type: session
 base_url: https://labs.connect.dimagi.com
+prewarm: true
+video_viewport_width: 1280
+video_viewport_height: 1000
 name: verified-monitoring
 narrative: 'David manages a Connect program delivering vitamin-A home visits across
   rural Kaduna. David''s frontline workers log every visit through Connect, and David
@@ -61,9 +64,15 @@ scenes:
   - kind: goto
     target: ${runner_path}
   - kind: wait_for
-    target: Service-delivery data vs independent survey
-  - kind: scroll_to
-    target: Service-delivery data vs independent survey
+    target: service-delivery data
+  - kind: hold
+    seconds: 1
+  - kind: click
+    target: role:button:R3
+  - kind: hold
+    seconds: 1
+  - kind: click
+    target: role:button:R6
   - kind: hold
     seconds: 2
   concept_claim: Read left to right as a six-round bi-monthly timeline, the program's
@@ -98,17 +107,18 @@ scenes:
     the independent intervention-arm survey at every bi-monthly round, the control-arm
     survey far below — earliest round at left, most recent at right.'
   title: Six bi-monthly rounds over time — the gap holds
+  vo: "The program's self-reported delivery sits above what the independent survey confirms each round, while the never-visited control arm stays low — the gap holds over time."
 - actions:
   - kind: scroll_to
     target: Map ·
   - kind: hold
     seconds: 1
   - kind: click
-    target: R1
+    target: role:button:R1
   - kind: hold
     seconds: 1
   - kind: click
-    target: R6
+    target: role:button:R6
   - kind: hold
     seconds: 1
   - kind: scroll
@@ -159,9 +169,18 @@ scenes:
     clusters toggled on from the shared Layers panel — flying to each cycle's two
     real wards.
   title: Where delivery happened vs where the survey checked (the map moves)
+  vo: "Delivery is concentrated in the intervention ward and absent in the adjacent control ward, while the independent survey covered both — so the coverage gap tracks where the program went, not where the survey looked."
 - actions:
   - kind: scroll_to
     target: Survey-quality scorecard
+  - kind: hold
+    seconds: 1
+  - kind: click
+    target: css:[data-cell="T6:evidence"]
+  - kind: hold
+    seconds: 2
+  - kind: click
+    target: css:[data-cell="T6:backcheck"]
   - kind: hold
     seconds: 2
   concept_claim: The survey's quality is not asserted in aggregate — it is computed
@@ -202,6 +221,7 @@ scenes:
     back-check, each computed from that surveyor's own records — with one surveyor
     flagged REVIEW on the non-GPS signals.
   title: The per-surveyor quality scorecard catches a surveyor
+  vo: "Quality is computed per surveyor from each surveyor's own records, so one under-performing surveyor is flagged for review rather than averaged away."
 - actions:
   - kind: scroll_to
     target: Answer uniformity
@@ -251,19 +271,20 @@ scenes:
     a red composite band, every other surveyor green — fabrication caught from the
     data's shape with no re-visit.
   title: GPS is clean — the Distributions screen catches the fabrication
+  vo: "GPS is clean for everyone, but a fabricator can't fake the shape of their data — the flagged surveyor's interviews run impossibly fast and their answers collapse onto one value."
 - actions:
-  - kind: click
-    target: ← back-check
   - kind: wait_for
-    target: Identity match
-  - kind: scroll_to
     target: Identity match
   - kind: hold
     seconds: 1
-  - kind: click
-    target: '[data-bcinfo="identity"]'
+  - kind: scroll_to
+    target: INDEPENDENT BACK-CHECK
   - kind: hold
-    seconds: 2
+    seconds: 3
+  - kind: click
+    target: css:[data-bcinfo="identity"]
+  - kind: hold
+    seconds: 3
   concept_claim: An independent re-survey by a different enumerator disagrees with
     this surveyor's originals on identity, location, and outcome — the strongest evidence
     their data needs review — and the method is traceable to its source.
@@ -293,8 +314,9 @@ scenes:
   show: The independent back-check for the flagged surveyor — Identity (incl. roof)
     / Location / Outcome, original over re-survey, the method behind an info button.
   title: The independent back-check confirms it
+  vo: "An independent re-survey by a different enumerator disagrees on identity, location, and outcome — the strongest evidence yet that this surveyor's data needs review."
 setup:
   command: python scripts/walkthroughs/verified-monitoring/regenerate.py
   outputs: scripts/walkthroughs/verified-monitoring/.run_ids.json
   rerun: per_render
-why_brief: ../../.canopy/ddd/runs/verified-monitoring-2026-06-04-001/why_brief.yaml
+why_brief: verified-monitoring.why_brief.yaml
