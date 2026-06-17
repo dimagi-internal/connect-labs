@@ -176,6 +176,14 @@
         selectedListEl.appendChild(row);
       });
       updateCompareBtn();
+      // Keep the compare table's per-row "Add boundary / ✓ added" in sync with the
+      // live selection (e.g. when a ward is removed from the rail after being added).
+      if (
+        lastCompareState &&
+        comparePanel &&
+        !comparePanel.classList.contains('hidden')
+      )
+        renderComparePanel(lastCompareState);
     }
     // Slick per-boundary arm selector: a two-segment Interv / Control pill, the
     // active half filled with its arm colour. Changing it re-tags the boundary's
@@ -785,6 +793,69 @@
       return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" class="block shrink-0">${bars}</svg>`;
     }
 
+    // Full per-column explanations (algorithm-level where relevant), shown in a
+    // click-toggled popover on each header.
+    const COL_INFO = {
+      ward:
+        'The candidate control ward. It’s filled on the map in this row’s colour, so you can see which ' +
+        'boundary it is. The ward you’re matching against is the green <b>baseline</b> row at the top.',
+      pop:
+        'Estimated population of the ward, from the admin-boundary dataset (Enriched Boundaries). A rough ' +
+        'size indicator only — it is <b>not</b> part of the match score, which is based on building density.',
+      buildings:
+        'Every building footprint inside the ward, from Google Open Buildings (via Overture Maps). Very small ' +
+        'or oversized footprints are dropped as noise / non-residential first. What remains is the ' +
+        '<b>sampling frame</b> — the structures the survey design draws from.',
+      clusters:
+        '<b>What it is.</b> The candidate PSUs (primary sampling units) — the units a survey would actually ' +
+        'visit. <b>How they’re formed.</b> The ward’s buildings are grouped by location with k-means ' +
+        'clustering: we deliberately over-cluster into 3× the target number of PSUs, then merge any cluster ' +
+        'with fewer than 16 buildings into its nearest neighbour, so every final cluster is big enough to be a ' +
+        'viable survey unit. When you draw the sample, a subset of these clusters are selected with probability ' +
+        'proportional to their building count (PPS). This column is shown for context — the density column is ' +
+        'measured per building, independent of this grouping.',
+      median:
+        '<b>The number.</b> The typical building’s local density, in buildings per km². ' +
+        '<b>How it’s computed.</b> For every building we find its 8 nearest neighbours and measure d₈, the ' +
+        'distance to the 8th; the local density there is 8 ÷ (π · d₈²) — eight buildings spread over the circle ' +
+        'that reaches them — converted to per-km². The median is the middle of all those per-building values: ' +
+        'half the ward’s buildings sit somewhere denser, half sparser. This k-nearest-neighbour intensity is ' +
+        'the standard, robust point-density estimator: because it’s measured locally at each building it isn’t ' +
+        'thrown off by a cluster’s outline shape or a few stray edge buildings (the weakness of the old ' +
+        'convex-hull density).',
+      distribution:
+        '<b>What it shows.</b> A histogram of <b>every</b> building’s local density (computed as in “Median ' +
+        'density”), so you see the whole spread, not just the middle. ' +
+        '<b>How to read it.</b> Both wards are binned on one shared axis — anchored to the intervention ward’s ' +
+        '2nd–98th percentile — so the <span class="text-gray-400">grey bars (intervention)</span> are identical ' +
+        'in every row and the coloured bars (this ward) line up for comparison. ' +
+        '<b>The score.</b> Each histogram is normalised to sum to 1; we add up the smaller of the two bars in ' +
+        'every bin, and that shared (overlapping) area is the Match %. A wide spread = a mixed ward (some ' +
+        'sparse, some dense).',
+      match:
+        'How much this ward’s local-density distribution <b>overlaps</b> the intervention’s (0–100%, the shared ' +
+        'area of the bars), banded as strong (≥ 70%) / partial (≥ 50%) / poor. High overlap = a similar ' +
+        'built-up texture, so a fairer counterfactual. This is the ranking key (best match first); density is ' +
+        'the one axis a matched design can’t correct after the fact.',
+    };
+
+    // One persistent column-info popover + a single outside-click closer (declared
+    // here, once per register, so re-renders don't stack document listeners).
+    let activeColPop = null;
+    document.addEventListener('click', (e) => {
+      if (
+        activeColPop &&
+        !activeColPop.classList.contains('hidden') &&
+        e.target.closest &&
+        !e.target.closest('.mp-ab-col-i') &&
+        !e.target.closest('.mp-ab-col-popover')
+      )
+        activeColPop.classList.add('hidden');
+    });
+    // The last rendered compare state, so a selection change (add/remove a boundary
+    // anywhere) can re-render the table and keep each row's "Add / added" accurate.
+    let lastCompareState = null;
+
     function renderComparePanel(state) {
       if (!comparePanel) return;
       const st = state || {};
@@ -886,19 +957,20 @@
         .map((r) => {
           const isErr = r.status === 'error';
           const ok = !isErr && r.overlap != null;
-          const isCtl = selected.has(r.boundary_id);
+          // Live selection state (re-rendered on every add/remove), so it can't go stale.
+          const inPlan = selected.has(r.boundary_id);
           const color = r.color || '#9ca3af';
           const cq = r.q_cand;
           const action = !ok
             ? ''
-            : isCtl
-            ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">✓ control</span>'
-            : '<button type="button" class="mp-ab-setctl text-[11px] font-medium px-2 py-0.5 rounded ' +
-              'border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100" ' +
+            : inPlan
+            ? '<span class="text-[11px] text-emerald-600 whitespace-nowrap">✓ added</span>'
+            : '<button type="button" class="mp-ab-addbnd text-[11px] font-medium px-2 py-0.5 rounded ' +
+              'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50" ' +
               `data-bid="${esc(r.boundary_id)}" data-name="${esc(r.name)}" ` +
               `data-pop="${
                 r.population != null ? esc(r.population) : ''
-              }">Set as control</button>`;
+              }">Add boundary</button>`;
           let matchCell;
           if (isErr)
             matchCell = `<td class="px-2 py-1.5 text-[11px] text-red-500">${esc(
@@ -936,44 +1008,30 @@
         })
         .join('');
 
-      const th = (label, title, extra) =>
+      // Each header shows the label + an ⓘ that opens a full-explanation popover (the
+      // text lives in COL_INFO, keyed by colKey).
+      const th = (label, colKey, extra) =>
         `<th class="px-2 py-1.5 font-semibold text-gray-500 ${
           extra || 'text-right'
-        }" title="${esc(title)}">${label}</th>`;
+        }">` +
+        (colKey
+          ? `<span class="inline-flex items-center gap-1">${label}` +
+            `<button type="button" class="mp-ab-col-i text-gray-300 hover:text-gray-600 cursor-pointer leading-none" ` +
+            `data-col="${colKey}" aria-label="Explain ${esc(
+              label,
+            )}">ⓘ</button></span>`
+          : label) +
+        '</th>';
       const table =
         '<div class="overflow-x-auto"><table class="w-full text-[12px]">' +
         '<thead class="bg-gray-50 text-[10px] uppercase tracking-wide"><tr>' +
-        th(
-          'Ward',
-          'The candidate control ward (filled in this colour on the map).',
-          'text-left',
-        ) +
-        th(
-          'Pop.',
-          'Estimated population of the ward (from the admin-boundary dataset).',
-        ) +
-        th(
-          'Buildings',
-          'Total building footprints found in the ward — the sampling frame.',
-        ) +
-        th(
-          'Clusters',
-          'Building clusters across the whole ward (the candidate PSUs). n = how many.',
-        ) +
-        th(
-          'Median density',
-          "The median building's local density (buildings per km², from its nearest neighbours) — half the ward's buildings sit somewhere denser, half sparser.",
-        ) +
-        th(
-          'Distribution',
-          'Local building-density histogram on one shared axis: grey = intervention, colour = this ward. Its spread shows how mixed the ward is.',
-          'text-left',
-        ) +
-        th(
-          'Match',
-          "How much this ward's local building-density distribution overlaps the intervention's.",
-          'text-left',
-        ) +
+        th('Ward', 'ward', 'text-left') +
+        th('Pop.', 'pop') +
+        th('Buildings', 'buildings') +
+        th('Clusters', 'clusters') +
+        th('Median density', 'median') +
+        th('Distribution', 'distribution', 'text-left') +
+        th('Match', 'match', 'text-left') +
         th('', '', 'text-left') +
         '</tr></thead><tbody>' +
         baseRow +
@@ -987,6 +1045,10 @@
                 'No neighbouring wards at the same level were found.',
             )}</p>`
           : '';
+
+      // Remember this state so a selection change elsewhere can re-render (keeping
+      // each row's Add / ✓ added accurate).
+      lastCompareState = st;
 
       comparePanel.innerHTML =
         '<div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">' +
@@ -1005,10 +1067,41 @@
           methodEl.classList.toggle('hidden'),
         );
 
-      comparePanel.querySelectorAll('.mp-ab-setctl').forEach((btn) => {
+      // Per-column info popover — fixed-positioned so the table's overflow-x can't clip it.
+      const colPop = document.createElement('div');
+      colPop.className =
+        'mp-ab-col-popover hidden fixed z-50 w-64 max-w-[80vw] bg-white border border-gray-200 rounded-lg ' +
+        'shadow-xl p-3 text-[11px] font-normal normal-case tracking-normal text-left text-gray-600 leading-snug';
+      comparePanel.appendChild(colPop);
+      activeColPop = colPop;
+      comparePanel.querySelectorAll('.mp-ab-col-i').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const key = btn.dataset.col;
+          if (
+            !colPop.classList.contains('hidden') &&
+            colPop.dataset.col === key
+          ) {
+            colPop.classList.add('hidden'); // toggle off
+            return;
+          }
+          colPop.dataset.col = key;
+          colPop.innerHTML = COL_INFO[key] || '';
+          colPop.classList.remove('hidden');
+          const rect = btn.getBoundingClientRect();
+          const w = colPop.offsetWidth || 256;
+          colPop.style.left =
+            Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
+          colPop.style.top = rect.bottom + 6 + 'px';
+        });
+      });
+
+      comparePanel.querySelectorAll('.mp-ab-addbnd').forEach((btn) => {
         btn.addEventListener('click', async () => {
           btn.disabled = true;
           btn.textContent = 'Adding…';
+          // On success addBoundary() calls renderSummary(), which re-renders this
+          // panel → the row flips to "✓ added". Only reset the button on failure.
           const done = await selectCandidateAsControl(
             {
               boundary_id: btn.dataset.bid,
@@ -1017,11 +1110,9 @@
             },
             ref,
           );
-          if (done)
-            renderComparePanel(st); // re-render: the row flips to "✓ control"
-          else {
+          if (!done) {
             btn.disabled = false;
-            btn.textContent = 'Set as control';
+            btn.textContent = 'Add boundary';
           }
         });
       });
