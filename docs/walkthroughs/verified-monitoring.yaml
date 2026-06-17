@@ -5,43 +5,11 @@ prewarm: true
 video_viewport_width: 1280
 video_viewport_height: 1000
 name: verified-monitoring
-narrative: 'David manages a Connect program delivering vitamin-A home visits across
-  rural Kaduna. David''s frontline workers log every visit through Connect, and David
-  gets a clean coverage figure back each cycle — but David has never been able to
-  tell whether those visits are actually changing anything in the communities his
-  program serves. So David stood up an independent rooftop survey that re-measures
-  the same households, cycle after cycle, in a ward his program works and in an adjacent
-  ward it doesn''t. This morning David opens its dashboard.
+narrative: 'David manages a Connect program delivering vitamin-A home visits across rural Kaduna. David''s frontline workers log every visit through Connect, and David gets a clean coverage figure back each cycle — but David has never been able to tell whether those visits are actually changing anything in the communities his program serves. So David stood up an independent rooftop survey that re-measures the same households, cycle after cycle, in a ward his program works and in an adjacent ward it doesn''t. This morning David opens its dashboard.
 
-  David starts with the six-round trend — the independent survey repeated every two
-  months, the earliest round at the left through the most recent at the right. Reading
-  left to right across that timeline, David lines up two numbers each round — what
-  his program''s delivery data reported, and what the independent survey found — and
-  reads the distance between them, hovering a point to pull the exact value; the control
-  arm, where his program never went, tracks flat along the bottom the whole way across.
-  To see where his program actually reached, David drops to the map: his program''s
-  logged visits fill the intervention ward and stop at its boundary, while the survey''s
-  pins fall in both wards. David steps through the cycles and watches the map fly
-  to each one''s real pair of wards.
+  David starts with the six-round trend — the independent survey repeated every two months, the earliest round at the left through the most recent at the right. Reading left to right across that timeline, David lines up two numbers each round — what his program''s delivery data reported, and what the independent survey found — and reads the distance between them, hovering a point to pull the exact value; the control arm, where his program never went, tracks flat along the bottom the whole way across. To see where his program actually reached, David drops to the map: his program''s logged visits fill the intervention ward and stop at its boundary, while the survey''s pins fall in both wards. David steps through the cycles and watches the map fly to each one''s real pair of wards.
 
-  David has been handed clean-looking survey data before that turned out to be invented,
-  so before David trusts any of this David checks the people who collected it. The
-  scorecard gives David one row per surveyor, every figure computed from that surveyor''s
-  own records — and one row is flagged for review. GPS is not the tell: the survey
-  app blocks any submission more than fifteen metres from the assigned household,
-  so every surveyor''s GPS reads clean by construction. So David looks where fabrication
-  actually leaves a fingerprint — the Distributions screen, which compares each surveyor
-  against their peers with no second visit: the flagged surveyor''s interviews run
-  impossibly fast and their answers collapse onto one value, both lighting up red
-  while everyone else sits normal. Then David confirms it with that surveyor''s back-check,
-  where a different enumerator independently re-visited a sample of the same households:
-  David reads each row as the original over the re-survey — the child''s sex and age,
-  the household''s roof, the location, the vitamin-A result — with whatever changed
-  marked in red, and taps the info button to confirm it follows the standard J-PAL/IPA
-  method. By the time David closes the page, nothing has told David what to conclude;
-  David has read his program''s own claim, the independent measure, the map, and the
-  one surveyor whose work David will question — and decided for himself whether his
-  program is actually having an impact.'
+  David has been handed clean-looking survey data before that turned out to be invented, so before David trusts any of this David checks the people who collected it. The scorecard gives David one row per surveyor, every figure computed from that surveyor''s own records — and one row is flagged for review. GPS is not the tell: the survey app blocks any submission more than fifteen metres from the assigned household, so every surveyor''s GPS reads clean by construction. So David looks where fabrication actually leaves a fingerprint — the Distributions screen, which compares each surveyor against their peers with no second visit: the flagged surveyor''s interviews run impossibly fast and their answers collapse onto one value, both lighting up red while everyone else sits normal. Then David confirms it with that surveyor''s back-check, where a different enumerator independently re-visited a sample of the same households: David reads each row as the original over the re-survey — the child''s sex and age, the household''s roof, the location, the vitamin-A result — with whatever changed marked in red, and taps the info button to confirm it follows the standard J-PAL/IPA method. By the time David closes the page, nothing has told David what to conclude; David has read his program''s own claim, the independent measure, the map, and the one surveyor whose work David will question — and decided for himself whether his program is actually having an impact.'
 narrative_locked: true
 narrative_locked_at: '2026-06-07T22:20:38.649374+00:00'
 narrative_synced_at: '2026-06-16T13:07:22.205289+00:00'
@@ -50,13 +18,7 @@ narrative_synced_version: 9
 personas:
   david:
     color: '#4F46E5'
-    intro: 'David manages a Connect program delivering vitamin-A home visits. His
-      frontline workers log every visit through Connect and the coverage figure looks
-      good — but David wants independent, drillable proof his program is actually
-      reaching households and changing outcomes, not merely that visits were logged.
-      He wants to see the verification machinery itself: the survey''s own per-surveyor
-      quality and a back-check David can read row by row, including whether any one
-      surveyor''s data can be trusted.'
+    intro: 'David manages a Connect program delivering vitamin-A home visits. His frontline workers log every visit through Connect and the coverage figure looks good — but David wants independent, drillable proof his program is actually reaching households and changing outcomes, not merely that visits were logged. He wants to see the verification machinery itself: the survey''s own per-surveyor quality and a back-check David can read row by row, including whether any one surveyor''s data can be trusted.'
     name: David Mensah
     role: Program Manager, Connect Program
 scenes:
@@ -75,37 +37,17 @@ scenes:
     target: role:button:R6
   - kind: hold
     seconds: 2
-  concept_claim: Read left to right as a six-round bi-monthly timeline, the program's
-    self-reported service-delivery stays above what the independent survey confirms
-    at each round while the control arm stays low — the gap holds across time, not
-    in a single snapshot.
-  design_intent: Three labelled lines (service-delivery dashed amber, intervention
-    survey indigo, control survey slate) plotted across six bi-monthly rounds left-to-right
-    as a time axis (earliest at left, most recent at right, each round date-stamped),
-    with a shaded service-delivery-minus-survey gap band and per-point hover tooltips,
-    so the gap's persistence over time reads from the chart without a sentence.
+  concept_claim: Across six bi-monthly rounds, the program's self-reported delivery stays above what the independent survey confirms each round, while the control arm stays low — the gap holds over time, not in a single snapshot.
+  design_intent: Three labelled lines (service-delivery dashed amber, intervention survey indigo, control survey slate) plotted across six bi-monthly rounds left-to-right as a time axis (earliest at left, most recent at right, each round date-stamped), with a shaded service-delivery-minus-survey gap band and per-point hover tooltips, so the gap's persistence over time reads from the chart without a sentence.
   features:
-  - description: A six-cycle line chart of the program self-report vs the independent
-      intervention-arm survey vs the control-arm survey, with a shaded gap band and
-      a hover tooltip on every point (series, cycle, value).
+  - description: A six-cycle line chart of the program self-report vs the independent intervention-arm survey vs the control-arm survey, with a shaded gap band and a hover tooltip on every point (series, cycle, value).
     id: trend-hero
-    verify: Assert three series render across six cycles; the legend reads service-delivery
-      data / intervention arm survey / control arm survey; hovering a point shows
-      a tooltip with the series, cycle, and value; no interpretive verbs on screen.
+    verify: Assert three series render across six cycles; the legend reads service-delivery data / intervention arm survey / control arm survey; hovering a point shows a tooltip with the series, cycle, and value; no interpretive verbs on screen.
   full_page: false
-  narrative: David manages a Connect program delivering vitamin-A home visits, and
-    wants to know whether those visits are actually changing anything — so David opens
-    the independent survey's dashboard and starts with its six-round trend — the same
-    survey repeated every two months, the earliest round at the left through the most
-    recent at the right. Reading across the timeline, David watches his program's
-    own delivery figure stay above what the independent survey confirms at each round,
-    hovering a point to pull the exact value, while the control arm tracks flat along
-    the bottom the whole way.
+  narrative: David manages a Connect program delivering vitamin-A home visits, and wants to know whether those visits are actually changing anything — so David opens the independent survey's dashboard and starts with its six-round trend — the same survey repeated every two months, the earliest round at the left through the most recent at the right. Reading across the timeline, David watches his program's own delivery figure stay above what the independent survey confirms at each round, hovering a point to pull the exact value, while the control arm tracks flat along the bottom the whole way.
   persona: david
   provenance: S5
-  show: 'The six-round trend over time: the program''s service-delivery line above
-    the independent intervention-arm survey at every bi-monthly round, the control-arm
-    survey far below — earliest round at left, most recent at right.'
+  show: 'The six-round trend over time: the program''s service-delivery line above the independent intervention-arm survey at every bi-monthly round, the control-arm survey far below — earliest round at left, most recent at right.'
   title: Six bi-monthly rounds over time — the gap holds
 - actions:
   - kind: scroll_to
@@ -124,49 +66,17 @@ scenes:
     value: '470'
   - kind: hold
     seconds: 2
-  concept_claim: Program delivery is concentrated inside the intervention ward and
-    absent in the adjacent control ward, while the independent survey covered both
-    — so the coverage gap tracks where the program went, not where the survey looked;
-    a docked Layers panel turns the designed sampling plan and its real building footprints
-    on over the survey, and stepping the cycle selector flies the map to the next
-    real ward pair.
-  design_intent: Real labelled admin boundaries (intervention indigo / control slate)
-    on a light Mapbox basemap via the shared ConnectMap module, with the SAME docked
-    Layers panel the plan editor uses — toggles for service delivery, the independent
-    survey, the designed Plan (arm-coloured selected-PSU hulls), the sampled Work
-    areas, and all Building footprints — drawn through the shared PlanLayers component
-    so the monitoring map and the plan editor render the plan identically. Every survey
-    draws (no per-ward cap), each on the real sampled footprint and within the 15
-    m GPS gate, distinguishing the unit the surveyor was assigned to try first (primary
-    — larger solid dot) from a substituted backup (alternate — smaller hollow ring).
-    The map re-fits on each cycle but NOT on a layer toggle, so toggling keeps the
-    planner's pan/zoom.
+  concept_claim: Program delivery is concentrated in the intervention ward and absent in the adjacent control ward, while the independent survey covered both — so the coverage gap tracks where the program went, not where the survey looked.
+  design_intent: Real labelled admin boundaries (intervention indigo / control slate) on a light Mapbox basemap via the shared ConnectMap module, with the SAME docked Layers panel the plan editor uses — toggles for service delivery, the independent survey, the designed Plan (arm-coloured selected-PSU hulls), the sampled Work areas, and all Building footprints — drawn through the shared PlanLayers component so the monitoring map and the plan editor render the plan identically. Every survey draws (no per-ward cap), each on the real sampled footprint and within the 15 m GPS gate, distinguishing the unit the surveyor was assigned to try first (primary — larger solid dot) from a substituted backup (alternate — smaller hollow ring). The map re-fits on each cycle but NOT on a layer toggle, so toggling keeps the planner's pan/zoom.
   features:
-  - description: A full-width two-ward Mapbox map with a docked Layers panel (service
-      delivery, independent survey, Plan · sampled PSUs, Work areas, Building footprints)
-      drawn via the shared PlanLayers component; service-delivery points fill the
-      intervention ward, every survey pin draws in both wards (each on a real sampled
-      footprint, larger solid for the primary unit / smaller hollow ring for an alternate),
-      and the map re-centres on a new real ward pair when the cycle changes.
+  - description: A full-width two-ward Mapbox map with a docked Layers panel (service delivery, independent survey, Plan · sampled PSUs, Work areas, Building footprints) drawn via the shared PlanLayers component; service-delivery points fill the intervention ward, every survey pin draws in both wards (each on a real sampled footprint, larger solid for the primary unit / smaller hollow ring for an alternate), and the map re-centres on a new real ward pair when the cycle changes.
     id: two-ward-map
-    verify: Assert both labelled ward boundaries and the Layers panel (delivery /
-      survey / plan / work areas / building footprints) render; toggling Plan draws
-      arm-coloured PSU hulls and does NOT recentre; clicking R1 then R6 re-centres
-      the map on a different program/comparison ward pair.
+    verify: Assert both labelled ward boundaries and the Layers panel (delivery / survey / plan / work areas / building footprints) render; toggling Plan draws arm-coloured PSU hulls and does NOT recentre; clicking R1 then R6 re-centres the map on a different program/comparison ward pair.
   full_page: false
-  narrative: 'To see where his program actually reached, David drops to the map: his
-    program''s logged visits fill the intervention ward and stop at its boundary,
-    while the independent survey''s pins — every one of them — fall in both wards.
-    From the docked Layers panel David turns on the designed sampling plan: the arm-coloured
-    selected-PSU clusters, the same ones the plan editor drew, sit right under the
-    survey. David steps the cycle selector and the map flies to each cycle''s real
-    pair of wards, the layers he chose staying on.'
+  narrative: 'To see where his program actually reached, David drops to the map: his program''s logged visits fill the intervention ward and stop at its boundary, while the independent survey''s pins — every one of them — fall in both wards. From the docked Layers panel David turns on the designed sampling plan: the arm-coloured selected-PSU clusters, the same ones the plan editor drew, sit right under the survey. David steps the cycle selector and the map flies to each cycle''s real pair of wards, the layers he chose staying on.'
   persona: david
   provenance: S3
-  show: The full-width map — program service-delivery filling the intervention ward,
-    every independent survey pin in both wards, the designed plan's arm-coloured PSU
-    clusters toggled on from the shared Layers panel — flying to each cycle's two
-    real wards.
+  show: The full-width map — program service-delivery filling the intervention ward, every independent survey pin in both wards, the designed plan's arm-coloured PSU clusters toggled on from the shared Layers panel — flying to each cycle's two real wards.
   title: Where delivery happened vs where the survey checked (the map moves)
 - actions:
   - kind: scroll_to
@@ -181,43 +91,17 @@ scenes:
     target: css:[data-cell="T6:backcheck"]
   - kind: hold
     seconds: 2
-  concept_claim: The survey's quality is not asserted in aggregate — it is computed
-    per surveyor from each surveyor's own records, so a single under-performing surveyor
-    is visible and accountable rather than averaged away. GPS is clean for everyone
-    — the app gates submission at 15 m — so the flag rests on the signals that gating
-    can't launder — evidence, on-primary fidelity, and back-check agreement.
-  design_intent: A dense scorecard, one row per surveyor, green within threshold /
-    rose below, with a REVIEW tag where a surveyor's integrity signals fail together;
-    the back-check column is cumulative across cycles. The GPS-within-15m column reads
-    ~100% for every surveyor — the app blocks any submission beyond 15 m, so it is
-    a passing trust signal, not the discriminator. An On-primary column shows the
-    share of each surveyor's surveys that landed on the assigned first-choice household
-    (vs a substituted alternate) — a sampling-fidelity signal where heavy substitution
-    reads rose.
+  concept_claim: "Quality is computed per surveyor from each surveyor's own records, so one under-performing surveyor is visible rather than averaged away — flagged on the signals GPS gating can't fake: evidence, on-primary fidelity, and back-check agreement."
+  design_intent: A dense scorecard, one row per surveyor, green within threshold / rose below, with a REVIEW tag where a surveyor's integrity signals fail together; the back-check column is cumulative across cycles. The GPS-within-15m column reads ~100% for every surveyor — the app blocks any submission beyond 15 m, so it is a passing trust signal, not the discriminator. An On-primary column shows the share of each surveyor's surveys that landed on the assigned first-choice household (vs a substituted alternate) — a sampling-fidelity signal where heavy substitution reads rose.
   features:
-  - description: A per-surveyor survey-quality scorecard (evidence, GPS, on-primary,
-      completeness, duration, consistency, duplicates, back-check) computed per surveyor,
-      with rose cells below threshold and a REVIEW tag on the flagged surveyor; the
-      GPS column reads ~100% for all (app-gated) so the flag rests on the non-GPS
-      signals.
+  - description: A per-surveyor survey-quality scorecard (evidence, GPS, on-primary, completeness, duration, consistency, duplicates, back-check) computed per surveyor, with rose cells below threshold and a REVIEW tag on the flagged surveyor; the GPS column reads ~100% for all (app-gated) so the flag rests on the non-GPS signals.
     id: surveyor-scorecard
-    verify: Assert the table renders one row per surveyor with computed values, including
-      an On-primary column and a ~100% GPS-within-15m column for every surveyor; exactly
-      the flagged surveyor (T6) shows a REVIEW tag; its rose cells coincide with sub-threshold
-      non-GPS values.
+    verify: Assert the table renders one row per surveyor with computed values, including an On-primary column and a ~100% GPS-within-15m column for every surveyor; exactly the flagged surveyor (T6) shows a REVIEW tag; its rose cells coincide with sub-threshold non-GPS values.
   full_page: false
-  narrative: Before David trusts any of the survey, David checks the people who collected
-    it. The scorecard gives David one row per surveyor, every figure computed from
-    that surveyor's own records. GPS reads clean for everyone — the app won't let
-    a survey submit more than 15 m from the assigned household — so David reads the
-    signals gating can't launder — the proof photos, how often each reached the household
-    they were assigned to try first, and the back-check. One row is flagged for review.
+  narrative: Before David trusts any of the survey, David checks the people who collected it. The scorecard gives David one row per surveyor, every figure computed from that surveyor's own records. GPS reads clean for everyone — the app won't let a survey submit more than 15 m from the assigned household — so David reads the signals gating can't launder — the proof photos, how often each reached the household they were assigned to try first, and the back-check. One row is flagged for review.
   persona: david
   provenance: S2
-  show: The per-surveyor quality scorecard — evidence, a ~100% GPS-within-15m column
-    (app-gated), completeness, duration, consistency, duplicates, on-primary, and
-    back-check, each computed from that surveyor's own records — with one surveyor
-    flagged REVIEW on the non-GPS signals.
+  show: The per-surveyor quality scorecard — evidence, a ~100% GPS-within-15m column (app-gated), completeness, duration, consistency, duplicates, on-primary, and back-check, each computed from that surveyor's own records — with one surveyor flagged REVIEW on the non-GPS signals.
   title: The per-surveyor quality scorecard catches a surveyor
 - actions:
   - kind: scroll_to
@@ -230,43 +114,17 @@ scenes:
     note: highlight the flagged surveyor's distributions row
   - kind: hold
     seconds: 3
-  concept_claim: A fabricator who never leaves the 15 m gate passes GPS, but cannot
-    fake the SHAPE of their data — the Distributions screen scores each surveyor against
-    their peers on interview speed and answer-uniformity with no second visit, and
-    the flagged surveyor reads red on both while everyone else sits normal.
-  design_intent: The Layer-3 Distributions card — one row per surveyor, robust median/MAD
-    z-scores vs peers on three signals (dose yes-rate, interview speed, and answer
-    uniformity — the Herfindahl concentration of roof-type answers), each rendered
-    as a compact raw-units lens (a centre line at the team-typical value, a dark notch
-    at this surveyor's actual value, and a coloured bar whose width is |z|), plus
-    a composite band pill. The flagged surveyor reads RED on speed (curbstoned ~9-min
-    interviews) and uniformity (answers collapsed onto one roof type); honest surveyors
-    vary naturally and read green — so the fabrication is caught from the data's shape,
-    no re-visit required.
+  concept_claim: A fabricator who passes the GPS gate still can't fake the shape of their data — the Distributions screen scores each surveyor against their peers on interview speed and answer uniformity, and the flagged surveyor reads red on both.
+  design_intent: The Layer-3 Distributions card — one row per surveyor, robust median/MAD z-scores vs peers on three signals (dose yes-rate, interview speed, and answer uniformity — the Herfindahl concentration of roof-type answers), each rendered as a compact raw-units lens (a centre line at the team-typical value, a dark notch at this surveyor's actual value, and a coloured bar whose width is |z|), plus a composite band pill. The flagged surveyor reads RED on speed (curbstoned ~9-min interviews) and uniformity (answers collapsed onto one roof type); honest surveyors vary naturally and read green — so the fabrication is caught from the data's shape, no re-visit required.
   features:
-  - description: A per-surveyor Distributions (Layer-3) table — robust z-scores vs
-      peers on dose yes-rate, interview speed, and answer-uniformity (roof-mix HHI),
-      each as a raw-units lens (notch = value, bar width = |z|), plus a composite
-      band — that flags the fabricator on speed + uniformity with no second field
-      visit.
+  - description: A per-surveyor Distributions (Layer-3) table — robust z-scores vs peers on dose yes-rate, interview speed, and answer-uniformity (roof-mix HHI), each as a raw-units lens (notch = value, bar width = |z|), plus a composite band — that flags the fabricator on speed + uniformity with no second field visit.
     id: distributions-screen
-    verify: Assert the Distributions table renders one row per surveyor with z-scores
-      on interview speed and answer uniformity; the flagged surveyor (T6) reads a
-      red composite band with red speed + uniformity z-scores, while the other surveyors
-      read green.
+    verify: Assert the Distributions table renders one row per surveyor with z-scores on interview speed and answer uniformity; the flagged surveyor (T6) reads a red composite band with red speed + uniformity z-scores, while the other surveyors read green.
   full_page: false
-  narrative: GPS is clean by construction, so a fabricator who stands near a building
-    and invents answers sails through it. David scrolls to the Distributions screen,
-    which needs no second visit — it compares each surveyor to their peers on how
-    fast they interviewed and how varied their answers were. The flagged surveyor's
-    interviews run impossibly fast and their roof-type answers collapse onto a single
-    value, both lighting up red, while every honest surveyor sits in the normal band.
+  narrative: GPS is clean by construction, so a fabricator who stands near a building and invents answers sails through it. David scrolls to the Distributions screen, which needs no second visit — it compares each surveyor to their peers on how fast they interviewed and how varied their answers were. The flagged surveyor's interviews run impossibly fast and their roof-type answers collapse onto a single value, both lighting up red, while every honest surveyor sits in the normal band.
   persona: david
   provenance: S2
-  show: The Distributions screen — per-surveyor z-scores on dose yes-rate, interview
-    speed, and answer uniformity, the flagged surveyor red on speed + uniformity and
-    a red composite band, every other surveyor green — fabrication caught from the
-    data's shape with no re-visit.
+  show: The Distributions screen — per-surveyor z-scores on dose yes-rate, interview speed, and answer uniformity, the flagged surveyor red on speed + uniformity and a red composite band, every other surveyor green — fabrication caught from the data's shape with no re-visit.
   title: GPS is clean — the Distributions screen catches the fabrication
 - actions:
   - kind: wait_for
@@ -277,34 +135,17 @@ scenes:
     target: INDEPENDENT BACK-CHECK
   - kind: hold
     seconds: 5
-  concept_claim: An independent re-survey by a different enumerator disagrees with
-    this surveyor's originals on identity, location, and outcome — the strongest evidence
-    their data needs review — and the method is traceable to its source.
-  design_intent: Descriptive section headers (Identity / Location / Outcome, with
-    the J-PAL "Type 1/2/3" jargon behind an info popup), two rows per household (Original
-    / Backcheck) with discordances in rose; a stratified sample (back-checking is
-    a sampling method) while the agreement %s are computed over all of the surveyor's
-    back-checks.
+  concept_claim: An independent re-survey by a different enumerator disagrees with this surveyor's records on identity, location, and outcome — the strongest evidence their data needs review.
+  design_intent: Descriptive section headers (Identity / Location / Outcome, with the J-PAL "Type 1/2/3" jargon behind an info popup), two rows per household (Original / Backcheck) with discordances in rose; a stratified sample (back-checking is a sampling method) while the agreement %s are computed over all of the surveyor's back-checks.
   features:
-  - description: The flagged surveyor's back-check — Identity (sex / age / present
-      / roof), Location (re-survey distance), Outcome (vitamin-A) agreement %s; two-row
-      original-vs-re-survey rows; an info popup citing J-PAL/IPA + World Bank DIME.
+  - description: The flagged surveyor's back-check — Identity (sex / age / present / roof), Location (re-survey distance), Outcome (vitamin-A) agreement %s; two-row original-vs-re-survey rows; an info popup citing J-PAL/IPA + World Bank DIME.
     id: backcheck-sections
-    verify: Assert the back-check renders for the flagged surveyor with Identity /
-      Location / Outcome agreement %s; Identity includes a Roof column; the info popup
-      cites dimewiki.worldbank.org/Back_Checks.
+    verify: Assert the back-check renders for the flagged surveyor with Identity / Location / Outcome agreement %s; Identity includes a Roof column; the info popup cites dimewiki.worldbank.org/Back_Checks.
   full_page: false
-  narrative: To confirm the Distributions flag with an independent field visit, David
-    opens that surveyor's back-check, where a different enumerator re-visited a sample
-    of the same households. David reads each household as the original over the re-survey
-    — sex, age, the household's roof, the location, the vitamin-A result — with whatever
-    changed marked in red, and taps the info button to confirm it follows the standard
-    J-PAL/IPA method. By the time David closes the page, nothing has told David what
-    to conclude — David has decided for himself whether his program is having an impact.
+  narrative: To confirm the Distributions flag with an independent field visit, David opens that surveyor's back-check, where a different enumerator re-visited a sample of the same households. David reads each household as the original over the re-survey — sex, age, the household's roof, the location, the vitamin-A result — with whatever changed marked in red, and taps the info button to confirm it follows the standard J-PAL/IPA method. By the time David closes the page, nothing has told David what to conclude — David has decided for himself whether his program is having an impact.
   persona: david
   provenance: S2
-  show: The independent back-check for the flagged surveyor — Identity (incl. roof)
-    / Location / Outcome, original over re-survey, the method behind an info button.
+  show: The independent back-check for the flagged surveyor — Identity (incl. roof) / Location / Outcome, original over re-survey, the method behind an info button.
   title: The independent back-check confirms it
 setup:
   command: python scripts/walkthroughs/verified-monitoring/regenerate.py
