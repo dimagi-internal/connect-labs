@@ -191,7 +191,6 @@ Labs includes pre-built workflow templates for common program types. Your progra
 | **OCS Outreach**                      | Community health outreach tracking                                                                                          |
 | **Bulk Image Audit**                  | Image-based QA combined with workflow status                                                                                |
 | **CHC Nutrition Analysis**            | Community health centre nutrition program monitoring                                                                        |
-| **MBW Auditing V4**                   | MBW audit reviews with flag and task workflow                                                                               |
 | **MBW Auditing V5**                   | MBW audit reviews — faster loads and preserved runs                                                                         |
 | **Program Admin Report**              | Cross-opportunity compliance view for program admins                                                                        |
 | **Verified Monitoring**               | Funder-facing view of independently-surveyed program coverage, contrasting implementer-reported and verified results        |
