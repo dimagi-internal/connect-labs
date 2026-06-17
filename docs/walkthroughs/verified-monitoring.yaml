@@ -276,11 +276,7 @@ scenes:
   - kind: scroll_to
     target: INDEPENDENT BACK-CHECK
   - kind: hold
-    seconds: 3
-  - kind: click
-    target: css:[data-bcinfo="identity"]
-  - kind: hold
-    seconds: 3
+    seconds: 5
   concept_claim: An independent re-survey by a different enumerator disagrees with
     this surveyor's originals on identity, location, and outcome — the strongest evidence
     their data needs review — and the method is traceable to its source.
