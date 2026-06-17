@@ -68,13 +68,22 @@ def density_bin_edges(densities, bins: int = 12):
     Passing these to every candidate's ``density_distribution_match`` puts all rows
     on one shared axis, so the reference (grey) bars are identical in every row and
     the candidate bars are directly comparable — and so the overlap a far-denser
-    ward shows is honest. Returns None when the reference has too few clusters."""
-    vals = [x for x in (densities or []) if x and x > 0]
+    ward shows is honest. Returns None when the reference has too few points.
+
+    The range is the reference's 2nd–98th percentile (not min/max): per-building
+    k-NN density has a long upper tail (a few buildings in an ultra-dense core), and
+    raw min/max would stretch the axis so far that all the real mass piles into the
+    first bin. Out-of-range values clip to the nearest edge in ``_shared_hist``."""
+    import numpy as np
+
+    vals = np.asarray([x for x in (densities or []) if x and x > 0], dtype=float)
     if len(vals) < MIN_DIST_CLUSTERS:
         return None
-    lo, hi = float(min(vals)), float(max(vals))
+    lo, hi = float(np.percentile(vals, 2)), float(np.percentile(vals, 98))
     if hi <= lo:
-        hi = lo + 1.0
+        lo, hi = float(vals.min()), float(vals.max())
+        if hi <= lo:
+            hi = lo + 1.0
     step = (hi - lo) / bins
     return [lo + step * i for i in range(bins + 1)]
 
