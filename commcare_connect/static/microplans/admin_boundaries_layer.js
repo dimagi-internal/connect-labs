@@ -1067,10 +1067,15 @@
           methodEl.classList.toggle('hidden'),
         );
 
-      // Per-column info popover — fixed-positioned so the table's overflow-x can't clip it.
+      // Per-column info popover — absolutely positioned within comparePanel (which
+      // is in normal flow), so it stays pinned to the header it opened from and
+      // scrolls WITH the page (a fixed/viewport one runs off-screen with no way to
+      // reach its bottom). comparePanel is the table's sibling container, so its
+      // overflow-x doesn't clip this.
+      comparePanel.classList.add('relative');
       const colPop = document.createElement('div');
       colPop.className =
-        'mp-ab-col-popover hidden fixed z-50 w-64 max-w-[80vw] bg-white border border-gray-200 rounded-lg ' +
+        'mp-ab-col-popover hidden absolute z-50 w-64 max-w-[88vw] bg-white border border-gray-200 rounded-lg ' +
         'shadow-xl p-3 text-[11px] font-normal normal-case tracking-normal text-left text-gray-600 leading-snug';
       comparePanel.appendChild(colPop);
       activeColPop = colPop;
@@ -1088,11 +1093,14 @@
           colPop.dataset.col = key;
           colPop.innerHTML = COL_INFO[key] || '';
           colPop.classList.remove('hidden');
+          // Position relative to comparePanel so it tracks the header on scroll.
+          const panelRect = comparePanel.getBoundingClientRect();
           const rect = btn.getBoundingClientRect();
           const w = colPop.offsetWidth || 256;
-          colPop.style.left =
-            Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
-          colPop.style.top = rect.bottom + 6 + 'px';
+          let left = rect.left - panelRect.left;
+          left = Math.max(4, Math.min(left, comparePanel.clientWidth - w - 4));
+          colPop.style.left = left + 'px';
+          colPop.style.top = rect.bottom - panelRect.top + 4 + 'px';
         });
       });
 
