@@ -46,6 +46,23 @@ When building your response template, each question has an optional **Framing** 
 !!! info "Validation errors on the creation form"
 Labs now checks that all fields are in the correct format when a solicitation is saved. If something is wrong — for example, a deadline that isn't a valid date, an evaluation criterion missing a name, or a response question that references something that no longer exists — you will see an inline error message on the relevant field. Correct the flagged fields and save again. These checks prevent incomplete or misformatted solicitations from being stored silently.
 
+### Creating a Solicitation from a Micro-Plan
+
+If your solicitation is tied to specific geographic areas already defined in Labs, you can start directly from a micro-plan or plan group rather than writing the solicitation from scratch.
+
+**From a plan group:**
+Go to the plan group's management page and click **Create solicitation**. The solicitation form opens pre-filled with a title and scope of work drawn from the group name and region, and with all plans in the group already attached as coverage areas.
+
+**From a single plan:**
+Go to the plan's review page and click **Create solicitation**. The form opens pre-filled in the same way, with that one plan attached as a coverage area.
+
+In both cases, you can edit any pre-filled field before publishing. Once you save the solicitation, the attached plans become a fixed snapshot — later edits to the underlying micro-plans will not change what is shown on the published solicitation.
+
+The coverage areas are listed on the public solicitation page so applicants can see exactly which areas are on the table.
+
+!!! info "Plans are captured as a snapshot"
+Because coverage areas are fixed at the time the solicitation is created, any changes you make to a micro-plan after that point will not be reflected in the solicitation. If your plans change significantly before the deadline, you will need to update the solicitation's coverage areas manually or create a new solicitation.
+
 ### Reviewing Responses
 
 Once the deadline passes, go to the solicitation and click **Responses**.
@@ -54,9 +71,10 @@ For each response:
 
 1. Click the response to open it
 2. Read the organization's answers to each question
-3. Click **Review** to score the submission
-4. Score each criterion from 1–10 and add notes
-5. Set your recommendation: Approve / Reject / Needs Revision
+3. Review the applicant's selected coverage areas — these are shown on the responses list and on the response detail page
+4. Click **Review** to score the submission
+5. Score each criterion from 1–10 and add notes
+6. Set your recommendation: Approve / Reject / Needs Revision
 
 Multiple reviewers can score independently — average scores are calculated automatically.
 
@@ -69,20 +87,27 @@ When the team agrees on a winner:
 3. Confirm the award amount
 4. Optionally link the award to a fund to track disbursements over time
 
+!!! info "Coverage area assignments after award"
+In the current version, the coverage areas selected by an applicant are captured for your review alongside the rest of their response. Formal area assignment to the awarded organization is handled outside Labs as part of your normal award process.
+
 ---
 
 ## For Implementing Organizations (Submitting)
 
 ### Finding Solicitations
 
-Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (EOI or RFP) to find relevant opportunities.
+Published solicitations are visible on the Labs solicitations page without logging in. Filter by type (EOI or RFP) to find relevant opportunities. Where a solicitation was created from micro-plans, the specific geographic areas on offer are listed on the solicitation page.
 
 ### Submitting a Response
 
 1. Open a solicitation and read the full description and scope of work
 2. Click **Submit Response**
 3. Answer each question in the response template — where present, read the italicised framing above each question to understand what the program team is looking for
-4. Review your answers, then click **Submit**
+4. If the solicitation includes coverage areas, select the areas you can cover by choosing one or more plans from the list — you must select at least one to submit
+5. Review your answers, then click **Submit**
+
+!!! info "Selecting coverage areas"
+Each plan is offered as a whole unit. If a plan includes multiple wards or intervention and control areas, you take all of it — you cannot select only part of a plan. If you are unsure what a plan covers, read the solicitation description or contact the program team before submitting.
 
 !!! warning "Submissions are final"
 Responses cannot be edited after submission. Make sure your response is complete before submitting. If you need to make a correction, contact the program team directly.
@@ -125,3 +150,12 @@ A small number of older solicitations were saved before Labs began enforcing fie
 
 **What is the Framing field on a response question?**
 Framing is an optional one-to-two sentence note you can attach to any question in your response template. It appears above the question prompt on the public solicitation page in italics, giving respondents context about why you're asking. It has no effect on scoring or submission — it is purely for the benefit of applicants reading the solicitation.
+
+**Can I create a solicitation from a micro-plan if the plans haven't been finalised yet?**
+You can, but the coverage areas are fixed as a snapshot at the moment you save the solicitation. If your plans change after that point, the published solicitation will not update automatically. Wait until your plans are stable before creating the solicitation, or be prepared to update the coverage areas manually if things change before the deadline.
+
+**Do applicants have to cover all the areas listed in a solicitation?**
+No — applicants select only the areas they can cover. They must select at least one plan to submit a response, but they do not need to take all areas on offer. The program team can see each applicant's selected areas when reviewing responses.
+
+**What does it mean that a plan is selected "as a whole unit"?**
+If a micro-plan bundles multiple wards, or includes both intervention and control areas, an applicant who selects that plan is committing to all of it. There is no option to select only part of a plan.
