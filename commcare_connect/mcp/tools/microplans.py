@@ -18,6 +18,9 @@ from ..tool_registry import MCPToolError, register
 
 logger = logging.getLogger(__name__)
 
+# Lifecycle statuses a plan can be moved to (see microplans.core.plan.PLAN_STATUSES).
+_PLAN_STATUSES = ("draft", "in_review", "approved", "deployed", "archived")
+
 
 def _is_labs_only(program_id) -> bool:
     """A labs-only program surfaces as a program id in the reserved
@@ -152,6 +155,128 @@ def microplans_plan_work_areas(user, *, program_id, plan_id):
             # verified-monitoring generator) can draw the DESIGNED plan via PlanLayers.
             "input_areas": p.data.get("input_areas") or [],
             "psu_hulls": p.data.get("psu_hulls") or {"type": "FeatureCollection", "features": []},
+        }
+    finally:
+        da.close()
+
+
+@register(
+    name="microplans_delete_plan",
+    description=(
+        "Hard-delete one plan from a microplans program. Program-scoped: refuses if "
+        "the plan is not in this program (never deletes by raw id). Use to wipe "
+        "sample/residue plans; for normal lifecycle prefer microplans_transition_plan "
+        "to 'archived'. Works for labs-only synthetic programs (program_id >= the "
+        "labs-only floor = the backing opp id)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "program_id": {"type": "integer"},
+            "plan_id": {"type": "integer"},
+        },
+        "required": ["program_id", "plan_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def microplans_delete_plan(user, *, program_id, plan_id):
+    from commcare_connect.microplans.core.data_access import RecordNotInProgramError
+
+    _require_program_access(user, program_id)
+    da = _data_access(user, program_id)
+    try:
+        try:
+            da.delete_plan(int(plan_id))
+        except RecordNotInProgramError as e:
+            raise MCPToolError("NOT_FOUND", str(e))
+        return {"program_id": int(program_id), "plan_id": int(plan_id), "deleted": True}
+    finally:
+        da.close()
+
+
+@register(
+    name="microplans_delete_group",
+    description=(
+        "Hard-delete one study/bundle group from a microplans program (the group "
+        "container only — member plans are NOT deleted; delete those separately with "
+        "microplans_delete_plan). Program-scoped: refuses if the group is not in this "
+        "program. Use to wipe residue study groups. Works for labs-only synthetic "
+        "programs (program_id >= the labs-only floor = the backing opp id)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "program_id": {"type": "integer"},
+            "group_id": {"type": "integer"},
+        },
+        "required": ["program_id", "group_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def microplans_delete_group(user, *, program_id, group_id):
+    from commcare_connect.microplans.core.data_access import RecordNotInProgramError
+
+    _require_program_access(user, program_id)
+    da = _data_access(user, program_id)
+    try:
+        try:
+            da.delete_group(int(group_id))
+        except RecordNotInProgramError as e:
+            raise MCPToolError("NOT_FOUND", str(e))
+        return {"program_id": int(program_id), "group_id": int(group_id), "deleted": True}
+    finally:
+        da.close()
+
+
+@register(
+    name="microplans_transition_plan",
+    description=(
+        "Advance a plan's lifecycle status: draft -> in_review -> approved -> "
+        "deployed, or -> archived. Deploying requires opportunity_id (the live "
+        "Connect opp the plan binds to). Illegal transitions are rejected. The "
+        "acting user is recorded in the plan's status_log. Works for labs-only "
+        "synthetic programs (program_id >= the labs-only floor = the backing opp id)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "program_id": {"type": "integer"},
+            "plan_id": {"type": "integer"},
+            "to": {"type": "string", "enum": list(_PLAN_STATUSES)},
+            "opportunity_id": {
+                "type": ["integer", "null"],
+                "description": "Required only when to='deployed'.",
+            },
+        },
+        "required": ["program_id", "plan_id", "to"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def microplans_transition_plan(user, *, program_id, plan_id, to, opportunity_id=None):
+    from commcare_connect.microplans.core.data_access import RecordNotInProgramError, StalePlanError
+
+    if to not in _PLAN_STATUSES:
+        raise MCPToolError("INVALID_SCHEMA", f"unknown status {to!r}; expected one of {', '.join(_PLAN_STATUSES)}")
+    _require_program_access(user, program_id)
+    da = _data_access(user, program_id)
+    try:
+        actor = user.get_username() if hasattr(user, "get_username") else str(user)
+        try:
+            plan = da.transition_plan(int(plan_id), to, actor, opportunity_id=opportunity_id)
+        except RecordNotInProgramError as e:
+            raise MCPToolError("NOT_FOUND", str(e))
+        except StalePlanError as e:
+            raise MCPToolError("CONFLICT", f"stale plan: {e}")
+        except ValueError as e:
+            raise MCPToolError("INVALID_SCHEMA", str(e))
+        return {
+            "program_id": int(program_id),
+            "plan_id": plan.id,
+            "plan_status": plan.status,
+            "opportunity_id": plan.data.get("opportunity_id"),
         }
     finally:
         da.close()
