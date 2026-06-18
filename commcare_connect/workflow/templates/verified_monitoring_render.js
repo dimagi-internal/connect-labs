@@ -130,21 +130,46 @@ function WorkflowUI(props) {
           labelHalo: '#ffffff',
         });
         try {
+          // Arm-keyed ward washes in two clearly DIFFERENT hues so the arms
+          // read apart by fill at a glance: intervention = indigo wash,
+          // control = a warm amber wash. Keyed to the title-caption swatches
+          // below. The intervention ward keeps a clearly heavier outline so it
+          // still reads as the focus arm.
           map.setPaintProperty('vm-wards-fill', 'fill-color', [
             'case',
             ['==', ['get', 'ward'], progWard],
             INDIGO,
-            COMP,
+            AMBER,
           ]);
-          map.setPaintProperty('vm-wards-fill', 'fill-opacity', 0.14);
+          map.setPaintProperty('vm-wards-fill', 'fill-opacity', [
+            'case',
+            ['==', ['get', 'ward'], progWard],
+            0.34,
+            0.22,
+          ]);
           map.setPaintProperty('vm-wards-line', 'line-color', [
             'case',
             ['==', ['get', 'ward'], progWard],
             INDIGO,
-            COMP,
+            '#64748b',
           ]);
-          map.setPaintProperty('vm-wards-label', 'text-color', SUBINK);
+          map.setPaintProperty('vm-wards-line', 'line-width', [
+            'case',
+            ['==', ['get', 'ward'], progWard],
+            3,
+            1.5,
+          ]);
+          // Color each in-map ward label by its arm so the label itself, not
+          // just the wash, says which ward is intervention vs control.
+          map.setPaintProperty('vm-wards-label', 'text-color', [
+            'case',
+            ['==', ['get', 'ward'], progWard],
+            INDIGO,
+            '#475569',
+          ]);
           map.setPaintProperty('vm-wards-label', 'text-halo-color', '#ffffff');
+          map.setPaintProperty('vm-wards-label', 'text-halo-width', 2);
+          map.setLayoutProperty('vm-wards-label', 'text-size', 13);
         } catch (e) {}
         // Two overlapping point layers, separated by WEIGHT (not shape): the
         // program's delivery visits read as the solid, larger, opaque green
@@ -153,10 +178,21 @@ function WorkflowUI(props) {
         // which has survey pins but no delivery — stays visibly green-free.
         if (sdOn && overlay.service_delivery) {
           CM.points(map, 'vm-sd', overlay.service_delivery, {
-            color: '#16a34a',
-            radius: 3.6,
-            opacity: 0.95,
+            color: '#15803d',
+            radius: 4.2,
+            opacity: 0.9,
           });
+          // Give the program-delivery dots a white edge so they separate from
+          // one another (less overlap soup) and read clearly apart from the
+          // indigo survey pins layered on top.
+          try {
+            map.setPaintProperty('vm-sd', 'circle-stroke-width', 0.8);
+            map.setPaintProperty(
+              'vm-sd',
+              'circle-stroke-color',
+              'rgba(255,255,255,0.85)',
+            );
+          } catch (e) {}
         }
         if (pinsOn && overlay.survey_pins) {
           // When a scorecard row is selected, filter the pins to THAT surveyor's
@@ -203,14 +239,14 @@ function WorkflowUI(props) {
             map.setPaintProperty('vm-pins', 'circle-radius', [
               'case',
               isAlt,
-              2.8,
-              4.0,
+              2.6,
+              3.4,
             ]);
             map.setPaintProperty('vm-pins', 'circle-opacity', [
               'case',
               isAlt,
               0.12,
-              0.95,
+              0.82,
             ]);
             map.setPaintProperty('vm-pins', 'circle-stroke-width', [
               'case',
@@ -385,11 +421,17 @@ function WorkflowUI(props) {
         var buildingsOn = waOn || bfOn;
         try {
           if (map.getLayer('vm-wards-fill'))
-            map.setPaintProperty(
-              'vm-wards-fill',
-              'fill-opacity',
-              buildingsOn ? 0.05 : 0.14,
-            );
+            // Keep the two arms ARM-KEYED here too — this toggle handler runs
+            // after draw() and would otherwise flatten both wards to one faint
+            // wash. Intervention (indigo) reads clearly heavier than control
+            // (amber) so the arms are obviously different at a glance; both
+            // fade together when a building layer is on.
+            map.setPaintProperty('vm-wards-fill', 'fill-opacity', [
+              'case',
+              ['==', ['get', 'ward'], progWard],
+              buildingsOn ? 0.06 : 0.34,
+              buildingsOn ? 0.04 : 0.22,
+            ]);
           if (map.getLayer('vm-plan-psu-fill'))
             map.setPaintProperty(
               'vm-plan-psu-fill',
@@ -1019,109 +1061,6 @@ function WorkflowUI(props) {
     scrollMarginTop: 84,
   };
 
-  // Floating info popover for a back-check section (method + source). Opens
-  // BELOW its trigger 'i' (caret pointing up) anchored at the click point, so it
-  // never covers the section title / agreement-share header above it; a
-  // transparent full-screen backdrop closes it on outside click.
-  function bcInfoPopup() {
-    if (!bcInfo) return null;
-    var W = 320;
-    var vw = typeof window !== 'undefined' ? window.innerWidth || 1200 : 1200;
-    var cx = bcInfo.x || vw / 2;
-    var ty = bcInfo.y || 120;
-    var left = Math.min(Math.max(8, cx - W / 2), vw - W - 8);
-    var caretX = Math.min(Math.max(14, cx - left), W - 14);
-    var top = ty + 16;
-    return (
-      <div>
-        <div
-          onClick={function () {
-            setBcInfo(null);
-          }}
-          style={{ position: 'fixed', inset: 0, zIndex: 50 }}
-        />
-        <div
-          style={{
-            position: 'fixed',
-            left: left,
-            top: top,
-            width: W,
-            zIndex: 51,
-            background: '#fff',
-            border: '1px solid ' + LINE,
-            borderRadius: 10,
-            boxShadow: '0 10px 30px rgba(16,24,40,0.20)',
-            padding: '12px 14px',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              left: caretX - 7,
-              top: -7,
-              width: 0,
-              height: 0,
-              borderLeft: '7px solid transparent',
-              borderRight: '7px solid transparent',
-              borderBottom: '7px solid #fff',
-              filter: 'drop-shadow(0 -1px 1px rgba(16,24,40,0.12))',
-            }}
-          />
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'baseline',
-              marginBottom: 5,
-            }}
-          >
-            <b style={{ color: SUBINK, fontSize: 13 }}>{bcInfo.label}</b>
-            <button
-              onClick={function () {
-                setBcInfo(null);
-              }}
-              style={{
-                cursor: 'pointer',
-                border: 'none',
-                background: 'transparent',
-                color: MUT,
-                fontSize: 16,
-                lineHeight: 1,
-                padding: 0,
-              }}
-            >
-              ×
-            </button>
-          </div>
-          <div style={{ color: SUBINK, fontSize: 12.5, lineHeight: 1.5 }}>
-            {bcInfo.info}
-          </div>
-          <div
-            style={{
-              color: MUT,
-              fontSize: 11.5,
-              lineHeight: 1.5,
-              marginTop: 7,
-            }}
-          >
-            An independent surveyor re-visits a sample of households and
-            re-records the same facts. Standard back-check method (J-PAL/IPA;
-            World Bank DIME {'—'}{' '}
-            <a
-              href="https://dimewiki.worldbank.org/Back_Checks"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: INDIGO }}
-            >
-              method reference
-            </a>
-            ).
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   function sw(color, dashed) {
     return (
       <span
@@ -1149,7 +1088,7 @@ function WorkflowUI(props) {
     if (n < 2) return null;
     var w = 1040,
       h = 230,
-      padL = 34,
+      padL = 50,
       padR = 150,
       padT = 14,
       padB = 34;
@@ -1187,7 +1126,7 @@ function WorkflowUI(props) {
       return (
         <g key={g}>
           <line x1={padL} y1={Y(g)} x2={w - padR} y2={Y(g)} stroke={LINE} />
-          <text x={6} y={Y(g) + 3} fill={MUT} fontSize="10" fontFamily={mono}>
+          <text x={20} y={Y(g) + 3} fill={MUT} fontSize="10" fontFamily={mono}>
             {g + '%'}
           </text>
         </g>
@@ -1207,7 +1146,7 @@ function WorkflowUI(props) {
             strokeWidth="1.5"
           />
           <text
-            x={X(i) + 10}
+            x={X(i) + 16}
             y={Y(arr[i]) + 4}
             fill={color}
             fontSize="11"
@@ -1312,6 +1251,18 @@ function WorkflowUI(props) {
         style={{ display: 'block' }}
       >
         {grid}
+        <text
+          x={-(padT + (h - padB - padT) / 2)}
+          y={11}
+          transform="rotate(-90)"
+          textAnchor="middle"
+          fill={MUT}
+          fontSize="8.5"
+          fontFamily={mono}
+          style={{ letterSpacing: '.04em' }}
+        >
+          % confirmed / reported
+        </text>
         {(function () {
           var hx0 = Math.max(padL, X(sel) - 26);
           var hx1 = Math.min(w - padR, X(sel) + 26);
@@ -1322,13 +1273,19 @@ function WorkflowUI(props) {
               width={Math.max(0, hx1 - hx0)}
               height={h - padB - padT}
               fill={INDIGO}
-              opacity="0.06"
+              fillOpacity="0.12"
+              stroke={INDIGO}
+              strokeOpacity="0.35"
+              strokeWidth="1"
             />
           );
         })()}
         {band ? (
           <polygon points={band} fill={AMBER} fillOpacity="0.12" />
         ) : null}
+        {/* Label the amber band IN PLACE (not only in the footnote): drop a
+            small inline tag at the mid-round, vertically between the two series
+            it spans (self-report above, intervention survey below). */}
         <polyline
           points={poly(cp)}
           fill="none"
@@ -1444,16 +1401,82 @@ function WorkflowUI(props) {
           return a + (s.type3_pct || 0) * (s.n || 0);
         }, 0) / aggBcN
       : null;
-    // [key, label, threshold, lowerIsBetter, isCount]
+    // [key, label, threshold, lowerIsBetter, isCount, sublabel, tooltip]
+    // Each column carries a plain-language sublabel (shown under the header) and
+    // a hover tooltip so a non-technical program lead can read it unaided.
     var COLS = [
-      ['evidence', 'Evidence', 90, false, false],
-      ['gps', 'GPS ≤15m', 90, false, false],
-      ['primary_rate', 'On primary', 85, false, false],
-      ['completeness', 'Complete', 98, false, false],
-      ['duration', 'Duration', 90, false, false],
-      ['consistency', 'Consistency', 98, false, false],
-      ['duplicates', 'Dupes', 0, true, true],
-      ['backcheck', 'Back-check', 90, false, false],
+      [
+        'evidence',
+        'Evidence',
+        90,
+        false,
+        false,
+        'photo on file',
+        '% of records with a proof photo attached — the auditable evidence behind a coverage claim.',
+      ],
+      [
+        'gps',
+        'GPS ≤15m',
+        90,
+        false,
+        false,
+        'at the house',
+        '% of captures whose GPS lands within 15 m of the assigned household — confirms the surveyor was actually there.',
+      ],
+      [
+        'primary_rate',
+        'On primary',
+        85,
+        false,
+        false,
+        'sampled house',
+        '% surveyed at the originally-sampled (primary) household rather than a substitute.',
+      ],
+      [
+        'completeness',
+        'Complete',
+        98,
+        false,
+        false,
+        'no blanks',
+        '% of records with every required field filled in — no blanks left behind.',
+      ],
+      [
+        'duration',
+        'Duration',
+        90,
+        false,
+        false,
+        'plausible length',
+        '% of interviews within a plausible time band — flags records too fast to be real.',
+      ],
+      [
+        'consistency',
+        'Consistency',
+        98,
+        false,
+        false,
+        'edit rules pass',
+        '% passing internal edit checks (e.g. a "received" record must have an eligible child present).',
+      ],
+      [
+        'duplicates',
+        'Dupes',
+        0,
+        true,
+        true,
+        'copied records',
+        'Count of duplicate household IDs or repeated (GPS, time) — catches copy-pasted records. Lower is better.',
+      ],
+      [
+        'backcheck',
+        'Back-check',
+        90,
+        false,
+        false,
+        'agrees on re-visit',
+        '% of facts that matched when an independent surveyor re-visited a sample of households.',
+      ],
     ];
     function fail(v, thr, lower) {
       if (v == null) return false;
@@ -1465,7 +1488,7 @@ function WorkflowUI(props) {
       if (c[4]) return String(v);
       var s = v.toFixed(1) + '%';
       if (c[0] === 'backcheck' && row.backcheck_n != null)
-        s += ' ·' + row.backcheck_n;
+        s += ' · n=' + row.backcheck_n;
       return s;
     }
     // flag a surveyor for review when >=2 integrity signals fail together
@@ -1574,6 +1597,15 @@ function WorkflowUI(props) {
             var v = row[c[0]];
             var bad = fail(v, c[2], c[3]);
             var isBc = c[0] === 'backcheck';
+            // Cells that participate in the REVIEW flag rule (>=2 of these fail
+            // together) — so a failing one of these is what the row's REVIEW
+            // badge is pointing at. Used to make the offending cell pop hardest.
+            var flagCriterion =
+              c[0] === 'evidence' ||
+              c[0] === 'gps' ||
+              c[0] === 'primary_rate' ||
+              c[0] === 'backcheck';
+            var isOffender = !isAgg && fl && bad && flagCriterion;
             // back-check cell selects the surveyor (drives the section below);
             // a quality cell opens the metric info panel for that surveyor.
             var clickable = isBc ? !isAgg : !!QMETA[c[0]];
@@ -1610,8 +1642,12 @@ function WorkflowUI(props) {
                     : null
                 }
                 style={Object.assign({}, td, {
+                  // Below-threshold cells are marked by RED TEXT only — no bright
+                  // fill. The value's own colour carries the signal so the table
+                  // reads as clean objective data, not a shouted verdict.
                   color: v == null ? MUT : bad ? ROSE : GREEN,
-                  fontWeight: bad ? 700 : 500,
+                  fontWeight: bad ? 800 : 500,
+                  background: 'transparent',
                   cursor: clickable ? 'pointer' : 'default',
                   boxShadow: selCell ? 'inset 0 0 0 1.5px ' + INDIGO : 'none',
                 })}
@@ -1633,10 +1669,17 @@ function WorkflowUI(props) {
               <th style={th0}>Surveyor</th>
               <th style={th}>n</th>
               {COLS.map(function (c) {
+                var subLabel = c[5];
+                if (c[0] === 'backcheck')
+                  subLabel = (subLabel || '') + ' · this round';
                 return (
-                  <th key={c[0]} style={th}>
+                  <th
+                    key={c[0]}
+                    style={Object.assign({}, th, { cursor: 'help' })}
+                    title={c[6]}
+                  >
                     {c[1]}
-                    {c[0] === 'backcheck' ? (
+                    {subLabel ? (
                       <div
                         style={{
                           fontSize: 8.5,
@@ -1644,9 +1687,10 @@ function WorkflowUI(props) {
                           fontWeight: 400,
                           textTransform: 'none',
                           letterSpacing: 0,
+                          marginTop: 1,
                         }}
                       >
-                        this round
+                        {subLabel}
                       </div>
                     ) : null}
                   </th>
@@ -1721,7 +1765,7 @@ function WorkflowUI(props) {
     // surveyor's actual value (where they sit + which side), and a coloured bar
     // whose WIDTH is |z| — a thin mark for a normal surveyor, a fat red bar for
     // a clear outlier.
-    var SW = 60; // lens width (px) — compact, sits inline next to value + z
+    var SW = 88; // lens width (px) — wide enough that even a normal-row bar reads
     function _vals(key) {
       return rows
         .map(function (r) {
@@ -1742,7 +1786,9 @@ function WorkflowUI(props) {
       var lo = s[0];
       var hi = s[n - 1];
       var pad = (hi - lo) * 0.18 || Math.abs(med) * 0.1 || 1;
-      return { lo: lo - pad, hi: hi + pad, center: med };
+      // rawLo/rawHi = the unpadded peer spread, drawn as a faint band so a row's
+      // value is read against where the rest of the team actually sits.
+      return { lo: lo - pad, hi: hi + pad, center: med, rawLo: lo, rawHi: hi };
     }
     var DOMS = {
       yes_rate: _domain('yes_rate'),
@@ -1754,19 +1800,30 @@ function WorkflowUI(props) {
       var c = Math.max(dom.lo, Math.min(dom.hi, v));
       return ((c - dom.lo) / span) * SW;
     }
+    // CAP for the |z| bar: at/above the flag threshold (3.5) the bar is at full
+    // width and we draw an off-scale marker, so an off-scale outlier reads as
+    // MORE extreme (capped + chevron) rather than identical to its neighbour. The
+    // numeric "z ±N" label disambiguates a -9.0 from a +6.7.
+    var ZCAP = 3.5;
     function zWidth(z) {
-      // |z| -> bar width px: floor so a normal surveyor is still a small mark,
-      // (most of) the track at |z| = 6, capped so it can't overflow.
-      return Math.max(4, Math.min(SW - 8, (Math.abs(z) / 6) * (SW - 8)));
+      // |z| -> bar width px: a clear floor so even a normal surveyor's bar is
+      // legibly visible, scaling LINEARLY with |z| up to the CAP so in-range rows
+      // show genuinely short, magnitude-faithful bars (no all-saturate).
+      var frac = Math.min(Math.abs(z), ZCAP) / ZCAP;
+      return Math.max(10, Math.min(SW - 6, frac * (SW - 6)));
     }
-    // the "lens": raw-units axis + centre + |z|-width bar + value notch
+    // the "lens": faint peer-range band + centre line + |z|-width bar + value
+    // notch. Bars are thicker/higher-contrast and a peer band gives the bar a
+    // visible reference so its width reads as outlier size on every row.
     function lens(rawVal, z, dom) {
       var a = Math.abs(z);
       var hot = a > 3.5;
       var amb = !hot && a >= 2;
-      var col = hot ? ROSE : amb ? AMBER : SLATE;
+      var col = hot ? ROSE : amb ? AMBER : '#64748b';
       var ctr = px(dom.center, dom);
       var pos = px(rawVal, dom);
+      var bandLo = px(dom.rawLo == null ? dom.lo : dom.rawLo, dom);
+      var bandHi = px(dom.rawHi == null ? dom.hi : dom.rawHi, dom);
       var w = zWidth(z);
       var left = Math.max(0, Math.min(SW - w, pos - w / 2));
       return (
@@ -1774,51 +1831,93 @@ function WorkflowUI(props) {
           style={{
             position: 'relative',
             width: SW,
-            height: 10,
+            height: 12,
             flex: '0 0 auto',
           }}
-          title="notch = this surveyor's value on its own scale; bar width = |z| (how big an outlier)"
+          title="shaded = where the rest of the team falls (peer range); line = team-typical; notch = this surveyor's value; bar width = |z| (how big an outlier)"
         >
+          {/* baseline track */}
           <span
             style={{
               position: 'absolute',
               left: 0,
               right: 0,
-              top: 4,
+              top: 5,
               height: 2,
               background: '#eef2f7',
               borderRadius: 2,
             }}
           />
+          {/* peer-range band */}
+          <span
+            style={{
+              position: 'absolute',
+              left: Math.min(bandLo, bandHi),
+              width: Math.max(2, Math.abs(bandHi - bandLo)),
+              top: 2,
+              height: 8,
+              background: '#e2e8f0',
+              borderRadius: 3,
+            }}
+          />
+          {/* team-typical centre line */}
           <span
             style={{
               position: 'absolute',
               left: ctr,
               top: 0,
-              height: 10,
-              width: 1,
-              background: '#cbd5e1',
+              height: 12,
+              width: 1.5,
+              background: '#94a3b8',
             }}
           />
+          {/* |z|-width bar */}
           <span
             style={{
               position: 'absolute',
               left: left,
               width: w,
               top: 3,
-              height: 4,
-              borderRadius: 2,
+              height: 6,
+              borderRadius: 3,
               background: col,
-              opacity: 0.9,
+              opacity: 0.95,
             }}
           />
+          {/* off-scale chevron — only when |z| exceeds the cap, pointing in the
+              direction of the outlier, so a capped bar still reads as off-scale
+              (more extreme), not equal to an at-cap row. */}
+          {a > ZCAP ? (
+            <span
+              title={
+                'off-scale: |z| = ' +
+                a.toFixed(1) +
+                ' (bar capped at ' +
+                ZCAP +
+                ')'
+              }
+              style={{
+                position: 'absolute',
+                top: -1,
+                right: z >= 0 ? 0 : 'auto',
+                left: z >= 0 ? 'auto' : 0,
+                fontSize: 12,
+                lineHeight: '14px',
+                fontWeight: 700,
+                color: col,
+              }}
+            >
+              {z >= 0 ? '▸' : '◂'}
+            </span>
+          ) : null}
+          {/* this surveyor's value notch */}
           <span
             style={{
               position: 'absolute',
-              left: pos - 0.75,
-              top: 0,
-              height: 10,
-              width: 1.5,
+              left: pos - 1,
+              top: -1,
+              height: 14,
+              width: 2,
               borderRadius: 1,
               background: '#0f172a',
             }}
@@ -1852,14 +1951,18 @@ function WorkflowUI(props) {
             {valTxt}
           </span>
           <span
+            title="z = standard deviations from the team-typical value. 0 = typical; further from 0 (either sign) = more unusual; past ±3.5 we flag it."
             style={{
               color: hot ? ROSE : amb ? AMBER : SUBINK,
               fontWeight: hot ? 700 : amb ? 600 : 500,
               minWidth: 38,
               textAlign: 'right',
+              cursor: 'help',
             }}
           >
-            {'z ' + (z >= 0 ? '+' : '') + z.toFixed(1)}
+            {Math.abs(z) > 10
+              ? 'z ' + (z < 0 ? '<−10' : '>10') + ' ·off-scale'
+              : 'z ' + (z >= 0 ? '+' : '') + z.toFixed(1)}
           </span>
           {lens(rawVal, z, dom)}
         </span>
@@ -1909,25 +2012,67 @@ function WorkflowUI(props) {
           <thead>
             <tr>
               <th style={thD0}>Surveyor</th>
-              <th style={thD}>
+              <th
+                style={Object.assign({}, thD, { cursor: 'help' })}
+                title="Share of 'received' answers, compared with the rest of the team."
+              >
                 Dose yes-rate{tag('A')}
-                <div style={glossStyle}>vs peers</div>
+                <div style={glossStyle}>% saying received</div>
               </th>
-              <th style={thD}>
+              <th
+                style={Object.assign({}, thD, { cursor: 'help' })}
+                title="Typical (median) minutes per interview — too fast to be real is the classic fabrication tell."
+              >
                 Interview speed{tag('A')}
-                <div style={glossStyle}>median min</div>
+                <div style={glossStyle}>median minutes</div>
               </th>
-              <th style={thD}>
+              <th
+                style={Object.assign({}, thD, { cursor: 'help' })}
+                title="How concentrated this surveyor's answers are (HHI). Real fieldwork sees a natural spread of roof types; an unnaturally uniform mix suggests answers weren't really collected."
+              >
                 Answer uniformity{tag('B')}
-                <div style={glossStyle}>roof-mix HHI</div>
+                <div style={glossStyle}>how same-y answers are</div>
               </th>
-              <th style={thD}>Composite</th>
+              <th
+                style={Object.assign({}, thD, { cursor: 'help' })}
+                title="Overall outlier verdict combining the signals at left."
+              >
+                Composite
+              </th>
             </tr>
           </thead>
           <tbody>
             {rows.map(function (r) {
               var on = effSurv === r.surveyor;
-              return (
+              // Plain-language explanation for a flagged (red) row, naming the
+              // signal that drives the flag in human terms (e.g. interviews far
+              // faster than the team norm).
+              var teamSpeed = DOMS.speed_med.center;
+              var noteText = null;
+              if (r.band === 'red') {
+                var parts = [];
+                if (
+                  r.speed_med != null &&
+                  teamSpeed != null &&
+                  Math.abs(r.speed_z || 0) >= 2
+                ) {
+                  parts.push(
+                    'interviews ~' +
+                      Math.round(r.speed_med) +
+                      ' min vs ~' +
+                      Math.round(teamSpeed) +
+                      ' min team norm — implausibly fast',
+                  );
+                }
+                if (Math.abs(r.uniformity_z || 0) >= 2)
+                  parts.push('answers far more uniform than peers');
+                if (Math.abs(r.yes_z || 0) >= 2)
+                  parts.push('received-rate well off the team');
+                noteText = parts.length
+                  ? 'Flagged: ' + parts.join('; ') + '.'
+                  : 'Flagged: behaves unlike peers across multiple signals.';
+              }
+              return [
                 <tr
                   key={r.surveyor}
                   style={{
@@ -1964,7 +2109,7 @@ function WorkflowUI(props) {
                     {cell(
                       r.yes_rate,
                       r.yes_z,
-                      r.yes_rate != null ? r.yes_rate + '%' : '—',
+                      r.yes_rate != null ? Math.round(r.yes_rate) + '%' : '—',
                       DOMS.yes_rate,
                     )}
                   </td>
@@ -1987,8 +2132,26 @@ function WorkflowUI(props) {
                     )}
                   </td>
                   <td style={tdD}>{pill(r.band)}</td>
-                </tr>
-              );
+                </tr>,
+                noteText ? (
+                  <tr key={r.surveyor + '-note'}>
+                    <td
+                      colSpan={5}
+                      style={{
+                        padding: '0 10px 9px 24px',
+                        borderBottom: '1px solid ' + LINE,
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                        color: '#9f1239',
+                        background:
+                          on || r.band === 'red' ? '#fff1f2' : 'transparent',
+                      }}
+                    >
+                      {noteText}
+                    </td>
+                  </tr>
+                ) : null,
+              ];
             })}
           </tbody>
         </table>
@@ -2119,6 +2282,8 @@ function WorkflowUI(props) {
           data-bcinfo={s.key}
           onClick={function (e) {
             e.stopPropagation();
+            // Inline disclosure: toggle the explanation block under the section
+            // header (pushes content down) rather than floating over the table.
             setBcInfo(
               on
                 ? null
@@ -2126,8 +2291,6 @@ function WorkflowUI(props) {
                     key: s.key,
                     label: s.label,
                     info: s.info,
-                    x: e.clientX,
-                    y: e.clientY,
                   },
             );
           }}
@@ -2173,6 +2336,91 @@ function WorkflowUI(props) {
           shows the share that agreed {'·'} tap{' '}
           <b style={{ fontFamily: mono }}>i</b> for what it means.
         </div>
+        {/* Colour-convention legend — at the TOP so it's read before the rows. */}
+        <div
+          style={{
+            fontSize: 11,
+            color: MUT,
+            fontFamily: mono,
+            marginBottom: 8,
+          }}
+        >
+          <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = the
+          re-survey disagreed with what {sid} recorded
+        </div>
+        {/* Inline method disclosure — toggled by the 'i' on a section header.
+            Renders here (pushing the table down) instead of overlaying it. */}
+        {bcInfo
+          ? (function () {
+              var s = null;
+              for (var i = 0; i < sections.length; i++)
+                if (sections[i].key === bcInfo.key) s = sections[i];
+              if (!s) return null;
+              return (
+                <div
+                  style={{
+                    border: '1px solid ' + LINE,
+                    borderLeft: '3px solid ' + INDIGO,
+                    background: '#f8fafc',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    marginBottom: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'baseline',
+                      marginBottom: 4,
+                    }}
+                  >
+                    <b style={{ color: SUBINK, fontSize: 12.5 }}>{s.label}</b>
+                    <button
+                      onClick={function () {
+                        setBcInfo(null);
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        border: 'none',
+                        background: 'transparent',
+                        color: MUT,
+                        fontSize: 15,
+                        lineHeight: 1,
+                        padding: 0,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div style={{ color: SUBINK, fontSize: 12, lineHeight: 1.5 }}>
+                    {s.info}
+                  </div>
+                  <div
+                    style={{
+                      color: MUT,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      marginTop: 6,
+                    }}
+                  >
+                    An independent surveyor re-visits a sample of households and
+                    re-records the same facts. Standard back-check method
+                    (J-PAL/IPA; World Bank DIME {'—'}{' '}
+                    <a
+                      href="https://dimewiki.worldbank.org/Back_Checks"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: INDIGO }}
+                    >
+                      method reference
+                    </a>
+                    ).
+                  </div>
+                </div>
+              );
+            })()
+          : null}
         <div style={{ overflow: 'auto', maxHeight: 460 }}>
           <table
             style={{
@@ -2218,6 +2466,18 @@ function WorkflowUI(props) {
                         >
                           {s.pct == null ? '—' : s.pct.toFixed(0) + '%'}
                         </span>
+                        {sb.n != null ? (
+                          <span
+                            style={{
+                              color: MUT,
+                              fontFamily: mono,
+                              fontWeight: 600,
+                              fontSize: 10.5,
+                            }}
+                          >
+                            · n={sb.n}
+                          </span>
+                        ) : null}
                         {/* For the location section the % is "share within
                             threshold" and the cells below are raw distances, so
                             spell that out — otherwise "0%" sitting over "40 m"
@@ -2234,6 +2494,27 @@ function WorkflowUI(props) {
                           </span>
                         ) : null}
                         {infoBtn(s)}
+                        {/* Plain-language gloss so a 0% GPS-match share reads as a
+                            location-fraud signal, not an instrument failure. */}
+                        {s.mode === 'distance' &&
+                        s.pct != null &&
+                        s.pct === 0 ? (
+                          <span
+                            style={{
+                              flexBasis: '100%',
+                              color: ROSE,
+                              fontWeight: 600,
+                              fontSize: 10,
+                              fontFamily: sans,
+                              lineHeight: 1.4,
+                              marginTop: 2,
+                            }}
+                          >
+                            none of the {sb.n} re-visits landed within {thr} m
+                            of where the surveyor logged the household — a
+                            location-fraud signal
+                          </span>
+                        ) : null}
                       </div>
                     </th>
                   );
@@ -2333,12 +2614,6 @@ function WorkflowUI(props) {
             </tbody>
           </table>
         </div>
-        <div
-          style={{ marginTop: 8, fontSize: 11, color: MUT, fontFamily: mono }}
-        >
-          <span style={{ color: ROSE, fontWeight: 700 }}>rose</span> = the
-          re-survey disagreed with what {sid} recorded
-        </div>
       </div>
     );
   }
@@ -2418,9 +2693,10 @@ function WorkflowUI(props) {
         {prog.name || 'Verified Monitoring'}
       </div>
       <div style={{ color: MUT, fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
-        Independent rooftop survey · {prog.cadence || 'bi-monthly'} · the
-        program rotates wards each cycle, each intervention ward verified
-        against an adjacent control ward
+        Independent rooftop survey (an independent team re-measures the same
+        households) · {prog.cadence || 'bi-monthly'} · the program rotates wards
+        each cycle, each intervention ward verified against an adjacent control
+        ward
       </div>
 
       {/* PAGE HERO — the six-cycle trend, edge-to-edge */}
@@ -2449,14 +2725,14 @@ function WorkflowUI(props) {
             flexWrap: 'wrap',
             fontSize: 11,
             color: SUBINK,
-            marginTop: 2,
+            marginTop: 8,
           }}
         >
           <span>{sw(AMBER, true)}service-delivery data</span>
           <span>{sw(INDIGO)}intervention arm survey</span>
           <span>{sw(COMP)}control arm survey</span>
           <span style={{ color: '#94a3b8' }}>
-            · amber band = service-delivery − survey gap · highlighted column =
+            · amber band = self-report − survey gap · highlighted column =
             selected cycle · click a cycle to open it
           </span>
         </div>
@@ -2503,6 +2779,32 @@ function WorkflowUI(props) {
             </div>
             {/* Layer toggles live in the docked Layers panel (top-right of the
                 map) — the SAME MicroplansMapPanel the plan editor uses. */}
+          </div>
+          {/* Per-ward confirmed-rate caption — sits in the title bar, NOT over the
+              map polygons, so the intervention ward's dots are never occluded. */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 14,
+              marginBottom: 8,
+              fontSize: 12,
+              fontFamily: mono,
+              color: SUBINK,
+            }}
+          >
+            <span>
+              <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention) —{' '}
+              <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
+            </span>
+            <span>
+              <span style={{ color: AMBER }}>▰</span> {cWard} (control) —{' '}
+              <b style={{ color: COMP }}>
+                {pct((trend.comparison || [])[sel])}
+              </b>{' '}
+              confirmed
+            </span>
           </div>
           <div ref={panelMountRef} style={{ position: 'relative' }}>
             <div
@@ -2562,16 +2864,20 @@ function WorkflowUI(props) {
                 </button>
               </div>
             ) : null}
+            {/* Dot key — docked BOTTOM-LEFT over empty basemap with a semi-opaque
+                panel, so it never covers the intervention ward's dots (which sit
+                top-left). Per-ward confirmed rates moved to the caption above the
+                map. */}
             <div
               style={{
                 position: 'absolute',
-                top: 8,
+                bottom: 26,
                 left: 8,
-                background: 'rgba(255,255,255,0.97)',
+                background: 'rgba(255,255,255,0.88)',
                 border: '1px solid ' + LINE,
                 borderRadius: 8,
-                padding: '8px 11px',
-                fontSize: 11.5,
+                padding: '7px 10px',
+                fontSize: 11,
                 fontFamily: mono,
                 color: MUT,
                 display: 'flex',
@@ -2580,24 +2886,14 @@ function WorkflowUI(props) {
                 lineHeight: 1.5,
                 boxShadow: '0 2px 8px rgba(16,24,40,0.14)',
                 pointerEvents: 'none',
+                backdropFilter: 'blur(1px)',
               }}
             >
-              <span style={{ color: SUBINK, fontWeight: 700, marginBottom: 2 }}>
-                Independent survey · both wards
-              </span>
-              <span style={{ color: SUBINK }}>
-                <span style={{ color: INDIGO }}>▰</span> {tWard} (intervention)
-                — <b style={{ color: INDIGO }}>{pct(ver)}</b> confirmed
-              </span>
-              <span style={{ color: SUBINK }}>
-                <span style={{ color: COMP }}>▰</span> {cWard} (control) —{' '}
-                <b style={{ color: COMP }}>
-                  {pct((trend.comparison || [])[sel])}
-                </b>{' '}
-                confirmed
+              <span style={{ color: SUBINK, fontWeight: 700, marginBottom: 1 }}>
+                Map key
               </span>
               <span>
-                <span style={{ color: '#16a34a' }}>●</span> service delivery
+                <span style={{ color: '#15803d' }}>●</span> service delivery
                 (program)
               </span>
               <span>
@@ -2668,6 +2964,11 @@ function WorkflowUI(props) {
             marginTop: 16,
             paddingTop: 14,
             borderTop: '1px solid ' + LINE,
+            // scroll target: land the back-check sub-section header clear of the
+            // host sticky nav so the header + the three agreement shares + the
+            // first Original/Backcheck rows frame at the top of the viewport,
+            // exactly like the Distributions card below.
+            scrollMarginTop: 84,
           }}
         >
           <div
@@ -2677,6 +2978,7 @@ function WorkflowUI(props) {
               textTransform: 'uppercase',
               letterSpacing: '.05em',
               marginBottom: 10,
+              scrollMarginTop: 84,
             }}
           >
             {qSel && QMETA[qSel.key]
@@ -2689,7 +2991,12 @@ function WorkflowUI(props) {
       </div>
 
       {/* DISTRIBUTIONS — Layer-3 statistical fabrication screen, one card, no drill */}
-      <div style={Object.assign({ marginTop: 16, padding: 14 }, cardStyle)}>
+      <div
+        style={Object.assign(
+          { marginTop: 16, padding: 14, scrollMarginTop: 84 },
+          cardStyle,
+        )}
+      >
         <div
           style={{
             color: MUT,
@@ -2697,6 +3004,9 @@ function WorkflowUI(props) {
             textTransform: 'uppercase',
             letterSpacing: '.05em',
             marginBottom: 10,
+            // scroll target: land this card clear of the host sticky nav so the
+            // previous (back-check) table doesn't bleed into the top of frame.
+            scrollMarginTop: 84,
           }}
         >
           Distributions · {tWard} · R{rd.round} — statistical fabrication
@@ -2715,8 +3025,9 @@ function WorkflowUI(props) {
           interviews too short to be real, or answers too uniform to occur
           naturally. Each lens places this surveyor at their real value on its
           own scale (the notch; the line is the team-typical), and the coloured
-          bar's width is |z| — how big an outlier (robust median/MAD). No second
-          field visit required.
+          bar's width is |z| — how many standard deviations from the
+          team-typical (using a robust median-based spread that one outlier
+          can't distort). No second field visit required.
         </div>
         <div
           style={{
@@ -2745,9 +3056,81 @@ function WorkflowUI(props) {
             A = compare a number · B = compare a distribution
           </span>
         </div>
+        {/* How to read the lens — a labeled mini-axis so the bar/notch/band
+            encoding is legible without hovering each cell. */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            marginBottom: 12,
+            fontSize: 10.5,
+            color: MUT,
+            fontFamily: mono,
+          }}
+        >
+          <span
+            style={{
+              position: 'relative',
+              display: 'inline-block',
+              width: 88,
+              height: 12,
+              flex: '0 0 auto',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                left: 20,
+                width: 48,
+                top: 2,
+                height: 8,
+                background: '#e2e8f0',
+                borderRadius: 3,
+              }}
+            />
+            <span
+              style={{
+                position: 'absolute',
+                left: 44,
+                top: 0,
+                height: 12,
+                width: 1.5,
+                background: '#94a3b8',
+              }}
+            />
+            <span
+              style={{
+                position: 'absolute',
+                left: 30,
+                width: 34,
+                top: 3,
+                height: 6,
+                borderRadius: 3,
+                background: '#64748b',
+                opacity: 0.95,
+              }}
+            />
+            <span
+              style={{
+                position: 'absolute',
+                left: 53,
+                top: -1,
+                height: 14,
+                width: 2,
+                background: '#0f172a',
+              }}
+            />
+          </span>
+          <span>
+            shaded = peer range · grey line = team-typical ·{' '}
+            <b style={{ color: SUBINK }}>dark notch</b> = this surveyor ·
+            coloured bar width = how big an outlier (|z|)
+          </span>
+        </div>
         {distributionsTable()}
       </div>
-      {bcInfoPopup()}
     </div>
   );
 }
