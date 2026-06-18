@@ -25,7 +25,12 @@
                 <span class="badge badge-md {% if solicitation.solicitation_type == 'eoi' %}primary-light{% else %}warning-light{% endif %}">
                     {{ solicitation.type_label }}
                 </span>
-                {% if solicitation.status == 'active' %}
+                {% if has_awarded %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                        <i class="fa-solid fa-trophy text-xs mr-1.5"></i>
+                        Awarded
+                    </span>
+                {% elif solicitation.status == 'active' %}
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                         <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>
                         Active
@@ -359,9 +364,7 @@
                                         {% endif %}
                                     {% endwith %}
                                 {% elif response.status == 'awarded' %}
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        Awarded
-                                    </span>
+                                    <span class="text-gray-400 text-sm">—</span>
                                 {% else %}
                                     <span class="text-gray-400 text-sm">Not reviewed</span>
                                 {% endif %}
@@ -389,7 +392,7 @@
                                             <i class="fa-solid fa-trophy mr-1"></i> Award
                                         </a>
                                     {% else %}
-                                        <span class="text-green-600 font-medium">
+                                        <span class="text-gray-400 text-sm">
                                             <i class="fa-solid fa-check mr-1"></i> Awarded
                                         </span>
                                     {% endif %}
